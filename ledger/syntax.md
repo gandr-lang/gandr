@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x13382841945671f9`
+- Grammar fingerprint: `0xd806681e3a52f996`
 - Rules: 174 — 173 committed, 1 internal
-- Molds: 2892
+- Molds: 2929
 - Attributes: 17
 
 ## Reading a form
@@ -35,8 +35,8 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`module_declaration`](../corpus/ledger/syntax/module-declaration.gandr) | `module ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ⦅ = ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ; ‖ ⦅ ( ‹type_identifier› : ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ) ⦆? ⦅ : ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ‖ :> ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ⦆? where { ⦅ MODULE_MEMBER ⦆* } ⦆` | `item.singleton` | `module_declaration` | admitted | Keyword, Type, VariableDef, Other, Member, TypeVariable, Operator |
 | [`flow_declaration`](../corpus/ledger/syntax/flow-declaration.gandr) | `flow ‹identifier› : ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ⇝ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* where { ⦅ MODULE_MEMBER ⦆* }` or `flow ‹identifier› : ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ~~> ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* where { ⦅ MODULE_MEMBER ⦆* }` | `item.singleton` | `flow_declaration` * | admitted | Keyword, FunctionDef, Other, Type, Member, Operator |
 | [`import_declaration`](../corpus/ledger/syntax/import-declaration.gandr) | `import ⦅ " ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* " ‖ ‹identifier› ⦅ . ‹identifier› ⦆* ⦆ ⦅ as ‹identifier› ⦆? ⦅ : ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ⦅ via ‹identifier› ⦆? ⦆? ⦅ ( ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ) ⦆? ;` | `item.singleton` | `import_declaration` * | admitted | Keyword, StringLit, Escape, Variable, Other, Member, VariableDef, Type |
-| [`world_declaration`](../corpus/ledger/syntax/world-declaration.gandr) | `world ‹identifier› ⦅ requires [ ⦅ TYPE : ⦆? ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦅ , ⦅ TYPE : ⦆? ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆* ⦅ , ⦆? ] ⦆? ;` | `item.singleton` | `world_declaration` * | admitted | Keyword, Label, Other, Type |
-| [`offers_declaration`](../corpus/ledger/syntax/offers-declaration.gandr) | `offers [ ⦅ ‹type_identifier› ‖ ‹identifier› = ‹type_identifier› ⦆ ⦅ , ⦅ ‹type_identifier› ‖ ‹identifier› = ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ] ;` | `item.singleton` | `offers_declaration` * | admitted | Keyword, Other, Type, Label |
+| [`world_declaration`](../corpus/ledger/syntax/world-declaration.gandr) | `world ‹identifier› ⦅ requires [ ⦅ TYPE : ⦆? ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦅ , ⦅ TYPE : ⦆? ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆* ⦅ , ⦆? ] ⦆? ;` | `item.singleton` | `world_declaration` * | admitted | Keyword, Label, Other, Type |
+| [`offers_declaration`](../corpus/ledger/syntax/offers-declaration.gandr) | `offers [ ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦅ = ‹type_identifier› ⦆? ⦆ ⦅ , ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦅ = ‹type_identifier› ⦆? ⦆ ⦆* ⦅ , ⦆? ] ;` | `item.singleton` | `offers_declaration` * | admitted | Keyword, Other, Type, Member |
 | [`rec_block`](../corpus/ledger/syntax/rec-block.gandr) | `rec { ⦅ ITEM ⦆* }` | `item.singleton` | `rec_block` * | admitted | Keyword, Other |
 | [`pub_declaration`](../corpus/ledger/syntax/pub-declaration.gandr) | `pub` | `item.singleton` | `pub_declaration` * | admitted | Keyword |
 | [`attribute_block`](../corpus/ledger/syntax/attribute-block.gandr) | `@[ ‹identifier› ⦅ ( EXPRESSION ⦅ = EXPRESSION ⦆? ) ⦆? ⦅ , ‹identifier› ⦅ ( EXPRESSION ⦅ = EXPRESSION ⦆? ) ⦆? ⦆* ⦅ , ⦆? ]` | `item.singleton` | `attribute_block` | admitted | Other |
@@ -108,7 +108,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`lambda_expression`](../corpus/ledger/syntax/lambda-expression.gandr) | `fun ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) BLOCK ‖ { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ‖ [ ‹type_variable› ⦅ , ‹type_variable› ⦆* ⦅ , ⦆? ] BLOCK ⦆` | `expression.atom` | `lambda_expression` | admitted | Keyword, Other, VariableParam, TypeVariable, Type, Operator |
 | [`thunk_expression`](../corpus/ledger/syntax/thunk-expression.gandr) | `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? BLOCK` or `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? BLOCK` | `expression.atom` | `thunk_expression` | admitted | Keyword, Other, Number |
 | [`match_expression`](../corpus/ledger/syntax/match-expression.gandr) | `match EXPRESSION ⦅ with EXPRESSION ⦆? ⦅ -> TYPE ⦆? ⦅ { } ‖ ⦅ { PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ‖ { \| PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `match_expression` | admitted | Keyword, Operator, Other |
-| [`handle_expression`](../corpus/ledger/syntax/handle-expression.gandr) | `handle ‹identifier› : ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⟨block⟩ ⦅ with ⦅ { ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦅ , ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦆* ⦅ , ⦆? } ‖ ‹type_identifier› ⦆ ⦆?` | `expression.atom` | `handle_expression` * | admitted | Keyword, VariableDef, Other, Type, Number, Member, VariableParam, Operator, FunctionDef |
+| [`handle_expression`](../corpus/ledger/syntax/handle-expression.gandr) | `handle ‹identifier› : ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⟨block⟩ ⦅ with ⦅ { ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦅ , ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦆* ⦅ , ⦆? } ‖ ‹type_identifier› ⦆ ⦆?` | `expression.atom` | `handle_expression` * | admitted | Keyword, VariableDef, Other, Type, Member, Number, VariableParam, Operator, FunctionDef |
 | [`if_expression`](../corpus/ledger/syntax/if-expression.gandr) | `if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦅ BLOCK ‖ if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else BLOCK ⦆` | `expression.atom` | `if_expression` | admitted | Keyword, Operator, Other, VariableDef, Number, Type, Member |
 | [`for_expression`](../corpus/ledger/syntax/for-expression.gandr) | `for ‹identifier› in EXPRESSION ⟨block⟩` | `expression.atom` | `for_expression` * | admitted | Keyword, VariableDef, Other, Number, Type, Member |
 | [`while_expression`](../corpus/ledger/syntax/while-expression.gandr) | `while EXPRESSION ⟨block⟩` | `expression.atom` | `while_expression` * | admitted | Keyword, Other, VariableDef, Number, Type, Member |
@@ -176,9 +176,9 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`manifest_sort`](../corpus/ledger/syntax/manifest-sort.gandr) | `sort ‹type_identifier› = TYPE` | `type.union` | `manifest_sort` * | admitted | Keyword, Type, Other |
 | [`sum_type`](../corpus/ledger/syntax/sum-type.gandr) | `TYPE + TYPE` | `type.sum` | `sum_type` | admitted | Operator |
 | [`product_type`](../corpus/ledger/syntax/product-type.gandr) | `TYPE * TYPE` | `type.product` | `product_type` | admitted | Operator |
-| [`f_type.row`](../corpus/ledger/syntax/f-type.row.gandr) | `-F [ ⦅ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ‖ TYPE ⦆ ] TYPE` | `type.application` | `f_type` | admitted | Keyword, Other, Type, Operator |
+| [`f_type.row`](../corpus/ledger/syntax/f-type.row.gandr) | `-F [ ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ , ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ] TYPE` | `type.application` | `f_type` | admitted | Keyword, Other, Type, Member, Operator |
 | [`f_type`](../corpus/ledger/syntax/f-type.gandr) | `-F TYPE` | `type.application` | `f_type` | admitted | Keyword |
-| [`f_type.result`](../corpus/ledger/syntax/f-type.result.gandr) | `[ ⦅ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ‖ TYPE ⦆ ] TYPE` | `type.application` | `f_type` | admitted | Other, Type, Operator |
+| [`f_type.result`](../corpus/ledger/syntax/f-type.result.gandr) | `[ ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ , ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ] TYPE` | `type.application` | `f_type` | admitted | Other, Type, Member, Operator |
 | [`u_type`](../corpus/ledger/syntax/u-type.gandr) | `+U ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? TYPE` or `+U ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? TYPE` | `type.application` | `u_type` | admitted | Keyword, Other, Number |
 | [`universe_type`](../corpus/ledger/syntax/universe-type.gandr) | `Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆?` | `type.atom` | `universe_type` * | admitted | TypeBuiltin, Other, Keyword, Number |
 | [`representable_universe_type`](../corpus/ledger/syntax/representable-universe-type.gandr) | `Type+` | `type.atom` | `representable_universe_type` * | admitted | TypeBuiltin |
@@ -203,8 +203,8 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`moded_type`](../corpus/ledger/syntax/moded-type.gandr) | `‹type_variable› TYPE` | `type.arrow` | `moded_type` * | admitted | TypeVariable |
 | [`capability_type`](../corpus/ledger/syntax/capability-type.gandr) | `Cap ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? { ‹identifier› ⦅ , ‹identifier› ⦆* ⦅ , ⦆? }` or `Cap ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? { ‹identifier› ⦅ , ‹identifier› ⦆* ⦅ , ⦆? }` | `type.atom` | `capability_type` * | admitted | TypeBuiltin, Other, Number, Member |
 | [`number.type`](../corpus/ledger/syntax/number.type.gandr) | `‹number›` | `type.atom` | `number` | admitted | Number |
-| [`f_type.row.labelled`](../corpus/ledger/syntax/f-type.row.labelled.gandr) | `-F [ ⦅ TYPE : ⦆? ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦅ , ⦅ TYPE : ⦆? ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ] TYPE` | `type.application` | `f_type` | admitted | Keyword, Other, Type, Operator |
-| [`f_type.result.labelled`](../corpus/ledger/syntax/f-type.result.labelled.gandr) | `[ ⦅ TYPE : ⦆? ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦅ , ⦅ TYPE : ⦆? ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ] TYPE` | `type.application` | `f_type` | admitted | Other, Type, Keyword, Operator |
+| [`f_type.row.labelled`](../corpus/ledger/syntax/f-type.row.labelled.gandr) | `-F [ ⦅ TYPE : ⦆? ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦅ , ⦅ TYPE : ⦆? ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ] TYPE` | `type.application` | `f_type` | admitted | Keyword, Other, Type, Member, Operator |
+| [`f_type.result.labelled`](../corpus/ledger/syntax/f-type.result.labelled.gandr) | `[ ⦅ TYPE : ⦆? ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦅ , ⦅ TYPE : ⦆? ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ] TYPE` | `type.application` | `f_type` | admitted | Other, Type, Member, Keyword, Operator |
 
 ## `instantiation` — 4 rules
 
@@ -277,8 +277,8 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `module_declaration` | item | 171 | `module` | — | 60 |
 | `flow_declaration` | item | 15 | `flow` | — | 0 |
 | `import_declaration` | item | 26 | `import` | — | 4 |
-| `world_declaration` | item | 20 | `world` | — | 4 |
-| `offers_declaration` | item | 14 | `offers` | — | 4 |
+| `world_declaration` | item | 26 | `world` | — | 12 |
+| `offers_declaration` | item | 18 | `offers` | — | 10 |
 | `rec_block` | item | 3 | `rec` | — | 0 |
 | `pub_declaration` | item | 1 | `pub` | — | 0 |
 | `attribute_block` | item | 12 | `@[` | — | 4 |
@@ -347,7 +347,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `lambda_expression` | expression | 29 | `fun` | — | 14 |
 | `thunk_expression` | expression | 6 | `thunk` | — | 0 |
 | `match_expression` | expression | 24 | `match` | — | 9 |
-| `handle_expression` | expression | 76 | `handle` | — | 4 |
+| `handle_expression` | expression | 79 | `handle` | — | 4 |
 | `if_expression` | expression | 70 | `if` | — | 0 |
 | `for_expression` | expression | 35 | `for` | — | 0 |
 | `while_expression` | expression | 33 | `while` | — | 0 |
@@ -398,9 +398,9 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `manifest_sort` | type | 3 | `sort` | — | 0 |
 | `sum_type` | type | 1 | `+` | — | 0 |
 | `product_type` | type | 1 | `*` | — | 0 |
-| `f_type.row` | type | 8 | `-F` | `f_type`, `f_type.row.labelled` | 2 |
+| `f_type.row` | type | 14 | `-F` | `f_type`, `f_type.row.labelled` | 8 |
 | `f_type` | type | 1 | `-F` | `f_type.row`, `f_type.row.labelled` | 0 |
-| `f_type.result` | type | 7 | `[` | `f_type.result.labelled` | 2 |
+| `f_type.result` | type | 13 | `[` | `f_type.result.labelled` | 8 |
 | `u_type` | type | 6 | `+U` | — | 0 |
 | `universe_type` | type | 7 | `Type` | — | 0 |
 | `representable_universe_type` | type | 1 | `Type+` | — | 0 |
@@ -443,8 +443,8 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `circuit_declaration` | item | 123 | `oper` `rule` | — | 38 |
 | `derive_declaration` | item | 9 | `derive` | — | 0 |
 | `forget_model_expression` | expression | 8 | `forget` | — | 2 |
-| `f_type.row.labelled` | type | 18 | `-F` | `f_type`, `f_type.row` | 4 |
-| `f_type.result.labelled` | type | 17 | `[` | `f_type.result` | 4 |
+| `f_type.row.labelled` | type | 24 | `-F` | `f_type`, `f_type.row` | 12 |
+| `f_type.result.labelled` | type | 23 | `[` | `f_type.result` | 12 |
 
 ## Menus — 202 labels
 
@@ -452,17 +452,17 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
-| `identifier` | 370 | 55 | 3 |
+| `identifier` | 381 | 59 | 3 |
 | `,` | 275 | 53 | 0 |
 | `:` | 263 | 32 | 0 |
-| `type_identifier` | 170 | 34 | 2 |
+| `type_identifier` | 183 | 34 | 2 |
 | `=` | 129 | 31 | 0 |
 | `)` | 127 | 43 | 0 |
 | `(` | 123 | 42 | 4 |
 | `;` | 123 | 25 | 1 |
+| `.` | 82 | 38 | 3 |
 | `}` | 79 | 41 | 0 |
 | `type_variable` | 70 | 15 | 3 |
-| `.` | 69 | 32 | 3 |
 | `]` | 67 | 41 | 0 |
 | `{` | 62 | 32 | 2 |
 | `[` | 61 | 38 | 7 |

@@ -14,7 +14,7 @@ def later : Integer => Unit;
 @[ runs("blame: `later` is owed its body") ]
 def unwound() -> Integer {
   var x = 1;
-  let r : Integer = handle c : Proc {
+  let r : Integer = handle c : std.process.Exit.Eff {
     access x as v { let _ = c.exit(1); resume(v, 5) } unwind { later(1) };
     pure 0
   } with {
@@ -35,7 +35,7 @@ def built(a : Integer) -> List(Integer) {
 def unwound_kept() -> List(Integer) {
   let ys = built(1);
   var x = 1;
-  let r : Integer = handle c : Proc {
+  let r : Integer = handle c : std.process.Exit.Eff {
     access x as v { let _ = c.exit(1); resume(v, 5) } unwind { let _ = ys; pure unit };
     pure 0
   } with {

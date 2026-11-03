@@ -550,9 +550,11 @@ fn declarations(
     // --- offers declaration -----------------------------
     // `offers [ … ] ;` is a site's answer to the requirement rows of the
     // worlds placed at it, its entries mirroring a requirement's: a host
-    // interface by name, which the site grants from its ambient authority, and
-    // `label = Module`, a model module the same file declares, named bare as a
-    // handler is. Closed, as a requirement is, and one to a site's file.
+    // interface by its path, `std.io.Console.Eff`, which the site grants from its
+    // ambient authority, and `label = Module`, a model module the same file
+    // declares, named bare as a handler is. The label is an operand, as a
+    // row's is, so it shares the hole a package's lowercase path reads in.
+    // Closed, as a requirement is, and one to a site's file.
     out.push(r(
         RuleName("offers_declaration"),
         Provenance("offers_declaration"),
@@ -562,11 +564,10 @@ fn declarations(
             t(TileLabel("offers")),
             t(TileLabel("[")),
             comma1(alt([
-                t(TileLabel("type_identifier")),
+                theory_path(),
                 seq([
-                    t(TileLabel("identifier")),
-                    t(TileLabel("=")),
-                    t(TileLabel("type_identifier")),
+                    h(Sort::Type),
+                    opt(seq([t(TileLabel("=")), t(TileLabel("type_identifier"))])),
                 ]),
             ])),
             t(TileLabel("]")),
@@ -781,7 +782,7 @@ fn functor_application_tail() -> Regex
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_)))))]
-fn theory_path() -> Regex
+pub(super) fn theory_path() -> Regex
 {
     seq([
         t(TileLabel("type_identifier")),
@@ -790,6 +791,31 @@ fn theory_path() -> Regex
             alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
         ])),
     ])
+}
+
+/// Build an effect's path as a row entry, a capability scope's head and a
+/// world's entries write it: a theory's path, `State` or `Kit.Older`, or a
+/// type, which reads a package's lowercase path, `std.io.Console.Eff`, as the
+/// postfix `type_path` does. A path led by a type name is the theory path's
+/// tiles; one led by a lowercase name is the type's, so `[r]` and `[a : I]`
+/// keep their variable and label, which a lowercase path head would claim.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a theory path or a hole of `ty`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in rows and scopes, L3 grammar identity and
+///   corpus role observations catch a changed alternative. The predicate
+///   observes the stated shape; source programs outside the finite corpus are
+///   not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty))))]
+pub(super) fn effect_path(ty: Sort) -> Regex
+{
+    alt([theory_path(), h(ty)])
 }
 
 /// Build an applied signature former, `Model(CatShape)`, and the manifest
@@ -4464,9 +4490,10 @@ fn primary_expressions(
     // The capability scope `handle c : I { … } with { pure(x) => e, oper
     // op(p, k) => e, … }`: a deep handler for the interface `I` whose body is
     // handed the capability `c` it introduces, the only form that brings a
-    // capability into a body's scope. `I` is a host interface or a theory,
-    // whose value sorts follow it as a model type's do, `State with sort S =
-    // Integer`; the manifest's `with` is followed by `sort`, the clauses' by
+    // capability into a body's scope. `I` is the path of a host interface or
+    // a theory, `std.io.Console.Eff`, whose value sorts follow it as a model
+    // type's do, `State.Eff with sort S = Integer`; the manifest's `with` is
+    // followed by `sort`, the clauses' by
     // `{` or a module's name, so the three never compete. The clauses follow
     // the body: the return clause, spelled with the returner's own keyword
     // `pure`, binds the body's result, and each operation clause, spelled with
@@ -4486,7 +4513,7 @@ fn primary_expressions(
             t(TileLabel("handle")),
             t(TileLabel("identifier")),
             t(TileLabel(":")),
-            t(TileLabel("type_identifier")),
+            effect_path(Sort::Type),
             repeat(seq([
                 t(TileLabel("with")),
                 t(TileLabel("sort")),

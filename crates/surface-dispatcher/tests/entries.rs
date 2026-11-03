@@ -370,8 +370,8 @@ fn kind(
 /// names, as the module and the model type a pack names, as a variable a
 /// binding port binds or an abstracting operation in a theory's rule, as
 /// the head or the type of an `Eq.generic(T)` or of one of its laws, as a
-/// node of the tactic a splice runs, or as a node of a world's requirement
-/// row.
+/// node of the tactic a splice runs, as a node of a world's requirement
+/// row, or as a host interface's path.
 ///
 /// # Specification
 /// trivial.
@@ -493,11 +493,17 @@ enum Placed
     /// answers.
     Template,
     /// A node of a world's requirement row, `store` and `String` in `world
-    /// far requires [store : Store with sort V = String] ;`: the lowering
-    /// reads the row's entries and the deployment check judges them in the
-    /// text of the site the world is placed at, so no core node of the walked
-    /// source holds them, and the world's declaration answers.
+    /// far requires [store : Store with sort V = String] ;`, or of a site's
+    /// offer, `store` in `offers [std.io.Console.Eff, store = Echo] ;`: the
+    /// lowering reads the row's entries and the deployment check judges them
+    /// in the text of the site the world is placed at, so no core node of the
+    /// walked source holds them, and the world's or the offer's declaration
+    /// answers.
     Required,
+    /// A host interface's path, `std.io.Console.Eff` in a row's entry or a
+    /// `handle` head: the name of an interface, neither a term nor a type the
+    /// lowering forms, so the row or the scope answers.
+    Interface,
 }
 
 /// What the lowering knows of a source's models: each model implicit a
@@ -532,11 +538,14 @@ fn gated(
 {
     let source: &str = tree.source().into();
     // The namespaces the builtin primitives are written under, each proper
-    // prefix of a primitive's name, as the lowering seeds them.
+    // prefix of a primitive's name, as the lowering seeds them, and the homes
+    // of the host's interfaces, each proper prefix of an interface's name,
+    // `std` and `std.io` in `std.io.Console.Eff`.
     let namespaces: BTreeSet<&str> = gandr_core_term::primitive::PRELUDE
         .iter()
-        .flat_map(|primitive| {
-            let name: &'static str = primitive.name().into();
+        .map(|primitive| -> &'static str { primitive.name().into() })
+        .chain(gandr_core_term::effect::host::INTERFACES)
+        .flat_map(|name| {
             name.match_indices('.')
                 .filter_map(move |(at, _)| name.get(.. at))
         })
@@ -876,8 +885,9 @@ fn gated(
         // `Model(…)` or `Terms(…)` in a type but its head.
         let modelled =
             melded && def.sort == Sort::Type && matches!(spelled(opener), "Model" | "Terms");
-        // A world's requirement row: every child of a world declaration.
-        let required = melded && def.label == "world" && def.sort == Sort::Item;
+        // A world's requirement row or a site's offer: every child of a world
+        // or an offers declaration.
+        let required = melded && matches!(def.label, "world" | "offers") && def.sort == Sort::Item;
         // The head and the type of a derived equality or law: every child of
         // an `Eq.generic(T)`, `Eq.generic.refl(T)` or `Eq.generic.sym(T)` call.
         let deriving = applied
@@ -989,8 +999,8 @@ fn gated(
             else {
                 def.label == "constructor"
                     || def.label == "type_identifier"
-                    || (def.label == "identifier"
-                        && (namespaces.contains(text) || modules.contains(text.trim())))
+                    || ((def.label == "identifier" || def.label == "type_variable")
+                        && (namespaces.contains(text.trim()) || modules.contains(text.trim())))
                     || ((def.label == "identifier" || def.label == "type_variable") && modelled)
             };
         // A module or a model implicit a call supplies a model implicit by,
@@ -1083,6 +1093,13 @@ fn gated(
         let pasted = pastings.iter().any(|&(start, end)| {
             start <= usize::from(span.start()) && usize::from(span.end()) <= end
         });
+        let interfaced = melded
+            && def.label == "."
+            && def.sort == Sort::Type
+            && text
+                .trim()
+                .rsplit_once('.')
+                .is_some_and(|(home, _)| namespaces.contains(home.trim()));
         let placed = placed
             .or_else(|| templated.then_some(Placed::Template))
             .or_else(|| head.then_some(Placed::Head))
@@ -1097,7 +1114,8 @@ fn gated(
             .or_else(|| (sized || supplied).then_some(Placed::Stage))
             .or_else(|| (regioned || naming).then_some(Placed::Region))
             .or_else(|| unstated.then_some(Placed::Unstated))
-            .or_else(|| packed.then_some(Placed::Packed));
+            .or_else(|| packed.then_some(Placed::Packed))
+            .or_else(|| interfaced.then_some(Placed::Interface));
         gated.push((kind(grammar, tree, position, *def), span, placed));
     }
     gated

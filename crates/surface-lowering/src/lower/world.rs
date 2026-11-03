@@ -500,29 +500,32 @@ impl<'source> Lowerer<'_, 'source>
         let mut labelled: BTreeMap<SurfaceName<'source>, ByteSpan> = BTreeMap::new();
         let mut whole: BTreeMap<SurfaceName<'source>, ByteSpan> = BTreeMap::new();
         for entry in entries {
-            let interface =
-                self.handled(site, entry.interface, entry.interface.node, &entry.manifest)?;
-            let (named, seen) = match entry.label {
-                Maybe::Present(written) => (self.label_of(site, written)?, &mut labelled),
+            let interface = self.handled(
+                site,
+                &entry.interface,
+                entry.interface.last.node,
+                &entry.manifest,
+            )?;
+            let (span, name, seen) = match entry.label {
+                Maybe::Present(written) => {
+                    let named = self.label_of(site, written)?;
+                    (named.span, self.name_at(named), &mut labelled)
+                },
                 Maybe::Absent(_) => {
+                    let name = entry.interface.name(self.tree);
                     if let Interface::Theory(_) = interface {
                         return Err(LoweringRefusal::UnlabelledRequirement {
-                            span: entry.interface.span,
-                            name: self.name_at(entry.interface),
+                            span: entry.interface.span(),
+                            name,
                         });
                     }
-                    (entry.interface, &mut whole)
+                    (entry.interface.span(), name, &mut whole)
                 },
             };
-            let name = self.name_at(named);
             if let Some(&first) = seen.get(&name) {
-                return Err(LoweringRefusal::DuplicateDefinition {
-                    span: named.span,
-                    name,
-                    first,
-                });
+                return Err(LoweringRefusal::DuplicateDefinition { span, name, first });
             }
-            let _first = seen.insert(name, named.span);
+            let _first = seen.insert(name, span);
         }
 
         Ok(())

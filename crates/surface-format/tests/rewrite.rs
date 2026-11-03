@@ -353,16 +353,16 @@ def pass[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r) {
 }
 
 /// #2255: the sugared form writes a result row of several interfaces before
-/// its type, `[Div, Proc] B`, a row open through a tail as written, `[Div |
-/// r] B` and `[r] B`, and a type looser than an application parenthesised
-/// after it; a row under `+U` in a parameter's type is no result and keeps
-/// its returner.
+/// its type, `[Div, std.process.Exit.Eff] B`, a row open through a tail as
+/// written, `[Div | r] B` and `[r] B`, and a type looser than an application
+/// parenthesised after it; a row under `+U` in a parameter's type is no result
+/// and keeps its returner.
 #[test]
 fn a_result_row_is_written_before_its_type_2255()
 {
     let grammar = grammar();
     let source = "\
-def both() -> -F [Div, Proc] Integer {
+def both() -> -F [Div, std.process.Exit.Eff] Integer {
   pure 1
 }
 
@@ -383,7 +383,7 @@ def open[r : Row]() -> -F [r] Unit {
 }
 ";
     let sugared = "\
-def both() -> [Div, Proc] Integer {
+def both() -> [Div, std.process.Exit.Eff] Integer {
   pure 1
 }
 
@@ -412,35 +412,35 @@ def open[r : Row]() -> [r] Unit {
 
 /// #2271: the sugared form writes a result row naming an instance by its
 /// label before its type as the row reads, each label before its interface:
-/// alone, `[out : Console] B`, after an interface and before a tail; the
-/// explicit form keeps either spelling.
+/// alone, `[out : std.io.Console.Eff] B`, after an interface and before a tail;
+/// the explicit form keeps either spelling.
 #[test]
 fn a_labelled_result_row_is_written_before_its_type_2271()
 {
     let grammar = grammar();
     let source = "\
-def say() -> -F [out : Console] Unit {
+def say() -> -F [out : std.io.Console.Eff] Unit {
   out.print(\"said\")
 }
 
-def both() -> -F [Div, out : Console] Unit {
+def both() -> -F [Div, out : std.io.Console.Eff] Unit {
   out.print(\"said\")
 }
 
-def tailed[r : Row]() -> -F [d : Console, Div | r] Unit {
+def tailed[r : Row]() -> -F [d : std.io.Console.Eff, Div | r] Unit {
   pure unit
 }
 ";
     let sugared = "\
-def say() -> [out : Console] Unit {
+def say() -> [out : std.io.Console.Eff] Unit {
   out.print(\"said\")
 }
 
-def both() -> [Div, out : Console] Unit {
+def both() -> [Div, out : std.io.Console.Eff] Unit {
   out.print(\"said\")
 }
 
-def tailed[r : Row]() -> [d : Console, Div | r] Unit {
+def tailed[r : Row]() -> [d : std.io.Console.Eff, Div | r] Unit {
   pure unit
 }
 ";

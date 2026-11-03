@@ -1,4 +1,4 @@
-// Two programs exchange a ping over `Net`, the host interface for streams to
+// Two programs exchange a ping over `std.net.Eff`, the host interface for streams to
 // peers named by their keys.
 //
 // One process serves and another pings it, the first step from one process
@@ -7,7 +7,7 @@
 //
 // `gandr run ping.gandr` serves, and `gandr run ping.gandr <key>@<ip:port>`
 // dials the server that key and socket name, then prints its answer. The
-// host binds its network on the run's first `Net` operation, at the socket
+// host binds its network on the run's first `std.net.Eff` operation, at the socket
 // `--net-bind` names, under the key `GANDR_NET_SECRET` holds.
 //
 // - see: `crates/surface-driver/tests/net.rs` — the two processes
@@ -15,29 +15,29 @@
 
 /// Accept one stream, read its ping, answer `pong`, disconnect, and return
 /// the ping.
-pub def serve() -> [Net] String {
-  let (peer, stream) = Net.accept();
-  let ping = Net.receive(stream);
-  Net.transmit(stream, "pong");
-  Net.disconnect(stream);
+pub def serve() -> [std.net.Eff] String {
+  let (peer, stream) = std.net.accept();
+  let ping = std.net.receive(stream);
+  std.net.transmit(stream, "pong");
+  std.net.disconnect(stream);
   ping
 }
 
 /// Dial `peer`, send `ping`, read the answer, disconnect, and return the
 /// answer.
-pub def ping(peer : String) -> [Net] String {
-  let stream = Net.connect(peer);
-  Net.transmit(stream, "ping");
-  let pong = Net.receive(stream);
-  Net.disconnect(stream);
+pub def ping(peer : String) -> [std.net.Eff] String {
+  let stream = std.net.connect(peer);
+  std.net.transmit(stream, "ping");
+  let pong = std.net.receive(stream);
+  std.net.disconnect(stream);
   pong
 }
 
-/// `ping` under a handler written here, a second model of `Net` whose every
+/// `ping` under a handler written here, a second model of `std.net.Eff` whose every
 /// received frame is `pong`. The same term returns what the server answers.
 @[ runs("\"pong\"") ]
 def pingAnswered() -> String {
-  handle n : Net {
+  handle n : std.net.Eff {
     ping("peer")
   } with {
     pure(x) => pure x,
@@ -51,9 +51,9 @@ def pingAnswered() -> String {
 
 /// The entry: serve with no argument, ping the peer the first argument
 /// names otherwise, print what came back, and exit with 0.
-def main(args : List(String)) -> [Net, Console] Integer {
+def main(args : List(String)) -> [std.net.Eff, std.io.Console.Eff] Integer {
   match args {
-    [] => { let got = serve(); Console.print(got); 0 },
-    [peer, .._] => { let got = ping(peer); Console.print(got); 0 }
+    [] => { let got = serve(); std.io.Console.print(got); 0 },
+    [peer, .._] => { let got = ping(peer); std.io.Console.print(got); 0 }
   }
 }

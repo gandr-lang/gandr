@@ -4,14 +4,14 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 10 │ ┌  def outlived() -> Integer {
 11 │ │    var s = 4;
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
-12 │ │┌   handle c : Proc {
+12 │ │┌   handle c : std.process.Exit.Eff {
 13 │ ││     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
-   │ ││     ─── checked against `-F [Proc, c : Proc] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
+   │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
 14 │ ││     let back : () => Integer = pass(k);
    │ ││     ┬──        ┬────────────   ━━━━━━━ its type does not convert: expected `-F Integer`, found `-F ((() => Integer) at c)`
    │ ││     │          │
    │ ││     │          the type it is checked against
-   │ ││     checked against `-F [Proc, c : Proc] Integer`; while finishing the type of this
+   │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while finishing the type of this
 15 │ ││     force back
    ┆ ┆┆
 18 │ ││     oper exit(code, rest) => pure 0

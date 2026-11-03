@@ -9,7 +9,7 @@
 // sort left unfixed and a label written twice.
 //
 // - see: `corpus/model/deployments/offers.gandr` — a world requiring
-//   `Console` and a store under `store`
+//   `std.io.Console.Eff` and a store under `store`
 
 /// A store holds values by key, and each operation hands what it reads on.
 pub theory Store where {
@@ -38,7 +38,7 @@ pub world lost requires [Missing];
 
 /// A world requiring a theory under no label: nothing performs it.
 @[ refuses("UnlabelledRequirement") ]
-pub world bare requires [Console, Store with sort V = String];
+pub world bare requires [std.io.Console.Eff, Store with sort V = String];
 
 /// A world requiring a theory whose operations are no effects.
 @[ refuses("UninterfacedMember") ]

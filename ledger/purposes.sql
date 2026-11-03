@@ -718,6 +718,7 @@ INSERT INTO purpose VALUES('core-term','description::decode_ref','function','Int
 INSERT INTO purpose VALUES('core-term','description::decode_signature','function','Decodes the constructor table into a native nominal signature, retaining parameters, kind and constructor tag order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::EffectConflict','enum','Why a signature or row cannot denote a single interface per label: a duplicate operation, a conflicting signature or two tails.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::EffectLabel','enum','What an effect row''s entry is keyed by: which instance of an interface a returner may perform.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::EffectModule','struct','The module an interface lives in, borrowed from the interface''s name: the path a call names its operations through.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::EffectName','struct','The name of an effect interface, shared across occurrences and rows.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::EffectOp','struct','An operation''s payload and reply types, resolved by perform and handler clauses.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::EffectPresence','enum','Whether a computation''s row permits an operation: present or absent.',NULL,'fits','sound',NULL);

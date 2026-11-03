@@ -4,14 +4,14 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
 11 │ ┌  def unkept() -> Integer {
 12 │ │    var s = 3;
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
-13 │ │┌   handle c : Proc {
+13 │ │┌   handle c : std.process.Exit.Eff {
 14 │ ││     let k : () => Integer = access shared s as w { pure thunk { pure w } };
    │ ││     ┬──                     ┬──────────────────────┬────┯━━━━━━━━━━━━━━━──
    │ ││     │                       │                      │    │
    │ ││     │                       │                      │    a view outliving its access
    │ ││     │                       │                      checked against `-F (() => Integer)`; while judging the value this returns
    │ ││     │                       checked against `-F (() => Integer)`; while checking the body of this access
-   │ ││     checked against `-F [Proc, c : Proc] Integer`; while finishing the type of this
+   │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while finishing the type of this
 15 │ ││     force k
 16 │ ││   } with {
 17 │ ││     pure(x) => pure x,
@@ -30,7 +30,7 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
 25 │ ┌   def keptExclusive() -> Integer {
 26 │ │     var s = 3;
    │ │     ─── checked against `-F Integer`; while checking the scope of this hold
-27 │ │┌    handle c : Proc {
+27 │ │┌    handle c : std.process.Exit.Eff {
 28 │ ││┌     access s as v {
 29 │ │││       let k : (() => Integer) at c = thunk { pure v };
    │ │││       ┬──                            ━━━━━━━━━━━━━━━━ a view outliving its access
@@ -38,7 +38,7 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    │ │││       synthesised; while finishing the type of this
 30 │ │││       resume(v, v)
 31 │ │││     };
-   │ ││└─────┘ checked against `-F [Proc, c : Proc] Integer`; while checking the body of this access
+   │ ││└─────┘ checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body of this access
    ┆ ┆┆
 35 │ ││      oper exit(code, k) => pure 0
 36 │ ││    }
@@ -55,9 +55,9 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
 42 │ ┌  def written() -> Integer {
 43 │ │    var s = 3;
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
-44 │ │┌   handle c : Proc {
+44 │ │┌   handle c : std.process.Exit.Eff {
 45 │ ││     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
-   │ ││     ─── checked against `-F [Proc, c : Proc] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
+   │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
 46 │ ││     access s as v { resume(v, v + 1) };
    │ ││     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
 47 │ ││     force k
@@ -76,13 +76,13 @@ error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding 
 57 │ ┌  def rewrapped() -> Integer {
 58 │ │    var s = 3;
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
-59 │ │┌   handle c : Proc {
+59 │ │┌   handle c : std.process.Exit.Eff {
 60 │ ││     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
-   │ ││     ─── checked against `-F [Proc, c : Proc] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
+   │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
 61 │ ││     let j : () => Integer = thunk { force k };
    │ ││     ┬──                     ━━━━━━━━━━━━━━━━━ a value kept in the scope's own region
    │ ││     │
-   │ ││     checked against `-F [Proc, c : Proc] Integer`; while finishing the type of this
+   │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while finishing the type of this
 62 │ ││     force j
    ┆ ┆┆
 65 │ ││     oper exit(code, k) => pure 0
@@ -103,16 +103,16 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ │
 73 │ │    var s = 3;
    │ │    ─── checked against `-F (() => Integer)`; while checking the scope of this hold
-74 │ │┌   handle c : Proc {
+74 │ │┌   handle c : std.process.Exit.Eff {
 75 │ ││     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
    │ ││     ┬──     ──────────────────── the type it synthesises
    │ ││     │
-   │ ││     checked against `-F [Proc, c : Proc] (() => Integer)`; while checking the body under this binding; binds k : (() => Integer) at c
+   │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] (() => Integer)`; while checking the body under this binding; binds k : (() => Integer) at c
 76 │ ││     pure k
    │ ││     ┬────┯
    │ ││     │    │
    │ ││     │    its type does not convert: expected `() => Integer`, found `(() => Integer) at c`
-   │ ││     checked against `-F [Proc, c : Proc] (() => Integer)`; while judging the value this returns
+   │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] (() => Integer)`; while judging the value this returns
 77 │ ││   } with {
 78 │ ││     pure(x) => pure x,
 79 │ ││     oper exit(code, k) => pure thunk { pure 0 }

@@ -4,14 +4,14 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 14 │ ┌    def backwards() -> Integer {
 15 │ │      var s = 5;
    │ │      ─── checked against `-F Integer`; while checking the scope of this hold
-16 │ │┌     handle outer : Proc {
+16 │ │┌     handle outer : std.process.Exit.Eff {
 17 │ ││       let k : (() => Integer) at outer = access shared s as w { pure pure w };
-   │ ││       ─── checked against `-F [Proc, outer : Proc] Integer`; while checking the body under this binding; binds k : (() => Integer) at outer
-18 │ ││┌      handle inner : Proc {
+   │ ││       ─── checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() => Integer) at outer
+18 │ ││┌      handle inner : std.process.Exit.Eff {
 19 │ │││        let _ : Path(
    │ │││┌───────┬───────┘
    │ ││││       │
-   │ ││││       checked against `-F [Proc, outer : Proc, inner : Proc] Integer`; while checking this computation against the type it is ascribed
+   │ ││││       checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while checking this computation against the type it is ascribed
 20 │ ││││         (() => Integer) at inner => (() => Integer) at outer,
    │ ││││         ──────────────────────── the type it synthesises
 21 │ ││││         thunk { fun (x) { let z : (() => Integer) at outer = x; pass(z) } },
@@ -28,7 +28,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ┆ ┆┆┆
 27 │ │││        oper exit(code, rest) => pure 0
 28 │ │││      }
-   │ ││└──────┘ checked against `-F [Proc, outer : Proc] Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
+   │ ││└──────┘ checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
    ┆ ┆┆
 31 │ ││       oper exit(code, rest) => pure 0
 32 │ ││     }
@@ -45,12 +45,12 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
 38 │ ┌   def unequal() -> Integer {
 39 │ │     var s = 5;
    │ │     ─── checked against `-F Integer`; while checking the scope of this hold
-40 │ │┌    handle outer : Proc {
+40 │ │┌    handle outer : std.process.Exit.Eff {
 41 │ ││      let k : (() => Integer) at outer = access shared s as w { pure pure w };
-   │ ││      ─── checked against `-F [Proc, outer : Proc] Integer`; while checking the body under this binding; binds k : (() => Integer) at outer
-42 │ ││┌     handle inner : Proc {
+   │ ││      ─── checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() => Integer) at outer
+42 │ ││┌     handle inner : std.process.Exit.Eff {
 43 │ │││       let _ : Path(
-   │ │││       ─── checked against `-F [Proc, outer : Proc, inner : Proc] Integer`; while finishing the type of this
+   │ │││       ─── checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while finishing the type of this
 44 │ │││         (() => Integer) at outer => (() => Integer) at inner,
 45 │ │││         thunk { fun (x) { let y : (() => Integer) at outer = pass(x); pure y } },
    │ │││         ──────────────────────────────────────────────────────────────────────── an endpoint the point does not convert to
@@ -61,7 +61,7 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ┆ ┆┆┆
 51 │ │││       oper exit(code, rest) => pure 0
 52 │ │││     }
-   │ ││└─────┘ checked against `-F [Proc, outer : Proc] Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
+   │ ││└─────┘ checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
    ┆ ┆┆
 55 │ ││      oper exit(code, rest) => pure 0
 56 │ ││    }

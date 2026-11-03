@@ -1089,7 +1089,7 @@ fn a_model_implicit_supplied_by_a_value_is_refused_739()
 }
 
 /// A line printed through the instance `out` its row names.
-const SAY: &str = "def say() -> -F [out : Console] Unit { out.print(\"x\") }\n";
+const SAY: &str = "def say() -> -F [out : std.io.Console.Eff] Unit { out.print(\"x\") }\n";
 
 /// A handler of `Console` answering 1, around `body`.
 ///
@@ -1101,7 +1101,7 @@ fn handled(
 ) -> String
 {
     format!(
-        "handle {binder} : Console {{ {body} }} with {{ pure(v) => pure v, oper print(line, k) => pure 1 }}"
+        "handle {binder} : std.io.Console.Eff {{ {body} }} with {{ pure(v) => pure v, oper print(line, k) => pure 1 }}"
     )
 }
 
@@ -1112,7 +1112,7 @@ fn a_row_label_is_an_instance_after_every_parameter_2271()
     // its row, each at a region binder of its own: the type its explicit twin
     // writes. Its row's tail reads `r` past both instances, which no type
     // names, as the twin's reads it past `x` and `y`.
-    let source = "def both[r : Row](s : String) -> -F [x : Console, y : Console | r] Unit { y.print(s) }\ndef twin[r : Row, q : Region, q1 : Region](s : String, x : Cap {print} at q, y : Cap {print} at q1) -> -F [q : Console, q1 : Console | r] Unit { y.print(s) }\n";
+    let source = "def both[r : Row](s : String) -> -F [x : std.io.Console.Eff, y : std.io.Console.Eff | r] Unit { y.print(s) }\ndef twin[r : Row, q : Region, q1 : Region](s : String, x : Cap {print} at q, y : Cap {print} at q1) -> -F [q : std.io.Console.Eff, q1 : std.io.Console.Eff | r] Unit { y.print(s) }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert_eq!(
@@ -1139,8 +1139,7 @@ fn a_row_label_naming_a_region_binder_is_its_instance_2271()
 {
     // `twin`'s labels name its region binders: they bind no parameter, and
     // every parameter it takes is written.
-    let source =
-        "def twin[r : Region](x : Cap {print} at r) -> -F [r : Console] Unit { x.print(\"x\") }\n";
+    let source = "def twin[r : Region](x : Cap {print} at r) -> -F [r : std.io.Console.Eff] Unit { x.print(\"x\") }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let twin = declaration_named(&module, SurfaceName::from("twin")).constant();
@@ -1162,7 +1161,7 @@ fn an_omitted_instance_is_the_one_handled_in_scope_2271()
     // `say()` inside one scope passes its capability, as `say[.out = a]()`
     // does; inside a function whose row labels an instance, it passes that.
     let source = format!(
-        "{SAY}def resolved() -> -F Integer {{ {} }}\ndef named() -> -F Integer {{ {} }}\ndef relayed() -> -F [o : Console] Unit {{ say() }}\ndef relayedNamed() -> -F [o : Console] Unit {{ say[.out = o]() }}\n",
+        "{SAY}def resolved() -> -F Integer {{ {} }}\ndef named() -> -F Integer {{ {} }}\ndef relayed() -> -F [o : std.io.Console.Eff] Unit {{ say() }}\ndef relayedNamed() -> -F [o : std.io.Console.Eff] Unit {{ say[.out = o]() }}\n",
         handled("a".into(), SourceText::from("say(); pure 0")),
         handled("a".into(), SourceText::from("say[.out = a](); pure 0")),
     );
@@ -1187,7 +1186,7 @@ fn an_omitted_instance_is_refused_when_none_or_several_stand_2271()
 {
     let inner = handled("b".into(), SourceText::from("say(); pure 0"));
     let source = format!(
-        "{SAY}def none() -> -F [Console] Unit {{ say() }}\ndef several() -> -F Integer {{ {} }}\n",
+        "{SAY}def none() -> -F [std.io.Console.Eff] Unit {{ say() }}\ndef several() -> -F Integer {{ {} }}\n",
         handled("a".into(), SourceText::from(inner.as_str())),
     );
     let mut arena = CoreArena::new();
@@ -1198,7 +1197,7 @@ fn an_omitted_instance_is_refused_when_none_or_several_stand_2271()
             LoweringRefusal::InstanceUnanswered { function, instance, interface, .. }
                 if function == SurfaceName::from("say")
                     && instance == SurfaceName::from("out")
-                    && interface == SurfaceName::from("Console")
+                    && interface == SurfaceName::from("std.io.Console.Eff")
         ),
         "the row's default is no instance a call may pass"
     );

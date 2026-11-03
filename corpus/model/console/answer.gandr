@@ -18,7 +18,7 @@ import std.authority (Authority, console);
 import std.io (print, eprint, read_line);
 
 /// The entry: it reads one line and answers it.
-def main(authority : Authority) -> [Console, Stderr, Stdin] Unit {
+def main(authority : Authority) -> [std.io.Console.Eff, std.io.Stderr.Eff, std.io.Stdin.Eff] Unit {
   let answer = read_line(console(authority));
   if answer == "yes\n" {
     print(console(authority), "agreed")

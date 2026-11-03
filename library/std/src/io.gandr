@@ -3,21 +3,21 @@
 // `main` is handed. A program reaches the streams through a capability it was
 // given, never through the ambient interfaces, so what it may print or read
 // is what crossed from `main`. Each stream is an interface of its own,
-// `Console`, `Stderr` and `Stdin`, as `cap-std` holds three handles, and a
-// function's row names the streams it touches.
+// `std.io.Console.Eff`, `std.io.Stderr.Eff` and `std.io.Stdin.Eff`, as `cap-std` holds
+// three handles, and a function's row names the streams it touches.
 
 /// One line, written to standard output through `console`.
-pub def print(console : Cap { print }, line : String) -> [Console] Unit {
+pub def print(console : Cap { print }, line : String) -> [std.io.Console.Eff] Unit {
   console.print(line)
 }
 
 /// One line, written to standard error through `console`.
-pub def eprint(console : Cap { eprint }, line : String) -> [Stderr] Unit {
+pub def eprint(console : Cap { eprint }, line : String) -> [std.io.Stderr.Eff] Unit {
   console.eprint(line)
 }
 
 /// The next line of standard input through `console`, its newline kept; the
 /// empty string once the input is spent.
-pub def read_line(console : Cap { read_line }) -> [Stdin] String {
+pub def read_line(console : Cap { read_line }) -> [std.io.Stdin.Eff] String {
   console.read_line(unit)
 }

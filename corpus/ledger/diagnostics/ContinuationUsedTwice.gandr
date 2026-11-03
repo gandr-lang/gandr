@@ -23,7 +23,7 @@ module Ring :> #{
 
 @[ refuses("ContinuationUsedTwice") ]
 def resumedTwice() -> -F Unit {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     let ring = fork (kernel : Ring.Submission) {
       let sqe = recv(kernel);
       send(kernel, Ring.done);

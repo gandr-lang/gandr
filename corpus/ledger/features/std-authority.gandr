@@ -5,11 +5,11 @@
 import std.authority (Authority, console);
 
 /// A greeting, printed through a capability that holds `print` alone.
-pub def greet(console : Cap { print }) -> [Console] Unit {
+pub def greet(console : Cap { print }) -> [std.io.Console.Eff] Unit {
   console.print("hello, world!")
 }
 
 /// The greeting through the console that `main` opens from its authority.
-pub def hello(authority : Authority) -> [Console] Unit {
+pub def hello(authority : Authority) -> [std.io.Console.Eff] Unit {
   greet(console(authority))
 }

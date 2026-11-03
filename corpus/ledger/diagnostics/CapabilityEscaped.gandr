@@ -1,7 +1,7 @@
 /// `CapabilityEscaped`: a scoped capability that would outlive its region.
 @[ refuses("CapabilityEscaped") ]
 def leak() -> -F Cap {exit} {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     return c
   } with {
     pure(x) => x,

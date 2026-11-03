@@ -3803,8 +3803,8 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     fn a_printed_line_reaches_the_console_2279()
     {
         let mut printing = program(
-            "def greet() -> -F [Console] Unit {\n  Console.print(\"a\") ;\n  \
-             Console.print(\"b\")\n}\n",
+            "def greet() -> -F [std.io.Console.Eff] Unit {\n  std.io.Console.print(\"a\") ;\n  \
+             std.io.Console.print(\"b\")\n}\n",
         );
         let greet = printing
             .declarations

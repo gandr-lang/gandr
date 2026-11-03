@@ -243,22 +243,28 @@ fn add_type_rules(
     // names keep the kinds `f_type` and `u_type` the tree-sitter grammar
     // names, so a consumer dispatching on kinds reads the bridges as before.
     //
-    // The returner takes an optional effect row, `-F [Fs, Proc] A`: the
-    // interfaces its computation may request, each a host interface's name.
-    // A row may stay open through a tail, a row-valued operand written after
-    // a `|`, `-F [Fs | r] A`, or alone, `-F [r] A`. The bracket follows the
-    // compound tile as the thunk's grade does. The row form is a rule of its
-    // own, `f_type.row`, realising the kind `f_type`, rather than an optional
-    // bracket in `f_type`: an optional bracket leaves the bare returner's only
-    // mold awaiting a `[`, so a returner missing its operand recovers as the
-    // thunk does, with three obligations where it had one. The two rules give
-    // `-F` two molds, and the molder settles their tie at the next token: a
-    // `[` continues only the row form, and anything else only the bare one.
-    // The row form is pushed first so its mold numbers first, which is what
-    // keeps `-F [Fs] A` a row: a `[` may also open an expression list in the
-    // operand's hole, a reading the bare form keeps open, and an exact tie
-    // keeps the smaller mold. A row naming an instance by a label, `-F [a :
-    // Console] A`, is the labelled form's ([`labelled_rows`]).
+    // The returner takes an optional effect row, `-F [std.fs.Eff,
+    // std.process.Exit.Eff] A`: the interfaces its computation may request,
+    // each an effect's path ([`super::term::effect_path`]), a theory's tiles
+    // or a type, which reads a package's lowercase path as the postfix type
+    // path does. A lowercase head as a tile would claim the row variable of
+    // `[r]` and the label of `[a : I]`, so it is the type sort's. A row may
+    // stay open through a tail, a row-valued operand written after a `|`,
+    // `-F [std.fs.Eff | r] A`, or alone, `-F [r] A`, a type entry the
+    // lowering reads as the tail when it spells no path. The bracket follows
+    // the compound tile as the thunk's grade does. The row form is a rule of
+    // its own, `f_type.row`, realising the kind `f_type`, rather than an
+    // optional bracket in `f_type`: an optional bracket leaves the bare
+    // returner's only mold awaiting a `[`, so a returner missing its operand
+    // recovers as the thunk does, with three obligations where it had one.
+    // The two rules give `-F` two molds, and the molder settles their tie at
+    // the next token: a `[` continues only the row form, and anything else
+    // only the bare one. The row form is pushed first so its mold numbers
+    // first, which is what keeps `-F [Div] A` a row: a `[` may also open an
+    // expression list in the operand's hole, a reading the bare form keeps
+    // open, and an exact tie keeps the smaller mold. A row naming an instance
+    // by a label, `-F [a : std.io.Console.Eff] A`, is the labelled form's
+    // ([`labelled_rows`]).
     rules.push(Rule::with_provenance(
         RuleName("f_type.row"),
         Provenance("f_type"),
@@ -267,12 +273,9 @@ fn add_type_rules(
         Regex::seq([
             tile(TileLabel("-F")),
             tile(TileLabel("[")),
-            Regex::alt([
-                Regex::seq([
-                    comma1(tile(TileLabel("type_identifier"))),
-                    Regex::optional(Regex::seq([tile(TileLabel("|")), Regex::sort(ty)])),
-                ]),
-                Regex::sort(ty),
+            Regex::seq([
+                comma1(super::term::effect_path(ty)),
+                Regex::optional(Regex::seq([tile(TileLabel("|")), Regex::sort(ty)])),
             ]),
             tile(TileLabel("]")),
             Regex::sort(ty),
@@ -298,12 +301,9 @@ fn add_type_rules(
         type_application,
         Regex::seq([
             tile(TileLabel("[")),
-            Regex::alt([
-                Regex::seq([
-                    comma1(tile(TileLabel("type_identifier"))),
-                    Regex::optional(Regex::seq([tile(TileLabel("|")), Regex::sort(ty)])),
-                ]),
-                Regex::sort(ty),
+            Regex::seq([
+                comma1(super::term::effect_path(ty)),
+                Regex::optional(Regex::seq([tile(TileLabel("|")), Regex::sort(ty)])),
             ]),
             tile(TileLabel("]")),
             Regex::sort(ty),
@@ -1359,18 +1359,20 @@ fn entry_shape(sort: Sort) -> Regex
     ])
 }
 
-/// A labelled row's entry: an interface's name, standing for its default
-/// instance, or `a : I`, the instance of `I` named `a`, then the sorts it
-/// fixes, `State with sort S = Integer`. The label is an operand, as a
-/// telescope's binder is. The manifest tail is the capability scope's, the
-/// same tiles in the same order: its `with` follows the name's tile and
-/// `sort` follows the `with`, so it is decided at its keyword.
+/// A labelled row's entry: an interface's path, `std.fs.Eff` or `State.Eff`,
+/// standing for its default instance, or `a : I`, the instance of `I` named
+/// `a`, then the sorts it fixes, `State.Eff with sort S = Integer`. The path is
+/// an effect's ([`super::term::effect_path`]): a theory's tiles, or a type,
+/// which reads a package's lowercase path and the `with` after it whole. The
+/// label is an operand, as a telescope's binder is. The manifest tail is the
+/// capability scope's, the same tiles in the same order: its `with` follows
+/// the path and `sort` follows the `with`, so it is decided at its keyword.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: optionally a hole of the supplied sort and a colon, then an
-///   interface's name, then any number of `with sort x = A`, each ending in a
-///   hole of the supplied sort.
+///   effect's path, a theory path or a hole of the supplied sort, then any
+///   number of `with sort x = A`, each ending in a hole of the supplied sort.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1380,12 +1382,12 @@ fn entry_shape(sort: Sort) -> Regex
 ///   not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Optional(labelled) if matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|label| matches!(label.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)) && sequence.get(1).is_some_and(|colon| matches!(colon.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":"))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(manifest) if matches!(manifest.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.first().is_some_and(|with| matches!(with.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "with")) && sequence.last().is_some_and(|fixed| matches!(fixed.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Optional(labelled) if matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|label| matches!(label.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)) && sequence.get(1).is_some_and(|colon| matches!(colon.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":"))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref paths) if paths.first().is_some_and(|path| matches!(path.shape(), RegexShape::Seq(ref path) if path.first().is_some_and(|head| matches!(head.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")))) && paths.get(1).is_some_and(|path| matches!(path.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(manifest) if matches!(manifest.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.first().is_some_and(|with| matches!(with.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "with")) && sequence.last().is_some_and(|fixed| matches!(fixed.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)))))))]
 pub(super) fn row_entry(ty: Sort) -> Regex
 {
     Regex::seq([
         Regex::optional(Regex::seq([Regex::sort(ty), tile(TileLabel(":"))])),
-        tile(TileLabel("type_identifier")),
+        super::term::effect_path(ty),
         Regex::repeat(Regex::seq([
             tile(TileLabel("with")),
             tile(TileLabel("sort")),

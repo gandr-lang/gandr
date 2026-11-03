@@ -23,9 +23,9 @@
 /// would outlive the access that lent it.
 @[ refuses("ViewEscaped") ]
 def bypassed() -> Integer {
-  handle outer : Proc {
+  handle outer : std.process.Exit.Eff {
     let q : (() => Integer) at outer = thunk { pure 0 };
-    let x : Integer = handle inner : Proc {
+    let x : Integer = handle inner : std.process.Exit.Eff {
       var l = 42;
       let q2 : (() => Integer) at outer = access shared l as w { pure thunk { pure w } };
       force q2

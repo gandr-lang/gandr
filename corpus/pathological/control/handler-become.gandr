@@ -4,7 +4,7 @@ def one() -> Integer {
 
 @[ refuses("AcrossHandler") ]
 def became() -> -F Integer {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     become one()
   } with {
     pure(x) => pure x,

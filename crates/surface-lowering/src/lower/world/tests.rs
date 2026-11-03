@@ -99,13 +99,13 @@ fn a_world_s_requirement_is_a_row_3523()
         concat!(
             "theory Magma where { sort M : Type; oper mul : (x : M, y : M) --> M; }\n",
             "world near;\n",
-            "world far requires [Console, store : Store with sort V = String];\n",
+            "world far requires [std.io.Console.Eff, store : Store with sort V = String];\n",
             "world lost requires [Missing];\n",
-            "world bare requires [Console, Store with sort V = String];\n",
+            "world bare requires [std.io.Console.Eff, Store with sort V = String];\n",
             "world modelled requires [m : Magma];\n",
             "world unfixed requires [store : Store];\n",
             "world twice requires [s : Store with sort V = String, s : Store with sort V = Integer];\n",
-            "world doubled requires [Console, Console];\n",
+            "world doubled requires [std.io.Console.Eff, std.io.Console.Eff];\n",
         )
     );
     let module = lowered(SourceText::from(text.as_str()), &mut arena);
@@ -136,7 +136,7 @@ fn a_world_s_requirement_is_a_row_3523()
     assert_eq!(
         required("far"),
         Some(alloc::vec![
-            (None, "Console", "Console"),
+            (None, "std.io.Console.Eff", "std.io.Console.Eff"),
             (Some("store"), "Store", "Store with sort V = String"),
         ]),
         "each entry is filed in written order, its label apart from its interface"
@@ -178,7 +178,7 @@ fn a_world_s_requirement_is_a_row_3523()
         refused("twice")
     );
     assert!(
-        matches!(refused("doubled"), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("Console")),
+        matches!(refused("doubled"), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("std.io.Console.Eff")),
         "an interface named whole twice: {:?}",
         refused("doubled")
     );
@@ -237,9 +237,9 @@ fn a_site_s_offer_answers_by_label_and_by_name_3523()
         }
     };
     assert_eq!(
-        offered("offers [Console, store = Echo];"),
+        offered("offers [std.io.Console.Eff, store = Echo];"),
         Ok((
-            alloc::vec![alloc::string::String::from("Console")],
+            alloc::vec![alloc::string::String::from("std.io.Console.Eff")],
             alloc::vec![(
                 alloc::string::String::from("store"),
                 alloc::string::String::from("Echo")
@@ -250,7 +250,10 @@ fn a_site_s_offer_answers_by_label_and_by_name_3523()
     for (offers, refused) in [
         ("offers [Missing];", "UnresolvedTypeHead"),
         ("offers [store = Absent];", "UnresolvedName"),
-        ("offers [Console, Console];", "DuplicateDefinition"),
+        (
+            "offers [std.io.Console.Eff, std.io.Console.Eff];",
+            "DuplicateDefinition",
+        ),
         (
             "offers [store = Echo, store = Echo];",
             "DuplicateDefinition",
@@ -265,7 +268,7 @@ fn a_site_s_offer_answers_by_label_and_by_name_3523()
             "`{offers}` is refused {refused} as the offer's own: {outcomes}"
         );
     }
-    let twice = offered("offers [Console];\noffers [store = Echo];");
+    let twice = offered("offers [std.io.Console.Eff];\noffers [store = Echo];");
     assert!(
         matches!(
             twice,

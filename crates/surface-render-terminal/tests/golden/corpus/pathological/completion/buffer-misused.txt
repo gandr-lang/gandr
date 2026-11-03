@@ -2,7 +2,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    ╭▸ corpus/pathological/completion/buffer-misused.gandr:12:5
    │
 10 │ ┌  def neverFreed() -> Unit {
-11 │ │┌   handle r : Ring {
+11 │ │┌   handle r : std.io.Ring.Eff {
 12 │ ││     let b = r.alloc(4096);
    │ ││     ━━━ a buffer never handed back
 13 │ ││     pure unit
@@ -20,16 +20,16 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
    ╭▸ corpus/pathological/completion/buffer-misused.gandr:27:12
    │
 23 │ ┌  def freedTwice() -> Unit {
-24 │ │┌   handle r : Ring {
+24 │ │┌   handle r : std.io.Ring.Eff {
 25 │ ││     let b = r.alloc(4096);
-   │ ││     ─── checked against `-F [Ring, r : Ring] Unit`; while checking the rest of this receive's block; binds b : Buf
+   │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf
 26 │ ││     let first = r.free(b);
-   │ ││     ─── checked against `-F [Ring, r : Ring] Unit`; while checking the body under this binding; binds first : Unit
+   │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the body under this binding; binds first : Unit
 27 │ ││     r.free(b)
    │ ││     ┬──────┯─
    │ ││     │      │
    │ ││     │      a buffer already handed back
-   │ ││     checked against `-F [Ring, r : Ring] Unit`; while checking the payload of this operation
+   │ ││     checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the payload of this operation
    ┆ ┆┆
 31 │ ││     oper free(b, k) => k(unit)
 32 │ ││   }
@@ -43,13 +43,13 @@ error[BufferRead]: a buffer can be used only by the `send`, the operation or the
    ╭▸ corpus/pathological/completion/buffer-misused.gandr:40:24
    │
 37 │ ┌  def readWhileHeld() -> Unit {
-38 │ │┌   handle r : Ring {
+38 │ │┌   handle r : std.io.Ring.Eff {
 39 │ ││     let b = r.alloc(4096);
-   │ ││     ─── checked against `-F [Ring, r : Ring] Unit`; while checking the rest of this receive's block; binds b : Buf
+   │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf
 40 │ ││     let copied : Buf = b;
    │ ││     ┬──                ━ a buffer read other than by its return
    │ ││     │
-   │ ││     checked against `-F [Ring, r : Ring] Unit`; while finishing the type of this
+   │ ││     checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while finishing the type of this
 41 │ ││     r.free(b)
    ┆ ┆┆
 45 │ ││     oper free(b, k) => k(unit)
@@ -64,7 +64,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    ╭▸ corpus/pathological/completion/buffer-misused.gandr:53:3
    │
 52 │ ┌  def mintDropped() -> Unit {
-53 │ │┏   handle r : Ring {
+53 │ │┏   handle r : std.io.Ring.Eff {
 54 │ │┃     let b = r.alloc(4096);
 55 │ │┃     r.free(b)
 56 │ │┃   } with {
@@ -81,7 +81,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    ╭▸ corpus/pathological/completion/buffer-misused.gandr:74:9
    │
 66 │ ┌  def receivedKept() -> Unit {
-67 │ │┌   handle r : Ring {
+67 │ │┌   handle r : std.io.Ring.Eff {
 68 │ ││     let b = r.alloc(4096);
 69 │ ││     r.free(b)
 70 │ ││   } with {
@@ -103,7 +103,7 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
     ╭▸ corpus/pathological/completion/buffer-misused.gandr:96:22
     │
  86 │ ┌  def receivedReturnedTwice() -> Unit {
- 87 │ │┌   handle r : Ring {
+ 87 │ │┌   handle r : std.io.Ring.Eff {
  88 │ ││     let b = r.alloc(4096);
  89 │ ││     r.free(b)
  90 │ ││   } with {
@@ -135,15 +135,15 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
     │     │                 ──── checked against `Bool -> -F Unit`; while checking the body of this function; binds flag : Bool
     │ ┌───┘
     │ │
-113 │ │┌    handle r : Ring {
+113 │ │┌    handle r : std.io.Ring.Eff {
 114 │ ││      let b = r.alloc(4096);
-    │ ││      ─── checked against `-F [Ring, r : Ring] Unit`; while checking the rest of this receive's block; binds b : Buf
+    │ ││      ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf
 115 │ ││┌     match flag {
 116 │ │││       true => r.free(b),
 117 │ │││       false => pure unit
     │ │││                ━━━━━━━━━ a buffer never handed back
 118 │ │││     }
-    │ ││└─────┘ checked against `-F [Ring, r : Ring] Unit`; while checking the branches of this case
+    │ ││└─────┘ checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the branches of this case
     ┆ ┆┆
 122 │ ││      oper free(b, k) => k(unit)
 123 │ ││    }

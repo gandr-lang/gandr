@@ -31,6 +31,54 @@ pub mod host;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EffectName(Arc<str>);
 
+impl EffectName
+{
+    /// The interface the module this name spells holds, `std.io.Console.Eff`
+    /// for `std.io.Console`: each effect lives in its API's module as `Eff`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn homed(&self) -> Self
+    {
+        Self(Arc::from(alloc::format!("{}.Eff", self.0)))
+    }
+
+    /// The module a call names the interface's operations through,
+    /// `std.io.Console` for `std.io.Console.Eff`: the name less its last
+    /// `.Eff`, or the whole name for an interface held under a name of its
+    /// own, an extern block's.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn module(&self) -> EffectModule<'_>
+    {
+        EffectModule(self.0.strip_suffix(".Eff").unwrap_or(&self.0))
+    }
+}
+
+/// The module an interface lives in, borrowed from the interface's name:
+/// `std.io.Console` for `std.io.Console.Eff`.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EffectModule<'name>(&'name str);
+
+impl<'name> From<EffectModule<'name>> for &'name str
+{
+    /// The module's spelling, borrowed as long as the interface's name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(module: EffectModule<'name>) -> Self
+    {
+        module.0
+    }
+}
+
 impl From<&str> for EffectName
 {
     /// Copy an interface name into shared storage.

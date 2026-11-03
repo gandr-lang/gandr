@@ -2,7 +2,7 @@ error[ContinuationUnspent]: the operation's continuation holds something that mu
    ╭▸ corpus/ledger/diagnostics/ContinuationUnspent.gandr:23:27
    │
 12 │ ┌  def dropped() -> -F Unit {
-13 │ │┌   handle c : Proc {
+13 │ │┌   handle c : std.process.Exit.Eff {
 14 │ ││     let found = fork (task : Cancel.Join) {
 15 │ ││       send(task, Cancel.notes);
 16 │ ││       close(task)

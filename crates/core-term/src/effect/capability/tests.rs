@@ -106,7 +106,7 @@ fn attenuation_is_inclusion_on_grant_atoms()
     assert_eq!(exits.grants_within(&both, &arena), RowInclusion::Excluded);
     let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
     let string = arena.value_type_base(gandr_kernel_term::BaseType::String);
-    let counted = EffectSig::new(EffectName::from("Fs"), [EffectOp {
+    let counted = EffectSig::new(EffectName::from("std.fs.Eff"), [EffectOp {
         name: read,
         payload: string,
         reply: integer,
@@ -168,7 +168,7 @@ fn the_atoms_apart_are_each_type_that_differs_held_first()
     let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
     let character = arena.value_type_base(gandr_kernel_term::BaseType::Character);
     let reading = |payload, reply| {
-        let restricted = EffectSig::new(EffectName::from("Fs"), [EffectOp {
+        let restricted = EffectSig::new(EffectName::from("std.fs.Eff"), [EffectOp {
             name: read.clone(),
             payload,
             reply,

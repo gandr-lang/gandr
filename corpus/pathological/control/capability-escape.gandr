@@ -1,6 +1,6 @@
 @[ refuses("CapabilityEscaped") ]
 def leak() -> Cap { exit } {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     return c
   } with {
     pure(x) => x,

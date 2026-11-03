@@ -90,7 +90,7 @@ corpus/ledger/features/atom-identity.gandr Tense bb84656c8f060822
 corpus/ledger/features/atom-sorts.gandr Tense cc759d9ddaaa8c8e
 corpus/ledger/features/atom-sorts.gandr IngMain 19e3828b3b43a596
 corpus/ledger/features/bridge-types.gandr Tense 92c3319fec697391
-corpus/ledger/features/buffer-tokens.gandr Tense f4f7a065eeef72c2
+corpus/ledger/features/buffer-tokens.gandr Tense c067a671403ee679
 corpus/ledger/features/circuit-algebras.gandr Passive f2291e3931f119fa
 corpus/ledger/features/circuit-algebras.gandr Tense a6a1495519873222
 corpus/ledger/features/colimit-layer.gandr Tense 5468a38b20b26f35
@@ -331,7 +331,8 @@ corpus/model/control/divergence.gandr Passive c676253e201e582a
 corpus/model/control/divergence.gandr Passive fbb382eb87dd62d8
 corpus/model/control/divergence.gandr Glossary fdfc2b971ccf0e07
 corpus/model/control/effect-rows.gandr Passive 22276bdda721beae
-corpus/model/control/effect-rows.gandr Passive efe888217b0248f7
+corpus/model/control/effect-rows.gandr Passive 45e6323ebe84d911
+corpus/model/control/effect-rows.gandr Passive a1bf89c3678db9ec
 corpus/model/control/handler-exits.gandr Passive 1f46612c697f4d50
 corpus/model/control/handler-exits.gandr Passive 2d8f06a5376a1c03
 corpus/model/control/handler-exits.gandr Passive 5126caf7413516d6
@@ -339,7 +340,9 @@ corpus/model/control/held-unique.gandr Passive 7188f0b847880553
 corpus/model/control/kept-view.gandr Passive d5dd8d194fa6243f
 corpus/model/control/kept-view.gandr Tense 660fe399f6c0b576
 corpus/model/control/kept-view.gandr Tense d5dd8d194fa6243f
+corpus/model/control/module-effect.gandr Tense fd9ac2aed8d59dec
 corpus/model/control/named-instances.gandr Tense 5df66cf34a047880
+corpus/model/control/named-instances.gandr Tense 88b400238e156a69
 corpus/model/control/named-instances.gandr Tense 94c894d9dccaf192
 corpus/model/control/named-instances.gandr Tense 9d68ddc0ebd36473
 corpus/model/control/row-variable.gandr Passive 3c58ea759d2485aa
@@ -869,8 +872,10 @@ corpus/pathological/control/kept-view.gandr Passive 75d54c3435e508dd
 corpus/pathological/control/kept-view.gandr Passive f29802f7b9f073bf
 corpus/pathological/control/kept-view.gandr Tense 128c7f688a0238bb
 corpus/pathological/control/kept-view.gandr Tense 84e31a1f8813bf7a
-corpus/pathological/control/named-instances.gandr Passive d0cb4f53ca352317
-corpus/pathological/control/row-variable.gandr Passive 83c207a3fc166141
+corpus/pathological/control/named-instances.gandr Passive 24bb8ce0a381d1a5
+corpus/pathological/control/named-instances.gandr Tense 40d95dd097bed694
+corpus/pathological/control/named-instances.gandr Tense dd97a2267c09c859
+corpus/pathological/control/row-variable.gandr Passive ab8fe4e5b17f1a35
 corpus/pathological/data/answered-definition.gandr Tense 5abbc9cefc6730b8
 corpus/pathological/data/curry.gandr Tense a4b200974f8d7ccd
 corpus/pathological/data/descent.gandr Tense 6e22181f34a8254c
@@ -1213,8 +1218,8 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ImportShad
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ImportUnresolved.txt Procedure 5be6308f32a9bbe9
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/IndexOccurrence.txt Procedure 2065713ae42b1fb5
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InertRead.txt Procedure f43265b374f6605f
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InstanceAmbiguous.txt Procedure 4c08e8b3ac820282
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InstanceUnanswered.txt Procedure 1420460626f7368c
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InstanceAmbiguous.txt Procedure 51e14b31a2f70bd6
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InstanceUnanswered.txt Procedure 0a09f4e667677f07
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LevelMismatch.txt Procedure 4243b91b89fd9499
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LiteralAmbiguous.txt Procedure acc9566fda12a574
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LoopNotRespected.txt Procedure 5acc3f19f3b29f8d
@@ -1375,6 +1380,8 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor-shared.txt Procedure fd9e9d7a789773fe
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor-twice.txt Procedure 48671335456e38f6
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor-twice.txt Procedure fcca581c914165cd
+crates/surface-render-terminal/tests/golden/corpus/pathological/control/bare-effect.txt Procedure 512c4bc78febc503
+crates/surface-render-terminal/tests/golden/corpus/pathological/control/bare-effect.txt Procedure 7a6847d01365466d
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/capability-amplify.txt Procedure ec151e0249661fd9
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/capability-drop.txt Procedure a2211548579845b9
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/capability-escape.txt Procedure 83bba8e6e74068b2
@@ -1387,8 +1394,8 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/control/held-uni
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/held-unique.txt Procedure 6ad67f41084b472c
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/held-unique.txt Procedure 8bca00861f3d6554
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/kept-view.txt Procedure 5388aacc3a654ccf
-crates/surface-render-terminal/tests/golden/corpus/pathological/control/named-instances.txt Procedure 1420460626f7368c
-crates/surface-render-terminal/tests/golden/corpus/pathological/control/named-instances.txt Procedure 4c08e8b3ac820282
+crates/surface-render-terminal/tests/golden/corpus/pathological/control/named-instances.txt Procedure 0a09f4e667677f07
+crates/surface-render-terminal/tests/golden/corpus/pathological/control/named-instances.txt Procedure 51e14b31a2f70bd6
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/named-instances.txt Procedure ec151e0249661fd9
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/absurd-not-apart.txt Procedure 8d19cbccfa867da0
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/answered-definition.txt Procedure 66f046af38530338

@@ -4045,7 +4045,7 @@ fn a_script_that_runs_its_main_leaves_successfully()
         &scratch,
         Path::new("main.gandr"),
         Text::from(
-            "def answer = 42 ;\ndef main() -> [Console] Unit {\n  Console.print(\"42\")\n}\n",
+            "def answer = 42 ;\ndef main() -> [std.io.Console.Eff] Unit {\n  std.io.Console.print(\"42\")\n}\n",
         ),
     );
     assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
@@ -4076,7 +4076,7 @@ fn a_program_leaves_with_its_entry_s_status_1881()
         ),
         (
             "exited.gandr",
-            "def proc : Cap {exit} ;\ndef main() -> -F [Proc] Integer { proc.exit(7) ; return 0 }\n",
+            "def proc : Cap {exit} ;\ndef main() -> -F [std.process.Exit.Eff] Integer { proc.exit(7) ; return 0 }\n",
             &[][..],
             7_i32,
         ),
@@ -4306,7 +4306,7 @@ fn a_bare_dash_is_a_path_not_standard_input()
     assert!(stderr(&output).starts_with("gandr: -: "));
     let _path = scratch.file(
         Path::new("-"),
-        Text::from("def main() -> [Console] Unit { Console.print(\"17\") }"),
+        Text::from("def main() -> [std.io.Console.Eff] Unit { std.io.Console.print(\"17\") }"),
     );
     let mut present = gandr(&["run", "-"]);
     present.current_dir(&scratch.0);
@@ -4352,7 +4352,7 @@ fn a_failed_diagnostic_stream_stops_later_output()
     let scratch = Scratch::new(Path::new("failed-diagnostic-stream"));
     let source = scratch.file(
         Path::new("value.gandr"),
-        Text::from("def unused : Integer ; def main() -> [Console] Unit { Console.print(\"9\") }"),
+        Text::from("def unused : Integer ; def main() -> [std.io.Console.Eff] Unit { std.io.Console.print(\"9\") }"),
     );
     let control = ran(gandr(&[Path::new("run"), &source]));
     assert_eq!(code(&control), Code(0));
@@ -4496,8 +4496,9 @@ fn an_unreadable_or_malformed_configuration_stops_the_run()
 /// `gandr check` of a manifold judges its deployment before any process
 /// starts: a site answering each entry its world requires settles with nothing
 /// on standard error, and a site file checked beside it is no manifold; a site
-/// leaving `Console` out and binding `store` at other sorts is refused at each,
-/// and a placement of a world the program lacks by the world's name (#3523).
+/// leaving `std.io.Console.Eff` out and binding `store` at other sorts is
+/// refused at each, and a placement of a world the program lacks by the world's
+/// name (#3523).
 #[test]
 fn a_manifold_s_deployment_is_judged_at_its_check_3523()
 {
@@ -4515,7 +4516,7 @@ fn a_manifold_s_deployment_is_judged_at_its_check_3523()
     assert_eq!(
         (code(&offered), stderr(&offered)),
         (Code(0_i32), String::new()),
-        "a site answering `Console` and `store` takes `far`, and the site's own file is \
+        "a site answering `std.io.Console.Eff` and `store` takes `far`, and the site's own file is \
          judged as no deployment"
     );
     let refused = checked(&["corpus/pathological/worlds/offers.gandr"]);
@@ -4524,7 +4525,7 @@ fn a_manifold_s_deployment_is_judged_at_its_check_3523()
         (
             Code(1_i32),
             String::from(concat!(
-                "gandr: `far` requires `Console`, and the site ",
+                "gandr: `far` requires `std.io.Console.Eff`, and the site ",
                 "`corpus/pathological/worlds/offers.gandr` does not answer it: the site's ",
                 "offer does not list it\n",
                 "gandr: `far` requires `store`, and the site ",

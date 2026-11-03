@@ -944,7 +944,7 @@ fn a_node_stands_in_the_regions_of_each_scope_and_hold_around_it()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "def f() -> -F Unit {\n  var s = 3;\n  handle c : Proc {\n    let k : Integer at s = \
+        "def f() -> -F Unit {\n  var s = 3;\n  handle c : std.process.Exit.Eff {\n    let k : Integer at s = \
          pure 1 ;\n    let m = k ;\n    c.exit(1)\n  } with {\n    pure(x) => return x,\n    \
          oper exit(code, k) => return unit\n  }\n}\n",
     );
@@ -1646,7 +1646,7 @@ fn a_trace_spells_a_kept_region_by_its_name_1494()
         (
             "c",
             SourceText::from(
-                "def traced() -> -F Integer {\n  var s = 3;\n  handle c : Proc {\n    let k : (() => \
+                "def traced() -> -F Integer {\n  var s = 3;\n  handle c : std.process.Exit.Eff {\n    let k : (() => \
                  Integer) at c = access shared s as w { pure thunk { pure thunk { pure w } } } ;\n    \
                  force k\n  } with {\n    pure(x) => pure x,\n    oper exit(code, k) => pure 0\n  }\n}\n",
             ),
@@ -1654,7 +1654,7 @@ fn a_trace_spells_a_kept_region_by_its_name_1494()
         (
             "l",
             SourceText::from(
-                "def traced() -> -F Integer {\n  handle c : Proc {\n    var l = 42;\n    let k : (() => \
+                "def traced() -> -F Integer {\n  handle c : std.process.Exit.Eff {\n    var l = 42;\n    let k : (() => \
                  Integer) at l = access shared l as w { pure thunk { pure thunk { pure w } } } ;\n    \
                  force k\n  } with {\n    pure(x) => pure x,\n    oper exit(code, k) => pure 0\n  }\n}\n",
             ),

@@ -8,7 +8,7 @@
 /// before the hold ends.
 @[ runs("42") ]
 def keptAtHold() -> Integer {
-  handle inner : Proc {
+  handle inner : std.process.Exit.Eff {
     var l = 42;
     let q : (() => Integer) at l = access shared l as w { pure pure w };
     force q
@@ -22,8 +22,8 @@ def keptAtHold() -> Integer {
 /// bound opens no region of its own.
 @[ runs("42") ]
 def keptAtNestedHold() -> Integer {
-  handle outer : Proc {
-    let x : Integer = handle inner : Proc {
+  handle outer : std.process.Exit.Eff {
+    let x : Integer = handle inner : std.process.Exit.Eff {
       var l = 42;
       let q : (() => Integer) at l = access shared l as w { pure pure w };
       force q

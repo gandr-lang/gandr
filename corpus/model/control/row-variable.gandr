@@ -1,31 +1,31 @@
 // A returner's row may stay open through a row variable, an implicit of the
-// kind `Row` (#2270): `log` prints through `Console` and leaves the rest of
+// kind `Row` (#2270): `log` prints through `std.io.Console.Eff` and leaves the rest of
 // its row to its caller, so one definition is used under every row holding
-// `Console`, the variable solved at each call by the row equation, and a
-// handler of `Console` takes `[Console | r]` to `[r]`, forwarding the rest
+// `std.io.Console.Eff`, the variable solved at each call by the row equation, and a
+// handler of `std.io.Console.Eff` takes `[std.io.Console.Eff | r]` to `[r]`, forwarding the rest
 // (Hillerström and Lindley, "Liberating Effects with Rows and Handlers",
 // Type-Driven Development 2016, § 2.5 and § 3.3, T-HANDLER). What refuses is
 // in `../../pathological/control/row-variable.gandr`.
 
-/// A line printed through `Console`, the rest of the row left open: `r`
-/// lacks `Console`, which the row writes beside it.
-pub def log[r : Row](s : String) -> [Console | r] Unit { Console.print(s) }
+/// A line printed through `std.io.Console.Eff`, the rest of the row left open: `r`
+/// lacks `std.io.Console.Eff`, which the row writes beside it.
+pub def log[r : Row](s : String) -> [std.io.Console.Eff | r] Unit { std.io.Console.print(s) }
 
-/// `log` where the row is `Console` alone: the call's `r` is the empty row.
-def logAlone() -> [Console] Unit { log("alone") }
+/// `log` where the row is `std.io.Console.Eff` alone: the call's `r` is the empty row.
+def logAlone() -> [std.io.Console.Eff] Unit { log("alone") }
 
 /// `log` beside `Div`: the call's `r` is `[Div]`.
-def logBeside() -> [Console, Div] Unit { log("beside") }
+def logBeside() -> [std.io.Console.Eff, Div] Unit { log("beside") }
 
 /// `logBeside`'s row listed the other way round is the same row, so the
 /// call's `r` is solved as the same `[Div]`: one solution, not two that
 /// convert.
-def logSwapped() -> [Div, Console] Unit { log("swapped") }
+def logSwapped() -> [Div, std.io.Console.Eff] Unit { log("swapped") }
 
-/// A handler of `Console` around `log`: the handled body's row is
-/// `[Console | r]`, and what the handler leaves is `r`.
+/// A handler of `std.io.Console.Eff` around `log`: the handled body's row is
+/// `[std.io.Console.Eff | r]`, and what the handler leaves is `r`.
 def quiet[r : Row](s : String) -> [r] Unit {
-  handle c : Console {
+  handle c : std.io.Console.Eff {
     log(s)
   } with {
     pure(x) => pure x,

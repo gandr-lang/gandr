@@ -390,7 +390,7 @@ impl Source for ContentSource<'_>
                 ref operation,
                 payload,
             } => Former::Perform {
-                interface: Name::from(signature.name().as_ref()),
+                interface: Name::from(<&str>::from(signature.name().module())),
                 operation: Name::from(operation.as_ref()),
                 payload,
             },

@@ -3,7 +3,7 @@
 //
 // Authority enters a program in one place, as `main`'s parameter, and the
 // program prints through a capability opened from it. Nothing reaches the
-// standard streams through the ambient `Console` interface.
+// standard streams through the ambient `std.io.Console.Eff` interface.
 //
 // `console` narrows the authority to the standard streams, and `print` writes
 // one line through them. `gandr run hello.gandr` prints `hello, world!` and
@@ -20,6 +20,6 @@ import std.authority (Authority, console);
 import std.io (print);
 
 /// The entry: it opens the console from its authority and prints its greeting.
-def main(authority : Authority) -> [Console] Unit {
+def main(authority : Authority) -> [std.io.Console.Eff] Unit {
   print(console(authority), "hello, world!")
 }

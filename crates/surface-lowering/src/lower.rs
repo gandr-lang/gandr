@@ -4862,7 +4862,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .iter()
                     .map(|written| crate::module::Required {
                         label: written.label.map(|label| label.span),
-                        interface: written.interface.span,
+                        interface: written.interface.span(),
                         written: written.written,
                     })
                     .collect();
@@ -4877,7 +4877,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     granted: offer
                         .granted
                         .iter()
-                        .map(|interface| interface.span)
+                        .map(crate::form::WrittenPath::span)
                         .collect(),
                     answered: offer
                         .answered

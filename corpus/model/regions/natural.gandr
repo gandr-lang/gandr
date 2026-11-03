@@ -21,9 +21,9 @@ pub def touch[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r)
 @[ runs("5") ]
 def passNatural() -> Integer {
   var s = 5;
-  handle outer : Proc {
+  handle outer : std.process.Exit.Eff {
     let k : (() => Integer) at outer = access shared s as w { pure pure w };
-    handle inner : Proc {
+    handle inner : std.process.Exit.Eff {
       let _ : Path(
         (() => Integer) at outer => (() => Integer) at inner,
         fun (x) { let y : (() => Integer) at outer = pass(x); pure y },
@@ -45,9 +45,9 @@ def passNatural() -> Integer {
 @[ runs("5") ]
 def touchNatural() -> Integer {
   var s = 5;
-  handle outer : Proc {
+  handle outer : std.process.Exit.Eff {
     let k : (() => Integer) at outer = access shared s as w { pure pure w };
-    handle inner : Proc {
+    handle inner : std.process.Exit.Eff {
       let _ : Path(
         (() => Integer) at outer => (() => Integer) at inner,
         fun (x) { let y : (() => Integer) at outer = touch(x); pure y },

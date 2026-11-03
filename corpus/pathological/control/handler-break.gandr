@@ -1,7 +1,7 @@
 @[ refuses("AcrossHandler") ]
 def broke() -> -F Integer {
   loop {
-    handle c : Proc {
+    handle c : std.process.Exit.Eff {
       break(1)
     } with {
       pure(x) => pure x,
@@ -13,7 +13,7 @@ def broke() -> -F Integer {
 @[ refuses("AcrossHandler") ]
 def again() -> -F Integer {
   loop {
-    handle c : Proc {
+    handle c : std.process.Exit.Eff {
       continue
     } with {
       pure(x) => pure x,

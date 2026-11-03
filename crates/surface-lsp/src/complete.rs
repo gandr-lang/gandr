@@ -1242,7 +1242,7 @@ mod tests
             row("match", "match ${1:value} { \\}"),
             row(
                 "handle",
-                "handle ${1:identifier} : ${2:type_identifier} { ${3:computation} \\}",
+                "handle ${1:identifier} : ${2:type} { ${3:computation} \\}",
             ),
             row(
                 "if",

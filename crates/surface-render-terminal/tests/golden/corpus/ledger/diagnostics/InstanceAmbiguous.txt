@@ -1,4 +1,4 @@
-error[InstanceAmbiguous]: `say`'s instance `out` could be `b` or `a`, each an instance of `Console` handled where this call stands: name the one it means, `say[out = b](…)`
+error[InstanceAmbiguous]: `say`'s instance `out` could be `b` or `a`, each an instance of `std.io.Console.Eff` handled where this call stands: name the one it means, `say[out = b](…)`
    ╭▸ corpus/ledger/diagnostics/InstanceAmbiguous.gandr:10:7
    │
 10 │       say();

@@ -1,5 +1,5 @@
 // A row may name an instance of an interface by a label (#2271): `say`
-// performs `Console` through its instance `out`, apart from the
+// performs `std.io.Console.Eff` through its instance `out`, apart from the
 // interface's default and from every other instance, so one row holds two
 // instances of one interface. The label is a parameter the function
 // abstracts, placed after every parameter it writes: a call supplies it by
@@ -12,12 +12,12 @@
 
 /// A line printed through the instance `out`, the capability its label
 /// binds.
-pub def say() -> [out : Console] Unit { out.print("said") }
+pub def say() -> [out : std.io.Console.Eff] Unit { out.print("said") }
 
-/// One instance of `Console` handled around the call: the call passes it.
+/// One instance of `std.io.Console.Eff` handled around the call: the call passes it.
 @[ runs("1") ]
 def resolved() -> Integer {
-  handle a : Console {
+  handle a : std.io.Console.Eff {
     say();
     pure 0
   } with {
@@ -30,8 +30,8 @@ def resolved() -> Integer {
 /// answers.
 @[ runs("1") ]
 def namedOuter() -> Integer {
-  handle a : Console {
-    handle b : Console {
+  handle a : std.io.Console.Eff {
+    handle b : std.io.Console.Eff {
       say[.out = a]();
       pure 0
     } with {
@@ -47,8 +47,8 @@ def namedOuter() -> Integer {
 /// The same two, the inner named.
 @[ runs("2") ]
 def namedInner() -> Integer {
-  handle a : Console {
-    handle b : Console {
+  handle a : std.io.Console.Eff {
+    handle b : std.io.Console.Eff {
       say[.out = b]();
       pure 0
     } with {
@@ -63,15 +63,15 @@ def namedInner() -> Integer {
 
 /// A caller's own instance answers the call it makes: `say` passes `o`
 /// on.
-def relayed() -> [o : Console] Unit { say() }
+def relayed() -> [o : std.io.Console.Eff] Unit { say() }
 
 /// An explicit parameter beside the instance, which comes after it.
-def sayLine(s : String) -> [out : Console] Unit { out.print(s) }
+def sayLine(s : String) -> [out : std.io.Console.Eff] Unit { out.print(s) }
 
 /// The explicit argument written, the instance passed from the scope.
 @[ runs("1") ]
 def sayLineRuns() -> Integer {
-  handle a : Console {
+  handle a : std.io.Console.Eff {
     sayLine("line");
     pure 0
   } with {
@@ -90,7 +90,7 @@ data Steps : Type where {
 
 /// A recursion under its row: each level prints through `out`, and the
 /// recursive call passes `out` on, as a call that omits its instance does.
-def rec descend(s : Steps) -> [out : Console] Unit {
+def rec descend(s : Steps) -> [out : std.io.Console.Eff] Unit {
   match s {
     Ground => pure unit,
     Step(rest) => {
@@ -104,7 +104,7 @@ def rec descend(s : Steps) -> [out : Console] Unit {
 /// handler answers every level's line.
 @[ runs("3") ]
 def descendRuns() -> Integer {
-  handle a : Console {
+  handle a : std.io.Console.Eff {
     descend(Step(Step(Step(Ground))));
     pure 0
   } with {
@@ -116,9 +116,9 @@ def descendRuns() -> Integer {
   }
 }
 
-/// Two instances of `Console` in one row, `first` printed through before
+/// Two instances of `std.io.Console.Eff` in one row, `first` printed through before
 /// `second`.
-def both() -> [first : Console, second : Console] Unit {
+def both() -> [first : std.io.Console.Eff, second : std.io.Console.Eff] Unit {
   say[.out = first]();
   say[.out = second]()
 }
@@ -127,8 +127,8 @@ def both() -> [first : Console, second : Console] Unit {
 /// answers the first line.
 @[ runs("1") ]
 def outerFirst() -> Integer {
-  handle a : Console {
-    handle b : Console {
+  handle a : std.io.Console.Eff {
+    handle b : std.io.Console.Eff {
       both[.first = a, .second = b]();
       pure 0
     } with {
@@ -145,8 +145,8 @@ def outerFirst() -> Integer {
 /// inner scope, whose clause answers.
 @[ runs("2") ]
 def innerFirst() -> Integer {
-  handle a : Console {
-    handle b : Console {
+  handle a : std.io.Console.Eff {
+    handle b : std.io.Console.Eff {
       both[.first = b, .second = a]();
       pure 0
     } with {
@@ -161,7 +161,7 @@ def innerFirst() -> Integer {
 
 /// A suspended computation at the function's own instance, run by it: the
 /// parameter's row names the label the result row binds.
-def runAt(body : +U (-F [o : Console] Unit)) -> [o : Console] Unit {
+def runAt(body : +U (-F [o : std.io.Console.Eff] Unit)) -> [o : std.io.Console.Eff] Unit {
   force body
 }
 
@@ -171,7 +171,7 @@ def runAt(body : +U (-F [o : Console] Unit)) -> [o : Console] Unit {
 def bothWritten[r : Region, r1 : Region](
   first : Cap { print } at r,
   second : Cap { print } at r1
-) -> [r : Console, r1 : Console] Unit {
+) -> [r : std.io.Console.Eff, r1 : std.io.Console.Eff] Unit {
   say[.out = first]();
   say[.out = second]()
 }
@@ -179,8 +179,8 @@ def bothWritten[r : Region, r1 : Region](
 /// `bothWritten` passed the inner scope first: its clause answers.
 @[ runs("2") ]
 def bothWrittenRuns() -> Integer {
-  handle a : Console {
-    handle b : Console {
+  handle a : std.io.Console.Eff {
+    handle b : std.io.Console.Eff {
       bothWritten(b, a);
       pure 0
     } with {

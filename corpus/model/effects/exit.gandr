@@ -9,7 +9,7 @@
 /// The clause resumes the body, whose value passes through the `pure` clause.
 @[ runs("101") ]
 def resumed() -> Integer {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     c.exit(5);
     pure 1
   } with {
@@ -21,7 +21,7 @@ def resumed() -> Integer {
 /// The clause answers for the handler, and the rest of the body never runs.
 @[ runs("9") ]
 def answered() -> Integer {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     c.exit(5);
     pure 1
   } with {
@@ -33,7 +33,7 @@ def answered() -> Integer {
 /// The clause answers the operation's payload.
 @[ runs("5") ]
 def coded() -> Integer {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     c.exit(5);
     pure 1
   } with {
@@ -46,7 +46,7 @@ def coded() -> Integer {
 /// resumed, and each clause adds its code to what the rest answers.
 @[ runs("108") ]
 def summed() -> Integer {
-  handle c : Proc {
+  handle c : std.process.Exit.Eff {
     c.exit(3);
     c.exit(4);
     pure 1
@@ -63,7 +63,7 @@ def summed() -> Integer {
 /// counted, and the body's value is dropped.
 @[ runs("2") ]
 def printed() -> Integer {
-  handle out : Console {
+  handle out : std.io.Console.Eff {
     out.print("one");
     out.print("two");
     pure 7

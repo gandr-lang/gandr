@@ -1,4 +1,4 @@
-error[InstanceUnanswered]: `say` performs `Console` through its instance `out`, and no instance of `Console` is handled where this call stands: handle one around the call, `handle c : Console { … }`, or supply one by name, `say[out = c](…)`
+error[InstanceUnanswered]: `say` performs `std.io.Console.Eff` through its instance `out`, and no instance of `std.io.Console.Eff` is handled where this call stands: handle one around the call, `handle c : std.io.Console.Eff { … }`, or supply one by name, `say[out = c](…)`
   ╭▸ corpus/ledger/diagnostics/InstanceUnanswered.gandr:8:3
   │
 8 │   say()

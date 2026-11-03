@@ -6,7 +6,7 @@
 // `gandr check` of this file reads the program `Manifold.artifact` names and
 // resolves `far` among its worlds. It finds the site's file among its imports
 // by the site's key, then judges `far`'s row against the site's `offers`.
-// `Console` is granted from the site's `Authority`. `store` is answered by a
+// `std.io.Console.Eff` is granted from the site's `Authority`. `store` is answered by a
 // module that a functor over `Model(Store) with sort V = String` takes.
 //
 // - see: `offers.gandr` — the program it deploys

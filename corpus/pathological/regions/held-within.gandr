@@ -8,7 +8,7 @@
 /// which the hold does not outlive (#1494).
 @[ refuses("ViewEscaped") ]
 def keptPastHold() -> Integer {
-  handle inner : Proc {
+  handle inner : std.process.Exit.Eff {
     var l = 42;
     let q : (() => Integer) at inner = access shared l as w { pure thunk { pure w } };
     force q
@@ -22,8 +22,8 @@ def keptPastHold() -> Integer {
 /// it: where a handler is bound opens no region of its own.
 @[ refuses("ViewEscaped") ]
 def keptPastNestedHold() -> Integer {
-  handle outer : Proc {
-    let x : Integer = handle inner : Proc {
+  handle outer : std.process.Exit.Eff {
+    let x : Integer = handle inner : std.process.Exit.Eff {
       var l = 42;
       let q : (() => Integer) at inner = access shared l as w { pure thunk { pure w } };
       force q

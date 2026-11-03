@@ -1122,9 +1122,12 @@ fn two_halves_share_a_capability_only_to_read_through_it_2789()
             granted(&arena, shared)
         ],
         [
-            alloc::vec![String::from("Fs.read")],
-            alloc::vec![String::from("Fs.write")],
-            alloc::vec![String::from("Fs.read"), String::from("Fs.write")],
+            alloc::vec![String::from("std.fs.Eff.read")],
+            alloc::vec![String::from("std.fs.Eff.write")],
+            alloc::vec![
+                String::from("std.fs.Eff.read"),
+                String::from("std.fs.Eff.write")
+            ],
         ],
         "each half's footprint is what it may do, and the shared one both"
     );

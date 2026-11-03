@@ -13,9 +13,9 @@ import "../../model/regions/natural.gandr";
 @[ refuses("TypeMismatch") ]
 def backwards() -> Integer {
   var s = 5;
-  handle outer : Proc {
+  handle outer : std.process.Exit.Eff {
     let k : (() => Integer) at outer = access shared s as w { pure pure w };
-    handle inner : Proc {
+    handle inner : std.process.Exit.Eff {
       let _ : Path(
         (() => Integer) at inner => (() => Integer) at outer,
         thunk { fun (x) { let z : (() => Integer) at outer = x; pass(z) } },
@@ -37,9 +37,9 @@ def backwards() -> Integer {
 @[ refuses("EndpointMismatch") ]
 def unequal() -> Integer {
   var s = 5;
-  handle outer : Proc {
+  handle outer : std.process.Exit.Eff {
     let k : (() => Integer) at outer = access shared s as w { pure pure w };
-    handle inner : Proc {
+    handle inner : std.process.Exit.Eff {
       let _ : Path(
         (() => Integer) at outer => (() => Integer) at inner,
         thunk { fun (x) { let y : (() => Integer) at outer = pass(x); pure y } },

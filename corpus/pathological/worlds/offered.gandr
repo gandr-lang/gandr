@@ -39,7 +39,7 @@ pub offers [Missing];
 
 /// An offer granting the console twice.
 @[ refuses("DuplicateDefinition") ]
-pub offers [Console, Console];
+pub offers [std.io.Console.Eff, std.io.Console.Eff];
 
 /// An offer answering a label by a module the file does not declare.
 @[ refuses("UnresolvedName") ]

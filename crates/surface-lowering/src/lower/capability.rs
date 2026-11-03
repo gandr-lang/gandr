@@ -197,6 +197,7 @@ use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::SourceFragment;
 use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
@@ -229,6 +230,9 @@ use crate::form::Placed;
 use crate::form::Run;
 use crate::form::Shape;
 use crate::form::TileName;
+use crate::form::WrittenPath;
+use crate::form::entry_path;
+use crate::form::operand_entry;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::model::InterfaceFault;
@@ -1041,17 +1045,22 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
         let misplaced = site.fault(entry.binder.span, FormFault::MisplacedTile);
-        let Maybe::Present(written) = entry.declared
+        let Maybe::Present(path) = entry.interface
         else {
             return Err(misplaced);
         };
-        let named = self.name_at(written);
+        let named = self.instance_interface(path);
         let table = host(site)?;
         let interface = EffectName::from(named.as_ref());
         if let Maybe::Absent(_) = table.named(&interface) {
+            let mut segments = self.path_segments(path);
+            let Some((span, last)) = segments.pop()
+            else {
+                return Err(misplaced);
+            };
             let _presented =
                 self.collected
-                    .presented_theory(written.span.start(), written.span, named)?;
+                    .presented_theory_in(path.start(), &segments, span, last)?;
         }
         let Maybe::Present(slot) = self.collected.owner_of(site.at.node)
         else {
@@ -1111,11 +1120,11 @@ impl<'source> Lowerer<'_, 'source>
         entry: crate::module::TelescopeEntry<'source>,
     ) -> Result<DeBruijnIndex, LoweringRefusal<'source>>
     {
-        let Maybe::Present(written) = entry.declared
+        let Maybe::Present(path) = entry.interface
         else {
             return Err(site.fault(site.at.span, FormFault::MisplacedTile));
         };
-        let named = self.name_at(written);
+        let named = self.instance_interface(path);
         let wanted = EffectName::from(named.as_ref());
         let mut standing = self.scope.bindings(frame).filter(|&(_, bound)| {
             self.answered.get(&bound.binder) == Some(&wanted)
@@ -1145,6 +1154,62 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Ok(only.index)
+    }
+
+    /// The interface an instance's row label names, as the bytes `path` of its
+    /// whole path spell it: `std.io.Console.Eff`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn instance_interface(
+        &self,
+        path: ByteSpan,
+    ) -> SurfaceName<'source>
+    {
+        SurfaceName::from(
+            self.tree
+                .spanned(path)
+                .unwrap_or_else(|| SourceFragment::from("")),
+        )
+    }
+
+    /// Each name of the dotted path the bytes `path` spell, `std`, `io`,
+    /// `Console` and `Eff` of `std.io.Console.Eff`, at its own bytes.
+    ///
+    /// # Specification
+    /// - requires: `path` spans a path a row label's entry writes.
+    /// - ensures: one entry per name between the dots, in written order, each
+    ///   at its bytes with the space beside it left out, inside `path`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a labelled entry naming a dotted theory path whose
+    ///   last name no theory bears, refused at that name's own bytes.
+    /// - witness: `lower::capability::tests::a_labelled_row_entry_names_a_theory_by_its_dotted_path_4495`
+    #[spec(ensures: |ret| ret.iter().all(|&(span, _)| path.start() <= span.start() && span.end() <= path.end()))]
+    fn path_segments(
+        &self,
+        path: ByteSpan,
+    ) -> Vec<(ByteSpan, SurfaceName<'source>)>
+    {
+        let text: &'source str = self.tree.spanned(path).map_or("", <&str>::from);
+        let start = usize::from(path.start());
+        let mut segments = Vec::new();
+        let mut from = 0_usize;
+        for piece in text.split('.') {
+            let lead = piece.len().saturating_sub(piece.trim_start().len());
+            let name = piece.trim();
+            let first = start.saturating_add(from).saturating_add(lead);
+            if let Ok(span) = ByteSpan::new(
+                ByteOffset::from(first),
+                ByteOffset::from(first.saturating_add(name.len())),
+            ) {
+                segments.push((span, SurfaceName::from(SourceFragment::from(name))));
+            }
+            from = from.saturating_add(piece.len()).saturating_add(1);
+        }
+        segments
     }
 
     /// Read a capability's grade, `[r]`, past its `[`.
@@ -1247,13 +1312,15 @@ impl<'source> Lowerer<'_, 'source>
         cursor: &mut Cursor<'_>,
     ) -> Result<WrittenRow, LoweringRefusal<'source>>
     {
-        // An operand first is the row's tail written alone, `[r]`, or its
-        // first label, `[a : I]`, as the tile after it says.
-        let mut first = None;
+        // An operand alone is the row's tail, `[r]`, unless it spells a
+        // package's path, `[std.fs.Eff]`, the sorts it fixes beside it.
         if let Maybe::Present(Piece::Operand(written)) = cursor.peek() {
-            let _written = cursor.read();
-            if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
-                closed(site, cursor, TileName::BRACKET_CLOSE)?;
+            let mut ahead = cursor.clone();
+            let _written = ahead.read();
+            if let Maybe::Present(_) = ahead.tile(TileName::BRACKET_CLOSE)
+                && operand_entry(self.pbg, self.tree, written)?.is_none()
+            {
+                *cursor = ahead;
                 return Ok(WrittenRow {
                     interfaces: Vec::new(),
                     labels: Vec::new(),
@@ -1263,7 +1330,6 @@ impl<'source> Lowerer<'_, 'source>
                     tail: Maybe::Present(written.node),
                 });
             }
-            first = Some(self.label_of(site, written)?);
         }
         let mut row: BTreeMap<EffectName, (ByteSpan, Interface)> = BTreeMap::new();
         let mut labels: Vec<(Placed, Interface)> = Vec::new();
@@ -1272,22 +1338,25 @@ impl<'source> Lowerer<'_, 'source>
         let mut fixed = Vec::new();
         let mut named = Vec::new();
         loop {
-            let label = match first.take() {
-                Some(label) => Some(label),
-                None => match cursor.peek() {
-                    Maybe::Present(Piece::Operand(written)) => {
-                        let _written = cursor.read();
-                        closed(site, cursor, TileName::COLON)?;
-                        Some(self.label_of(site, written)?)
-                    },
-                    Maybe::Present(Piece::Tile { .. }) | Maybe::Absent(_) => None,
-                },
-            };
-            let Maybe::Present(written) = cursor.tile(TileName::TYPE_IDENTIFIER)
+            // An operand the `:` follows is the entry's label, `a : I`.
+            let mut label = None;
+            if let Maybe::Present(Piece::Operand(written)) = cursor.peek() {
+                let mut ahead = cursor.clone();
+                let _written = ahead.read();
+                if let Maybe::Present(_) = ahead.tile(TileName::COLON) {
+                    *cursor = ahead;
+                    label = Some(self.label_of(site, written)?);
+                }
+            }
+            let Maybe::Present((written, stated)) = entry_path(self.pbg, self.tree, cursor)?
             else {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             };
             manifest.clear();
+            for (sort, ty) in stated {
+                manifest.push((sort, ty.node));
+                fixed.push(ty);
+            }
             while let Maybe::Present(_) = cursor.tile(TileName::WITH) {
                 closed(site, cursor, TileName::SORT)?;
                 let Maybe::Present(sort) = cursor.tile(TileName::TYPE_IDENTIFIER)
@@ -1299,9 +1368,9 @@ impl<'source> Lowerer<'_, 'source>
                 manifest.push((sort, ty.node));
                 fixed.push(ty);
             }
-            let interface = self.handled(site, written, written.node, &manifest)?;
+            let interface = self.handled(site, &written, written.last.node, &manifest)?;
             if let Interface::Theory(ref theory) = interface {
-                named.push((written.span, theory.theory));
+                named.push((written.span(), theory.theory));
             }
             if let Some(label) = label {
                 let label_name = self.name_at(label);
@@ -1318,12 +1387,12 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 if let Some(&(first, _)) = row.get(interface.name()) {
                     return Err(LoweringRefusal::DuplicateDefinition {
-                        span: written.span,
-                        name: self.name_at(written),
+                        span: written.span(),
+                        name: written.name(self.tree),
                         first,
                     });
                 }
-                let _first = row.insert(interface.name().clone(), (written.span, interface));
+                let _first = row.insert(interface.name().clone(), (written.span(), interface));
             }
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
                 break;
@@ -1629,16 +1698,17 @@ impl<'source> Lowerer<'_, 'source>
 
     /// What performs the operation a call head `x.op` selects, and the
     /// selected `op`, when `x` holds a capability where `frame` stands or
-    /// names a host interface and no value.
+    /// names an interface's module and no value.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the capability `c` and the selected `op` for a projection off
     ///   a name bound or declared at a written `Cap` type, or bound by a
-    ///   capability scope; the interface `I` and `op` for a projection off a
-    ///   name that resolves to no binder or declaration, or a capitalised name
-    ///   no constructor bears, that a host interface bears; nothing for any
-    ///   other head.
+    ///   capability scope; the interface and `op` for a projection off a name
+    ///   that resolves to no binder or declaration, a capitalised name no
+    ///   constructor bears, or a module path, `std.io.Console.print`, each
+    ///   naming an interface as [`Self::interface_named`] reads it; nothing for
+    ///   any other head.
     /// - fails: [`LoweringRefusal::UnknownMold`].
     /// - panics: none.
     ///
@@ -1690,6 +1760,12 @@ impl<'source> Lowerer<'_, 'source>
                         .map(|interface| (Performer::Interface(interface), selected)),
                 });
             },
+            // A module path, `std.io.Console`: the interface living in it.
+            Some((_, Former::Projection)) => {
+                return Ok(self
+                    .interface_named(target.span.start(), written)
+                    .map(|interface| (Performer::Interface(interface), selected)));
+            },
             Some(_) | None => return Ok(None),
         }
         // Resolved at the call, whose declaration already owns it: the holder's
@@ -1718,8 +1794,10 @@ impl<'source> Lowerer<'_, 'source>
             .then_some((Performer::Capability(target.node, None), selected)))
     }
 
-    /// The interface named `written` where `at` stands, as that source reads
-    /// it.
+    /// The interface the module `written` names where `at` stands, as that
+    /// source reads it: an extern block's interface by the block's own name,
+    /// or else the interface `Eff` the module holds, `std.io.Console.Eff` for
+    /// `std.io.Console`, as each effect lives in its API's module.
     ///
     /// # Specification
     /// trivial.
@@ -1729,8 +1807,12 @@ impl<'source> Lowerer<'_, 'source>
         written: SurfaceName<'_>,
     ) -> Option<EffectName>
     {
-        let interface = EffectName::from(written.as_ref());
-        self.collected.interface(at, &interface).map(|_| interface)
+        let named = EffectName::from(written.as_ref());
+        if self.collected.interface(at, &named).is_some() {
+            return Some(named);
+        }
+        let homed = named.homed();
+        self.collected.interface(at, &homed).map(|_| homed)
     }
 
     /// Whether the computation `bound` a `let` statement binds, read where
@@ -2066,12 +2148,24 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
         closed(site, &mut cursor, TileName::COLON)?;
-        let Maybe::Present(written) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        let Maybe::Present((written, written_fixed)) =
+            entry_path(self.pbg, self.tree, &mut cursor)?
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
         let mut manifest = Vec::new();
         let mut stated = Vec::new();
+        let mut fix = |this: &mut Self, sort: Placed, ty: Placed| {
+            this.read(ty.node, Reading::ValueType(frame));
+            // Every operation exercised in the subject reads the type, and the
+            // subject stands after it in the tree.
+            this.fixed_carriers.push(ty);
+            manifest.push((sort, ty.node));
+            stated.push((sort, ty));
+        };
+        for (sort, ty) in written_fixed {
+            fix(self, sort, ty);
+        }
         while let Maybe::Present(_) = cursor.tile(TileName::WITH) {
             closed(site, &mut cursor, TileName::SORT)?;
             let Maybe::Present(sort) = cursor.tile(TileName::TYPE_IDENTIFIER)
@@ -2080,14 +2174,9 @@ impl<'source> Lowerer<'_, 'source>
             };
             closed(site, &mut cursor, TileName::EQUALS)?;
             let ty = site.one(cursor.operands())?;
-            self.read(ty.node, Reading::ValueType(frame));
-            // Every operation exercised in the subject reads the type, and the
-            // subject stands after it in the tree.
-            self.fixed_carriers.push(ty);
-            manifest.push((sort, ty.node));
-            stated.push((sort, ty));
+            fix(self, sort, ty);
         }
-        let interface = self.handled(site, written, site.at.node, &manifest)?;
+        let interface = self.handled(site, &written, site.at.node, &manifest)?;
         let held = self.bind(binder, frame)?;
         let _first = self.capabilities.insert(held);
         match interface {
@@ -2097,15 +2186,18 @@ impl<'source> Lowerer<'_, 'source>
             Interface::Theory(ref theory) => {
                 let _first = self.answered.insert(held, theory.name.clone());
                 let _first = self.theory_capabilities.insert(held, Arc::clone(theory));
-                // The written name refers to the theory, as `Model(T)`'s does.
-                self.resolutions
-                    .push((written.span, crate::Resolution::Declaration(theory.theory)));
+                // The written path's last name refers to the theory, as
+                // `Model(T)`'s does.
+                self.resolutions.push((
+                    written.last.span,
+                    crate::Resolution::Declaration(theory.theory),
+                ));
             },
             // A source handler of an extern block's interface is beyond the
             // form: the host the run is offered to answers it (#327).
             Interface::Foreign(_) => {
                 let named = Site {
-                    at: written,
+                    at: written.last,
                     ..site
                 };
                 return Err(named.folded(
@@ -2119,14 +2211,21 @@ impl<'source> Lowerer<'_, 'source>
 
         if handlers.is_empty() {
             let named = Site {
-                at: written,
+                at: written.last,
                 ..site
             };
             if !matches!(interface, Interface::Theory(_)) {
-                return Err(named.out(FragmentBoundary::WrongSort));
+                let whole = Site {
+                    at: crate::form::Placed {
+                        node: written.last.node,
+                        span: written.span(),
+                    },
+                    ..site
+                };
+                return Err(whole.out(FragmentBoundary::WrongSort));
             }
             let slot = self.theory_slot(named, site.at.span.start(), &stated)?;
-            let supplied = self.answering_model(site, self.name_at(written), &slot)?;
+            let supplied = self.answering_model(site, written.name(self.tree), &slot)?;
             self.plan(
                 site,
                 super::Plan::Scope(Scoped {
@@ -2152,7 +2251,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(named.out(FragmentBoundary::WrongSort));
             }
             let named = Site {
-                at: written,
+                at: written.last,
                 ..site
             };
             let slot = self.theory_slot(named, site.at.span.start(), &stated)?;
@@ -2179,7 +2278,7 @@ impl<'source> Lowerer<'_, 'source>
             && let Some(value) = theory.values.first()
         {
             return Err(LoweringRefusal::UninterfacedMember {
-                span: written.span,
+                span: written.span(),
                 name: self.name_at(value.named),
                 fault: InterfaceFault::Value,
             });
@@ -2332,26 +2431,27 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// The interface a capability scope or a row entry names at `written`, the
-    /// value sorts `manifest` fixes each beside the node of the type it
-    /// writes, a theory's signature minted once for the form at `at`.
+    /// The interface a capability scope or a row entry names by the path
+    /// `written`, the value sorts `manifest` fixes each beside the node of the
+    /// type it writes, a theory's signature minted once for the form at `at`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the interface the source reads the name as, where it reads
-    ///   one and the manifest is empty. The source reads a block of its own
-    ///   over the host's interface of the name. Otherwise the theory the name
-    ///   resolves to where the form stands, read as an interface whose value
-    ///   sorts the manifest fixes ([`theory::operations`]), held for the form
-    ///   at `at`.
+    /// - ensures: the interface the source reads the whole path as, where it
+    ///   reads one and the manifest is empty. The source reads a block of its
+    ///   own over the host's interface of the path. Otherwise the theory the
+    ///   path resolves to where the form stands, its last name under the
+    ///   modules its prefix names, read as an interface whose value sorts the
+    ///   manifest fixes ([`theory::operations`]), held for the form at `at` and
+    ///   named by the whole path.
     /// - fails: [`LoweringRefusal::UnresolvedName`] at a manifest sort the
     ///   interface does not declare, an interface the source reads declaring
     ///   none; [`LoweringRefusal::DuplicateDefinition`] at a sort the manifest
     ///   fixes twice; the refusals of
-    ///   [`crate::module::Collected::presented_theory`] for a name neither the
-    ///   source's interfaces nor a theory answers; an unadmitted form for a
+    ///   [`crate::module::Collected::presented_theory_in`] for a path neither
+    ///   the source's interfaces nor a theory answers; an unadmitted form for a
     ///   theory whose value codes no presentation;
-    ///   [`LoweringRefusal::UninterfacedMember`] at the theory's name, for its
+    ///   [`LoweringRefusal::UninterfacedMember`] at the theory's path, for its
     ///   first member out of shape or first law no clause reads; an unadmitted
     ///   form for a scope over a theory no declaration owns.
     /// - panics: none.
@@ -2372,14 +2472,15 @@ impl<'source> Lowerer<'_, 'source>
     pub(super) fn handled(
         &self,
         site: Site,
-        written: Placed,
+        written: &WrittenPath,
         at: NodeIndex,
         manifest: &[(Placed, NodeIndex)],
     ) -> Result<Interface, LoweringRefusal<'source>>
     {
-        let handled = self.name_at(written);
+        let span = written.span();
+        let handled = written.name(self.tree);
         let named = EffectName::from(handled.as_ref());
-        if let Some(provider) = self.collected.interface(written.span.start(), &named) {
+        if let Some(provider) = self.collected.interface(span.start(), &named) {
             if let Some(&(sort, _)) = manifest.first() {
                 return Err(LoweringRefusal::UnresolvedName {
                     span: sort.span,
@@ -2391,9 +2492,17 @@ impl<'source> Lowerer<'_, 'source>
                 Provider::Host => Interface::Host(named),
             });
         }
-        let (presented, presentation) =
-            self.collected
-                .presented_theory(written.span.start(), written.span, handled)?;
+        let prefix: Vec<(ByteSpan, SurfaceName<'source>)> = written
+            .prefix
+            .iter()
+            .map(|&segment| (segment.span, self.name_at(segment)))
+            .collect();
+        let (presented, presentation) = self.collected.presented_theory_in(
+            span.start(),
+            &prefix,
+            written.last.span,
+            self.name_at(written.last),
+        )?;
         let Some(theory) = self
             .collected
             .slots
@@ -2401,7 +2510,7 @@ impl<'source> Lowerer<'_, 'source>
             .map(|slot| slot.constant)
         else {
             return Err(LoweringRefusal::UnresolvedTypeHead {
-                span: written.span,
+                span,
                 name: handled,
                 arity: crate::resolve::HeadArity::Nullary,
             });
@@ -2448,7 +2557,7 @@ impl<'source> Lowerer<'_, 'source>
             Ok(read) => read,
             Err((member, fault)) => {
                 return Err(LoweringRefusal::UninterfacedMember {
-                    span: written.span,
+                    span,
                     name: self.name_at(member),
                     fault,
                 });

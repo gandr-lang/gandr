@@ -2,16 +2,16 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    ╭▸ corpus/pathological/regions/held-within.gandr:13:68
    │
 10 │ ┌  def keptPastHold() -> Integer {
-11 │ │┌   handle inner : Proc {
+11 │ │┌   handle inner : std.process.Exit.Eff {
 12 │ ││     var l = 42;
-   │ ││     ─── checked against `-F [Proc, inner : Proc] Integer`; while checking the scope of this hold
+   │ ││     ─── checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while checking the scope of this hold
 13 │ ││     let q : (() => Integer) at inner = access shared l as w { pure thunk { pure w } };
    │ ││     ┬──                                ┬──────────────────────┬────┯━━━━━━━━━━━━━━━──
    │ ││     │                                  │                      │    │
    │ ││     │                                  │                      │    a view outliving its access
    │ ││     │                                  │                      checked against `-F ((() => Integer) at inner)`; while judging the value this returns
    │ ││     │                                  checked against `-F ((() => Integer) at inner)`; while checking the body of this access
-   │ ││     checked against `-F [Proc, inner : Proc] Integer`; while finishing the type of this
+   │ ││     checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while finishing the type of this
 14 │ ││     force q
    ┆ ┆┆
 17 │ ││     oper exit(code, k) => pure 0
@@ -27,20 +27,20 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    ╭▸ corpus/pathological/regions/held-within.gandr:28:70
    │
 24 │ ┌   def keptPastNestedHold() -> Integer {
-25 │ │┌    handle outer : Proc {
-26 │ ││      let x : Integer = handle inner : Proc {
+25 │ │┌    handle outer : std.process.Exit.Eff {
+26 │ ││      let x : Integer = handle inner : std.process.Exit.Eff {
    │ ││┌─────┬─────────────────┘
    │ │││     │
-   │ │││     checked against `-F [Proc, outer : Proc] Integer`; while finishing the type of this
+   │ │││     checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while finishing the type of this
 27 │ │││       var l = 42;
-   │ │││       ─── checked against `-F [Proc, inner : Proc] Integer`; while checking the scope of this hold
+   │ │││       ─── checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while checking the scope of this hold
 28 │ │││       let q : (() => Integer) at inner = access shared l as w { pure thunk { pure w } };
    │ │││       ┬──                                ┬──────────────────────┬────┯━━━━━━━━━━━━━━━──
    │ │││       │                                  │                      │    │
    │ │││       │                                  │                      │    a view outliving its access
    │ │││       │                                  │                      checked against `-F ((() => Integer) at inner)`; while judging the value this returns
    │ │││       │                                  checked against `-F ((() => Integer) at inner)`; while checking the body of this access
-   │ │││       checked against `-F [Proc, inner : Proc] Integer`; while finishing the type of this
+   │ │││       checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while finishing the type of this
 29 │ │││       force q
    ┆ ┆┆┆
 32 │ │││       oper exit(code, k) => pure 0

@@ -39,7 +39,7 @@ pub module Echo : Model(Kept) with sort V = String where {
 }
 
 /// The site grants the console, and answers `store` with `Echo`.
-pub offers [Console, store = Echo];
+pub offers [std.io.Console.Eff, store = Echo];
 
 /// The far site, on a loopback socket.
 pub module Site : Model(Site) where {

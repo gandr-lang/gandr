@@ -7,7 +7,7 @@
 /// scope holds, and is forced inside it.
 def kept() -> Integer {
   var l = 42;
-  handle inner : Proc {
+  handle inner : std.process.Exit.Eff {
     let q2 : (() => Integer) at inner = access shared l as w { pure pure w };
     force q2
   } with {
