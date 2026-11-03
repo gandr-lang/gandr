@@ -207,6 +207,7 @@ pub use crate::edit::located;
 pub use crate::edit::spanned;
 pub use crate::forms::FormCensus;
 pub use crate::forms::FormCount;
+pub use crate::forms::FormStore;
 pub use crate::item_source::Revision;
 pub use crate::item_source::RevisionFault;
 pub use crate::item_source::SurfaceItems;

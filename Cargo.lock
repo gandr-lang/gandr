@@ -1318,6 +1318,7 @@ name = "gandr-lang"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "gandr-core-fork",
  "gandr-core-publish",
  "gandr-kernel-core",
  "gandr-runtime-net",
@@ -1331,6 +1332,7 @@ dependencies = [
  "gandr-surface-parser",
  "gandr-surface-render-terminal",
  "gandr-surface-repl",
+ "gandr-surface-session",
  "gandr-surface-syntax",
  "gandr-surface-tui",
  "gandr-workflow-sweep",

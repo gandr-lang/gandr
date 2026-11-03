@@ -835,12 +835,13 @@ impl<'text> Labeled<'text>
         let before = whole
             .get(.. whole.floor_char_boundary(usize::from(at)))
             .unwrap_or_default();
+        let (labeling, _relabeled) = self
+            .labeling
+            .clone()
+            .relabel(SourceFragment::from(whole), SourceFragment::from(before));
         Self {
             text: SourceText::from(before),
-            labeling: self
-                .labeling
-                .clone()
-                .relabel(SourceFragment::from(whole), SourceFragment::from(before)),
+            labeling,
         }
     }
 }
