@@ -60,7 +60,7 @@ def pingAnswered() -> String {
 /// names otherwise, print what came back, and exit with 0.
 def main(args : List(String)) -> [std.net.Eff, std.io.Console.Eff] Integer {
   match args {
-    [] => { let got = serve(); std.io.Console.print(got); 0 },
-    [peer, .._] => { let got = ping(peer); std.io.Console.print(got); 0 }
+    #[] => { let got = serve(); std.io.Console.print(got); 0 },
+    #[peer, .._] => { let got = ping(peer); std.io.Console.print(got); 0 }
   }
 }

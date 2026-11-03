@@ -28,6 +28,6 @@ pub module Manifold : Model(Manifold) where {
 }
 
 /// `far` at the far site, as one process.
-pub def placements : List(Placement) = [
+pub def placements : List(Placement) = #[
   At("far", far.site),
 ];

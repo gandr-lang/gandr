@@ -46,8 +46,8 @@ pub def wp(e : Thir.Expr) -> Spec(Places, Thir.Value) {
 /// borrows, and whether mutably.
 pub def borrows(e : Thir.Expr) -> List(#{place : Thir.Place, mutable : Bool}) {
   match e {
-    Thir.Expr.Borrow(p, kind) => [#{place = p, mutable = kind == Thir.BorrowKind.Mut}],
+    Thir.Expr.Borrow(p, kind) => #[#{place = p, mutable = kind == Thir.BorrowKind.Mut}],
     Thir.Expr.Call(_f, args) => concatMap(args, borrows),
-    _ => []
+    _ => #[]
   }
 }

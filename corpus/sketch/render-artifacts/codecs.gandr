@@ -25,7 +25,7 @@ pub def versionToml : Codec(Toml, Version) = #{
   decode = fun (doc) {
     match doc {
       Value.string(s) => match split(s, ".") {
-        [a, b, c] => zip3(parseNat(a), parseNat(b), parseNat(c)).map(fun ((x, y, z)) { #{ major = x, minor = y, patch = z } }),
+        #[a, b, c] => zip3(parseNat(a), parseNat(b), parseNat(c)).map(fun ((x, y, z)) { #{ major = x, minor = y, patch = z } }),
         _ => none
       },
       _ => none
@@ -41,5 +41,5 @@ pub def versionRoundTrip(v : Version) -> versionToml.decode(versionToml.encode(v
 
 /// The text `gandr.toml` holds for a version, printed by TOML's printer.
 pub def versionLine(v : Version) -> String {
-  Toml.print(Table.of([("version", versionToml.encode(v))]))
+  Toml.print(Table.of(#[("version", versionToml.encode(v))]))
 }

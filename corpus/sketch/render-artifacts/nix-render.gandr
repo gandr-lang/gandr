@@ -44,11 +44,11 @@ pub def siteDerivation(pages : String, bash : String, coreutils : String) -> Der
     name = "docs-site-1.0",
     system = "x86_64-linux",
     builder = bash ++ "/bin/bash",
-    args = ["-c", "mkdir -p $out && cp -r $pages/. $out"],
-    env = [("pages", pages), ("PATH", coreutils ++ "/bin"), ("out", "")],
-    inputDrvs = [],
-    inputSrcs = [pages],
-    outputs = [("out", "")],
+    args = #["-c", "mkdir -p $out && cp -r $pages/. $out"],
+    env = #[("pages", pages), ("PATH", coreutils ++ "/bin"), ("out", "")],
+    inputDrvs = #[],
+    inputSrcs = #[pages],
+    outputs = #[("out", "")],
     version = 4
   }
 }

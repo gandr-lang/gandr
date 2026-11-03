@@ -250,7 +250,7 @@ fn a_later_member_named_ua_is_a_forward_reference()
 #[test]
 fn a_recursive_function_named_compose_recurses_through_its_claim()
 {
-    let source = "def rec compose(xs : List(Integer)) -> Integer {\n  match xs {\n    [] => 0,\n    [_, \
+    let source = "def rec compose(xs : List(Integer)) -> Integer {\n  match xs {\n    #[] => 0,\n    #[_, \
                   ..rest] => compose[<](rest)\n  }\n}\n";
     let mut arena = CoreArena::new();
     let source = listing(source);

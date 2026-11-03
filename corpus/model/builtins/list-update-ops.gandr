@@ -7,7 +7,7 @@
 import std.list (List);
 
 /// Three tens, annotated as a list of integers (#1544).
-def tens = ([10, 20, 30] : List(Integer));
+def tens = (#[10, 20, 30] : List(Integer));
 
 /// The element at position one, replaced.
 @[ refuses("OutOfFragment.projection_expression") ]
@@ -31,11 +31,11 @@ def grown = list.push(tens, 40);
 
 /// A second list appended.
 @[ refuses("OutOfFragment.projection_expression") ]
-def appended = list.append(tens, [40, 50]);
+def appended = list.append(tens, #[40, 50]);
 
 /// A list of lists, concatenated.
 @[ refuses("OutOfFragment.projection_expression") ]
-def concatenated = list.concat([tens, [40, 50]]);
+def concatenated = list.concat(#[tens, #[40, 50]]);
 
 /// Every element over fifteen doubled; the lowering reads no `list` primitive
 /// yet (#1106).

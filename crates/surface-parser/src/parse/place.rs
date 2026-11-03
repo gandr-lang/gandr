@@ -1382,7 +1382,7 @@ mod tests
             "def once(n : Integer)) -> -F Integer {\n  return n\n}\n",
             "def head(xs : List(Integer) -> -F Integer {\n  return 0\n}\n",
             "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  rule S(P(x) <=> x;\n}\n",
-            "def pair = f(x, [y, z], (w)) ;\n",
+            "def pair = f(x, #[y, z], (w)) ;\n",
         ] {
             for end in (0 ..= source.len()).filter(|&end| source.is_char_boundary(end)) {
                 let prefix = SourceText::from(source.get(.. end).unwrap());

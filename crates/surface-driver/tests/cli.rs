@@ -456,7 +456,7 @@ fn an_unsettled_run_exits_one()
 fn a_list_type_needs_its_listing_from_std_list_4520()
 {
     let scratch = Scratch::new(Path::new("list-home"));
-    let body = "def xs : List(Integer) = [1, 2] ;\n";
+    let body = "def xs : List(Integer) = #[1, 2] ;\n";
     let listed_text = format!("import std.list (List) ;\n{body}");
     let listed = scratch.file(Path::new("listed.gandr"), Text::from(listed_text.as_str()));
     let output = ran(gandr(&[Path::new("check"), &listed]));
@@ -2709,7 +2709,7 @@ fn a_workspace_checks_each_member_it_names_2687()
     };
     let workspace = scratch.file(
         Path::new("workspace.gandr"),
-        Text::from(stated("[\"hello\", \"tools\"]").as_str()),
+        Text::from(stated("#[\"hello\", \"tools\"]").as_str()),
     );
     for (library, name, up) in [
         ("hello/src/package.gandr", "hello", "../.."),
@@ -2757,7 +2757,7 @@ fn a_workspace_checks_each_member_it_names_2687()
             );
         }
     }
-    std::fs::write(&workspace, stated("[\"hello\", \"docs\"]")).expect("a member is misnamed");
+    std::fs::write(&workspace, stated("#[\"hello\", \"docs\"]")).expect("a member is misnamed");
     let refused = within(".");
     assert_eq!(code(&refused), Code(2_i32), "{}", stdout(&refused));
     assert!(refused.stdout.is_empty(), "nothing is read");
@@ -4274,8 +4274,8 @@ fn a_program_leaves_with_its_entry_s_status_1881()
 {
     let scratch = Scratch::new(Path::new("program-entry"));
     let counted = "import std.list (List);\ndef rec count(xs : List(String)) -> -F Integer {\n  match \
-                   xs {\n    [] => 0,\n    \
-                   [x, ..rest] => { let n = count[<](rest); n + 1 }\n  }\n}\ndef main(args : \
+                   xs {\n    #[] => 0,\n    \
+                   #[x, ..rest] => { let n = count[<](rest); n + 1 }\n  }\n}\ndef main(args : \
                    List(String)) -> -F Integer { become count(args) }\n";
     for (name, text, arguments, status) in [
         (

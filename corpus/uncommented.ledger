@@ -4155,6 +4155,8 @@ sketch/foreign/thir.gandr:manifest_sort:47b7ec98bdcdc228 uncommented
 sketch/foreign/thir.gandr:splice_expression:3992f34650760215 uncommented
 sketch/graded-rows/boundaries.gandr:Choice:f0697efd0bc9bcd1 uncommented
 sketch/graded-rows/boundaries.gandr:anyMatch:835762c4521fc01b uncommented
+sketch/graded-rows/laws.gandr:data_declaration:eb01ff60a7c3a29b uncommented
+sketch/graded-rows/laws.gandr:or:5517278e397cd8da uncommented
 sketch/grades/equipped.gandr:manifest_sort:cb46bb8f2599df7b uncommented
 sketch/grades/equipped.gandr:parenthesized_expression:30573fecc5c2433b uncommented
 sketch/grades/expected.gandr:u_type:8656bbfc29c2cedd uncommented
@@ -4192,8 +4194,8 @@ sketch/providers/nix.gandr:parenthesized_type:425026668db5ff44 uncommented
 sketch/providers/nix.gandr:splice_expression:9b266c2047d3fc7d uncommented
 sketch/providers/provider.gandr:module_declaration:519f5859273d4a39 uncommented
 sketch/providers/provider.gandr:service:e73d88d23650be59 uncommented
-sketch/render-artifacts/codecs.gandr:versionLine:952e427d48c0f177 uncommented
-sketch/render-artifacts/fleet.gandr:Aws:e274a998d2c3a15f uncommented
+sketch/render-artifacts/codecs.gandr:versionLine:156f25f46646221c uncommented
+sketch/render-artifacts/fleet.gandr:Aws:838e1925cbb1dce8 uncommented
 sketch/specifications/queue.gandr:drain:d568a5a779ec12f8 uncommented
 sketch/specifications/queue.gandr:push:b5eef6bbe1ed3cfe uncommented
 sketch/specifications/spec-values.gandr:listLookup:8e6853a1855f6212 uncommented

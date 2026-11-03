@@ -7,5 +7,5 @@ import std.list (List);
 /// A list's first element, its rest a hole.
 @[ refuses("UndecidedCoverage") ]
 def head(xs : List(Integer)) -> -F Integer {
-  match xs { [x, ..?] => return x, [] => return 0 }
+  match xs { #[x, ..?] => return x, #[] => return 0 }
 }

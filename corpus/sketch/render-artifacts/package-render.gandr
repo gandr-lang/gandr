@@ -25,7 +25,7 @@ import std.codec.toml (Toml, Table, Value);
 /// `[package]` table.
 pub def manifest(m : Module(Gandr.Package)) -> [Elab] Toml {
   let fields = m.definitions.map(fun (d) { (d.name, Value.string(d.value)) });
-  Toml.document([("package", Table.of(fields))])
+  Toml.document(#[("package", Table.of(fields))])
 }
 
 /// `std`, its manifest rendered by `manifest` into `package.gandr.toml`.

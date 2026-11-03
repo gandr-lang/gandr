@@ -1,10 +1,10 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/builtins/lists.gandr:10:18
+   ╭▸ corpus/pathological/builtins/lists.gandr:10:19
    │
-10 │ def mixed = ([1, "two"] : List(Integer));
-   │              ┬───┯━━━━─        ─────── the type it is checked against
-   │              │   │
-   │              │   its type does not convert: expected `Integer`, found `String`
+10 │ def mixed = (#[1, "two"] : List(Integer));
+   │              ┬────┯━━━━─        ─────── the type it is checked against
+   │              │    │
+   │              │    its type does not convert: expected `Integer`, found `String`
    │              checked against `List(Integer)`; while checking the first part of this list cell or dependent record
    │
    ├ note: `mixed` is refused with TypeMismatch, as its expectation states

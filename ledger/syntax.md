@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xf2770cdf17df4b0f`
+- Grammar fingerprint: `0x1f4a9ac27a6aacc2`
 - Rules: 171 — 170 committed, 1 internal
-- Molds: 2898
+- Molds: 2896
 - Attributes: 17
 
 ## Reading a form
@@ -55,7 +55,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`tuple_pattern`](../corpus/ledger/syntax/tuple-pattern.gandr) | `( PATTERN , PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? )` | `pattern.atom` | `tuple_pattern` | admitted | Other |
 | [`telescope_pattern`](../corpus/ledger/syntax/telescope-pattern.gandr) | `#{ ⦅ ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦅ , ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦆* ⦅ , ⦆? ⦆? }` | `pattern.atom` | `telescope_pattern` * | admitted | Other, Member, Number |
 | [`labelled_sum_pattern`](../corpus/ledger/syntax/labelled-sum-pattern.gandr) | `+ { . ⦅ ‹identifier› ‖ ‹number› ⦆ = PATTERN }` | `pattern.atom` | `labelled_sum_pattern` * | admitted | Operator, Other, Member, Number |
-| [`list_pattern`](../corpus/ledger/syntax/list-pattern.gandr) | `⦅ #[ ‖ [ ⦆ ⦅ PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦅ ⟨rest_pattern⟩ ⦆? ⦆? ‖ ⟨rest_pattern⟩ ⦆? ]` | `pattern.atom` | `list_pattern` | admitted | Other, Operator |
+| [`list_pattern`](../corpus/ledger/syntax/list-pattern.gandr) | `#[ ⦅ PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦅ ⟨rest_pattern⟩ ⦆? ⦆? ‖ ⟨rest_pattern⟩ ⦆? ]` | `pattern.atom` | `list_pattern` | admitted | Other, Operator |
 | [`rest_pattern`](../corpus/ledger/syntax/rest-pattern.gandr) | `.. PATTERN` | `pattern.atom` | `rest_pattern` | admitted | Operator |
 | [`literal_pattern`](../corpus/ledger/syntax/literal-pattern.gandr) | `‹number› ‖ ‹typed_number› ‖ " ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* " ‖ true ‖ false` | `pattern.atom` | `literal_pattern` | admitted | Number, StringLit, Escape, Boolean |
 | [`hole.pattern`](../corpus/ledger/syntax/hole.pattern.gandr) | `? ⦅ ‹hole_name› ⦆?` | `pattern.atom` | `hole` | admitted | Hole, Label |
@@ -102,7 +102,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`wildcard.expression`](../corpus/ledger/syntax/wildcard.expression.gandr) | `_` | `expression.atom` | `wildcard` | admitted | Variable |
 | [`parenthesized_expression`](../corpus/ledger/syntax/parenthesized-expression.gandr) | `( ⦅ ) ‖ EXPRESSION ⦅ ) ‖ , ⦅ EXPRESSION ⦅ , EXPRESSION ⦅ , EXPRESSION ⦆* ⦆? ⦅ , ⦆? ⦆? ) ‖ : TYPE ) ⦆ ⦆` | `expression.atom` | `parenthesized_expression` | admitted | Other |
 | [`type_quote_expression`](../corpus/ledger/syntax/type-quote-expression.gandr) | `type( TYPE )` | `expression.atom` | `type_quote_expression` * | admitted | Keyword, Other |
-| [`list_expression`](../corpus/ledger/syntax/list-expression.gandr) | `⦅ #[ ‖ [ ⦆ ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? ]` | `expression.atom` | `list_expression` | admitted | Other |
+| [`list_expression`](../corpus/ledger/syntax/list-expression.gandr) | `#[ ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? ]` | `expression.atom` | `list_expression` | admitted | Other |
 | [`block`](../corpus/ledger/syntax/block.gandr) | `{ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ module ‹identifier› = EXPRESSION ; ‖ var ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? }` | `expression.atom` | `block` | admitted | Other, Keyword, VariableDef, Number, Type, Member |
 | [`lambda_expression`](../corpus/ledger/syntax/lambda-expression.gandr) | `fun ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) BLOCK ‖ { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ‖ [ ‹type_variable› ⦅ , ‹type_variable› ⦆* ⦅ , ⦆? ] BLOCK ⦆` | `expression.atom` | `lambda_expression` | admitted | Keyword, Other, VariableParam, TypeVariable, Type, Operator |
 | [`thunk_expression`](../corpus/ledger/syntax/thunk-expression.gandr) | `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? BLOCK` or `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? BLOCK` | `expression.atom` | `thunk_expression` | admitted | Keyword, Other, Number |
@@ -293,7 +293,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `tuple_pattern` | pattern | 5 | `(` | — | 2 |
 | `telescope_pattern` | pattern | 14 | `#{` | — | 10 |
 | `labelled_sum_pattern` | pattern | 7 | `+` | — | 0 |
-| `list_pattern` | pattern | 7 | `#[` `[` | — | 3 |
+| `list_pattern` | pattern | 6 | `#[` | — | 2 |
 | `rest_pattern` | pattern | 1 | `..` | — | 0 |
 | `literal_pattern` | pattern | 8 | `"` `false` `number` `true` `typed_number` | — | 0 |
 | `hole.pattern` | pattern | 2 | `?` | — | 0 |
@@ -338,7 +338,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `wildcard.expression` | expression | 1 | `_` | — | 0 |
 | `parenthesized_expression` | expression | 10 | `(` | — | 4 |
 | `type_quote_expression` | expression | 2 | `type(` | — | 0 |
-| `list_expression` | expression | 5 | `#[` `[` | — | 3 |
+| `list_expression` | expression | 4 | `#[` | — | 2 |
 | `block` | expression | 31 | `{` | — | 0 |
 | `lambda_expression` | expression | 29 | `fun` | — | 14 |
 | `thunk_expression` | expression | 6 | `thunk` | — | 0 |
@@ -459,7 +459,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `type_variable` | 70 | 15 | 3 |
 | `]` | 65 | 39 | 0 |
 | `{` | 61 | 31 | 2 |
-| `[` | 59 | 36 | 7 |
+| `[` | 57 | 34 | 5 |
 | `number` | 52 | 30 | 3 |
 | `_` | 48 | 7 | 2 |
 | `=>` | 45 | 10 | 1 |

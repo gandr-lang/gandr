@@ -67,7 +67,7 @@ pub module Manifold : Model(Manifold) where {
 
 /// `far` at a site that answers neither entry, and a world the program
 /// lacks.
-pub def placements : List(Placement) = [
+pub def placements : List(Placement) = #[
   At("far", site),
   At("nowhere", site),
 ];

@@ -11303,7 +11303,7 @@ mod tests
         let pbg = built_in()?;
         let source = "// lead\ndef x = 1; // trail\n\n// alone\n\n// first\n// second\ndef w = 2;\n\
                       def f(x: Integer) -> -F Integer {\n  // above\n  return x\n}\n\
-                      def y = [ /* empty */ ];\ndef z = 1 /* one */;\n";
+                      def y = #[ /* empty */ ];\ndef z = 1 /* one */;\n";
         let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
         assert_eq!(crate::testing::reconstruct(&tree), source);
         let owner_of = |comment: &str| -> Option<String> {
@@ -11335,7 +11335,7 @@ mod tests
             ("// first", "def w = 2;", "leading, stacked"),
             ("// second", "def w = 2;", "leading"),
             ("// above", "return x", "leading, inside a block"),
-            ("/* empty */", "[ /* empty */ ]", "dangling"),
+            ("/* empty */", "#[ /* empty */ ]", "dangling"),
             ("/* one */", "def z = 1 /* one */;", "beside a leaf"),
         ] {
             assert_eq!(
@@ -11659,7 +11659,7 @@ mod tests
             ("( x", vec![tile(")")], 1_usize),
             ("def x = 1 +", vec![hole(Sort::Expression), tile(";")], 2),
             ("def x = 1 + (2", vec![tile(")"), tile(";")], 1),
-            ("def f = [1, 2", vec![tile("]"), tile(";")], 1),
+            ("def f = #[1, 2", vec![tile("]"), tile(";")], 1),
             ("def f = \"abc", vec![tile("\""), tile(";")], 1),
             ("def x = 1", vec![tile(";")], 1),
             ("x", vec![], 0),

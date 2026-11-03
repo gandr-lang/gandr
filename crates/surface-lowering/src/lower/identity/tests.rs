@@ -1077,7 +1077,7 @@ fn a_bridge_type_lowers_to_the_core_bridge_3427()
     // reads; reflexivity is no bridge's introduction.
     let mut arena = CoreArena::new();
     let source = listing(
-        "def lifted : Bridge(List(Integer), [1, 2], [1, 2]);\ndef lifted = (unit, (unit, unit));\ndef related : Bridge(Type, Unit, String);\ndef related = thunk { fun (x : Unit) { fun (y : String) { return Unit } } };\n",
+        "def lifted : Bridge(List(Integer), #[1, 2], #[1, 2]);\ndef lifted = (unit, (unit, unit));\ndef related : Bridge(Type, Unit, String);\ndef related = thunk { fun (x : Unit) { fun (y : String) { return Unit } } };\n",
     );
     let module = listed(&source, &mut arena);
     for (name, endpoint) in [("lifted", "a list cell"), ("related", "a quoted code")] {

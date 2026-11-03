@@ -1171,7 +1171,12 @@ mod tests
         let pbg = built_in().unwrap();
         let mut distinct_severity = false;
         let mut distinct_span = false;
-        for source in ["", "def x = 1;", "def a = ( ; ¤ def b = [ ;", "def = ; ? ?"] {
+        for source in [
+            "",
+            "def x = 1;",
+            "def a = ( ; ¤ def b = #[ ;",
+            "def = ; ? ?",
+        ] {
             let parsed = parse(&pbg, SourceText::from(source)).unwrap();
             let obligations = parsed.obligations();
             for (left, right) in obligations.iter().zip(obligations.iter().skip(1)) {
@@ -1833,7 +1838,7 @@ pure greeting
             "match v { Inl(x) => x, Inr(y) => y }",
             "if c { pure 1 } else { pure 2 }",
             "#{ a = 1, b = \"s\" }",
-            "[1, 2, 3] ++ [4]",
+            "#[1, 2, 3] ++ #[4]",
             "#!{ echo hi; }",
             "@[doc(\"d\")] def y = 2;",
         ];

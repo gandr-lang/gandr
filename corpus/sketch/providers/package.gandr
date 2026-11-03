@@ -24,7 +24,7 @@ pub module Package : Model(Gandr.Package) where {
   def gandr = "0.1";
   /// What each provider may run, read and reach.
   def providers = #{
-    .nix = #{ .run = [Command("nix")], .read = [Path("nixpkgs")] },
-    .aws = #{ .reach = [Host("*.amazonaws.com")] }
+    .nix = #{ .run = #[Command("nix")], .read = #[Path("nixpkgs")] },
+    .aws = #{ .reach = #[Host("*.amazonaws.com")] }
   };
 }

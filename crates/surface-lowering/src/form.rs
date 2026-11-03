@@ -372,7 +372,7 @@ impl FormName
     pub const OR_PATTERN: Self = Self("or_pattern");
     /// The as-pattern `x @ p`, or `x .@ p`.
     pub const AS_PATTERN: Self = Self("as_pattern");
-    /// The list pattern `[p, …]`.
+    /// The list pattern `#[p, …]`.
     pub const LIST_PATTERN: Self = Self("list_pattern");
     /// The rest pattern `..p` inside a list pattern.
     pub const REST_PATTERN: Self = Self("rest_pattern");
@@ -884,7 +884,7 @@ pub enum Former
     /// The telescope value `#{…}`: the tuple of its positional entries, or the
     /// record of its labelled ones.
     Telescope,
-    /// The list literal `[v, …]`: the native list of its elements in order,
+    /// The list literal `#[v, …]`: the native list of its elements in order,
     /// the empty list when it has none.
     List,
     /// A module packed at the model type its signature states, `pack M at

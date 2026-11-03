@@ -10,4 +10,4 @@
 
 /// Two numbers in a list, the list type unimported.
 @[ refuses("UnresolvedTypeHead") ]
-def xs : List(Integer) = [1, 2];
+def xs : List(Integer) = #[1, 2];
