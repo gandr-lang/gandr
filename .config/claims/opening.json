@@ -828,6 +828,56 @@
     "output": ""
   },
   {
+    "name": "#4421: a `fail` message of a `.config` cases script citing the issue is a regression",
+    "input": {
+      "branch": "workflow-2621-collector",
+      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 2621,
+          "body": "",
+          "labels": ["kind:defect", "area:workflow"]
+        }
+      ],
+      "regressions": [
+        {
+          "path": ".config/mise/host-lock-cases.bash",
+          "text": "  [[ $status == 0 ]] || fail \"#2621: a collector is passed over\""
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#4421: a cases script's comment, or a `fail` message that does not open with the issue, is no regression",
+    "input": {
+      "branch": "workflow-2621-collector",
+      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 2621,
+          "body": "",
+          "labels": ["kind:defect", "area:workflow"]
+        }
+      ],
+      "regressions": [
+        {
+          "path": ".config/mise/host-lock-cases.bash",
+          "text": "# A collector is passed over (#2621)."
+        },
+        {
+          "path": ".config/mise/host-lock-cases.bash",
+          "text": "  fail \"a collector is passed over (#2621)\""
+        },
+        {
+          "path": ".config/mise/gate.bash",
+          "text": "  fail \"#2621: a collector is passed over\""
+        }
+      ]
+    },
+    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, a `.config` case whose name cites it, or a `//` line or `test(…)` name citing it in an extension's TypeScript tests, added by the change; add it, then run `pr:open` again"
+  },
+  {
     "name": "#2524: a corpus `///` line citing the issue is a regression; an observation left as a comment is none",
     "input": {
       "branch": "surface-2621-probe",

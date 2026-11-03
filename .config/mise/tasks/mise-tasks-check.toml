@@ -1490,9 +1490,10 @@ echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as 
 
 # The host lock the gate slots, the mutation run and `ci:act` take (#3105):
 # `.config/mise/host-lock-cases.bash` holds a scratch lock's slots and reads
-# the refusal, a waiter, a killed holder and a killed holder's running child.
+# the refusal, a waiter, a killed holder, a killed holder's running child, and
+# a gate's detached daemon after the gate ends (#4421).
 ["check:host-lock"]
-description = "A host lock's slots refuse or wait while held and free when their holder and its children are gone"
+description = "A host lock's slots refuse or wait while held, free when their holder and its children are gone, and a gate's slot frees when the gate exits"
 run = ".config/mise/host-lock-cases.bash"
 
 # The pinned rust-clippy the Dylint driver's build reads, in the CI image and
