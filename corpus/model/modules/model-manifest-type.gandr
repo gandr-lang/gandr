@@ -104,3 +104,27 @@ def secondLeft() -> (Unit + Unit) + Unit { stepOnceLeft(leftward) }
 def inlineLeft() -> (Unit + Unit) + Unit {
   stepOnceLeft(Path.walk(fun (x) { type(Model(Counter) with sort C = x) }, nestings, rightward))
 }
+
+/// A module counts modulo three over the right nesting.
+module Thirds : Model(Counter) where {
+  /// The right nesting holds the three states.
+  type C = Unit + (Unit + Unit);
+
+  /// The count starts at the first state.
+  def start() -> Unit + (Unit + Unit) { first() }
+
+  /// Each step moves one state on.
+  def step(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { onward(c) }
+}
+
+/// A counter over the right nesting takes the module, and the module leaves
+/// out the carrier its parameter fixes.
+@[ runs("+{.1 = +{.0 = unit}}") ]
+def secondThirds() -> Unit + (Unit + Unit) { stepOnce(Thirds) }
+
+/// The module stands at a signature that fixes its carrier.
+def thirds : Model(Counter) with sort C = Unit + (Unit + Unit) = Thirds;
+
+/// The counter steps once from its start to the second state.
+@[ runs("+{.1 = +{.0 = unit}}") ]
+def secondPacked() -> Unit + (Unit + Unit) { stepOnce(thirds) }

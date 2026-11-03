@@ -2909,11 +2909,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   `pack` tile.
     /// - ensures: the form stands as a value and is planned as
     ///   [`Self::packed_module`] reads the module `M` names at the theory `S`
-    ///   names.
+    ///   names, without the sorts [`Self::expected_fixed`] reads off the type
+    ///   the form is asked at.
     /// - fails: the wrong-sort refusal where no value is read; a misplaced or
     ///   missing piece; a module operand that is no capitalised name, or a
     ///   stated type that is not `Model(S)`, out of the fragment; the refusals
-    ///   [`Self::packed_module`] yields.
+    ///   [`Self::expected_fixed`] and [`Self::packed_module`] yield.
     /// - panics: none.
     ///
     /// # Errors
@@ -2925,6 +2926,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
     /// - witness: `tests::modules::models::a_pack_of_a_sealed_sort_is_refused`
     /// - witness: `tests::modules::models::a_pack_of_no_module_is_refused`
+    /// - witness: `tests::modules::models::a_module_packs_at_a_model_type_fixing_its_sorts_4826`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Packed(_))))]
     pub(super) fn pack_model(
         &mut self,
@@ -2949,7 +2951,8 @@ impl<'source> Lowerer<'_, 'source>
             at_stated,
             at_stated.out(FragmentBoundary::Unadmitted(Unbuilt::PackModel)),
         )?;
-        let theories = self.packed_module(site, module, &theory, &BTreeMap::new())?;
+        let fixed = self.expected_fixed(site, &theory)?;
+        let theories = self.packed_module(site, module, &theory, &fixed)?;
         self.plan(site, Plan::Packed(Arc::new(theories)));
 
         Ok(())
@@ -2964,11 +2967,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   constructor, binder, declaration or stated type answers.
     /// - ensures: when a module of the source declared before `site` is named
     ///   `name` and its header ascribes `Model(S)`, `site` stands as a value
-    ///   planned as [`Self::packed_structure`] reads that module at `S`, with
-    ///   no sort fixed; otherwise nothing is planned and the name is
-    ///   unresolved.
+    ///   planned as [`Self::packed_structure`] reads that module at `S`,
+    ///   without the sorts [`Self::expected_fixed`] reads off the type `site`
+    ///   is asked at; otherwise nothing is planned and the name is unresolved.
     /// - fails: the wrong-sort refusal where no value is read; the refusals
-    ///   [`Self::packed_structure`] yields, a sealed sort's among them.
+    ///   [`Self::expected_fixed`] and [`Self::packed_structure`] yield, a
+    ///   sealed sort's among them.
     /// - panics: none.
     ///
     /// # Errors
@@ -2981,6 +2985,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   is.
     /// - witness: `tests::modules::models::a_module_named_where_a_value_is_read_is_its_model_4485`
     /// - witness: `tests::modules::models::a_module_no_model_type_ascribes_is_no_value_4485`
+    /// - witness: `tests::modules::models::a_module_packs_at_a_model_type_fixing_its_sorts_4826`
     #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(()))) || matches!(self.plans.get(site.at.node), Some(&Plan::Packed(_))))]
     pub(super) fn module_value(
         &mut self,
@@ -3012,11 +3017,12 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(unresolved);
         };
         let _frame = self.require(site, Produced::Value)?;
+        let fixed = self.expected_fixed(site, &theory)?;
         let packed = self.packed_structure(
             site,
             (StructureIndex::from(outermost), site.at.span, name),
             &theory,
-            &BTreeMap::new(),
+            &fixed,
         )?;
         self.plan(site, Plan::Packed(Arc::new(packed)));
 
@@ -3209,6 +3215,24 @@ impl<'source> Lowerer<'_, 'source>
             ..site
         };
         let mut theories = self.bundled(written, (site.at.span.start(), theory))?;
+        // A sort the type fixes is left out of the record, but the module
+        // still states it: a sealed sort is refused as its pack is.
+        let sealed = self
+            .collected
+            .structures
+            .get(usize::from(outermost))
+            .is_some_and(|structure| {
+                structure.types.iter().any(|component| {
+                    fixed.contains_key(&Name::from(component.name.as_ref()))
+                        && matches!(
+                            component.meaning,
+                            TypeMeaning::Sealed | TypeMeaning::Family(_)
+                        )
+                })
+            });
+        if sealed {
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::PackModel)));
+        }
         if let Some(outermost) = theories.first_mut() {
             outermost
                 .signature
