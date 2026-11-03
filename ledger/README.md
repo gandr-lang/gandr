@@ -77,10 +77,10 @@ To edit it: `mise run ledger:build`, change `features.db` with `sqlite3`, `mise 
 
 | Command | Does |
 | ------- | ---- |
-| `cargo run --package gandr-lang -- ledger syntax --write ledger` | regenerates `syntax.md` and `syntax.json` |
+| `mise run ledger:syntax` | regenerates `syntax.md` and `syntax.json` with the worktree's own build, never the default toolchain's |
 | `cargo run --package gandr-lang -- ledger exemplars corpus/ledger` | verifies every exemplar, printing `<file>: <fault>` for each that does not hold |
 | `cargo run --package gandr-lang -- test corpus/ledger` | settles every exemplar |
-| `mise run check:syntax-ledger` | regenerates both ledger files into a temporary directory and fails, printing the difference, while either differs from the committed file |
+| `mise run check:syntax-ledger` | regenerates both ledger files into a temporary directory through `ledger:syntax` and fails, printing the difference, while either differs from the committed file |
 | `mise run check:syntax-exemplars` | fails while a committed rule, an attribute or a refusal has no exemplar or owed row, a file names none, an exemplar does not show what it names, or a features exemplar states `owes` or `refuses` |
 | `mise run check:exemplars` | fails while an exemplar leaves a declaration unsettled |
 | `mise run ledger:build`, `mise run ledger:dump` | build `features.db` from `features.sql`, and dump it back |

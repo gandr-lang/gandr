@@ -1,6 +1,6 @@
 {
   "ledger": "syntax",
-  "generator": "gandr ledger syntax --write ledger",
+  "generator": "mise run ledger:syntax",
   "fingerprint": "0xf2770cdf17df4b0f",
   "molds": 2898,
   "rules": [

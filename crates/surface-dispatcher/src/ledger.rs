@@ -190,8 +190,9 @@ const MARKDOWN: &str = "syntax.md";
 const JSON: &str = "syntax.json";
 
 /// The invocation that regenerates the committed ledger, as its header names
-/// it.
-const REGENERATE: &str = "gandr ledger syntax --write ledger";
+/// it: the task that runs the worktree's own build, never a bare `gandr`, which
+/// runs the host's default toolchain (#4500).
+const REGENERATE: &str = "mise run ledger:syntax";
 
 /// Which ledger a `gandr ledger` invocation writes, verifies or reads, and
 /// where.

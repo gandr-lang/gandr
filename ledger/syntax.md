@@ -1,6 +1,6 @@
 # Syntax ledger
 
-Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
+Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
 - Grammar fingerprint: `0xf2770cdf17df4b0f`
 - Rules: 171 — 170 committed, 1 internal

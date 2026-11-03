@@ -786,29 +786,17 @@ echo 'readme pin OK: README.md is the owner-approved synopsis'
 
 # The syntax ledger is generated from the grammar, the attribute registry and
 # the committed rules' exemplars, which each rule's admission is read off
-# (`gandr-surface-dispatcher`'s `ledger` module): regenerated into a temporary
-# directory and compared with the committed `ledger/syntax.md` and
-# `ledger/syntax.json` byte for byte. A difference is printed and fails the
-# gate; `gandr ledger syntax --write ledger --exemplars corpus/ledger` rewrites
-# both files.
+# (`gandr-surface-dispatcher`'s `ledger` module): `ledger:syntax` regenerates
+# it into a temporary directory under each case's environment in
+# `.config/ledger/syntax-cases.json`, a toolchain selection no host carries
+# among them, and `.config/ledger/syntax-cases.bash` compares it with the
+# committed `ledger/syntax.md` and `ledger/syntax.json` byte for byte. A
+# difference is printed and fails the gate; `mise run ledger:syntax` rewrites
+# both files with the worktree's own build (#4500).
 ["check:syntax-ledger"]
-description = "The committed syntax ledger is the one the grammar generates"
-run = '''
-#!/usr/bin/env bash
-set -euo pipefail
-fresh=$(mktemp -d)
-trap 'rm -rf "$fresh"' EXIT
-.config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger syntax --write "$fresh" --exemplars corpus/ledger > /dev/null
-stale=0
-for file in syntax.md syntax.json; do
-  diff -u "ledger/$file" "$fresh/$file" || stale=1
-done
-if (( stale )); then
-  echo 'syntax ledger check FAILED: the committed ledger is not the grammar'"'"'s; run `gandr ledger syntax --write ledger --exemplars corpus/ledger`' >&2
-  exit 1
-fi
-echo 'syntax ledger check OK: the committed ledger is the grammar'"'"'s'
-'''
+description = "The committed syntax ledger is the one the worktree's grammar generates"
+tools.jq = "1.8.1"
+run = ".config/ledger/syntax-cases.bash"
 
 # One exemplar per committed rule of the syntax ledger and per attribute
 # (`corpus/ledger/{syntax,attributes}`), verified by the driver: the files
