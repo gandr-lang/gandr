@@ -1,19 +1,25 @@
-//! A package: the sources beside a `package.gandr`, and the `gandr.toml` the
-//! checker writes at its root from the package's own model.
+//! A package: a `package.gandr` at its root, the modules under the directory
+//! its model's `sources` names, and the `gandr.toml` the checker writes beside
+//! it from the package's own model.
 //!
 //! # A package is found by its package source
 //!
 //! [`Package::discover`] walks up from a path to the first directory that holds
-//! `package.gandr`, or holds it in a `src` directory of its own. The package is
-//! every source under the package source's directory. Its root, where the
-//! manifest lives, is that directory, or the directory above it when the
-//! package source sits in a directory named `src`. So a package laid out as
-//! `hello/src/package.gandr` is rooted at `hello`, and one laid out as
-//! `hello/package.gandr` at `hello` too. The search is Cargo's upward search
-//! for `Cargo.toml` and Go's for `go.mod`, keyed by the package source a gandr
-//! package always has rather than by the manifest, since the manifest is the
-//! checker's output. A layout that roots a package elsewhere reverses the
-//! convention, by a root the package's model states.
+//! `package.gandr`. That directory is the package's root, where the manifest
+//! lives. The package's modules are the sources under the directory its
+//! `Package` model's `sources` names from the root, `src` for a package laid
+//! out as `hello/package.gandr` and `hello/src/text/greet.gandr`. The search is
+//! Cargo's upward search for `Cargo.toml` and Go's for `go.mod`, keyed by the
+//! package source a gandr package always has rather than by the manifest,
+//! since the manifest is the checker's output.
+//!
+//! **Choice.** Discovery reads `sources` off the package source's tokens, as
+//! the string literal the model's `def sources` writes: an import resolves
+//! through it before any source is checked, so it cannot wait for the model
+//! to run. [`Manifest::of`] runs the field with the others, and refuses a
+//! package whose `sources` runs to another string than the one discovery
+//! read, or leaves the root. **Reversal.** A default for `sources` (#4915)
+//! reads `src` for a model that states none.
 //!
 //! # The manifest is written, never read
 //!
@@ -44,14 +50,15 @@
 //!
 //! | Role | Fields | Address |
 //! | --- | --- | --- |
-//! | inert | `name`, `version`, `authors`, `licence`, `documentation`, `endpoint`, `spelling` | left out: an edit leaves it |
+//! | inert | `name`, `version`, `authors`, `licence`, `documentation`, `endpoint`, `spelling`, `sources` | left out: an edit leaves it |
 //! | resolution | an import's coordinate, `import "path:…" as name ;` | written in the importer's source; each dependency's address enters through `gandr.lock`, never its alias or its coordinate |
 //! | syntax | an import's signature, `import <address> : S ;` | written in the importer's source, not in the model |
 //! | toolchain | `gandr`, `features`, `systems` | content: an edit moves it |
 //!
 //! The manifest's own bytes enter no address: `gandr.toml` is the checker's
 //! output, so identity enters through the items, the lock and the
-//! constraints, never through the file. A reference is an address and a
+//! constraints, never through the file. Where the sources sit enters none
+//! either: the address digests their content. A reference is an address and a
 //! coordinate kept apart: the address says what the package is, and a resolve
 //! that finds another is refused `LockDrift.<coordinate>`; the coordinate says
 //! where it is found and is never part of identity. The capabilities a package
@@ -67,6 +74,7 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use core::fmt::Write as _;
 use std::io;
+use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -80,6 +88,8 @@ use gandr_surface_lowering::Inertness;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::Visibility;
 use gandr_surface_lowering::decode_escapes;
+use gandr_surface_parser::Lexeme;
+use gandr_surface_parser::label;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -116,9 +126,9 @@ pub const PACKAGE: &str = "package.gandr";
 /// The file name of the manifest the checker writes at a package's root.
 pub const MANIFEST: &str = "gandr.toml";
 
-/// The directory name that roots a package one directory above its package
-/// source.
-const SOURCES: &str = "src";
+/// The `Package` model's field naming the directory a package's modules sit
+/// under, as a model writes it.
+const SOURCES: &str = "sources";
 
 /// The line that opens a manifest the checker wrote.
 const WRITTEN: &str = "# Written by `gandr check` from the package's `Package` model: edit the \
@@ -127,14 +137,22 @@ const WRITTEN: &str = "# Written by `gandr check` from the package's `Package` m
 /// The prefix of the header line that carries the digest of the body.
 const DIGEST: &str = "# blake3: ";
 
-/// A package: its package source and the root its manifest is written at.
+/// A package: its package source, the root its manifest is written at, and
+/// the directory its modules sit under.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Package
 {
-    /// The directory the manifest is written in.
+    /// The directory the manifest is written in, which holds the package
+    /// source.
     root: PathBuf,
     /// The package source, `package.gandr`.
     source: PathBuf,
+    /// The directory the modules sit under: the one `stated` names below the
+    /// root, else the root.
+    sources: PathBuf,
+    /// The string literal the model's `sources` writes, as discovery read it
+    /// off the package source's tokens; none when it writes none.
+    stated: Option<PathBuf>,
 }
 
 impl Package
@@ -146,26 +164,30 @@ impl Package
     /// - requires: nothing; a relative path is read against the working
     ///   directory.
     /// - ensures: the first directory from `from` up — `from` itself when it is
-    ///   a directory, else the directory holding it — that holds [`PACKAGE`],
-    ///   or holds it in a [`SOURCES`] directory, names the package; its package
-    ///   source is that file, and its root the directory above the package
-    ///   source's when that is named [`SOURCES`], else the package source's
-    ///   own. Each path is canonical. `Unpackaged` when no directory up to the
-    ///   filesystem's root holds one, or `from` cannot be canonicalized.
+    ///   a directory, else the directory holding it — that holds [`PACKAGE`]
+    ///   names the package: that directory is its root and that file its
+    ///   package source. Its sources are the directory the string literal its
+    ///   model's `sources` writes names below the root, read as
+    ///   [`stated_sources`] reads it, when that path stays inside the root; the
+    ///   root itself otherwise. Each path is canonical. `Unpackaged` when no
+    ///   directory up to the filesystem's root holds one, or `from` cannot be
+    ///   canonicalized.
     /// - provides: the root search every verb run without a path reads.
     /// - fails: an unpackaged path is the typed absence.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a leaf two directories below `src/package.gandr`, the
-    ///   package's root, its `src` directory and a flat `package.gandr` each
-    ///   find their package at its root, an inner package source is found
-    ///   before an outer one, and a directory with no package source above it
-    ///   is unpackaged.
+    /// - hypothesis: L3 — a leaf two directories below a package's `src`, the
+    ///   package's root and its `src` directory each find their package at its
+    ///   root with its sources at `src`, a package whose `sources` is `.` has
+    ///   its root for its sources, an inner package source is found before an
+    ///   outer one, and a directory with no package source above it is
+    ///   unpackaged.
     /// - witness: `tests::package::a_package_is_found_from_any_path_in_it_2687`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(ref package) => package.source.ends_with(PACKAGE)
-            && package.source.starts_with(&package.root),
+            && package.source.parent() == Some(package.root.as_path())
+            && package.sources.starts_with(&package.root),
         Maybe::Absent(package_root::Absent::Unpackaged) => true,
     })]
     #[inline]
@@ -186,23 +208,20 @@ impl Package
             }
         };
         for directory in start.ancestors() {
-            let source = [
-                directory.join(PACKAGE),
-                directory.join(SOURCES).join(PACKAGE),
-            ]
-            .into_iter()
-            .find(|source| source.is_file());
-            if let Some(source) = source {
-                let sources = source.parent().unwrap_or(directory);
-                let root = if sources.file_name().is_some_and(|name| name == SOURCES) {
-                    sources.parent().unwrap_or(sources)
-                }
-                else {
-                    sources
-                };
+            let source = directory.join(PACKAGE);
+            if source.is_file() {
+                let stated = std::fs::read_to_string(&source)
+                    .ok()
+                    .and_then(|text| stated_sources(SourceFragment::from(text.as_str())));
+                let sources = stated
+                    .as_deref()
+                    .and_then(|stated| inside(directory, stated))
+                    .unwrap_or_else(|| directory.to_path_buf());
                 return Maybe::Present(Self {
-                    root: root.to_path_buf(),
+                    root: directory.to_path_buf(),
                     source,
+                    sources,
+                    stated,
                 });
             }
         }
@@ -231,8 +250,10 @@ impl Package
         &self.source
     }
 
-    /// The directory every source of the package sits under: the package
-    /// source's.
+    /// The directory every module of the package sits under: the one its
+    /// model's `sources` names, or the root when that names none inside it.
+    /// A directory that does not stand holds no modules, as a checkout of a
+    /// package with none carries no empty directory.
     ///
     /// # Specification
     /// trivial.
@@ -240,7 +261,19 @@ impl Package
     #[must_use]
     pub fn sources(&self) -> &Path
     {
-        self.source.parent().unwrap_or(&self.root)
+        &self.sources
+    }
+
+    /// The directory the model's `sources` writes, its string literal as
+    /// discovery read it; none when the model writes none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn stated(&self) -> Option<&Path>
+    {
+        self.stated.as_deref()
     }
 
     /// The path of the package's manifest, [`MANIFEST`] at its root.
@@ -261,11 +294,103 @@ quenchant_shape::reason_enum! {
         /// No directory from the path up holds a package source.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// No `package.gandr` stands in, or in a `src` directory of, any
-            /// directory from the path up.
+            /// No `package.gandr` stands in any directory from the path up.
             Unpackaged,
         }
     }
+}
+
+/// The string literal `source`, a package source, writes for its `Package`
+/// model's `sources`, as a path: the string after `def sources =` directly in
+/// the braces of the module named `Package`, the module [`Manifest::of`]
+/// reads each field of. None when that module writes none, or writes an
+/// escape.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: read off the labeler's tokens, the layout and comments skipped,
+///   the first `def sources = "<text>"` at depth one of the braces after the
+///   first `module Package`; its `<text>` as written, empty for `""`; none when
+///   the string holds an escape or the form is another.
+/// - provides: the directory discovery reads before any source is checked.
+/// - fails: never; an unread field is none.
+/// - panics: none.
+/// - executable: none — the clause restates the scan.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `src`, `.` and the empty string read as written; a
+///   computed `sources`, an escaped one and one in a nested module read none.
+/// - witness: `tests::package::a_model_s_sources_is_the_literal_discovery_reads_4916`
+fn stated_sources(source: SourceFragment<'_>) -> Option<PathBuf>
+{
+    let tokens: Vec<(Lexeme, &str)> = label(source)
+        .iter()
+        .filter(|token| token.lexeme != Lexeme::Space)
+        .map(|token| (token.lexeme, <&str>::from(token.text(&source))))
+        .collect();
+    let spelled = |at: usize| tokens.get(at).map(|&(_, spelled)| spelled);
+    let named = (0 .. tokens.len()).find(|&at| {
+        spelled(at) == Some("module") && spelled(at.saturating_add(1)) == Some("Package")
+    })?;
+    let open = (named .. tokens.len()).find(|&at| spelled(at) == Some("{"))?;
+    let mut depth = 0_usize;
+    for at in open .. tokens.len() {
+        match spelled(at) {
+            Some("{") => depth = depth.saturating_add(1),
+            Some("}") => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return None;
+                }
+            },
+            Some("def")
+                if depth == 1
+                    && spelled(at.saturating_add(1)) == Some(SOURCES)
+                    && spelled(at.saturating_add(2)) == Some("=") =>
+            {
+                let quoted = at.saturating_add(3);
+                return match (
+                    tokens.get(quoted),
+                    tokens.get(quoted.saturating_add(1)),
+                    tokens.get(quoted.saturating_add(2)),
+                ) {
+                    (Some(&(Lexeme::Quote, _)), Some(&(Lexeme::Quote, _)), _) => {
+                        Some(PathBuf::new())
+                    },
+                    (
+                        Some(&(Lexeme::Quote, _)),
+                        Some(&(Lexeme::StringFragment, written)),
+                        Some(&(Lexeme::Quote, _)),
+                    ) => Some(PathBuf::from(written)),
+                    _ => None,
+                };
+            },
+            _ => {},
+        }
+    }
+    None
+}
+
+/// The directory `stated`, a relative path, names below `root`; none when it
+/// is empty or leaves `root`: a parent, a root or a prefix among its
+/// components.
+///
+/// # Specification
+/// trivial.
+fn inside(
+    root: &Path,
+    stated: &Path,
+) -> Option<PathBuf>
+{
+    let mut below = root.to_path_buf();
+    for component in stated.components() {
+        match component {
+            Component::Normal(name) => below.push(name),
+            Component::CurDir => {},
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    (!stated.as_os_str().is_empty()).then_some(below)
 }
 
 /// The paths a verb walks and the packages they reach, each path inside a
@@ -275,18 +400,20 @@ quenchant_shape::reason_enum! {
 /// - requires: `working` is the process's working directory, against which a
 ///   relative path given is read, or every path given is absolute.
 /// - ensures: with no path, the package [`Package::discover`] finds from
-///   `working`, its [`Package::sources`] the one path walked; when it finds
+///   `working`: its package source when it lies outside its
+///   [`Package::sources`], then its sources when they stand; when it finds
 ///   none, the workspace [`Workspace::discover`] finds from `working`: its
-///   [`Workspace::source`], then each member's sources in the order
-///   [`Workspace::members`] reads them; and [`Unpathed::Nowhere`] naming
+///   [`Workspace::source`], then each member as a package is listed, in the
+///   order [`Workspace::members`] reads them; and [`Unpathed::Nowhere`] naming
 ///   `working` canonically when neither stands. Otherwise each path in order:
-///   one in a package is replaced by the package's sources, and also kept when
-///   it lies outside them, under the package's root; a workspace's directory,
-///   in no package, is replaced by the workspace's source and its members'
-///   sources; any other path in no package is kept as given. A package's
-///   sources are listed once, at the first path reaching it, and each package
-///   once, in that order. Paths below `working` are listed relative to it, `.`
-///   for `working` itself, as a path a caller gives would be.
+///   one in a package is replaced by the package as it is listed, and also kept
+///   when it lies outside the sources and is not the package source, under the
+///   package's root; a workspace's directory, in no package, is replaced by the
+///   workspace's source and its members; any other path in no package is kept
+///   as given. A package is listed once, at the first path reaching it, and
+///   each package once, in that order. Paths below `working` are listed
+///   relative to it, `.` for `working` itself, as a path a caller gives would
+///   be.
 /// - provides: the paths `check`, `test` and `fmt` walk, and the packages whose
 ///   locks and manifests `check` reconciles.
 /// - fails: [`Unpathed::Nowhere`] when no path is given and `working` is in no
@@ -309,7 +436,8 @@ quenchant_shape::reason_enum! {
     captures: [given = paths.len()],
     ensures: |ret| match ret {
         Ok((ref walked, ref packages)) => packages.iter().all(|package|
-                walked.iter().any(|path| working.join(path).canonicalize()
+                !package.sources().is_dir()
+                || walked.iter().any(|path| working.join(path).canonicalize()
                     .is_ok_and(|canonical| canonical == package.sources()))),
         Err(Unpathed::Nowhere { .. }) => given == 0,
         Err(Unpathed::Unmembered { .. }) => true,
@@ -342,7 +470,12 @@ pub fn packaged(
     let mut seen: BTreeSet<PathBuf> = BTreeSet::new();
     let mut reach = |package: Package, walked: &mut Vec<PathBuf>| {
         if seen.insert(package.source.clone()) {
-            walked.push(shown(package.sources()));
+            if !package.source.starts_with(&package.sources) {
+                walked.push(shown(&package.source));
+            }
+            if package.sources.is_dir() {
+                walked.push(shown(package.sources()));
+            }
             packages.push(package);
         }
     };
@@ -378,9 +511,9 @@ pub fn packaged(
             }
             continue;
         };
-        let inside = path
-            .canonicalize()
-            .is_ok_and(|canonical| canonical.starts_with(package.sources()));
+        let inside = path.canonicalize().is_ok_and(|canonical| {
+            canonical.starts_with(package.sources()) || canonical == package.source
+        });
         reach(package, &mut walked);
         if !inside {
             walked.push(path);
@@ -423,8 +556,8 @@ impl core::fmt::Display for Unpathed
         match *self {
             Self::Nowhere { ref working } => write!(
                 f,
-                "no path given, and no `{PACKAGE}` stands in `{}` or a directory above it, or in \
-                 a `{SOURCES}` directory of one, and no `{WORKSPACE}` above it",
+                "no path given, and no `{PACKAGE}` stands in `{}` or a directory above it, and \
+                 no `{WORKSPACE}` above it",
                 working.display()
             ),
             Self::Unmembered {
@@ -482,11 +615,14 @@ impl Manifest
     ///   [`Toolchain::read`] of `gandr`, `features` and `systems`, and a
     ///   `gandr` it cannot read is [`Unmanifested::Unconstrained`]. `spelling`
     ///   is empty or a name [`gandr_surface_grammar::Spelling`] reads, and any
-    ///   other is [`Unmanifested::Unspelled`]. The modules are [`modules`] of
-    ///   `package`'s sources, in order.
+    ///   other is [`Unmanifested::Unspelled`]. `sources` is the literal
+    ///   [`Package::stated`] holds, else [`Unmanifested::Unstated`], and names
+    ///   a directory inside the root, else [`Unmanifested::Outside`]. The
+    ///   modules are [`modules`] of `package`'s sources, in order.
     /// - provides: the manifest `gandr check` writes.
     /// - fails: a field undeclared, or run to no string; a `gandr` stating no
-    ///   constraint; a `spelling` naming none.
+    ///   constraint; a `spelling` naming none; a `sources` discovery did not
+    ///   read, or naming a directory outside the root.
     /// - panics: none.
     /// - executable: none — each field is run on the program's machine, which a
     ///   predicate could only check by running it again; the witness observes
@@ -494,13 +630,15 @@ impl Manifest
     ///
     /// # Errors
     /// The first field that is undeclared, or does not run to a string; a
-    /// `gandr` stating no constraint; a `spelling` naming none.
+    /// `gandr` stating no constraint; a `spelling` naming none; a `sources`
+    /// discovery did not read, or outside the root.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a model holding every field, one of them escaped,
     ///   reads each; one missing `version` and one whose name is an integer are
     ///   refused at that field; a `gandr` with no `>=` and a `spelling` naming
-    ///   no spelling are refused.
+    ///   no spelling are refused; a computed `sources` and one leaving the root
+    ///   are refused.
     /// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
     /// - witness: `tests::package::a_manifest_renders_the_toolchain_its_model_asks_for_3135`
     /// - witness: `tests::package::a_manifest_renders_the_presentation_its_model_names_3135`
@@ -525,6 +663,13 @@ impl Manifest
         let spelling = strung(program, own, Field::Spelling)?;
         if !spelling.is_empty() && spelling.parse::<gandr_surface_grammar::Spelling>().is_err() {
             return Err(Unmanifested::Unspelled { came: spelling });
+        }
+        let sources = strung(program, own, Field::Sources)?;
+        if package.stated().map(Path::as_os_str) != Some(std::ffi::OsStr::new(&sources)) {
+            return Err(Unmanifested::Unstated { came: sources });
+        }
+        if inside(package.root(), Path::new(&sources)).is_none() {
+            return Err(Unmanifested::Outside { came: sources });
         }
         Ok(Self {
             name,
@@ -997,9 +1142,9 @@ impl core::fmt::Display for Unaddressed
 /// # Specification
 /// - requires: `sources` is a package's sources directory.
 /// - ensures: one entry per `.gandr` file under `sources`, its directories and
-///   its file stem joined by `.`, the root module `package.gandr` beside
-///   `sources` left out; a directory holding a `package.gandr` of its own is
-///   another package's, and nothing under it is named. A directory that does
+///   its file stem joined by `.`, the root module `package.gandr` left out when
+///   the sources are the root; a directory holding a `package.gandr` of its own
+///   is another package's, and nothing under it is named. A directory that does
 ///   not list names nothing.
 /// - provides: the membership the manifest records, a module being a file that
 ///   nothing declares, and the sources a package's address reads after its
@@ -1099,6 +1244,8 @@ pub enum Field
     Systems,
     /// `Package.spelling`.
     Spelling,
+    /// `Package.sources`.
+    Sources,
 }
 
 impl Field
@@ -1120,6 +1267,7 @@ impl Field
             Self::Features => "Package.features",
             Self::Systems => "Package.systems",
             Self::Spelling => "Package.spelling",
+            Self::Sources => "Package.sources",
         })
     }
 }
@@ -1147,6 +1295,22 @@ pub enum Unmanifested
     },
     /// The package source's `Package.spelling` names no spelling.
     Unspelled
+    {
+        /// What it runs to.
+        came: String,
+    },
+    /// The package source's `Package.sources` runs to another string than the
+    /// literal discovery read off its tokens, or the model writes it as no
+    /// string literal: discovery resolves imports through it before any source
+    /// is checked.
+    Unstated
+    {
+        /// What it runs to.
+        came: String,
+    },
+    /// The package source's `Package.sources` names no directory inside the
+    /// package's root.
+    Outside
     {
         /// What it runs to.
         came: String,
@@ -1186,6 +1350,19 @@ impl core::fmt::Display for Unmanifested
                 "`{}` is `{came}`, which names no spelling, so no `{MANIFEST}` is written: \
                  write `unicode` or `ascii`, or nothing for the reader's own",
                 Field::Spelling.path()
+            ),
+            Self::Unstated { ref came } => write!(
+                f,
+                "`{}` runs to `{came}`, which no string literal states, so no `{MANIFEST}` is \
+                 written: write it as `def {SOURCES} = \"<directory>\";`",
+                Field::Sources.path()
+            ),
+            Self::Outside { ref came } => write!(
+                f,
+                "`{}` is `{came}`, which names no directory inside the package's root, so no \
+                 `{MANIFEST}` is written: write a path below the root, `src`, or `.` for the \
+                 root",
+                Field::Sources.path()
             ),
         }
     }

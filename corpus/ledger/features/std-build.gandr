@@ -28,4 +28,6 @@ pub module Package : Model(Gandr.Package) where {
   def systems = "";
   /// The spelling the package asks for: the reader's own.
   def spelling = "";
+  /// The directory the modules sit under, below the package's root.
+  def sources = "src";
 }

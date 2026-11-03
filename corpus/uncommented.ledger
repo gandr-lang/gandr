@@ -2250,10 +2250,9 @@ model/programs/env-guard-exit.gandr:<file> unshaped:HeadParagraphs
 model/programs/env-guard-exit.gandr:<file> unshaped:ReferenceOutsideReferences
 model/programs/env-guard-exit.gandr:<file> unshaped:WhatLength
 model/programs/env-guard-exit.gandr:comment:298c937263d948a8 unshaped:ItemShape
-model/projects/hello/src/package.gandr:<file> unshaped:HeadParagraphs
-model/projects/hello/src/package.gandr:<file> unshaped:ReferenceOutsideReferences
-model/projects/hello/src/package.gandr:<file> unshaped:Semicolon
-model/projects/hello/src/package.gandr:comment:71aedd0d3d069c63 unshaped:ItemShape
+model/projects/hello/package.gandr:<file> unshaped:HeadParagraphs
+model/projects/hello/package.gandr:<file> unshaped:ReferenceOutsideReferences
+model/projects/hello/package.gandr:comment:71aedd0d3d069c63 unshaped:ItemShape
 model/projects/hello/src/text/greet.gandr:<file> unshaped:HeadParagraphs
 model/projects/hello/src/text/greet.gandr:<file> unshaped:ReferenceOutsideReferences
 model/projects/hello/src/text/greet.gandr:<file> unshaped:Semicolon

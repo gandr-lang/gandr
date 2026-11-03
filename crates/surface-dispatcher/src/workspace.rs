@@ -780,7 +780,7 @@ impl core::fmt::Display for Unmembered
             Self::Unpackaged { ref member } => write!(
                 f,
                 "the member `{member}` of `{WORKSPACE}` roots no package: no `package.gandr` stands \
-                 in it or in its `src` directory"
+                 in it"
             ),
         }
     }

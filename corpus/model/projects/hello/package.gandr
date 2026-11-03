@@ -1,10 +1,10 @@
-// #2687: a package is the sources beside its `src/package.gandr`, rooted at
-// the directory above `src`. That file declares the package's model, and `gandr
-// check` writes `gandr.toml` at the root from it; its version is the one the
-// workspace above it states.
+// #2687, #4916: a package is its `package.gandr` and its `sources`.
+// That file declares the package's model, and `gandr check` writes
+// `gandr.toml` beside it. Its modules sit under `src`, and its version is the
+// one the workspace above it states.
 import text.greet (greeting);
 // The workspace above the package, whose model states its version.
-import "../../workspace.gandr";
+import "../workspace.gandr";
 // The manifest theories.
 import std.build (Gandr);
 // The tone, a module three names deep.
@@ -33,6 +33,8 @@ pub module Package : Model(Gandr.Package) where {
   def systems = Workspace.systems;
   /// The spelling the package asks for: the reader's own.
   def spelling = "";
+  /// The directory the modules sit under.
+  def sources = "src";
 }
 
 /// The greeting, read from the module `text.greet` by its path, at the type

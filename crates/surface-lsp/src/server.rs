@@ -15747,9 +15747,9 @@ mod tests
     fn a_project_s_spelling_outranks_the_user_s_and_yields_to_the_editor_s_3135()
     {
         let root = std::env::temp_dir().join(format!("gandr-lsp-project-{}", std::process::id()));
-        std::fs::create_dir_all(root.join("src")).expect("the scratch package is created");
+        std::fs::create_dir_all(&root).expect("the scratch package is created");
         let text = "def r : Integer ≃ String ;\ndef r = 1 ;\n";
-        std::fs::write(root.join("src/package.gandr"), text).expect("the library is written");
+        std::fs::write(root.join("package.gandr"), text).expect("the library is written");
         std::fs::write(
             root.join("gandr.toml"),
             "[presentation]\nspelling = \"ascii\"\n",
@@ -15761,7 +15761,7 @@ mod tests
             ..Connected::default()
         };
         let folder = format!("file://{}", root.display());
-        let library = format!("{folder}/src/package.gandr");
+        let library = format!("{folder}/package.gandr");
         let _answered = send(
             &mut server,
             Json(&format!(
