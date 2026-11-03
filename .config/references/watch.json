@@ -1,0 +1,1240 @@
+[
+  {
+    "name": "each seed reads its new works: a follow-up shares an author and the topic, a citing work names what it cites, a held author's work names the author, and a venue's work is kept on a term (#2544)",
+    "input": {
+      "cited_works": [
+        {
+          "id": "https://openalex.org/W1",
+          "doi": null,
+          "display_name": "Elaborating dependent (co)pattern matching",
+          "publication_date": "2020-01-01",
+          "authorships": [
+            {
+              "author": {
+                "id": "https://openalex.org/A10",
+                "display_name": "Jesper Cockx"
+              }
+            },
+            {
+              "author": {
+                "id": "https://openalex.org/A11",
+                "display_name": "Andreas Abel"
+              }
+            }
+          ],
+          "primary_location": {
+            "source": {
+              "id": "https://openalex.org/S1",
+              "display_name": "Journal of Functional Programming"
+            }
+          },
+          "primary_topic": {
+            "id": "https://openalex.org/T7"
+          }
+        }
+      ],
+      "held": ["W2"],
+      "held_authors": ["A20"],
+      "terms": [
+        {
+          "name": "rewriting",
+          "match": "\\brewrit\\w*"
+        }
+      ],
+      "seeds": {
+        "cited": [
+          {
+            "id": "https://openalex.org/W100",
+            "doi": "https://doi.org/10.1145/9999",
+            "display_name": "Copattern matching, revisited",
+            "publication_date": "2026-10-30",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              },
+              {
+                "author": {
+                  "id": "https://openalex.org/A12",
+                  "display_name": "New Coauthor"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1", "https://openalex.org/W50"]
+          },
+          {
+            "id": "https://openalex.org/W101",
+            "doi": null,
+            "display_name": "A study citing copatterns",
+            "publication_date": "2026-10-29",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A30",
+                  "display_name": "Somebody Else"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1"]
+          }
+        ],
+        "authors": [
+          {
+            "id": "https://openalex.org/W102",
+            "doi": null,
+            "display_name": "Held author writes",
+            "publication_date": "2026-10-28",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T3"
+            }
+          },
+          {
+            "id": "https://openalex.org/W100",
+            "doi": "https://doi.org/10.1145/9999",
+            "display_name": "Copattern matching, revisited",
+            "publication_date": "2026-10-30",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              },
+              {
+                "author": {
+                  "id": "https://openalex.org/A12",
+                  "display_name": "New Coauthor"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1", "https://openalex.org/W50"]
+          }
+        ],
+        "venues": [
+          {
+            "id": "https://openalex.org/W103",
+            "doi": null,
+            "display_name": "Strategic rewriting for dependent types",
+            "publication_date": "2026-10-27",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A40",
+                  "display_name": "V One"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "LICS"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W104",
+            "doi": null,
+            "display_name": "Unrelated databases",
+            "publication_date": "2026-10-26",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A41",
+                  "display_name": "V Two"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "LICS"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W102",
+            "doi": null,
+            "display_name": "Held author writes",
+            "publication_date": "2026-10-28",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T3"
+            }
+          }
+        ]
+      },
+      "reported": [],
+      "dismissed": [],
+      "cap": 200,
+      "per_author": 3
+    },
+    "output": {
+      "followups": [
+        {
+          "id": "W100",
+          "title": "Copattern matching, revisited",
+          "date": "2026-10-30",
+          "venue": "Journal of Functional Programming",
+          "doi": "10.1145/9999",
+          "authors": "Jesper Cockx, New Coauthor",
+          "because": "follows Elaborating dependent (co)pattern matching"
+        }
+      ],
+      "cited": [
+        {
+          "id": "W101",
+          "title": "A study citing copatterns",
+          "date": "2026-10-29",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "authors": "Somebody Else",
+          "because": "cites Elaborating dependent (co)pattern matching"
+        }
+      ],
+      "authors": [
+        {
+          "id": "W102",
+          "title": "Held author writes",
+          "date": "2026-10-28",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "authors": "Held Person",
+          "because": "by Held Person"
+        }
+      ],
+      "venues": [
+        {
+          "id": "W103",
+          "title": "Strategic rewriting for dependent types",
+          "date": "2026-10-27",
+          "venue": "LICS",
+          "doi": null,
+          "authors": "V One",
+          "because": "LICS, on rewriting"
+        }
+      ],
+      "capped": null,
+      "reported": ["W100", "W101", "W102", "W103"]
+    }
+  },
+  {
+    "name": "a second run a week on, its state holding every work the first reported, reports no new row (#2544)",
+    "input": {
+      "cited_works": [
+        {
+          "id": "https://openalex.org/W1",
+          "doi": null,
+          "display_name": "Elaborating dependent (co)pattern matching",
+          "publication_date": "2020-01-01",
+          "authorships": [
+            {
+              "author": {
+                "id": "https://openalex.org/A10",
+                "display_name": "Jesper Cockx"
+              }
+            },
+            {
+              "author": {
+                "id": "https://openalex.org/A11",
+                "display_name": "Andreas Abel"
+              }
+            }
+          ],
+          "primary_location": {
+            "source": {
+              "id": "https://openalex.org/S1",
+              "display_name": "Journal of Functional Programming"
+            }
+          },
+          "primary_topic": {
+            "id": "https://openalex.org/T7"
+          }
+        }
+      ],
+      "held": ["W2"],
+      "held_authors": ["A20"],
+      "terms": [
+        {
+          "name": "rewriting",
+          "match": "\\brewrit\\w*"
+        }
+      ],
+      "seeds": {
+        "cited": [
+          {
+            "id": "https://openalex.org/W100",
+            "doi": "https://doi.org/10.1145/9999",
+            "display_name": "Copattern matching, revisited",
+            "publication_date": "2026-10-30",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              },
+              {
+                "author": {
+                  "id": "https://openalex.org/A12",
+                  "display_name": "New Coauthor"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1", "https://openalex.org/W50"]
+          },
+          {
+            "id": "https://openalex.org/W101",
+            "doi": null,
+            "display_name": "A study citing copatterns",
+            "publication_date": "2026-10-29",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A30",
+                  "display_name": "Somebody Else"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1"]
+          }
+        ],
+        "authors": [
+          {
+            "id": "https://openalex.org/W102",
+            "doi": null,
+            "display_name": "Held author writes",
+            "publication_date": "2026-10-28",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T3"
+            }
+          },
+          {
+            "id": "https://openalex.org/W100",
+            "doi": "https://doi.org/10.1145/9999",
+            "display_name": "Copattern matching, revisited",
+            "publication_date": "2026-10-30",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              },
+              {
+                "author": {
+                  "id": "https://openalex.org/A12",
+                  "display_name": "New Coauthor"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1", "https://openalex.org/W50"]
+          }
+        ],
+        "venues": [
+          {
+            "id": "https://openalex.org/W103",
+            "doi": null,
+            "display_name": "Strategic rewriting for dependent types",
+            "publication_date": "2026-10-27",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A40",
+                  "display_name": "V One"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "LICS"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W104",
+            "doi": null,
+            "display_name": "Unrelated databases",
+            "publication_date": "2026-10-26",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A41",
+                  "display_name": "V Two"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "LICS"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W102",
+            "doi": null,
+            "display_name": "Held author writes",
+            "publication_date": "2026-10-28",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T3"
+            }
+          }
+        ]
+      },
+      "reported": ["W100", "W101", "W102", "W103"],
+      "dismissed": [],
+      "cap": 200,
+      "per_author": 3
+    },
+    "output": {
+      "followups": [],
+      "cited": [],
+      "authors": [],
+      "venues": [],
+      "capped": null,
+      "reported": []
+    }
+  },
+  {
+    "name": "a work the vault ledger's paper table holds, by its OpenAlex id or by its DOI, never reappears (#2544)",
+    "input": {
+      "cited_works": [
+        {
+          "id": "https://openalex.org/W1",
+          "doi": null,
+          "display_name": "Elaborating dependent (co)pattern matching",
+          "publication_date": "2020-01-01",
+          "authorships": [
+            {
+              "author": {
+                "id": "https://openalex.org/A10",
+                "display_name": "Jesper Cockx"
+              }
+            },
+            {
+              "author": {
+                "id": "https://openalex.org/A11",
+                "display_name": "Andreas Abel"
+              }
+            }
+          ],
+          "primary_location": {
+            "source": {
+              "id": "https://openalex.org/S1",
+              "display_name": "Journal of Functional Programming"
+            }
+          },
+          "primary_topic": {
+            "id": "https://openalex.org/T7"
+          }
+        }
+      ],
+      "held": ["W2"],
+      "held_authors": ["A20"],
+      "terms": [
+        {
+          "name": "rewriting",
+          "match": "\\brewrit\\w*"
+        }
+      ],
+      "seeds": {
+        "cited": [
+          {
+            "id": "https://openalex.org/W100",
+            "doi": "https://doi.org/10.1145/9999",
+            "display_name": "Copattern matching, revisited",
+            "publication_date": "2026-10-30",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              },
+              {
+                "author": {
+                  "id": "https://openalex.org/A12",
+                  "display_name": "New Coauthor"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1", "https://openalex.org/W50"]
+          },
+          {
+            "id": "https://openalex.org/W101",
+            "doi": null,
+            "display_name": "A study citing copatterns",
+            "publication_date": "2026-10-29",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A30",
+                  "display_name": "Somebody Else"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1"]
+          }
+        ],
+        "authors": [
+          {
+            "id": "https://openalex.org/W102",
+            "doi": null,
+            "display_name": "Held author writes",
+            "publication_date": "2026-10-28",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T3"
+            }
+          },
+          {
+            "id": "https://openalex.org/W100",
+            "doi": "https://doi.org/10.1145/9999",
+            "display_name": "Copattern matching, revisited",
+            "publication_date": "2026-10-30",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              },
+              {
+                "author": {
+                  "id": "https://openalex.org/A12",
+                  "display_name": "New Coauthor"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1", "https://openalex.org/W50"]
+          }
+        ],
+        "venues": [
+          {
+            "id": "https://openalex.org/W103",
+            "doi": null,
+            "display_name": "Strategic rewriting for dependent types",
+            "publication_date": "2026-10-27",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A40",
+                  "display_name": "V One"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "LICS"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W104",
+            "doi": null,
+            "display_name": "Unrelated databases",
+            "publication_date": "2026-10-26",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A41",
+                  "display_name": "V Two"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "LICS"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W102",
+            "doi": null,
+            "display_name": "Held author writes",
+            "publication_date": "2026-10-28",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T3"
+            }
+          }
+        ]
+      },
+      "reported": [],
+      "dismissed": [
+        {
+          "openalex": "W101",
+          "doi": null
+        },
+        {
+          "openalex": "W999",
+          "doi": "10.1145/9999"
+        }
+      ],
+      "cap": 200,
+      "per_author": 3
+    },
+    "output": {
+      "followups": [],
+      "cited": [],
+      "authors": [
+        {
+          "id": "W102",
+          "title": "Held author writes",
+          "date": "2026-10-28",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "authors": "Held Person",
+          "because": "by Held Person"
+        }
+      ],
+      "venues": [
+        {
+          "id": "W103",
+          "title": "Strategic rewriting for dependent types",
+          "date": "2026-10-27",
+          "venue": "LICS",
+          "doi": null,
+          "authors": "V One",
+          "because": "LICS, on rewriting"
+        }
+      ],
+      "capped": null,
+      "reported": ["W102", "W103"]
+    }
+  },
+  {
+    "name": "a library work and a cited work are no new works, whatever seed returns them (#2544)",
+    "input": {
+      "cited_works": [
+        {
+          "id": "https://openalex.org/W1",
+          "doi": null,
+          "display_name": "Elaborating dependent (co)pattern matching",
+          "publication_date": "2020-01-01",
+          "authorships": [
+            {
+              "author": {
+                "id": "https://openalex.org/A10",
+                "display_name": "Jesper Cockx"
+              }
+            },
+            {
+              "author": {
+                "id": "https://openalex.org/A11",
+                "display_name": "Andreas Abel"
+              }
+            }
+          ],
+          "primary_location": {
+            "source": {
+              "id": "https://openalex.org/S1",
+              "display_name": "Journal of Functional Programming"
+            }
+          },
+          "primary_topic": {
+            "id": "https://openalex.org/T7"
+          }
+        }
+      ],
+      "held": ["W2"],
+      "held_authors": ["A20"],
+      "terms": [
+        {
+          "name": "rewriting",
+          "match": "\\brewrit\\w*"
+        }
+      ],
+      "seeds": {
+        "cited": [],
+        "authors": [
+          {
+            "id": "https://openalex.org/W2",
+            "doi": null,
+            "display_name": "A held paper",
+            "publication_date": "2026-10-25",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W1",
+            "doi": null,
+            "display_name": "Elaborating dependent (co)pattern matching",
+            "publication_date": "2020-01-01",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          }
+        ],
+        "venues": []
+      },
+      "reported": [],
+      "dismissed": [],
+      "cap": 200,
+      "per_author": 3
+    },
+    "output": {
+      "followups": [],
+      "cited": [],
+      "authors": [],
+      "venues": [],
+      "capped": null,
+      "reported": []
+    }
+  },
+  {
+    "name": "past its cap the held authors' seed keeps each author's newest works and states both counts (#2544)",
+    "input": {
+      "cited_works": [
+        {
+          "id": "https://openalex.org/W1",
+          "doi": null,
+          "display_name": "Elaborating dependent (co)pattern matching",
+          "publication_date": "2020-01-01",
+          "authorships": [
+            {
+              "author": {
+                "id": "https://openalex.org/A10",
+                "display_name": "Jesper Cockx"
+              }
+            },
+            {
+              "author": {
+                "id": "https://openalex.org/A11",
+                "display_name": "Andreas Abel"
+              }
+            }
+          ],
+          "primary_location": {
+            "source": {
+              "id": "https://openalex.org/S1",
+              "display_name": "Journal of Functional Programming"
+            }
+          },
+          "primary_topic": {
+            "id": "https://openalex.org/T7"
+          }
+        }
+      ],
+      "held": ["W2"],
+      "held_authors": ["A20", "A21"],
+      "terms": [
+        {
+          "name": "rewriting",
+          "match": "\\brewrit\\w*"
+        }
+      ],
+      "seeds": {
+        "cited": [],
+        "authors": [
+          {
+            "id": "https://openalex.org/W200",
+            "doi": null,
+            "display_name": "Paper 0",
+            "publication_date": "2026-10-10",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W201",
+            "doi": null,
+            "display_name": "Paper 1",
+            "publication_date": "2026-10-11",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W202",
+            "doi": null,
+            "display_name": "Paper 2",
+            "publication_date": "2026-10-12",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W203",
+            "doi": null,
+            "display_name": "Paper 3",
+            "publication_date": "2026-10-13",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A20",
+                  "display_name": "Held Person"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W204",
+            "doi": null,
+            "display_name": "Paper 4",
+            "publication_date": "2026-10-14",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A21",
+                  "display_name": "Other Held"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          },
+          {
+            "id": "https://openalex.org/W205",
+            "doi": null,
+            "display_name": "Paper 5",
+            "publication_date": "2026-10-15",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A21",
+                  "display_name": "Other Held"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": null
+          }
+        ],
+        "venues": []
+      },
+      "reported": [],
+      "dismissed": [],
+      "cap": 3,
+      "per_author": 2
+    },
+    "output": {
+      "followups": [],
+      "cited": [],
+      "authors": [
+        {
+          "id": "W205",
+          "title": "Paper 5",
+          "date": "2026-10-15",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "authors": "Other Held",
+          "because": "by Other Held"
+        },
+        {
+          "id": "W204",
+          "title": "Paper 4",
+          "date": "2026-10-14",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "authors": "Other Held",
+          "because": "by Other Held"
+        },
+        {
+          "id": "W203",
+          "title": "Paper 3",
+          "date": "2026-10-13",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "authors": "Held Person",
+          "because": "by Held Person"
+        },
+        {
+          "id": "W202",
+          "title": "Paper 2",
+          "date": "2026-10-12",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "authors": "Held Person",
+          "because": "by Held Person"
+        }
+      ],
+      "venues": [],
+      "capped": {
+        "before": 6,
+        "after": 4
+      },
+      "reported": ["W202", "W203", "W204", "W205"]
+    }
+  },
+  {
+    "name": "a citing work that shares no author, or no topic, with the work it cites is no follow-up (#2544)",
+    "input": {
+      "cited_works": [
+        {
+          "id": "https://openalex.org/W1",
+          "doi": null,
+          "display_name": "Elaborating dependent (co)pattern matching",
+          "publication_date": "2020-01-01",
+          "authorships": [
+            {
+              "author": {
+                "id": "https://openalex.org/A10",
+                "display_name": "Jesper Cockx"
+              }
+            },
+            {
+              "author": {
+                "id": "https://openalex.org/A11",
+                "display_name": "Andreas Abel"
+              }
+            }
+          ],
+          "primary_location": {
+            "source": {
+              "id": "https://openalex.org/S1",
+              "display_name": "Journal of Functional Programming"
+            }
+          },
+          "primary_topic": {
+            "id": "https://openalex.org/T7"
+          }
+        }
+      ],
+      "held": ["W2"],
+      "held_authors": ["A20"],
+      "terms": [
+        {
+          "name": "rewriting",
+          "match": "\\brewrit\\w*"
+        }
+      ],
+      "seeds": {
+        "cited": [
+          {
+            "id": "https://openalex.org/W300",
+            "doi": null,
+            "display_name": "Same authors, other topic",
+            "publication_date": "2026-10-20",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A10",
+                  "display_name": "Jesper Cockx"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T8"
+            },
+            "referenced_works": ["https://openalex.org/W1"]
+          },
+          {
+            "id": "https://openalex.org/W301",
+            "doi": null,
+            "display_name": "Same topic, other authors",
+            "publication_date": "2026-10-21",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A31",
+                  "display_name": "X"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "id": "https://openalex.org/S1",
+                "display_name": "Journal of Functional Programming"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T7"
+            },
+            "referenced_works": ["https://openalex.org/W1"]
+          }
+        ],
+        "authors": [],
+        "venues": []
+      },
+      "reported": [],
+      "dismissed": [],
+      "cap": 200,
+      "per_author": 3
+    },
+    "output": {
+      "followups": [],
+      "cited": [
+        {
+          "id": "W301",
+          "title": "Same topic, other authors",
+          "date": "2026-10-21",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "authors": "X",
+          "because": "cites Elaborating dependent (co)pattern matching"
+        },
+        {
+          "id": "W300",
+          "title": "Same authors, other topic",
+          "date": "2026-10-20",
+          "venue": "Journal of Functional Programming",
+          "doi": null,
+          "authors": "Jesper Cockx",
+          "because": "cites Elaborating dependent (co)pattern matching"
+        }
+      ],
+      "authors": [],
+      "venues": [],
+      "capped": null,
+      "reported": ["W300", "W301"]
+    }
+  }
+]

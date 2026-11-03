@@ -1269,8 +1269,11 @@ echo "purposes check OK: $(sqlite3 "$db" 'SELECT count(*) FROM purpose;') rows, 
 # `cites.awk` prints for them, each case in `.config/references/window.json`
 # the citations, the years and the policy, and the window's findings, and
 # each case in `.config/references/fidelity.json` the citations, the corpus
-# sources and the `fidelity` rows, and the refresh's findings. Every finding
-# is printed before the gate fails.
+# sources and the `fidelity` rows, and the refresh's findings. Each case in
+# `.config/references/watch.json` holds the paper watch's recorded OpenAlex
+# works, its state and the vault ledger's `paper` rows, and the delta
+# `watch.jq` reads from them (#2544). Every finding is printed before the
+# gate fails.
 ["check:references"]
 description = "The references ledger is the crates' citations, each key line keyed and given its role, each README listing its crate's keys, every work older than the citation window allowed where it is cited, and every site the citation refresh records held to its record"
 tools.jq = "1.8.1"
@@ -1330,6 +1333,13 @@ while IFS= read -r case; do
     failed=1
   fi
 done < <(jq -c '.[]' .config/references/fidelity.json)
+while IFS= read -r case; do
+  got=$(jq -c -L .config/references 'include "watch"; .input | delta' <<< "$case")
+  if [[ "$got" != "$(jq -c '.output' <<< "$case")" ]]; then
+    printf 'references watch case FAILED: %s\n  gave:\n%s\n' "$(jq -r .name <<< "$case")" "$got" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/references/watch.json)
 db=$fresh/references.db
 references_load "$db"
 references_fresh "$db"
