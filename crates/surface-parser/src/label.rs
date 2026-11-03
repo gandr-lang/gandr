@@ -819,10 +819,14 @@ impl Token
 /// is the statement `n = n + 1 ;`. Each extends a live operator tile with
 /// `=`, and no slot takes `=` after an operator, so nothing written
 /// re-munches.
+///
+/// **`|>` plugs a call's outputs into a function's inputs.** It extends the
+/// live single tile `|`, which closes a row's tail or a pattern's
+/// alternative, and neither takes `>` next, so nothing written re-munches.
 const MULTI_PUNCT: &[&str] = &[
     "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "~>", "->", "<-", "=>", "==",
-    "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", "@![", ":>", "::",
-    "+=", "-=", "*=",
+    "!=", "<=", ">=", "++", "&&", "||", "|&", "|>", "<>", "<&", ">&", ">>", "@[", "@![", ":>",
+    "::", "+=", "-=", "*=",
 ];
 
 /// UTF-8 bytes for U+00A0 NO-BREAK SPACE.
@@ -3374,8 +3378,8 @@ mod tests
         }
         for operator in [
             "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "~>", "->", "<-", "=>",
-            "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", "@![",
-            ":>", "::", "+=", "-=", "*=",
+            "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "|>", "<>", "<&", ">&", ">>", "@[",
+            "@![", ":>", "::", "+=", "-=", "*=",
         ] {
             assert_eq!(
                 super::punct_len(super::SourceBytes::from(operator.as_bytes()), zero)

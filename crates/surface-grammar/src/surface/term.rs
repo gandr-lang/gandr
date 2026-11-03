@@ -4294,19 +4294,14 @@ fn primary_expressions(
     // A labelled group of outputs, `( .l = E, … )`, takes a `(` of its own,
     // decided by the very next tile, as the labelled telescope `*{ .l = E }`
     // does: a `(` admitting both a hole and a `.` after it would read the
-    // projection dot of `(p.x, p.y)` as a label's.
+    // projection dot of `(p.x, p.y)` as a label's. It is placed last, so a
+    // `(` with no tile after it yet closes as the unit `( )`.
     let mut paren = r(
         RuleName("parenthesized_expression"),
         Provenance("parenthesized_expression"),
         s,
         p,
         alt([
-            // a labelled group of outputs: `( .l = E , … )`
-            seq([
-                t(TileLabel("(")),
-                comma1(seq([dotted_label(), t(TileLabel("=")), h(s)])),
-                t(TileLabel(")")),
-            ]),
             seq([
                 t(TileLabel("(")),
                 alt([
@@ -4332,6 +4327,12 @@ fn primary_expressions(
                         ]),
                     ]),
                 ]),
+            ]),
+            // a labelled group of outputs: `( .l = E , … )`
+            seq([
+                t(TileLabel("(")),
+                comma1(seq([dotted_label(), t(TileLabel("=")), h(s)])),
+                t(TileLabel(")")),
             ]),
         ]),
     );

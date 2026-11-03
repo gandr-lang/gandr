@@ -3400,13 +3400,13 @@ fn a_returned_field_or_scrutinee_runs_first_2140()
     );
 }
 
-/// #4853: a return of two values reaches a binder of two in written order,
+/// #4954: a return of two values reaches a binder of two in written order,
 /// first value outermost, whether the values are plain or one holds a
 /// returned value `⟨c⟩`, which runs first and keeps its place. Each binds the
 /// pair swapped, so a value delivered to the other's binder, or a transport
 /// run after its neighbour's place was taken, answers wrongly.
 #[test]
-fn a_many_value_return_delivers_its_values_in_order_4853()
+fn a_many_value_return_delivers_its_values_in_order_4954()
 {
     let mut core = CoreArena::new();
     let five = integer(&mut core, Digits("5"));

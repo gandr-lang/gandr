@@ -67,7 +67,7 @@ use gandr_theory_graphs::WalkChainLength;
 /// element index read only through its selector, `.#[ … ]` (#4944), then by
 /// a path-shaped type's carrier supplied by name, `Path[.A = C](a, b)`
 /// (#4932).
-const BUILT_IN_FINGERPRINT: u64 = 0x54dd_31bb_2153_fa1f;
+const BUILT_IN_FINGERPRINT: u64 = 0x9a4a_e667_3855_2c7d;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block

@@ -6566,9 +6566,9 @@ fn an_open_row_writes_its_tail_after_its_interfaces_2270()
 }
 
 /// A group of outputs under a row is written after the row, closed or open
-/// through its tail, and the empty group as `()` (#4853).
+/// through its tail, and the empty group as `()` (#4954).
 #[test]
-fn a_group_under_a_row_is_written_after_it_4853()
+fn a_group_under_a_row_is_written_after_it_4954()
 {
     use gandr_core_term::effect::EffectName;
     use gandr_core_term::effect::EffectOp;
