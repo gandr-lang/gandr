@@ -3755,18 +3755,20 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Planned(true))
     }
 
-    /// How many outputs the call `bound` returns, read under `frame` ahead of
-    /// the walk from `anchor`: those of the earlier declaration its head
-    /// names, when that declaration's result is written as a group.
+    /// The outputs the call `bound` returns, as its callee writes them, read
+    /// under `frame` ahead of the walk from `anchor`: those of the earlier
+    /// declaration its head names, when that declaration's result is written
+    /// as a group.
     ///
     /// # Specification
     /// - requires: `bound` is `anchor` or under it.
-    /// - ensures: the count of the outputs the callee's result writes, when
-    ///   `bound` is a call whose head is one name resolving to a declaration
-    ///   whose result is planned as a [`Plan::Returns`] or written as a group,
-    ///   as [`Self::written_group`] reads it; nothing for any other form, a
-    ///   head a binder answers, or a callee returning one value. The nodes
-    ///   under `bound` take `anchor`'s owner, as the walk would give them.
+    /// - ensures: the entries of the group the callee's result writes, in
+    ///   order, when `bound` is a call whose head is one name resolving to a
+    ///   declaration whose result is planned as a [`Plan::Returns`] or written
+    ///   as a group, as [`Self::written_group`] reads it; nothing for any other
+    ///   form, a head a binder answers, or a callee returning one value. The
+    ///   nodes under `bound` take `anchor`'s owner, as the walk would give
+    ///   them.
     /// - fails: the name's resolution refusal; a foreign mold.
     /// - panics: none.
     ///
@@ -3782,7 +3784,7 @@ impl<'source> Lowerer<'_, 'source>
         frame: Frame,
         bound: Placed,
         anchor: NodeIndex,
-    ) -> Result<Option<usize>, LoweringRefusal<'source>>
+    ) -> Result<Option<Vec<Entry<'source>>>, LoweringRefusal<'source>>
     {
         let Some((name, Former::Call)) = self.form_at(bound)?
         else {
@@ -3827,19 +3829,192 @@ impl<'source> Lowerer<'_, 'source>
         while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
             at = inner;
         }
-        if let Some(&Plan::Returns(outputs)) = self.plans.get(at) {
-            return Ok(Some(outputs.end.saturating_sub(outputs.start)));
-        }
-        // A callee the walk has not reached yet is read off its syntax.
+        // The group is read off its syntax, whether or not the walk has
+        // reached the callee yet.
         let Some(tree) = self.tree.node(at)
         else {
             return Ok(None);
         };
         let result = Placed::of(at, tree);
-        if !self.written_group(result, frame)? {
+        if !matches!(self.plans.get(at), Some(&Plan::Returns(_)))
+            && !self.written_group(result, frame)?
+        {
             return Ok(None);
         }
-        Ok(Some(self.domain_entries(result, frame)?.len()))
+        Ok(Some(self.domain_entries(result, frame)?))
+    }
+
+    /// Classify a selection `f(a, …).l` off a call whose result is a group of
+    /// outputs as the output `l` alone.
+    ///
+    /// # Specification
+    /// - requires: `site` is a projection; `pieces` is its reading.
+    /// - ensures: planned when the selection is one link off a call whose
+    ///   callee writes its result as a group, as [`Self::called_outputs`] reads
+    ///   it, one of whose outputs the link names: the call read as a
+    ///   computation, every output bound and the named one returned, with no
+    ///   product built. Nothing is planned for any other selection.
+    /// - fails: the wrong-sort refusal where no computation is read; as
+    ///   [`Self::called_outputs`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The selection's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each output of a two-output call, selected, returns
+    ///   its own binder.
+    /// - witness: `lower::arity::tests::a_selected_output_binds_every_output_and_returns_one`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::SelectedOutput { .. })))]
+    pub(super) fn selected_output(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let Ok((mut target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        else {
+            return Ok(Planned(false));
+        };
+        // `(f(a)).l` selects as `f(a).l` does.
+        while let Some((_, Former::Parenthesized)) = self.form_at(target)? {
+            let mut grouped = Pieces::new();
+            read_pieces(self.pbg, self.tree, target.node, &mut grouped)?;
+            let mut cursor = Cursor::new(&grouped.pieces, target.span);
+            let _open = cursor.tile(TileName::PAREN_OPEN);
+            let Run::One(inner) = cursor.operands()
+            else {
+                return Ok(Planned(false));
+            };
+            target = inner;
+        }
+        let frame = site.reading.frame();
+        let Some(outputs) = self.called_outputs(frame, target, site.at.node)?
+        else {
+            return Ok(Planned(false));
+        };
+        let label = self.name_at(selected);
+        let Some(index) = outputs
+            .iter()
+            .position(|output| matches!(output.key, Key::Label(name, _) if name == label))
+        else {
+            return Ok(Planned(false));
+        };
+        let frame = self.require(site, Produced::Computation)?;
+        self.read(target.node, Reading::Computation(frame));
+        self.plan(site, Plan::SelectedOutput {
+            call: target.node,
+            arity: gandr_core_term::ComponentCount::from(outputs.len()),
+            index,
+        });
+
+        Ok(Planned(true))
+    }
+
+    /// Mint the selection of one output of a call: every output bound, the
+    /// selected one returned.
+    ///
+    /// # Specification
+    /// - requires: the call is already minted or absent.
+    /// - ensures: the many-value bind of the call's `arity` outputs into the
+    ///   return of the binder at `index`, the first output outermost, with the
+    ///   written origin; nothing when the call did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::selected_output`].
+    /// - witness: `lower::arity::tests::a_selected_output_binds_every_output_and_returns_one`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
+    pub(super) fn mint_selected_output(
+        &self,
+        (call, arity, index): (NodeIndex, gandr_core_term::ComponentCount, usize),
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let bound = match self.computation_at(call) {
+            Maybe::Present(bound) => bound,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let Some(depth) = usize::from(arity)
+            .checked_sub(index)
+            .and_then(|after| after.checked_sub(1_usize))
+            .and_then(|depth| u32::try_from(depth).ok())
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let selected = sink
+            .arena
+            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(depth));
+        sink.origins.record_value(selected, origin);
+        let returned = sink.arena.computation_return(selected);
+        sink.origins.record_computation(returned, origin);
+        let id = sink.arena.computation_bind_all(bound, arity, returned);
+
+        Maybe::Present(sink.computation(id, origin))
+    }
+
+    /// Mint a call of a function returning a group of outputs as the record
+    /// of its outputs: every output bound, and the record of them returned.
+    ///
+    /// # Specification
+    /// - requires: `call` is the minted call; `labels` holds one entry per
+    ///   output, in order.
+    /// - ensures: the many-value bind of the call's outputs into the return of
+    ///   the record labelling each by its name, when every output is named, and
+    ///   of the tuple of them otherwise, the first output outermost; every node
+    ///   with the written origin.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a let of a two-output call binds the record of its
+    ///   named outputs, and of unnamed ones the tuple.
+    /// - witness: `lower::arity::tests::a_call_of_outputs_standing_as_one_value_is_their_record`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
+    pub(super) fn mint_record_of_outputs(
+        call: ComputationId,
+        labels: &[Option<FieldLabel>],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let count = labels.len();
+        let mut values = Vec::with_capacity(count);
+        for index in 0 .. count {
+            let Some(depth) = count
+                .checked_sub(index)
+                .and_then(|after| after.checked_sub(1_usize))
+                .and_then(|depth| u32::try_from(depth).ok())
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let value = sink
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(depth));
+            sink.origins.record_value(value, origin);
+            values.push(value);
+        }
+        let named: Option<BTreeMap<FieldLabel, ValueId>> = labels
+            .iter()
+            .zip(&values)
+            .map(|(label, &value)| label.clone().map(|label| (label, value)))
+            .collect();
+        let packed = match named {
+            Some(fields) => sink.arena.value_record(fields),
+            None => sink.arena.value_tuple(&values),
+        };
+        sink.origins.record_value(packed, origin);
+        let returned = sink.arena.computation_return(packed);
+        sink.origins.record_computation(returned, origin);
+        let id = sink.arena.computation_bind_all(
+            call,
+            gandr_core_term::ComponentCount::from(count),
+            returned,
+        );
+
+        Maybe::Present(sink.computation(id, origin))
     }
 
     /// The entries of the parenthesised domain list `domain` of a value

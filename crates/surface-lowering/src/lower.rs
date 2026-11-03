@@ -2719,6 +2719,17 @@ enum Plan
     /// A tuple ending a body whose result is a group of outputs: the return
     /// of the members in the lowerer's operand store, one per output.
     ReturnAll(Stretch),
+    /// One output of a call whose result is a group, `f(a).l`: the call,
+    /// every output bound, and the one at `index` returned.
+    SelectedOutput
+    {
+        /// The call.
+        call: NodeIndex,
+        /// How many outputs the call returns.
+        arity: gandr_core_term::ComponentCount,
+        /// The selected output's place among them.
+        index: usize,
+    },
     /// Adopt the child's lowered node unchanged.
     Transparent(NodeIndex),
     /// The value at the first node, ascribed the value type at the second:
@@ -3417,6 +3428,10 @@ struct Lowerer<'run, 'source>
     /// annotated constructor or injection is not among them: `T` is already
     /// its classifier.
     ascribed: BTreeMap<NodeIndex, NodeIndex>,
+    /// Each call standing as one value whose callee returns a group of
+    /// outputs, with its outputs' labels in order, none for an unnamed one:
+    /// the call stands as the record of its outputs.
+    packed: BTreeMap<NodeIndex, Vec<Option<FieldLabel>>>,
     /// Each lambda's binder written with a type, `x` in `fun (x : A) { … }`,
     /// with `A`, the frame it was read under, which the lambda stands in, and
     /// the lambda's own frame, which binds `x`.
@@ -5508,6 +5523,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             classifiers: BTreeMap::new(),
             annotated_definitions: BTreeMap::new(),
             ascribed: BTreeMap::new(),
+            packed: BTreeMap::new(),
             typed_parameters: BTreeMap::new(),
             argued: BTreeMap::new(),
             parameter_typed: BTreeMap::new(),
@@ -11340,7 +11356,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.read(bound.node, Reading::Computation(frame));
             let arity = gandr_core_term::ComponentCount::from(names.len());
             let outputs = match annotation {
-                None => self.called_outputs(frame, bound, run.node)?,
+                None => self
+                    .called_outputs(frame, bound, run.node)?
+                    .map(|outputs| outputs.len()),
                 Some(_) => None,
             };
             // A pattern of a call returning outputs binds every one of them.
@@ -12124,6 +12142,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             return self.ports(site, ported, fields);
         }
+        // A call of a function returning a group of outputs, standing as one
+        // value, is the record of its outputs.
+        if let Reading::Value(frame) = site.reading
+            && let Some(outputs) = self.called_outputs(frame, site.at, site.at.node)?
+        {
+            let labels = outputs
+                .iter()
+                .map(|output| match output.key {
+                    arity::Key::Label(name, _) => {
+                        Some(FieldLabel::from(String::from(name.as_ref())))
+                    },
+                    arity::Key::Positional | arity::Key::Index(..) => None,
+                })
+                .collect();
+            let _first = self.packed.insert(site.at.node, labels);
+        }
         if let Run::One(head) = cursor.clone().operands()
             && let Maybe::Present(operation) = self.identity_head(site, head)?
         {
@@ -12810,7 +12844,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::SelectedOutput { .. } | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
                 )
         },
     )]
@@ -12837,6 +12871,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         // `C(a, …).l` names the port `l` of the multi-output constructor `C`.
         if self.port(site, pieces)? == arity::Planned(true) {
+            return Ok(());
+        }
+        // `f(a, …).l` selects the output `l` of a call returning a group.
+        if self.selected_output(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
         // An observation by position of a thunked lazy product or codata
@@ -17532,6 +17570,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             (_, minted) => minted,
         };
+        // A call standing as the record of its outputs binds each and returns
+        // the record, labelled when every output is named.
+        let minted = match (bridge, minted, self.packed.get(&position)) {
+            (
+                Bridge::Inserted(Insertion::Nested | Insertion::Bound | Insertion::Endpoint),
+                Maybe::Present(Lowered::Computation(call)),
+                Some(labels),
+            ) => Self::mint_record_of_outputs(call, labels, sink, origin),
+            (_, minted, _) => minted,
+        };
         // A call of no arguments is its head's force, so that force is the
         // call the source wrote: it answers at the call, not at the head.
         let called = self
@@ -17716,7 +17764,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Ports(..)
                 | Plan::Ascribed(..)
                 | Plan::Packed(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::ReturnAll(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::ReturnAll(_) | Plan::SelectedOutput { .. } | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -17956,6 +18004,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .map(Lowered::Value),
             Plan::Tuple(members) => self.mint_tuple(members, sink, origin),
             Plan::ReturnAll(members) => self.mint_return_all(members, sink, origin),
+            Plan::SelectedOutput { call, arity, index } => {
+                self.mint_selected_output((call, arity, index), sink, origin)
+            },
             Plan::List(elements) => self.mint_list(elements, sink, origin),
             Plan::Record(ref fields) => self.mint_record(fields, sink, origin),
             Plan::RecordUpdate(base, ref fields) => {
@@ -19188,6 +19239,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::StaticApplication(..)
             | Plan::Tuple(_)
             | Plan::ReturnAll(_)
+            | Plan::SelectedOutput { .. }
             | Plan::List(_)
             | Plan::Record(_)
             | Plan::RecordUpdate(..)

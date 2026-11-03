@@ -1951,6 +1951,68 @@ fn a_tuple_pattern_binds_each_output_of_a_call()
     );
 }
 
+#[test]
+fn a_selected_output_binds_every_output_and_returns_one()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
+         half(n : Integer) -> Integer { divmod(n, n).q }\ndef rest(n : Integer) -> Integer { \
+         (divmod(n, n)).r }",
+        &mut arena,
+    );
+
+    let half = body(&arena, &module, "half");
+    assert_eq!(
+        half.get(.. 3_usize),
+        Some(
+            &[
+                String::from("thunk"),
+                String::from("lambda"),
+                String::from("bindall2")
+            ][..]
+        ),
+        "a selection binds every output of the call, {half:?}"
+    );
+    assert_eq!(
+        half.get(half.len().saturating_sub(2_usize) ..),
+        Some(&[String::from("return"), String::from("#1")][..]),
+        "the first output is the outermost binder"
+    );
+    let rest = body(&arena, &module, "rest");
+    assert_eq!(
+        rest.get(rest.len().saturating_sub(2_usize) ..),
+        Some(&[String::from("return"), String::from("#0")][..]),
+        "a selection through parentheses returns its output, {rest:?}"
+    );
+}
+
+#[test]
+fn a_call_of_outputs_standing_as_one_value_is_their_record()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
+         pair(m : Integer, n : Integer) -> (Integer, Integer) { (m, n) }\ndef named(a : Integer) \
+         -> Integer { let r = divmod(a, a); r.q }\ndef whole(a : Integer) -> Integer { let t = \
+         pair(a, a); 0 }",
+        &mut arena,
+    );
+
+    let named = body(&arena, &module, "named");
+    assert!(
+        named.iter().any(|token| token == "bindall2")
+            && named.iter().any(|token| token == "record{q,r}"),
+        "a call of named outputs bound to one name binds the record of them, {named:?}"
+    );
+    let whole = body(&arena, &module, "whole");
+    assert!(
+        whole.iter().any(|token| token == "bindall2")
+            && whole.iter().any(|token| token == "tuple2"),
+        "a call of unnamed outputs bound to one name binds the tuple of them, {whole:?}"
+    );
+}
+
 /// #2179: a dependent arrow and a telescope whose binder is named as a type
 /// is, `(A : Type) -> A -> -F A`, bind it as the lowercase binder does, so
 /// the type a parameter list naming `A` declares reads back as written.
