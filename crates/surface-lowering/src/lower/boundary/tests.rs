@@ -10,6 +10,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_kernel_term::Literal;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -17,11 +18,16 @@ use crate::error::LoweringRefusal;
 use crate::lower::native::tests::body_named;
 use crate::lower::native::tests::judged;
 use crate::lower::native::tests::lowered;
+use crate::lower::native::tests::preluded;
 use crate::lower::native::tests::refusal_of;
 use crate::lower::native::tests::tail_of;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredModule;
 use crate::resolve::SurfaceName;
+use crate::unit::ImportTarget;
+use crate::unit::SourceIndex;
+use crate::unit::Unit;
+use crate::unit::UnitSource;
 
 /// The data a boundary check builds, declared as `std.boundary` and
 /// `std.layout` declare them, with one row.
@@ -255,4 +261,111 @@ fn a_check_naming_no_admission_is_refused_at_its_payload_2901()
             "{payload}: refused at the payload"
         );
     }
+}
+
+/// A check reads its names in the source declaring `admitBlock`, wherever
+/// the block's source reaches it, whatever the imports between list. The
+/// block imports only `addRow`, whose source lists `Row`, `Plain` and `U32`.
+/// The home reads the scalars through its own import of the layout (#4698).
+#[test]
+fn a_check_reads_its_names_where_the_imports_reach_them_4698()
+{
+    let layout = "pub data Scalar : Type where { | U32 : Scalar | U64 : Scalar | I32 : Scalar | I64 \
+                  : Scalar }\n";
+    let boundary = concat!(
+        "import \"./layout.gandr\" ;\n",
+        "pub data Code : Type where { | Plain : (s : Scalar) --> Code }\n",
+        "pub data Coded : Type where { | NoCoded : Coded | Coded : (name : String, c : Code, rest \
+         : Coded) --> Coded }\n",
+        "pub data Signature : Type where { | Signature : (params : Coded, result : Code) --> \
+         Signature }\n",
+        "pub data Signatures : Type where { | NoSignature : Signatures | Member : (s : Signature, \
+         rest : Signatures) --> Signatures }\n",
+        "pub data Row : Type where { | Row : (result : Code) --> Row }\n",
+        "pub data Rows : Type where { | NoRow : Rows | Named : (r : Row, rest : Rows) --> Rows }\n",
+        "pub data Admission : Type where { | Admitted : Admission }\n",
+        "pub def admitBlock(ss : Signatures, rs : Rows) -> Admission { Admitted }\n",
+    );
+    let rows = concat!(
+        "import \"./boundary.gandr\" (Row, Plain) ;\n",
+        "import \"./layout.gandr\" (U32) ;\n",
+        "pub def addRow : Row = Row(Plain(U32));\n",
+    );
+    let block = concat!(
+        "import \"./rows.gandr\" (addRow) ;\n",
+        "@[ boundary(addRow) ]\n",
+        "extern \"rust\" from \"boundary\" as Boundary { def add(x : u32, n : u64) -> u32; }\n",
+    );
+    let on = |source: usize| ImportTarget::Source(SourceIndex::from(source));
+    let mut text = String::new();
+    let mut sources = Vec::new();
+    for (written, imports) in [
+        (layout, vec![]),
+        (boundary, vec![on(0_usize)]),
+        (rows, vec![on(1_usize), on(0_usize)]),
+        (block, vec![on(2_usize)]),
+    ] {
+        sources.push(UnitSource::new(ByteOffset::from(text.len()), imports));
+        text.push_str(written);
+    }
+    let unit = Unit::new(sources).expect("the sources are laid in order");
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
+    let refused: Vec<String> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                Some(format!("{refusal:?}"))
+            }
+            else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        refused,
+        Vec::<String>::new(),
+        "every name the check reads resolves in its home"
+    );
+    let body = body_named(&module, SurfaceName::from("Boundary"));
+    let call = tail_of(&arena, body);
+    let Some(&Computation::Application(applied, _)) = arena.computation(call)
+    else {
+        panic!("the check applies its call: {:?}", arena.computation(call));
+    };
+    let Some(&Computation::Application(forced, members)) = arena.computation(applied)
+    else {
+        panic!("to the members: {:?}", arena.computation(applied));
+    };
+    let Some(&Computation::Force(callee)) = arena.computation(forced)
+    else {
+        panic!("the callee is forced: {:?}", arena.computation(forced));
+    };
+    assert_eq!(spelled(&module, &arena, callee), "admitBlock");
+    assert_eq!(
+        spelled(&module, &arena, members),
+        r##"#1(#0(#1("x", #0(#0), #1("n", #0(#1), #0)), #0(#0)), #0)"##,
+        "the members coded by the home's scalars"
+    );
+    let report = judged(&module, &mut arena);
+    let Some(check) = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == SurfaceName::from("Boundary"))
+    else {
+        panic!("the check is declared");
+    };
+    let verdict = report
+        .judged()
+        .iter()
+        .find(|judged| judged.constant() == check.constant())
+        .map(gandr_core_checker::Judged::verdict);
+    assert!(
+        matches!(
+            verdict,
+            Some(Verdict::Checked { .. } | Verdict::Synthesised { .. })
+        ),
+        "the call is typed: {verdict:?}"
+    );
 }

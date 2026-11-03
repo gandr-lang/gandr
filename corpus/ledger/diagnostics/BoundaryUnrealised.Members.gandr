@@ -1,8 +1,7 @@
 /// `BoundaryUnrealised.Members`: an `extern "rust"` block whose `boundary` attribute names more rows than it declares members.
-// `Row`, `Codes`, `Code` and `admitBlock`.
-import "../../../library/std/src/boundary.gandr";
-// `U32`.
-import "../../../library/std/src/layout.gandr";
+// The boundary check reads `admitBlock` here, whatever the listing names.
+import std.boundary (Arg, NoCode, Plain, Row);
+import std.layout (U32);
 
 /// Two `u32` to a `u32`.
 def addRow : Row = Row(Arg(Plain(U32), Arg(Plain(U32), NoCode)), Plain(U32));
