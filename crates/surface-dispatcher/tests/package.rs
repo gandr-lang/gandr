@@ -1449,6 +1449,95 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
     }
 }
 
+/// #4715: a module path whose head is the alias a coordinate import binds
+/// names the dependency's module, qualified and by a listed name, refused as
+/// unlocked until the lock records the coordinate and read once it does; the
+/// lock records the coordinate alone, and a head that is neither the alias nor
+/// a source of the package stays refused.
+#[test]
+fn a_module_path_through_a_coordinate_s_alias_reads_the_dependency_s_module_4715()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let directory = scratch(Path::new("aliased-path"), &[
+        Path::new("hello/src/package.gandr"),
+        Path::new("hello/src/text/greet.gandr"),
+        Path::new("sibling/src/package.gandr"),
+        Path::new("stray/src/package.gandr"),
+    ]);
+    write_hello(&directory, Hello {
+        version: "0.1.0",
+        welcome: "hello",
+    });
+    std::fs::write(
+        directory.join("hello/src/text/greet.gandr"),
+        "pub def greeting = \"hi\";\n",
+    )
+    .expect("hello's module is written");
+    for (package, imports, rest) in [
+        (
+            "sibling",
+            "import \"path:../hello\" as hello;\nimport hello.text.greet (greeting);\n",
+            "pub def listed = greeting;\npub def qualified = hello.text.greet.greeting;\n",
+        ),
+        (
+            "stray",
+            "import \"path:../hello\" as hello;\nimport nowhere.text.greet;\n",
+            "pub def stray = nowhere.text.greet.greeting;\n",
+        ),
+    ] {
+        std::fs::write(
+            directory.join(package).join("src/package.gandr"),
+            Library {
+                imports,
+                version: "0.1.0",
+                rest,
+            }
+            .source(),
+        )
+        .expect("the dependent is written");
+    }
+    let sibling = rooted(&directory.join("sibling"));
+    let coordinate = Coordinate::Path(String::from("../hello"));
+    let mut store = stored(Path::new("aliased-path"));
+    let unlocked = sibling.identity(&grammar, &Held::default(), &Lock::default(), &store);
+    assert!(
+        matches!(unlocked, Err(Unaddressed::Refused { .. })),
+        "with no lock, the module path through the alias is refused: {unlocked:?}"
+    );
+    let lock = sibling
+        .resolve(&grammar, &mut store, Revisions::Locked)
+        .expect("the dependencies resolve");
+    assert_eq!(
+        lock.coordinates().collect::<Vec<_>>(),
+        [&coordinate],
+        "the lock records the coordinate alone, the module path adding no entry"
+    );
+    assert!(
+        matches!(
+            reconcile(&sibling.root().join(LOCK), &lock),
+            Ok(Reconciled::Written)
+        ),
+        "the lock is written"
+    );
+    let locked = sibling.identity(&grammar, &Held::default(), &lock, &store);
+    assert!(
+        locked.is_ok(),
+        "with the lock, the listed name and the qualified path read hello's module: {locked:?}"
+    );
+    let stray = rooted(&directory.join("stray"));
+    let lock = stray
+        .resolve(&grammar, &mut store, Revisions::Locked)
+        .expect("the stray's dependencies resolve");
+    let _written = reconcile(&stray.root().join(LOCK), &lock).expect("the stray's lock is written");
+    let refused = stray.identity(&grammar, &Held::default(), &lock, &store);
+    assert!(
+        matches!(refused, Err(Unaddressed::Refused { ref item, .. }) if item == "stray"),
+        "a head that is neither the alias nor a source stays refused: {refused:?}"
+    );
+    std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+    std::fs::remove_dir_all(store.root()).expect("the store is removed");
+}
+
 /// #3072: an inert edit to a dependency leaves its dependent's lock; a
 /// content edit moves the dependency's address, and the standing lock is
 /// refused as `LockDrift.path:../hello`, left byte for byte, until `relock`
