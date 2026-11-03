@@ -1,0 +1,32 @@
+/// Naturality as a function of the pasting module, with no infix and no arrow
+/// sigil.
+///
+/// Today the same square is `natural` applied to two functions, the homotopy
+/// between them and a path. The writer spells out each argument with its type.
+///
+/// `Pasting.nat(t, X)` is the naturality of `t` in the cells `X`. The checker
+/// reads every boundary off `t` and `X`.
+///
+/// - see: #4560 — the cells sketch, its rulings in the issue body
+/// - see: corpus/ledger/features/naturality.gandr — `assoc_nat`, the square written by hand
+
+// The pasting module, its functions qualified.
+import std.math.category.Pasting;
+
+// The associator of three composable paths.
+import std.math.path (assoc);
+
+/// The associator's naturality in its first cell: the square whose sides are
+/// the associators at `fm` and `fp`, and whose other sides whisker `fa`.
+def assocNat[A : Type, x y z w : A, fm fp : Path(A, x, y)](
+  fa : fm => fp,
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) = Pasting.nat(assoc(fm, g, h), fa)
+
+/// A homotopy's naturality along a path: the square between the two ways
+/// around it.
+def homotopyNat[A B : Type, f g : A -> B, x y : A](
+  H : (a : A) -> Path(B, f(a), g(a)),
+  p : Path(A, x, y)
+) = Pasting.nat(H, p)

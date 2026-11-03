@@ -1,0 +1,24 @@
+/// Composing functions, the one-wire case of composing cells.
+///
+/// A function is a 1-cell of the universe, so its composite goes through the
+/// same node as any cell. The pipeline spelling stays as notation.
+///
+/// `f |> g` is `#fuse{ f g }`, and both lower to plain composition. No node
+/// stands between the two calls at run time.
+///
+/// - see: #4560 — the cells sketch, its rulings in the issue body
+
+// The reader `#fuse`, unqualified.
+import std.math.category.Pasting;
+
+/// `wordCount` counts a string's words, and the composite reads forward.
+def wordCount : String -> Nat = words |> length
+
+/// The same composite as the node writes it.
+def wordCountFused : String -> Nat = #fuse{ words length }
+
+/// Composition read backward, as `map (g ∘ f) xs` reads.
+def lengths(xs : List(String)) : List(Nat) = map (length ∘ words) xs
+
+/// A pipeline of three stages, the middle one a partial application.
+def normalise : String -> String = #fuse{ trim (replace " " "_") lowercase }

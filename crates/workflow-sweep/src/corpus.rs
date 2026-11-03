@@ -16,6 +16,11 @@ const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../surface-corpus");
 /// The fixture root, at the repository's top.
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus");
 
+/// The fixture root's directories that hold no source a sweep reads: the
+/// ledgers, and the sketch set, which no gate parses
+/// (`gandr-surface-corpus`'s `root` module, § The sketch set).
+const FIXTURE_HELD_OUT: &[&str] = &["ledger", "sketch"];
+
 /// A source's name: its root's prefix, then its path below that root.
 ///
 /// The parts are `/`-separated: `strict/values.gandr`,
@@ -143,12 +148,22 @@ pub struct Source
     pub class: Class,
 }
 
+/// Where a path below a root lies, for a sweep.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Place
+{
+    /// Outside every held-out directory: a sweep reads it.
+    Read,
+    /// In a held-out directory: no sweep reads it.
+    HeldOut,
+}
+
 /// One root a sweep draws sources from.
 ///
 /// # Specification
 /// - provides: where a source lies on disk and the name it is listed by: its
 ///   path below `directory`, prefixed by `prefix`; a directory `held_out` names
-///   directly below `directory` holds no source.
+///   directly below `directory` holds no source a sweep reads.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Root
 {
@@ -156,8 +171,8 @@ pub struct Root
     pub prefix: &'static str,
     /// The root's directory.
     pub directory: PathBuf,
-    /// The directory below the root that holds no source, if any.
-    pub held_out: Option<&'static str>,
+    /// The directories directly below the root that hold no source.
+    pub held_out: &'static [&'static str],
 }
 
 impl Root
@@ -179,10 +194,27 @@ impl Root
         }
         CorpusName(name)
     }
+
+    /// Where `below`, a path below the root, lies: in a held-out directory or
+    /// outside every one.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn place(
+        &self,
+        below: &Path,
+    ) -> Place
+    {
+        let held = below
+            .components()
+            .next()
+            .is_some_and(|first| self.held_out.iter().any(|held| first.as_os_str() == *held));
+        if held { Place::HeldOut } else { Place::Read }
+    }
 }
 
 /// The corpus's two roots: the strict root in the corpus crate, and the
-/// fixture root at the repository's top, its `ledger/` held out.
+/// fixture root at the repository's top, its `ledger/` and `sketch/` held out.
 ///
 /// # Specification
 /// - provides: the one statement of where the corpus lies and how its sources
@@ -204,7 +236,7 @@ impl Roots
     /// - requires: nothing.
     /// - ensures: the strict root `crates/surface-corpus/strict`, prefixed
     ///   `strict`, and the fixture root `corpus`, prefixed `fixture` with
-    ///   `ledger` held out, each canonical.
+    ///   `ledger` and `sketch` held out, each canonical.
     /// - provides: the roots the walk starts from and `git` runs in.
     /// - fails: [`SweepError::Walk`] when a root cannot be resolved.
     /// - panics: none.
@@ -230,12 +262,12 @@ impl Roots
             strict: Root {
                 prefix: "strict",
                 directory: canonical(&Path::new(CORPUS).join("strict"))?,
-                held_out: None,
+                held_out: &[],
             },
             fixture: Root {
                 prefix: "fixture",
                 directory: canonical(Path::new(FIXTURE))?,
-                held_out: Some("ledger"),
+                held_out: FIXTURE_HELD_OUT,
             },
         })
     }
@@ -255,7 +287,7 @@ impl Roots
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one source per `.gandr` file under the [`Roots::asked`] roots,
-///   outside each root's held-out directory, reached without following a
+///   outside each root's held-out directories, reached without following a
 ///   symbolic link — the dispatcher walk's rule — each named by [`Root::name`],
 ///   sorted by name.
 /// - provides: the candidates a sweep samples.
@@ -290,7 +322,11 @@ pub fn sources() -> Result<Vec<Source>, SweepError>
                 let kind = entry.file_type().map_err(unreadable)?;
                 let path = entry.path();
                 if kind.is_dir() {
-                    if at == *base && root.held_out.is_some_and(|held| path.ends_with(held)) {
+                    if at == *base
+                        && path
+                            .strip_prefix(base)
+                            .is_ok_and(|below| root.place(below) == Place::HeldOut)
+                    {
                         continue;
                     }
                     pending.push(path);

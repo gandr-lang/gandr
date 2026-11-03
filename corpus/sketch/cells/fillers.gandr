@@ -1,0 +1,54 @@
+/// Fillers over named cells: the coherence between two composites of one
+/// pasting context.
+///
+/// Today a filler names its dimension and size, its shape as a numeral chain
+/// and its cells by position. Here it names its cells alone.
+///
+/// `#fill` with a boundary after `:` answers that cell. With none, it answers
+/// the canonical coherence over the context, as Catt's `comp` does.
+///
+/// - see: #4560 — the cells sketch, its rulings in the issue body
+/// - see: library/std/src/math/cylinder.gandr — `cylinderFill3`, the positional filler
+/// - see: corpus/ledger/features/naturality.gandr — `natassoc`, the positional naturality filler
+
+// The readers `#fuse` and `#fill`, unqualified.
+import std.math.category.Pasting;
+
+/// The interchange law: composing horizontally then vertically agrees with
+/// composing vertically then horizontally, over the one context of the four
+/// cells.
+def interchange[A : Type, x y z : A, f g h : Path(A, x, y), k l m : Path(A, y, z)](
+  α : f => g,
+  α' : g => h,
+  β : k => l,
+  β' : l => m
+) : #fuse{ #fuse{ α α' } #fuse{ β β' } } => #fuse{ #fuse{ α β } #fuse{ α' β' } } =
+  #fill{ α α' β β' : #fuse{ #fuse{ α α' } #fuse{ β β' } } => #fuse{ #fuse{ α β } #fuse{ α' β' } } }
+
+/// The associator's naturality in its first cell, stated by its cells alone:
+/// the canonical coherence over `fa`, `g` and `h`.
+def natassoc[A : Type, x y z w : A, fm fp : Path(A, x, y)](
+  fa : fm => fp,
+  g : Path(A, y, z),
+  h : Path(A, z, w)
+) = #fill{ fa g h }
+
+/// Two 3-cylinders side by side compose to a 3-cylinder. The six cells name
+/// it, and the checker reads the shape and every boundary off them.
+def cylinderFill3[
+  A : Type,
+  x y z : A,
+  fm fp pm pp : Path(A, x, y),
+  am : fm => pm,
+  ap : fp => pp,
+  gm gp qm qp : Path(A, y, z),
+  km : gm => qm,
+  kp : gp => qp
+](
+  fa : fm => fp,
+  pa : pm => pp,
+  aa : #fuse{ am pa } => #fuse{ fa ap },
+  ga : gm => gp,
+  qa : qm => qp,
+  ka : #fuse{ km qa } => #fuse{ ga kp }
+) = #fill{ fa pa aa ga qa ka }

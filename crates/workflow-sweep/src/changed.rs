@@ -29,6 +29,7 @@ use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
 
 use crate::corpus::CorpusName;
+use crate::corpus::Place;
 use crate::corpus::Roots;
 use crate::error::SweepError;
 
@@ -133,7 +134,7 @@ impl Changed
     /// - requires: `git` on the path; each of `roots` is a directory inside one
     ///   Git work tree holding the base revision.
     /// - ensures: every `.gandr` file below a root, outside its held-out
-    ///   directory, that the working tree adds or modifies against the base,
+    ///   directories, that the working tree adds or modifies against the base,
     ///   and every untracked one Git does not ignore, named as
     ///   [`crate::corpus::Root::name`] names it — less every modified source
     ///   the formatter lays out to the text it lays the base's out to — keyed
@@ -213,22 +214,11 @@ impl Changed
         };
         let mut names = BTreeSet::new();
         let mut shown = String::new();
-        let mut excluded = String::new();
         for root in roots.each() {
             let directory = root.directory.as_path();
-            excluded.clear();
-            if let Some(held) = root.held_out {
-                excluded.push_str(":(exclude)");
-                excluded.push_str(held);
-            }
-            let within: &[&str] = if excluded.is_empty() {
-                &["."]
-            }
-            else {
-                &[".", excluded.as_str()]
-            };
+            let held = |below: &&str| source(below) && root.place(Path::new(below)) == Place::Read;
             let listed = |filter: &str| {
-                let mut args = vec![
+                let args = [
                     "diff",
                     "--name-only",
                     "--no-renames",
@@ -236,22 +226,23 @@ impl Changed
                     "--relative",
                     base.0,
                     "--",
+                    ".",
                 ];
-                args.extend_from_slice(within);
                 git(directory, GitArgs(&args))
             };
             let added = listed("--diff-filter=A")?;
             let modified = listed("--diff-filter=M")?;
-            let mut untracked_args = vec!["ls-files", "--others", "--exclude-standard", "--"];
-            untracked_args.extend_from_slice(within);
-            let untracked = git(directory, GitArgs(&untracked_args))?;
+            let untracked = git(
+                directory,
+                GitArgs(&["ls-files", "--others", "--exclude-standard", "--", "."]),
+            )?;
             names.extend(
                 added
                     .lines()
-                    .filter(source)
+                    .filter(held)
                     .map(|below| root.name(Path::new(below))),
             );
-            for below in modified.lines().filter(source) {
+            for below in modified.lines().filter(held) {
                 shown.clear();
                 shown.push_str(base.0);
                 shown.push_str(":./");
@@ -268,7 +259,7 @@ impl Changed
             names.extend(
                 untracked
                     .lines()
-                    .filter(source)
+                    .filter(held)
                     .map(|below| root.name(Path::new(below))),
             );
         }
@@ -465,12 +456,12 @@ mod tests
             strict: Root {
                 prefix: "strict",
                 directory: strict,
-                held_out: None,
+                held_out: &[],
             },
             fixture: Root {
                 prefix: "fixture",
                 directory: fixture,
-                held_out: Some("ledger"),
+                held_out: &["ledger"],
             },
         }
     }
