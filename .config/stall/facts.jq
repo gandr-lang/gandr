@@ -13,6 +13,10 @@
 #   created   when it was opened, in epoch seconds;
 #   mergeable `MERGEABLE`, `CONFLICTING` or `UNKNOWN`;
 #   queued    whether it is in the merge queue;
+#   queue     the branch whose merge queue holds it, read off the queue's
+#             path (`/<owner>/<repo>/queue/<branch>`), null when none does
+#             (#4643): GitHub queues a stack's member in the trunk's queue
+#             whatever its base;
 #   removals  each time it left the merge queue unmerged: `{at, reason}`;
 #   checks    each check run and status on its head: `{name, verdict,
 #             conclusion, started, completed}`, the verdict `pass`, `fail` or
@@ -55,6 +59,7 @@ def verdict:
   created: (.createdAt | epoch),
   mergeable,
   queued: .isInMergeQueue,
+  queue: (.mergeQueueEntry.mergeQueue.resourcePath // null | if . == null then null else sub("^.*/queue/"; "") end),
   removals: [.timelineItems.nodes[] | select(.createdAt != null) | {at: (.createdAt | epoch), reason}],
   checks: [(.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // [])[] | {
     name: (.name // .context),
