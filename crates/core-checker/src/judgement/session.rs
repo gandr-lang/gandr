@@ -1644,7 +1644,10 @@ impl Machine<'_, '_>
     ///   [`Self::handed_endpoint`] spends; [`HandedOn::Other`], nothing
     ///   changed, otherwise, so the argument's check refuses an endpoint read
     ///   as a value.
-    /// - fails: as [`Self::handed_endpoint`].
+    /// - fails: as [`Self::handed_endpoint`]; [`CheckRefusal::StageNotBelow`]
+    ///   at the argument, standing at no stage, when `domain` is a session type
+    ///   staged by a recursion and the argument names an endpoint, which never
+    ///   descends.
     /// - panics: none.
     ///
     /// # Errors
@@ -1654,8 +1657,10 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — a fork's child that hands its end to a function at
     ///   `end` checks, an action on the end after the call is refused as after
     ///   close, and an end handed at `Integer` stays refused as read as a
-    ///   value.
+    ///   value; a recursive definition that hands its endpoint parameter to
+    ///   itself is refused at the self-call.
     /// - witness: `judgement::session::tests::an_endpoint_moved_into_a_call_leaves_its_caller_4501`
+    /// - witness: `judgement::session::tests::a_self_call_handing_on_its_endpoint_is_refused_at_the_endpoint_4704`
     #[spec(
         captures: depth = self.context.depth(Zone::Linear),
         ensures: |ret| self.context.depth(Zone::Linear) == depth,
@@ -1667,13 +1672,39 @@ impl Machine<'_, '_>
     ) -> Result<HandedOn, CheckRefusal>
     {
         let head = self.context.whnf_value_type(domain)?;
+        let view = value_type_view(self.context.arena(), head)?;
+        if matches!(view, ValueTypeView::Session(_)) {
+            return self.handed_endpoint(argument, domain);
+        }
+        let ValueTypeView::Staged { base, stage } = view
+        else {
+            return Ok(HandedOn::Other);
+        };
+        let unstaged = self.context.whnf_value_type(base)?;
         if !matches!(
-            value_type_view(self.context.arena(), head)?,
+            value_type_view(self.context.arena(), unstaged)?,
             ValueTypeView::Session(_)
         ) {
             return Ok(HandedOn::Other);
         }
-        self.handed_endpoint(argument, domain)
+        let Value::Variable {
+            zone: Zone::Linear,
+            index,
+        } = *self.value(argument)?
+        else {
+            return Ok(HandedOn::Other);
+        };
+        let node = CoreNode::Term(TermNode::Value(argument));
+        if !matches!(self.resided(node, index)?.resident, Resident::Endpoint(_)) {
+            return Ok(HandedOn::Other);
+        }
+        // An endpoint never descends: it stands at no stage, so the self-call
+        // it is handed to is refused at it.
+        Err(CheckRefusal::StageNotBelow {
+            at: argument,
+            found: gandr_kernel_term::Standing::Top,
+            bound: stage,
+        })
     }
 
     /// Finish a send whose payload checked: advance the endpoint.
@@ -1814,13 +1845,14 @@ impl Machine<'_, '_>
     ///   or a function's parameter at a session type.
     /// - ensures: one linear slot more, opened available at the payload's weak
     ///   head: a buffer, or an endpoint the placement binds at the session
-    ///   state the head names, its head recorded for `at`; one `ReceiveBody`
-    ///   frame waits on the body's judgement in the placement's direction, so
-    ///   the body's end refuses the buffer unreturned, or the endpoint unspent,
-    ///   as a receive's does.
+    ///   state the head names, its head recorded for `at`; a session type a
+    ///   recursion stages is placed at its base, since an endpoint never
+    ///   descends; one `ReceiveBody` frame waits on the body's judgement in the
+    ///   placement's direction, so the body's end refuses the buffer
+    ///   unreturned, or the endpoint unspent, as a receive's does.
     /// - fails: [`CheckRefusal::MachineInvariant`] for a payload other than an
-    ///   intuitionistic variable whose type is the buffer or a session type at
-    ///   its weak head, which the lowering never builds.
+    ///   intuitionistic variable whose type is the buffer or a session type,
+    ///   staged or not, at its weak head, which the lowering never builds.
     /// - panics: none.
     ///
     /// # Errors
@@ -1830,9 +1862,11 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — an allocated buffer freed checks, and one the body
     ///   never returns is refused at the placement; a parameter's endpoint
     ///   closed checks, and one the body leaves unspent is refused at the
-    ///   placement.
+    ///   placement; a recursive definition's endpoint parameter is placed, so
+    ///   its self-call, not the placement, is refused.
     /// - witness: `judgement::session::tests::an_allocated_buffer_is_returned_once`
     /// - witness: `judgement::session::tests::a_placed_endpoint_is_spent_by_its_body_1862`
+    /// - witness: `judgement::session::tests::a_self_call_handing_on_its_endpoint_is_refused_at_the_endpoint_4704`
     #[spec(
         captures: before = self.context.depth(Zone::Linear),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { .. })))
@@ -1860,7 +1894,18 @@ impl Machine<'_, '_>
             .map_err(|_fault| CheckRefusal::MachineInvariant)?;
         let arena = self.context.arena_mut();
         let read = shift_value_type(arena, declared, Binders::past(index)).settle(arena);
-        let head = self.context.whnf_value_type(read)?;
+        let mut head = self.context.whnf_value_type(read)?;
+        // A fixpoint's descending parameter stands at a stage of its type; an
+        // endpoint never descends, so it is placed at the session it is.
+        if let ValueTypeView::Staged { base, .. } = value_type_view(self.context.arena(), head)? {
+            let unstaged = self.context.whnf_value_type(base)?;
+            if matches!(
+                value_type_view(self.context.arena(), unstaged)?,
+                ValueTypeView::Session(_)
+            ) {
+                head = unstaged;
+            }
+        }
         let view = value_type_view(self.context.arena(), head)?;
         let resident = if matches!(view, ValueTypeView::Session(_)) {
             // The readmission erases a placed endpoint as it erases a
