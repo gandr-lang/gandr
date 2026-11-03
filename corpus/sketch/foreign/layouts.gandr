@@ -1,0 +1,28 @@
+/// A link from a foreign ABI to gandr's layouts lets a value cross with a proof.
+///
+/// A C struct and a gandr record agree only if their bytes agree. The link
+/// states that agreement once, and every crossing reuses it.
+///
+/// The importer reads the struct's ABI layout from the IR. `Realizes` relates
+/// it to the layout gandr's record has. The proof compares sizes, alignments
+/// and field offsets.
+///
+/// - see: #4720 — the foreign languages sketch, its rulings in the issue body
+/// - see: corpus/sketch/views-and-layouts/layouts.gandr — the layouts this links to
+
+// The C importer's ABI layouts.
+import std.foreign.c (C);
+// gandr's layouts and the realizability relation.
+import std.layout (Layout, Realizes);
+
+/// The allocator's block header as gandr writes it.
+@[repr(c)]
+type Header = #{size : U32, order : U8, free : Bool};
+
+/// The block header as the C side declares it, read from its IR.
+def cHeader : C.Abi = ~c.abi("struct header", path = "vendor/alloc.h");
+
+/// The two agree byte for byte, so a header crosses either way.
+def headerLink : Realizes(cHeader, Layout.of(Header)) {
+  Realizes.byFields(cHeader, Layout.of(Header))
+}

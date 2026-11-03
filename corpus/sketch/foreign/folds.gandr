@@ -1,0 +1,53 @@
+/// The shared theories a foreign IR folds into, and two folds over one IR.
+///
+/// Each language keeps its IR as data, so an analysis walks it. Its meaning
+/// comes from folds into theories every language shares, and a further
+/// analysis is a further fold.
+///
+/// `Places` is the memory and place theory of a language family. The
+/// weakest-precondition fold sends THIR's nodes into it. The borrow fold
+/// reads the same data and answers which places each function borrows.
+///
+/// - see: #4720 — the foreign languages sketch, its rulings in the issue body
+/// - see: corpus/model/specification/tree-state-wp.gandr — the fold this generalises
+
+// THIR's datatype, from the Rust importer.
+import std.foreign.rust (Thir);
+
+/// The places of a language family with owned memory: allocate, read,
+/// write and free.
+pub theory Places where {
+  /// A place in memory.
+  sort Place : Type;
+  /// A value a place holds.
+  sort Val : Type;
+  /// A fresh place holding `v`.
+  oper alloc(v : Val) -> Place;
+  /// The value at `p`.
+  oper load(p : Place) -> Val;
+  /// `v` written at `p`.
+  oper store(p : Place, v : Val) -> Unit;
+  /// `p` given back.
+  oper free(p : Place) -> Unit;
+}
+
+/// THIR's meaning, which folds each node into the specification monad over
+/// `Places`.
+pub def wp(e : Thir.Expr) -> Spec(Places, Thir.Value) {
+  match e {
+    Thir.Expr.Deref(p) => Places.load(place(p)),
+    Thir.Expr.Assign(p, v) => Places.store(place(p), wp(v)),
+    Thir.Expr.Return(v) => Spec.exit(wp(v)),
+    Thir.Expr.Call(f, args) => Spec.call(f, map(args, wp))
+  }
+}
+
+/// A second analysis over the same data: the places each expression
+/// borrows, and whether mutably.
+pub def borrows(e : Thir.Expr) -> List(#{place : Thir.Place, mutable : Bool}) {
+  match e {
+    Thir.Expr.Borrow(p, kind) => [#{place = p, mutable = kind == Thir.BorrowKind.Mut}],
+    Thir.Expr.Call(_f, args) => concatMap(args, borrows),
+    _ => []
+  }
+}
