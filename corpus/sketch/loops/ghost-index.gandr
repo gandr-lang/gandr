@@ -1,0 +1,42 @@
+/// A loop keeps an index in an erased ghost place when no counter determines
+/// it.
+///
+/// An assignment to an owned place updates that place's type alone. Between
+/// two heads the places may disagree, and the head's relation holds again
+/// where control returns to it.
+///
+/// The head's family ranges over the ghost place. An aliased place packs its
+/// index instead, and the pack costs nothing at run time.
+///
+/// - see: #4565 — the loops sketch, its rulings in the issue body
+
+/// A cursor into a table that grows by two on some passes. At every head
+/// `k : Fin(m)` for the current `m`.
+def cursor(grow : () -> Bool, done : () -> Bool) -> [Partial] Nat {
+  var m : Nat @0 = 3;
+  var k : Fin(m) = fin(0);
+  loop over (m : Nat @0, k : Fin(m)) {
+    if grow() {
+      m = m + 2;
+      k = Fin.shift(2, k)
+    } else {
+      k = Fin.last(m)
+    }
+    if done() { break }
+  }
+  Fin.toNat(k)
+}
+
+/// A shared cell holds the same cursor and packs its index with it. Each write
+/// stores a new pair, and the cell's type never changes.
+def sharedCursor(cell : Ref(Σ (m : Nat @0), Fin(m)), grow : () -> Bool, done : () -> Bool) -> [Partial] Unit {
+  loop {
+    let (m, k) = cell.get();
+    if grow() {
+      cell.set((m + 2, Fin.shift(2, k)))
+    } else {
+      cell.set((m, Fin.last(m)))
+    }
+    if done() { break }
+  }
+}

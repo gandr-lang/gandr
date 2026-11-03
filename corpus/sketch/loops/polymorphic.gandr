@@ -1,0 +1,28 @@
+/// A function recurses polymorphically over a nested data type, and its writer
+/// states its signature.
+///
+/// A nested type's tail holds pairs of its elements, so each recursive call
+/// runs at a larger type. The checker decides such a call against a stated type,
+/// and no algorithm infers that type.
+///
+/// The writer states the signature. The recursive call then checks at the
+/// pair type.
+///
+/// - see: #4565 — the loops sketch, its rulings in the issue body
+
+/// A list whose every next cell holds pairs of the cell before.
+data Nest(A : Type) : Type where {
+  /// The empty nest.
+  | Nil : Nest(A)
+  /// An element, then a nest of pairs.
+  | Cons : (head : A, tail : Nest(A * A)) --> Nest(A)
+}
+
+/// The number of elements a nest holds. The recursive call runs at `A * A`,
+/// and the stated signature lets it check.
+def size[A : Type](xs : Nest(A)) -> Nat {
+  match xs {
+    | Nil => 0
+    | Cons(_, tail) => 1 + 2 * size(tail)
+  }
+}

@@ -1,0 +1,26 @@
+/// A loop states its invariant and its measure in the specification block a
+/// declaration head takes.
+///
+/// A loop with a measure terminates, so it owes no partiality. The invariant
+/// names what each pass keeps, and the checker holds the body to it.
+///
+/// `#spec{ … }` stands between the loop's condition and its body. It holds an
+/// `invariant` block and a `measure` block, as sketch 6 spells them.
+///
+/// - see: #4565 — the loops sketch, its rulings in the issue body
+/// - see: #4564 — sketch 6, the specification block
+
+/// The sum of a list's first `n` elements. The invariant holds on entry and
+/// after each pass, and `n - i` decreases every pass.
+def sumPrefix(xs : List(Integer), n : Nat) -> Integer {
+  var i = 0;
+  var sum = 0;
+  while i < n #spec{
+    invariant { sum == total(take(i, xs)) }
+    measure { decreases n - i }
+  } {
+    sum += xs.#[i];
+    i += 1
+  }
+  sum
+}

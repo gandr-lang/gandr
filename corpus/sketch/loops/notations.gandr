@@ -1,0 +1,35 @@
+/// `loop` is the one built-in loop head, and `while` and `for` are notations
+/// over it.
+///
+/// A notation binds as the head it notates. The elaborator keeps the
+/// notation's source spans, so a diagnostic names the `while` the author
+/// wrote.
+///
+/// Each `while` below stands beside the `loop` it reads to. The two programs
+/// mean the same.
+///
+/// - see: #4565 — the loops sketch, its rulings in the issue body
+
+/// A countdown in the `while` notation.
+def countdown(n : Nat) -> Nat {
+  var i = n;
+  var steps = 0;
+  while i > 0 #spec{ measure { decreases i } } {
+    i -= 1;
+    steps += 1
+  }
+  steps
+}
+
+/// The same countdown as the `loop` it notates. The condition becomes a
+/// `break` at the head.
+def countdownLoop(n : Nat) -> Nat {
+  var i = n;
+  var steps = 0;
+  loop #spec{ measure { decreases i } } {
+    if i == 0 { break }
+    i -= 1;
+    steps += 1
+  }
+  steps
+}
