@@ -12657,16 +12657,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
 
     /// Make the outermost scope answer `name` with the top-level module the
     /// source holding `site` sees: the module it declares, else the one its
-    /// imports answer. A unit grafts every top-level module of its sources
-    /// into one scope, a later one over an earlier one of the same name, so a
-    /// source whose module another source's displaced reads it again here.
+    /// imports answer, else the nearest one its imports' imports declare. A
+    /// unit grafts every top-level module of its sources into one scope, a
+    /// later one over an earlier one of the same name, so a source whose
+    /// module another source's displaced reads it again here.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: when the source holding `site` declares a top-level module or
-    ///   instance named `name`, or its imports answer one unambiguously, and
-    ///   the outermost scope binds `name` to a module another source declares,
-    ///   the scope binds `name` to the seen module's namespace, as
+    ///   instance named `name`, or its imports answer one unambiguously, or one
+    ///   source alone among the nearest its imports reach declares one, and the
+    ///   outermost scope binds `name` to a module another source declares, the
+    ///   scope binds `name` to the seen module's namespace, as
     ///   [`Self::declare_module`] declares it; the scope is unchanged
     ///   otherwise, a builtin's binding among them.
     /// - fails: never.
@@ -12676,8 +12678,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a source reading a module's value and type components
-    ///   through its import, in one unit beside a source declaring a module of
-    ///   the same name before it.
+    ///   through its import, or through the import of a source it imports, in
+    ///   one unit beside a source declaring a module of the same name before
+    ///   it.
     /// - witness: `tests::namespace::a_module_path_reads_the_module_its_source_sees_4797`
     fn see_module(
         &mut self,
@@ -12686,25 +12689,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )
     {
         let source = self.collected.unit.source_at(site.at.span.start());
-        let structures = &self.collected.structures;
-        let module = |held: &&StructureIndex| {
-            structures.get(usize::from(**held)).is_some_and(|entry| {
-                matches!(entry.stratum, Stratum::Module | Stratum::Instance(_))
-            })
-        };
-        let seen = match self
-            .collected
-            .modules
-            .get(&(Container::TopLevel(source), name))
-            .filter(module)
-        {
-            Some(&own) => own,
+        let seen = match self.top_module(source, name) {
+            Some(own) => own,
             None => match self.collected.imported_module(source, name) {
                 Ok(Maybe::Present((imported, _))) => imported,
-                Ok(Maybe::Absent(_)) | Err(_) => return,
+                Ok(Maybe::Absent(_)) => match self.reached_module(source, name) {
+                    Some(reached) => reached,
+                    None => return,
+                },
+                Err(_) => return,
             },
         };
-        let Some(named) = structures
+        let Some(named) = self
+            .collected
+            .structures
             .get(usize::from(seen))
             .map(|entry| entry.named.span)
         else {
@@ -12715,6 +12713,83 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && held != named
         {
             self.declare_module(seen);
+        }
+    }
+
+    /// The top-level module or instance named `name` that `source` declares.
+    ///
+    /// # Specification
+    /// trivial.
+    fn top_module(
+        &self,
+        source: SourceIndex,
+        name: SurfaceName<'source>,
+    ) -> Option<StructureIndex>
+    {
+        self.collected
+            .modules
+            .get(&(Container::TopLevel(source), name))
+            .copied()
+            .filter(|held| {
+                self.collected
+                    .structures
+                    .get(usize::from(*held))
+                    .is_some_and(|entry| {
+                        matches!(entry.stratum, Stratum::Module | Stratum::Instance(_))
+                    })
+            })
+    }
+
+    /// The top-level module named `name` that the nearest sources `source`
+    /// reaches through its imports declare, public or not, when one alone
+    /// does.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the module of the first ring of `source`'s import closure,
+    ///   its own imports the first ring, where some source declares one, when
+    ///   exactly one source of that ring does; none otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a search of the unit's import graph.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::see_module`].
+    /// - witness: `tests::namespace::a_module_path_reads_the_module_its_source_sees_4797`
+    fn reached_module(
+        &self,
+        source: SourceIndex,
+        name: SurfaceName<'source>,
+    ) -> Option<StructureIndex>
+    {
+        let targets = |from: SourceIndex| {
+            self.collected
+                .imports
+                .of(from)
+                .filter_map(|import| match import.resolution() {
+                    ImportResolution::Path(ImportTarget::Source(target)) => Some(target),
+                    ImportResolution::Path(_) | ImportResolution::Foreign => None,
+                })
+        };
+        let mut visited = BTreeSet::from([source]);
+        let mut ring = BTreeSet::from([source]);
+        loop {
+            let next: BTreeSet<SourceIndex> = ring
+                .iter()
+                .flat_map(|&from| targets(from))
+                .filter(|target| !visited.contains(target))
+                .collect();
+            if next.is_empty() {
+                return None;
+            }
+            visited.extend(next.iter().copied());
+            let mut found = next
+                .iter()
+                .filter_map(|&target| self.top_module(target, name));
+            if let Some(first) = found.next() {
+                return found.next().is_none().then_some(first);
+            }
+            ring = next;
         }
     }
 
