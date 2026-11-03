@@ -1,0 +1,35 @@
+/// Rust's THIR brought in by a provider and reasoned over by a fold.
+///
+/// The model corpus writes THIR as data by hand and folds it into a
+/// weakest-precondition calculus. A provider brings the data in from `rustc`
+/// instead, so a crate's real functions become terms an analysis walks.
+///
+/// `~rust.thir(…)` provides THIR's datatype and a function's body as a value
+/// of it. `Rust.wp` folds the body into the shared specification monad, and
+/// the proof is ordinary gandr over the folded precondition.
+///
+/// - see: #4720 — the foreign languages sketch, its rulings in the issue body
+/// - see: corpus/model/interop/thir/example.gandr — THIR written as data by hand
+/// - see: corpus/model/interop/thir/buddy-pop.gandr — the allocator's `pop` by hand
+
+// The Rust importer: THIR's datatype, a body as its value, and its folds.
+import std.foreign.rust (Rust);
+// The shared specification monad and the place theory folds land in.
+import std.foreign.spec (Spec, Places);
+
+/// THIR's datatype at the crate's pinned toolchain, which the provider answers whole.
+type Thir = ~rust.thir(crate = "corten", toolchain = "nightly-2026-10-01");
+
+/// The buddy allocator's `pop`, its body a THIR value.
+def popBody : Thir.Body = ~rust.body("corten::buddy::pop");
+
+/// What `pop` promises: it answers the head of an order's free list and
+/// leaves the rest free.
+def popSpec(order : Nat) -> Spec(Places, Option(Thir.Value)) {
+  Spec.ensures(fun (r, mem) { freeHead(mem, order, r) })
+}
+
+/// `pop` meets its specification, read off the folded precondition.
+def popMeets(order : Nat) -> Rust.wp(popBody) <= popSpec(order) {
+  Spec.byUnfolding(Rust.wp(popBody))
+}

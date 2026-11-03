@@ -1,0 +1,34 @@
+/// The generic MLIR importer, the fallback for C through ClangIR.
+///
+/// A native importer exists only where a language's IR carries more than
+/// MLIR does. Every other language that lowers to MLIR arrives through one
+/// importer over MLIR's uniform operation form.
+///
+/// An operation is a name, its operands, its attributes and its nested
+/// bodies. `~mlir.module(…)` provides a C file's ClangIR as values of that
+/// form. A fold reads ClangIR's `cir.load` and `cir.store` into `Places`.
+///
+/// - see: #4720 — the foreign languages sketch, its rulings in the issue body
+/// - see: corpus/sketch/foreign/folds.gandr — the shared theory this folds into
+
+// The MLIR importer and its operation form.
+import std.foreign.mlir (Mlir, Op);
+// The place theory C's loads and stores fold into.
+import std.foreign.spec (Spec, Places);
+
+/// A C allocator's ClangIR, from the C file at a pinned Clang.
+def allocModule : Mlir.Module = ~mlir.module(path = "vendor/alloc.c", via = "clangir", clang = "21.1");
+
+/// One ClangIR operation folded into the place theory, the dialects this
+/// sketch reads named by their operation names.
+def wpOp(op : Op) -> Spec(Places, Mlir.Value) {
+  match op.name {
+    "cir.load" => Places.load(Mlir.place(op.operands[0])),
+    "cir.store" => Places.store(Mlir.place(op.operands[1]), Mlir.value(op.operands[0])),
+    "cir.call" => Spec.call(op.attributes["callee"], op.operands),
+    _ => Spec.havoc(op.results)
+  }
+}
+
+/// The module's function `alloc`, which the fold reads op by op.
+def allocWp : Spec(Places, Mlir.Value) = Spec.sequence(map(allocModule.function("alloc").body, wpOp));
