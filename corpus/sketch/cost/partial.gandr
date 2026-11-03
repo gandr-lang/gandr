@@ -1,0 +1,68 @@
+/// A potential bounds every run that ends, and every finite prefix of a run
+/// that does not.
+///
+/// A desk that follows a seat's reports runs until the seat retires, and a
+/// search over a growing graph may never stop. Neither has a total cost, but
+/// each pass has one.
+///
+/// Under `[Partial]` a `measure` block is partial cost correctness, so it is
+/// never refused. A productive loop's measure counts one pass, and its bound
+/// is a rate.
+///
+/// - see: #4569 — the cost sketch, its rulings in the issue body
+/// - see: #4565 — the loops sketch, `[Partial]` and the endpoint loop
+/// - see: #4729 — whether the potential's fracture survives the recursion effect
+
+// The cost theory.
+import std.cost (Cost);
+// The two-list queue and its amortised operations.
+import "./amortised.gandr";
+
+/// A seat's reports until it retires: a report or a retirement, then the
+/// recursion point again.
+type Reports = mu open. &{report : ?Integer. open, retire : ?Integer. end};
+
+/// A desk queues each report for a worker until the seat retires. Each pass
+/// costs at most two, amortised over the queue's back list.
+def follow(operator : Reports) -> [Cost] Batched(Integer) {
+  var queue = Lists(Nil, Nil);
+  loop over (operator : Reports) #spec{
+    measure {
+      | potential length(queue.back)
+      | cost 2
+    }
+  } {
+    offer(operator) {
+      report => {
+        recv(operator) as next;
+        queue = push(queue, next);
+        continue
+      },
+      retire => {
+        recv(operator) as last;
+        close(operator);
+        break
+      }
+    }
+  }
+  queue
+}
+
+/// Explores a graph breadth first from a frontier until `goal` holds. Each
+/// node it takes costs one step, and each run that finds the goal costs no
+/// more than the nodes it reaches.
+def rec explore(next : Node -> List(Node), goal : Node -> Bool, frontier : Batched(Node)) -> [Partial, Cost] Maybe(Node) #spec{
+  measure {
+    | potential length(frontier.back)
+    | cost 1
+  }
+} {
+  match pop(frontier) {
+    None => none,
+    Some((n, rest)) => if goal(n) {
+      some(n)
+    } else {
+      explore(next, goal, fold(next(n), rest, push))
+    }
+  }
+}

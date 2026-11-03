@@ -1,0 +1,37 @@
+/// A cost stated on a definition, without editing its body.
+///
+/// A binding to a hash routine knows what a call costs, and its body is
+/// someone else's code. A wrapper over a library search is the same. Neither
+/// body should change to say what a call costs.
+///
+/// `@[cost(n)]` charges `n` once for each call, before the body runs. The body
+/// stays as written, and a caller's `measure` clause adds the charge to its own.
+///
+/// - see: #4569 — the cost sketch, its rulings in the issue body
+/// - see: corpus/sketch/specifications/measures.gandr — sketch 6's `measure` block
+
+// The cost theory.
+import std.cost (Cost);
+// The hash routine and the library search the wrappers call.
+import std.bytes (Bytes, Digest, blake3);
+import std.array (binarySearch);
+
+/// Hashes a block, at one step for each 64 bytes and one more.
+@[cost(length(block) / 64 + 1)]
+def hash(block : Bytes) -> [Cost] Digest {
+  blake3(block)
+}
+
+/// Finds `x` in a sorted array, at one step for each halving and one more.
+@[cost(log2(length(xs)) + 1)]
+def find(xs : Array(Integer), x : Integer) -> [Cost] Maybe(Nat) {
+  binarySearch(xs, x)
+}
+
+/// Hashes two blocks. Each call charges what its attribute states, and the
+/// bound is their sum.
+def hashBoth(a : Bytes, b : Bytes) -> [Cost] (Digest, Digest) #spec{
+  measure { cost length(a) / 64 + length(b) / 64 + 2 }
+} {
+  (hash(a), hash(b))
+}
