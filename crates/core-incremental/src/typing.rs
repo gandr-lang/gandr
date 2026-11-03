@@ -919,8 +919,11 @@ pub enum Refusal
     /// A run with no computation enclosing it to run before.
     UnenclosedRun
     {
-        /// The nested computation or written run.
+        /// The nested computation or written run, or the value a crossing
+        /// carries.
         at: Site,
+        /// Whether the source wrote the run or a crossing minted it.
+        source: gandr_core_checker::RunSource,
     },
     /// A call's omitted implicit the solver left unbound.
     ImplicitUnsolved
@@ -1691,7 +1694,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::StageNotBelow { at, found, bound } = matched_left_value && let Refusal::StageNotBelow { at: projected, found: stood, bound: wanted } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stood == found && wanted == bound }
  else if let CheckRefusal::StagesDisagree { at, binder } = matched_left_value && let Refusal::StagesDisagree { at: projected, binder: named } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && named == binder }
  else if let CheckRefusal::StageNotCarried { at } = matched_left_value && let Refusal::StageNotCarried { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
- else if let CheckRefusal::UnenclosedRun { at } = matched_left_value && let Refusal::UnenclosedRun { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::UnenclosedRun { at, source } = matched_left_value && let Refusal::UnenclosedRun { at: projected, source: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == source }
  else if let CheckRefusal::ImplicitUnsolved { at, reason } = matched_left_value && let Refusal::ImplicitUnsolved { at: projected, reason: kept } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && kept == reason }
  else if let CheckRefusal::ModelUnanswered { at, .. } = matched_left_value && let Refusal::ModelUnanswered { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::ModelAmbiguous { at, survivors } = matched_left_value && let Refusal::ModelAmbiguous { at: projected, survivors: kept } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && kept == survivors }
@@ -2065,8 +2068,9 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             CheckRefusal::StageNotCarried { at } => Refusal::StageNotCarried {
                 at: self.site(ArenaNode::Computation(at)),
             },
-            CheckRefusal::UnenclosedRun { at } => Refusal::UnenclosedRun {
+            CheckRefusal::UnenclosedRun { at, source } => Refusal::UnenclosedRun {
                 at: self.site(ArenaNode::Value(at)),
+                source,
             },
             CheckRefusal::ImplicitUnsolved { at, reason } => Refusal::ImplicitUnsolved {
                 at: self.site(ArenaNode::Value(at)),

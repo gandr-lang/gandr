@@ -7250,9 +7250,13 @@ where
                 gandr_core_checker::fill::UnsupportedFamily::Bridge => 1,
             }));
         },
-        Refusal::UnenclosedRun { at } => {
+        Refusal::UnenclosedRun { at, source } => {
             writer.tag(Tag(55));
             write_site(writer, at)?;
+            writer.tag(Tag(match source {
+                gandr_core_checker::RunSource::Written => 0,
+                gandr_core_checker::RunSource::Crossing => 1,
+            }));
         },
         Refusal::ImplicitUnsolved { at, reason } => {
             writer.tag(Tag(86));
@@ -8080,6 +8084,11 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         },
         55 => Refusal::UnenclosedRun {
             at: read_site(reader)?,
+            source: match reader.tag()?.0 {
+                0 => gandr_core_checker::RunSource::Written,
+                1 => gandr_core_checker::RunSource::Crossing,
+                _ => return Err(CodecError::Corrupt),
+            },
         },
         86 => Refusal::ImplicitUnsolved {
             at: read_site(reader)?,
