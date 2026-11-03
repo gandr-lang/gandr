@@ -3,6 +3,8 @@
 /// Not implemented: the authority is durable, not linear, until the checker admits a consumable capability, `Cap[1]`, which #3509 owes; it holds the standard streams' operations alone until `std.fs`, `std.net`, `std.time`, `std.rand`, `std.process` and `std.env` land; an exercise on a value typed by the alias, `authority.print(…)`, is refused as a projection (#1106), so a program exercises it through a parameter of capability type.
 
 import std.authority (Authority, console);
+// The console's host interface.
+import std.io;
 
 /// A greeting, printed through a capability that holds `print` alone.
 pub def greet(console : Cap { print }) -> [std.io.Console.Eff] Unit {

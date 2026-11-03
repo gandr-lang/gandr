@@ -9,6 +9,8 @@ use quenchant_shape::shape::Maybe;
 use super::Arguments;
 use super::entry_shape;
 use crate::error::LoweringRefusal;
+use crate::fixture::hosted;
+use crate::fixture::hosting;
 use crate::fixture::listed;
 use crate::fixture::listing;
 use crate::lower::native::tests::lowered;
@@ -151,7 +153,8 @@ fn an_entry_returns_the_unit_2279()
     }
     let source =
         "def main() -> -F [std.io.Console.Eff] Unit { std.io.Console.print(\"hello, world!\") }\n";
-    let module = lowered(SourceText::from(source), &mut arena);
+    let text = hosting(source);
+    let module = hosted(&text, &mut arena);
     assert!(
         module.declarations().iter().all(|declaration| matches!(
             declaration.outcome(),
@@ -171,7 +174,8 @@ fn an_entry_takes_the_ambient_authority_2970()
     let source = "def main(authority : Cap { print }) -> [std.io.Console.Eff] Unit {\n  \
                   authority.print(\"hello, world!\")\n}\n";
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source), &mut arena);
+    let text = hosting(source);
+    let module = hosted(&text, &mut arena);
     let [declaration] = *module.declarations().iter().collect::<alloc::vec::Vec<_>>()
     else {
         panic!("one declaration: {source}");

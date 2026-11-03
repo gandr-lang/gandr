@@ -14,6 +14,9 @@
 // - see: `corpus/pathological/worlds/offers.gandr` — sites leaving an entry
 //   unanswered, and a world the program lacks
 
+// The console's host interface.
+import std.io;
+
 /// What a role at `far` reads and writes: values held by key. Each operation
 /// hands what it reads to what runs after, so a model answers it.
 pub theory Store where {

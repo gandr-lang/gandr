@@ -749,14 +749,19 @@ mod tests
     use super::Width;
     use super::dispatch;
 
+    /// The lines a source writes to import the module of every host interface
+    /// (#4523), after its own text.
+    pub const HOSTING: &str = "import std.env ;\nimport std.fs ;\nimport std.io ;\nimport std.net ;\nimport std.process ;\n";
+
     /// A source laid after `std.list`, as the driver lays a source after the
-    /// module it imports: the module's text first, then the source, whose one
-    /// path import resolves to it (#4520).
+    /// module it imports: the module's text first, then the source, whose
+    /// path imports each resolve to it (#4520). The module declares nothing,
+    /// so it stands in for the host interfaces' modules as well (#4523).
     pub struct Listed
     {
         /// The unit's text.
         pub text: alloc::string::String,
-        /// Where each source starts and what the source's import resolves to.
+        /// Where each source starts and what the source's imports resolve to.
         pub unit: gandr_surface_lowering::Unit,
         /// Where the source's own text starts in `text`.
         pub base: gandr_surface_syntax::ByteOffset,
@@ -767,9 +772,11 @@ mod tests
         /// `source` laid after the standard library's `std.list`.
         ///
         /// # Specification
-        /// - requires: the source's only path import, if any, is `std.list`.
+        /// - requires: each line of the source opening with `import ` is a path
+        ///   import of a module that declares nothing it reads by name.
         /// - ensures: the text ends with `source`, which starts at `base`.
-        /// - provides: a source naming `List` composed where it resolves.
+        /// - provides: a source naming `List` or a host interface composed
+        ///   where it resolves.
         /// - fails: never.
         /// - panics: if the standard library is not checked out.
         ///
@@ -791,19 +798,48 @@ mod tests
                     .join("../../library/std/src/list.gandr"),
             )
             .expect("the standard library is checked out");
+            let written: &str = source.into();
+            let imports = written
+                .lines()
+                .filter(|line| line.starts_with("import "))
+                .count();
             let base = ByteOffset::from(module.len());
             let unit = Unit::new(alloc::vec![
                 UnitSource::new(ByteOffset::from(0_usize), alloc::vec::Vec::new()),
-                UnitSource::new(base, alloc::vec![ImportTarget::Source(SourceIndex::from(
-                    0_usize
-                ))]),
+                UnitSource::new(
+                    base,
+                    alloc::vec![ImportTarget::Source(SourceIndex::from(0_usize)); imports]
+                ),
             ])
             .expect("the source imports the module before it");
             Self {
-                text: alloc::format!("{module}{}", <&str>::from(source)),
+                text: alloc::format!("{module}{written}"),
                 unit,
                 base,
             }
+        }
+
+        /// `source`, then [`HOSTING`], laid as [`Listed::new`] lays a source.
+        ///
+        /// # Specification
+        /// - requires: as [`Listed::new`].
+        /// - ensures: the text ends with [`HOSTING`], and `source` starts at
+        ///   `base`.
+        /// - provides: a source naming host interfaces composed where they
+        ///   resolve.
+        /// - fails: never.
+        /// - panics: as [`Listed::new`].
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — a program printing through the console runs.
+        /// - witness: `evaluate::tests::a_printed_line_reaches_the_console_2279`
+        #[spec(ensures: |ref ret| ret.text.ends_with(HOSTING))]
+        pub fn hosted<Source>(source: Source) -> Self
+        where
+            Source: core::fmt::Display,
+        {
+            let written = alloc::format!("{source}{HOSTING}");
+            Self::new(gandr_surface_syntax::SourceText::from(written.as_str()))
         }
 
         /// The laid source composed as [`crate::compose()`] composes one source

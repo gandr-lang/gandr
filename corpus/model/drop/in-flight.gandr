@@ -6,6 +6,8 @@
 
 // The ring's protocol and its entries.
 import "../completion/ring-base.gandr";
+// Early exit's host interface.
+import std.process;
 
 /// A read submitted and its completion abandoned in flight: the clause
 /// abandons the rest that would reap it (#1334).

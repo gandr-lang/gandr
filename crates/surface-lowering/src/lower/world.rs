@@ -60,6 +60,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::effect::EffectName;
 use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
 use gandr_core_term::world::WorldType;
@@ -442,6 +443,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let source = self.current.source;
         let mut refusals = Vec::new();
+        let mut hosts = Vec::new();
         for (&slot, entries) in &self.collected.requirements {
             let Some(entry) = self.collected.slots.get(usize::from(slot))
             else {
@@ -461,9 +463,20 @@ impl<'source> Lowerer<'_, 'source>
                 name: FormName::WORLD_DECLARATION,
                 reading: Reading::Unread,
             };
-            if let Err(refusal) = self.required(site, entries) {
-                refusals.push((slot, refusal));
+            match self.required(site, entries) {
+                Ok(()) => hosts.extend(entries.iter().map(|required| {
+                    (
+                        required.interface.span().start(),
+                        EffectName::from(required.interface.name(self.tree).as_ref()),
+                    )
+                })),
+                Err(refusal) => refusals.push((slot, refusal)),
             }
+        }
+        // Each host interface a requirement names reaches the import of its
+        // module (#4523).
+        for (at, named) in hosts {
+            self.collected.reach_host(at, &named);
         }
         for (slot, refusal) in refusals {
             let _first = self.faults.entry(slot).or_insert(refusal);

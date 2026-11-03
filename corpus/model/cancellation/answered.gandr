@@ -3,6 +3,8 @@
 
 // The subject's shared declarations.
 import "./cancel-base.gandr";
+// Early exit's host interface.
+import std.process;
 
 /// A scope cancelled at its exit answers nine, not one hundred and one
 /// (#1334).

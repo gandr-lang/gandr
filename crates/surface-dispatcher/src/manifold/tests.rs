@@ -319,7 +319,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
     let _program = scratch.file(
         Path::new("p.gandr"),
         Text(
-            "pub theory Store where {\n  sort V : Type+;\n  sort C : Type;\n  oper get : (key : V, k : \
+            "import std.io;\nimport std.net;\npub theory Store where {\n  sort V : Type+;\n  sort C : Type;\n  oper get : (key : V, k : \
              pi+ (v : V). C) --> C;\n  oper put : (key : V, value : V, k : C) --> C;\n}\npub \
              world far requires [std.io.Console.Eff, store : Store with sort V = String];\npub world netted \
              requires [std.net.Eff];\npub world lost requires [Missing];\n",
@@ -335,7 +335,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
         scratch.file(
             Path::new(name),
             Text(&format!(
-                "import \"../../../library/std/src/authority.gandr\";\n{KEPT}{offers}pub module \
+                "import \"../../../library/std/src/authority.gandr\";\nimport std.io;\nimport std.net;\n{KEPT}{offers}pub module \
                  Site : Model(Site) where {{\n  def key = \"{key}\";\n  def sockets = \"\";\n  def \
                  secret = \"far\";\n}}\npub def site : Model(Site) = pack Site at \
                  Model(Site);\n"

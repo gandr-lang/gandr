@@ -10,6 +10,9 @@
 // Effect Polymorphism", OOPSLA 2020). What refuses is in
 // `../../pathological/control/named-instances.gandr`.
 
+// The console's host interface.
+import std.io;
+
 /// A line printed through the instance `out`, the capability its label
 /// binds.
 pub def say() -> [out : std.io.Console.Eff] Unit { out.print("said") }

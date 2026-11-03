@@ -3,8 +3,11 @@
 // `main` is handed. A program reaches the streams through a capability it was
 // given, never through the ambient interfaces, so what it may print or read
 // is what crossed from `main`. Each stream is an interface of its own,
-// `std.io.Console.Eff`, `std.io.Stderr.Eff` and `std.io.Stdin.Eff`, as `cap-std` holds
-// three handles, and a function's row names the streams it touches.
+// `std.io.Console.Eff`, `std.io.Stderr.Eff` and `std.io.Stdin.Eff`, as
+// `cap-std` holds three handles, and a function's row names the streams it
+// touches. The ring's interface, `std.io.Ring.Eff`, lives here too. A source
+// names these interfaces where it imports this module, `import std.io;`, and
+// this module names its own (#4523).
 
 /// One line, written to standard output through `console`.
 pub def print(console : Cap { print }, line : String) -> [std.io.Console.Eff] Unit {

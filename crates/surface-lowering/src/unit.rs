@@ -55,12 +55,16 @@
 //!
 //! [`Container::TopLevel`]: crate::Container::TopLevel
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::NodeKey;
+use quenchant_shape::shape::Maybe;
+
+use crate::resolve::SurfaceName;
 
 /// A source's position in its unit, which is the order the unit admits its
 /// sources in: every source after each source it imports.
@@ -238,8 +242,8 @@ pub enum ImportTarget
     Unlocked,
 }
 
-/// One source of a unit: where its text starts, and what its imports
-/// resolved to.
+/// One source of a unit: where its text starts, what its imports resolved
+/// to, and the `std` module it is, when it is one.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnitSource
 {
@@ -249,12 +253,30 @@ pub struct UnitSource
     /// the source writes them; an import whose address has a scheme takes no
     /// entry.
     imports: Vec<ImportTarget>,
+    /// The module path of the standard library's source this source is,
+    /// `std.io`: the module whose host interfaces it names without importing
+    /// it (#4523).
+    home: Option<Arc<str>>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a source is no module of the standard library.
+    pub mod unhomed {
+        /// The reason no module is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The caller laid the source as no module of the standard
+            /// library.
+            Elsewhere,
+        }
+    }
 }
 
 impl UnitSource
 {
     /// The source starting at `start`, its path imports resolved to
-    /// `imports` in the order it writes them.
+    /// `imports` in the order it writes them, no module of the standard
+    /// library.
     ///
     /// # Specification
     /// trivial.
@@ -265,7 +287,28 @@ impl UnitSource
         imports: Vec<ImportTarget>,
     ) -> Self
     {
-        Self { start, imports }
+        Self {
+            start,
+            imports,
+            home: None,
+        }
+    }
+
+    /// The source, laid as the standard library's module `module`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn homed(
+        self,
+        module: SurfaceName<'_>,
+    ) -> Self
+    {
+        Self {
+            home: Some(Arc::from(module.as_ref())),
+            ..self
+        }
     }
 
     /// Where the source's own text starts in the unit's.
@@ -288,6 +331,20 @@ impl UnitSource
     pub fn imports(&self) -> &[ImportTarget]
     {
         &self.imports
+    }
+
+    /// The standard library's module the source is, laid by [`Self::homed`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn home(&self) -> Maybe<SurfaceName<'_>, unhomed::Absent>
+    {
+        self.home
+            .as_deref()
+            .map_or(Maybe::Absent(unhomed::Absent::Elsewhere), |module| {
+                Maybe::Present(SurfaceName::from(module))
+            })
     }
 }
 
@@ -586,6 +643,22 @@ impl Unit
             .get(source.0)
             .and_then(|held| held.imports.get(ordinal.0).copied())
             .unwrap_or(ImportTarget::Unresolved)
+    }
+
+    /// The standard library's module `source` is, when the caller laid it as
+    /// one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn home(
+        &self,
+        source: SourceIndex,
+    ) -> Maybe<SurfaceName<'_>, unhomed::Absent>
+    {
+        self.sources
+            .get(source.0)
+            .map_or(Maybe::Absent(unhomed::Absent::Elsewhere), UnitSource::home)
     }
 }
 

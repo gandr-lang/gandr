@@ -6,6 +6,10 @@
 
 // `say` prints through its instance `out`.
 import "../../model/control/named-instances.gandr";
+// The console's host interface.
+import std.io;
+// Early exit's host interface.
+import std.process;
 
 /// Two instances of `std.io.Console.Eff` handled around a call naming neither: the
 /// call is refused naming both, never routed to the innermost.

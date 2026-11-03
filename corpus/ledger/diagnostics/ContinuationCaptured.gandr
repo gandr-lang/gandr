@@ -1,4 +1,9 @@
 /// `ContinuationCaptured`: a continuation holding an obligation named where its end may run other than once.
+
+// Early exit's host interface.
+import std.process;
+
+/// A task's join protocol and the path it reads.
 module Cancel :> #{
   type Join = !String. end,
   notes : String

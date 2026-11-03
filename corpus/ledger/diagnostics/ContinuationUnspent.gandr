@@ -1,4 +1,9 @@
 /// `ContinuationUnspent`: an operation clause owing its continuation, which holds an obligation, finishing without resuming or abandoning it.
+
+// Early exit's host interface.
+import std.process;
+
+/// A task's join protocol and the path it reads.
 module Cancel :> #{
   type Join = !String. end,
   notes : String

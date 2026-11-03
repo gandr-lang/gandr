@@ -5463,17 +5463,16 @@ def wrong = "text" ;"#,
     #[test]
     fn an_effectful_declaration_stays_on_the_checkers_side()
     {
-        let grammar = grammar();
-        let report = settled(
-            &grammar,
-            CorpusRoot::Strict,
-            SourceText::from(concat!(
-                "def peek(c : Cap {read}) -> -F [std.fs.Eff] String { c.read(\"notes\") }\n",
-                "def quit() -> -F Unit { handle c : std.process.Exit.Eff { c.exit(1) } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
-                "def answer : Integer ;\n",
-                "def answer = 42 ;\n",
-            )),
-        );
+        let listed = crate::tests::Listed::hosted(concat!(
+            "def peek(c : Cap {read}) -> -F [std.fs.Eff] String { c.read(\"notes\") }\n",
+            "def quit() -> -F Unit { handle c : std.process.Exit.Eff { c.exit(1) } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
+            "def answer : Integer ;\n",
+            "def answer = 42 ;\n",
+        ));
+        let Composed::Settled { report, .. } = listed.composed(CorpusRoot::Strict)
+        else {
+            panic!("the source composes");
+        };
         let rows: Vec<(String, Settlement)> = report
             .declarations()
             .iter()

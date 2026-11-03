@@ -5,6 +5,9 @@
 // `return` leaves the handler with its value as it stands. A tail call is an
 // exit too, so every `become` here is written: the exits are the subject.
 
+// Early exit's host interface.
+import std.process;
+
 /// The operation's clause resumes the body, whose value passes through the
 /// `pure` clause.
 @[ runs("101") ]

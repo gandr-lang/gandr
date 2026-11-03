@@ -1,4 +1,9 @@
 /// `ContinuationAsValue`: a continuation holding an obligation read as a value, other than as what a resumption or an abandonment ends.
+
+// Early exit's host interface.
+import std.process;
+
+/// A task's join protocol and the path it reads.
 module Cancel :> #{
   type Join = !String. end,
   notes : String

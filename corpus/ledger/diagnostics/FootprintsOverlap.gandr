@@ -7,6 +7,9 @@
 ///
 /// - see: corpus/ledger/features/footprint-separation.gandr
 
+// The filesystem's host interface.
+import std.fs;
+
 /// Both halves write `notes` through one capability that may read and write.
 @[ refuses("FootprintsOverlap") ]
 def racing(c : Cap { read, write }) -> [std.fs.Eff] Unit {

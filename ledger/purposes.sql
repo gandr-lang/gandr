@@ -739,7 +739,9 @@ INSERT INTO purpose VALUES('core-term','effect::host::CONSOLE','constant','The c
 INSERT INTO purpose VALUES('core-term','effect::host::ENV','constant','The read-only process environment interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::EXEC','constant','The process execution interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::FS','constant','The filesystem interface''s name.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::HOMES','constant','The `std` module each host interface lives in, so a source names the interface where it imports the module.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::HostAccess','enum','How a host operation meets the host: it only reads it, or it changes what another task could observe.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::HostHome','struct','Names the `std` module a host interface lives in, spelled as an import writes it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::HostSignatures','struct','The ten host interfaces, sharing their arena-owned payload and reply types.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::INTERFACES','constant','The ten host interfaces'' names, in the order the host declares them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::NET','constant','The network interface''s name: a stream to a peer named by its key.',NULL,'fits','sound',NULL);
@@ -749,6 +751,7 @@ INSERT INTO purpose VALUES('core-term','effect::host::RING','constant','The comp
 INSERT INTO purpose VALUES('core-term','effect::host::STDERR','constant','The error stream interface''s name: a line written to the process''s standard error.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::STDIN','constant','The input interface''s name: a line read from the process''s standard input.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::access','function','How an interface''s operation meets the host, so two forked halves may share an interface whose shared operations only read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::home','function','The `std` module a source imports to name a host interface, so an interface outside its imports is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::partiality','function','The divergence interface''s signature: named Partial with no operation, so it names no type and needs no arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','failure::FailureClass','enum','Whose fact a refusal records: a user absence, an unimplemented feature, a malformed source, or an engine fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','failure::TrackingIssue','struct','The issue on gandr''s tracker whose landing builds what a refusal or an editor answer is missing.',NULL,'fits','sound',NULL);
@@ -2802,6 +2805,7 @@ INSERT INTO purpose VALUES('surface-lowering','unit::Unit','struct','Holds a uni
 INSERT INTO purpose VALUES('surface-lowering','unit::UnitFault','enum','Names a unit''s fault, so the fault''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','unit::UnitKey','struct','Holds a unit''s key, so the key''s source is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','unit::UnitSource','struct','Holds a unit''s source, so the source''s start is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','unit::unhomed::Absent','enum','Names why a source is laid as no `std` module, so it names only the host interfaces it imports.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','Capabilities','struct','The capabilities the server advertises: what `initialize` answers, displayed as one line of JSON.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','build::Build','struct','Names one build by its executable''s digest, so a hub''s socket and a save''s checkpoints are keyed by the build that made them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','bus::RENDER_BUS_PREFACE','constant','The line a render-bus client opens its connection with: the attach, naming the bus and its wire schema version.',NULL,'fits','sound',NULL);

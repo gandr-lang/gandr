@@ -1,20 +1,20 @@
 error[ContinuationAsValue]: this continuation holds something that must end, so it can be used only by `resume` or `abandon`
-   ╭▸ corpus/ledger/diagnostics/ContinuationAsValue.gandr:28:40
+   ╭▸ corpus/ledger/diagnostics/ContinuationAsValue.gandr:33:40
    │
-17 │ ┌  def handed() -> -F Unit {
-18 │ │┌   handle c : std.process.Exit.Eff {
-19 │ ││     let found = fork (task : Cancel.Join) {
-20 │ ││       send(task, Cancel.notes);
-21 │ ││       close(task)
+22 │ ┌  def handed() -> -F Unit {
+23 │ │┌   handle c : std.process.Exit.Eff {
+24 │ ││     let found = fork (task : Cancel.Join) {
+25 │ ││       send(task, Cancel.notes);
+26 │ ││       close(task)
    ┆ ┆┆
-28 │ ││     oper exit(code, k) => resume_stack(k)
+33 │ ││     oper exit(code, k) => resume_stack(k)
    │ ││                           ┬────────────┯─
    │ ││                           │            │
    │ ││                           │            a continuation read as a value
    │ ││                           checked against `-F Unit`; while checking the argument of this application
-29 │ ││   }
+34 │ ││   }
    │ │└───┘ checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack(-F Unit, -F Unit)
-30 │ │  }
+35 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
    ╰ note: `handed` is refused with ContinuationAsValue, as its expectation states

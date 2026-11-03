@@ -1,4 +1,9 @@
 /// `BufferUnreturned`: a receive or an allocation ending with the buffer it placed live never handed back.
+
+// The ring's host interface.
+import std.io;
+
+/// A buffer allocated and never freed.
 @[ refuses("BufferUnreturned") ]
 def neverFreed() -> -F Unit {
   handle r : std.io.Ring.Eff {

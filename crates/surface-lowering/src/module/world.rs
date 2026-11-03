@@ -345,18 +345,22 @@ impl<'source> Collector<'_, 'source>
         Ok(())
     }
 
-    /// Withdraw the offer of the source `source` when a label names a module
-    /// the source does not declare at its top level, filing its refusal as a
-    /// stray onto `strays`.
+    /// Withdraw the offer of the source `source` when it grants a host
+    /// interface whose module the source does not import, or a label names a
+    /// module the source does not declare at its top level, filing its
+    /// refusal as a stray onto `strays`.
     ///
     /// # Specification
-    /// - requires: every module of `source` is collected.
-    /// - ensures: the offer kept, when each module it names is one `source`
-    ///   declares at its top level, and the first attribute block before it
-    ///   filed as a stray decorating nothing; otherwise the offer withdrawn and
-    ///   a stray filed at it, refused [`LoweringRefusal::UnresolvedName`] at
-    ///   the first module the source does not declare and decorated by the
-    ///   offer's attribute blocks, which state what it is expected to be.
+    /// - requires: every module and import of `source` is collected.
+    /// - ensures: the offer kept, when the source reaches each host interface
+    ///   it grants and each module it names is one `source` declares at its top
+    ///   level, and the first attribute block before it filed as a stray
+    ///   decorating nothing; otherwise the offer withdrawn and a stray filed at
+    ///   it, refused [`LoweringRefusal::UnresolvedTypeHead`] at the first
+    ///   interface the source does not reach, or else
+    ///   [`LoweringRefusal::UnresolvedName`] at the first module the source
+    ///   does not declare, and decorated by the offer's attribute blocks, which
+    ///   state what it is expected to be.
     /// - fails: a fault reading an attribute block that is no stray's own.
     /// - panics: none.
     ///
@@ -366,7 +370,8 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a label answered by a module of the source settles,
     ///   and one answered by a name the source declares no module under is
-    ///   refused at the name.
+    ///   refused at the name; an interface whose module the source imports
+    ///   after the offer settles, and one it does not import is refused.
     /// - witness: `lower::world::tests::a_site_s_offer_answers_by_label_and_by_name_3523`
     #[spec(
         captures: before = strays.len(),
@@ -382,27 +387,57 @@ impl<'source> Collector<'_, 'source>
         else {
             return Ok(());
         };
-        let unanswered = offer.answered.iter().find_map(|&(_, module)| {
-            let name = self.name_of(module);
+        // A host interface is reached through an import the source may write
+        // after its offer, so the offer's interfaces are read once the source
+        // is collected (#4523).
+        let unreached = offer.granted.iter().find_map(|interface| {
+            let name = interface.name(self.tree);
             (!self
                 .collected
-                .modules
-                .contains_key(&(Container::TopLevel(source), name)))
-            .then_some((module, name))
+                .reaches(interface.span().start(), &EffectName::from(name.as_ref()))
+                .0)
+                .then_some(LoweringRefusal::UnresolvedTypeHead {
+                    span: interface.span(),
+                    name,
+                    arity: HeadArity::Nullary,
+                })
         });
+        let unanswered = || {
+            offer.answered.iter().find_map(|&(_, module)| {
+                let name = self.name_of(module);
+                (!self
+                    .collected
+                    .modules
+                    .contains_key(&(Container::TopLevel(source), name)))
+                .then_some(LoweringRefusal::UnresolvedName {
+                    span: module.span,
+                    name,
+                })
+            })
+        };
         let first = offer.decorations.first().copied();
-        if let Some((module, name)) = unanswered {
+        let granted: Vec<_> = offer
+            .granted
+            .iter()
+            .map(|interface| {
+                (
+                    interface.span().start(),
+                    EffectName::from(interface.name(self.tree).as_ref()),
+                )
+            })
+            .collect();
+        if let Some(refusal) = unreached.or_else(unanswered) {
             if let Some(withdrawn) = self.collected.offers.remove(&source) {
                 strays.push(Stray::of(
                     withdrawn.declaration,
-                    LoweringRefusal::UnresolvedName {
-                        span: module.span,
-                        name,
-                    },
+                    refusal,
                     withdrawn.decorations,
                 ));
             }
             return Ok(());
+        }
+        for (at, named) in granted {
+            self.collected.reach_host(at, &named);
         }
         if let Some(block) = first
             && let Some(refusal) = strayed(self.module_child(block))?

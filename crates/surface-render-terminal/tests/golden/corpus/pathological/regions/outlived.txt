@@ -1,23 +1,23 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/regions/outlived.gandr:14:32
+   ╭▸ corpus/pathological/regions/outlived.gandr:17:32
    │
-10 │ ┌  def outlived() -> Integer {
-11 │ │    var s = 4;
+13 │ ┌  def outlived() -> Integer {
+14 │ │    var s = 4;
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
-12 │ │┌   handle c : std.process.Exit.Eff {
-13 │ ││     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
+15 │ │┌   handle c : std.process.Exit.Eff {
+16 │ ││     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
    │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
-14 │ ││     let back : () => Integer = pass(k);
+17 │ ││     let back : () => Integer = pass(k);
    │ ││     ┬──        ┬────────────   ━━━━━━━ its type does not convert: expected `-F Integer`, found `-F ((() => Integer) at c)`
    │ ││     │          │
    │ ││     │          the type it is checked against
    │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while finishing the type of this
-15 │ ││     force back
+18 │ ││     force back
    ┆ ┆┆
-18 │ ││     oper exit(code, rest) => pure 0
-19 │ ││   }
+21 │ ││     oper exit(code, rest) => pure 0
+22 │ ││   }
    │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
-20 │ │  }
+23 │ │  }
    │ └──┘ checked against `() => Integer`; while checking the body of this thunk
    │
    ├ note: `outlived` is refused with TypeMismatch, as its expectation states

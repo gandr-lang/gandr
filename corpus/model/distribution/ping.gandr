@@ -15,6 +15,10 @@
 
 // The native finite lists.
 import std.list (List);
+// The console's host interface.
+import std.io;
+// The network's host interface.
+import std.net;
 
 /// Accept one stream, read its ping, answer `pong`, disconnect, and return
 /// the ping.

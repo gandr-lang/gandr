@@ -1,4 +1,9 @@
 /// `CapabilityEscaped`: a scoped capability that would outlive its region.
+
+// Early exit's host interface.
+import std.process;
+
+/// A scope that returns its own capability.
 @[ refuses("CapabilityEscaped") ]
 def leak() -> -F Cap {exit} {
   handle c : std.process.Exit.Eff {

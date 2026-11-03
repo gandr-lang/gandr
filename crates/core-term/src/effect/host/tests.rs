@@ -168,3 +168,34 @@ fn an_operation_reads_the_host_only_when_it_changes_nothing()
         "an interface the host does not declare holds its handler's state"
     );
 }
+
+#[test]
+fn each_host_interface_but_partial_lives_in_a_std_module_4523()
+{
+    let home = |name: &str| super::home(&EffectName::from(name));
+    assert_eq!(
+        home(CONSOLE),
+        Maybe::Present(super::HostHome("std.io")),
+        "the console lives in `std.io`"
+    );
+    assert_eq!(
+        home(EXEC),
+        Maybe::Present(super::HostHome("std.process")),
+        "execution lives in `std.process`"
+    );
+    assert_eq!(
+        home(NET),
+        Maybe::Present(super::HostHome("std.net")),
+        "the network lives in `std.net`"
+    );
+    assert_eq!(
+        home(PARTIAL),
+        Maybe::Absent(super::homed::Absent::Ambient),
+        "divergence stays ambient"
+    );
+    assert_eq!(
+        home("std.io"),
+        Maybe::Absent(super::homed::Absent::Ambient),
+        "a module is no interface"
+    );
+}

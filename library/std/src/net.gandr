@@ -1,0 +1,5 @@
+// `std.net`: the home of the network's host interface, `std.net.Eff`, whose
+// operations open, accept, write, read and close a stream to a peer. A source
+// names the interface where it imports this module, `import std.net;`, and
+// nowhere else (#4523). The interface is native, so no declaration here
+// states it. The pool capability and its streams wait for demand.

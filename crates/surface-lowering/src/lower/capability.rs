@@ -1017,8 +1017,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   numbered after every one the declaration binds before it, and pushed
     ///   as a parameter whose type is that instance's capability; the frame it
     ///   bound is returned.
-    /// - fails: the refusals of [`crate::module::Collected::presented_theory`]
-    ///   for an interface neither the host nor a theory answers, at the name; a
+    /// - fails: [`LoweringRefusal::UnresolvedTypeHead`] at the name for a host
+    ///   interface whose `std` module the source does not import (#4523); the
+    ///   refusals of [`crate::module::Collected::presented_theory`] for an
+    ///   interface neither the host nor a theory answers, at the name; a
     ///   binder's own refusal; a fault at the label when the declaration has no
     ///   owner or its region binders overflow their width.
     /// - panics: none.
@@ -1052,7 +1054,17 @@ impl<'source> Lowerer<'_, 'source>
         let named = self.instance_interface(path);
         let table = host(site)?;
         let interface = EffectName::from(named.as_ref());
-        if let Maybe::Absent(_) = table.named(&interface) {
+        if let Maybe::Present(_) = table.named(&interface) {
+            if !self.collected.reaches(path.start(), &interface).0 {
+                return Err(LoweringRefusal::UnresolvedTypeHead {
+                    span: path,
+                    name: named,
+                    arity: crate::resolve::HeadArity::Nullary,
+                });
+            }
+            self.collected.reach_host(path.start(), &interface);
+        }
+        else {
             let mut segments = self.path_segments(path);
             let Some((span, last)) = segments.pop()
             else {
@@ -1282,11 +1294,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   at the sorts the entry fixes, each fixed type kept to be read with the
     ///   row.
     /// - fails: the refusals of [`Self::handled`] at an entry, the unresolved
-    ///   head among them for a name that no extern block, host interface or
-    ///   theory answers; [`LoweringRefusal::DuplicateDefinition`] for an
-    ///   interface named whole again, or a label written again, at the second,
-    ///   since a row holds each label once; a misplaced-tile fault for a row
-    ///   out of shape or a label that is not one name.
+    ///   head among them for a name that no extern block, host interface the
+    ///   source imports or theory answers;
+    ///   [`LoweringRefusal::DuplicateDefinition`] for an interface named whole
+    ///   again, or a label written again, at the second, since a row holds each
+    ///   label once; a misplaced-tile fault for a row out of shape or a label
+    ///   that is not one name.
     /// - panics: none.
     ///
     /// # Errors
@@ -1493,6 +1506,16 @@ impl<'source> Lowerer<'_, 'source>
             self.read(ty.node, Reading::ValueType(frame));
             self.fixed_carriers.push(ty);
         }
+        // Each host interface the row names reaches the import of its module.
+        for interface in row
+            .interfaces
+            .iter()
+            .chain(row.labels.iter().map(|&(_, ref held)| held))
+        {
+            if let Interface::Host(ref named) = *interface {
+                self.collected.reach_host(site.at.span.start(), named);
+            }
+        }
         for &(span, theory) in &row.named {
             self.resolutions
                 .push((span, crate::Resolution::Declaration(theory)));
@@ -1618,6 +1641,9 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
+        if let Performer::Interface(ref named) = performer {
+            self.collected.reach_host(head.span.start(), named);
+        }
         let name = self.name_at(selected);
         let operation = OperationName::from(name.as_ref());
         let interface = if let Performer::Capability(_, Some(ref theory)) = performer {
@@ -2181,6 +2207,7 @@ impl<'source> Lowerer<'_, 'source>
         let _first = self.capabilities.insert(held);
         match interface {
             Interface::Host(ref name) => {
+                self.collected.reach_host(site.at.span.start(), name);
                 let _first = self.answered.insert(held, name.clone());
             },
             Interface::Theory(ref theory) => {
@@ -2444,10 +2471,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   modules its prefix names, read as an interface whose value sorts the
     ///   manifest fixes ([`theory::operations`]), held for the form at `at` and
     ///   named by the whole path.
-    /// - fails: [`LoweringRefusal::UnresolvedName`] at a manifest sort the
-    ///   interface does not declare, an interface the source reads declaring
-    ///   none; [`LoweringRefusal::DuplicateDefinition`] at a sort the manifest
-    ///   fixes twice; the refusals of
+    /// - fails: [`LoweringRefusal::UnresolvedTypeHead`] at a host interface
+    ///   whose `std` module the source does not import (#4523);
+    ///   [`LoweringRefusal::UnresolvedName`] at a manifest sort the interface
+    ///   does not declare, an interface the source reads declaring none;
+    ///   [`LoweringRefusal::DuplicateDefinition`] at a sort the manifest fixes
+    ///   twice; the refusals of
     ///   [`crate::module::Collected::presented_theory_in`] for a path neither
     ///   the source's interfaces nor a theory answers; an unadmitted form for a
     ///   theory whose value codes no presentation;
@@ -2490,6 +2519,16 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(match *provider {
                 Provider::Block(ref foreign) => Interface::Foreign(Arc::clone(foreign)),
                 Provider::Host => Interface::Host(named),
+            });
+        }
+        // A host interface whose module the source does not import is no
+        // theory either: the head is unresolved, and its help names the
+        // import (#4523).
+        if let Maybe::Present(_) = gandr_core_term::effect::host::home(&named) {
+            return Err(LoweringRefusal::UnresolvedTypeHead {
+                span,
+                name: handled,
+                arity: crate::resolve::HeadArity::Nullary,
             });
         }
         let prefix: Vec<(ByteSpan, SurfaceName<'source>)> = written

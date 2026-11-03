@@ -38,6 +38,9 @@ use crate::error::CrossedExit;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::fixture::grammar;
+use crate::fixture::hosted;
+use crate::fixture::hosting;
+use crate::fixture::imported;
 use crate::fixture::listed;
 use crate::fixture::listing;
 use crate::fixture::parsed;
@@ -347,12 +350,10 @@ fn a_capability_type_lowers_to_its_authority()
 fn a_returner_row_names_whole_interfaces()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(
-            "def peek(c : Cap {read}) -> -F [std.process.Exit.Eff, std.fs.Eff] String { c.read(\"notes\") }\n",
-        ),
-        &mut arena,
+    let text = hosting(
+        "def peek(c : Cap {read}) -> -F [std.process.Exit.Eff, std.fs.Eff] String { c.read(\"notes\") }\n",
     );
+    let module = hosted(&text, &mut arena);
     let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, "peek".into())
     else {
         panic!("the function lowers");
@@ -396,17 +397,60 @@ fn a_returner_row_names_whole_interfaces()
     );
 }
 
+/// #4523: a host interface lives in a `std` module. A row names it where its
+/// source imports the module, and nowhere else: a source importing another
+/// module, or none, refuses the head by its path. The corpus's
+/// `corpus/model/effects/hello.gandr` names the console through a listing.
+#[test]
+fn a_host_interface_answers_only_where_its_module_is_imported_4523()
+{
+    let say = "def say(c : Cap {print}) -> -F [std.io.Console.Eff] Unit { c.print(\"said\") }\n";
+    for (imports, reached) in [
+        ("import std.io ;\n", true),
+        ("import std.fs ;\n", false),
+        ("", false),
+    ] {
+        let source = alloc::format!("\n{say}{imports}");
+        let mut arena = CoreArena::new();
+        let module = imported(&source, &mut arena);
+        let outcome = outcome_of(&module, "say".into());
+        let import = source.find("import");
+        let marked = module
+            .reached_imports()
+            .iter()
+            .any(|span| Some(usize::from(span.start())) == import);
+        assert_eq!(
+            marked, reached,
+            "{imports:?}: the row reaches the console through the import, which so reads as used"
+        );
+        if reached {
+            assert!(
+                matches!(outcome, DeclarationOutcome::Completed { .. }),
+                "{imports:?}: the row names the console: {outcome:?}"
+            );
+        }
+        else {
+            assert!(
+                matches!(
+                    outcome,
+                    DeclarationOutcome::Refused(LoweringRefusal::UnresolvedTypeHead { name, arity: HeadArity::Nullary, .. })
+                        if name == SurfaceName::from("std.io.Console.Eff")
+                ),
+                "{imports:?}: the console is an unresolved head: {outcome:?}"
+            );
+        }
+    }
+}
+
 #[test]
 fn a_row_stays_open_through_its_tail_2270()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(concat!(
-            "def log[r : Row](s : String) -> -F [std.io.Console.Eff | r] Unit { std.io.Console.print(s) }\n",
-            "def alone[r : Row]() -> -F [r] Unit { pure unit }\n",
-        )),
-        &mut arena,
-    );
+    let text = hosting(concat!(
+        "def log[r : Row](s : String) -> -F [std.io.Console.Eff | r] Unit { std.io.Console.print(s) }\n",
+        "def alone[r : Row]() -> -F [r] Unit { pure unit }\n",
+    ));
+    let module = hosted(&text, &mut arena);
     for (name, written) in [
         ("log", ["std.io.Console.Eff"].as_slice()),
         ("alone", [].as_slice()),
@@ -476,16 +520,14 @@ fn a_row_stays_open_through_its_tail_2270()
 fn an_unknown_operation_or_interface_is_refused_by_name()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(concat!(
-            "def held : Cap {delete} ;\n",
-            "def row(c : Cap {read}) -> -F [Radio] String { c.read(\"x\") }\n",
-            "def sent(c : Cap {read}) -> -F [std.fs.Eff] String { c.delete(\"x\") }\n",
-            "def scoped() -> -F Unit { handle c : Radio { pure unit } with { pure(x) => pure x } }\n",
-            "def twice() -> -F Unit { handle c : std.process.Exit.Eff { pure unit } with { pure(x) => pure x, pure(y) => pure y, oper exit(code, k) => k(unit) } }\n",
-        )),
-        &mut arena,
-    );
+    let text = hosting(concat!(
+        "def held : Cap {delete} ;\n",
+        "def row(c : Cap {read}) -> -F [Radio] String { c.read(\"x\") }\n",
+        "def sent(c : Cap {read}) -> -F [std.fs.Eff] String { c.delete(\"x\") }\n",
+        "def scoped() -> -F Unit { handle c : Radio { pure unit } with { pure(x) => pure x } }\n",
+        "def twice() -> -F Unit { handle c : std.process.Exit.Eff { pure unit } with { pure(x) => pure x, pure(y) => pure y, oper exit(code, k) => k(unit) } }\n",
+    ));
+    let module = hosted(&text, &mut arena);
     for name in ["held", "sent"] {
         assert!(
             matches!(
@@ -523,13 +565,11 @@ fn an_unknown_operation_or_interface_is_refused_by_name()
 fn a_row_names_each_interface_once()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(concat!(
-            "def twice() -> -F [std.fs.Eff, std.fs.Eff] Integer { pure 1 }\n",
-            "def apart() -> -F [std.fs.Eff, Partial] Integer { pure 1 }\n",
-        )),
-        &mut arena,
-    );
+    let text = hosting(concat!(
+        "def twice() -> -F [std.fs.Eff, std.fs.Eff] Integer { pure 1 }\n",
+        "def apart() -> -F [std.fs.Eff, Partial] Integer { pure 1 }\n",
+    ));
+    let module = hosted(&text, &mut arena);
     let DeclarationOutcome::Refused(LoweringRefusal::DuplicateDefinition { span, name, first }) =
         outcome_of(&module, "twice".into())
     else {
@@ -543,8 +583,8 @@ fn a_row_names_each_interface_once()
         ),
         (
             SurfaceName::from("std.fs.Eff"),
-            (19_usize, 29_usize),
-            (31_usize, 41_usize)
+            (20_usize, 30_usize),
+            (32_usize, 42_usize)
         ),
         "the second `std.fs.Eff` is refused, pointing back at the first"
     );
@@ -561,14 +601,12 @@ fn a_row_names_each_interface_once()
 fn a_row_names_two_instances_of_one_interface_apart_2271()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(concat!(
-            "def both() -> -F [x : std.io.Console.Eff, y : std.io.Console.Eff] Unit { x.print(\"x\") }\n",
-            "def twice() -> -F [o : std.io.Console.Eff, o : std.io.Console.Eff] Unit { pure unit }\n",
-            "def lost(k : +U (-F [z : std.io.Console.Eff] Unit)) -> -F Unit { pure unit }\n",
-        )),
-        &mut arena,
-    );
+    let text = hosting(concat!(
+        "def both() -> -F [x : std.io.Console.Eff, y : std.io.Console.Eff] Unit { x.print(\"x\") }\n",
+        "def twice() -> -F [o : std.io.Console.Eff, o : std.io.Console.Eff] Unit { pure unit }\n",
+        "def lost(k : +U (-F [z : std.io.Console.Eff] Unit)) -> -F Unit { pure unit }\n",
+    ));
+    let module = hosted(&text, &mut arena);
     let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, "both".into())
     else {
         panic!("both: the function lowers");
@@ -647,17 +685,15 @@ fn a_row_names_two_instances_of_one_interface_apart_2271()
 fn an_exercise_is_checked_against_the_authority_it_was_attenuated_to()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(concat!(
-            "def fs : Cap {read, write} ;\n",
-            "def peek(c : Cap {read}) -> -F [std.fs.Eff] String { c.read(\"notes\") }\n",
-            "def granted() -> -F [std.fs.Eff] String { peek(fs) }\n",
-            "def save(c : Cap {read, write}) -> -F [std.fs.Eff] Unit { c.write(\"notes\", \"x\") }\n",
-            "def denied(c : Cap {read}) -> -F [std.fs.Eff] Unit { c.write(\"notes\", \"x\") }\n",
-            "def direct() -> -F [std.fs.Eff] String { fs.read(\"notes\") }\n",
-        )),
-        &mut arena,
-    );
+    let text = hosting(concat!(
+        "def fs : Cap {read, write} ;\n",
+        "def peek(c : Cap {read}) -> -F [std.fs.Eff] String { c.read(\"notes\") }\n",
+        "def granted() -> -F [std.fs.Eff] String { peek(fs) }\n",
+        "def save(c : Cap {read, write}) -> -F [std.fs.Eff] Unit { c.write(\"notes\", \"x\") }\n",
+        "def denied(c : Cap {read}) -> -F [std.fs.Eff] Unit { c.write(\"notes\", \"x\") }\n",
+        "def direct() -> -F [std.fs.Eff] String { fs.read(\"notes\") }\n",
+    ));
+    let module = hosted(&text, &mut arena);
     let peek = tail_of(&module, &arena, "peek".into());
     let Some(&Computation::Exercise {
         capability,
@@ -726,13 +762,11 @@ fn an_exercise_is_checked_against_the_authority_it_was_attenuated_to()
 fn an_operation_is_performed_by_its_interface_s_name_2279()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(concat!(
-            "def hello() -> -F [std.io.Console.Eff] Unit { std.io.Console.print(\"hello, world!\") }\n",
-            "def elsewhere() -> -F [std.process.Exit.Eff] Unit { std.process.Exit.print(\"x\") }\n",
-        )),
-        &mut arena,
-    );
+    let text = hosting(concat!(
+        "def hello() -> -F [std.io.Console.Eff] Unit { std.io.Console.print(\"hello, world!\") }\n",
+        "def elsewhere() -> -F [std.process.Exit.Eff] Unit { std.process.Exit.print(\"x\") }\n",
+    ));
+    let module = hosted(&text, &mut arena);
     let hello = tail_of(&module, &arena, "hello".into());
     let Some(&Computation::Perform {
         ref signature,
@@ -1001,7 +1035,8 @@ fn an_exercise_s_head_answers_at_its_operation()
         "def save(c : Cap {read, write}) -> -F [std.fs.Eff] Unit { c.write(\"notes\", \"x\") }\n",
     );
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(text), &mut arena);
+    let text = hosting(text);
+    let module = hosted(&text, &mut arena);
     let read = |ty| arena.value_type(ty).cloned();
     let mut heads: Vec<(&str, Option<ValueType>, Option<ValueType>)> = module
         .origins()
@@ -1058,12 +1093,10 @@ fn an_exercise_s_head_answers_at_its_operation()
 fn a_scope_handles_its_capability_and_resumes()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(
-            "def quit() -> -F Unit { handle c : std.process.Exit.Eff { c.exit(1) } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
-        ),
-        &mut arena,
+    let text = hosting(
+        "def quit() -> -F Unit { handle c : std.process.Exit.Eff { c.exit(1) } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
     );
+    let module = hosted(&text, &mut arena);
     let quit = tail_of(&module, &arena, "quit".into());
     let Some(&Computation::Scope {
         ref signature,
@@ -1204,7 +1237,8 @@ fn a_scope_records_the_theory_and_sorts_it_handles_2382()
         ),
         state = STATE,
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let text = hosting(source.as_str());
+    let module = hosted(&text, &mut arena);
     let fixed = tail_of(&module, &arena, "fixed".into());
     let hosted = tail_of(&module, &arena, "hosted".into());
     let &[(scope, ref model)] = module.origins().scope_theories()
@@ -1250,7 +1284,8 @@ fn a_scope_s_manifest_names_only_its_theory_s_sorts_2272()
         state = STATE,
         handlers = handlers,
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let text = hosting(source.as_str());
+    let module = hosted(&text, &mut arena);
     for (name, sort) in [("undeclared", "T"), ("hosted", "S")] {
         assert!(
             matches!(
@@ -1315,7 +1350,8 @@ fn a_row_names_a_theory_at_the_sorts_it_fixes_2844()
         ),
         state = STATE,
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let text = hosting(source.as_str());
+    let module = hosted(&text, &mut arena);
     let DeclarationOutcome::Completed { declared_type, .. } =
         outcome_of(&module, "labelled".into())
     else {
@@ -1609,7 +1645,8 @@ fn a_row_records_the_theory_and_sorts_each_entry_fixes_3230()
         ),
         state = STATE,
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let text = hosting(source.as_str());
+    let module = hosted(&text, &mut arena);
     let returner = |name: &str| {
         let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, name.into())
         else {
@@ -2021,7 +2058,8 @@ fn a_scope_names_a_model_of_its_theory_2272()
         put_put = PUT_PUT,
         passing = PASSING,
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let text = hosting(source.as_str());
+    let module = hosted(&text, &mut arena);
     let answered = tail_of(&module, &arena, "answered".into());
     let Some(&Computation::Scope {
         on_return,
@@ -2144,7 +2182,7 @@ fn a_scope_names_a_model_of_its_theory_2272()
                 span,
                 boundary: FragmentBoundary::WrongSort,
                 ..
-            }) if source.get(usize::from(span.start()) .. usize::from(span.end())) == Some("Passing")
+            }) if text.get(usize::from(span.start()) .. usize::from(span.end())) == Some("Passing")
         ),
         "{:?}",
         outcome_of(&module, "hosted".into())
@@ -2313,7 +2351,8 @@ fn a_scope_is_answered_by_the_model_in_scope_2272()
         passing = PASSING,
         zero_and_one = ZERO_AND_ONE,
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let text = hosting(source.as_str());
+    let module = hosted(&text, &mut arena);
     let answered = tail_of(&module, &arena, "answered".into());
     let Some(&Computation::Scope { ref clauses, .. }) = arena.computation(answered)
     else {
@@ -2399,7 +2438,7 @@ fn a_scope_is_answered_by_the_model_in_scope_2272()
                 span,
                 boundary: FragmentBoundary::WrongSort,
                 ..
-            }) if source.get(usize::from(span.start()) .. usize::from(span.end())) == Some("std.process.Exit.Eff")
+            }) if text.get(usize::from(span.start()) .. usize::from(span.end())) == Some("std.process.Exit.Eff")
         ),
         "{:?}",
         outcome_of(&module, "hosted".into())
@@ -2518,7 +2557,8 @@ fn a_clause_abandons_its_continuation_1334()
         "def abandon(n : Integer) -> -F Unit { pure unit }\n",
         "def halt() -> -F Unit { abandon(1) }\n",
     );
-    let module = lowered(SourceText::from(source), &mut arena);
+    let text = hosting(source);
+    let module = hosted(&text, &mut arena);
     let quit = tail_of(&module, &arena, "quit".into());
     let Some(&Computation::Scope { ref clauses, .. }) = arena.computation(quit)
     else {
@@ -2561,12 +2601,10 @@ fn a_clause_abandons_its_continuation_1334()
 fn a_scoped_capability_cannot_escape()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(
-            "def leak() -> -F Cap {exit} { handle c : std.process.Exit.Eff { pure c } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
-        ),
-        &mut arena,
+    let text = hosting(
+        "def leak() -> -F Cap {exit} { handle c : std.process.Exit.Eff { pure c } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
     );
+    let module = hosted(&text, &mut arena);
     let report = judged(&module, &mut arena);
     assert!(
         matches!(
@@ -2586,7 +2624,8 @@ fn a_return_in_a_subject_leaves_past_the_handler()
         "def leave(n : Integer) -> -F Integer { handle c : std.process.Exit.Eff { c.exit(1); return n } with { pure(x) => pure x + 1, oper exit(code, k) => k(unit) } }\n",
         "def kept() -> -F Integer { handle c : std.process.Exit.Eff { 1 } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
     );
-    let module = lowered(SourceText::from(source), &mut arena);
+    let text = hosting(source);
+    let module = hosted(&text, &mut arena);
     let leave = tail_of(&module, &arena, "leave".into());
     let Some(&Computation::Reset(delimited)) = arena.computation(leave)
     else {
@@ -2661,16 +2700,14 @@ fn a_return_in_a_subject_leaves_past_the_handler()
 fn an_exit_that_would_run_in_a_live_frame_is_refused()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(concat!(
-            "def one() -> -F Integer { 1 }\n",
-            "def became() -> -F Integer { handle c : std.process.Exit.Eff { become one() } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
-            "def broke() -> -F Integer { loop { handle c : std.process.Exit.Eff { break(1) } with { pure(x) => pure x, oper exit(code, k) => k(unit) } } }\n",
-            "def again() -> -F Integer { loop { handle c : std.process.Exit.Eff { continue } with { pure(x) => pure x, oper exit(code, k) => k(unit) } } }\n",
-            "def inner() -> -F Integer { handle c : std.process.Exit.Eff { let v = loop { break(5) } ; pure v } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
-        )),
-        &mut arena,
-    );
+    let text = hosting(concat!(
+        "def one() -> -F Integer { 1 }\n",
+        "def became() -> -F Integer { handle c : std.process.Exit.Eff { become one() } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
+        "def broke() -> -F Integer { loop { handle c : std.process.Exit.Eff { break(1) } with { pure(x) => pure x, oper exit(code, k) => k(unit) } } }\n",
+        "def again() -> -F Integer { loop { handle c : std.process.Exit.Eff { continue } with { pure(x) => pure x, oper exit(code, k) => k(unit) } } }\n",
+        "def inner() -> -F Integer { handle c : std.process.Exit.Eff { let v = loop { break(5) } ; pure v } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
+    ));
+    let module = hosted(&text, &mut arena);
     for (name, crossed) in [
         ("became", CrossedExit::Become),
         ("broke", CrossedExit::Break),
@@ -2708,7 +2745,8 @@ fn a_capability_at_a_scope_lives_in_its_region()
          def plain() -> -F Unit {{ handle c : std.process.Exit.Eff {{ let d : Integer at c = 1 ; pure unit }} {clauses} }}\n\
          def held() -> -F Unit {{ var s = 1 ; handle c : std.process.Exit.Eff {{ let d : Integer at s = 1 ; let e : Integer at c = 2 ; pure unit }} {clauses} }}\n"
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let text = hosting(source.as_str());
+    let module = hosted(&text, &mut arena);
     let outer = tail_of(&module, &arena, "regions".into());
     let Some(&Computation::Scope { subject: inner, .. }) = arena.computation(outer)
     else {
@@ -2887,13 +2925,11 @@ fn an_allocated_buffer_is_placed_live_and_freed()
     use gandr_core_term::session::SessionAction;
 
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(
-            "def ring() -> -F Unit { handle r : std.io.Ring.Eff { let b = r.alloc(4096) ; r.free(b) } with { pure(x) => pure x, oper alloc(n, b, k) => k(b), oper free(b, k) => k(unit) } }\n\
+    let text = hosting(
+        "def ring() -> -F Unit { handle r : std.io.Ring.Eff { let b = r.alloc(4096) ; r.free(b) } with { pure(x) => pure x, oper alloc(n, b, k) => k(b), oper free(b, k) => k(unit) } }\n\
              def named() -> -F Unit { handle c : std.process.Exit.Eff { let code = c.exit(1) ; pure code } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
-        ),
-        &mut arena,
     );
+    let module = hosted(&text, &mut arena);
     let ring = tail_of(&module, &arena, "ring".into());
     let Some(&Computation::Scope {
         subject,
@@ -3022,7 +3058,8 @@ fn a_scope_records_where_its_clauses_bind_1439()
                    with { pure(x) => pure x, oper alloc(n, b, k) => k(b), oper free(m, j) => \
                    j(unit) } }\n";
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(written), &mut arena);
+    let text = hosting(written);
+    let module = hosted(&text, &mut arena);
     let ring = tail_of(&module, &arena, "ring".into());
     let spelled: Vec<(ClauseBinder, &str)> = module
         .origins()
@@ -3033,8 +3070,7 @@ fn a_scope_records_where_its_clauses_bind_1439()
             let span = entry.1.span();
             (
                 entry.0.1,
-                written
-                    .get(usize::from(span.start()) .. usize::from(span.end()))
+                text.get(usize::from(span.start()) .. usize::from(span.end()))
                     .unwrap_or_default(),
             )
         })

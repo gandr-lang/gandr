@@ -11,6 +11,9 @@
 // - see: `corpus/model/deployments/offers.site.gandr` — a site whose offer
 //   answers its role's row
 
+// The console's host interface.
+import std.io;
+
 /// What the site keeps: values by key.
 pub theory Kept where {
   /// The site keeps values of this sort.

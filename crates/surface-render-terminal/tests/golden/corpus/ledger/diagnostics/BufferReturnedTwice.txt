@@ -1,22 +1,22 @@
 error[BufferReturnedTwice]: the buffer is handed back a second time
-   ╭▸ corpus/ledger/diagnostics/BufferReturnedTwice.gandr:7:12
+   ╭▸ corpus/ledger/diagnostics/BufferReturnedTwice.gandr:12:12
    │
- 3 │ ┌  def freedTwice() -> -F Unit {
- 4 │ │┌   handle r : std.io.Ring.Eff {
- 5 │ ││     let b = r.alloc(4096);
+ 8 │ ┌  def freedTwice() -> -F Unit {
+ 9 │ │┌   handle r : std.io.Ring.Eff {
+10 │ ││     let b = r.alloc(4096);
    │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf
- 6 │ ││     let first = r.free(b);
+11 │ ││     let first = r.free(b);
    │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the body under this binding; binds first : Unit
- 7 │ ││     r.free(b)
+12 │ ││     r.free(b)
    │ ││     ┬──────┯─
    │ ││     │      │
    │ ││     │      a buffer already handed back
    │ ││     checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the payload of this operation
    ┆ ┆┆
-11 │ ││     oper free(b, k) => k(unit)
-12 │ ││   }
+16 │ ││     oper free(b, k) => k(unit)
+17 │ ││   }
    │ │└───┘ checked against `-F Unit`; while checking the subject of this scope under its capability; binds r : Cap {alloc, free}
-13 │ │  }
+18 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
    ╰ note: `freedTwice` is refused with BufferReturnedTwice, as its expectation states

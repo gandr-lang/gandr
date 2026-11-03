@@ -5870,6 +5870,25 @@ mod tests
         TypeTable::of(&grammar, source).expect("the source parses")
     }
 
+    /// The table [`TypeTable::of_unit`] builds for `source` laid importing
+    /// every host interface's module ([`crate::tests::Listed::hosted`]), its
+    /// offsets the source's own; panics when the grammar or the parse fails.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hosted_table(source: SourceText<'_>) -> TypeTable
+    {
+        let listed = crate::tests::Listed::hosted(<&str>::from(source));
+        let grammar = built_in().expect("the built-in grammar builds");
+        TypeTable::of_unit(
+            &grammar,
+            SourceText::from(listed.text.as_str()),
+            &listed.unit,
+            listed.base,
+        )
+        .expect("the unit parses")
+    }
+
     /// #2440: a source its lowering refuses whole tables as its typing does —
     /// nothing typed, the refusal's message kept — without typing it.
     #[test]
@@ -7450,7 +7469,7 @@ mod tests
              c.exit(1)\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return \
              unit\n  }\n}\n",
         );
-        let table = table(source);
+        let table = hosted_table(source);
         let used = || answer(&table, source, SourceText::from("c ;"));
         assert!(
             matches!(used(), Maybe::Present(Answer { ref ty, .. }) if ty == "Cap {exit} at c"),
@@ -7479,7 +7498,7 @@ mod tests
              c.exit(1)\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return \
              unit\n  }\n}\n",
         );
-        let table = table(source);
+        let table = hosted_table(source);
         let capability = answer(&table, source, SourceText::from("c ;"));
         assert!(
             matches!(capability, Maybe::Present(Answer { ref ty, .. }) if ty == "Cap {exit} at c"),
@@ -7713,7 +7732,7 @@ mod tests
              pure code\n  } with {\n    pure(x) => pure unit,\n    oper exit(status, k) => pure \
              unit\n  }\n}\n",
         );
-        let table = table(source);
+        let table = hosted_table(source);
         let binder = |ty: &str| {
             Maybe::Present(Answer {
                 subject: Subject::Binder,

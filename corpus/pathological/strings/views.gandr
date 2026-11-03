@@ -7,6 +7,8 @@
 // The lists; the byte lists.
 import "../../model/data/data-base.gandr";
 import "../../model/strings/string-base.gandr";
+// Early exit's host interface.
+import std.process;
 
 /// A view captured by a thunk: the thunk may be forced after the access that
 /// lent the view has ended, so the view would outlive its access.

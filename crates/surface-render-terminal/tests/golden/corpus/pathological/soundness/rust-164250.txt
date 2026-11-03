@@ -1,33 +1,33 @@
 error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
-   ╭▸ corpus/pathological/soundness/rust-164250.gandr:30:71
+   ╭▸ corpus/pathological/soundness/rust-164250.gandr:33:71
    │
-25 │ ┌   def bypassed() -> Integer {
-26 │ │┌    handle outer : std.process.Exit.Eff {
-27 │ ││      let q : (() => Integer) at outer = thunk { pure 0 };
+28 │ ┌   def bypassed() -> Integer {
+29 │ │┌    handle outer : std.process.Exit.Eff {
+30 │ ││      let q : (() => Integer) at outer = thunk { pure 0 };
    │ ││      ─── checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds q : (() => Integer) at outer
-28 │ ││      let x : Integer = handle inner : std.process.Exit.Eff {
+31 │ ││      let x : Integer = handle inner : std.process.Exit.Eff {
    │ ││┌─────┬─────────────────┘
    │ │││     │
    │ │││     checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while finishing the type of this
-29 │ │││       var l = 42;
+32 │ │││       var l = 42;
    │ │││       ─── checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while checking the scope of this hold
-30 │ │││       let q2 : (() => Integer) at outer = access shared l as w { pure thunk { pure w } };
+33 │ │││       let q2 : (() => Integer) at outer = access shared l as w { pure thunk { pure w } };
    │ │││       ┬──                                 ┬──────────────────────┬────┯━━━━━━━━━━━━━━━──
    │ │││       │                                   │                      │    │
    │ │││       │                                   │                      │    a view outliving its access
    │ │││       │                                   │                      checked against `-F ((() => Integer) at outer)`; while judging the value this returns
    │ │││       │                                   checked against `-F ((() => Integer) at outer)`; while checking the body of this access
    │ │││       checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while finishing the type of this
-31 │ │││       force q2
+34 │ │││       force q2
    ┆ ┆┆┆
-34 │ │││       oper exit(code, k) => pure 0
-35 │ │││     };
+37 │ │││       oper exit(code, k) => pure 0
+38 │ │││     };
    │ ││└─────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
    ┆ ┆┆
-39 │ ││      oper exit(code, k) => pure 0
-40 │ ││    }
+42 │ ││      oper exit(code, k) => pure 0
+43 │ ││    }
    │ │└────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds outer : Cap {exit}
-41 │ │   }
+44 │ │   }
    │ └───┘ checked against `() => Integer`; while checking the body of this thunk
    │
    ├ note: `bypassed` is refused with ViewEscaped, as its expectation states

@@ -8,6 +8,9 @@
 // extents follow Koronkevich and Bowman, _Type Universes as Kripke Worlds_
 // (ICFP 2025, doi:10.1145/3747532).
 
+// Early exit's host interface.
+import std.process;
+
 /// A thunk kept in the scope's region reads the held value through a shared
 /// view after the access that lent the view has ended.
 @[ runs("3") ]

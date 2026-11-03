@@ -1,3 +1,16 @@
+// A capability passed where one granting more is expected.
+//
+// A capability grants the operations its type names, and a narrower one
+// never stands where a wider one is asked.
+//
+// `save` writes through a capability that grants reading and writing.
+// `widen` hands it one that grants reading alone, which the checker refuses.
+//
+// - see: corpus/ledger/diagnostics/CapabilityAmplified.gandr
+
+// The filesystem's host interface.
+import std.fs;
+
 def save(c : Cap { read, write }) -> [std.fs.Eff] Unit {
   c.write("notes", "draft")
 }

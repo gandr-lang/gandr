@@ -1,3 +1,16 @@
+// A `become` inside a handled subject.
+//
+// A handled scope holds its handler until its subject returns, so a tail
+// call never leaves it.
+//
+// `became` leaves the scope its handler holds by a tail call, which the
+// lowering refuses.
+//
+// - see: corpus/ledger/diagnostics/AcrossHandler.gandr
+
+// Early exit's host interface.
+import std.process;
+
 def one() -> Integer {
   1
 }

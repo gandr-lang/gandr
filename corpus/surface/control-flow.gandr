@@ -6,6 +6,8 @@
 
 // The native finite lists.
 import std.list (List);
+// Early exit's host interface.
+import std.process;
 
 data Nat : Type where {
   | Zero : Nat

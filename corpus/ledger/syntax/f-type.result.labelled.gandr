@@ -1,6 +1,11 @@
 /// `f_type.result.labelled`: a definition's result written as a row naming an
 /// instance by its label, `-F [out : std.io.Console.Eff] Unit`, the capability the label
 /// binds performing the operation.
+
+// The console's host interface.
+import std.io;
+
+/// A line printed through the console instance the row labels `out`.
 @[ checks ]
 def say() -> [out : std.io.Console.Eff] Unit {
   out.print("said")

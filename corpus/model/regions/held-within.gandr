@@ -4,6 +4,9 @@
 // until the region ends, so a slot held inside the scope is kept at the hold
 // that holds it.
 
+// Early exit's host interface.
+import std.process;
+
 /// Keeps a view of a value held inside the handler at the hold, and forces it
 /// before the hold ends.
 @[ runs("42") ]

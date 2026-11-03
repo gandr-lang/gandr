@@ -16,6 +16,8 @@ import "./string-base.gandr";
 import "./nul-terminated.gandr";
 import "./small-string.gandr";
 import "./copy-on-write.gandr";
+// Early exit's host interface.
+import std.process;
 
 /// The length of `hi` read through a view, which writes it back unchanged:
 /// its two bytes and the zero.

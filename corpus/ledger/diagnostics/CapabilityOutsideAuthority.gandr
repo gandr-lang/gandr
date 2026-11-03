@@ -1,4 +1,9 @@
 /// `CapabilityOutsideAuthority`: an operation exercised through a capability that does not grant it.
+
+// The filesystem's host interface.
+import std.fs;
+
+/// A write through a capability that grants reading alone.
 @[ refuses("CapabilityOutsideAuthority") ]
 def save(c : Cap {read}) -> -F [std.fs.Eff] Unit {
   c.write("notes", "draft")

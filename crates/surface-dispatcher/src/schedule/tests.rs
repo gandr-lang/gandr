@@ -23,7 +23,6 @@ use crate::compose::LoweringCount;
 use crate::compose::Opening;
 use crate::compose::adapt;
 use crate::compose::checking_context;
-use crate::compose::lower_source;
 use crate::compose::pattern_holes;
 
 /// What a call's head applies, through its applications and the force of
@@ -69,16 +68,21 @@ fn callee(
     }
 }
 
-/// `source` lowered, and its declarations typed over the arena the lowering
+/// `listed` lowered, and its declarations typed over the arena the lowering
 /// made.
 ///
 /// # Specification
 /// trivial.
-fn typed(source: SourceText<'_>) -> (LoweredModule<'_>, CoreArena, TypedModule)
+fn typed(listed: &crate::tests::Listed) -> (LoweredModule<'_>, CoreArena, TypedModule)
 {
     let grammar = built_in().expect("the built-in grammar");
-    let lowering =
-        lower_source(&grammar, source, &mut LoweringCount::default()).expect("the source lowers");
+    let lowering = crate::lower_unit_source(
+        &grammar,
+        SourceText::from(listed.text.as_str()),
+        &listed.unit,
+        &mut LoweringCount::default(),
+    )
+    .expect("the source lowers");
     let Lowered::Module { module, mut arena } = lowering.into_lowered()
     else {
         panic!("the source is a module");
@@ -96,13 +100,16 @@ fn typed(source: SourceText<'_>) -> (LoweredModule<'_>, CoreArena, TypedModule)
 
 /// Each bind head `source`'s typed run judged, by the constant it calls,
 /// beside whether [`independent`] names it a writer: sorted by name, each
-/// pair once.
+/// pair once. The source is laid importing every host interface's module.
 ///
 /// # Specification
 /// trivial.
-fn named_calls(source: SourceText<'_>) -> Vec<(String, Independence)>
+fn named_calls<Source>(source: Source) -> Vec<(String, Independence)>
+where
+    Source: core::fmt::Display,
 {
-    let (module, core, typed) = typed(source);
+    let listed = crate::tests::Listed::hosted(source);
+    let (module, core, typed) = typed(&listed);
     let core = &core;
     let writers = independent(core, &typed);
     let name = |called: Callee| match called {
@@ -137,7 +144,7 @@ fn named_calls(source: SourceText<'_>) -> Vec<(String, Independence)>
 #[test]
 fn the_tree_sum_names_each_pure_call()
 {
-    let named = named_calls(SourceText::from(
+    let named = named_calls(
         r#"
 data Tree : Type where {
   | Leaf : (n : Integer) --> Tree
@@ -152,7 +159,7 @@ def rec sum(t : Tree) -> Integer {
 def say(s : String) -> [std.io.Console.Eff] Unit { std.io.Console.print(s) }
 def shout(s : String) -> [std.io.Console.Eff] Integer { let u = say(s); 1 }
 "#,
-    ));
+    );
     assert_eq!(
         named,
         Vec::from([
@@ -166,7 +173,7 @@ def shout(s : String) -> [std.io.Console.Eff] Integer { let u = say(s); 1 }
 #[test]
 fn a_writer_over_a_capability_stays_fused()
 {
-    let named = named_calls(SourceText::from(
+    let named = named_calls(
         r#"
 def count(c : Cap { read }) -> Integer { 1 }
 def twice(n : Integer) -> Integer { n + n }
@@ -176,7 +183,7 @@ def both(c : Cap { read }, k : Integer) -> Integer {
   a + b
 }
 "#,
-    ));
+    );
     assert_eq!(
         named,
         Vec::from([
@@ -195,7 +202,7 @@ def both(c : Cap { read }, k : Integer) -> Integer {
 #[test]
 fn a_writer_answering_a_kept_value_stays_fused_2954()
 {
-    let source = SourceText::from(
+    let listed = crate::tests::Listed::hosted(
         r#"
 def keptView() -> Integer {
   var s = 3;
@@ -209,7 +216,7 @@ def keptView() -> Integer {
 }
 "#,
     );
-    let (_module, core, typed) = typed(source);
+    let (_module, core, typed) = typed(&listed);
     let core = &core;
     let binds = typed
         .typings()

@@ -482,6 +482,44 @@ fn a_list_type_needs_its_listing_from_std_list_4520()
     }
 }
 
+/// #4523: a host interface leaves the ambient scope for its `std` module. A
+/// row naming the console and the filesystem settles in a source importing
+/// `std.io` and `std.fs`, and `std.io` names its own interfaces unimported.
+/// The same row in a source importing nothing is an unresolved head, whose
+/// help names the import.
+#[test]
+fn a_host_interface_needs_the_import_of_its_module_4523()
+{
+    let scratch = Scratch::new(Path::new("host-home"));
+    let body = "def peek(c : Cap { read, print }) -> [std.io.Console.Eff, std.fs.Eff] String {\n  \
+                c.read(\"notes\")\n}\n";
+    let imported_text = format!("import std.fs;\nimport std.io;\n{body}");
+    let imported = scratch.file(
+        Path::new("imported.gandr"),
+        Text::from(imported_text.as_str()),
+    );
+    let home = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std/src/io.gandr");
+    for source in [imported.as_path(), home.as_path()] {
+        let output = ran(gandr(&[Path::new("check"), source]));
+        assert_eq!(
+            code(&output),
+            Code(0_i32),
+            "{}: {}",
+            source.display(),
+            stdout(&output)
+        );
+    }
+    let bare = scratch.file(Path::new("bare.gandr"), Text::from(body));
+    let output = ran(gandr(&[Path::new("check"), &bare]));
+    assert_eq!(code(&output), Code(1_i32), "{}", stdout(&output));
+    let diagnostic = printed(&output);
+    assert!(
+        diagnostic
+            .contains("help: write `import std.io;`, the import of `std.io.Console.Eff`'s module"),
+        "{diagnostic}"
+    );
+}
+
 /// Two sources of one run that each declare `P` and share an import settle in
 /// either order: each run spells its value by its own `P`'s constructors, not
 /// by the first `P` the run declares (#3125).
@@ -4079,7 +4117,7 @@ fn a_script_that_runs_its_main_leaves_successfully()
         &scratch,
         Path::new("main.gandr"),
         Text::from(
-            "def answer = 42 ;\ndef main() -> [std.io.Console.Eff] Unit {\n  std.io.Console.print(\"42\")\n}\n",
+            "import std.io ;\ndef answer = 42 ;\ndef main() -> [std.io.Console.Eff] Unit {\n  std.io.Console.print(\"42\")\n}\n",
         ),
     );
     assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
@@ -4111,7 +4149,7 @@ fn a_program_leaves_with_its_entry_s_status_1881()
         ),
         (
             "exited.gandr",
-            "def proc : Cap {exit} ;\ndef main() -> -F [std.process.Exit.Eff] Integer { proc.exit(7) ; return 0 }\n",
+            "import std.process ;\ndef proc : Cap {exit} ;\ndef main() -> -F [std.process.Exit.Eff] Integer { proc.exit(7) ; return 0 }\n",
             &[][..],
             7_i32,
         ),
@@ -4341,7 +4379,7 @@ fn a_bare_dash_is_a_path_not_standard_input()
     assert!(stderr(&output).starts_with("gandr: -: "));
     let _path = scratch.file(
         Path::new("-"),
-        Text::from("def main() -> [std.io.Console.Eff] Unit { std.io.Console.print(\"17\") }"),
+        Text::from("import std.io ;\ndef main() -> [std.io.Console.Eff] Unit { std.io.Console.print(\"17\") }"),
     );
     let mut present = gandr(&["run", "-"]);
     present.current_dir(&scratch.0);
@@ -4387,7 +4425,7 @@ fn a_failed_diagnostic_stream_stops_later_output()
     let scratch = Scratch::new(Path::new("failed-diagnostic-stream"));
     let source = scratch.file(
         Path::new("value.gandr"),
-        Text::from("def unused : Integer ; def main() -> [std.io.Console.Eff] Unit { std.io.Console.print(\"9\") }"),
+        Text::from("import std.io ;\ndef unused : Integer ; def main() -> [std.io.Console.Eff] Unit { std.io.Console.print(\"9\") }"),
     );
     let control = ran(gandr(&[Path::new("run"), &source]));
     assert_eq!(code(&control), Code(0));

@@ -1,19 +1,19 @@
 error[CapabilityEscaped]: a capability its scope introduced would outlive the scope here
-   ╭▸ corpus/ledger/diagnostics/CapabilityEscaped.gandr:5:12
+   ╭▸ corpus/ledger/diagnostics/CapabilityEscaped.gandr:10:12
    │
- 3 │ ┌  def leak() -> -F Cap {exit} {
- 4 │ │┌   handle c : std.process.Exit.Eff {
- 5 │ ││     return c
+ 8 │ ┌  def leak() -> -F Cap {exit} {
+ 9 │ │┌   handle c : std.process.Exit.Eff {
+10 │ ││     return c
    │ ││     ┬──────┯
    │ ││     │      │
    │ ││     │      a capability outliving its scope: found `Cap {exit}`
    │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Cap {exit}`; while judging the value this returns; binds _ : Stack(-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Cap {exit}, -F Cap {exit})
- 6 │ ││   } with {
- 7 │ ││     pure(x) => x,
- 8 │ ││     oper exit(code, k) => k(unit)
- 9 │ ││   }
+11 │ ││   } with {
+12 │ ││     pure(x) => x,
+13 │ ││     oper exit(code, k) => k(unit)
+14 │ ││   }
    │ │└───┘ checked against `-F Cap {exit}`; while checking the subject of this scope under its capability; binds c : Cap {exit}
-10 │ │  }
+15 │ │  }
    │ └──┘ checked against `() => Cap {exit}`; while checking the body of this reset
    │
    ╰ note: `leak` is refused with CapabilityEscaped, as its expectation states
