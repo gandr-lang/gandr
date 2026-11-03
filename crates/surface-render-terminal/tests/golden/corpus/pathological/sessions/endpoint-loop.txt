@@ -1,54 +1,78 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/sessions/endpoint-loop.gandr:20:19
+   ╭▸ corpus/pathological/sessions/endpoint-loop.gandr:23:19
    │
-14 │      def hasty(operator : mu open. &{
+17 │      def hasty(operator : mu open. &{
    │    ┌─│─────────┬──────────┘
    │    │ │         │
    │ ┌──│─┘         checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit`; while checking the rest of this receive's block; binds operator : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
    │ │  │
-15 │ │  │   report : ?Integer. open,
-16 │ │  │   retire : ?Integer. end
-17 │ │  │ }) -> [Partial] Unit {
+18 │ │  │   report : ?Integer. open,
+19 │ │  │   retire : ?Integer. end
+20 │ │  │ }) -> [Partial] Unit {
    │ │  └─┘ the type it is checked against
-18 │ │  ┌   loop {
-19 │ │  ┌     offer(operator) {
-20 │ │          report => { continue },
+21 │ │  ┌   loop {
+22 │ │  ┌     offer(operator) {
+23 │ │          report => { continue },
    │ │                      ━━━━━━━━ its type does not convert: expected `rec t => &{report : ?Integer >> t, retire : ?Integer >> end}`, found `?Integer >> rec t => &{report : ?Integer >> t, retire : ?Integer >> end}`
-21 │ │          retire => { let last = recv(operator); close(operator); break }
-22 │ │  │     }
+24 │ │          retire => { let last = recv(operator); close(operator); break }
+25 │ │  │     }
    │ │  └─────┘ checked against `-F [Partial] Unit`; while checking an arm of this offer
-23 │ │  │   }
+26 │ │  │   }
    │ │  └───┘ checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit`; while checking the rest of this receive's block; binds _ : +U ((rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit), _ : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
-24 │ │    }
+27 │ │    }
    │ └────┘ checked against `+U ((rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit)`; while checking the body of this thunk
    │
    ├ note: `hasty` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[ArmsDisagree]: the arms of this `offer` leave the endpoints in different states
-   ╭▸ corpus/pathological/sessions/endpoint-loop.gandr:35:19
+   ╭▸ corpus/pathological/sessions/endpoint-loop.gandr:38:19
    │
-28 │      def abandoned(operator : mu open. &{
+31 │      def abandoned(operator : mu open. &{
    │      │             ──────── checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit`; while checking the rest of this receive's block; binds operator : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
    │ ┌────┘
    │ │
-29 │ │      report : ?Integer. open,
-30 │ │      retire : ?Integer. end
-31 │ │    }) -> [Partial] Unit {
-32 │ │ ┌    loop {
-33 │ │ │┌     offer(operator) {
-34 │ │ ││       report => { let next = recv(operator); continue },
+32 │ │      report : ?Integer. open,
+33 │ │      retire : ?Integer. end
+34 │ │    }) -> [Partial] Unit {
+35 │ │ ┌    loop {
+36 │ │ │┌     offer(operator) {
+37 │ │ ││       report => { let next = recv(operator); continue },
    │ │ ││                   ─── the arm it disagrees with
-35 │ │ ││       retire => { let last = recv(operator); break }
+38 │ │ ││       retire => { let last = recv(operator); break }
    │ │ ││                   ━━━ an arm that leaves the endpoints otherwise
-36 │ │ ││     }
+39 │ │ ││     }
    │ │ │└─────┘ checked against `-F [Partial] Unit`; while checking an arm of this offer
-37 │ │ │    }
+40 │ │ │    }
    │ │ │    │
    │ │ │    │
    │ │ └────the endpoint was taken as this parameter
    │ │      checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit`; while checking the rest of this receive's block; binds _ : +U ((rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit), _ : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
-38 │ │    }
+41 │ │    }
    │ └────┘ checked against `+U ((rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit)`; while checking the body of this thunk
    │
    ╰ note: `abandoned` is refused with ArmsDisagree, as its expectation states
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/sessions/endpoint-loop.gandr:50:3
+   │
+46 │    def idle(waiting : Bool, operator : mu open. &{
+   │    │        ┬──────         ──────── checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F Unit`; while checking the rest of this receive's block; binds operator : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
+   │    │        │
+   │ ┌──┘        checked against `Bool -> (rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F Unit`; while checking the body of this function; binds waiting : Bool
+   │ │
+47 │ │    report : ?Integer. open,
+48 │ │    retire : ?Integer. end
+49 │ │  }) -> Unit {
+50 │ │┏   loop {
+51 │ │┃     match waiting {
+52 │ │┃       true => continue,
+53 │ │┃       false => offer(operator) {
+   ┆ ┆┇
+58 │ │┃   }
+   │ │┗━━━┛ its type does not convert: expected `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F Unit`, found `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit`
+59 │ │  }
+   │ └──┘ checked against `(Bool, rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) => Unit`; while checking the body of this thunk
+   │
+   ├ note: `idle` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

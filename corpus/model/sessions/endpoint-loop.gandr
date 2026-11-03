@@ -7,20 +7,19 @@
 //
 // The lowering hands the endpoint to the loop's first pass and places it again
 // in each pass. The first pass takes it at the state the loop starts in, the
-// loop head's state, and `continue` hands it on at that state again. The loop
-// owes `Partial` as every loop does.
+// loop head's state, and `continue` hands it on at that state again. A loop
+// whose every pass acts on its endpoint before it runs again follows its
+// protocol, so it owes no `Partial`.
 //
 // - see: #4502
-// - see: #4705 — not implemented: a loop that acts on its endpoint every pass
-//   owing no `Partial`
-// - see: #4687 — not implemented: running a placed endpoint
+// - see: #4705
 
 /// A desk following a seat's reports until it retires: each report is one
 /// pass, and the retirement closes the endpoint and leaves the loop.
 def follow(operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
-}) -> [Partial] Unit {
+}) -> Unit {
   loop {
     offer(operator) {
       report => { let next = recv(operator); continue },
@@ -34,7 +33,7 @@ def follow(operator : mu open. &{
 def tally(operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
-}) -> [Partial] Integer {
+}) -> Integer {
   var seen = 0;
   loop {
     offer(operator) {
@@ -43,4 +42,20 @@ def tally(operator : mu open. &{
     }
   };
   pure seen
+}
+
+/// A seat that reports twice and retires, followed by a forked desk.
+@[ runs("unit") ]
+def followed() -> Unit {
+  let seat = fork (operator : mu open. &{
+    report : ?Integer. open,
+    retire : ?Integer. end
+  }) { follow(operator) };
+  select(seat, report);
+  send(seat, 1);
+  select(seat, report);
+  send(seat, 2);
+  select(seat, retire);
+  send(seat, 3);
+  close(seat)
 }
