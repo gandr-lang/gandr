@@ -1,0 +1,57 @@
+/// A module parameter or a block's import equips a scope with a grade
+/// algebra, and `Usage` grades the rest.
+///
+/// Today the grade positions read no algebra at all. Here a module takes its
+/// algebra as a parameter, so one body serves both algebras alike.
+/// A program that writes no grade reads as it does today.
+///
+/// An import in a block brings `Count` for that block alone. No keyword names
+/// the structure, and no scope carries a default of its own.
+///
+/// - see: #4563 — the grade-algebra sketch, its rulings in the issue body
+/// - see: #4561 — meaning never depends on scope state
+/// - see: corpus/model/modules/model-functor.gandr — a module over a model
+
+// The grade theory and its two models.
+import std.grade (Grade, Usage, Count);
+
+/// A cache over any algebra of grades. A lookup uses its loader once, and a
+/// refresh uses it once more.
+module Cache(g : Model(Grade)) where {
+  /// A key and the value it caches.
+  pub data Entry : Type where {
+    /// The key and its value.
+    | Make : (key : String, value : String) --> Entry
+  }
+
+  /// Loads the value for `key` once.
+  pub def load(loader : +U[1] (String -> String), key : String) : Entry = Make(key, loader(key))
+
+  /// Loads the value, then loads it again to refresh it.
+  pub def refreshed(loader : +U[1 + 1] (String -> String), key : String) : Entry = {
+    let stale = load(loader, key);
+    load(loader, stale.key)
+  }
+}
+
+/// The cache that counts, where `1 + 1` is two loads.
+module CountedCache = Cache(Count);
+
+/// The cache that tracks usage, where `1 + 1` is many.
+module UsedCache = Cache(Usage);
+
+/// Reads once outside a block and twice inside it. The block counts its
+/// reads, and `Usage` grades the rest.
+def batch(read : +U[1] (Unit -> String)) : (String, String, String) = {
+  let first = read(unit);
+  let pair = {
+    import Count;
+    let shout = thunk[2] { first ++ "!" };
+    (force(shout), force(shout))
+  };
+  (first, pair.0, pair.1)
+}
+
+/// Writes no grade, so every position takes the default and the function
+/// checks as it does today.
+def greet(name : String) : String = "hello, " ++ name

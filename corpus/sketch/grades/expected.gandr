@@ -1,0 +1,69 @@
+/// A numeral at a grade position reads as a numeral of the algebra that the
+/// position's subject carries.
+///
+/// Today a grade position takes `ω` alone, and the checker refuses a numeral
+/// there. Here a retry policy counts how often it may fetch, so `2` is
+/// `Count`'s two and `3` is `Count`'s three.
+///
+/// `import Count;` brings `Count` into a scope. The model slot of every grade
+/// there resolves to it, as any model slot resolves to the model in scope.
+///
+/// - see: #4563 — the grade-algebra sketch, its rulings in the issue body
+/// - see: #4528 — a literal read through an implicit at its expected type
+/// - see: library/std/src/grade.gandr — `Count`, counting in the naturals
+
+// Counting, the algebra that grades the fetches below.
+import std.grade (Count);
+
+/// The answer a server gives.
+data Status : Type where {
+  /// The server serves the request.
+  | Served : Status
+  /// The server fails, and the client may fetch again.
+  | ServerError : Status
+}
+
+/// A request a client sends.
+data Request : Type where {
+  /// A path to read.
+  | Get : (path : String) --> Request
+}
+
+/// A server's answer: its status and its body.
+data Response : Type where {
+  /// The answer.
+  | Answer : (status : Status, body : String) --> Response
+}
+
+/// A retrying client, which counts each fetch as a use of the connection.
+module Retrying where {
+  // Counting over the module's body: every grade below reads in `Count`.
+  import Count;
+
+  /// Fetches `r`, and once more when the first answer is a server error. The
+  /// client uses the connection at most twice.
+  pub def onceMore(fetch : +U[2] (Request -> Response), r : Request) : Response = {
+    let first = fetch(r);
+    match first.status {
+      ServerError => fetch(r),
+      Served => first,
+    }
+  }
+
+  /// Fetches `r` up to three times, until an answer is not a server error.
+  pub def thrice(fetch : +U[3] (Request -> Response), r : Request) : Response = {
+    let first = fetch(r);
+    match first.status {
+      ServerError => onceMore(fetch, r),
+      Served => first,
+    }
+  }
+}
+
+/// Forces a suspended load exactly twice. The block's counting grades the
+/// thunk, so `thunk[2]` reads in `Count`.
+def warmed(load : String) : (String, String) = {
+  import Count;
+  let cached = thunk[2] { load };
+  (force(cached), force(cached))
+}
