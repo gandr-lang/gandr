@@ -130,8 +130,17 @@ fn shown(
                 Some(&CompType::Returner { result, .. }) => {
                     (String::from("F"), vec![Root::ValueType(result)])
                 },
-                Some(&CompType::Returns { ref results, .. }) => (
-                    format!("F{}", results.len()),
+                Some(&CompType::Returns {
+                    ref results,
+                    ref effects,
+                }) => (
+                    // A group under a row is marked by the row's presence.
+                    if *effects == gandr_core_term::effect::EffectRow::EMPTY {
+                        format!("F{}", results.len())
+                    }
+                    else {
+                        format!("F{}[row]", results.len())
+                    },
                     results
                         .iter()
                         .map(|&result| Root::ValueType(result))
@@ -2042,6 +2051,46 @@ fn a_call_of_outputs_standing_as_one_value_is_their_record()
         whole.iter().any(|token| token == "bindall2")
             && whole.iter().any(|token| token == "tuple2"),
         "a call of unnamed outputs bound to one name binds the tuple of them, {whole:?}"
+    );
+}
+
+#[test]
+fn a_row_returns_a_group_of_outputs()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def spin(n : Integer) -> [Partial] (q : Integer, r : Integer) { (n, n) }\ndef \
+         explicit(n : Integer) -> -F [Partial] (Integer, Integer) { (n, n) }\ndef caller(n : \
+         Integer) -> [Partial] Integer { let (q, r) = spin(n); q }\ndef none(n : Integer) -> \
+         [Partial] () { () }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "spin"),
+        ["U", "->", "Integer", "F2[row]", "Integer", "Integer"],
+        "a row before a group is the row of the group's returner"
+    );
+    assert_eq!(
+        declared(&arena, &module, "explicit"),
+        declared(&arena, &module, "spin"),
+        "the explicit returner over a row writes the same group"
+    );
+    assert_eq!(
+        body(&arena, &module, "spin"),
+        ["thunk", "lambda", "return2", "#0", "#0"],
+        "a tuple ending a body under a row returns each member"
+    );
+    assert!(
+        body(&arena, &module, "caller")
+            .iter()
+            .any(|token| token == "bindall2"),
+        "a caller binds each output of a group under a row"
+    );
+    assert_eq!(
+        body(&arena, &module, "none"),
+        ["thunk", "lambda", "return0"],
+        "`()` ends a body of no outputs under a row"
     );
 }
 

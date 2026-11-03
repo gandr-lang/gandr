@@ -9585,8 +9585,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         if let Run::Empty(_) = run {
             // `()` ending a body of no outputs returns none.
-            if let Some(outputs) = self.answered_outputs(site)
-                && outputs.start == outputs.end
+            if self
+                .answered_outputs(site)?
+                .is_some_and(|outputs| outputs.is_empty())
             {
                 let _frame = self.require(site, Produced::Computation)?;
                 let none = self.operands.len();
@@ -9806,7 +9807,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             name: FormName::TUPLE,
             ..site
         };
-        let outputs = self.answered_outputs(site);
+        let outputs = self.answered_outputs(site)?;
         let produced = match outputs {
             Some(_) => Produced::Computation,
             None => Produced::Value,
@@ -9851,45 +9852,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
         });
 
         Ok(())
-    }
-
-    /// The outputs of the result the body `site` ends answers, when that
-    /// result is written as a group of outputs.
-    ///
-    /// # Specification
-    /// - requires: nothing beyond a well-formed tree.
-    /// - ensures: the stretch of a [`Plan::Returns`] the written answer of a
-    ///   computation at `site` is planned as, through any grouping; nothing for
-    ///   a value, a form that ends no body, or another answer.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::pair`].
-    /// - witness: `lower::arity::tests::a_tuple_ending_a_body_of_outputs_returns_each_member`
-    fn answered_outputs(
-        &self,
-        site: Site,
-    ) -> Option<Stretch>
-    {
-        if !matches!(site.reading, Reading::Computation(_)) {
-            return None;
-        }
-        let answer = self
-            .answers
-            .get(&site.at.node)
-            .filter(|_| self.exits.contains(&site.at.node))?;
-        if !matches!(answer.over, native::Over::Written) {
-            return None;
-        }
-        let mut at = answer.node;
-        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
-            at = inner;
-        }
-        match self.plans.get(at) {
-            Some(&Plan::Returns(outputs)) => Some(outputs),
-            _ => None,
-        }
     }
 
     /// Classify a list literal, `#[v1, …, vn]`, the empty `#[]` included.
@@ -15825,7 +15787,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let row = self.returner_row(site, &mut cursor)?;
             let argument = site.one(cursor.operands())?;
             exhausted(site, &cursor)?;
-            return self.effectful(site, row, argument.node);
+            return self.effectful(site, row, argument);
         }
         let _keyword = cursor.tile(label);
         let name = self.name_at(at);
@@ -15844,7 +15806,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     let row = self.returner_row(site, &mut cursor)?;
                     let argument = site.one(cursor.operands())?;
                     exhausted(site, &cursor)?;
-                    return self.effectful(site, row, argument.node);
+                    return self.effectful(site, row, argument);
                 },
                 TypeFormer::List | TypeFormer::Run | TypeFormer::Prefix | TypeFormer::Dialogue => {
                     return Err(site.folded(
@@ -18158,7 +18120,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::DependentArrow(entries, codomain) => {
                 self.mint_dependent_arrow(entries, codomain, sink, origin)
             },
-            Plan::Returns(entries) => self.mint_returns(entries, sink, origin),
+            Plan::Returns(entries) => self.mint_returns(
+                entries,
+                gandr_core_term::effect::EffectRow::EMPTY,
+                sink,
+                origin,
+            ),
             Plan::Transparent(child) => self.lowered_at(child),
             Plan::Former(former, argument) => self.mint_former(former, argument, sink, origin),
             Plan::Application(head, arguments) => {

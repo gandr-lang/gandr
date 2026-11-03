@@ -1477,7 +1477,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   of the sweep, each label of its row placed at the region its name
     ///   names there ([`Self::region_named`]), a label of a theory's instance
     ///   recorded as that theory's capability, and each theory entry's name
-    ///   resolved to the theory's declaration, planned over both.
+    ///   resolved to the theory's declaration, planned over both. An argument
+    ///   written as a group of outputs, `-F [E] (q : A, r : B)`, is read as a
+    ///   result, the group the row's returner returns.
     /// - fails: the wrong-sort refusal where no computation type is read;
     ///   [`LoweringRefusal::UnresolvedName`] at a label naming no region.
     /// - panics: none.
@@ -1488,15 +1490,16 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::returner_row`].
     /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
+    /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
     /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
     /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
     /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&super::Plan::Effectful(_, child)) if child == argument))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&super::Plan::Effectful(_, child)) if child == argument.node))]
     pub(super) fn effectful(
         &mut self,
         site: Site,
         mut row: WrittenRow,
-        argument: NodeIndex,
+        argument: Placed,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::CompType)?;
@@ -1548,8 +1551,14 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Present(tail) = row.tail {
             self.read(tail, Reading::Value(frame));
         }
-        self.read(argument, Reading::ValueType(frame));
-        self.plan(site, super::Plan::Effectful(row, argument));
+        let reading = if self.written_group(argument, frame)? {
+            Reading::Result(frame)
+        }
+        else {
+            Reading::ValueType(frame)
+        };
+        self.read(argument.node, reading);
+        self.plan(site, super::Plan::Effectful(row, argument.node));
 
         Ok(())
     }
@@ -2768,15 +2777,16 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `argument` and the row's tail are already minted or absent.
-    /// - ensures: `F^⟨row⟩ A` at `origin`, each interface named whole at its
-    ///   default label and each label's instance at its region, each an extern
-    ///   block's signature, a host's, or a theory's at the types its entry
-    ///   fixes ([`Self::interface_signature`]), its tail standing for the row
-    ///   the tail's value denotes, and each entry over a theory recorded at the
-    ///   returner with its instance's region, the theory and the sorts it fixes
-    ///   as written; the argument's, a fixed type's or the tail's absence when
-    ///   it did not lower, and the unminted absence when two labels name one
-    ///   instance.
+    /// - ensures: `F^⟨row⟩ A` at `origin`, or the many-value returner of a
+    ///   group the argument plans with the same row, each interface named whole
+    ///   at its default label and each label's instance at its region, each an
+    ///   extern block's signature, a host's, or a theory's at the types its
+    ///   entry fixes ([`Self::interface_signature`]), its tail standing for the
+    ///   row the tail's value denotes, and each entry over a theory recorded at
+    ///   the returner with its instance's region, the theory and the sorts it
+    ///   fixes as written; the argument's, a fixed type's or the tail's absence
+    ///   when it did not lower, and the unminted absence when two labels name
+    ///   one instance.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2786,6 +2796,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
     /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
     /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+    /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
     /// - witness: `lower::capability::tests::a_row_records_the_theory_and_sorts_each_entry_fixes_3230`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::CompType(id)) => sink.origins.comp_type(id) == Maybe::Present(origin),
@@ -2800,9 +2811,20 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let result = match self.value_type_at(argument) {
-            Maybe::Present(result) => result,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        let mut grouped = argument;
+        while let Some(&super::Plan::Transparent(inner)) = self.plans.get(grouped) {
+            grouped = inner;
+        }
+        let outputs = match self.plans.get(grouped) {
+            Some(&super::Plan::Returns(outputs)) => Some(outputs),
+            _ => None,
+        };
+        let result = match outputs {
+            Some(_) => None,
+            None => match self.value_type_at(argument) {
+                Maybe::Present(result) => Some(result),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
         };
         let tail = match row.tail {
             Maybe::Present(written) => match self.value_at(written) {
@@ -2851,10 +2873,20 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
-        let id = sink
-            .arena
-            .comp_type_returner_with_effects(result, effects.with_tail(tail));
-        sink.origins.record_comp_type(id, origin);
+        let effects = effects.with_tail(tail);
+        let id = match (outputs, result) {
+            (Some(outputs), _) => match self.mint_returns(outputs, effects, sink, origin) {
+                Maybe::Present(Lowered::CompType(id)) => id,
+                Maybe::Present(_) => return Maybe::Absent(lowered::Absent::Unminted),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            (None, Some(result)) => {
+                let id = sink.arena.comp_type_returner_with_effects(result, effects);
+                sink.origins.record_comp_type(id, origin);
+                id
+            },
+            (None, None) => return Maybe::Absent(lowered::Absent::Unminted),
+        };
         for entry in theories {
             sink.origins.record_row_theory(id, entry);
         }

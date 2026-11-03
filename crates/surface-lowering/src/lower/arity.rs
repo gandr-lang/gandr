@@ -163,7 +163,6 @@ use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
-use gandr_surface_syntax::SourceFragment;
 use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
@@ -3832,18 +3831,107 @@ impl<'source> Lowerer<'_, 'source>
             at = inner;
         }
         // The group is read off its syntax, whether or not the walk has
-        // reached the callee yet.
+        // reached the callee yet, under any row its returner writes.
         let Some(tree) = self.tree.node(at)
         else {
             return Ok(None);
         };
-        let result = Placed::of(at, tree);
-        if !matches!(self.plans.get(at), Some(&Plan::Returns(_)))
+        let result = self.returned(Placed::of(at, tree))?;
+        if !matches!(self.plans.get(result.node), Some(&Plan::Returns(_)))
             && !self.written_group(result, frame)?
         {
             return Ok(None);
         }
         Ok(Some(self.domain_entries(result, frame)?))
+    }
+
+    /// The outputs of the result the body `site` ends answers, when that
+    /// result is written as a group of outputs, as written.
+    ///
+    /// # Specification
+    /// - requires: nothing beyond a well-formed tree.
+    /// - ensures: the entries of the group the written answer of a computation
+    ///   at `site` writes, through any grouping and any row its returner
+    ///   writes, read off the syntax whether or not the walk has reached the
+    ///   answer; nothing for a value, a form that ends no body, or another
+    ///   answer.
+    /// - fails: a foreign mold; a misplaced key in the group.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`] and [`LoweringRefusal::MalformedForm`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::pair`].
+    /// - witness: `lower::arity::tests::a_tuple_ending_a_body_of_outputs_returns_each_member`
+    /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
+    pub(super) fn answered_outputs(
+        &mut self,
+        site: Site,
+    ) -> Result<Option<Vec<Entry<'source>>>, LoweringRefusal<'source>>
+    {
+        let Reading::Computation(frame) = site.reading
+        else {
+            return Ok(None);
+        };
+        let Some(&answer) = self
+            .answers
+            .get(&site.at.node)
+            .filter(|_| self.exits.contains(&site.at.node))
+        else {
+            return Ok(None);
+        };
+        if !matches!(answer.over, super::native::Over::Written) {
+            return Ok(None);
+        }
+        let mut at = answer.node;
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
+            at = inner;
+        }
+        let Some(tree) = self.tree.node(at)
+        else {
+            return Ok(None);
+        };
+        let result = self.returned(Placed::of(at, tree))?;
+        if !matches!(self.plans.get(result.node), Some(&Plan::Returns(_)))
+            && !self.written_group(result, frame)?
+        {
+            return Ok(None);
+        }
+        Ok(Some(self.domain_entries(result, frame)?))
+    }
+
+    /// The type a returner written at `at` returns: `B` of `-F B`, of
+    /// `-F [E] B` and of a result's `[E] B`; `at` itself for any other type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the last operand of a returner type; `at` otherwise.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a group under a row is the callee's outputs.
+    /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|returned| returned.node == at.node || self.form_at(at).is_ok_and(|form| matches!(form, Some((_, Former::ReturnerType))))))]
+    fn returned(
+        &self,
+        at: Placed,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        if !matches!(self.form_at(at)?, Some((_, Former::ReturnerType))) {
+            return Ok(at);
+        }
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, at.node, &mut pieces)?;
+
+        Ok(match pieces.pieces.last() {
+            Some(&Piece::Operand(argument)) => argument,
+            _ => at,
+        })
     }
 
     /// Classify a labelled group, `(.r = e, .q = e)`, ending a body whose
@@ -3881,7 +3969,7 @@ impl<'source> Lowerer<'_, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let Some(outputs) = self.answered_outputs(site)
+        let Some(outputs) = self.answered_outputs(site)?
         else {
             return Err(site.out(FragmentBoundary::WrongSort));
         };
@@ -3905,24 +3993,16 @@ impl<'source> Lowerer<'_, 'source>
             written.push((label, key, value));
             separated(site, &mut cursor, TileName::PAREN_CLOSE)?;
         }
-        if written.len() != outputs.end.saturating_sub(outputs.start) {
+        if written.len() != outputs.len() {
             return Err(site.out(FragmentBoundary::Arity(OperandCount::from(written.len()))));
         }
         let mut names = Vec::with_capacity(written.len());
-        for position in outputs.start .. outputs.end {
-            let Some(&output) = self.parameters.get(position)
+        for output in &outputs {
+            let Key::Label(name, _) = output.key
             else {
-                continue;
-            };
-            // An unnamed output's binder is its declared type.
-            if matches!(output.declared, Maybe::Present(declared) if declared == output.binder) {
                 return Err(site.out(FragmentBoundary::WrongSort));
-            }
-            names.push(SurfaceName::from(
-                self.tree
-                    .fragment(output.binder)
-                    .unwrap_or_else(|| SourceFragment::from("")),
-            ));
+            };
+            names.push(name);
         }
         if let Some(&(_, key, _)) = written.iter().find(|&&(label, ..)| !names.contains(&label)) {
             return Err(site.fault(key.span, FormFault::MisplacedTile));
@@ -5233,23 +5313,26 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Mint a function's group of outputs: the many-value returner of its
-    /// entries' types, each under the entries before it.
+    /// entries' types, each under the entries before it, at the row
+    /// `effects`.
     ///
     /// # Specification
     /// - requires: every entry's type is already minted or absent.
-    /// - ensures: the returner of the entries' types in order, the one result's
-    ///   returner for a group of one, with the written origin; nothing when a
-    ///   type did not lower.
+    /// - ensures: the returner of the entries' types in order at `effects`, the
+    ///   one result's returner for a group of one, with the written origin;
+    ///   nothing when a type did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::output_group`].
     /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
+    /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
     pub(super) fn mint_returns(
         &self,
         entries: Stretch,
+        effects: gandr_core_term::effect::EffectRow,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -5266,9 +5349,7 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
-        let id = sink
-            .arena
-            .comp_type_returns_with_effects(&results, gandr_core_term::effect::EffectRow::EMPTY);
+        let id = sink.arena.comp_type_returns_with_effects(&results, effects);
         sink.origins.record_comp_type(id, origin);
 
         Maybe::Present(Lowered::CompType(id))
