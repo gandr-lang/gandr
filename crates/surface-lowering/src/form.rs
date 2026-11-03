@@ -493,9 +493,6 @@ impl TileName
     /// The lazy product's `&`, and the opener of the lazy record over labels
     /// and of the copattern block, `&{`.
     pub const AMPERSAND: Self = Self("&");
-    /// The keyword `admitted` closing a module's law member: the host asserts
-    /// the law.
-    pub const ADMITTED: Self = Self("admitted");
     /// The attribute-block opener `@[`.
     pub const ATTRIBUTES: Self = Self("@[");
     /// The inner attribute-block opener `@![`, decorating the item it stands

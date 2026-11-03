@@ -1415,18 +1415,19 @@ impl<'source> Collector<'_, 'source>
     ///   type, the member yielded; a nested model is answered by the nested
     ///   module of its name ascribed the model signature its theory derives,
     ///   the module yielded; a law is answered as well by the admission of its
-    ///   name, `law name admitted ;`, stated as a definition member is; a law
-    ///   no member answers takes a slot of [`Role::Discharged`] under its name
-    ///   in the module, introduced by the module's form, whose attributes state
-    ///   its expectation, stated as a definition member is, the member yielded,
-    ///   so the checker discharges it; a component the derivation cannot state,
-    ///   a value component a nested module answers, a component other than a
-    ///   law an admission answers, a nested model anything else answers, and
-    ///   any other name nothing answers each refuse a held slot under the
-    ///   component's name, introduced by the module's form, whose attributes
-    ///   state its expectation, and nothing is yielded — save a name whose
-    ///   member was repaired, whose parse error already answers for it. A law
-    ///   an admission answers is judged against the host's laws by the checker.
+    ///   name, `law name = ~admitted ;`, stated as a definition member is; a
+    ///   law no member answers takes a slot of [`Role::Discharged`] under its
+    ///   name in the module, introduced by the module's form, whose attributes
+    ///   state its expectation, stated as a definition member is, the member
+    ///   yielded, so the checker discharges it; a component the derivation
+    ///   cannot state, a value component a nested module answers, a component
+    ///   other than a law an admission answers, a nested model anything else
+    ///   answers, and any other name nothing answers each refuse a held slot
+    ///   under the component's name, introduced by the module's form, whose
+    ///   attributes state its expectation, and nothing is yielded — save a name
+    ///   whose member was repaired, whose parse error already answers for it. A
+    ///   law an admission answers is judged against the host's laws by the
+    ///   checker.
     /// - provides: the derived half of [`Self::match_signature`].
     /// - fails: never; a fault is filed rather than raised.
     /// - panics: none.

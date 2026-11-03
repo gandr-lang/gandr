@@ -29,7 +29,7 @@ theory Collapsed where {
 module CollapsedInteger : Model(Collapsed) with sort Loop = Integer where {
   /// The admission names a law the host does not assert.
   @[ refuses("UnprovenLaw.Admitted") ]
-  law one admitted;
+  law one = ~admitted;
 }
 
 /// A rule from a variable would identify every loop with the trivial one.

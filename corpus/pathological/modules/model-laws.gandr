@@ -25,7 +25,7 @@ data Lone : Type where {
 module Overadmitted : Model(Decided) with sort Carrier = Lone where {
   def alike(a : Lone, b : Lone) -> Bool { true }
   @[ refuses("UnprovenLaw.Admitted") ]
-  law refl admitted;
+  law refl = ~admitted;
   def sym(a : Lone, b : Lone) -> Path(Bool, alike(a, b), alike(b, a)) { Path.here(true) }
 }
 
@@ -34,13 +34,13 @@ module Overadmitted : Model(Decided) with sort Carrier = Lone where {
 module FloatEqAdmitted : Model(Eq) with sort Carrier = f64 where {
   def eq(a : f64, b : f64) -> Bool { float64.eq(a, b) }
   @[ refuses("UnprovenLaw.Admitted") ]
-  law refl admitted;
-  law sym admitted;
+  law refl = ~admitted;
+  law sym = ~admitted;
 }
 
 /// Float equality as an `Eq` stating no reflexivity at all.
 @[ refuses("NoFiller.Omitted") ]
 module FloatEqMissing : Model(Eq) with sort Carrier = f64 where {
   def eq(a : f64, b : f64) -> Bool { float64.eq(a, b) }
-  law sym admitted;
+  law sym = ~admitted;
 }

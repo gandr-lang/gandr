@@ -3824,8 +3824,8 @@ fn member_sep() -> Regex
 /// A model include `include M ;` takes the model module `M`'s members as this
 /// module's own, the dual of a theory's `include`.
 ///
-/// A law's admission `law refl admitted ;` states that the host asserts the
-/// theory's law `refl` at this model's primitive carrier, in the place a
+/// A law's admission `law refl = ~admitted ;` states that the host asserts
+/// the theory's law `refl` at this model's primitive carrier, in the place a
 /// proving model defines it.
 ///
 /// # Specification
@@ -3902,7 +3902,7 @@ fn module_members(
             t(TileLabel(";")),
         ]),
     ));
-    // `law refl admitted ;` admits the theory's law `refl` at a primitive
+    // `law refl = ~admitted ;` admits the theory's law `refl` at a primitive
     // carrier: the host asserts it, in the place a proving model's `def refl`
     // stands. It leads with `law` and closes on `;`, like an include.
     out.push(r(
@@ -3956,11 +3956,14 @@ fn attributed_module_member() -> Regex
     ])
 }
 
-/// Build a law's admission, `law refl admitted ;`.
+/// Build a law's admission, `law refl = ~admitted ;`.
+///
+/// The body is an expression, so the splice `~admitted` reads as every
+/// splice does; the lowering admits the law only for that splice.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `law`, the law's name, `admitted` and `;`.
+/// - ensures: `law`, the law's name, `=`, an expression and `;`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3968,13 +3971,14 @@ fn attributed_module_member() -> Regex
 ///   role observations catch changed discriminators, delimiters and hole sorts.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "law")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "law")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
 fn law_admission_tail() -> Regex
 {
     seq([
         t(TileLabel("law")),
         t(TileLabel("identifier")),
-        t(TileLabel("admitted")),
+        t(TileLabel("=")),
+        h(Sort::Expression),
         t(TileLabel(";")),
     ])
 }

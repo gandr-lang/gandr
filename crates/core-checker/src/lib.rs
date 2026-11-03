@@ -72,8 +72,8 @@
 //! classifier leaves its absence class empty.
 //!
 //! **A law is admitted on the host's word only where the host gives it.** A
-//! declaration whose body is [`body::Absent::Hosted`] — a model's `law x
-//! admitted` — is owed as a hole is, and admitted only when its declared type
+//! declaration whose body is [`body::Absent::Hosted`] — a model's `law x =
+//! ~admitted` — is owed as a hole is, and admitted only when its declared type
 //! converts with a law the host asserts of one of its primitives
 //! ([`gandr_core_term::primitive::Primitive::laws`]): integer and string
 //! equality are equivalences, float equality symmetric and transitive alone,

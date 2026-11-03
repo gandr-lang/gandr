@@ -32,5 +32,5 @@ module PutGet : Model(StatePutGet) with sort S = Integer where {
     thunk { fun (_old) { k(s) } }
   }
   /// The law the signature cannot state.
-  law putGet admitted;
+  law putGet = ~admitted;
 }

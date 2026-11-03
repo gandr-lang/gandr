@@ -2,7 +2,7 @@ error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law 
    ╭▸ corpus/ledger/diagnostics/UnprovenLaw.Admitted.gandr:20:3
    │
 20 │ ┏   @[ refuses("UnprovenLaw.Admitted") ]
-21 │ ┃   law refl admitted;
-   │ ┗━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Lone) => Path(Bool, Admitting.alike(a, a), true)`
+21 │ ┃   law refl = ~admitted;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Lone) => Path(Bool, Admitting.alike(a, a), true)`
    │
    ╰ note: `refl` is refused with UnprovenLaw.Admitted, as its expectation states

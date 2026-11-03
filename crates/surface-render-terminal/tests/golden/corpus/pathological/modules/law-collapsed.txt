@@ -11,8 +11,8 @@ error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law 
    ╭▸ corpus/pathological/modules/law-collapsed.gandr:31:3
    │
 31 │ ┏   @[ refuses("UnprovenLaw.Admitted") ]
-32 │ ┃   law one admitted;
-   │ ┗━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Integer, b : Integer) => Path(Integer, a, b)`
+32 │ ┃   law one = ~admitted;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Integer, b : Integer) => Path(Integer, a, b)`
    │
    ╰ note: `one` is refused with UnprovenLaw.Admitted, as its expectation states
 

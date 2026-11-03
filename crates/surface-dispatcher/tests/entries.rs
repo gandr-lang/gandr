@@ -370,8 +370,8 @@ fn kind(
 /// names, as the module and the model type a pack names, as a variable a
 /// binding port binds or an abstracting operation in a theory's rule, as
 /// the head or the type of an `Eq.generic(T)` or of one of its laws, as a
-/// node of the tactic a splice runs, as a node of a world's requirement
-/// row, or as a host interface's path.
+/// node of the tactic a splice runs, as the splice a law member admits by,
+/// as a node of a world's requirement row, or as a host interface's path.
 ///
 /// # Specification
 /// trivial.
@@ -488,6 +488,10 @@ enum Placed
     /// core term of its own, and the splice, located at the answered term,
     /// answers.
     Tactic,
+    /// The splice a law member admits its law by, `~admitted` in `law refl =
+    /// ~admitted;`: the admission is the member's form, no term the checker
+    /// judges, so the member answers.
+    Admission,
     /// A node of a flow's body, `reply` in `flow f : V1 ~~> V2 { def answer =
     /// reply ; }`: the body is a template, judged only through the instance
     /// an import mints, a flow its source publishes is applied only in its
@@ -863,7 +867,9 @@ fn gated(
         }));
         binds.clear();
         let mut bound = None::<bool>;
+        let mut lawful = false;
         for (at, &child) in children.iter().enumerate() {
+            lawful = lawful || spelled(Some(child)) == "law";
             let previous = |back: usize| {
                 at.checked_sub(back)
                     .and_then(|before| children.get(before))
@@ -924,6 +930,9 @@ fn gated(
                     .and_then(|before| children.get(before))
                     .copied(),
             ) == "at";
+        // The splice a law member admits by: every child of a module member
+        // holding a `law` tile.
+        let admitting = melded && def.sort == Sort::ModuleMember && lawful;
         stack.extend(
             children
                 .iter()
@@ -949,6 +958,9 @@ fn gated(
                         }
                         else if packing || (stating && Some(child) == last) {
                             placed.or(Some(Placed::Packed))
+                        }
+                        else if admitting {
+                            placed.or(Some(Placed::Admission))
                         }
                         else {
                             placed

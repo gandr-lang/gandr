@@ -18,5 +18,5 @@ data Lone : Type where {
 module Admitting : Model(Reflexive) with sort Carrier = Lone where {
   def alike(a : Lone, b : Lone) -> Bool { true }
   @[ refuses("UnprovenLaw.Admitted") ]
-  law refl admitted;
+  law refl = ~admitted;
 }
