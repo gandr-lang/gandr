@@ -97,6 +97,51 @@ fn spelled<'text>(
     )
 }
 
+/// `source` formatted under `form` beside a stand-in for every module its
+/// path imports name, each resolving to it: a source naming a host interface
+/// imports its module (#4523).
+///
+/// # Specification
+/// trivial.
+fn hosted_spelled<Source>(
+    grammar: &Pbg,
+    source: &Source,
+    form: Form,
+) -> String
+where
+    Source: AsRef<str> + ?Sized,
+{
+    let parsed = parse(grammar, SourceText::from(source.as_ref())).expect("the source parses");
+    let imports = source
+        .as_ref()
+        .lines()
+        .filter(|line| line.starts_with("import "))
+        .count();
+    let unit = Unit::new(Vec::from([
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(ByteOffset::from(1_usize), vec![
+            ImportTarget::Source(
+                SourceIndex::from(0_usize)
+            );
+            imports
+        ]),
+    ]))
+    .expect("the unit is well formed");
+    let beside = Beside::Imports {
+        before: SourceText::from("\n"),
+        unit: &unit,
+    };
+    let options = FormatOptions {
+        form,
+        rewrites: Selection::Every,
+        ..FormatOptions::default()
+    };
+    format_beside(grammar, &parsed, options, (beside, None)).map_or_else(
+        |error| panic!("the source formats as {form}: {error}"),
+        Formatted::into_text,
+    )
+}
+
 /// Each rewrite moves its pair both ways, and each spelling is the one its
 /// form keeps.
 #[test]
@@ -362,6 +407,8 @@ fn a_result_row_is_written_before_its_type_2255()
 {
     let grammar = grammar();
     let source = "\
+import std.process;
+
 def both() -> -F [Partial, std.process.Exit.Eff] Integer {
   pure 1
 }
@@ -383,6 +430,8 @@ def open[r : Row]() -> -F [r] Unit {
 }
 ";
     let sugared = "\
+import std.process;
+
 def both() -> [Partial, std.process.Exit.Eff] Integer {
   pure 1
 }
@@ -404,7 +453,7 @@ def open[r : Row]() -> [r] Unit {
 }
 ";
     assert_eq!(
-        spelled(&grammar, source, Form::Sugared, Selection::Every),
+        hosted_spelled(&grammar, source, Form::Sugared),
         sugared,
         "sugared"
     );
@@ -419,6 +468,8 @@ fn a_labelled_result_row_is_written_before_its_type_2271()
 {
     let grammar = grammar();
     let source = "\
+import std.io;
+
 def say() -> -F [out : std.io.Console.Eff] Unit {
   out.print(\"said\")
 }
@@ -432,6 +483,8 @@ def tailed[r : Row]() -> -F [d : std.io.Console.Eff, Partial | r] Unit {
 }
 ";
     let sugared = "\
+import std.io;
+
 def say() -> [out : std.io.Console.Eff] Unit {
   out.print(\"said\")
 }
@@ -445,13 +498,13 @@ def tailed[r : Row]() -> [d : std.io.Console.Eff, Partial | r] Unit {
 }
 ";
     assert_eq!(
-        spelled(&grammar, source, Form::Sugared, Selection::Every),
+        hosted_spelled(&grammar, source, Form::Sugared),
         sugared,
         "sugared"
     );
     for written in [source, sugared] {
         assert_eq!(
-            spelled(&grammar, written, Form::Explicit, Selection::Every),
+            hosted_spelled(&grammar, written, Form::Explicit),
             written,
             "explicit"
         );

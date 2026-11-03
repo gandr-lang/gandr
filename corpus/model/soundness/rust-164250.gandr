@@ -3,6 +3,9 @@
 // before that region ends; the pathological twin keeps the same view one
 // region out and is refused (#1492).
 
+// Early exit's host interface.
+import std.process;
+
 /// A slot kept at the handler's region holds a view of a value the handler's
 /// scope holds, and is forced inside it.
 def kept() -> Integer {

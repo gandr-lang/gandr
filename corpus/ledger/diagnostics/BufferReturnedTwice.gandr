@@ -1,4 +1,9 @@
 /// `BufferReturnedTwice`: a placed buffer handed back a second time.
+
+// The ring's host interface.
+import std.io;
+
+/// Frees one buffer twice in one scope.
 @[ refuses("BufferReturnedTwice") ]
 def freedTwice() -> -F Unit {
   handle r : std.io.Ring.Eff {

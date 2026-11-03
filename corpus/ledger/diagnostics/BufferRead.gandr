@@ -3,7 +3,10 @@
 // The native buffer a receive places live.
 import std.buffer (Buf);
 
-/// A buffer copied out while the ring still holds it.
+// The ring's host interface.
+import std.io;
+
+/// Copies a buffer the ring holds live, then frees it.
 @[ refuses("BufferRead") ]
 def readWhileHeld() -> -F Unit {
   handle r : std.io.Ring.Eff {

@@ -12,6 +12,9 @@
 /// - see: corpus/pathological/worlds/requires.gandr
 /// - see: crates/surface-driver/tests/cli.rs
 
+// The console's host interface.
+import std.io;
+
 /// What a role at `far` reads and writes: values held by key.
 pub theory Store where {
   /// The store holds values of this sort.

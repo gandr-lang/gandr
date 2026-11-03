@@ -12,6 +12,9 @@
 // The native buffer a receive places live.
 import std.buffer (Buf);
 
+// The ring's host interface.
+import std.io;
+
 /// A buffer allocated and freed: the allocation places it live, and the free
 /// hands it back to the scope that minted it. The `alloc` clause lends its
 /// mint to a mock kernel, which fills it and hands it back with the

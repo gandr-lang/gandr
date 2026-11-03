@@ -6,6 +6,11 @@
 // program and the fold, so the claim that the body performs only the handled
 // operation is its own.
 
+// The console's host interface.
+import std.io;
+// Early exit's host interface.
+import std.process;
+
 /// The clause resumes the body, whose value passes through the `pure` clause.
 @[ runs("101") ]
 def resumed() -> Integer {

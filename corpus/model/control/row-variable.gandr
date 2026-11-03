@@ -7,6 +7,9 @@
 // Type-Driven Development 2016, § 2.5 and § 3.3, T-HANDLER). What refuses is
 // in `../../pathological/control/row-variable.gandr`.
 
+// The console's host interface.
+import std.io;
+
 /// A line printed through `std.io.Console.Eff`, the rest of the row left open: `r`
 /// lacks `std.io.Console.Eff`, which the row writes beside it.
 pub def log[r : Row](s : String) -> [std.io.Console.Eff | r] Unit { std.io.Console.print(s) }

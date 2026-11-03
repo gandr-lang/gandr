@@ -4,6 +4,9 @@
 // capability holding more operations is passed where one holding fewer is
 // asked, and a holder cannot use an operation its capability does not hold.
 
+// The filesystem's host interface.
+import std.fs;
+
 /// The file system's capability, holding reading and writing, owed by the
 /// host that grants it.
 @[ owes(1) ]

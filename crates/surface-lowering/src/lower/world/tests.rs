@@ -13,6 +13,8 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::error::LoweringRefusal;
+use crate::fixture::hosted;
+use crate::fixture::hosting;
 use crate::lower::native::tests::body_named;
 use crate::lower::native::tests::lowered;
 use crate::lower::native::tests::refusal_of;
@@ -108,7 +110,8 @@ fn a_world_s_requirement_is_a_row_3523()
             "world doubled requires [std.io.Console.Eff, std.io.Console.Eff];\n",
         )
     );
-    let module = lowered(SourceText::from(text.as_str()), &mut arena);
+    let text = hosting(text.as_str());
+    let module = hosted(&text, &mut arena);
     let required = |name: &str| {
         let spelled = |span: gandr_surface_syntax::ByteSpan| {
             text.get(usize::from(span.start()) .. usize::from(span.end()))
@@ -205,7 +208,8 @@ fn a_site_s_offer_answers_by_label_and_by_name_3523()
     let offered = |offers: &str| {
         let text = alloc::format!("{offers}\n{echo}");
         let mut arena = CoreArena::new();
-        let module = lowered(SourceText::from(text.as_str()), &mut arena);
+        let text = hosting(text.as_str());
+        let module = hosted(&text, &mut arena);
         let spelled = |span: gandr_surface_syntax::ByteSpan| {
             alloc::string::String::from(
                 text.get(usize::from(span.start()) .. usize::from(span.end()))
@@ -275,6 +279,24 @@ fn a_site_s_offer_answers_by_label_and_by_name_3523()
             Ok((ref granted, ref answered)) if granted.len() == 1 && answered.is_empty()
         ),
         "the first offer stands and a second is refused: {twice:?}"
+    );
+    // A site that imports no module of the interface it grants refuses it,
+    // though its offer stands before the imports a source may write (#4523).
+    let unimported = alloc::format!("\noffers [std.io.Console.Eff];\n{echo}");
+    let mut arena = CoreArena::new();
+    let module = crate::fixture::imported(&unimported, &mut arena);
+    let outcomes = alloc::format!(
+        "{:?}",
+        module
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.name() == SurfaceName::from("offers"))
+            .map(crate::module::LoweredDeclaration::outcome)
+            .collect::<alloc::vec::Vec<_>>()
+    );
+    assert!(
+        matches!(module.offer(), Maybe::Absent(_)) && outcomes.contains("UnresolvedTypeHead"),
+        "an unimported interface is refused as the offer's own: {outcomes}"
     );
 }
 

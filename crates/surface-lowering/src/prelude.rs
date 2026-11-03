@@ -65,6 +65,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
 
 use crate::unit::ImportTarget;
 use crate::unit::SourceIndex;
@@ -131,7 +132,7 @@ pub fn lay(
         .sources()
         .iter()
         .map(|source| {
-            UnitSource::new(
+            let laid = UnitSource::new(
                 ByteOffset::from(usize::from(source.start()).saturating_add(usize::from(base))),
                 source
                     .imports()
@@ -145,7 +146,11 @@ pub fn lay(
                         | ImportTarget::Unlocked) => held,
                     })
                     .collect(),
-            )
+            );
+            match source.home() {
+                Maybe::Present(home) => laid.homed(home),
+                Maybe::Absent(_) => laid,
+            }
         })
         .collect();
 

@@ -43,6 +43,8 @@ use gandr_core_checker::worlds::Crossed;
 use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_checker::worlds::Predicate;
 use gandr_core_term::compose::Form;
+use gandr_core_term::effect::EffectName;
+use gandr_core_term::effect::host;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
@@ -166,12 +168,18 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::DerivedComponent { member, theory, .. } => format!(
             "delete `{member}`: the model reads it as `{theory}.{member}`, which the derivation fills"
         ),
-        // A head a `std` module homes names its listing; any other is unworded.
+        // A head a `std` module homes names its listing, and a host interface
+        // the import of its module; any other is unworded.
         LoweringRefusal::UnresolvedTypeHead { name, .. } => match head_home(name) {
             Maybe::Present(home) => {
                 format!("write `import {home} ({name});`, the listing of `{name}` from its home")
             },
-            Maybe::Absent(_) => return Maybe::Absent(help::Absent::Unworded),
+            Maybe::Absent(_) => match host::home(&EffectName::from(name.as_ref())) {
+                Maybe::Present(home) => {
+                    format!("write `import {home};`, the import of `{name}`'s module")
+                },
+                Maybe::Absent(_) => return Maybe::Absent(help::Absent::Unworded),
+            },
         },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }

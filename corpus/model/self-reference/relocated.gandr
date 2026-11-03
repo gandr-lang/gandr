@@ -2,6 +2,9 @@
 // window copied with them: the captured locals move, and every read follows
 // them. The move a polled Rust future may not make is the ordinary case.
 
+// Early exit's host interface.
+import std.process;
+
 /// The stack resumed under a frame of the clause's own, so its frames lie
 /// higher than where they were captured; the view still reads its cell, and
 /// the clause adds its hundred to the handled answer (#1183).

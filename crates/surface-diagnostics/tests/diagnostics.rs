@@ -62,11 +62,16 @@ use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::compose;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_dispatcher::lower_source;
+use gandr_surface_dispatcher::lower_unit_source;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::FormFault;
+use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::SourceIndex;
+use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::UnitSource;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Fidelity;
@@ -289,6 +294,61 @@ fn only(
     let mut printed = printed(path, SourceRoot::Strict, text, Verb::Check(Goals::Gated));
     assert_eq!(printed.len(), 1_usize, "one diagnostic: {printed:?}");
     printed.remove(0)
+}
+
+/// The diagnostics a strict source with `text` prints under plain `check`,
+/// walked from a file named `name` in a scratch directory of its own, so each
+/// `std` module it imports is laid before it (#4520, #4523).
+///
+/// # Specification
+/// trivial.
+fn walked(
+    name: &Path,
+    text: SourceText<'_>,
+) -> Vec<Diagnostic>
+{
+    let scratch = Scratch::new(name);
+    scratch.file(
+        &Path::new("strict").join(name).with_extension("gandr"),
+        text,
+    );
+    let mut printed = Vec::new();
+    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
+            printed.extend(entries(&step, Verb::Check(Goals::Gated)));
+            ControlFlow::Continue(())
+        },
+    );
+    printed
+}
+
+/// The lines a source writes to import the module of every host interface
+/// (#4523).
+const HOSTING: &str =
+    "import std.env ;\nimport std.fs ;\nimport std.io ;\nimport std.net ;\nimport std.process ;\n";
+
+/// A newline standing in for every host interface's module, `source`, then
+/// [`HOSTING`]; and the unit laying them, each of the second source's
+/// imports resolving to the first.
+///
+/// # Specification
+/// trivial.
+fn hosted<Source>(source: Source) -> (String, Unit)
+where
+    Source: core::fmt::Display,
+{
+    let unit = Unit::new(vec![
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(ByteOffset::from(1_usize), vec![
+            ImportTarget::Source(
+                SourceIndex::from(0_usize)
+            );
+            HOSTING.lines().count()
+        ]),
+    ])
+    .expect("two sources make a unit");
+    (format!("\n{source}{HOSTING}"), unit)
 }
 
 /// The bytes of each appearance of `needle` in `text`, in order.
@@ -943,13 +1003,14 @@ fn a_shared_field_variable_answers_at_the_depth_it_was_judged_1515()
 fn a_node_stands_in_the_regions_of_each_scope_and_hold_around_it()
 {
     let grammar = built_in().expect("the built-in grammar builds");
-    let text = SourceText::from(
+    let (laid, unit) = hosted(
         "def f() -> -F Unit {\n  var s = 3;\n  handle c : std.process.Exit.Eff {\n    let k : Integer at s = \
          pure 1 ;\n    let m = k ;\n    c.exit(1)\n  } with {\n    pure(x) => return x,\n    \
          oper exit(code, k) => return unit\n  }\n}\n",
     );
+    let text = SourceText::from(laid.as_str());
     let Lowered::Module { module, arena } =
-        lower_source(&grammar, text, &mut LoweringCount::default())
+        lower_unit_source(&grammar, text, &unit, &mut LoweringCount::default())
             .expect("the source lowers")
             .into_lowered()
     else {
@@ -1646,7 +1707,8 @@ fn a_trace_spells_a_kept_region_by_its_name_1494()
         (
             "c",
             SourceText::from(
-                "def traced() -> -F Integer {\n  var s = 3;\n  handle c : std.process.Exit.Eff {\n    let k : (() => \
+                "import std.process ;\n\
+                 def traced() -> -F Integer {\n  var s = 3;\n  handle c : std.process.Exit.Eff {\n    let k : (() => \
                  Integer) at c = access shared s as w { pure thunk { pure thunk { pure w } } } ;\n    \
                  force k\n  } with {\n    pure(x) => pure x,\n    oper exit(code, k) => pure 0\n  }\n}\n",
             ),
@@ -1654,13 +1716,16 @@ fn a_trace_spells_a_kept_region_by_its_name_1494()
         (
             "l",
             SourceText::from(
-                "def traced() -> -F Integer {\n  handle c : std.process.Exit.Eff {\n    var l = 42;\n    let k : (() => \
+                "import std.process ;\n\
+                 def traced() -> -F Integer {\n  handle c : std.process.Exit.Eff {\n    var l = 42;\n    let k : (() => \
                  Integer) at l = access shared l as w { pure thunk { pure thunk { pure w } } } ;\n    \
                  force k\n  } with {\n    pure(x) => pure x,\n    oper exit(code, k) => pure 0\n  }\n}\n",
             ),
         ),
     ] {
-        let diagnostic = only(Path::new("traced.gandr"), text);
+        let mut printed = walked(Path::new(&format!("traced-{kept}")), text);
+        assert_eq!(printed.len(), 1_usize, "one diagnostic: {printed:?}");
+        let diagnostic = printed.remove(0);
         let labels: Vec<String> = contexts(text, &diagnostic)
             .into_iter()
             .map(|(_, label)| label)
@@ -3089,7 +3154,7 @@ mod sweeps
                         let mut unsupported = false;
                         for (declaration, &severity) in unsettled()
                             .zip(&severities)
-                            .filter(|&(declaration, _)| declaration.name() == malformed.name())
+                            .filter(|&(declaration, _)| declaration.span() == malformed.span())
                         {
                             if severity == Severity::Error {
                                 errors = errors.saturating_add(1_usize);

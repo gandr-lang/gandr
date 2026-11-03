@@ -487,7 +487,7 @@ fn a_script_pings_over_its_network_3186()
     let stray = Scratch::write(
         Path::new("net-stray-3186"),
         SourceText::from(
-            "def main() -> -F [std.net.Eff] Integer { std.net.transmit(7, \"lost\"); 0 }\n",
+            "import std.net;\ndef main() -> -F [std.net.Eff] Integer { std.net.transmit(7, \"lost\"); 0 }\n",
         ),
     );
     let mut script = Script::new(stray.0.clone());

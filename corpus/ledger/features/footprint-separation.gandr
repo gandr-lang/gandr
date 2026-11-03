@@ -12,6 +12,10 @@
 
 // The task's protocol.
 import "../../model/tasks/task-base.gandr";
+// The filesystem's host interface.
+import std.fs;
+// Early exit's host interface.
+import std.process;
 
 /// Both halves hold the capability attenuated to reading, so they share the file system only to read it.
 def reading(c : Cap { read }) -> [std.fs.Eff] Unit {

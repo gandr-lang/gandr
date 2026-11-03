@@ -1,0 +1,28 @@
+// A host interface written with no import of its module names no type.
+//
+// Each host interface lives in a `std` module, and the ambient scope answers
+// it nowhere. A source that names one imports its module, as it imports any
+// other module.
+//
+// The source writes `std.io.Console.Eff` in a row and `std.process.Exit.Eff`
+// at a scope without `import std.io;` or `import std.process;`. Each head is
+// refused where it is written, and its help names the import.
+//
+// - see: #4523
+
+/// Prints a line through a capability with no import of `std.io`.
+@[ refuses("UnresolvedTypeHead") ]
+def say(c : Cap { print }) -> [std.io.Console.Eff] Unit {
+  c.print("said")
+}
+
+/// Handles an exit at once with no import of `std.process`.
+@[ refuses("UnresolvedTypeHead") ]
+def quit() -> Unit {
+  handle c : std.process.Exit.Eff {
+    c.exit(1)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure unit
+  }
+}

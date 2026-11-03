@@ -10,6 +10,8 @@
 // `peek` reads through `std.fs.Eff`; `once` states `Partial`.
 import "./capability-attenuate.gandr";
 import "./divergence.gandr";
+// The filesystem's host interface.
+import std.fs;
 
 /// Reading a file, then a loop: the row joins `peek`'s `std.fs.Eff` and `once`'s
 /// `Partial`.

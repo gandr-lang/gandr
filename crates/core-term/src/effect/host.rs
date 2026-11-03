@@ -45,10 +45,12 @@
 //! Each interface lives in its API's module, as Rust's `std` places
 //! `io::Result`, and its name is its path: the module, then `Eff`. The
 //! standard streams and the ring sit under `std.io`, the process's execution
-//! and its early exit under `std.process`, and the filesystem, the
-//! environment and the network each in a module of its own. `Partial` names
-//! the partiality monad and stays ambient by its bare name until
-//! `std.partial.Eff` reads by its path.
+//! and its early exit under `std.process`, and the filesystem, the environment
+//! and the network each in a module of its own. A source names an interface
+//! where it imports the module, as `import std.io;` for `std.io.Console.Eff`,
+//! and the module names its own (#4523). `Partial` names the partiality monad
+//! and stays ambient by its bare name until `std.partial.Eff` reads by its
+//! path.
 //!
 //! | Interface | Path |
 //! | --- | --- |
@@ -115,6 +117,94 @@ pub const NET: &str = "std.net.Eff";
 pub const INTERFACES: [&str; 10] = [
     EXEC, FS, PROC, ENV, RING, PARTIAL, CONSOLE, STDERR, STDIN, NET,
 ];
+
+/// The `std` module each host interface lives in, beside the interface: the
+/// module a source imports to name it (#4523). [`PARTIAL`] lives in none and
+/// stays ambient.
+pub const HOMES: [(&str, &str); 9] = [
+    (EXEC, "std.process"),
+    (FS, "std.fs"),
+    (PROC, "std.process"),
+    (ENV, "std.env"),
+    (RING, "std.io"),
+    (CONSOLE, "std.io"),
+    (STDERR, "std.io"),
+    (STDIN, "std.io"),
+    (NET, "std.net"),
+];
+
+quenchant_shape::reason_enum! {
+    /// Why a name has no `std` module a source imports to name it.
+    pub mod homed {
+        /// The reason no module is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The name is ambient, as [`super::PARTIAL`] is, or no host interface.
+            Ambient,
+        }
+    }
+}
+
+/// The `std` module a source imports to name the host interface `name`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the module [`HOMES`] holds beside `name`; the ambient absence for
+///   [`PARTIAL`] and for a name no host interface carries.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the console's home is `std.io`, execution's is
+///   `std.process`, and `Partial` has none.
+/// - witness: `effect::host::tests::each_host_interface_but_partial_lives_in_a_std_module_4523`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(module) => HOMES.contains(&(name.as_ref(), module.0)),
+    Maybe::Absent(_) => HOMES.iter().all(|&(interface, _)| interface != name.as_ref()),
+})]
+#[inline]
+pub fn home(name: &EffectName) -> Maybe<HostHome, homed::Absent>
+{
+    HOMES
+        .into_iter()
+        .find_map(|(interface, module)| (interface == name.as_ref()).then_some(HostHome(module)))
+        .map_or(Maybe::Absent(homed::Absent::Ambient), Maybe::Present)
+}
+
+/// The `std` module a host interface lives in, spelled as an import writes
+/// it: `std.io` for the console.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HostHome(&'static str);
+
+impl AsRef<str> for HostHome
+{
+    /// Borrow the module's path.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        self.0
+    }
+}
+
+impl core::fmt::Display for HostHome
+{
+    /// Writes the module's path.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(self.0)
+    }
+}
 
 /// The ten interfaces, sharing their arena-owned payload and reply types.
 #[derive(Clone, Debug, Eq, PartialEq)]

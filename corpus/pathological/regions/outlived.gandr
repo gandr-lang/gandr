@@ -2,6 +2,9 @@
 // the borrow it came from: what `pass` hands back is kept in the handler's
 // region, so a binding kept in none cannot hold it.
 
+// Early exit's host interface.
+import std.process;
+
 /// Hands back the thunk it is lent, kept in the same region.
 def pass[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r) { pure k }
 

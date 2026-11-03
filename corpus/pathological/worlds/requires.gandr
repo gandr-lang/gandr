@@ -11,6 +11,9 @@
 // - see: `corpus/model/deployments/offers.gandr` — a world requiring
 //   `std.io.Console.Eff` and a store under `store`
 
+// The console's host interface.
+import std.io;
+
 /// A store holds values by key, and each operation hands what it reads on.
 pub theory Store where {
   /// The store holds values of this sort.

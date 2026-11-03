@@ -4,6 +4,8 @@
 
 // The task's protocol.
 import "./task-base.gandr";
+// Early exit's host interface.
+import std.process;
 
 /// A scope exiting after the parent read its task's end to its close.
 @[ runs("unit") ]

@@ -1,7 +1,7 @@
 error[InstanceAmbiguous]: `say`'s instance `out` could be `b` or `a`, each an instance of `std.io.Console.Eff` handled where this call stands: name the one it means, `say[out = b](…)`
-   ╭▸ corpus/ledger/diagnostics/InstanceAmbiguous.gandr:10:7
+   ╭▸ corpus/ledger/diagnostics/InstanceAmbiguous.gandr:15:7
    │
-10 │       say();
+15 │       say();
    │       ━━━━━ an instance with several in scope
    │
    ╰ note: `ambiguous` is refused with InstanceAmbiguous, as its expectation states

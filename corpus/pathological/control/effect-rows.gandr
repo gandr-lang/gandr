@@ -5,6 +5,8 @@
 // `peek` reads through `std.fs.Eff`; `once` states `Partial`.
 import "../../model/control/capability-attenuate.gandr";
 import "../../model/control/divergence.gandr";
+// The filesystem's host interface.
+import std.fs;
 
 /// `std.fs.Eff` named twice: a row holds each interface once, so the second `std.fs.Eff` is
 /// refused as a label defined twice, as a record's second field of one label

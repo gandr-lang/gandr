@@ -9,6 +9,8 @@
 
 // `pass`, which hands back the thunk it is lent.
 import "./passed.gandr";
+// Early exit's host interface.
+import std.process;
 
 /// Forces the thunk it is lent, then hands it back in the same region.
 pub def touch[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r) {

@@ -8,6 +8,9 @@
 // The native buffer a receive places live.
 import std.buffer (Buf);
 
+// The ring's host interface.
+import std.io;
+
 /// A buffer allocated and never freed.
 @[ refuses("BufferUnreturned") ]
 def neverFreed() -> Unit {

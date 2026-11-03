@@ -3821,10 +3821,11 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     #[test]
     fn a_printed_line_reaches_the_console_2279()
     {
-        let mut printing = program(
+        let listed = crate::tests::Listed::hosted(
             "def greet() -> -F [std.io.Console.Eff] Unit {\n  std.io.Console.print(\"a\") ;\n  \
              std.io.Console.print(\"b\")\n}\n",
         );
+        let mut printing = listed_program(&listed);
         let greet = printing
             .declarations
             .iter()

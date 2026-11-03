@@ -1,4 +1,9 @@
 /// `InstanceAmbiguous`: a call omitting an instance where several of its interface stand.
+
+// The console's host interface.
+import std.io;
+
+/// A line printed through the console instance the row labels `out`.
 def say() -> [out : std.io.Console.Eff] Unit {
   out.print("said")
 }

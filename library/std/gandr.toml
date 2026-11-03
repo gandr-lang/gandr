@@ -1,5 +1,5 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: d8cf9f10f39965468134cef9d4ec3ed767a67621bd3ed15c1c1a091314c42218
+# blake3: 8c443e511cd9d042b5bae89aa4b34a9f1b3e58c6504091179944643722072e2d
 
 [package]
 name = "std"
@@ -14,6 +14,8 @@ modules = [
   "buffer",
   "build",
   "cost",
+  "env",
+  "fs",
   "grade",
   "io",
   "layout",
@@ -21,6 +23,8 @@ modules = [
   "manifold",
   "math.cylinder",
   "math.path",
+  "net",
+  "process",
   "secret",
   "session",
   "string",

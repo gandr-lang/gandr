@@ -2,6 +2,9 @@
 // that ends the access, would read a cell nothing lends any more: the
 // dangling self-reference a moved Rust future risks without `Pin`.
 
+// Early exit's host interface.
+import std.process;
+
 /// A thunk over the view handed out of the access after its resume (#1183).
 @[ refuses("ViewEscaped") ]
 def dangling() -> Integer {

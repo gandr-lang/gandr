@@ -1,95 +1,95 @@
 error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
-   ╭▸ corpus/pathological/strings/views.gandr:16:25
+   ╭▸ corpus/pathological/strings/views.gandr:18:25
    │
-14 │ ┌ def escaped() -> Repr {
-15 │ │   var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+16 │ ┌ def escaped() -> Repr {
+17 │ │   var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
    │ │   ─── checked against `-F Repr`; while checking the scope of this hold
-16 │ │   access s as v { force thunk { resume(v, v) } };
+18 │ │   access s as v { force thunk { resume(v, v) } };
    │ │   ┬───────────────┬─────┯━━━━━━━━━━━━━━━━━━━━━──
    │ │   │               │     │
    │ │   │               │     a view outliving its access
    │ │   │               synthesised; while forcing this
    │ │   checked against `-F Repr`; while checking the body of this access
-17 │ │   pure s
-18 │ │ }
+19 │ │   pure s
+20 │ │ }
    │ └─┘ checked against `() => Repr`; while checking the body of this thunk
    │
    ├ note: `escaped` is refused with ViewEscaped, as its expectation states
    ╰ help: use the view outside a thunk, or open the `access` inside it
 
 error[ViewSpent]: the view is used after its `resume` or `abort`
-   ╭▸ corpus/pathological/strings/views.gandr:25:33
+   ╭▸ corpus/pathological/strings/views.gandr:27:33
    │
-23 │ ┌ def endedTwice() -> Unit {
-24 │ │   var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+25 │ ┌ def endedTwice() -> Unit {
+26 │ │   var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
    │ │   ─── checked against `-F Unit`; while checking the scope of this hold
-25 │ │   access s as v { resume(v, v); abort(v) }
+27 │ │   access s as v { resume(v, v); abort(v) }
    │ │   ┬───────────────┬─────────────┯━━━━━━━──
    │ │   │               │             │
    │ │   │               │             a view already ended
    │ │   │               checked against `-F Unit`; while checking the body of this split; binds _ : Unit
    │ │   checked against `-F Unit`; while checking the body of this access
-26 │ │ }
+28 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
    ╰ note: `endedTwice` is refused with ViewSpent, as its expectation states
 
 error[ViewUnended]: the body of this `access` must end its view with `resume` or `abort`
-   ╭▸ corpus/pathological/strings/views.gandr:33:3
+   ╭▸ corpus/pathological/strings/views.gandr:35:3
    │
-31 │ ┌ def unended() -> Unit {
-32 │ │   var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+33 │ ┌ def unended() -> Unit {
+34 │ │   var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
    │ │   ─── checked against `-F Unit`; while checking the scope of this hold
-33 │ │   access s as v { pure unit }
+35 │ │   access s as v { pure unit }
    │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━ a view neither resumed nor aborted
-34 │ │ }
+36 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
    ╰ note: `unended` is refused with ViewUnended, as its expectation states
 
 error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding `c`; the scope cannot answer it
-   ╭▸ corpus/pathological/strings/views.gandr:45:29
+   ╭▸ corpus/pathological/strings/views.gandr:47:29
    │
-39 │ ┌  def keptPastRegion() -> Integer {
-40 │ │    var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+41 │ ┌  def keptPastRegion() -> Integer {
+42 │ │    var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
-41 │ │┌   handle c : std.process.Exit.Eff {
-42 │ ││     let k : (() => Integer) at c = access shared s as w {
+43 │ │┌   handle c : std.process.Exit.Eff {
+44 │ ││     let k : (() => Integer) at c = access shared s as w {
    │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
-43 │ ││       pure thunk { let bs = bytes(w); count(bs) }
-44 │ ││     };
-45 │ ││     let j : () => Integer = thunk { force k };
+45 │ ││       pure thunk { let bs = bytes(w); count(bs) }
+46 │ ││     };
+47 │ ││     let j : () => Integer = thunk { force k };
    │ ││     ┬──                     ━━━━━━━━━━━━━━━━━ a value kept in the scope's own region
    │ ││     │
    │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while finishing the type of this
    ┆ ┆┆
-49 │ ││     oper exit(code, k) => pure 0
-50 │ ││   }
+51 │ ││     oper exit(code, k) => pure 0
+52 │ ││   }
    │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
-51 │ │  }
+53 │ │  }
    │ └──┘ checked against `() => Integer`; while checking the body of this thunk
    │
    ├ note: `keptPastRegion` is refused with KeptEscaped, as its expectation states
    ╰ help: return a value that the scope's own region does not keep
 
 error[HeldKept]: a shared view of this value is kept in a region whose scope is still running; an exclusive `access` waits until that scope ends
-   ╭▸ corpus/pathological/strings/views.gandr:62:5
+   ╭▸ corpus/pathological/strings/views.gandr:64:5
    │
-56 │ ┌  def writtenWhileKept() -> Integer {
-57 │ │    var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+58 │ ┌  def writtenWhileKept() -> Integer {
+59 │ │    var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
-58 │ │┌   handle c : std.process.Exit.Eff {
-59 │ ││     let k : (() => Integer) at c = access shared s as w {
+60 │ │┌   handle c : std.process.Exit.Eff {
+61 │ ││     let k : (() => Integer) at c = access shared s as w {
    │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
-60 │ ││       pure thunk { let bs = bytes(w); count(bs) }
-61 │ ││     };
-62 │ ││     access s as v { resume(v, v) };
+62 │ ││       pure thunk { let bs = bytes(w); count(bs) }
+63 │ ││     };
+64 │ ││     access s as v { resume(v, v) };
    │ ││     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
    ┆ ┆┆
-66 │ ││     oper exit(code, k) => pure 0
-67 │ ││   }
+68 │ ││     oper exit(code, k) => pure 0
+69 │ ││   }
    │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
-68 │ │  }
+70 │ │  }
    │ └──┘ checked against `() => Integer`; while checking the body of this thunk
    │
    ╰ note: `writtenWhileKept` is refused with HeldKept, as its expectation states

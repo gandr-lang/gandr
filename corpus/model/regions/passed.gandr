@@ -2,6 +2,9 @@
 // T) -> &'a T`: the answer is kept where the argument was, so the caller
 // reads it inside the same scope.
 
+// Early exit's host interface.
+import std.process;
+
 /// Hands back the thunk it is lent, kept in the same region.
 pub def pass[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r) { pure k }
 

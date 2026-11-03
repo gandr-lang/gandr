@@ -1,15 +1,15 @@
 error[UnresolvedTypeHead]: no type named `Missing` is written bare
-   ╭▸ corpus/pathological/worlds/offered.gandr:38:13
+   ╭▸ corpus/pathological/worlds/offered.gandr:41:13
    │
-38 │ pub offers [Missing];
+41 │ pub offers [Missing];
    │             ━━━━━━━ no type head of this name and arity
    │
    ╰ note: `offers` is refused with UnresolvedTypeHead, as its expectation states
 
 error[DuplicateDefinition]: `std.io.Console.Eff` is defined twice
-   ╭▸ corpus/pathological/worlds/offered.gandr:42:33
+   ╭▸ corpus/pathological/worlds/offered.gandr:45:33
    │
-42 │ pub offers [std.io.Console.Eff, std.io.Console.Eff];
+45 │ pub offers [std.io.Console.Eff, std.io.Console.Eff];
    │             ┬─────────────────  ━━━━━━━━━━━━━━━━━━ written again here
    │             │
    │             first written here
@@ -18,21 +18,21 @@ error[DuplicateDefinition]: `std.io.Console.Eff` is defined twice
    ╰ help: give each definition of `std.io.Console.Eff` its own name, or delete one of them
 
 error[DuplicateDefinition]: `offers` is defined twice
-   ╭▸ corpus/pathological/worlds/offered.gandr:50:5
+   ╭▸ corpus/pathological/worlds/offered.gandr:53:5
    │
-46 │ pub offers [store = Absent];
+49 │ pub offers [store = Absent];
    │     ──────────────────────── first written here
    ┆
-50 │ pub offers [store = Echo];
+53 │ pub offers [store = Echo];
    │     ━━━━━━━━━━━━━━━━━━━━━━ written again here
    │
    ├ note: `offers` is refused with DuplicateDefinition, as its expectation states
    ╰ help: give each definition of `offers` its own name, or delete one of them
 
 error[UnresolvedName]: `Absent` is not defined
-   ╭▸ corpus/pathological/worlds/offered.gandr:46:21
+   ╭▸ corpus/pathological/worlds/offered.gandr:49:21
    │
-46 │ pub offers [store = Absent];
+49 │ pub offers [store = Absent];
    │                     ━━━━━━ not found in this scope
    │
    ├ note: `offers` is refused with UnresolvedName, as its expectation states

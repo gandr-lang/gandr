@@ -5,6 +5,9 @@
 // ICFP 2025, doi:10.1145/3747532): a value of an outer region may stand in an
 // inner one, never the reverse.
 
+// Early exit's host interface.
+import std.process;
+
 /// The scope's own capability is bound at the type that names its region.
 def named() -> Unit {
   handle c : std.process.Exit.Eff {

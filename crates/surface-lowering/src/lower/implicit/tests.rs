@@ -19,6 +19,8 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::error::LoweringRefusal;
+use crate::fixture::hosted;
+use crate::fixture::hosting;
 use crate::lower::native::tests::assert_checked;
 use crate::lower::native::tests::body_named;
 use crate::lower::native::tests::judged;
@@ -1114,7 +1116,8 @@ fn a_row_label_is_an_instance_after_every_parameter_2271()
     // names, as the twin's reads it past `x` and `y`.
     let source = "def both[r : Row](s : String) -> -F [x : std.io.Console.Eff, y : std.io.Console.Eff | r] Unit { y.print(s) }\ndef twin[r : Row, q : Region, q1 : Region](s : String, x : Cap {print} at q, y : Cap {print} at q1) -> -F [q : std.io.Console.Eff, q1 : std.io.Console.Eff | r] Unit { y.print(s) }\n";
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source), &mut arena);
+    let text = hosting(source);
+    let module = hosted(&text, &mut arena);
     assert_eq!(
         equal_type_syntax(
             &arena,
@@ -1141,7 +1144,8 @@ fn a_row_label_naming_a_region_binder_is_its_instance_2271()
     // every parameter it takes is written.
     let source = "def twin[r : Region](x : Cap {print} at r) -> -F [r : std.io.Console.Eff] Unit { x.print(\"x\") }\n";
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source), &mut arena);
+    let text = hosting(source);
+    let module = hosted(&text, &mut arena);
     let twin = declaration_named(&module, SurfaceName::from("twin")).constant();
     assert!(
         module.implicits(twin).is_empty(),
@@ -1166,7 +1170,8 @@ fn an_omitted_instance_is_the_one_handled_in_scope_2271()
         handled("a".into(), SourceText::from("say[.out = a](); pure 0")),
     );
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let text = hosting(source.as_str());
+    let module = hosted(&text, &mut arena);
     for (omitted, supplied) in [("resolved", "named"), ("relayed", "relayedNamed")] {
         assert_eq!(
             equal_certificate_syntax(
@@ -1190,7 +1195,8 @@ fn an_omitted_instance_is_refused_when_none_or_several_stand_2271()
         handled("a".into(), SourceText::from(inner.as_str())),
     );
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let text = hosting(source.as_str());
+    let module = hosted(&text, &mut arena);
     assert!(
         matches!(
             refusal_of(&module, SurfaceName::from("none")),

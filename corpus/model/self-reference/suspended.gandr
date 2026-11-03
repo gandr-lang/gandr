@@ -4,6 +4,9 @@
 // resumes. Rust pins a future whose state borrows from itself (`Pin`, RFC
 // 2349); C++ keeps such an object immobile by convention.
 
+// Early exit's host interface.
+import std.process;
+
 /// A view read after a suspension: the stack holding the access is resumed,
 /// and the view reads the cell it was lent (#1183).
 @[ runs("12") ]

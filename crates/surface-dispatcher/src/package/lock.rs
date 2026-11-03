@@ -1172,6 +1172,41 @@ pub fn standard(rest: Option<&Path>) -> Option<PathBuf>
     Some(within(&library, rest))
 }
 
+/// The module path of the standard library's source at `path`, `std.io` for
+/// its `src/io.gandr`: the module whose host interfaces the source names
+/// without importing it (#4523).
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`STANDARD`], a dot and the path's module path under the standard
+///   library's sources, as the package walk names it; none for a path outside
+///   them, or when the tree this build was built from holds no standard
+///   library.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause reads the file system again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `std.io`'s file is `std.io`, and a source beside the
+///   importer is none.
+/// - witness: `component::tests::a_std_module_path_names_the_standard_library_from_any_root_4517`
+#[must_use]
+pub fn standard_module(path: &Path) -> Option<String>
+{
+    static SOURCES: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    let sources = SOURCES
+        .get_or_init(|| match Package::discover(Path::new(STANDARD_ROOT)) {
+            Maybe::Present(library) => std::fs::canonicalize(library.sources()).ok(),
+            Maybe::Absent(_) => None,
+        })
+        .as_deref()?;
+    let module = super::module_path(sources, path).or_else(|| {
+        let canonical = std::fs::canonicalize(path).ok()?;
+        super::module_path(sources, &canonical)
+    })?;
+    Some(alloc::format!("{STANDARD}.{module}"))
+}
+
 /// The file `rest` names in `dependency`: its package source for none, and
 /// the file under its sources otherwise.
 ///

@@ -4,6 +4,8 @@
 
 // The task's protocol.
 import "../../model/cancellation/cancel-base.gandr";
+// Early exit's host interface.
+import std.process;
 
 /// A scope whose exit clause resumes the rest inside a thunk while its task's
 /// end is open (#1334).

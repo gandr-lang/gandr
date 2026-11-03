@@ -1,4 +1,9 @@
 /// `handle_expression`: a handler: a computation and its operation clauses.
+
+// Early exit's host interface.
+import std.process;
+
+/// Returns `n` after an exit its handler resumes.
 @[ checks ]
 def quiet(n : Integer) -> -F Integer {
   handle c : std.process.Exit.Eff {

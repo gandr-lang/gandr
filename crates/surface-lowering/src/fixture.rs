@@ -204,6 +204,99 @@ where
     .expect("the listed unit lowers")
 }
 
+/// The lines a source writes to import the module of every host interface
+/// (#4523): it names any of them through these.
+pub const HOSTING: &str =
+    "import std.env ;\nimport std.fs ;\nimport std.io ;\nimport std.net ;\nimport std.process ;\n";
+
+/// A newline that stands in for the host modules, then `source` and
+/// [`HOSTING`] after it: the text [`hosted`] lowers. The imports trail the
+/// source, so its spans stand one byte on.
+///
+/// # Specification
+/// trivial.
+pub fn hosting<Source>(source: Source) -> String
+where
+    Source: core::fmt::Display,
+{
+    format!("\n{source}{HOSTING}")
+}
+
+/// `text`, which [`hosting`] made, lowered as a unit of two sources: the
+/// stand-in for the host modules and the source importing each of them.
+///
+/// # Specification
+/// - requires: `text` is what [`hosting`] made and parses cleanly.
+/// - ensures: as [`imported`] over [`HOSTING`]'s imports.
+/// - fails: never on accepted fixtures.
+/// - panics: if the lowering refuses the unit.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every witness naming a host interface reads its module
+///   through here.
+/// - witness: `lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
+#[spec(requires: text.as_ref().starts_with('\n') && text.as_ref().ends_with(HOSTING))]
+pub fn hosted<'source, Text>(
+    text: &'source Text,
+    arena: &mut CoreArena,
+) -> LoweredModule<'source>
+where
+    Text: AsRef<str> + ?Sized,
+{
+    imported(text, arena)
+}
+
+/// `text` lowered as a unit of two sources: a newline that stands in for
+/// every module the second imports, then the second, whose path imports,
+/// each a line opening `import `, resolve to the first.
+///
+/// # Specification
+/// - requires: `text` opens with the stand-in's newline, parses cleanly and
+///   writes each path import on a line of its own.
+/// - ensures: each of the second source's path imports resolves to the first.
+/// - provides: a source whose imports resolve, lowered where they do.
+/// - fails: never on accepted fixtures.
+/// - panics: if the lowering refuses the unit.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source importing the console's module reaches it, and
+///   one importing another module does not.
+/// - witness: `lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
+#[spec(requires: text.as_ref().starts_with('\n'))]
+pub fn imported<'source, Text>(
+    text: &'source Text,
+    arena: &mut CoreArena,
+) -> LoweredModule<'source>
+where
+    Text: AsRef<str> + ?Sized,
+{
+    let imports = text
+        .as_ref()
+        .lines()
+        .filter(|line| line.starts_with("import "))
+        .count();
+    let pbg = grammar();
+    let tree = parsed(&pbg, SourceText::from(text.as_ref()));
+    let unit = Unit::new(Vec::from([
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(
+            ByteOffset::from(1_usize),
+            alloc::vec![ImportTarget::Source(SourceIndex::from(0_usize)); imports],
+        ),
+    ]))
+    .expect("the importing source imports the source before it");
+    lower_unit(
+        &pbg,
+        &tree,
+        &unit,
+        arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        &mut Decisions::none(),
+    )
+    .expect("the imported unit lowers")
+}
+
 /// The span from `start` to `end`.
 ///
 /// # Specification

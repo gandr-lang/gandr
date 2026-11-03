@@ -12,7 +12,8 @@
 //! A source reads an interface name through one table. The host's interfaces
 //! seed the table. Each block of the source goes in over them. A block thus
 //! shadows the host's interface of its name. A source with no block reads the
-//! seed itself.
+//! seed itself. A host interface lives in a `std` module, and a source reads
+//! it only where it imports that module or is it ([`Reaches`], #4523).
 //!
 //! Three forms read the host's interfaces alone: the operations of a
 //! capability type, the label of an instance in a row, and the interfaces of a
@@ -45,7 +46,9 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::OperationName;
+use gandr_core_term::effect::host::HostHome;
 use gandr_core_term::effect::host::INTERFACES;
+use gandr_core_term::effect::host::home;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::IntegerWidth;
 use gandr_surface_syntax::ByteOffset;
@@ -75,6 +78,8 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::TileName;
 use crate::form::read_pieces;
+use crate::import::ImportDeclaration;
+use crate::import::Opening;
 use crate::resolve::SurfaceName;
 use crate::unbuilt::Unbuilt;
 use crate::unit::SourceIndex;
@@ -339,19 +344,145 @@ impl Interfaces
     }
 }
 
+/// Whether a source may name a host interface: it imports the interface's
+/// module, or it is the module, or the interface is ambient.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Reaches(pub bool);
+
 impl Collected<'_>
 {
-    /// What the source holding `at` reads the interface `name` as.
+    /// What the source holding `at` reads the interface `name` as: a block
+    /// of its own over the name, or else the host's interface, where the
+    /// source reaches it ([`Self::reaches`]).
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the block the source declares under `name`; else the host's
+    ///   interface of the name where the source reaches it; else none.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a row naming `std.io.Console.Eff` reads it in a
+    ///   source importing `std.io` and reads none in a source that does not.
+    /// - witness: `lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
+    ///
+    /// # Clause cost
+    /// - bound: one lookup of the source's blocks, then [`Self::reaches`]: no
+    ///   more steps than the source writes imports.
+    #[spec(ensures: |ret| ret.is_none_or(|found| matches!(*found, Provider::Block(_)) || self.reaches(at, name).0))]
     pub(crate) fn interface(
         &self,
         at: ByteOffset,
         name: &EffectName,
     ) -> Option<&Provider>
     {
-        self.interfaces.named(self.unit.source_at(at), name)
+        let found = self.interfaces.named(self.unit.source_at(at), name)?;
+        match *found {
+            Provider::Host if !self.reaches(at, name).0 => None,
+            Provider::Host | Provider::Block(_) => Some(found),
+        }
+    }
+
+    /// Whether the source holding `at` may name the host interface `name`.
+    /// A host interface lives in a `std` module ([`home`]), so a source
+    /// names it where it imports the module, `import std.io;` or a listing
+    /// from it, and the module names its own (#4523).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Reaches`] true for an ambient name, and for a homed one
+    ///   where the source is the home or writes an import of it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is the imports' membership, which a
+    ///   clause would restate whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source importing `std.io` reaches the console, one
+    ///   importing nothing does not, and `std.io` itself does.
+    /// - witness: `lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
+    ///
+    /// # Clause cost
+    /// - bound: walks the imports the source writes once, and compares one
+    ///   module path with each: no more steps than the source has imports.
+    pub(crate) fn reaches(
+        &self,
+        at: ByteOffset,
+        name: &EffectName,
+    ) -> Reaches
+    {
+        let Maybe::Present(module) = home(name)
+        else {
+            return Reaches(true);
+        };
+        let source = self.unit.source_at(at);
+        Reaches(
+            matches!(self.unit.home(source), Maybe::Present(held) if held.as_ref() == module.as_ref())
+                || !self.home_imports(source, module).is_empty(),
+        )
+    }
+
+    /// Record the imports the source holding `at` reaches the host interface
+    /// `name` through, as a name lookup answered through them is recorded, so
+    /// none of them reads as unused (#4523).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each import of the source that names `name`'s module is among
+    ///   the reached imports; nothing for an ambient name.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — membership is a search of the receiver's set.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an import of `std.io` a row reads the console through
+    ///   is among the reached imports, and an import of `std.fs` is not.
+    /// - witness: `lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
+    pub(crate) fn reach_host(
+        &mut self,
+        at: ByteOffset,
+        name: &EffectName,
+    )
+    {
+        if let Maybe::Present(module) = home(name) {
+            let source = self.unit.source_at(at);
+            let imports = self.home_imports(source, module);
+            self.reached.extend(imports);
+        }
+    }
+
+    /// The bytes of each import `source` writes of the module `module`,
+    /// whole, `import std.io;`, or as a listing, `import std.io (print);`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn home_imports(
+        &self,
+        source: SourceIndex,
+        module: HostHome,
+    ) -> Vec<ByteSpan>
+    {
+        self.imports
+            .of(source)
+            .filter(|import| {
+                matches!(
+                    *import.opening(),
+                    Opening::Listed { module: listed, .. } if listed.as_ref() == module.as_ref()
+                )
+            })
+            .map(ImportDeclaration::span)
+            .chain(
+                match self
+                    .imports
+                    .aliased(source, SurfaceName::from(module.as_ref()))
+                {
+                    Maybe::Present(import) => Some(import.span()),
+                    Maybe::Absent(_) => None,
+                },
+            )
+            .collect()
     }
 }
 

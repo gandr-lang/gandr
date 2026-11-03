@@ -4,6 +4,9 @@
 // view kept in a region keeps its held value frozen until the region ends, and
 // a hold opened inside the scope ends before the scope does.
 
+// Early exit's host interface.
+import std.process;
+
 /// Keeps a view of a value held inside the handler at the handler's region,
 /// which the hold does not outlive (#1494).
 @[ refuses("ViewEscaped") ]

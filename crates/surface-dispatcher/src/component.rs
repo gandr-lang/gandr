@@ -131,6 +131,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::Address;
 use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::SourceIndex;
+use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::UnitSource;
 use gandr_surface_lowering::WrittenImport;
@@ -1090,13 +1091,32 @@ impl Laid
         laid.push_str(text.as_ref());
         Self {
             text: laid,
-            unit: Unit::preluded(Vec::from([UnitSource::new(base, Vec::new())]))
-                .unwrap_or_default(),
+            unit: Unit::preluded(Vec::from([homed(
+                UnitSource::new(base, Vec::new()),
+                lock::standard_module(path),
+            )]))
+            .unwrap_or_default(),
             base,
             paths: Vec::from([PathBuf::from(prelude::NAME), named_path(path)]),
             named,
             written,
         }
+    }
+}
+
+/// `source`, laid as the standard library's module `home` when it is one: the
+/// module whose host interfaces it names without importing it (#4523).
+///
+/// # Specification
+/// trivial.
+fn homed(
+    source: UnitSource,
+    home: Option<String>,
+) -> UnitSource
+{
+    match home {
+        Some(module) => source.homed(SurfaceName::from(module.as_str())),
+        None => source,
     }
 }
 
@@ -1788,7 +1808,10 @@ impl Graph
                 root: read.root,
                 written: core::mem::take(&mut read.written),
             });
-            sources.push(UnitSource::new(start, targets));
+            sources.push(homed(
+                UnitSource::new(start, targets),
+                lock::standard_module(&read.path),
+            ));
         }
         let reading = self.reading;
         Unit::preluded(sources).map_or(Maybe::Absent(laid::Absent::Alone), |unit| {
@@ -1827,8 +1850,8 @@ impl Graph
         let mut text = String::from(prelude::TEXT);
         text.push('\n');
         let start = ByteOffset::from(text.len());
-        let (imports, origin, root) = self.read.get_mut(position.0).map_or_else(
-            || (Vec::new(), Vec::new(), CorpusRoot::Strict),
+        let (imports, origin, root, home) = self.read.get_mut(position.0).map_or_else(
+            || (Vec::new(), Vec::new(), CorpusRoot::Strict, None),
             |read| {
                 text.push_str(&read.text);
                 read.text = String::new();
@@ -1843,12 +1866,14 @@ impl Graph
                         written: core::mem::take(&mut read.written),
                     }]),
                     read.root.corpus_root(),
+                    lock::standard_module(&read.path),
                 )
             },
         );
         let end = ByteOffset::from(text.len());
         Component {
-            unit: Unit::preluded(Vec::from([UnitSource::new(start, imports)])).unwrap_or_default(),
+            unit: Unit::preluded(Vec::from([homed(UnitSource::new(start, imports), home)]))
+                .unwrap_or_default(),
             members: Vec::from([Member { start, end, root }]),
             text,
             sources: origin,

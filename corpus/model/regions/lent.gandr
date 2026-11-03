@@ -2,6 +2,9 @@
 // T)`: `read` forces a thunk kept in whatever region its caller holds, and a
 // call places that region at the scope its argument is kept in.
 
+// Early exit's host interface.
+import std.process;
+
 /// Reads the thunk it is lent, whatever region keeps it.
 def read[r : Region](k : (() => Integer) at r) -> Integer { force k }
 
