@@ -4,11 +4,13 @@
 //
 // An endpoint left open at the body's end breaks the protocol its type
 // states. An action on an endpoint after a call took it acts on what the
-// caller no longer holds.
+// caller no longer holds. A recursive definition descends on its parameter,
+// and an endpoint never descends.
 //
 // The checker refuses the first at the placement as `LinearResidue`, and the
 // second at the action as `UsedAfterClose`. An endpoint handed to a parameter
-// that is not a session type stays an endpoint read as a value.
+// that is not a session type stays an endpoint read as a value. A self-call
+// that hands its endpoint on is refused at the call as `StageNotBelow`.
 //
 // - see: corpus/model/sessions/endpoint-parameter.gandr
 
@@ -41,4 +43,13 @@ def reused() -> Unit {
 def miscounted() -> Unit {
   let desk = fork (seat : end) { let total = counted(seat); close(seat) };
   close(desk)
+}
+
+/// A recursive protocol followed by calling itself on the same endpoint.
+@[ refuses("StageNotBelow") ]
+def rec follow(operator : mu open. &{report : ?Integer. open, retire : ?Integer. end}) -> Unit {
+  offer(operator) {
+    report => { let next = recv(operator); become follow[<](operator) },
+    retire => { let last = recv(operator); close(operator) }
+  }
 }

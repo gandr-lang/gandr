@@ -2014,6 +2014,57 @@ fn an_endpoint_moved_into_a_call_leaves_its_caller_4501()
     );
 }
 
+/// A recursive function whose parameter is an endpoint, placed at its body's
+/// entry, that hands the endpoint to itself: the placement opens the endpoint
+/// at its session type, and the self-call is refused at the endpoint, which
+/// stands at no stage below the parameter's.
+#[test]
+fn a_self_call_handing_on_its_endpoint_is_refused_at_the_endpoint_4704()
+{
+    use gandr_kernel_term::FixpointEvidence;
+    use gandr_kernel_term::Standing;
+
+    let mut arena = CoreArena::new();
+    let ended = end(&mut arena);
+    let unit = arena.value_type_unit();
+    let returns_unit = arena.comp_type_returner(unit);
+    let takes_an_end = arena.comp_type_arrow(ended, returns_unit);
+    let declared = arena.value_type_thunk(takes_an_end);
+    // fix follow. \seat. place seat { follow(seat) }
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let follow = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let forced = arena.computation_force(follow);
+    let seat = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+    let call = arena.computation_application(forced, seat);
+    let placed = arena.computation_session(SessionAction::Place {
+        payload: parameter,
+        body: call,
+    });
+    let lambda = arena.computation_lambda(placed);
+    let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+    let defined = arena.value_thunk(fixpoint);
+    let declarations = [Declaration::new(
+        ConstantIndex::from(0_usize),
+        Maybe::Present(declared),
+        Maybe::Present(defined),
+        OriginToken::from(0_usize),
+    )];
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let report = check_module(&mut context, &declarations);
+    let verdicts: Vec<_> = report.judged().iter().map(crate::Judged::verdict).collect();
+    assert!(
+        matches!(
+            verdicts.first(),
+            Some(Verdict::Refused(CheckRefusal::StageNotBelow {
+                at,
+                found: Standing::Top,
+                ..
+            })) if *at == seat
+        ),
+        "the self-call is refused at the endpoint it hands on: {verdicts:?}"
+    );
+}
+
 /// A received value crosses read from an assumption of its type, and an
 /// offer as a case on an assumed choice among its arms: the kernel defines an
 /// exchange returning the string it received and the whole seat exchange,
