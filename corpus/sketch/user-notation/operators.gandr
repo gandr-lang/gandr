@@ -1,0 +1,56 @@
+/// Operators whose names place their holes, each in a precedence group.
+///
+/// A library that defines a ring wants `a + b * c` to read as its readers
+/// expect. Today only the built-in operators have a precedence.
+///
+/// `_+_` places its two holes around `+`, as Agda's names do.
+/// `@[infix(Additive, left)]` states its fixity, and a precedence group is a
+/// value of `Precedence`, ordered by `below` and `above`.
+///
+/// - see: #4571 — the user notations sketch, its rulings in the issue body
+/// - see: #4634 — unit 12, the resolver that reads each run against these
+/// - see: `../../model/basics/arithmetic.gandr` — the built-in precedence today
+
+// The precedence groups and the ordering between them.
+import std.notation (Precedence);
+
+/// The group of multiplication, above addition.
+pub def Multiplicative : Precedence = Precedence.above(Additive);
+
+/// The group of addition, below multiplication and above comparison.
+pub def Additive : Precedence = Precedence.above(Comparison);
+
+/// The group of comparison, the loosest here.
+pub def Comparison : Precedence = Precedence.lowest;
+
+/// The natural numbers' addition, written between its arguments.
+@[infix(Additive, left)]
+pub def _+_(a : Nat, b : Nat) -> Nat {
+  natAdd(a, b)
+}
+
+/// The natural numbers' multiplication, binding tighter than `+`.
+@[infix(Multiplicative, left)]
+pub def _*_(a : Nat, b : Nat) -> Nat {
+  natMul(a, b)
+}
+
+/// Whether one natural number is at most another.
+@[infix(Comparison, none)]
+pub def _≤_(a : Nat, b : Nat) -> Bool {
+  natLe(a, b)
+}
+
+/// The factorial, written after its argument.
+@[postfix(Multiplicative)]
+pub def _!(n : Nat) -> Nat {
+  match n {
+    Zero => 1,
+    Succ(m) => n * m!
+  }
+}
+
+/// A polynomial in the precedence the groups give: `2 * x + 1 ≤ y`.
+pub def underLine(x : Nat, y : Nat) -> Bool {
+  2 * x + 1 ≤ y
+}

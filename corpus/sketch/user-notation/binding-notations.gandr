@@ -1,0 +1,77 @@
+/// Notations that bind, each a set of arms from a pattern to the fragment it
+/// denotes.
+///
+/// `for` and the dependent pair bind a name over a body. An operator's name
+/// cannot say where that name scopes, so these notations state a fragment.
+///
+/// `#notation{ … }` reads arms as Rust's `macro_rules!` does. The right of
+/// `=>` is gandr code with `$` metavariables, and a binder scopes where the
+/// fragment binds it. A name the fragment introduces is fresh.
+///
+/// - see: #4571 — the user notations sketch, its rulings in the issue body
+/// - see: #4565 — the loops sketch, whose `for` and `while` these notate
+/// - see: #4568 — the names sketch, whose `~name(x)` escapes hygiene
+/// - see: `../loops/notations.gandr` — `while` beside the `loop` it reads to
+
+// The notation type and its reader.
+import std.notation (Notation, Precedence);
+
+/// `for x in xs body` as the `loop` over an iterator it reads to. The fragment
+/// binds `it`, which no `$` names, so `it` never captures the author's name.
+pub def forLoop : Notation = #notation{
+  | for $x in $e $body => {
+      var it = iter($e);
+      loop {
+        match it.next() {
+          Some($x) => $body,
+          None => break
+        }
+      }
+    }
+}
+
+/// `while c body` as the `loop` that breaks when `c` fails.
+pub def whileLoop : Notation = #notation{
+  | while $c $body => loop {
+      if !$c { break }
+      $body
+    }
+}
+
+/// The dependent pair, one binder or several. `$x` scopes over `$B` because
+/// the fragment binds it there, and the last arm peels one binder per step.
+@[infix(Quantifier, right)]
+pub def sigma : Notation = #notation{
+  | ($x : $A) * $B => Sigma($A, fun ($x) { $B })
+  | exists ($x : $A) . $p => Sigma($A, fun ($x) { $p })
+  | exists ($x : $A), $( $rest ),+ . $p => Sigma($A, fun ($x) { exists $( $rest ),+ . $p })
+}
+
+/// The group of the quantifiers, the loosest of all.
+pub def Quantifier : Precedence = Precedence.lowest;
+
+/// The sum of a list, written with the `for` notation.
+pub def total(xs : List(Nat)) -> Nat {
+  var sum = 0;
+  for x in xs {
+    sum += x
+  }
+  sum
+}
+
+/// A vector together with its length, written with the dependent pair.
+pub def sized(A : Type) -> Type {
+  (n : Nat) * Vec(A, n)
+}
+
+/// Two numbers whose sum is ten, written with several binders.
+pub def pairToTen : Type = exists (a : Nat), (b : Nat) . a + b == 10;
+
+/// A binding the body reads by the use site's own name. `~name(it)` names
+/// the use site's `it`, so the author captures it on purpose.
+pub def withIt : Notation = #notation{
+  | with it = $e $body => {
+      let ~name(it) = $e;
+      $body
+    }
+}
