@@ -1,10 +1,10 @@
-//! A package's lock: each dependency its library declares, at the address it
-//! was resolved to.
+//! A package's lock: each dependency its package source declares, at the
+//! address it was resolved to.
 //!
 //! # A dependency is named by an alias and found by a coordinate
 //!
-//! A library declares `pub def dependencies : List(Dependency)`, each an alias
-//! a source imports the dependency by and a coordinate saying where it is
+//! A package source declares `pub def dependencies : List(Dependency)`, each an
+//! alias a source imports the dependency by and a coordinate saying where it is
 //! found. A path coordinate is a directory, read from the dependent's root,
 //! that roots a package. [`Package::resolve`] reads each one and checks it as
 //! the package it roots, recursively, so a dependency's own dependencies are
@@ -88,7 +88,7 @@ use crate::workspace::ran_alone;
 /// The file name of the lock the checker writes at a package's root.
 pub const LOCK: &str = "gandr.lock";
 
-/// The declaration of a library that names its dependencies.
+/// The declaration of a package source that names its dependencies.
 pub(super) const DEPENDENCIES: &str = "dependencies";
 
 /// The line that opens a lock the checker wrote.
@@ -147,11 +147,11 @@ impl core::fmt::Display for Alias
 pub enum Coordinate
 {
     /// A directory rooting the dependency, read from the dependent's root, as
-    /// the library writes it.
+    /// the package source writes it.
     Path(String),
 }
 
-/// A dependency as a library declares it.
+/// A dependency as a package source declares it.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Dependency
 {
@@ -603,19 +603,19 @@ quenchant_shape::reason_enum! {
 
 impl Package
 {
-    /// The dependencies the package's library declares, in the order it lists
+    /// The dependencies the package's source declares, in the order it lists
     /// them.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the library checked alone over the sources it imports and its
-    ///   `dependencies` run, as [`ran_alone`] does; each element of the list
-    ///   its alias and its path coordinate. None when the library declares no
-    ///   `dependencies`.
+    /// - ensures: the package source checked alone over the sources it imports
+    ///   and its `dependencies` run, as [`ran_alone`] does; each element of the
+    ///   list its alias and its path coordinate. None when the package source
+    ///   declares no `dependencies`.
     /// - provides: the dependencies [`Package::resolve`] resolves.
-    /// - fails: [`Unresolved::Undeclared`] for a library that cannot be read or
-    ///   is refused as a whole, or whose `dependencies` runs to no list of
-    ///   dependencies.
+    /// - fails: [`Unresolved::Undeclared`] for a package source that cannot be
+    ///   read or is refused as a whole, or whose `dependencies` runs to no list
+    ///   of dependencies.
     /// - panics: none.
     /// - executable: none — as [`ran_alone`].
     ///
@@ -623,8 +623,8 @@ impl Package
     /// [`Unresolved::Undeclared`], as above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a library naming one dependency reads it, and one
-    ///   naming none reads none.
+    /// - hypothesis: L3 — a package source naming one dependency reads it, and
+    ///   one naming none reads none.
     /// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
     #[inline]
     pub fn dependencies(&self) -> Result<Vec<Dependency>, Unresolved>
@@ -633,7 +633,7 @@ impl Package
             package: self.root.clone(),
             why,
         };
-        let came = match ran_alone(&self.library, [SurfaceName::from(DEPENDENCIES)]) {
+        let came = match ran_alone(&self.source, [SurfaceName::from(DEPENDENCIES)]) {
             Ok([Maybe::Present(came)]) => came,
             Ok([Maybe::Absent(declaration_name::Absent::Undeclared)]) => return Ok(Vec::new()),
             Err(Unran::Unread { message }) => return Err(undeclared(message)),
@@ -788,7 +788,7 @@ struct Frame
     /// The alias and coordinate its dependent names it by; none for the
     /// package resolution started at.
     via: Option<(Alias, Coordinate)>,
-    /// Its dependencies not yet resolved, in the order its library lists
+    /// Its dependencies not yet resolved, in the order its package source lists
     /// them.
     pending: alloc::vec::IntoIter<Dependency>,
     /// Its dependencies resolved so far, by alias.
@@ -840,7 +840,7 @@ fn cycle(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Unresolved
 {
-    /// A library's `dependencies` cannot be read, or runs to no list of
+    /// A package source's `dependencies` cannot be read, or runs to no list of
     /// dependencies.
     Undeclared
     {
@@ -914,7 +914,7 @@ impl core::fmt::Display for Unresolved
             } => write!(
                 f,
                 "the dependencies of `{}` cannot be read: {why}; declare `pub def {DEPENDENCIES} \
-                 : List(Dependency)` in its library",
+                 : List(Dependency)` in its package source",
                 package.display()
             ),
             Self::Unpackaged {
@@ -923,7 +923,7 @@ impl core::fmt::Display for Unresolved
             } => write!(
                 f,
                 "the dependency `{alias}` names `{}`, which roots no package: point its \
-                 coordinate at a directory holding `lib.gandr` or `src/lib.gandr`",
+                 coordinate at a directory holding `package.gandr` or `src/package.gandr`",
                 path.display()
             ),
             Self::Cycle { ref chain } => {
@@ -1146,8 +1146,8 @@ pub fn relock(
 }
 
 /// The file an import through the alias `head` of a module path names in
-/// `package`, the path below it `rest`: the dependency's library for the alias
-/// alone, and the file under its sources otherwise; none when the lock
+/// `package`, the path below it `rest`: the dependency's package source for the
+/// alias alone, and the file under its sources otherwise; none when the lock
 /// standing at `package`'s root records no such alias, or the dependency it
 /// records roots no package.
 ///
@@ -1170,7 +1170,7 @@ pub fn through(
         return None;
     };
     Some(rest.map_or_else(
-        || dependency.library().to_path_buf(),
+        || dependency.source().to_path_buf(),
         |rest| dependency.sources().join(rest),
     ))
 }

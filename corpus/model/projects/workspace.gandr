@@ -1,12 +1,11 @@
 // #2687: a workspace is the packages its `workspace.gandr` names, found
-// above them. It is not a package: it states what its members share as a
-// model of `Gandr.Workspace`, which each member's library imports, and names
-// its members, each a directory below it rooting a package. `gandr check`
-// here checks this source and every member, and writes each member's
-// `gandr.toml`.
-// The manifest theories, from the standard library's `std.package` by its
-// path until a project imports a package by name (#533 p3).
-import "../../../library/std/src/package.gandr";
+// above them. It is not a package: it states what its members share as a model
+// of `Gandr.Workspace`, which each member's package source imports, and names
+// its members, each a directory below it rooting a package. `gandr check` here
+// checks this source and every member, and writes each member's `gandr.toml`.
+// The manifest theories, from the standard library's `std.build` by its path
+// until a project imports a package by name (#533 p3).
+import "../../../library/std/src/build.gandr";
 
 /// What the members share: the version each states. Each member reads what it
 /// asks of the toolchain here unless it asks more.

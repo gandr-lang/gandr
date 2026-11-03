@@ -5,11 +5,11 @@
 //! [`Workspace::discover`] walks up from a path to the first directory that
 //! holds `workspace.gandr`, as Cargo walks up to the `Cargo.toml` holding
 //! `[workspace]`. The workspace is not a package: its source declares no
-//! library, and the checker writes no manifest for it. It states what its
-//! members share as a model of `Gandr.Workspace`, which each member's
-//! `lib.gandr` imports and reads, and it names its members by a free-standing
-//! `pub def members : List(String)`, each a directory below the workspace
-//! that roots a package.
+//! package source, and the checker writes no manifest for it. It states what
+//! its members share as a model of `Gandr.Workspace`, which each member's
+//! `package.gandr` imports and reads, and it names its members by a
+//! free-standing `pub def members : List(String)`, each a directory below the
+//! workspace that roots a package.
 //!
 //! [`Workspace::members`] reads that list by checking the workspace's source
 //! alone and running `members`, so the list is gandr and never a second
@@ -178,8 +178,8 @@ impl Workspace
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a workspace naming two members reads both in order;
-    ///   one naming a directory with no library, and one whose `members` is a
-    ///   string, are refused with what they state.
+    ///   one naming a directory with no package source, and one whose `members`
+    ///   is a string, are refused with what they state.
     /// - witness: `tests::package::a_workspace_walks_every_member_it_names_2687`
     #[inline]
     pub fn members(&self) -> Result<Vec<Package>, Unmembered>
@@ -227,8 +227,8 @@ impl Workspace
 ///   the program's machine in order, its value spelled; `Undeclared` at a name
 ///   the source declares nowhere.
 /// - provides: the one reading of the values a source states about its own
-///   package, workspace, site or manifold: a workspace's `members`, a library's
-///   `dependencies`, a site's model and a manifold's.
+///   package, workspace, site or manifold: a workspace's `members`, a package
+///   source's `dependencies`, a site's model and a manifold's.
 /// - fails: [`Unran::Unread`] for a source that cannot be read, and
 ///   [`Unran::Refused`] for one that does not compose or is refused as a whole.
 /// - panics: none.
@@ -808,7 +808,7 @@ impl core::fmt::Display for Unmembered
             ),
             Self::Unpackaged { ref member } => write!(
                 f,
-                "the member `{member}` of `{WORKSPACE}` roots no package: no `lib.gandr` stands \
+                "the member `{member}` of `{WORKSPACE}` roots no package: no `package.gandr` stands \
                  in it or in its `src` directory"
             ),
         }

@@ -1343,9 +1343,9 @@ impl<'source> Program<'source>
     /// - ensures: the highest admission position of `among` that holds a
     ///   declaration and whose path is `path`, as [`Self::named`] reads one;
     ///   `Undeclared` when none of them is.
-    /// - provides: the reading of a package's manifest fields among its
-    ///   library's own declarations, when its program holds another library
-    ///   declaring the same paths.
+    /// - provides: the reading of a package's manifest fields among its package
+    ///   source's own declarations, when its program holds another package
+    ///   source declaring the same paths.
     /// - fails: an absent path is the typed absence.
     /// - panics: none.
     ///
@@ -4361,8 +4361,9 @@ def bad : Integer ; def bad = "text" ;"#,
     }
 
     /// #2687: a path is read among the declarations given and never outside
-    /// them, as a walk's library reads its own model when its program also
-    /// holds another library's; a path none of them holds is undeclared.
+    /// them, as a walk's package source reads its own model when its program
+    /// also holds another package source's; a path none of them holds is
+    /// undeclared.
     #[test]
     fn a_path_is_named_among_the_declarations_given_2687()
     {

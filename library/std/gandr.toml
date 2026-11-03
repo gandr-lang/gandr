@@ -1,5 +1,5 @@
 # Written by `gandr check` from the package's `Package` model: edit the model, not this file.
-# blake3: c88dc41e885ce4e0dffb15e7cd6214c2ce43819048dee7332395301445b4ef43
+# blake3: 3593a9004fdb7b2c836a41b2b058c99855a64df02dc216c785e2278feaa9abb6
 
 [package]
 name = "std"
@@ -11,12 +11,12 @@ endpoint = "https://github.com/gandr-lang/gandr"
 modules = [
   "authority",
   "boundary",
+  "build",
   "console",
   "cost",
   "grade",
   "layout",
   "manifold",
-  "package",
   "secret",
   "string",
 ]

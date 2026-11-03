@@ -316,7 +316,7 @@ pub enum ImportBase
     /// The importing source's: a quoted path, `import "./base.gandr" ;`.
     Importer,
     /// The package's root module's: a module path, `import text.greet ;`,
-    /// whose file is `text/greet.gandr` beside the package's `lib.gandr`.
+    /// whose file is `text/greet.gandr` beside the package's `package.gandr`.
     Root,
 }
 
@@ -391,7 +391,8 @@ impl ImportPath
     /// - hypothesis: L3 — a module path imported from a source under `src/text`
     ///   names its file under `src`, and a quoted path its file beside the
     ///   importer; a module path whose head is a locked alias names the
-    ///   dependency's library, and one whose head is neither is unlocked.
+    ///   dependency's package source, and one whose head is neither is
+    ///   unlocked.
     /// - witness: `component::tests::a_module_path_is_named_from_its_package_s_root_2687`
     /// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
     #[inline]
@@ -421,9 +422,9 @@ impl ImportPath
     ///   given.
     /// - ensures: [`Named::File`] of the file under `sources` when its head —
     ///   the first segment, the stem of a file alone — names a `.gandr` file or
-    ///   a directory there; else [`Named::File`] of the dependency's library
-    ///   for a head alone, or of the rest of the path under its sources, when
-    ///   the lock at `package`'s root records the head as an alias;
+    ///   a directory there; else [`Named::File`] of the dependency's package
+    ///   source for a head alone, or of the rest of the path under its sources,
+    ///   when the lock at `package`'s root records the head as an alias;
     ///   [`Named::Unlocked`] of the file under `sources` otherwise, and for no
     ///   package.
     /// - provides: the one rule an import through an alias reads.
@@ -3438,7 +3439,10 @@ mod tests
     {
         let grammar = built_in().expect("the grammar builds");
         let packaged = Scratch::new(Path::new("rooted"), &[
-            (Path::new("lib.gandr"), SourceText::from("def root = 0 ;")),
+            (
+                Path::new("package.gandr"),
+                SourceText::from("def root = 0 ;"),
+            ),
             (
                 Path::new("greet.gandr"),
                 SourceText::from("def greeting = 1 ;"),

@@ -3,7 +3,7 @@
 //!
 //! # Three constraints, each checked at `gandr check`
 //!
-//! A package's model includes `std.package`'s `Toolchain` and states three
+//! A package's model includes `std.build`'s `Toolchain` and states three
 //! fields, each a string:
 //!
 //! - `gandr`, the least language version its sources are written for, `>= 0.3`
@@ -697,7 +697,7 @@ mod tests
         };
         let met = Toolchain::read(
             String::from(">= 0.3"),
-            Separated("strict-corpus-root, std-package"),
+            Separated("strict-corpus-root, std-build"),
             Separated("aarch64-macos, x86_64-linux"),
         )
         .expect("the constraints read");
@@ -762,7 +762,7 @@ mod tests
             .expect("a description reads back");
         let asked = Toolchain::read(
             String::from(">= 0.0"),
-            Separated("strict-corpus-root, std-package, first-class-environments, not-a-feature"),
+            Separated("strict-corpus-root, std-build, first-class-environments, not-a-feature"),
             Separated(""),
         )
         .expect("the constraints read");

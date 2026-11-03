@@ -1848,7 +1848,7 @@ macro_rules! fields {
     };
 }
 
-/// A package's library declaring its model, `name`, `version` and the
+/// A package's source declaring its model, `name`, `version` and the
 /// fields [`fields`] states, after [`STD_PACKAGE`].
 const LIBRARY: &str = concat!(
     "/// The package.\npub module Package : Model(Gandr.Package) where {\n  def name = \"hello\";\n  def \
@@ -1857,12 +1857,12 @@ const LIBRARY: &str = concat!(
     "}\n"
 );
 
-/// The import of the manifest theories, `std.package`, by the absolute path
+/// The import of the manifest theories, `std.build`, by the absolute path
 /// to its source in the tree (#2767).
 const STD_PACKAGE: &str = concat!(
     "import \"",
     env!("CARGO_MANIFEST_DIR"),
-    "/../../library/std/src/package.gandr\";\n"
+    "/../../library/std/src/build.gandr\";\n"
 );
 
 /// #2687: `check`, `test` and `fmt` run with no path work on the package the
@@ -1873,7 +1873,7 @@ fn a_verb_with_no_path_checks_the_package_it_runs_in_2687()
 {
     let scratch = Scratch::new(Path::new("no-path"));
     let _library = scratch.file(
-        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}").as_str()),
     );
     let _leaf = scratch.file(
@@ -1919,8 +1919,8 @@ fn a_verb_with_no_path_checks_the_package_it_runs_in_2687()
 
 /// #2687, #3030: `check` writes a package's `gandr.toml` from its model,
 /// leaves it unchanged when the model is, rewrites it when the model changes,
-/// and refuses a hand edit as drift, leaving it as it stands; a library that
-/// states no `version`, and one that does not settle, write none. Each
+/// and refuses a hand edit as drift, leaving it as it stands; a package source
+/// that states no `version`, and one that does not settle, write none. Each
 /// reconciled manifest's line carries the package's address, which an edit to
 /// an inert field leaves and an edit to a module's item moves.
 #[test]
@@ -1928,7 +1928,7 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
 {
     let scratch = Scratch::new(Path::new("manifest"));
     let library = scratch.file(
-        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}").as_str()),
     );
     let leaf = scratch.file(
@@ -2056,7 +2056,7 @@ fn a_package_s_toolchain_is_met_or_refused_by_its_clause_3135()
 {
     let scratch = Scratch::new(Path::new("toolchain"));
     let library = scratch.file(
-        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}").as_str()),
     );
     let manifest = scratch.0.join("hello/gandr.toml");
@@ -2096,7 +2096,7 @@ fn a_package_s_toolchain_is_met_or_refused_by_its_clause_3135()
         let unmet = checked();
         assert_eq!(code(&unmet), Code(1_i32), "{to}: {}", stdout(&unmet));
         assert!(
-            stderr(&unmet).contains(&format!("lib.gandr: {clause}")),
+            stderr(&unmet).contains(&format!("package.gandr: {clause}")),
             "{to}: {}",
             stderr(&unmet)
         );
@@ -2122,11 +2122,11 @@ fn check_writes_a_lock_and_refuses_its_drift_3072()
 {
     let scratch = Scratch::new(Path::new("lock"));
     let hello = scratch.file(
-        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
     );
     let _sibling = scratch.file(
-        Path::new("sibling/src/lib.gandr"),
+        Path::new("sibling/src/package.gandr"),
         Text::from(
             format!(
                 "import hello;\n{STD_PACKAGE}{}pub def dependencies : List(Dependency) = [#{{ \
@@ -2217,11 +2217,11 @@ fn a_package_s_lock_points_into_the_store_the_run_opens_3157()
 {
     let scratch = Scratch::new(Path::new("store"));
     let _hello = scratch.file(
-        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
     );
     let _sibling = scratch.file(
-        Path::new("sibling/src/lib.gandr"),
+        Path::new("sibling/src/package.gandr"),
         Text::from(
             format!(
                 "import hello;\n{STD_PACKAGE}{}pub def dependencies : List(Dependency) = [#{{ \
@@ -2286,15 +2286,15 @@ fn a_package_s_lock_points_into_the_store_the_run_opens_3157()
 
 /// #3225: `check` of a package commits its export into the store the run
 /// opens, under the root `export/<address>`, the address its manifest line
-/// prints: the export holds the library's artifact and a module's, which the
-/// store reads back, and a second check names the same pointer; a package
+/// prints: the export holds the package source's artifact and a module's, which
+/// the store reads back, and a second check names the same pointer; a package
 /// with an unsettled source names no export.
 #[test]
 fn a_checked_package_s_export_is_named_by_its_address_3225()
 {
     let scratch = Scratch::new(Path::new("export"));
     let _library = scratch.file(
-        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
     );
     let _module = scratch.file(
@@ -2331,7 +2331,7 @@ fn a_checked_package_s_export_is_named_by_its_address_3225()
     let first = check();
     assert_eq!(code(&first), Code(0_i32), "{}", stderr(&first));
     let (pointer, export) = exported(&first);
-    for source in ["src/lib.gandr", "src/text/greet.gandr"] {
+    for source in ["src/package.gandr", "src/text/greet.gandr"] {
         assert!(
             matches!(export.artifact(Path::new(source)), Maybe::Present(_)),
             "the export holds {source}'s artifact"
@@ -2373,11 +2373,11 @@ fn a_dependent_re_admits_its_dependency_s_export_3285()
 {
     let scratch = Scratch::new(Path::new("readmit"));
     let _hello = scratch.file(
-        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
     );
     let _sibling = scratch.file(
-        Path::new("sibling/src/lib.gandr"),
+        Path::new("sibling/src/package.gandr"),
         Text::from(
             format!(
                 "import hello;\n{STD_PACKAGE}{}pub def dependencies : List(Dependency) = [#{{ \
@@ -2485,7 +2485,7 @@ fn a_dependent_re_admits_its_dependency_s_export_3285()
 /// #2687: a workspace's `check` with no path, at its root or in a directory
 /// of it in no package, checks its source and each member it names and writes
 /// each member's `gandr.toml` from that member's own model, though both
-/// libraries import the workspace and declare the same paths; a member
+/// package sources import the workspace and declare the same paths; a member
 /// rooting no package refuses the verb before any source is read.
 #[test]
 fn a_workspace_checks_each_member_it_names_2687()
@@ -2503,8 +2503,8 @@ fn a_workspace_checks_each_member_it_names_2687()
         Text::from(stated("[\"hello\", \"tools\"]").as_str()),
     );
     for (library, name, up) in [
-        ("hello/src/lib.gandr", "hello", "../.."),
-        ("tools/lib.gandr", "tools", ".."),
+        ("hello/src/package.gandr", "hello", "../.."),
+        ("tools/package.gandr", "tools", ".."),
     ] {
         let _library = scratch.file(
             Path::new(library),

@@ -1,12 +1,12 @@
-// #2687: a package is the sources beside its library, `src/lib.gandr`,
-// rooted at the directory above `src`. The library declares the package's
-// model, and `gandr check` writes `gandr.toml` at the root from it; its
-// version is the one the workspace above it states.
+// #2687: a package is the sources beside its `src/package.gandr`, rooted at
+// the directory above `src`. That file declares the package's model, and `gandr
+// check` writes `gandr.toml` at the root from it; its version is the one the
+// workspace above it states.
 import text.greet (greeting);
 // The workspace above the package, whose model states its version.
 import "../../workspace.gandr";
-// The manifest theories, from `std.package` by its path (#533 p3).
-import "../../../../../library/std/src/package.gandr";
+// The manifest theories, from `std.build` by its path (#533 p3).
+import "../../../../../library/std/src/build.gandr";
 
 /// The package: its name, its version and the rest of what `gandr.toml`
 /// records.

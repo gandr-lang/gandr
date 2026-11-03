@@ -137,46 +137,45 @@ fn stored(test: &Path) -> Store
     Store::open(&directory).expect("the store opens")
 }
 
-/// The root and library of the package `from` sits in, or none.
+/// The root and package source of the package `from` sits in, or none.
 ///
 /// # Specification
 /// trivial.
 fn found(from: &Path) -> Option<(PathBuf, PathBuf)>
 {
     match Package::discover(from) {
-        Maybe::Present(package) => Some((
-            package.root().to_path_buf(),
-            package.library().to_path_buf(),
-        )),
+        Maybe::Present(package) => {
+            Some((package.root().to_path_buf(), package.source().to_path_buf()))
+        },
         Maybe::Absent(package_root::Absent::Unpackaged) => None,
     }
 }
 
 /// #2687: a package is found from any path in it — a leaf deep in its
-/// sources, its `src` directory, its root — at its root, the directory above
-/// a library in `src`, or the library's own directory when the library is
-/// not in one. An inner library is found before an outer one, and a
-/// directory with no library above it is in no package.
+/// sources, its `src` directory, its root — at its root, the directory above a
+/// package source in `src`, or the package source's own directory when the
+/// package source is not in one. An inner package source is found before an
+/// outer one, and a directory with no package source above it is in no package.
 #[test]
 fn a_package_is_found_from_any_path_in_it_2687()
 {
     let directory = scratch(Path::new("found"), &[
-        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
         Path::new("hello/src/text/greet/words.gandr"),
-        Path::new("flat/lib.gandr"),
-        Path::new("flat/inner/lib.gandr"),
+        Path::new("flat/package.gandr"),
+        Path::new("flat/inner/package.gandr"),
         Path::new("flat/inner/deep.gandr"),
         Path::new("loose/alone.gandr"),
     ]);
     let hello = (
         directory.join("hello"),
-        directory.join("hello/src/lib.gandr"),
+        directory.join("hello/src/package.gandr"),
     );
     for from in [
         "hello/src/text/greet/words.gandr",
         "hello/src/text",
         "hello/src",
-        "hello/src/lib.gandr",
+        "hello/src/package.gandr",
         "hello",
     ] {
         assert_eq!(
@@ -187,14 +186,14 @@ fn a_package_is_found_from_any_path_in_it_2687()
     }
     assert_eq!(
         found(&directory.join("flat")),
-        Some((directory.join("flat"), directory.join("flat/lib.gandr"))),
+        Some((directory.join("flat"), directory.join("flat/package.gandr"))),
         "a library outside `src` roots its own directory"
     );
     assert_eq!(
         found(&directory.join("flat/inner/deep.gandr")),
         Some((
             directory.join("flat/inner"),
-            directory.join("flat/inner/lib.gandr")
+            directory.join("flat/inner/package.gandr")
         )),
         "the nearest library is the package's"
     );
@@ -219,7 +218,7 @@ fn a_package_is_found_from_any_path_in_it_2687()
 fn a_path_in_a_package_walks_the_whole_package_2687()
 {
     let directory = scratch(Path::new("walked"), &[
-        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
         Path::new("hello/src/text/greet.gandr"),
         Path::new("hello/src/text/part.gandr"),
         Path::new("hello/tests/smoke.gandr"),
@@ -301,7 +300,7 @@ fn a_path_in_a_package_walks_the_whole_package_2687()
 fn a_package_root_walks_each_source_once_3889()
 {
     let directory = scratch(Path::new("root-once"), &[
-        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
         Path::new("hello/src/text/greet.gandr"),
         Path::new("hello/tests/smoke.gandr"),
     ]);
@@ -320,7 +319,7 @@ fn a_package_root_walks_each_source_once_3889()
     assert_eq!(
         reached,
         Vec::from([
-            PathBuf::from("hello/src/lib.gandr"),
+            PathBuf::from("hello/src/package.gandr"),
             PathBuf::from("hello/src/text/greet.gandr"),
             PathBuf::from("hello/tests/smoke.gandr"),
         ]),
@@ -341,8 +340,8 @@ fn a_workspace_walks_every_member_it_names_2687()
 {
     let directory = scratch(Path::new("workspace"), &[
         Path::new("workspace.gandr"),
-        Path::new("hello/src/lib.gandr"),
-        Path::new("tools/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
+        Path::new("tools/package.gandr"),
         Path::new("docs/notes.gandr"),
     ]);
     let source = directory.join("workspace.gandr");
@@ -356,7 +355,7 @@ fn a_workspace_walks_every_member_it_names_2687()
         stated("pub def members : List(String) = [\"hello\", \"tools\"];"),
     )
     .expect("the workspace is written");
-    for from in ["", "docs", "hello/src", "tools/lib.gandr"] {
+    for from in ["", "docs", "hello/src", "tools/package.gandr"] {
         assert!(
             matches!(
                 Workspace::discover(&directory.join(from)),
@@ -478,12 +477,12 @@ fn settled_of(source: SourceText<'static>) -> (Program<'static>, SettleReport<'s
 }
 
 /// The manifest the `Package` model of `source` states, for a package of
-/// its library alone.
+/// its package source alone.
 ///
 /// # Specification
 /// - requires: as [`settled_of`].
 /// - ensures: [`Manifest::of`] the program `source` composes to and its report,
-///   for a scratch package whose sources hold nothing but its `lib.gandr`.
+///   for a scratch package whose sources hold nothing but its `package.gandr`.
 /// - fails: never on the admitted domain.
 /// - panics: as [`settled_of`], and as [`scratch`].
 /// - executable: none — reading the manifest runs the program, which a
@@ -495,7 +494,7 @@ fn settled_of(source: SourceText<'static>) -> (Program<'static>, SettleReport<'s
 /// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
 fn manifest_of(source: SourceText<'static>) -> Result<Manifest, Unmanifested>
 {
-    let directory = scratch(Path::new("alone"), &[Path::new("lib.gandr")]);
+    let directory = scratch(Path::new("alone"), &[Path::new("package.gandr")]);
     let Maybe::Present(package) = Package::discover(&directory)
     else {
         panic!("the scratch package is found");
@@ -595,9 +594,9 @@ fn a_manifest_reads_the_package_model_2687()
     );
 }
 
-/// #3072: a library's `dependencies` renders the manifest's dependency table,
-/// each alias with its path, and one that runs to no list of dependencies is
-/// refused with what it came to.
+/// #3072: a package source's `dependencies` renders the manifest's dependency
+/// table, each alias with its path, and one that runs to no list of
+/// dependencies is refused with what it came to.
 #[test]
 fn a_manifest_renders_the_dependencies_its_library_lists_3072()
 {
@@ -688,14 +687,14 @@ fn a_manifest_renders_the_toolchain_its_model_asks_for_3135()
         };
     }
     let read = model!(
-        "def gandr = \">= 0.3.1\" ; def features = \" package-lock ,, std-package \" ; def \
+        "def gandr = \">= 0.3.1\" ; def features = \" package-lock ,, std-build \" ; def \
          systems = \"x86_64-linux\" ;"
     )
     .expect("the constraints read");
     assert!(
         read.render().ends_with(
             "modules = []\n\n[toolchain]\ngandr = \">= 0.3.1\"\nfeatures = [\n  \
-             \"package-lock\",\n  \"std-package\",\n]\nsystems = [\n  \"x86_64-linux\",\n]\n"
+             \"package-lock\",\n  \"std-build\",\n]\nsystems = [\n  \"x86_64-linux\",\n]\n"
         ),
         "the table follows the package's, each entry trimmed: {}",
         read.render()
@@ -761,11 +760,11 @@ fn a_manifest_renders_the_presentation_its_model_names_3135()
 fn a_manifest_lists_the_modules_its_sources_make_2687()
 {
     let directory = scratch(Path::new("modules"), &[
-        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
         Path::new("hello/src/util.gandr"),
         Path::new("hello/src/text/greet.gandr"),
         Path::new("hello/src/text/notes.md"),
-        Path::new("hello/src/vendored/lib.gandr"),
+        Path::new("hello/src/vendored/package.gandr"),
         Path::new("hello/src/vendored/inner.gandr"),
     ]);
     let Maybe::Present(package) = Package::discover(&directory.join("hello"))
@@ -944,14 +943,14 @@ fn keyed(
         .collect()
 }
 
-/// The import of `std.package` by the absolute path to its source.
+/// The import of `std.build` by the absolute path to its source.
 const STD_PACKAGE: &str = concat!(
     "import \"",
     env!("CARGO_MANIFEST_DIR"),
-    "/../../library/std/src/package.gandr\";\n"
+    "/../../library/std/src/build.gandr\";\n"
 );
 
-/// #3030, #3135: in a package of a library and one module, an edit to an
+/// #3030, #3135: in a package of a package source and one module, an edit to an
 /// inert field of the model leaves the package's address and the key of every
 /// item but the field's where they were; an edit to a toolchain constraint,
 /// which is content, moves the address and only its own key, and so does an
@@ -960,10 +959,10 @@ const STD_PACKAGE: &str = concat!(
 fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
 {
     let directory = scratch(Path::new("address"), &[
-        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
         Path::new("hello/src/text/greet.gandr"),
     ]);
-    let library = directory.join("hello/src/lib.gandr");
+    let library = directory.join("hello/src/package.gandr");
     let leaf = directory.join("hello/src/text/greet.gandr");
     let stated = |name: &str, gandr: &str| {
         format!(
@@ -1062,12 +1061,12 @@ fn moved(
 }
 
 /// Each inert operation of `Gandr.Package`, the ones it includes from
-/// `Versioned` among them, as `std.package` states it, by name.
+/// `Versioned` among them, as `std.build` states it, by name.
 ///
 /// # Specification
-/// - requires: `std.package` writes each operation as `oper <name> : <type>;`
-///   on one line, an `@[ inert ]` mark on the line before it, and each theory
-///   as `pub theory <name> where {` closed by a line `}`.
+/// - requires: `std.build` writes each operation as `oper <name> : <type>;` on
+///   one line, an `@[ inert ]` mark on the line before it, and each theory as
+///   `pub theory <name> where {` closed by a line `}`.
 /// - ensures: the operations of `Versioned`, `Presentation` and `Gandr.Package`
 ///   marked inert, in the order the source states them.
 /// - fails: never on the admitted domain.
@@ -1081,9 +1080,9 @@ fn moved(
 fn inert_fields() -> Vec<String>
 {
     let source = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std/src/package.gandr"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std/src/build.gandr"),
     )
-    .expect("`std.package` reads");
+    .expect("`std.build` reads");
     let mut fields = Vec::new();
     let mut theory = "";
     let mut marked = false;
@@ -1115,19 +1114,19 @@ fn inert_fields() -> Vec<String>
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Replaced(usize);
 
-/// The text of the library at `library` with the body of each of `fields` in
-/// its `Package` model replaced by another string, and how many times each
-/// was replaced.
+/// The text of the package source at `library` with the body of each of
+/// `fields` in its `Package` model replaced by another string, and how many
+/// times each was replaced.
 ///
 /// # Specification
-/// - requires: the library reads; the model opens on a line starting with `pub
-///   module Package : Model(Gandr.Package)` and closes on a line `}`, each
-///   component on one line as `def <name> ... = <body>;`, and each field is a
-///   string.
+/// - requires: the package source reads; the model opens on a line starting
+///   with `pub module Package : Model(Gandr.Package)` and closes on a line `}`,
+///   each component on one line as `def <name> ... = <body>;`, and each field
+///   is a string.
 /// - ensures: the text with each named component's body `"swept"`, and every
 ///   other line as it stood, beside each field's count of replacements.
 /// - fails: never on the admitted domain.
-/// - panics: a library that cannot be read violates the precondition.
+/// - panics: a package source that cannot be read violates the precondition.
 /// - executable: none — the sweep counts each field's replacements.
 ///
 /// # Adequacy
@@ -1173,7 +1172,7 @@ fn swept(
 /// #3030: every corpus package — the witness workspace's two members and
 /// `std` — keeps its address and every item key when each inert field of its
 /// model is edited to another value of its type, and a declaration added to
-/// its library moves the address.
+/// its package source moves the address.
 #[test]
 fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
 {
@@ -1186,9 +1185,9 @@ fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
     let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let store = stored(Path::new("inert-corpus"));
     for library in [
-        "corpus/model/projects/hello/src/lib.gandr",
-        "corpus/model/projects/tools/lib.gandr",
-        "library/std/src/lib.gandr",
+        "corpus/model/projects/hello/src/package.gandr",
+        "corpus/model/projects/tools/package.gandr",
+        "library/std/src/package.gandr",
     ] {
         let library = tree
             .join(library)
@@ -1247,12 +1246,12 @@ fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
     }
 }
 
-/// A library a case writes: what it imports before `std.package`, the
+/// A package source a case writes: what it imports before `std.build`, the
 /// version its `Package` model states, and what follows the model.
 #[derive(Clone, Copy, Debug)]
 struct Library<'text>
 {
-    /// The imports before `std.package`'s.
+    /// The imports before `std.build`'s.
     imports: &'text str,
     /// The model's `version`.
     version: &'text str,
@@ -1262,7 +1261,7 @@ struct Library<'text>
 
 impl Library<'_>
 {
-    /// The library's source.
+    /// The package source's text.
     ///
     /// # Specification
     /// trivial.
@@ -1306,12 +1305,12 @@ fn siblings(
 ) -> PathBuf
 {
     let directory = scratch(test, &[
-        Path::new("hello/src/lib.gandr"),
-        Path::new("sibling/src/lib.gandr"),
+        Path::new("hello/src/package.gandr"),
+        Path::new("sibling/src/package.gandr"),
     ]);
     write_hello(&directory, written);
     std::fs::write(
-        directory.join("sibling/src/lib.gandr"),
+        directory.join("sibling/src/package.gandr"),
         Library {
             imports: "import hello;\n",
             version: "0.1.0",
@@ -1324,7 +1323,7 @@ fn siblings(
     directory
 }
 
-/// Write `hello`'s library under `directory` as `written`.
+/// Write `hello`'s package source under `directory` as `written`.
 ///
 /// # Specification
 /// trivial.
@@ -1335,7 +1334,7 @@ fn write_hello(
 {
     let rest = format!("pub def welcome = \"{}\";\n", written.welcome);
     std::fs::write(
-        directory.join("hello/src/lib.gandr"),
+        directory.join("hello/src/package.gandr"),
         Library {
             imports: "",
             version: written.version,
@@ -1360,12 +1359,12 @@ fn rooted(root: &Path) -> Package
     }
 }
 
-/// #3072, #3157: a library's `dependencies` runs before its lock is written,
-/// the use through the alias alone refused; the lock records the dependency's
-/// coordinate and the pointer its identity commits to, is written once, read
-/// back equal and unchanged on a second run, and is the same bytes resolved
-/// from another directory into another store; with it, the use reads the
-/// dependency.
+/// #3072, #3157: a package source's `dependencies` runs before its lock is
+/// written, the use through the alias alone refused; the lock records the
+/// dependency's coordinate and the pointer its identity commits to, is written
+/// once, read back equal and unchanged on a second run, and is the same bytes
+/// resolved from another directory into another store; with it, the use reads
+/// the dependency.
 #[test]
 fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
 {
@@ -1657,12 +1656,12 @@ fn a_dependency_cycle_is_refused_by_its_paths_3072()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let directory = scratch(Path::new("cycle"), &[
-        Path::new("a/src/lib.gandr"),
-        Path::new("b/src/lib.gandr"),
+        Path::new("a/src/package.gandr"),
+        Path::new("b/src/package.gandr"),
     ]);
     for (from, to) in [("a", "b"), ("b", "a")] {
         std::fs::write(
-            directory.join(from).join("src/lib.gandr"),
+            directory.join(from).join("src/package.gandr"),
             format!(
                 "{STD_PACKAGE}pub def dependencies : List(Dependency) = [#{{ alias = \"{to}\", \
                  coordinate = Path(\"../{to}\") }}];\n"
@@ -1787,7 +1786,7 @@ fn a_package_s_export_holds_what_its_check_admitted_3225()
     let directory = scratch(Path::new("export"), &[]);
     for (source, text) in [
         (
-            "src/lib.gandr",
+            "src/package.gandr",
             "def answer : Integer ;\ndef answer = 42 ;\n",
         ),
         (
@@ -1855,7 +1854,7 @@ fn a_package_s_export_holds_what_its_check_admitted_3225()
         "the sources an import joins share one artifact"
     );
     assert_ne!(
-        artifact("src/lib.gandr"),
+        artifact("src/package.gandr"),
         artifact("src/shapes/here.gandr"),
         "a source joined to none has its own"
     );
@@ -1890,7 +1889,7 @@ fn a_dependency_s_export_is_re_admitted_through_the_kernel_3285()
     let directory = scratch(Path::new("readmit"), &[]);
     for (source, text) in [
         (
-            "src/lib.gandr",
+            "src/package.gandr",
             "def answer : Integer ;\ndef answer = 42 ;\n",
         ),
         (
@@ -1945,7 +1944,7 @@ fn a_dependency_s_export_is_re_admitted_through_the_kernel_3285()
         Ok(DeclarationCount::from(declarations)),
         "the kernel re-admits every declaration of each artifact, once"
     );
-    let library = Path::new("src/lib.gandr");
+    let library = Path::new("src/package.gandr");
     let (tampered, _admitted) =
         exported_walk(&directory, &directory.join("src"), &|source, kernel| {
             if source == library {
@@ -1975,7 +1974,7 @@ fn a_dependency_s_export_is_re_admitted_through_the_kernel_3285()
     else {
         panic!("the rewritten declaration is refused by the kernel's replay");
     };
-    assert_eq!(source, "src/lib.gandr", "the refusal names the source");
+    assert_eq!(source, "src/package.gandr", "the refusal names the source");
     assert_eq!(
         usize::from(refusal.position()),
         rewritten,

@@ -1553,7 +1553,7 @@ fn the_prelude_answers_a_name_nothing_written_binds_2302()
     );
 }
 
-/// #2767: `std.package`'s `theory Gandr.Package`, declared in the module its
+/// #2767: `std.build`'s `theory Gandr.Package`, declared in the module its
 /// dotted name opens, is read by its path from a source importing it: a model
 /// of it stands, and one missing members is refused at each member.
 #[test]
@@ -1569,7 +1569,7 @@ fn the_standard_package_theory_is_read_by_its_path_2767()
                   name : String = \"partial\";\n}\n";
     let (text, unit) = laid(&[
         (
-            SourceText::from(include_str!("../../../library/std/src/package.gandr")),
+            SourceText::from(include_str!("../../../library/std/src/build.gandr")),
             &[],
         ),
         (SourceText::from(source), &[ImportTarget::Source(

@@ -15749,7 +15749,7 @@ mod tests
         let root = std::env::temp_dir().join(format!("gandr-lsp-project-{}", std::process::id()));
         std::fs::create_dir_all(root.join("src")).expect("the scratch package is created");
         let text = "def r : Integer ≃ String ;\ndef r = 1 ;\n";
-        std::fs::write(root.join("src/lib.gandr"), text).expect("the library is written");
+        std::fs::write(root.join("src/package.gandr"), text).expect("the library is written");
         std::fs::write(
             root.join("gandr.toml"),
             "[presentation]\nspelling = \"ascii\"\n",
@@ -15761,7 +15761,7 @@ mod tests
             ..Connected::default()
         };
         let folder = format!("file://{}", root.display());
-        let library = format!("{folder}/src/lib.gandr");
+        let library = format!("{folder}/src/package.gandr");
         let _answered = send(
             &mut server,
             Json(&format!(

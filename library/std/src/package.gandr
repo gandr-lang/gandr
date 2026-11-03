@@ -1,116 +1,29 @@
-// `std.package`: the theories a project's manifest is read from. A package's
-// `lib.gandr` declares `module Package : Model(Gandr.Package)`, a workspace's
-// `workspace.gandr` a `Model(Gandr.Workspace)`, and `gandr check` writes each
-// package's `gandr.toml` from its model (#533). No theory here states a law: an
-// operation of each is a field the manifest records, and no conversion relates
-// two of them. An operation marked `@[ inert ]` is a field only the manifest
-// step and another inert field read (#3029), and a package's address leaves
-// out (#3030): a package's name, version, authors and licence, and where it is
-// documented and fetched from, say what it is called, not what it is. What a
-// package depends on is not inert: a library's `dependencies` lists each
-// `Dependency`, `gandr check` commits each one's address to the store and
-// locks the pointer to it in `gandr.lock`, and the package's address digests
-// those addresses (#3072). Nor is what a
-// package asks of the toolchain that checks it: `gandr check` refuses a
-// package whose `Toolchain` the running toolchain does not meet, and the
-// package's address digests it.
+// `std`: the standard library, a package like any other. Its modules and the
+// host seams they stand on are mapped in `../README.md`. Until a package
+// imports another by name (#533 p3), a project imports a module of `std` by
+// the relative path to its source.
+import build (Gandr);
 
-/// The version a package and a workspace release at, which [`Project`]
-/// brings to both, so a member reads its version from its workspace's model.
-pub theory Versioned where {
-  /// The version, as a package's manifest records it.
-  @[ inert ]
-  oper version : String;
+/// The package: `std`, at the version `gandr.toml` records.
+pub module Package : Model(Gandr.Package) where {
+  /// The package's name, `std`.
+  def name = "std";
+  /// The version `std` releases at.
+  def version = "0.1.0";
+  /// The authors of `std`.
+  def authors = "The gandr authors";
+  /// The licence `std` carries, an SPDX expression.
+  def licence = "MIT OR Apache-2.0";
+  /// The address the documentation of `std` stands at.
+  def documentation = "https://github.com/gandr-lang/gandr/tree/main/library/std";
+  /// The address a resolver may fetch `std` from.
+  def endpoint = "https://github.com/gandr-lang/gandr";
+  /// The least language version `std` is written for.
+  def gandr = ">= 0.0";
+  /// The features `std` asks the toolchain for: none it names yet.
+  def features = "";
+  /// The systems `std` is built on: any.
+  def systems = "";
+  /// The spelling `std` asks for: the reader's own.
+  def spelling = "";
 }
-
-/// What a package and a workspace ask of the toolchain that checks them,
-/// which [`Project`] brings to both, so a member may read its constraints from
-/// its workspace's model. A constraint is content, so the package's address
-/// digests it. Each list is one line of `,`-separated entries, none when it
-/// is empty, until an operation's port can be a list (#2993).
-pub theory Toolchain where {
-  /// The least language version the sources are written for, `>= 0.3`, or
-  /// empty for any.
-  oper gandr : String;
-  /// The features the sources use, each a feature's key in gandr's features
-  /// ledger, which the toolchain implements whole or in part.
-  oper features : String;
-  /// The systems the package is built on, each `<architecture>-<os>` as
-  /// `x86_64-linux`, or empty for any.
-  oper systems : String;
-}
-
-/// What a package and a workspace both state: the version they release at
-/// and what they ask of the toolchain. `Gandr.Package` and `Gandr.Workspace`
-/// include it, so the two theories it joins are joined once.
-pub theory Project where {
-  include Versioned;
-  include Toolchain;
-}
-
-/// How a package's sources are shown: the `[presentation]` table of its
-/// `gandr.toml`, the table the user's configuration file writes, which a
-/// language server opened on the package reads over the user's. Each field
-/// is inert: how a source is shown is not what it is.
-pub theory Presentation where {
-  /// The spelling a construct with a glyph is written in, `unicode` or
-  /// `ascii`, or empty to leave the reader's own.
-  @[ inert ]
-  oper spelling : String;
-}
-
-/// A package: the project a `lib.gandr` roots, described by the model its
-/// `module Package : Model(Gandr.Package)` is, from which the checker writes
-/// the project's `gandr.toml`. Its own fields are inert: what a package is
-/// called, who wrote it, where it is documented and how it is shown leave its
-/// address alone (#3030). What it asks of the toolchain is not.
-pub theory Gandr.Package where {
-  include Project;
-  include Presentation;
-  /// The package's name, which the manifest records it by.
-  @[ inert ]
-  oper name : String;
-  /// Who wrote the package, as one line, `Name <address>, Name <address>`: a
-  /// list once an operation's port can be one (#2993).
-  @[ inert ]
-  oper authors : String;
-  /// The package's licence, an SPDX expression.
-  @[ inert ]
-  oper licence : String;
-  /// Where the package's documentation is read.
-  @[ inert ]
-  oper documentation : String;
-  /// Where the package is fetched from, a hint the resolver may try first.
-  @[ inert ]
-  oper endpoint : String;
-}
-
-/// A workspace: the packages a `workspace.gandr` gathers, described by the
-/// model its `module Workspace : Model(Gandr.Workspace)` is, beside the
-/// `members` it names. Its members' libraries import it and read what it
-/// states.
-pub theory Gandr.Workspace where {
-  include Project;
-}
-
-/// A module of a package: a source below its library, named by its path from
-/// the package's root, `text.greet` of `text/greet.gandr`. The manifest lists
-/// each in `modules`; no source declares a model of it yet.
-pub theory Gandr.Module where {
-  /// The module's path, its segments joined by `.`.
-  oper path : String;
-}
-
-/// Where a dependency is found: never part of what it is, which its address,
-/// read back from the store at the pointer the dependent's `gandr.lock`
-/// records, says.
-pub data Coordinate : Type where {
-  /// A directory rooting the dependency, read from the dependent's root.
-  | Path : (path : String) --> Coordinate
-}
-
-/// A package another depends on: the alias the dependent's sources import it
-/// by, `import hello;` of `alias = "hello"`, and where it is found. A library
-/// lists its dependencies as `pub def dependencies : List(Dependency)`, a
-/// definition of its own until an operation's port can be a list (#2993).
-pub type Dependency = #{alias : String, coordinate : Coordinate};

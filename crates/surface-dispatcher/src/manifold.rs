@@ -518,8 +518,9 @@ impl Manifold
     /// - requires: `report` is the report of the source `program` composes.
     /// - ensures: the declaration `Manifold.artifact` names among those
     ///   `report` reports, as a package's manifest fields are read among its
-    ///   library's own; `Undeclared` when none of them is, so the theory's
-    ///   operation an import of `std.manifold` brings is no manifold's.
+    ///   package source's own; `Undeclared` when none of them is, so the
+    ///   theory's operation an import of `std.manifold` brings is no
+    ///   manifold's.
     /// - fails: a source stating no artifact of its own is the typed absence.
     /// - panics: none.
     ///

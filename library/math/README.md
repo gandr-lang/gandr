@@ -14,4 +14,4 @@ A module's interface is what its `pub` declarations state; a declaration is priv
 
 ## Importing it
 
-A project imports a module of `math` by the relative path to its source, `library/math/src/<module>.gandr`, until a package imports another by name (#533 p3). `math`'s own root imports `std.package` the same way, for the manifest theories its `Package` model is of.
+A project imports a module of `math` by the relative path to its source, `library/math/src/<module>.gandr`, until a package imports another by name (#533 p3). `math`'s own root imports `std.build` the same way, for the manifest theories its `Package` model is of.
