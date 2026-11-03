@@ -455,6 +455,9 @@ enum Placed
     /// `Model(T)` and `Terms(T)`: the name of a presentation, neither a term
     /// the checker judges nor a type the lowering forms, the record or the
     /// terms it derives located there and inserted, so the type answers.
+    /// Or a theory's dotted path a rule's `under` row names, `.Eff` in
+    /// `under [State.Eff | r]`: the theory's description reads the row as a
+    /// condition on its rule, and no core node holds the path (#4514).
     Theory,
     /// The module a pack packs and the model type it states, `M` and
     /// `Model(T)` in `pack M at Model(T)`, the module or the caller's model
@@ -627,6 +630,14 @@ fn gated(
         .match_indices("rule ")
         .filter_map(|(at, _)| {
             let end = source.get(at ..)?.find(';')?;
+            Some((at, at.saturating_add(end)))
+        })
+        .collect();
+    // The bytes of each row a rule's `where` names, `under [` to its `]`.
+    let unders: Vec<(usize, usize)> = source
+        .match_indices("under [")
+        .filter_map(|(at, _)| {
+            let end = source.get(at ..)?.find(']')?;
             Some((at, at.saturating_add(end)))
         })
         .collect();
@@ -1100,6 +1111,12 @@ fn gated(
                 .trim()
                 .rsplit_once('.')
                 .is_some_and(|(home, _)| namespaces.contains(home.trim()));
+        let conditioned = melded
+            && def.label == "."
+            && def.sort == Sort::Expression
+            && unders.iter().any(|&(start, end)| {
+                start <= usize::from(span.start()) && usize::from(span.end()) <= end
+            });
         let placed = placed
             .or_else(|| templated.then_some(Placed::Template))
             .or_else(|| head.then_some(Placed::Head))
@@ -1115,7 +1132,8 @@ fn gated(
             .or_else(|| (regioned || naming).then_some(Placed::Region))
             .or_else(|| unstated.then_some(Placed::Unstated))
             .or_else(|| packed.then_some(Placed::Packed))
-            .or_else(|| interfaced.then_some(Placed::Interface));
+            .or_else(|| interfaced.then_some(Placed::Interface))
+            .or_else(|| conditioned.then_some(Placed::Theory));
         gated.push((kind(grammar, tree, position, *def), span, placed));
     }
     gated

@@ -9,13 +9,13 @@
 // a record, so one carried along an equivalence of states is a model again,
 // its `get` conjugated by the equivalence.
 
-// The theories `State` and `StatePutPut`.
+// The theories `State.Eff` and `StatePutPut`.
 import "./state.gandr";
 // The counts, three states, and their negation, a path between types.
 import "../identity/model-counter.gandr";
 
 /// State passing: what runs reads the current state and answers an integer.
-module Passing : Model(State) with sort S = Integer where {
+module Passing : Model(State.Eff) with sort S = Integer where {
   /// A computation awaiting the current state.
   type C = Integer => Integer;
   /// Reading hands the current state to what runs after, at that same state.
@@ -75,7 +75,7 @@ def shown(c : Unit + (Unit + Unit)) -> Integer {
 
 /// State passing over the counts with both sorts manifest, so a model is the
 /// record of its two operations.
-def passing : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = #{
+def passing : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = #{
   .get = fun (k) { pure fun (s) { let after = k(s); after(s) } },
   .put = fun (s) { fun (k) { pure fun (_old) { k(s) } } }
 };
@@ -83,15 +83,15 @@ def passing : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Uni
 /// The same model carried along negation of the counts: `get`'s continuation
 /// is a function of the state, so the state it is handed is negated back and
 /// the computation it answers negated forth.
-def negated : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = Path.walk(
-  fun (x) { type(Model(State) with sort S = x with sort C = (x => Integer)) },
+def negated : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = Path.walk(
+  fun (x) { type(Model(State.Eff) with sort S = x with sort C = (x => Integer)) },
   countsNegated,
   passing
 );
 
 /// Storing the second count and then reading the state twice, from the first
 /// count.
-def putGet(m : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer)) -> Integer {
+def putGet(m : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer)) -> Integer {
   match m {
     #{.get = g, .put = p} => {
       let read = g(fun (s) {

@@ -1,12 +1,12 @@
 // The twin of `model/effects/state-model.gandr`: where a module is not a
 // model of a theory of state.
 
-// The theories `State` and `StatePutGet`.
+// The theories `State.Eff` and `StatePutGet`.
 import "../../model/effects/state.gandr";
 
 /// `get` read first-order, its continuation at the carrier: the model's `get`
 /// takes the function from the state, so the module's is refused at its type.
-module FirstOrder : Model(State) with sort S = Integer where {
+module FirstOrder : Model(State.Eff) with sort S = Integer where {
   /// The carrier.
   type C = Integer;
   /// A continuation at the carrier, not a function of the state.

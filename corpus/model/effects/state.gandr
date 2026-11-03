@@ -11,9 +11,10 @@
 // its pattern; each pair joins in the second-order reading.
 
 /// The operations alone: reading the state of sort `S` into what runs after,
-/// and storing a value of it before what runs after. A handler answers each
-/// with the sort fixed (`state-handler.gandr`).
-pub theory State where {
+/// and storing a value of it before what runs after. The module `State` holds
+/// the theory, and a handler answers each with the sort fixed
+/// (`state-handler.gandr`).
+pub theory State.Eff where {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;

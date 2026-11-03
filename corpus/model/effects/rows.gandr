@@ -6,7 +6,7 @@
 // rows share none owe nothing. A row is a set of theories, as an effect row
 // is a set of effects.
 
-// The theory `State`.
+// The theory `State.Eff`.
 import "./state.gandr";
 
 /// Writes that go nowhere: a theory of no operation, which a row holds where
@@ -18,25 +18,25 @@ pub theory Sink where {
 /// Marks on a computation, flushed at the end. Where writes go nowhere a
 /// flushed mark leaves nothing, and where the state is kept flushing a mark
 /// keeps it. The two overlap at `flush(mark(k))` in the rows holding both
-/// `State` and `Sink`; there marks and flushes are erased, so both reducts
-/// reach `k`.
+/// `State.Eff` and `Sink`, where the rules erase marks and flushes, so both
+/// reducts reach `k`.
 pub theory Marks where {
   sort C : Type;
   oper mark : (k : C) --> C;
   oper flush : (k : C) --> C;
   rule dropped : flush(mark(k)) <=> k where { | under [Sink | r] };
-  rule kept : flush(mark(k)) <=> mark(k) where { | under [State | r] };
-  rule erased : mark(k) <=> k where { | under [State, Sink | r] };
-  rule flushed : flush(k) <=> k where { | under [Sink, State | r] };
+  rule kept : flush(mark(k)) <=> mark(k) where { | under [State.Eff | r] };
+  rule erased : mark(k) <=> k where { | under [State.Eff, Sink | r] };
+  rule flushed : flush(k) <=> k where { | under [Sink, State.Eff | r] };
 }
 
 /// The same two rules under closed rows: a row holding exactly `Sink` is
-/// never one holding exactly `State`, so the overlap owes no join and no
+/// never one holding exactly `State.Eff`, so the overlap owes no join and no
 /// rule erases anything.
 theory ExactMarks where {
   sort C : Type;
   oper mark : (k : C) --> C;
   oper flush : (k : C) --> C;
   rule dropped : flush(mark(k)) <=> k where { | under [Sink] };
-  rule kept : flush(mark(k)) <=> mark(k) where { | under [State] };
+  rule kept : flush(mark(k)) <=> mark(k) where { | under [State.Eff] };
 }
