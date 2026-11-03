@@ -2,10 +2,11 @@
 # `mutants.bash` and `ci:act`: the gate's slots (#3057), the mutation run's
 # one lock (#2726) and `ci:act`'s two slots.
 #
-# `host_lock [--no-wait] <name> <slots> <holder>...` takes one of `<slots>`
-# slots, `<name>.<n>.lock` under `gandr/` in the user's runtime directory
-# (`host_lock_dir`). The slot is locked exclusively with `flock(2)` on file
-# descriptor 9, so the lock belongs to the caller and everything it started.
+# `host_lock [--no-wait] [--fd <n>] <name> <slots> <holder>...` takes one of
+# `<slots>` slots, `<name>.<n>.lock` under `gandr/` in the user's runtime
+# directory (`host_lock_dir`). The slot is locked exclusively with `flock(2)` on
+# file descriptor 9, or the one `--fd` names, so the lock belongs to the caller
+# and everything it started.
 # A killed holder never leaves a slot held: the kernel drops the lock once the
 # last process holding the descriptor exits. The file names its holder (the
 # holder words, the pid, the worktree and the start).
@@ -20,7 +21,8 @@
 # With every slot held, `host_lock` prints `<name>: waiting on <holders>` once
 # and tries again every 5 seconds; with `--no-wait` it refuses at once with
 # status 2, naming them. It sets `host_slot` to the slot's number. A process
-# keeps one host lock at a time, since each takes descriptor 9.
+# keeps one host lock per descriptor: the gate holds its lane's lock on
+# descriptor 8 beside its slot on 9 (#4911).
 #
 # The lock is `flock(1)`'s where the host has it and perl's `flock` where it
 # has not (macOS); either way it belongs to the open file the caller keeps.
@@ -28,27 +30,31 @@
 # Takes a free slot of `<name>`, waiting for one unless `--no-wait`, and
 # records the holder; sets `host_slot` to its number.
 host_lock() {
-  local wait=true name slots dir n holders announced=false
-  if [[ ${1:-} == --no-wait ]]; then
-    wait=false
-    shift
-  fi
-  name=${1:?host_lock [--no-wait] <name> <slots> <holder>...}
-  slots=${2:?host_lock [--no-wait] <name> <slots> <holder>...}
+  local wait=true fd=9 name slots dir n holders announced=false
+  while :; do
+    case ${1:-} in
+      --no-wait) wait=false; shift ;;
+      --fd) fd=${2:?--fd takes a descriptor}; shift 2 ;;
+      *) break ;;
+    esac
+  done
+  name=${1:?host_lock [--no-wait] [--fd <n>] <name> <slots> <holder>...}
+  slots=${2:?host_lock [--no-wait] [--fd <n>] <name> <slots> <holder>...}
   shift 2
+  [[ $fd =~ ^[0-9]$ ]] || { echo "$name: \`$fd\` is not a descriptor from 0 to 9" >&2; exit 2; }
   [[ $slots =~ ^[1-9][0-9]*$ ]] || { echo "$name: \`$slots\` is not a count of slots" >&2; exit 2; }
   dir=$(host_lock_dir)
   dir=${dir%/}/gandr
   mkdir -p "$dir"
   while :; do
     for (( n = 1; n <= slots; n++ )); do
-      exec 9<> "$dir/$name.$n.lock"
-      if host_flock; then
+      eval "exec $fd<> \"\$dir/\$name.\$n.lock\""
+      if host_flock "$fd"; then
         printf '%s (pid %s, in %s, since %s)\n' "$*" "$$" "$PWD" "$(date -u +%FT%TZ)" > "$dir/$name.$n.lock"
         host_slot=$n
         return 0
       fi
-      exec 9<&-
+      eval "exec $fd<&-"
     done
     holders=$(for (( n = 1; n <= slots; n++ )); do printf '%s; ' "$(< "$dir/$name.$n.lock")"; done)
     holders=${holders%; }
@@ -78,22 +84,24 @@ host_lock_dir() {
   fi
 }
 
-# Releases the lock on file descriptor 9 for every process sharing it, a
-# daemon that inherited it included.
+# Releases the lock on file descriptor `$1` (default 9) for every process
+# sharing it, a daemon that inherited it included.
 host_unlock() {
+  local fd=${1:-9}
   if command -v flock > /dev/null; then
-    flock --unlock 9
+    flock --unlock "$fd"
   else
-    perl -MFcntl=:flock -e 'open(my $fh, ">&=", 9) or die "fd 9: $!"; flock($fh, LOCK_UN)'
+    perl -MFcntl=:flock -e 'open(my $fh, ">&=", $ARGV[0]) or die "fd $ARGV[0]: $!"; flock($fh, LOCK_UN)' "$fd"
   fi
 }
 
-# Locks file descriptor 9 exclusively without waiting; fails when another
+# Locks file descriptor `$1` exclusively without waiting; fails when another
 # process holds it.
 host_flock() {
+  local fd=$1
   if command -v flock > /dev/null; then
-    flock --nonblock 9
+    flock --nonblock "$fd"
   else
-    perl -MFcntl=:flock -e 'open(my $fh, ">&=", 9) or die "fd 9: $!"; flock($fh, LOCK_EX | LOCK_NB) or exit 1'
+    perl -MFcntl=:flock -e 'open(my $fh, ">&=", $ARGV[0]) or die "fd $ARGV[0]: $!"; flock($fh, LOCK_EX | LOCK_NB) or exit 1' "$fd"
   fi
 }

@@ -6,7 +6,8 @@
 # slot a holder leaves; and a slot stays held while a child of a killed
 # holder still runs, as `act` does when `ci:act` is killed. A gate releases
 # its slot as it exits, whether it ends or is stopped by `TERM`, while a daemon
-# one of its steps started keeps the descriptor open (#4421).
+# one of its steps started keeps the descriptor open (#4421). A lane holds one
+# slot, and a heavy check run alone takes one (#4911).
 set -euo pipefail
 helper=$(cd "${BASH_SOURCE[0]%/*}" && pwd)/host-lock.bash
 scratch=$(mktemp -d)
@@ -18,6 +19,7 @@ cleanup() {
 }
 trap cleanup EXIT
 export XDG_RUNTIME_DIR=$scratch
+unset GANDR_GATE_SLOT GATE_NO_WAIT
 failed=0
 fail() {
   printf 'host-lock: %s\n' "$*" >&2
@@ -132,5 +134,73 @@ for ending in ends TERM; do
   [[ $status == 0 ]] || fail "#4421: a daemon kept the slot of the gate that $ending: $refusal"
 done
 
+for pid in "${pids[@]}"; do kill -KILL "$pid" 2> /dev/null || true; done
+for pid in "${pids[@]}"; do wait "$pid" 2> /dev/null || true; done
+pids=()
+
+# A lane holds one slot (#4911). Of two slots, a gate of the lane `surface`
+# holds one. A second gate of that lane refuses with `--no-wait`, naming the
+# lane's lock, and otherwise waits on it, while a gate of the lane `core` takes
+# the free slot. The waiter takes its slot once the first gate ends. The
+# worktrees' names give the lanes: `lane-surface` and `surface-4911-scope` are
+# both `surface`.
+gated=${helper%/*}/gated
+mkdir -p "$scratch/lane-surface" "$scratch/surface-4911-scope" "$scratch/core-1"
+gate_in() {
+  local dir=$1
+  shift
+  (cd "$scratch/$dir" && GANDR_GATE_SLOTS=2 exec bash -c "$@")
+}
+gate_in lane-surface 'source "$1"; hold_gate_slot first; echo $$ > "$2/first.pid"; : > "$2/first.held"; exec sleep 300' _ "$gate_helper" "$scratch" > /dev/null 2>&1 &
+pids+=("$!")
+tries=0
+until [[ -e $scratch/first.held ]]; do
+  (( ++tries < 100 )) || { fail "#4911: the lane's first gate never took its slot"; break; }
+  sleep 0.1
+done
+first=$(< "$scratch/first.pid")
+pids+=("$first")
+status=0
+refusal=$(gate_in surface-4911-scope 'source "$1"; GATE_NO_WAIT=1 hold_gate_slot second' _ "$gate_helper" 2>&1) || status=$?
+[[ $status == 2 ]] || fail "#4911: a lane's second gate exited $status beside its first, not 2"
+[[ $refusal == "gate-lane-surface: every slot on the host is held: first (pid"* ]] || fail "#4911: a lane's second gate named no lane lock: $refusal"
+status=0
+gate_in core-1 'source "$1"; GATE_NO_WAIT=1 hold_gate_slot other' _ "$gate_helper" > /dev/null 2>&1 || status=$?
+[[ $status == 0 ]] || fail "#4911: another lane's gate found no free slot beside the first lane's gate"
+gate_in surface-4911-scope 'echo $$ > "$2/lane-waiter.pid"; source "$1"; hold_gate_slot waiter; : > "$2/lane-waiter.held"' _ "$gate_helper" "$scratch" 2> "$scratch/lane-waiter.err" &
+waiter=$!
+pids+=("$waiter")
+sleep 1
+[[ ! -s $scratch/lane-waiter.pid ]] || pids+=("$(< "$scratch/lane-waiter.pid")")
+[[ ! -e $scratch/lane-waiter.held ]] || fail "#4911: a lane's second gate took a slot while its first gate ran"
+kill -KILL "$first"
+wait "$first" 2> /dev/null || true
+tries=0
+until [[ -e $scratch/lane-waiter.held ]]; do
+  (( ++tries < 100 )) || { fail "#4911: the lane's waiting gate never took a slot after the first ended"; break; }
+  sleep 0.1
+done
+[[ $(< "$scratch/lane-waiter.err") == "gate-lane-surface: waiting on first (pid"* ]] || fail "#4911: the lane's waiting gate named no lane lock: $(< "$scratch/lane-waiter.err")"
+wait "$waiter" 2> /dev/null || true
+
+# A heavy check run alone holds a slot through `gated`, so another lane's gate
+# finds none of one slot free; inside a gate, which exports `GANDR_GATE_SLOT`,
+# `gated` takes none.
+(cd "$scratch/lane-surface" && GANDR_GATE_SLOTS=1 exec "$gated" bash -c 'echo $$ > "$1/alone.pid"; : > "$1/alone.held"; exec sleep 300' _ "$scratch") > /dev/null 2>&1 &
+alone=$!
+pids+=("$alone")
+tries=0
+until [[ -e $scratch/alone.held ]]; do
+  (( ++tries < 100 )) || { fail "#4911: a heavy check run alone never ran"; break; }
+  sleep 0.1
+done
+[[ ! -s $scratch/alone.pid ]] || pids+=("$(< "$scratch/alone.pid")")
+status=0
+refusal=$(cd "$scratch/core-1" && GANDR_GATE_SLOTS=1 GATE_NO_WAIT=1 bash -c 'source "$1"; hold_gate_slot taker' _ "$gate_helper" 2>&1) || status=$?
+[[ $status == 2 && $refusal == "gate: every slot on the host is held: mise run "*" alone"* ]] || fail "#4911: a heavy check run alone held no slot: $refusal"
+status=0
+(cd "$scratch/core-1" && GANDR_GATE_SLOT=1 GANDR_GATE_SLOTS=1 GATE_NO_WAIT=1 "$gated" true) > /dev/null 2>&1 || status=$?
+[[ $status == 0 ]] || fail "#4911: a heavy check inside a gate took a slot of its own"
+
 (( failed == 0 )) || exit 1
-echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a gate's daemon kept no slot after the gate ended or was stopped"
+echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot; a heavy check run alone held a slot"
