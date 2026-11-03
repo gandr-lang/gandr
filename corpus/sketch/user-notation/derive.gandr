@@ -1,0 +1,37 @@
+/// Declaration macros that derive members from a declaration's code.
+///
+/// Equality, printing and ordering follow a data type's constructors. Writing
+/// them by hand repeats the declaration and drifts from it.
+///
+/// `@[derive(…)]` runs each named macro over the declaration's code and adds
+/// what it returns. The checker checks the derived members as if written, as
+/// `Eq.generic` derives equality today.
+///
+/// - see: #4571 — the user notations sketch, its rulings in the issue body
+
+/// The three primary colours, compared and printed by derived members.
+@[derive(Eq, Show)]
+pub data Colour : Type where {
+  /// Red.
+  | Red : Colour
+  /// Green.
+  | Green : Colour
+  /// Blue.
+  | Blue : Colour
+}
+
+/// A point in the plane, ordered by its first coordinate, then its second.
+@[derive(Eq, Ord, Show)]
+pub data Point : Type where {
+  | Point : (x : Integer, y : Integer) --> Point
+}
+
+/// Whether a colour is the first of the three.
+pub def isRed(c : Colour) -> Bool {
+  c == Red
+}
+
+/// The lesser of two points, by the derived order.
+pub def least(p : Point, q : Point) -> Point {
+  if p <= q { p } else { q }
+}

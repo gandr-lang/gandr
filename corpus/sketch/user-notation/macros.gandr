@@ -1,0 +1,43 @@
+/// Macros are definitions over the elaboration row, and `~` splices each one.
+///
+/// Some code needs what only the elaborator knows: a term's type, a
+/// declaration's signature, the names in scope. A macro reads that state and
+/// returns code.
+///
+/// `^{ e }` quotes code, a definition over `[Elab]` runs at elaboration, and
+/// `~m(…)` splices its result. The checker checks the spliced code as if
+/// written, so a macro adds nothing to what the kernel trusts.
+///
+/// - see: #4571 — the user notations sketch, its rulings in the issue body
+/// - see: #4567 — the environments sketch, whose `~env` a macro reads
+/// - see: #4566 — the oracles sketch, whose tactics `~smt` and `~intro` are macros
+
+// The elaboration row, quoted code and the elaborator's queries.
+import std.elab (Elab, Quote, Term, Type, inferType, signatureOf);
+
+/// The type of a quoted term, as the elaborator infers it.
+pub def typeof(e : Quote(Term)) -> [Elab] Quote(Type) {
+  inferType(e)
+}
+
+/// A function's signature, as its declaration states it.
+pub def signature(f : Quote(Term)) -> [Elab] Quote(Type) {
+  signatureOf(f)
+}
+
+/// The quoted code that prints an expression beside its value, for logging.
+pub def show(e : Quote(Term)) -> [Elab] Quote(Term) {
+  ^{ debugLine(~(quoteText(e)), ~e) }
+}
+
+/// The type of the list's head, spelled without naming the element type.
+pub def firstOf(xs : List(Nat)) -> ~typeof(^{ xs.head }) {
+  xs.head
+}
+
+/// A sum that logs its arguments, each line naming the expression it shows.
+pub def logged(a : Nat, b : Nat) -> Nat {
+  ~show(^{ a });
+  ~show(^{ b });
+  a + b
+}

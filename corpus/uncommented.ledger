@@ -4204,6 +4204,16 @@ sketch/specifications/queue.gandr:push:b5eef6bbe1ed3cfe uncommented
 sketch/specifications/spec-values.gandr:listLookup:8e6853a1855f6212 uncommented
 sketch/specifications/spec-values.gandr:tableLookup:8783ccb30759446e uncommented
 sketch/specifications/spec-values.gandr:unconsSpec:848d1fadff847ce0 uncommented
+sketch/user-notation/binding-notations.gandr:right:3a286998a1f42818 uncommented
+sketch/user-notation/binding-notations.gandr:whileLoop:cf27daeaef4a40c3 uncommented
+sketch/user-notation/derive.gandr:Colour.Blue:8323b704a6bc0386 uncommented
+sketch/user-notation/derive.gandr:Colour.Green:8ff880e55f21b704 uncommented
+sketch/user-notation/derive.gandr:Colour.Red:d8433d886e58bc21 uncommented
+sketch/user-notation/derive.gandr:Colour:fcef6c37174d7c44 uncommented
+sketch/user-notation/operators.gandr:Additive:86190622e57d8096 uncommented
+sketch/user-notation/operators.gandr:Comparison:46b6ceb9ce2542f6 uncommented
+sketch/user-notation/operators.gandr:def_value:ff689990d46712fb uncommented
+sketch/user-notation/operators.gandr:left:cade65ce20fe0be4 uncommented
 sketch/views-and-layouts/layouts-ascii.gandr:Layout:712ae62cc834c69f uncommented
 sketch/views-and-layouts/layouts-ascii.gandr:block:609482bed02fc390 uncommented
 sketch/views-and-layouts/layouts-ascii.gandr:block:f74caea121c0b597 uncommented

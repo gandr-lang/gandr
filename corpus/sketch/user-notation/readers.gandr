@@ -1,0 +1,40 @@
+/// Readers that turn tagged text into gandr data at elaboration time.
+///
+/// Programmers write a configuration file, a regular expression or a query
+/// in its own language. A reader lets a program write it in place and get
+/// data back, with holes for gandr values.
+///
+/// A reader is `@[reader]` on a definition named `#name`, in its module's
+/// namespace. Its extent is its delimiters, so the parser never reads the
+/// body, and `${e}` marks a hole the elaborator fills.
+///
+/// - see: #4571 — the user notations sketch, its rulings in the issue body
+/// - see: #4560 — the cells sketch, whose readers are namespaced as these are
+
+// Quoted code and the token trees a reader takes.
+import std.elab (Quote, Tokens);
+// JSON values.
+import std.json (Json);
+
+/// JSON written in place: the token tree becomes a `Json` value, each
+/// `${e}` a value the program supplies.
+@[reader]
+pub def #json(src : Tokens) -> Quote(Json) {
+  jsonFromTokens(src)
+}
+
+/// A service's configuration, its name supplied by the caller.
+pub def config(name : String) -> Json {
+  #json{ "name": ${name}, "port": 8080, "tags": ["internal", "v2"] }
+}
+
+/// The automaton of a regular expression, read once at elaboration time.
+@[reader]
+pub def #re(src : Text) -> Quote(Regex) {
+  compileRegex(src)
+}
+
+/// Whether a line is an ISO date.
+pub def isDate(line : String) -> Bool {
+  #re"^[0-9]{4}-[0-9]{2}-[0-9]{2}$".matches(line)
+}
