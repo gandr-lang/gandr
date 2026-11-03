@@ -1481,7 +1481,7 @@ fn kept(
 /// The document a hover quotes from: its text, its line index and the
 /// highlighter's spans over it.
 #[derive(Clone, Copy, Debug)]
-struct Quoted<'text>
+pub struct Quoted<'text>
 {
     /// The document's text.
     text: SourceText<'text>,
@@ -1491,8 +1491,21 @@ struct Quoted<'text>
     spans: &'text [HlSpan],
 }
 
-impl Quoted<'_>
+impl<'text> Quoted<'text>
 {
+    /// The document `text`, indexed by `index` and highlighted as `spans`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const fn new(
+        text: SourceText<'text>,
+        index: &'text LineIndex<'text>,
+        spans: &'text [HlSpan],
+    ) -> Self
+    {
+        Self { text, index, spans }
+    }
+
     /// Append to `code` the document's text over `bytes` when it is `quoted`,
     /// in the colours the document gives it; else `quoted` uncoloured.
     ///
@@ -1535,7 +1548,8 @@ impl Quoted<'_>
 ///   with the version after `since` and the note after a colon when the
 ///   attribute states them, after a blank line. Then the documentation
 ///   `session` filed under the form's key after a blank line.
-/// - provides: the declaration half of [`hover`].
+/// - provides: the declaration half of [`hover`], and each declaration's block
+///   on a documentation page ([`crate::doc::page`]).
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1551,7 +1565,7 @@ impl Quoted<'_>
 /// - witness: `hover::tests::a_stray_hovers_as_a_declaration_2073`
 #[spec(ensures: |ref ret| ret.range == range
     && ret.contents.value.starts_with(style.markup.opener().0))]
-fn declared<Store, Blocks>(
+pub fn declared<Store, Blocks>(
     session: &Session<Store, Blocks>,
     table: &TypeTable,
     declaration: &Declaration,

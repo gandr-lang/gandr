@@ -1331,6 +1331,70 @@ fn cells_reports_each_hole_s_count()
     );
 }
 
+/// #4906: `gandr doc` writes a page for each source of a package, an
+/// importer's beside the sibling it imports, and an index naming each page by
+/// its source and the first sentence of its own documentation; a path naming
+/// no source is a fault that exits two.
+#[test]
+fn doc_writes_a_page_per_source_and_an_index_4906()
+{
+    let scratch = Scratch::new(Path::new("doc"));
+    let package = scratch.0.join("lib");
+    let _base = scratch.file(
+        Path::new("lib/src/base.gandr"),
+        Text::from(
+            "//! The base. It holds one number.\n\ndef zero = 0 ;\n/// One.\npub def one : Integer ;\ndef one = \
+             1 ;\n",
+        ),
+    );
+    let _user = scratch.file(
+        Path::new("lib/src/user.gandr"),
+        Text::from(
+            "import \"./base.gandr\";\n\ndef inner = 3 ;\n/// The base's one, again.\npub def again : Integer ;\ndef \
+             again = one ;\n",
+        ),
+    );
+    let out = scratch.0.join("out");
+    let (doc, flag) = (Path::new("doc"), Path::new("--out"));
+
+    let written = ran(gandr(&[doc, &package, flag, &out]));
+    assert_eq!(code(&written), Code(0_i32), "{}", stderr(&written));
+    assert_eq!(
+        stdout(&written),
+        format!(
+            "{}\n{}\n{}\n",
+            out.join("src/base.md").display(),
+            out.join("src/user.md").display(),
+            out.join("index.md").display()
+        )
+    );
+    let read =
+        |relative: &str| std::fs::read_to_string(out.join(relative)).expect("the page is written");
+    assert_eq!(
+        read("index.md"),
+        "# `lib`\n\n- [`src/base.gandr`](src/base.md) — The base.\n- [`src/user.gandr`](src/user.md)\n"
+    );
+    assert_eq!(
+        read("src/base.md"),
+        "# `src/base.gandr`\n\nThe base. It holds one number.\n\n## `one`\n\n```gandr\none : \
+         Integer\n```\n\nOne.\n"
+    );
+    assert_eq!(
+        read("src/user.md"),
+        "# `src/user.gandr`\n\n## `again`\n\n```gandr\nagain : Integer\n```\n\nThe base's one, again.\n",
+        "the importer's declaration types through its sibling, and `inner` is private"
+    );
+
+    let absent = scratch.0.join("absent");
+    let faulted = ran(gandr(&[doc, &absent, flag, &out]));
+    assert_eq!(code(&faulted), Code(2_i32), "{}", stdout(&faulted));
+    assert!(
+        stderr(&faulted).starts_with(&format!("gandr: {}: ", absent.display())),
+        "{}",
+        stderr(&faulted)
+    );
+}
+
 #[test]
 fn the_syntax_ledger_is_written_and_reproduced()
 {

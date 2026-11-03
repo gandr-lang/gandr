@@ -790,6 +790,9 @@ jobs:
       - name: check the corpus layout
         if: *plain-gate
         run: mise run check:corpus-format
+      - name: write the standard library's pages
+        if: *plain-gate
+        run: mise run check:gandr-doc
       - name: corpus item comments
         if: *plain-gate
         run: mise run check:corpus-comments

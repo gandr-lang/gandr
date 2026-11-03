@@ -65,6 +65,14 @@ run = ".config/mise/scope cargo fmt --all --check"
 description = "Every corpus source in the gandr formatter's layout"
 run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict library/std"
 
+# The standard library's documentation, written as `gandr doc` writes a
+# package's (#4906): a source that cannot be read or judged, or a page that
+# cannot be written, fails the gate. CI runs it in the plain lane, whose state
+# holds the driver.
+["check:gandr-doc"]
+description = "The standard library's pages, written by `gandr doc`"
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- doc library/std --out target/gandr-doc/std"
+
 ["check:clippy"]
 description = "The clippy half of the lint wall"
 run = ".config/mise/gated .config/mise/scope cargo clippy --workspace --all-targets --locked"

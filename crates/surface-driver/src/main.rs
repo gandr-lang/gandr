@@ -44,6 +44,7 @@
 //! | `gandr fmt --form <explicit\|sugared> <paths>` | as `fmt`, asking for that spelling: a source declaring a form with `@[ form(…) ]` keeps its own, and one declaring none is refused, since no layout changes a token | as `fmt` |
 //! | `gandr fmt --jobs <threads> <paths>` | as `fmt`, its sources laid out on that many threads | as `fmt` |
 //! | `gandr cells <paths>` | one line per rewriting cell of each declaration a source writes, `<path>:<line>:<column>: cell <n> <provenance>, <growth>: <hole> <count>, …`, each hole with how many times the cell's right-hand side writes it (`gandr-surface-dispatcher`'s `cells` module); nothing is checked | a path that cannot be read or names no source, or a source that does not parse or lower, or that the lowering refuses whole |
+//! | `gandr doc <path> --out <directory>` | the path of each page written, one per source under the path, then the index's (`gandr-surface-lsp`'s `doc` module): each page the source's own documentation, then each public declaration's hover block under a heading naming it | a path that names no source, or a source that cannot be read or judged, or a page that cannot be written |
 //! | `gandr ledger syntax --write <directory> [--exemplars <directory>]` | the path of each file written, `syntax.md` then `syntax.json`, each committed rule's admission read off its exemplar (`gandr-surface-dispatcher`'s `ledger` module) | a ledger that cannot be generated or written, or a committed rule whose exemplar cannot be read |
 //! | `gandr ledger exemplars <directory>` | each exemplar that does not hold, `<path>: <fault>`, then the count verified and found (`gandr-surface-dispatcher`'s `ledger::exemplars` module) | an exemplar that does not hold, or a directory that cannot be listed |
 //! | `gandr ledger recovery <directory>` | the near-miss table, one line per literal tile the syntax exemplars write, then each mutant whose first error marks other bytes than its mutation, `<path>:<byte>: <tile> <mutation>: <error> at <span>, not at <site>`, then the count swept (`gandr-surface-dispatcher`'s `ledger::recovery` module) | a mutant marked elsewhere, or a directory that cannot be listed |
@@ -373,6 +374,7 @@ use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Printed;
 use gandr_surface_dispatcher::ProgramSpec;
 use gandr_surface_dispatcher::Ran;
+use gandr_surface_dispatcher::Reached;
 use gandr_surface_dispatcher::Reconciled;
 use gandr_surface_dispatcher::Revisions;
 use gandr_surface_dispatcher::Rewrite;
@@ -389,6 +391,7 @@ use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Status;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
+use gandr_surface_dispatcher::Traversal;
 use gandr_surface_dispatcher::Unaddressed;
 use gandr_surface_dispatcher::Undeployed;
 use gandr_surface_dispatcher::Unexported;
@@ -414,11 +417,14 @@ use gandr_surface_format::PageWidth;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lsp::Capabilities;
+use gandr_surface_lsp::Entry;
 #[cfg(unix)]
 use gandr_surface_lsp::Handover;
 #[cfg(unix)]
 use gandr_surface_lsp::Relayed;
 use gandr_surface_lsp::Served;
+use gandr_surface_lsp::index;
+use gandr_surface_lsp::page;
 use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_render_terminal::TerminalCapability;
 use gandr_surface_repl::Ended;
@@ -808,6 +814,22 @@ enum Command
         /// directory each member it names; with no path, the package the
         /// working directory sits in, or the workspace when it sits in none.
         paths: Vec<PathBuf>,
+    },
+    /// Write the documentation of the sources under a path as Markdown: an
+    /// index, and one page per source.
+    ///
+    /// A page holds the source's own documentation, then each public
+    /// declaration's signature as a hover on its name shows it, then its
+    /// documentation. Prints the path of each page written, the index last.
+    /// Exits 0 when every page was written, and 2 when the path names no
+    /// source, or a source cannot be read, judged or written.
+    Doc
+    {
+        /// The directory the pages are written under, made when missing.
+        #[arg(long, value_name = "DIRECTORY")]
+        out: PathBuf,
+        /// A source file, or a directory searched for `.gandr` sources.
+        path: PathBuf,
     },
     /// Report the rewriting cells of the sources under each path, one line
     /// per cell, each hole with how many times the cell's right-hand side
@@ -1949,6 +1971,7 @@ fn main() -> ExitCode
             Verbosity::User,
         ),
         Some(Command::Cells { paths }) => (Invocation::Cells { paths }, Verbosity::User),
+        Some(Command::Doc { out, path }) => return doc(&path, &out),
         Some(Command::Ledger {
             ledger: LedgerName::Syntax { write, exemplars },
         }) => (
@@ -2919,6 +2942,101 @@ fn tui(
         // channel left.
         Ok(()) | Err(_) => ExitCode::from(FAULTED),
     }
+}
+
+/// Write the documentation of the sources under `path` into `out`, printing
+/// the path of each page written, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each source the walk reaches under `path`, in walk order, has its
+///   [`page`] written at its path relative to `path` — the file's own name when
+///   `path` is a file — under `out`, its extension `md`, and the page's path
+///   printed on standard output; then `index.md` under `out` holds [`index`] of
+///   the pages titled by `path`'s last component, and its path is printed. A
+///   source that cannot be read or paged, a page that cannot be written and a
+///   path naming no source are each `gandr: <path>: <why>` on standard error,
+///   and the run goes on past them. The exit is two when any of them happened,
+///   and zero otherwise.
+/// - provides: `gandr doc`.
+/// - fails: never; every failure is an exit code.
+/// - panics: none.
+/// - executable: none — the pages are files, which the CLI witness reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a package of two sources, one documented, writes its
+///   pages and its index at their paths, and a path naming no source exits two.
+/// - witness: `tests::cli::doc_writes_a_page_per_source_and_an_index_4906`
+fn doc(
+    path: &Path,
+    out: &Path,
+) -> ExitCode
+{
+    let mut stdout = std::io::stdout().lock();
+    let mut stderr = std::io::stderr().lock();
+    let mut traversal = Traversal::new(Vec::from([path.to_path_buf()]));
+    let (mut entries, mut faulted) = (Vec::new(), false);
+    let mut fault = |stderr: &mut dyn std::io::Write, at: &Path, why: &dyn core::fmt::Display| {
+        faulted = true;
+        writeln!(stderr, "gandr: {}: {why}", at.display())
+    };
+    while let Maybe::Present(reached) = traversal.reach() {
+        let source = traversal.path().to_path_buf();
+        let noted = match reached {
+            Reached::Source => {
+                let relative = source
+                    .strip_prefix(path)
+                    .ok()
+                    .filter(|relative| !relative.as_os_str().is_empty())
+                    .or_else(|| source.file_name().map(Path::new))
+                    .unwrap_or(&source)
+                    .to_path_buf();
+                let written = page(&source, &relative)
+                    .map_err(|unpaged| unpaged.to_string())
+                    .and_then(|paged| {
+                        let target = out.join(&relative).with_extension("md");
+                        target
+                            .parent()
+                            .map_or(Ok(()), std::fs::create_dir_all)
+                            .and_then(|()| std::fs::write(&target, &paged.markdown))
+                            .map(|()| (target, paged.summary))
+                            .map_err(|error| error.to_string())
+                    });
+                match written {
+                    Ok((target, summary)) => {
+                        entries.push(Entry {
+                            page: relative.with_extension("md"),
+                            source: relative,
+                            summary,
+                        });
+                        writeln!(stdout, "{}", target.display())
+                    },
+                    Err(why) => fault(&mut stderr, &source, &why),
+                }
+            },
+            Reached::Unreadable(error) => fault(&mut stderr, &source, &error),
+            Reached::NoSource => fault(&mut stderr, &source, &"names no source"),
+        };
+        if noted.is_err() {
+            return ExitCode::from(FAULTED);
+        }
+    }
+    let package = path
+        .canonicalize()
+        .ok()
+        .and_then(|canonical| canonical.file_name().map(PathBuf::from))
+        .unwrap_or_else(|| path.to_path_buf());
+    let target = out.join("index.md");
+    let noted = match std::fs::create_dir_all(out)
+        .and_then(|()| std::fs::write(&target, index(&package, &entries)))
+    {
+        Ok(()) => writeln!(stdout, "{}", target.display()),
+        Err(error) => fault(&mut stderr, &target, &error),
+    };
+    if noted.is_err() || faulted {
+        return ExitCode::from(FAULTED);
+    }
+    ExitCode::SUCCESS
 }
 
 /// Print the capabilities the language server advertises, and choose the exit

@@ -2828,6 +2828,11 @@ INSERT INTO purpose VALUES('surface-lowering','unit::unhomed::Absent','enum','Na
 INSERT INTO purpose VALUES('surface-lsp','Capabilities','struct','The capabilities the server advertises: what `initialize` answers, displayed as one line of JSON.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','build::Build','struct','Names one build by its executable''s digest, so a hub''s socket and a save''s checkpoints are keyed by the build that made them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','bus::RENDER_BUS_PREFACE','constant','The line a render-bus client opens its connection with: the attach, naming the bus and its wire schema version.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','doc::Entry','struct','One row of a package''s documentation index: where a source''s page is and the sentence it is named by.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','doc::Page','struct','One source''s documentation page as Markdown, with the sentence an index names it by.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','doc::Unpaged','enum','Names why a source has no documentation page, so `gandr doc` reports which.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','doc::index','function','Writes a package''s documentation index, each page linked by its source beside its first sentence.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','doc::page','function','Writes a source''s documentation page: its own documentation, then each public declaration''s hover block.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','handover::Carried','struct','Names the client''s bytes a relay read and did not forward, so the next build''s relay sends them before standard input.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','handover::Handover','struct','Carries a session from one build''s relay to the next: the messages that open the connection again and the client''s bytes not yet forwarded.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','handover::REPLAY','constant','The method a relay asks its hub for the connection''s replay with, and the identifier of that request and of the replayed `initialize`.',NULL,'fits','sound',NULL);
