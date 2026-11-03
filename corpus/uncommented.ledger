@@ -4155,6 +4155,13 @@ pending/surface/data-operation-members.gandr:NatRule:cfa503c6a3597141 uncommente
 pending/surface/desc-declined-metadata.gandr:<file> uncommented
 pending/surface/desc-declined-metadata.gandr:Declared.Mk:8ebba07737aad3eb uncommented
 pending/surface/desc-declined-metadata.gandr:Declared:5bc45bf773d25595 uncommented
+sketch/environments/merge.gandr:Model:0bcac139b5c5ecd7 uncommented
+sketch/environments/merge.gandr:Model:16e0baf748977bca uncommented
+sketch/environments/merge.gandr:Model:39dba0fb853b464d uncommented
+sketch/environments/merge.gandr:Model:7d08677a9b1124f3 uncommented
+sketch/environments/merge.gandr:Model:9c90c7d434e5c682 uncommented
+sketch/environments/tactics.gandr:module_declaration:76f9aa5ed3ee63c2 uncommented
+sketch/environments/tactics.gandr:module_declaration:a93c288035ae3d0e uncommented
 sketch/grades/equipped.gandr:Make:ff1e90d0fdb0ff73 uncommented
 sketch/grades/equipped.gandr:parenthesized_expression:30573fecc5c2433b uncommented
 sketch/grades/expected.gandr:u_type:8656bbfc29c2cedd uncommented
