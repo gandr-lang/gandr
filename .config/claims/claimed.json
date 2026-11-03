@@ -1,0 +1,57 @@
+[
+  {
+    "name": "a claim on an unmarked body writes the lane's marker after its text",
+    "input": { "lane": "triage", "step": "write", "body": "Text.\n" },
+    "output": { "body": "Text.\n\n<!-- claim: lane=triage -->\n" }
+  },
+  {
+    "name": "a claim on an empty body writes the lane's marker alone",
+    "input": { "lane": "triage", "step": "write", "body": null },
+    "output": { "body": "\n\n<!-- claim: lane=triage -->\n" }
+  },
+  {
+    "name": "a claim takes the lane's release off",
+    "input": {
+      "lane": "triage",
+      "step": "write",
+      "body": "Text.\n\n<!-- released: lane=triage at=2026-11-03T01:00:00Z -->\n"
+    },
+    "output": { "body": "Text.\n\n<!-- claim: lane=triage -->\n" }
+  },
+  {
+    "name": "#4660: a claim written over another lane's keeps the earlier marker first",
+    "input": {
+      "lane": "triage",
+      "step": "write",
+      "body": "Text.\n\n<!-- claim: lane=surface -->\n"
+    },
+    "output": { "body": "Text.\n\n<!-- claim: lane=surface -->\n\n<!-- claim: lane=triage -->\n" }
+  },
+  {
+    "name": "a run whose marker is the first keeps the claim",
+    "input": {
+      "lane": "triage",
+      "step": "check",
+      "body": "Text.\n\n<!-- claim: lane=triage -->\n"
+    },
+    "output": { "kept": true }
+  },
+  {
+    "name": "#4660: a run whose marker follows another lane's yields, its marker taken off",
+    "input": {
+      "lane": "triage",
+      "step": "check",
+      "body": "Text.\n\n<!-- claim: lane=surface -->\n\n<!-- claim: lane=triage -->\n"
+    },
+    "output": { "kept": false, "body": "Text.\n\n<!-- claim: lane=surface -->\n" }
+  },
+  {
+    "name": "#4660: a run whose marker another write replaced yields with nothing to write back",
+    "input": {
+      "lane": "triage",
+      "step": "check",
+      "body": "Text.\n\n<!-- claim: lane=surface -->\n"
+    },
+    "output": { "kept": false, "body": null }
+  }
+]

@@ -20,6 +20,9 @@
 #            read from the issue now: {"<n>": [number]}; absent reads as
 #            none. It outranks `blocked`, which lags a dependency set or
 #            removed (#4104)
+#   reread   issues read from GitHub again just before the claim: {"<n>":
+#            {labels: [name], body}}; absent reads as none. A reading here
+#            outranks the board's, which is as old as the run (#4660)
 #   order    each open epic's sub-issues in the epic's order: {"<epic>": [number]}
 #   refusals the refusals `.config/debug/refusals.toml` names; absent reads
 #            as none
@@ -40,7 +43,8 @@
 #   landings the merged pull requests the open issues' `from:` lines name:
 #            [{number, body, head}]; absent reads as none
 #
-# An issue is a candidate when it is unowned (no `status:claimed`), not ruled
+# An issue is a candidate when it is unowned (no `status:claimed`, and no
+# other lane's claim marker, #4660), not ruled
 # out (`status:deferred`, `status:discarded`) and not an epic. An issue an open
 # pull request `names` is worked though no label claims it, so it is no
 # candidate for any lane, whatever the pull request's base (#4650). A `collector`
@@ -119,6 +123,9 @@ def within($areas): .labels as $labels | any($areas[]; . as $area | $labels | in
 def unruled:
   (has("status:claimed") or has("status:deferred") or has("status:discarded") or has("kind:epic")) | not;
 def candidate: unruled and (has("collector") | not);
+# Whether no other lane's claim marker stands in the body (#4660): a run that
+# read the board before another lane's claim landed sees it on the reread.
+def unclaimed($lane): ((.body | claim_lane) // $lane) == $lane;
 def effort:
   ["effort:easy", "effort:medium", "effort:hard", "effort:unknown"] as $ranks
   | [.labels[] as $l | $ranks | index($l) | values] | min // 4;
@@ -163,7 +170,9 @@ def observation($refusals):
   | "observation due: #\(.number) — mise run "
     + (if $refusal == null then "debug:test <package> <test>" else "debug:refusal \($refusal) <package> <test>" end);
 
-.areas as $areas
+(.reread // {}) as $reread
+| .issues |= map(. + ($reread["\(.number)"] // {}))
+| .areas as $areas
 | .order as $order
 | (.refusals // []) as $refusals
 | .lane as $lane
@@ -209,7 +218,7 @@ def observation($refusals):
      | . as $issue | select([$prs[] | names($issue.number)] | any | not)]
    end) as $held
 | if ($held | length) > 0 then $held[] | "held: #\(.number) \(.title)" else
-  [.issues[] | select(candidate) | . as $issue | select([$prs[] | names($issue.number)] | any | not)
+  [.issues[] | select(candidate and unclaimed($lane)) | . as $issue | select([$prs[] | names($issue.number)] | any | not)
     | select($lane == null or ([kept($now) | .lane != $lane] | any | not))] as $open
 | if $focus != null then [
     ($open | map(select([kept($now) | .lane == $lane] | any) | select(focus_fix or focus_unit)) | sort_by(-(kept($now) | .at), .number) | .[] | [., "released"]),
@@ -220,7 +229,7 @@ def observation($refusals):
   ] else [
     ($open | map(select([kept($now) | .lane == $lane] | any)) | sort_by(-(kept($now) | .at), .number) | .[] | [., "released"]),
     (.issues
-      | map(select(has("collector") and has("kind:defect") and within($areas) and unruled and open_rows > 0))
+      | map(select(has("collector") and has("kind:defect") and within($areas) and unruled and unclaimed($lane) and open_rows > 0))
       | sort_by(.number) | .[] | [., "collector"]),
     ($open | map(select(has("kind:defect") and within($areas))) | sort_by(priority, effort, .number) | .[] | [., "defect"]),
     ($open | map(select(has("kind:refactor") and within($areas))) | sort_by(priority, .number) | .[] | [., "refactor"]),

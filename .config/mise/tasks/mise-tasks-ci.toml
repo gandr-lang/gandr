@@ -1863,9 +1863,14 @@ fi
 # carving due. A defect pick opens with `observation due: #n — mise run
 # debug:refusal <Refusal> <package> <test>` (#3758), the refusal its title
 # names, or `debug:test` when it names none: the observation starts in the
-# debugger. It adds `status:claimed`, writes the lane's claim marker in the
-# body (`.config/claims/markers.jq`), and prints the claim as `#n <title>`;
-# `--dry-run` prints it without claiming.
+# debugger. It reads the pick from GitHub again and takes the order again with
+# that reading, passing over a pick another run claimed meanwhile (#4660).
+# It then adds `status:claimed`, writes the lane's claim marker after any
+# other lane's (`.config/claims/claimed.jq`), and reads the body once more:
+# when another lane's marker stands first, the earlier claim keeps the issue,
+# and the run takes its own marker off and claims its next pick. It prints
+# the claim as `#n <title>`; `--dry-run` reads the pick again and prints it
+# without claiming.
 #
 # One claim is in hand at a time (#3915): a lane holding a claimed issue that
 # no open pull request names claims nothing, each such issue printed on
@@ -1958,18 +1963,61 @@ if [[ -n ${unmarked// /} ]]; then
 fi
 now=$(date +%s)
 live='{}'
+# The pick is read from GitHub again before the claim, and once more after
+# its write (#4660): the board is as old as the run, so a run that read it
+# before another lane's claim landed would claim the same issue. The order is
+# taken again with each reading, until the pick it gives is one already read.
+# The write keeps another lane's claim marker standing before its own
+# (`claimed.jq`), so two runs that both reread before either writes see the
+# earlier claim after their writes: it keeps the issue, and the later run
+# takes its marker off and its next pick. Readings reach jq through files, an
+# issue body being past the argument limit at its largest (#2671).
+printf '{}\n' > "$board/reread.json"
+claimed=false
 while :; do
   lines=$(jq -n --argjson areas "$areas" --slurpfile issues "$board/issues.json" --argjson order "$order" --argjson refusals "$refusals" \
     --arg lane "$lane" --argjson now "$now" --slurpfile prs "$board/prs.json" --argjson focus "$focus" --argjson landings "$landings" --argjson live "$live" \
-    --argjson lanes "$lanes" --argjson branches "$branches" \
-    '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals, lane: $lane, now: $now, prs: $prs[0], focus: $focus, landings: $landings, live: $live, lanes: $lanes, branches: $branches}' \
+    --argjson lanes "$lanes" --argjson branches "$branches" --slurpfile reread "$board/reread.json" \
+    '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals, lane: $lane, now: $now, prs: $prs[0], focus: $focus, landings: $landings, live: $live, lanes: $lanes, branches: $branches, reread: $reread[0]}' \
     | jq -r -L "$claims" --argjson concerns "$concerns" --argjson cutoff "$(jq -R -s -f "$claims/cutoff.jq" "$root/.config/references/window.toml")" -f "$claims/next.jq")
   unread=$(jq -R -r --argjson live "$live" 'capture("^(blocked: #)?(?<n>[0-9]+)(\t|$)").n | select($live[.] == null)' <<< "$lines")
-  [[ -n $unread ]] || break
-  for number in $unread; do
-    live=$(jq -c --arg n "$number" --argjson read "$(deps_blocked_by "$repo" "$number")" \
-      '.[$n] = [$read[] | select(.state == "open") | .number]' <<< "$live")
-  done
+  if [[ -n $unread ]]; then
+    for number in $unread; do
+      live=$(jq -c --arg n "$number" --argjson read "$(deps_blocked_by "$repo" "$number")" \
+        '.[$n] = [$read[] | select(.state == "open") | .number]' <<< "$live")
+    done
+    continue
+  fi
+  number=$(awk -F '\t' '/^[0-9]+\t/ { print $1 }' <<< "$lines")
+  [[ -n $number ]] || break
+  if [[ $(jq --arg n "$number" 'has($n)' "$board/reread.json") == false ]]; then
+    gh api "repos/$repo/issues/$number" --jq '{labels: [.labels[].name], body}' > "$board/read.json"
+    jq --arg n "$number" --slurpfile read "$board/read.json" '.[$n] = $read[0]' "$board/reread.json" > "$board/next.json"
+    mv "$board/next.json" "$board/reread.json"
+    continue
+  fi
+  [[ ${usage_dry_run:-false} == false ]] || break
+  gh api -X POST "repos/$repo/issues/$number/labels" -f 'labels[]=status:claimed' > /dev/null
+  gh api "repos/$repo/issues/$number" --jq '{body}' \
+    | jq -c --arg lane "$lane" '{lane: $lane, step: "write", body}' \
+    | jq -c -L "$claims" -f "$claims/claimed.jq" \
+    | gh api -X PATCH "repos/$repo/issues/$number" --input - > /dev/null
+  gh api "repos/$repo/issues/$number" --jq '{labels: [.labels[].name], body}' > "$board/read.json"
+  jq -c --arg lane "$lane" '{lane: $lane, step: "check", body}' "$board/read.json" \
+    | jq -c -L "$claims" -f "$claims/claimed.jq" > "$board/check.json"
+  if [[ $(jq .kept "$board/check.json") == true ]]; then
+    claimed=true
+    break
+  fi
+  # Another lane's claim stands before this one: it keeps the issue. This run
+  # takes its own marker off, when its write left one, and the order passes
+  # over the issue on the reading.
+  if [[ $(jq '.body != null' "$board/check.json") == true ]]; then
+    jq -c '{body}' "$board/check.json" | gh api -X PATCH "repos/$repo/issues/$number" --input - > /dev/null
+  fi
+  echo "claim:next: #$number holds another lane's earlier claim; taking the next pick" >&2
+  jq --arg n "$number" --slurpfile read "$board/read.json" '.[$n] = $read[0]' "$board/reread.json" > "$board/next.json"
+  mv "$board/next.json" "$board/reread.json"
 done
 awk '/^focus: /' <<< "$lines" >&2
 held=$(awk '/^held: /' <<< "$lines")
@@ -1989,14 +2037,10 @@ if [[ -z "$pick" ]]; then
   exit 1
 fi
 IFS=$'\t' read -r number bucket title <<< "$pick"
-if [[ ${usage_dry_run:-false} == true ]]; then
-  echo "claim:next: dry run, nothing claimed ($bucket)" >&2
-else
-  gh api -X POST "repos/$repo/issues/$number/labels" -f 'labels[]=status:claimed' > /dev/null
-  jq -c -L "$claims" --arg number "$number" --arg lane "$lane" \
-    'include "markers"; .[] | select(.number == ($number | tonumber)) | {body: (.body | marked(claim_marker($lane)))}' "$board/issues.json" \
-    | gh api -X PATCH "repos/$repo/issues/$number" --input - > /dev/null
+if [[ $claimed == true ]]; then
   echo "claim:next: claimed ($bucket)" >&2
+else
+  echo "claim:next: dry run, nothing claimed ($bucket)" >&2
 fi
 printf '#%s %s\n' "$number" "$title"
 '''

@@ -2742,5 +2742,161 @@
       }
     },
     "output": "sections due: #30 — `## Surface` is missing: a feature in `area:surface` or `area:theory` states the tier it proposes, `tier <0–4> — <why the tier below does not read well enough>`, or `none — <why the feature has no surface>` (`units.md` § units-issue)\n30\tplanned\tissue 30"
+  },
+  {
+    "name": "#4660: a pick the reread shows another lane's run claimed is passed over for the next",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage",
+      "lanes": ["surface", "toolchain", "triage"],
+      "now": 1760000000,
+      "prs": [],
+      "issues": [
+        {
+          "number": 80,
+          "title": "workflow: the first defect",
+          "labels": ["kind:defect", "area:workflow", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n",
+          "blocked": null
+        },
+        {
+          "number": 81,
+          "title": "workflow: the second defect",
+          "labels": ["kind:defect", "area:workflow", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n",
+          "blocked": null
+        }
+      ],
+      "reread": {
+        "80": {
+          "labels": [
+            "kind:defect",
+            "area:workflow",
+            "priority:high",
+            "effort:easy",
+            "status:claimed"
+          ],
+          "body": "Text.\n\n<!-- claim: lane=toolchain -->\n"
+        }
+      }
+    },
+    "output": "observation due: #81 — mise run debug:test <package> <test>\nsections due: #81 — `## Sources` is missing\nsections due: #81 — `## Readings` is missing\nsections due: #81 — `## Concerns` is missing\nsections due: #81 — `## Ledger` is missing\nsections due: #81 — `## Not in this slice` is missing\nsections due: #81 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n81\tdefect\tworkflow: the second defect"
+  },
+  {
+    "name": "#4660: a pick whose reread body carries another lane's claim marker is passed over, though no label claims it",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage",
+      "lanes": ["surface", "toolchain", "triage"],
+      "now": 1760000000,
+      "prs": [],
+      "issues": [
+        {
+          "number": 80,
+          "title": "workflow: the first defect",
+          "labels": ["kind:defect", "area:workflow", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n",
+          "blocked": null
+        },
+        {
+          "number": 81,
+          "title": "workflow: the second defect",
+          "labels": ["kind:defect", "area:workflow", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n",
+          "blocked": null
+        }
+      ],
+      "reread": {
+        "80": {
+          "labels": ["kind:defect", "area:workflow", "priority:high", "effort:easy"],
+          "body": "Text.\n\n<!-- claim: lane=surface -->\n"
+        }
+      }
+    },
+    "output": "observation due: #81 — mise run debug:test <package> <test>\nsections due: #81 — `## Sources` is missing\nsections due: #81 — `## Readings` is missing\nsections due: #81 — `## Concerns` is missing\nsections due: #81 — `## Ledger` is missing\nsections due: #81 — `## Not in this slice` is missing\nsections due: #81 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n81\tdefect\tworkflow: the second defect"
+  },
+  {
+    "name": "#4660: a pick the reread shows this lane's own run claimed is held, and nothing more is claimed",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage",
+      "lanes": ["surface", "toolchain", "triage"],
+      "now": 1760000000,
+      "prs": [],
+      "issues": [
+        {
+          "number": 80,
+          "title": "workflow: the first defect",
+          "labels": ["kind:defect", "area:workflow", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n",
+          "blocked": null
+        },
+        {
+          "number": 81,
+          "title": "workflow: the second defect",
+          "labels": ["kind:defect", "area:workflow", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n",
+          "blocked": null
+        }
+      ],
+      "reread": {
+        "80": {
+          "labels": [
+            "kind:defect",
+            "area:workflow",
+            "priority:high",
+            "effort:easy",
+            "status:claimed"
+          ],
+          "body": "Text.\n\n<!-- claim: lane=triage -->\n"
+        }
+      }
+    },
+    "output": "held: #80 workflow: the first defect"
+  },
+  {
+    "name": "#4660: a pick the reread shows unchanged is the pick",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage",
+      "lanes": ["surface", "toolchain", "triage"],
+      "now": 1760000000,
+      "prs": [],
+      "issues": [
+        {
+          "number": 80,
+          "title": "workflow: the first defect",
+          "labels": ["kind:defect", "area:workflow", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n",
+          "blocked": null
+        },
+        {
+          "number": 81,
+          "title": "workflow: the second defect",
+          "labels": ["kind:defect", "area:workflow", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": "Text.\n",
+          "blocked": null
+        }
+      ],
+      "reread": {
+        "80": {
+          "labels": ["kind:defect", "area:workflow", "priority:high", "effort:easy"],
+          "body": "Text.\n"
+        }
+      }
+    },
+    "output": "observation due: #80 — mise run debug:test <package> <test>\nsections due: #80 — `## Sources` is missing\nsections due: #80 — `## Readings` is missing\nsections due: #80 — `## Concerns` is missing\nsections due: #80 — `## Ledger` is missing\nsections due: #80 — `## Not in this slice` is missing\nsections due: #80 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n80\tdefect\tworkflow: the first defect"
   }
 ]
