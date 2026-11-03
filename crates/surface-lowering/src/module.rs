@@ -7151,6 +7151,7 @@ impl<'source> Collector<'_, 'source>
 
     /// The documentation the parser left among `holder`'s children rather
     /// than grouping it under a form: what is written before a `pub` mark.
+    /// A `//!` run there is the source's own, so it is left out.
     ///
     /// # Specification
     /// trivial.
@@ -7165,6 +7166,11 @@ impl<'source> Collector<'_, 'source>
                 self.tree
                     .node(child)
                     .filter(|node| node.label() == NodeLabel::Doc)
+                    .filter(|_| {
+                        !self.tree.fragment(child).is_some_and(|written| {
+                            <&str>::from(written).starts_with(crate::doc::INNER_DOC_LINE)
+                        })
+                    })
                     .map(|node| Placed::of(child, node))
             })
             .collect()

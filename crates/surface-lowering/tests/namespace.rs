@@ -5575,6 +5575,42 @@ fn documentation_before_a_pub_mark_documents_its_declaration_2687()
     );
 }
 
+/// #4947: a source's own `//!` documentation before its first declaration
+/// documents the source alone, so a `pub` mark on that declaration carries
+/// only the `///` run it follows.
+#[test]
+fn a_source_s_own_documentation_stays_off_its_marked_declaration_4947()
+{
+    let pbg = grammar();
+    let text = "//! A small source.\n\n/// The answer.\npub def answer = 42 ;\n";
+    let module = lowered(&pbg, &parsed(&pbg, SourceText::from(text))).expect("the source lowers");
+    let answer = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name().as_ref() == "answer")
+        .expect("`answer` is declared");
+    let read =
+        |documentation: Maybe<&gandr_surface_lowering::Documentation<'_>, _>| match documentation {
+            Maybe::Present(documentation) => Some(format!("{:?}", documentation.text())),
+            Maybe::Absent(_) => None,
+        };
+    assert_eq!(
+        (
+            read(module.documentation(answer.introduced())),
+            module
+                .source_documentations()
+                .values()
+                .map(|documentation| format!("{:?}", documentation.text()))
+                .collect::<Vec<_>>(),
+        ),
+        (
+            Some(String::from("DocumentationText(\"The answer.\")")),
+            vec![String::from("DocumentationText(\"A small source.\")")],
+        ),
+        "the `//!` run documents the source, and the `///` run the declaration"
+    );
+}
+
 /// #2687: a document laid after its closure's tree stands under a root of its
 /// own, and documentation written before a `pub` mark there still documents
 /// the declaration the mark exports, as the editor's hover reads it.
