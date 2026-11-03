@@ -350,12 +350,18 @@ run = ".config/mise/scope cargo nextest run {{ env.CI_SHARD_ARGS | default(value
 # itself. With `CI_SHARD_ARGS` it resolves the shard's own members, the
 # packages those cargo flags select: a member's witnesses name its own tests,
 # so each enforcing shard resolves its members against its own listing.
+# A listing holds the tests this host builds, so a witness whose test's own
+# `#[cfg(…)]` builds it on another host is absent from it (#4441). Each
+# `unresolved-witness` line is read against that `cfg` (`.config/witnesses/
+# resolve.jq`): a test a gate host in `.config/witnesses/hosts.json` builds
+# is left to that host to run, and one no gate host builds is refused.
 ["check:witnesses"]
-description = "Resolve adequacy witnesses in the consumer test inventory"
+description = "Resolve adequacy witnesses in the consumer test inventory, a witness this host builds no test for left to the gate host whose cfg builds it"
 depends = ["workflow:install"]
 env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
+tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -373,7 +379,42 @@ scope=()
 for argument in ${CI_SHARD_ARGS:-}; do
   [[ $argument == --workspace ]] || scope+=("$argument")
 done
-quenchant-gates witnesses --manifest-path Cargo.toml "${listings[@]}" "${scope[@]}"
+witnesses=.config/witnesses
+summary=$(mktemp)
+trap 'rm -f "$summary"' EXIT
+status=0
+report=$(quenchant-gates witnesses --manifest-path Cargo.toml "${listings[@]}" "${scope[@]}" 2> "$summary") || status=$?
+if (( status != 1 )); then
+  [[ -z $report ]] || printf '%s\n' "$report"
+  cat "$summary" >&2
+  exit "$status"
+fi
+read=$(jq -n --arg report "$report" --argjson tests "$("$witnesses/tests.bash")" \
+  --argjson here "$(rustc --print cfg | jq -R -s . | jq -c -L "$witnesses" -f "$witnesses/atoms.jq")" \
+  --slurpfile hosts "$witnesses/hosts.json" \
+  '{lines: ($report | split("\n")), tests: $tests, here: $here, hosts: $hosts[0]}' \
+  | jq -c -L "$witnesses" -f "$witnesses/resolve.jq")
+jq -r '.resolved[]' <<< "$read"
+if [[ $(jq '.refused | length' <<< "$read") != 0 ]]; then
+  jq -r '.refused[]' <<< "$read"
+  cat "$summary" >&2
+  exit 1
+fi
+echo "adequacy witness resolution (G0): every witness resolves here or is left to the gate host whose cfg builds it"
+'''
+
+# The witness resolution's cases (#4441): each case in
+# `.config/witnesses/cases.json` holds a report, the gated tests and the host
+# atoms `resolve.jq` reads, and the lines it must leave to a gate host or
+# refuse; one holds `rustc --print cfg`'s text and the atoms `atoms.jq` keeps.
+["check:witness-cases"]
+description = "A witness this host builds no test for is left to the gate host whose cfg builds it, or refused when none does, as recorded"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+.config/cases/run.bash witnesses .config/witnesses/cases.json --programs .config/witnesses --mode c
+echo "witness cases OK: $(jq length .config/witnesses/cases.json) cases read as recorded"
 '''
 
 # Re-verification obligations (quenchant-gates obligations): a change owes a

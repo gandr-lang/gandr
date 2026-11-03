@@ -1,0 +1,263 @@
+[
+  {
+    "name": "#4441: a witness gated to Linux, read on macOS, is left to Linux to run",
+    "program": "resolve.jq",
+    "input": {
+      "lines": [
+        "/w/crates/surface-driver/src/main.rs:2376: unresolved-witness [gandr-lang] `tests::cli::follows`: no target of this crate runs the path; it is absent or renamed"
+      ],
+      "tests": [
+        {
+          "crate": "surface-driver",
+          "name": "follows",
+          "site": "crates/surface-driver/tests/cli.rs:3433",
+          "cfg": ["target_os = \"linux\""]
+        }
+      ],
+      "here": {
+        "target_os": ["macos"],
+        "target_family": ["unix"],
+        "target_arch": ["aarch64"],
+        "unix": true
+      },
+      "hosts": {
+        "x86_64-unknown-linux-gnu": {
+          "target_os": ["linux"],
+          "target_family": ["unix"],
+          "target_arch": ["x86_64"],
+          "unix": true
+        },
+        "aarch64-apple-darwin": {
+          "target_os": ["macos"],
+          "target_family": ["unix"],
+          "target_arch": ["aarch64"],
+          "unix": true
+        }
+      }
+    },
+    "output": {
+      "resolved": [
+        "/w/crates/surface-driver/src/main.rs:2376: the witness `tests::cli::follows` is left to x86_64-unknown-linux-gnu to run: #[cfg(target_os = \"linux\")] builds it there, not here"
+      ],
+      "refused": []
+    }
+  },
+  {
+    "name": "#4441: a witness gated to Windows, which no gate host builds, is refused",
+    "program": "resolve.jq",
+    "input": {
+      "lines": [
+        "/w/crates/surface-driver/src/main.rs:10: unresolved-witness [gandr-lang] `tests::cli::follows`: no target of this crate runs the path; it is absent or renamed"
+      ],
+      "tests": [
+        {
+          "crate": "surface-driver",
+          "name": "follows",
+          "site": "crates/surface-driver/tests/cli.rs:20",
+          "cfg": ["windows"]
+        }
+      ],
+      "here": { "target_os": ["macos"], "target_family": ["unix"], "unix": true },
+      "hosts": {
+        "x86_64-unknown-linux-gnu": {
+          "target_os": ["linux"],
+          "target_family": ["unix"],
+          "unix": true
+        },
+        "aarch64-apple-darwin": { "target_os": ["macos"], "target_family": ["unix"], "unix": true }
+      }
+    },
+    "output": {
+      "resolved": [],
+      "refused": [
+        "/w/crates/surface-driver/src/main.rs:10: unresolved-witness `tests::cli::follows`: #[cfg(windows)] builds it on no host the gate runs on (x86_64-unknown-linux-gnu, aarch64-apple-darwin)"
+      ]
+    }
+  },
+  {
+    "name": "#4441: a witness whose gated test this host builds stays unresolved as printed",
+    "program": "resolve.jq",
+    "input": {
+      "lines": [
+        "/w/crates/surface-driver/src/main.rs:10: unresolved-witness [gandr-lang] `tests::cli::follows`: no target of this crate runs the path; it is absent or renamed"
+      ],
+      "tests": [
+        {
+          "crate": "surface-driver",
+          "name": "follows",
+          "site": "crates/surface-driver/tests/cli.rs:20",
+          "cfg": ["target_os = \"linux\""]
+        }
+      ],
+      "here": { "target_os": ["linux"], "target_family": ["unix"], "unix": true },
+      "hosts": {
+        "x86_64-unknown-linux-gnu": {
+          "target_os": ["linux"],
+          "target_family": ["unix"],
+          "unix": true
+        }
+      }
+    },
+    "output": {
+      "resolved": [],
+      "refused": [
+        "/w/crates/surface-driver/src/main.rs:10: unresolved-witness [gandr-lang] `tests::cli::follows`: no target of this crate runs the path; it is absent or renamed"
+      ]
+    }
+  },
+  {
+    "name": "#4441: a witness no gated test is named for stays unresolved as printed",
+    "program": "resolve.jq",
+    "input": {
+      "lines": [
+        "/w/crates/surface-driver/src/main.rs:10: unresolved-witness [gandr-lang] `tests::cli::renamed`: no target of this crate runs the path; it is absent or renamed"
+      ],
+      "tests": [
+        {
+          "crate": "surface-driver",
+          "name": "follows",
+          "site": "crates/surface-driver/tests/cli.rs:20",
+          "cfg": ["target_os = \"linux\""]
+        }
+      ],
+      "here": { "target_os": ["macos"], "unix": true },
+      "hosts": { "x86_64-unknown-linux-gnu": { "target_os": ["linux"], "unix": true } }
+    },
+    "output": {
+      "resolved": [],
+      "refused": [
+        "/w/crates/surface-driver/src/main.rs:10: unresolved-witness [gandr-lang] `tests::cli::renamed`: no target of this crate runs the path; it is absent or renamed"
+      ]
+    }
+  },
+  {
+    "name": "#4441: a gated test of another crate leaves the witness unresolved",
+    "program": "resolve.jq",
+    "input": {
+      "lines": [
+        "/w/crates/surface-driver/src/main.rs:10: unresolved-witness [gandr-lang] `tests::cli::follows`: no target of this crate runs the path; it is absent or renamed"
+      ],
+      "tests": [
+        {
+          "crate": "surface-tui",
+          "name": "follows",
+          "site": "crates/surface-tui/tests/terminal.rs:20",
+          "cfg": ["target_os = \"linux\""]
+        }
+      ],
+      "here": { "target_os": ["macos"], "unix": true },
+      "hosts": { "x86_64-unknown-linux-gnu": { "target_os": ["linux"], "unix": true } }
+    },
+    "output": {
+      "resolved": [],
+      "refused": [
+        "/w/crates/surface-driver/src/main.rs:10: unresolved-witness [gandr-lang] `tests::cli::follows`: no target of this crate runs the path; it is absent or renamed"
+      ]
+    }
+  },
+  {
+    "name": "#4441: a line other than an unresolved witness stays refused",
+    "program": "resolve.jq",
+    "input": {
+      "lines": [
+        "/w/crates/surface-driver/src/main.rs:10: malformed-witness [gandr-lang] `follows`: a witness names a path",
+        ""
+      ],
+      "tests": [],
+      "here": { "target_os": ["macos"], "unix": true },
+      "hosts": { "x86_64-unknown-linux-gnu": { "target_os": ["linux"], "unix": true } }
+    },
+    "output": {
+      "resolved": [],
+      "refused": [
+        "/w/crates/surface-driver/src/main.rs:10: malformed-witness [gandr-lang] `follows`: a witness names a path"
+      ]
+    }
+  },
+  {
+    "name": "#4441: a nested predicate is read over each gate host's atoms",
+    "program": "resolve.jq",
+    "input": {
+      "lines": [
+        "/w/crates/runtime-stencils/src/lib.rs:10: unresolved-witness [gandr-runtime-stencils] `agreement::runs_native`: no target of this crate runs the path; it is absent or renamed"
+      ],
+      "tests": [
+        {
+          "crate": "runtime-stencils",
+          "name": "runs_native",
+          "site": "crates/runtime-stencils/tests/agreement.rs:85",
+          "cfg": [
+            "any( all(target_os = \"macos\", target_arch = \"aarch64\"), all( target_os = \"linux\", any(target_arch = \"aarch64\", target_arch = \"x86_64\") ) )"
+          ]
+        }
+      ],
+      "here": { "target_os": ["macos"], "target_arch": ["x86_64"], "unix": true },
+      "hosts": {
+        "x86_64-unknown-linux-gnu": {
+          "target_os": ["linux"],
+          "target_arch": ["x86_64"],
+          "unix": true
+        },
+        "aarch64-apple-darwin": {
+          "target_os": ["macos"],
+          "target_arch": ["aarch64"],
+          "unix": true
+        },
+        "x86_64-apple-darwin": { "target_os": ["macos"], "target_arch": ["x86_64"], "unix": true }
+      }
+    },
+    "output": {
+      "resolved": [
+        "/w/crates/runtime-stencils/src/lib.rs:10: the witness `agreement::runs_native` is left to x86_64-unknown-linux-gnu and aarch64-apple-darwin to run: #[cfg(any( all(target_os = \"macos\", target_arch = \"aarch64\"), all( target_os = \"linux\", any(target_arch = \"aarch64\", target_arch = \"x86_64\") ) ))] builds it there, not here"
+      ],
+      "refused": []
+    }
+  },
+  {
+    "name": "#4441: an atom outside the platform reads as holding, under not as failing",
+    "program": "resolve.jq",
+    "input": {
+      "lines": [
+        "/w/crates/a/src/lib.rs:1: unresolved-witness [a] `tests::featured`: absent",
+        "/w/crates/a/src/lib.rs:2: unresolved-witness [a] `tests::unfeatured`: absent"
+      ],
+      "tests": [
+        {
+          "crate": "a",
+          "name": "featured",
+          "site": "crates/a/tests/t.rs:1",
+          "cfg": ["all(target_os = \"linux\", feature = \"census\")"]
+        },
+        {
+          "crate": "a",
+          "name": "unfeatured",
+          "site": "crates/a/tests/t.rs:9",
+          "cfg": ["target_os = \"linux\"", "not(feature = \"census\")"]
+        }
+      ],
+      "here": { "target_os": ["macos"], "unix": true },
+      "hosts": { "x86_64-unknown-linux-gnu": { "target_os": ["linux"], "unix": true } }
+    },
+    "output": {
+      "resolved": [
+        "/w/crates/a/src/lib.rs:1: the witness `tests::featured` is left to x86_64-unknown-linux-gnu to run: #[cfg(all(target_os = \"linux\", feature = \"census\"))] builds it there, not here"
+      ],
+      "refused": [
+        "/w/crates/a/src/lib.rs:2: unresolved-witness `tests::unfeatured`: #[cfg(target_os = \"linux\")] #[cfg(not(feature = \"census\"))] builds it on no host the gate runs on (x86_64-unknown-linux-gnu)"
+      ]
+    }
+  },
+  {
+    "name": "rustc's cfg text keeps the platform atoms alone",
+    "program": "atoms.jq",
+    "input": "debug_assertions\npanic=\"unwind\"\ntarget_arch=\"aarch64\"\ntarget_env=\"\"\ntarget_family=\"unix\"\ntarget_feature=\"neon\"\ntarget_has_atomic\ntarget_os=\"macos\"\ntarget_vendor=\"apple\"\nunix\n",
+    "output": {
+      "target_arch": ["aarch64"],
+      "target_env": [""],
+      "target_family": ["unix"],
+      "target_os": ["macos"],
+      "target_vendor": ["apple"],
+      "unix": true
+    }
+  }
+]
