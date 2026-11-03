@@ -4155,6 +4155,11 @@ pending/surface/data-operation-members.gandr:NatRule:cfa503c6a3597141 uncommente
 pending/surface/desc-declined-metadata.gandr:<file> uncommented
 pending/surface/desc-declined-metadata.gandr:Declared.Mk:8ebba07737aad3eb uncommented
 pending/surface/desc-declined-metadata.gandr:Declared:5bc45bf773d25595 uncommented
+sketch/specifications/queue.gandr:drain:d568a5a779ec12f8 uncommented
+sketch/specifications/queue.gandr:push:b5eef6bbe1ed3cfe uncommented
+sketch/specifications/spec-values.gandr:listLookup:8e6853a1855f6212 uncommented
+sketch/specifications/spec-values.gandr:tableLookup:8783ccb30759446e uncommented
+sketch/specifications/spec-values.gandr:unconsSpec:848d1fadff847ce0 uncommented
 sketch/views-and-layouts/layouts-ascii.gandr:Layout:712ae62cc834c69f uncommented
 sketch/views-and-layouts/layouts-ascii.gandr:block:609482bed02fc390 uncommented
 sketch/views-and-layouts/layouts-ascii.gandr:block:f74caea121c0b597 uncommented

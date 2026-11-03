@@ -1,0 +1,81 @@
+/// Termination claims and cost bounds in a `measure` block of a head.
+///
+/// A binary search must stop, and a two-list queue pays for its reversal in
+/// advance. Both facts are measures over an algebra the program names.
+///
+/// `measure M { … }` names the algebra a measure lives in, as a grade names
+/// its algebra. `decreases e` claims termination, `potential Φ` an amortised
+/// cost and `cost c` a bound. A theory adds clauses, and the vocabulary grows
+/// without keywords.
+///
+/// - see: #4564 — the specifications sketch, its rulings in the issue body
+/// - see: #4569 — sketch 11, cost, which reads the `measure` block
+
+// The specification theory and the measure algebras.
+import std.spec (Spec, old);
+// The naturals under addition and the tropical semiring under min and plus.
+import std.cost (Additive, Tropical);
+
+/// The index of `x` in a sorted array, between `lo` and `hi`.
+pub def rec search(xs : Array(Integer), x : Integer, lo : Nat, hi : Nat) -> Maybe(Nat) #spec{
+  requires {
+    | sorted(xs)
+    | hi <= length(xs)
+  }
+  ensures r { r == none || xs[unwrap(r)] == x }
+  measure Additive {
+    | decreases hi - lo
+    | cost log2(hi - lo) + 1
+  }
+} {
+  if lo >= hi {
+    none
+  } else {
+    let mid = lo + (hi - lo) / 2;
+    if xs[mid] == x { some(mid) }
+    else if xs[mid] < x { search(xs, x, mid + 1, hi) }
+    else { search(xs, x, lo, mid) }
+  }
+}
+
+/// A queue as two lists: pushes go on the back list, and pops reverse it onto
+/// the front when the front runs out.
+pub data Banker(a : Type) : Type where {
+  /// The front, read in order, and the back, read in reverse.
+  | Lists : (front : List(a), back : List(a)) --> Banker(a)
+}
+
+/// Pops the front element, paying for a reversal from the potential the
+/// pushes saved.
+pub def pop[a : Type](q : Banker(a)) -> [State(Banker(a))] Maybe(a) #spec{
+  ensures r { length(q) == old(length(q)) - 1 || r == none }
+  measure Additive {
+    | potential length(q.back)
+    | cost 1
+  }
+} {
+  match q.front {
+    Cons(x, rest) => {
+      q.front := rest;
+      some(x)
+    },
+    Nil => match reverse(q.back) {
+      Nil => none,
+      Cons(x, rest) => {
+        q.front := rest;
+        q.back := Nil;
+        some(x)
+      }
+    }
+  }
+}
+
+/// The shortest distance to every node, its bound in the tropical semiring.
+pub def shortest(g : Graph, source : Node) -> Map(Node, Distance) #spec{
+  ensures d { d[source] == 0 }
+  measure Tropical {
+    | cost edges(g) + nodes(g) * log2(nodes(g))
+  }
+} {
+  dijkstra(g, source)
+}
