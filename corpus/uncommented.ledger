@@ -4164,6 +4164,8 @@ pending/surface/data-operation-members.gandr:NatRule:cfa503c6a3597141 uncommente
 pending/surface/desc-declined-metadata.gandr:<file> uncommented
 pending/surface/desc-declined-metadata.gandr:Declared.Mk:8ebba07737aad3eb uncommented
 pending/surface/desc-declined-metadata.gandr:Declared:5bc45bf773d25595 uncommented
+sketch/cost/amortised.gandr:Banked:5312780155118d89 uncommented
+sketch/cost/amortised.gandr:pop:254b2f174171e57a uncommented
 sketch/environments/merge.gandr:Model:0bcac139b5c5ecd7 uncommented
 sketch/environments/merge.gandr:Model:16e0baf748977bca uncommented
 sketch/environments/merge.gandr:Model:39dba0fb853b464d uncommented

@@ -1,0 +1,91 @@
+/// A two-list queue pays for each reversal from what its pushes saved.
+///
+/// A push costs one step and saves one more, so its savings pay for the
+/// reversal a pop meets. Each operation then costs a constant, amortised over the run.
+///
+/// `measure { potential Φ }` states a potential over the state. A step's own
+/// cost and the new potential stay within the old potential and the bound.
+/// `Credit(c, A)` holds the same potential as data at grade 0, invisible to the
+/// program. `save` moves cost into a credit, and `spend` pays a charge from it.
+///
+/// - see: #4569 — the cost sketch, its rulings in the issue body
+/// - see: corpus/sketch/specifications/measures.gandr — sketch 6's potential over a banker's queue
+
+// The cost theory and its credits.
+import std.cost (Cost, Credit, save, spend);
+
+/// A queue as two lists: pushes go on the back, and pops read the front.
+pub data Batched(a : Type) : Type where {
+  /// The front, read in order, and the back, read in reverse.
+  | Lists : (front : List(a), back : List(a)) --> Batched(a)
+}
+
+/// Adds an element at the back, at one step. The potential grows by one.
+pub def push[a : Type](q : Batched(a), x : a) -> [Cost] Batched(a) #spec{
+  measure {
+    | potential length(q.back)
+    | cost 2
+  }
+} {
+  charge(1);
+  Lists(q.front, Cons(x, q.back))
+}
+
+/// Takes the front element. An empty front reverses the back first, and the
+/// potential pays for the reversal.
+pub def pop[a : Type](q : Batched(a)) -> [Cost] Maybe((a, Batched(a))) #spec{
+  measure {
+    | potential length(q.back)
+    | cost 1
+  }
+} {
+  match q.front {
+    Cons(x, rest) => {
+      charge(1);
+      some((x, Lists(rest, q.back)))
+    },
+    Nil => {
+      charge(length(q.back));
+      match reverse(q.back) {
+        Nil => none,
+        Cons(x, rest) => {
+          charge(1);
+          some((x, Lists(rest, Nil)))
+        }
+      }
+    }
+  }
+}
+
+/// The same queue keeps its potential as credit beside the back list.
+pub data Banked(a : Type) : Type where {
+  /// The two lists, and one credit for each element of the back.
+  | Lists : (front : List(a), back : List(a), paid : Credit(length(back), Unit) @0) --> Banked(a)
+}
+
+/// Adds an element at the back, charging one step and saving one more.
+pub def pushBanked[a : Type](q : Banked(a), x : a) -> [Cost] Banked(a) #spec{
+  measure { cost 2 }
+} {
+  charge(1);
+  Lists(q.front, Cons(x, q.back), save(1, q.paid))
+}
+
+/// Takes the front element, and pays a reversal from the back's credit.
+pub def popBanked[a : Type](q : Banked(a)) -> [Cost] Maybe((a, Banked(a))) #spec{
+  measure { cost 1 }
+} {
+  match q.front {
+    Cons(x, rest) => {
+      charge(1);
+      some((x, Lists(rest, q.back, q.paid)))
+    },
+    Nil => match spend(q.paid, fun () { reverse(q.back) }) {
+      Nil => none,
+      Cons(x, rest) => {
+        charge(1);
+        some((x, Lists(rest, Nil, Credit.none)))
+      }
+    }
+  }
+}

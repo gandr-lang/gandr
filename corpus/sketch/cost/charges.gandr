@@ -1,0 +1,54 @@
+/// Charges a program makes as it runs, each numeral read in the cost algebra
+/// of its scope.
+///
+/// A parser charges a step for each token it reads, and a cache charges a miss
+/// more than a hit. The cost of a run is the sum of what it charged.
+///
+/// `charge(n)` is the operation of `std.cost`'s `Cost` theory, reached through
+/// the model in scope as any model slot is. The numeral reads in the algebra of
+/// what it charges, as a grade reads. Under `Erased`, the default, every charge
+/// is the identity and compiles to nothing.
+///
+/// - see: #4569 — the cost sketch, its rulings in the issue body
+/// - see: #4563 — a numeral read in the algebra of what it grades
+/// - see: corpus/ledger/features/cost-effect.gandr — the same steps as they are written today
+
+// The cost theory, its counting model and the count of a run.
+import std.cost (Cost, Counting, countOf);
+
+/// Three steps: a charge of one, a charge of two, then seven.
+def threeSteps() -> [Cost] Integer {
+  charge(1);
+  charge(2);
+  7
+}
+
+/// Looks a key up in a cache. A hit charges one, and a miss charges ten and
+/// loads the value.
+def lookup(cache : Ref(Map(String, String)), load : String -> String, key : String) -> [Cost, State(Heap)] String {
+  match cache.get().#[key] {
+    Some(v) => {
+      charge(1);
+      v
+    },
+    None => {
+      charge(10);
+      let v = load(key);
+      cache.set(insert(cache.get(), key, v));
+      v
+    }
+  }
+}
+
+/// The steps under the counting model, which answers their count of three.
+def countedSteps() -> Nat {
+  countOf(handle cost : Cost {
+    threeSteps()
+  } with Counting)
+}
+
+/// The steps with no model named. The default makes each charge the identity,
+/// so the answer is seven and the run counts nothing.
+def plainSteps() -> Integer {
+  threeSteps()
+}
