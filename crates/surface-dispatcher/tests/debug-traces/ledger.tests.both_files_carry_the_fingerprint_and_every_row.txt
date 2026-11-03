@@ -1,0 +1,77 @@
+test: ledger::tests::both_files_carry_the_fingerprint_and_every_row
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher ledger::tests::both_files_carry_the_fingerprint_and_every_row --break write_markdown
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-dispatcher/62a1e751c239727f/out/gandr_surface_dispatcher-62a1e751c239727f"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-dispatcher/62a1e751c239727f/out/gandr_surface_dispatcher-62a1e751c239727f' (x86_64).
+(lldb) settings set -- target.run-args  "ledger::tests::both_files_carry_the_fingerprint_and_every_row" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex write_markdown
+Breakpoint 1: 42 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_dispatcher-62a1e751c239727f`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000068f5438
+(lldb) run
+
+running 1 test
+test ledger::tests::both_files_carry_the_fingerprint_and_every_row ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 2895041 launched: 'target/debug-trace/debug/build/gandr-surface-dispatcher/62a1e751c239727f/out/gandr_surface_dispatcher-62a1e751c239727f' (x86_64)
+Process 2895041 stopped
+* thread #2, name = 'ledger::tests::', stop reason = breakpoint 1.38
+       frame #0: 0x00005555573aba23 gandr_surface_dispatcher-62a1e751c239727f`<gandr_surface_dispatcher::ledger::SyntaxLedger>::write_markdown(self={fingerprint:"0xf2770cdf17df4b0f", molds:2898, rules:size=171, attributes:size=17, menus:size=197}, out="") at ledger.rs:865:5
+   862 	    /// # Adequacy
+   863 	    /// - hypothesis: L3 — as [`markdown`](Self::markdown).
+   864 	    /// - witness: `ledger::tests::both_files_carry_the_fingerprint_and_every_row`
+-> 865 	    #[spec(ensures: |ref ret| ret.is_err() || out.ends_with('\n'))]
+    	    ^
+   866 	    fn write_markdown(
+   867 	        &self,
+   868 	        out: &mut String,
+(lldb) bt 24
+* thread #2, name = 'ledger::tests::', stop reason = breakpoint 1.38
+   * frame #0: 0x00005555573aba23 gandr_surface_dispatcher-62a1e751c239727f`<gandr_surface_dispatcher::ledger::SyntaxLedger>::write_markdown(self={fingerprint:"0xf2770cdf17df4b0f", molds:2898, rules:size=171, attributes:size=17, menus:size=197}, out="") at ledger.rs:865:5
+     frame #1: 0x00005555573884b5 gandr_surface_dispatcher-62a1e751c239727f`<gandr_surface_dispatcher::ledger::SyntaxLedger>::markdown::{closure#0} at ledger.rs:845:20
+     frame #2: 0x00005555573abd81 gandr_surface_dispatcher-62a1e751c239727f`anodized::__::eval_once::<alloc::string::String, <gandr_surface_dispatcher::ledger::SyntaxLedger>::markdown::{closure#0}>(closure={_ref__self:{fingerprint:"0xf2770cdf17df4b0f", molds:2898, rules:size=171, attributes:size=17, menus:size=197}}) at __.rs:32:5 [inlined]
+     frame #3: 0x00005555573abd77 gandr_surface_dispatcher-62a1e751c239727f`<gandr_surface_dispatcher::ledger::SyntaxLedger>::markdown(self={fingerprint:"0xf2770cdf17df4b0f", molds:2898, rules:size=171, attributes:size=17, menus:size=197}) at ledger.rs:839:5
+     frame #4: 0x0000555557262b11 gandr_surface_dispatcher-62a1e751c239727f`gandr_surface_dispatcher::ledger::tests::both_files_carry_the_fingerprint_and_every_row at ledger.rs:2524:31
+     frame #5: 0x0000555557235577 gandr_surface_dispatcher-62a1e751c239727f`gandr_surface_dispatcher::ledger::tests::both_files_carry_the_fingerprint_and_every_row::{closure#0}((null)={}) at ledger.rs:2521:56
+     frame #6: 0x0000555557061ea6 gandr_surface_dispatcher-62a1e751c239727f`<gandr_surface_dispatcher::ledger::tests::both_files_carry_the_fingerprint_and_every_row::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #7: 0x00005555579d44fb gandr_surface_dispatcher-62a1e751c239727f`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #8: 0x00005555579d44f9 gandr_surface_dispatcher-62a1e751c239727f`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #9: 0x00005555579e1a45 gandr_surface_dispatcher-62a1e751c239727f`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #10: 0x00005555579e1a40 gandr_surface_dispatcher-62a1e751c239727f`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #11: 0x00005555579e1a40 gandr_surface_dispatcher-62a1e751c239727f`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #12: 0x00005555579e1a2b gandr_surface_dispatcher-62a1e751c239727f`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #13: 0x00005555579e1a2b gandr_surface_dispatcher-62a1e751c239727f`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #14: 0x00005555579e1a2b gandr_surface_dispatcher-62a1e751c239727f`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #15: 0x00005555579e1a16 gandr_surface_dispatcher-62a1e751c239727f`test::run_test::{closure#0} at lib.rs:677:43
+     frame #16: 0x00005555579dc404 gandr_surface_dispatcher-62a1e751c239727f`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #17: 0x00005555579dc389 gandr_surface_dispatcher-62a1e751c239727f`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #18: 0x00005555579e4ba2 gandr_surface_dispatcher-62a1e751c239727f`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #19: 0x00005555579e4b93 gandr_surface_dispatcher-62a1e751c239727f`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #20: 0x00005555579e4b93 gandr_surface_dispatcher-62a1e751c239727f`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #21: 0x00005555579e4b83 gandr_surface_dispatcher-62a1e751c239727f`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #22: 0x00005555579e4b83 gandr_surface_dispatcher-62a1e751c239727f`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #23: 0x00005555579e4b83 gandr_surface_dispatcher-62a1e751c239727f`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+(lldb) frame variable --depth 3
+(gandr_surface_dispatcher::ledger::SyntaxLedger *) self = 0x00007ffff79fdb08 {fingerprint:"0xf2770cdf17df4b0f", molds:2898, rules:size=171, attributes:size=17, menus:size=197}
+(alloc::string::String *) out = 0x00007ffff79fd4c8 ""
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x00005555573884b5 gandr_surface_dispatcher-62a1e751c239727f`<gandr_surface_dispatcher::ledger::SyntaxLedger>::markdown::{closure#0} at ledger.rs:845:20
+   842 	    pub fn markdown(&self) -> String
+   843 	    {
+   844 	        let mut out = String::new();
+-> 845 	        match self.write_markdown(&mut out) {
+    	                   ^
+   846 	            // Writing into a `String` never fails.
+   847 	            Ok(()) | Err(core::fmt::Error) => out,
+   848 	        }
+(lldb) frame variable --depth 3
+(gandr_surface_dispatcher::ledger::SyntaxLedger) self = {fingerprint:"0xf2770cdf17df4b0f", molds:2898, rules:size=171, attributes:size=17, menus:size=197}
+(alloc::string::String) out = ""
