@@ -31,7 +31,7 @@ read_prs() {
         pullRequests(states: OPEN, first: 20, after: $endCursor) {
           pageInfo { hasNextPage endCursor }
           nodes {
-            number isDraft headRefOid isInMergeQueue mergeStateStatus
+            number isDraft headRefOid baseRefName isInMergeQueue mergeStateStatus
             autoMergeRequest { enabledAt }
             labels(first: 50) { nodes { name } }
             stack { number }
@@ -47,8 +47,20 @@ read_prs() {
       }
     }' --jq '.data.repository.pullRequests.nodes[] | select((.isDraft or any(.labels.nodes[]; .name == "hold:owner")) | not)' \
     | while IFS= read -r pr; do
+        # A dequeued head GitHub would rebase: the commits its base already
+        # carries, which that rebase replays empty (#4463). The checkout holds
+        # every branch as the run began; the fetch brings either up to date.
+        upstream='[]'
+        if [[ $(jq -r '.timelineItems.nodes[0].__typename' <<< "$pr") == RemovedFromMergeQueueEvent ]]; then
+          base=$(jq -r .baseRefName <<< "$pr")
+          head=$(jq -r .headRefOid <<< "$pr")
+          git fetch --quiet origin "$base" "$head" 2> /dev/null || true
+          if git cat-file -e "$head^{commit}" 2> /dev/null && git rev-parse --verify --quiet "origin/$base" > /dev/null; then
+            upstream=$(upstream_replays "origin/$base" "$head" | jq -R . | jq -cs .)
+          fi
+        fi
         jq -c --argjson reading "$(jq '.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // []' <<< "$pr" \
-          | jq -c --argjson required "$required" -f "$pr_stack_dir/required.jq")" \
+          | jq -c --argjson required "$required" -f "$pr_stack_dir/required.jq")" --argjson upstream "$upstream" \
           '{number, oid: .headRefOid,
             queued: (.isInMergeQueue or .autoMergeRequest != null),
             held: any(.labels.nodes[]; .name == "landing"),
@@ -58,6 +70,7 @@ read_prs() {
             reading: $reading,
             removed: (.timelineItems.nodes[0].__typename == "RemovedFromMergeQueueEvent"),
             removal: (.timelineItems.nodes[0].reason // "" | ascii_downcase),
+            upstream: $upstream,
             marks: [.comments.nodes[].body | scan("<!-- landing:(pr-[a-z]+):([0-9a-f]{40}) -->") | "\(.[0]):\(.[1])"]}' <<< "$pr"
       done | jq -cs .
 }
@@ -103,8 +116,13 @@ while IFS= read -r action; do
         "Every required check passed on this head and the pull request is out of the merge queue: \`pr:land $number\` queues its stack's ready prefix."
       ;;
     dequeued)
-      tell "$number" "pr-dequeued #$number" pr-dequeued "$oid" \
-        "The merge queue removed this pull request at this head. Read the entry's run, then \`pr:land $number\`, which restacks it onto \`$trunk\`."
+      if [[ $(jq -r '.upstream // [] | length' <<< "$action") != 0 ]]; then
+        tell "$number" "pr-dequeued #$number" pr-dequeued "$oid" \
+          "The merge queue removed this pull request, and its branch holds commits whose change its base already carries: $(jq -r '.upstream | map("`\(.)`") | join(", ")' <<< "$action"). GitHub's rebase would replay each as an empty commit without the trailers the push rule requires, so the watcher leaves it: \`pr:land $number\` restacks it onto \`$trunk\` and drops them."
+      else
+        tell "$number" "pr-dequeued #$number" pr-dequeued "$oid" \
+          "The merge queue removed this pull request at this head. Read the entry's run, then \`pr:land $number\`, which restacks it onto \`$trunk\`."
+      fi
       ;;
     red)
       tell "$number" "pr-red #$number $(jq -r '.failed | join(", ")' <<< "$action")" pr-red "$oid" \

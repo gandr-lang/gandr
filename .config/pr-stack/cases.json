@@ -2834,6 +2834,48 @@
     "output": "[{\"number\":54,\"act\":\"restack\",\"told\":true}]"
   },
   {
+    "name": "#4463: a dequeued pull request whose head holds a commit its base already carries is told, naming it, never rebased by GitHub; once told at the head it is left",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 55,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "upstream": ["refactor(surface): the block after a tile is one shared sort (#4445)"],
+          "marks": []
+        },
+        {
+          "number": 56,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "upstream": ["lower (#1)"],
+          "marks": ["pr-dequeued:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
+        }
+      ]
+    },
+    "output": "[{\"number\":55,\"act\":\"dequeued\",\"upstream\":[\"refactor(surface): the block after a tile is one shared sort (#4445)\"]}]"
+  },
+  {
     "name": "#2701: a dequeued stack with a queued member is never pushed (#2531); its seat is told",
     "program": "landing.jq",
     "input": {
