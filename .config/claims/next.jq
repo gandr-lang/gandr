@@ -243,7 +243,7 @@ def observation($refusals):
     | .[] | "blocked: #\(.number)"),
   ($at // empty | $ranked[.]
     | (select(.[0] | has("kind:defect")) | .[0] | observation($refusals)),
-      (select(.[1] != "collector") | .[0] | .number as $n | .body // "" | findings | "sections due: #\($n) — \(.)"),
+      (select(.[1] != "collector") | .[0] | .number as $n | .labels as $labels | .body // "" | findings($labels) | "sections due: #\($n) — \(.)"),
       (select(.[1] != "collector") | .[0] | quoted(unstated_axes)[] | "restate: \(.)"),
       "\(.[0].number)\t\(.[1])\t\(.[0].title)")
   end

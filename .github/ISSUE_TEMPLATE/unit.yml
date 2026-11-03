@@ -123,6 +123,18 @@ body:
     validations:
       required: true
   - type: textarea
+    id: surface
+    attributes:
+      label: Surface
+      description: >-
+        A kind:feature in area:surface or area:theory only (a std feature is area:surface): `tier <0–4> — <why the
+        tier below does not read well enough>`, or `none — <why the feature has no surface>`. The tiers: 0 names and
+        combinators, the library alone; 1 a user notation the library declares; 2 a reader `#name{ … }` the library
+        supplies; 3 an attribute `@[…]` the library elaborates; 4 a clause position bound to a `std` interface, only
+        where a name must be bound on a declaration's head. Leave it empty otherwise.
+    validations:
+      required: false
+  - type: textarea
     id: shape
     attributes:
       label: The shape

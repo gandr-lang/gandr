@@ -1,8 +1,9 @@
 # What a unit issue lacks before work may start on it (#2532): `findings`
 # gives one line per missing or malformed section of the body it is applied
-# to, or nothing. `unit:check` prints them (`unit.jq`); `claim:next` prints
-# them as the pick's sections due (`next.jq`, #3134), and `pr:open` refuses a
-# landing on an issue that has any (`signed.jq`).
+# to, or nothing; its argument is the issue's labels, read by the sections
+# only some kinds of unit carry. `unit:check` prints them (`unit.jq`);
+# `claim:next` prints them as the pick's sections due (`next.jq`, #3134), and
+# `pr:open` refuses a landing on an issue that has any (`signed.jq`).
 #
 # A unit issue carries, each with content (`units.md` § units-issue):
 #
@@ -25,6 +26,13 @@
 #   unit waits on (#2902). The section is the record; `unit:check` sets each
 #   one as the issue's GitHub `blocked by` dependency, and a dependency stated
 #   in prose, a line `after: …`, is refused;
+# - `## Surface`, on a `kind:feature` labelled `area:surface` or `area:theory`
+#   (#4637; a `std` feature carries `area:surface`): its first line is
+#   `tier <0–4> — <why the tier below does not read well enough>`, or
+#   `none — <why the feature has no surface>`. The tiers are the owner's
+#   scale: 0 names and combinators, 1 a user notation, 2 a reader
+#   `#name{ … }`, 3 an attribute `@[…]`, 4 a clause position bound to a `std`
+#   interface;
 # - `## The shape` and `## Try first`, when the body says it is new
 #   territory.
 #
@@ -42,7 +50,28 @@ def need($name):
     else empty
     end;
 
-def findings:
+# Whether the labels ask for `## Surface` (#4637). An issue the coordinator
+# signed is never judged for it again, so no unit signed before the rule, or
+# in flight, becomes unclaimable.
+def surfaced($labels):
+  ($labels | index("kind:feature")) != null and ($labels | index("shape:signed")) == null
+  and any($labels[]; . == "area:surface" or . == "area:theory");
+
+def surface($labels):
+  if surfaced($labels) | not then empty
+  else
+    "`tier <0–4> — <why the tier below does not read well enough>`, or `none — <why the feature has no surface>` (`units.md` § units-issue)" as $form
+    | (section("Surface") // null) as $lines
+    | if $lines == null then "`## Surface` is missing: a feature in `area:surface` or `area:theory` states the tier it proposes, \($form)"
+      elif ($lines | filled | not) then "`## Surface` is empty: write \($form)"
+      else ($lines | join("\n") | gsub("(?s)<!--.*?-->"; "") | split("\n") | map(select(test("\\S"))) | first | sub("^[-*]\\s+"; "")) as $first
+      | if $first | test("^(tier [0-4]|none) —\\s*\\S") then empty
+        else "`## Surface` opens `\($first)`, not \($form)"
+        end
+      end
+  end;
+
+def findings($labels):
   . as $body
   | need("Sources"),
     ((section("Sources") // []) as $lines
@@ -95,4 +124,5 @@ def findings:
        end),
     ($body | lines[] | select(test("^after:\\s"; "i"))
       | "the line `\(.)` states a dependency in prose: list each issue in `## After` as `- #n — <what it waits for>`, and `unit:check --fix` sets it on GitHub"),
-    (if $body | gsub("(?s)<!--.*?-->"; "") | test("new territory"; "i") then need("The shape"), need("Try first") else empty end);
+    (if $body | gsub("(?s)<!--.*?-->"; "") | test("new territory"; "i") then need("The shape"), need("Try first") else empty end),
+    surface($labels);

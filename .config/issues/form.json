@@ -19,5 +19,13 @@
     "name": "#3113: a body not opening with the form's Kind field is no form's and is left as filed",
     "input": "Seen on main.\n\n### Kind\n\nkind:defect\n",
     "output": null
+  },
+  {
+    "name": "#4637: the form's Surface field becomes the unit's `## Surface`",
+    "input": "### Kind\n\nkind:feature\n\n### Area\n\narea:surface\n\n### Brief\n\nThe checker refuses a row.\n\n### Detail\n\nUnder a scope.\n\n### Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `a.jq` | primary | the rule |\n\n### Readings\n\n| Family | Axis | Question | Selected |\n| ------ | ---- | -------- | -------- |\n| Identity | `univalent` | q | no — a form |\n| Locality | `oracle` | q | no — a form |\n| Locality | `descent` | q | no — a form |\n| Place | `located` | q | no — a form |\n| Place | `resident` | q | no — a form |\n| Dimension | `rewriting` | q | no — a form |\n| Cost | `zero-cost` | q | no — a form |\n| Names | `nominal` | q | no — a form |\n\n### Concerns\n\n| Concern | Touched |\n| ------- | ------- |\n| `fork` | no |\n| `oracle` | no |\n| `sharing` | no |\n| `nominal` | no |\n\n### Ledger\n\nNone.\n\n### Surface\n\ntier 1 — a combinator chain hides the operator the notation shows\n\n### The shape\n\n_No response_\n\n### Try first\n\n_No response_\n\n### Not in this slice\n\nNothing.\n\n### After\n\nnone\n",
+    "output": {
+      "body": "The checker refuses a row.\n\n### Detail\n\nUnder a scope.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `a.jq` | primary | the rule |\n\n## Readings\n\n| Family | Axis | Question | Selected |\n| ------ | ---- | -------- | -------- |\n| Identity | `univalent` | q | no — a form |\n| Locality | `oracle` | q | no — a form |\n| Locality | `descent` | q | no — a form |\n| Place | `located` | q | no — a form |\n| Place | `resident` | q | no — a form |\n| Dimension | `rewriting` | q | no — a form |\n| Cost | `zero-cost` | q | no — a form |\n| Names | `nominal` | q | no — a form |\n\n## Concerns\n\n| Concern | Touched |\n| ------- | ------- |\n| `fork` | no |\n| `oracle` | no |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Surface\n\ntier 1 — a combinator chain hides the operator the notation shows\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n",
+      "labels": ["kind:feature", "area:surface"]
+    }
   }
 ]
