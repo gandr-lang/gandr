@@ -4,7 +4,7 @@
 // under two hypotheses, none of which a rule could state: symmetry has no
 // orientation and reflexivity's left side reads its variable twice. A model at
 // a type of its own proves each law by a definition at the law's path; a
-// model at a host primitive admits each, `law refl admitted;`, and the
+// model at a host primitive admits each, `law refl = ~admitted;`, and the
 // report's audit lists the admission in place of an obligation. A model that
 // leaves a law out has the checker discharge it: `Path.here` at the law's left
 // side, where its sides convert (#4112). A theory including a lawful one
@@ -59,9 +59,9 @@ module LawfulOmitted : Model(Lawful) with sort Carrier = Single where {
 /// admitted` the first.
 module LawfulInteger : Model(Lawful) with sort Carrier = Integer where {
   def alike(a : Integer, b : Integer) -> Bool { a == b }
-  law refl admitted;
-  law sym admitted;
-  law trans admitted;
+  law refl = ~admitted;
+  law sym = ~admitted;
+  law trans = ~admitted;
 }
 
 /// The admitted model decides by the host: three is three.

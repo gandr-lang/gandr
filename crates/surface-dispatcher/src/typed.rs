@@ -2636,7 +2636,7 @@ impl TypeTable
             // and has no form of its own: the block's key is the theory's, so a
             // derived declaration never displaces what another placed there.
             let derived = declaration.role() == Role::Derived;
-            // An admitted law writes no half: the member `law x admitted;`
+            // An admitted law writes no half: the member `law x = ~admitted;`
             // that introduces it is its form.
             let admitted = (declaration.role() == Role::Admitted).then(|| declaration.introduced());
             for key in [

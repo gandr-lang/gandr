@@ -695,7 +695,7 @@ fn a_model_missing_an_operation_is_refused_naming_it()
 }
 
 /// #2356: a theory's stated laws are components a model proves by a
-/// definition at their path type or admits by `law name admitted ;`, which
+/// definition at their path type or admits by `law name = ~admitted ;`, which
 /// the checker owes as the axiom it is only where the host asserts the law of
 /// its primitive (#2302); a model that neither proves nor admits one leaves it
 /// to the checker to discharge (#4112), and one admitting a law at its own
@@ -703,7 +703,7 @@ fn a_model_missing_an_operation_is_refused_naming_it()
 #[test]
 fn a_stated_law_is_a_component_a_model_proves_2356()
 {
-    let source = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Proved : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  def refl(a : One) -> Path(Bool, same(a, a), true) { Path.here(true) }\n  def trans(a : One, b : One, c : One, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) -> Path(Bool, same(a, c), true) { Path.here(true) }\n}\nmodule Admitted : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl admitted;\n  law trans admitted;\n}\nmodule Short : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  law refl admitted;\n}\n";
+    let source = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Proved : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  def refl(a : One) -> Path(Bool, same(a, a), true) { Path.here(true) }\n  def trans(a : One, b : One, c : One, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) -> Path(Bool, same(a, c), true) { Path.here(true) }\n}\nmodule Admitted : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl = ~admitted;\n  law trans = ~admitted;\n}\nmodule Short : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  law refl = ~admitted;\n}\n";
     let mut lowered = lower(source);
     let found = rows(&lowered);
     for (path, role, amounts) in [
@@ -735,6 +735,51 @@ fn a_stated_law_is_a_component_a_model_proves_2356()
             && judgements.contains(&(unasserted, Judgement::Refused)),
         "each proof checks at the law's path, each admission the host asserts is owed as the \
          axiom it is, and one it does not is refused: {judgements:?}"
+    );
+}
+
+/// A law member admits its law only by the splice `~admitted`: a proof and a
+/// splice of another tactic are each refused at the body, and the module does
+/// not read.
+#[test]
+fn a_law_member_admits_only_by_the_splice_of_admitted()
+{
+    let theory = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : \
+                  Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), \
+                  true);\n}\n";
+    for (member, out_of_place) in [
+        ("law refl = Path.here(true);", "Path.here(true)"),
+        ("law refl = ~assumption;", "~assumption"),
+    ] {
+        let source = format!(
+            "{theory}module Host : Model(Same) with sort Carrier = Integer where {{\n  def \
+             same(a : Integer, b : Integer) -> Bool {{ int.eq(a, b) }}\n  {member}\n}}\n"
+        );
+        let found = rows(&lower(source.as_str()));
+        let refused = Amounts::Refused(LoweringRefusal::MalformedForm {
+            span: span_of(&source, out_of_place, 0_usize),
+            form: FormName::MODULE,
+            fault: FormFault::MisplacedTile,
+        });
+        assert!(
+            found
+                .iter()
+                .any(|&(ref path, _, ref amounts)| path == "Host" && *amounts == refused)
+                && !found.iter().any(|&(_, role, _)| role == Role::Admitted),
+            "`{member}` admits nothing and is refused at `{out_of_place}`: {found:?}"
+        );
+    }
+    let admitted = format!(
+        "{theory}module Host : Model(Same) with sort Carrier = Integer where {{\n  def same(a : \
+         Integer, b : Integer) -> Bool {{ int.eq(a, b) }}\n  law refl = ~admitted;\n}}\n"
+    );
+    assert!(
+        rows(&lower(admitted.as_str())).contains(&row(
+            "Host.refl",
+            Role::Admitted,
+            Amounts::Uncompleted
+        )),
+        "the splice of `admitted` admits the law"
     );
 }
 

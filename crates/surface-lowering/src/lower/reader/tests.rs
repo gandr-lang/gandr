@@ -16,8 +16,8 @@ module ParityFromNat : Model(FromNat) with sort Carrier = Parity where {
 }
 module Flag : Model(Eq) with sort Carrier = Bool where {
   def eq(a : Bool, b : Bool) -> Bool { true }
-  law refl admitted;
-  law sym admitted;
+  law refl = ~admitted;
+  law sym = ~admitted;
 }
 module BoolFromNat : Model(FromNat) with sort Carrier = Bool where {
   def fromNat(n : Integer) -> Bool { true }

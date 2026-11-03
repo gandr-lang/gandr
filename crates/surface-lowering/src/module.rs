@@ -827,7 +827,7 @@ pub enum Role
     /// from `T`'s constructors, and declaring nothing itself.
     Generic,
     /// A law of a module's model the host asserts at a primitive carrier,
-    /// `law refl admitted;`: entered in the module's name table, declared at
+    /// `law refl = ~admitted;`: entered in the module's name table, declared at
     /// the law's derived type with no definition, and crossing as the axiom
     /// the report's audit lists.
     Admitted,
@@ -7241,6 +7241,10 @@ fn written_docs(
 /// components.
 const TELESCOPE_TYPE: &str = "telescope_type";
 
+/// The name a law member's splice writes to admit the law on the host's
+/// word, `law refl = ~admitted ;`.
+const ADMITTED: &str = "admitted";
+
 /// The name the presentation code takes.
 pub const THEORY_CODE: &str = "Theory";
 
@@ -8944,8 +8948,8 @@ impl<'source> Collector<'_, 'source>
         });
     }
 
-    /// Read the law member `member`, `law name admitted ;` after any attribute
-    /// blocks, as the admission of its model's law of that name.
+    /// Read the law member `member`, `law name = ~admitted ;` after any
+    /// attribute blocks, as the admission of its model's law of that name.
     ///
     /// # Specification
     /// - requires: `pieces` is the reading of `member`, a member form of
@@ -8956,8 +8960,8 @@ impl<'source> Collector<'_, 'source>
     ///   matched against its model. An attribute block that does not read
     ///   refuses the slot.
     /// - fails: [`LoweringRefusal::DuplicateDefinition`] for a name an earlier
-    ///   member declares, and a misplaced-tile refusal for a member out of
-    ///   shape.
+    ///   member declares; a misplaced-tile refusal for a member out of shape,
+    ///   and at the body for a body other than the splice `~admitted`.
     /// - panics: none.
     ///
     /// # Errors
@@ -8965,8 +8969,10 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an admitted law at a primitive carrier checks, and
-    ///   one at the module's own data type is refused.
+    ///   one at the module's own data type is refused; a body other than
+    ///   `~admitted` is refused at the body.
     /// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
+    /// - witness: `tests::modules::models::a_law_member_admits_only_by_the_splice_of_admitted`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| ret.is_err() == (self.collected.slots.len() == before)
@@ -8998,15 +9004,20 @@ impl<'source> Collector<'_, 'source>
         else {
             return Err(misplaced_in(FormName::MODULE, cursor.here()));
         };
-        let closed = (
-            cursor.tile(TileName::ADMITTED),
-            cursor.tile(TileName::SEMICOLON),
-        );
-        if !matches!(closed, (Maybe::Present(_), Maybe::Present(_)))
+        let Maybe::Present(_) = cursor.tile(TileName::EQUALS)
+        else {
+            return Err(misplaced_in(FormName::MODULE, cursor.here()));
+        };
+        let Run::One(body) = cursor.operands()
+        else {
+            return Err(misplaced_in(FormName::MODULE, cursor.here()));
+        };
+        if !matches!(cursor.tile(TileName::SEMICOLON), Maybe::Present(_))
             || matches!(cursor.peek(), Maybe::Present(_))
         {
             return Err(misplaced_in(FormName::MODULE, cursor.here()));
         }
+        self.admission_splice(body)?;
         let name = self.name_of(named);
         if let Some(&earlier) = self.collected.by_name.get(&(container, name)) {
             return Err(LoweringRefusal::DuplicateDefinition {
@@ -9031,6 +9042,63 @@ impl<'source> Collector<'_, 'source>
         }
 
         Ok(())
+    }
+
+    /// Read the law member's body `body` as the splice `~admitted`.
+    ///
+    /// # Specification
+    /// - requires: `body` is the operand of a law member's `=`.
+    /// - ensures: succeeds exactly when `body` is a splice whose one operand is
+    ///   the name `admitted`.
+    /// - fails: a misplaced-tile refusal at `body` for any other body; the
+    ///   form's own refusal for a splice out of shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::admitted_law`].
+    /// - witness: `tests::modules::models::a_law_member_admits_only_by_the_splice_of_admitted`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |refusal| !matches!(*refusal, LoweringRefusal::MalformedForm { span, .. } if span == body.span)
+            || *refusal == misplaced_in(FormName::MODULE, body.span),
+        |&()| self.tree.fragment(body.node).is_some_and(|written| written.as_ref().ends_with(ADMITTED)),
+    ))]
+    fn admission_splice(
+        &self,
+        body: Placed,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let refused = misplaced_in(FormName::MODULE, body.span);
+        let shaped = |at: Placed| {
+            self.tree
+                .node(at.node)
+                .map_or(Ok(Shape::Root), |node| shape_of(self.pbg, node))
+        };
+        if !matches!(shaped(body)?, Shape::Form { name, .. } if name == FormName::SPLICE) {
+            return Err(refused);
+        }
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, body.node, &mut pieces)?;
+        let mut cursor = Cursor::new(&pieces.pieces, body.span);
+        let _tilde = cursor.tile(TileName::TILDE);
+        let Run::One(operand) = cursor.operands()
+        else {
+            return Err(refused);
+        };
+        if matches!(cursor.peek(), Maybe::Absent(_))
+            && matches!(shaped(operand)?, Shape::Form {
+                former: Former::Name,
+                ..
+            })
+            && self.name_of(operand).as_ref() == ADMITTED
+        {
+            Ok(())
+        }
+        else {
+            Err(refused)
+        }
     }
 
     /// Read the model include `member`, `include M ;`, as the module it

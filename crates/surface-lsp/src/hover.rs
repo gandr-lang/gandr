@@ -2597,7 +2597,7 @@ mod tests
         );
     }
 
-    /// #2407: a model's `law refl admitted;` hovers the law it admits, at the
+    /// #2407: a model's `law refl = ~admitted;` hovers the law it admits, at the
     /// model's carrier and with its truth endpoint written as its word, not
     /// the module that holds it; the theory's law hovers its statement.
     #[test]
@@ -2607,7 +2607,7 @@ mod tests
             "theory Lawful where {\n  sort Carrier : Type;\n  oper alike : (a : Carrier, b : Carrier) \
              --> Bool;\n  law refl : (a : Carrier) => Path(Bool, alike(a, a), true);\n}\nmodule \
              Host : Model(Lawful) with sort Carrier = Integer where {\n  def alike(a : Integer, b : \
-             Integer) -> Bool { int.eq(a, b) }\n  law refl admitted;\n}\n",
+             Integer) -> Bool { int.eq(a, b) }\n  law refl = ~admitted;\n}\n",
         );
         assert_eq!(
             shown(text, (7.into(), 7.into())),

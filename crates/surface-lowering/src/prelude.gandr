@@ -24,16 +24,16 @@ pub module Eq where {
 pub module EqInteger : Model(Eq) with sort Carrier = Integer where {
   /// Whether two integers are equal.
   def eq(a : Integer, b : Integer) -> Bool { int.eq(a, b) }
-  law refl admitted;
-  law sym admitted;
+  law refl = ~admitted;
+  law sym = ~admitted;
 }
 
 /// String equality, the string primitive, its laws the host's.
 pub module EqString : Model(Eq) with sort Carrier = String where {
   /// Whether two strings are equal, byte for byte.
   def eq(a : String, b : String) -> Bool { string.eq(a, b) }
-  law refl admitted;
-  law sym admitted;
+  law refl = ~admitted;
+  law sym = ~admitted;
 }
 
 /// Float equality, the float primitive: symmetric, and no equality, since
@@ -41,7 +41,7 @@ pub module EqString : Model(Eq) with sort Carrier = String where {
 pub module PartialEqFloat : Model(PartialEq) with sort Carrier = f64 where {
   /// Whether two floats are equal, NaN equal to none.
   def eq(a : f64, b : f64) -> Bool { float64.eq(a, b) }
-  law sym admitted;
+  law sym = ~admitted;
 }
 
 /// Equality through the model of `PartialEq` the operands' type resolves:

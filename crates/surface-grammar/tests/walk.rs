@@ -60,7 +60,7 @@ use gandr_theory_graphs::WalkChainLength;
 /// lowercase home: a row entry, a `handle` head and an `offers` entry each
 /// read a theory path or a type, `std.io.Console.Eff`, and an offer's label
 /// is an operand.
-const BUILT_IN_FINGERPRINT: u64 = 0xbb12_7bca_4826_7c01;
+const BUILT_IN_FINGERPRINT: u64 = 0x2ad5_39c3_d415_e4d1;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
@@ -69,7 +69,7 @@ const BUILT_IN_FINGERPRINT: u64 = 0xbb12_7bca_4826_7c01;
 const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2930);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 94;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
@@ -113,7 +113,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("<=", 1),
     ("<=>", 27),
     ("<>", 1),
-    ("=", 129),
+    ("=", 131),
     ("==", 1),
     ("==>", 27),
     ("=>", 45),
@@ -147,7 +147,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("abort", 1),
     ("access", 1),
     ("acquire", 1),
-    ("admitted", 2),
     ("arm_bar", 21),
     ("as", 4),
     ("at", 3),
