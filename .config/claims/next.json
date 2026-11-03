@@ -2644,5 +2644,51 @@
       ]
     },
     "output": "focus: #80\n83\tfocus\tworkflow: the focus epic's own unit"
+  },
+  {
+    "name": "#4650: an issue an open pull request names, by its closing keyword on a stacked base or by its branch alone, is passed over though no label claims it; the next candidate is the pick",
+    "input": {
+      "areas": ["area:surface", "area:ux"],
+      "order": {},
+      "lane": "surface",
+      "now": 1760000000,
+      "prs": [
+        {
+          "body": "Closes #40",
+          "head": "toolchain-40-quoted-motive"
+        },
+        {
+          "body": "A fix with no keyword.",
+          "head": "triage-41-stacked"
+        }
+      ],
+      "issues": [
+        {
+          "number": 40,
+          "title": "surface: a defect a stacked pull request closes",
+          "labels": ["kind:defect", "area:surface", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": null,
+          "blocked": null
+        },
+        {
+          "number": 41,
+          "title": "surface: a defect a branch works",
+          "labels": ["kind:defect", "area:surface", "priority:high", "effort:easy"],
+          "parent": null,
+          "body": null,
+          "blocked": null
+        },
+        {
+          "number": 42,
+          "title": "surface: an unworked defect",
+          "labels": ["kind:defect", "area:surface"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `next.jq` | primary | the pick |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no — not this case's |\n| `oracle` | no — not this case's |\n| `sharing` | no — not this case's |\n| `nominal` | no — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n\n## After\n\nnone\n\n<!-- released: lane=surface at=2025-10-09T06:43:20Z -->\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "observation due: #42 — mise run debug:test <package> <test>\n42\tdefect\tsurface: an unworked defect"
   }
 ]

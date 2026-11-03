@@ -1847,7 +1847,10 @@ fi
 # #a, #b`. The board's count of open blockers lags a dependency set or
 # removed (#4104), so each issue the order passes over as blocked, and the
 # pick, is read from GitHub, and the order taken again until every issue it
-# rests on is read. A `kind:defect` `collector` in
+# rests on is read. An issue an open pull request names, by a working
+# keyword in its body or by its number in its branch, is not picked on any
+# base (#4650): GitHub links a keyword only into the default branch, so a
+# stacked fix leaves its issue looking unworked. A `kind:defect` `collector` in
 # the lane's areas holding an open row heads the order (#3326): it is claimed
 # as the defect it is, its rows worked by the landing, and prints no section
 # due, keeping its own shape. The lane's defects and refactors come next,

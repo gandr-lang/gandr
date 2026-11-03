@@ -41,7 +41,9 @@
 #            [{number, body, head}]; absent reads as none
 #
 # An issue is a candidate when it is unowned (no `status:claimed`), not ruled
-# out (`status:deferred`, `status:discarded`) and not an epic. A `collector`
+# out (`status:deferred`, `status:discarded`) and not an epic. An issue an open
+# pull request `names` is worked though no label claims it, so it is no
+# candidate for any lane, whatever the pull request's base (#4650). A `collector`
 # is a candidate only as a `kind:defect` in a lane's area holding an open row
 # (#3326): it heads the order, ahead of every other bucket, and is claimed and
 # worked as the defect it is. Its rows carry no dates, so the oldest
@@ -207,7 +209,8 @@ def observation($refusals):
      | . as $issue | select([$prs[] | names($issue.number)] | any | not)]
    end) as $held
 | if ($held | length) > 0 then $held[] | "held: #\(.number) \(.title)" else
-  [.issues[] | select(candidate) | select($lane == null or ([kept($now) | .lane != $lane] | any | not))] as $open
+  [.issues[] | select(candidate) | . as $issue | select([$prs[] | names($issue.number)] | any | not)
+    | select($lane == null or ([kept($now) | .lane != $lane] | any | not))] as $open
 | if $focus != null then [
     ($open | map(select([kept($now) | .lane == $lane] | any) | select(focus_fix or focus_unit)) | sort_by(-(kept($now) | .at), .number) | .[] | [., "released"]),
     ($open | map(select(focus_fix and within($areas))) | sort_by(priority, effort, .number) | .[] | fixed),
