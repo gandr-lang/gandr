@@ -1,0 +1,26 @@
+/// A data type whose lifecycle protocol is a `#spec{ … }` clause on its head.
+///
+/// A program opens a file handle before a read and closes it exactly once. The
+/// type carries that protocol beside its invariant, where a reader looks.
+///
+/// `lifecycle { … }` is a `#spec{ … }` clause, as `requires` and `measure`
+/// are. Its formula spelling waits for unit 21, so the clause below holds a
+/// placeholder formula in today's words.
+///
+/// - see: #4568 — the nominal surface sketch, its rulings in the issue body
+/// - see: corpus/sketch/specifications/queue.gandr — `#spec{ … }` on a definition's head
+
+// The specification theory.
+import std.spec (Spec);
+
+/// An open file, whose head states its protocol.
+pub data Handle : Type #spec{
+  invariant { | fd >= 0 }
+  lifecycle {
+    | opened before read
+    | closed once
+  }
+} where {
+  /// A descriptor the kernel issued.
+  | Open : (fd : Integer) --> Handle
+}

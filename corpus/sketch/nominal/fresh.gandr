@@ -1,0 +1,38 @@
+/// Fresh names in a program: the `Fresh` effect, swapping and freshness.
+///
+/// A compiler pass that renames variables needs names no other binder uses.
+/// Name generation is an effect, so the pass states it in its row.
+///
+/// `fresh()` is the operation of the `Fresh` effect. `swap(a, b, t)` exchanges
+/// two names in a term, and `a # t` holds when `t` does not mention `a`. All
+/// three are `std.nominal`'s, and none is a keyword.
+///
+/// - see: #4568 — the nominal surface sketch, its rulings in the issue body
+/// - see: corpus/sketch/nominal/pi-calculus.gandr — the π-calculus whose processes this file builds
+
+// The effect, the abstraction type, `swap` and freshness.
+import std.nominal (Fresh, fresh, swap, Abs);
+// The π-calculus.
+import "./pi-calculus.gandr";
+
+/// Runs a body under a private name that `fresh()` draws.
+def spawn(body : (a : Name) ->[#] Proc) -> [Fresh] Proc {
+  let a = fresh();
+  body(a)
+}
+
+/// Two processes that share one private channel and nothing else.
+def pair(left : (a : Name) ->[#] Proc, right : (a : Name) ->[#] Proc) -> [Fresh] Proc {
+  Pi.nu(fun (a) { Pi.par(left(a), right(a)) })
+}
+
+/// Exchanges two names in a process, which keeps every freshness fact.
+def rename(a : Name, b : Name, p : Proc) -> Proc {
+  swap(a, b, p)
+}
+
+/// Whether a process may drop its restriction, which the garbage rule's
+/// condition decides.
+def collectable(a : Name, p : Proc) -> Bool {
+  a # p
+}

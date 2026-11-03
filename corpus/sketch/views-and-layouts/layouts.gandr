@@ -9,7 +9,7 @@
 /// `@[layout(packed)]` makes the packed layout the one the list compiles to.
 ///
 /// - see: #4561 — the views and layouts sketch, its rulings in the issue body
-/// - see: Baudon-2024-ribbit — Example 3.4, the two layouts and their memory types
+/// - see: Baudon-2024-algebraic_data_types_highperformance_computing — Example 3.4, the two layouts and their memory types
 /// - see: corpus/model/layouts/ribbit-list.gandr — the same two layouts, written by hand
 /// - see: corpus/sketch/views-and-layouts/layouts-ascii.gandr — the same layouts in ASCII
 
