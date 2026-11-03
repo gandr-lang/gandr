@@ -2313,5 +2313,70 @@
       }
     },
     "output": "{\"prs\":[{\"number\":4669,\"draft\":false,\"bot\":false,\"head\":\"surface-4642-restack-past-red\",\"base\":\"main\",\"oid\":\"d470fa2c1\",\"created\":1793656800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"queue\":\"main\",\"removals\":[],\"checks\":[]}],\"merged\":[{\"number\":4666,\"head\":\"triage-4643-off-trunk\",\"merged\":1793671606,\"verdict\":\"no\",\"rows\":0}],\"filed\":[],\"claimed\":[]}"
+  },
+  {
+    "name": "#4655: a root left unqueued pages the coordinator to queue it, hold it with `pr:hold` and its arguments, or reassign it",
+    "program": "decide.jq",
+    "input": {
+      "kind": "root-unqueued",
+      "number": 2774,
+      "lane": "surface",
+      "placed": true,
+      "age": 30,
+      "line": "STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue"
+    },
+    "output": "STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue. Decide: queue it: `gh stack merge`; hold it: `mise run pr:hold 2774 \"<what it waits on>\"`; reassign it"
+  },
+  {
+    "name": "#4655: an ejected pull request pages the coordinator to hold it or reassign it, never to queue it again",
+    "program": "decide.jq",
+    "input": {
+      "kind": "ejected",
+      "number": 41,
+      "lane": "triage",
+      "placed": true,
+      "age": 12,
+      "line": "STALL ejected #41 triage 12m: left the merge queue unmerged 2 times in 60m (failed_checks)"
+    },
+    "output": "STALL ejected #41 triage 12m: left the merge queue unmerged 2 times in 60m (failed_checks). Decide: hold it: `mise run pr:hold 41 \"<what it waits on>\"`; reassign it"
+  },
+  {
+    "name": "#4655: a base-blocked member pages the coordinator to order the rebase, hold it or reassign it",
+    "program": "decide.jq",
+    "input": {
+      "kind": "base-blocked",
+      "number": 52,
+      "lane": "core",
+      "placed": true,
+      "age": 15,
+      "line": "STALL base-blocked #52 core 15m: its base #51 conflicts with its own base"
+    },
+    "output": "STALL base-blocked #52 core 15m: its base #51 conflicts with its own base. Decide: order the rebase; hold it: `mise run pr:hold 52 \"<what it waits on>\"`; reassign it"
+  },
+  {
+    "name": "#4655: an unfiled verdict pages the coordinator to file it, and a merged pull request is never held",
+    "program": "decide.jq",
+    "input": {
+      "kind": "verdict-unfiled",
+      "number": 60,
+      "lane": "surface",
+      "placed": true,
+      "age": 20,
+      "line": "STALL verdict-unfiled #60 surface 20m: merged with a `yes` refactoring verdict and no `kind:refactor` issue carries `from: #60`; run `mise run refactor:file 60`"
+    },
+    "output": "STALL verdict-unfiled #60 surface 20m: merged with a `yes` refactoring verdict and no `kind:refactor` issue carries `from: #60`; run `mise run refactor:file 60`. Decide: file it: `mise run refactor:file 60`"
+  },
+  {
+    "name": "#4655: an idle seat pages the coordinator to page it to claim or assign its work, with no pull request to hold",
+    "program": "decide.jq",
+    "input": {
+      "kind": "seat-idle",
+      "number": null,
+      "lane": "theory",
+      "placed": true,
+      "age": 20,
+      "line": "STALL seat-idle theory 20m: no open pull request and no claim it holds; run `mise run claim:next theory`"
+    },
+    "output": "STALL seat-idle theory 20m: no open pull request and no claim it holds; run `mise run claim:next theory`. Decide: page the seat to claim; assign its next work"
   }
 ]

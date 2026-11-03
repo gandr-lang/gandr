@@ -2018,19 +2018,20 @@ echo "bench check OK: $(jq length .config/bench/cases.json) cases read as record
 # The stall detector's readings (#2785): `facts.jq` reads the open pull
 # requests off one answer to `.config/stall/query.graphql`, `detect.jq`
 # decides the stalls among them, what to page and what to remember,
-# `reports.jq` the stall reports whose event is over (#3112), and `live.jq`
-# whether the detector itself still reads. Each case in
+# `reports.jq` the stall reports whose event is over (#3112), `decide.jq`
+# the coordinator's line with the decisions its finding admits (#4655), and
+# `live.jq` whether the detector itself still reads. Each case in
 # `.config/stall/cases.json` holds a recorded reading, no network, and the
 # output it must give: a case per kind, its threshold's edge, the page-once
-# memory, the reports closed and kept, and the detector's liveness at two
-# intervals.
+# memory, the reports closed and kept, the coordinator's decisions, and the
+# detector's liveness at two intervals.
 ["check:stall"]
 description = "The stall detector's readings give each recorded case its findings"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-.config/cases/run.bash stall .config/stall/cases.json --programs .config/stall --mode c --raw live.jq -L .config/claims
+.config/cases/run.bash stall .config/stall/cases.json --programs .config/stall --mode c --raw live.jq --raw decide.jq -L .config/claims
 echo "stall check OK: $(jq length .config/stall/cases.json) cases read as recorded"
 '''
 

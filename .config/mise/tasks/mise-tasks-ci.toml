@@ -3858,10 +3858,14 @@ exit 2
 # (`stall:watch`), and neither `pr:watch` nor the `landing` workflow lands
 # it, nor anything stacked above it (`rests.jq`, #3253). The owner's hold is
 # `--owner`: the draft also carries the `hold:owner` label, which holds it
-# still if the draft is taken back, and is never a chat note. `pr:release
-# <n>` ends either hold, and the next watch lands it once green.
+# still if the draft is taken back, and is never a chat note. A pull request
+# in the merge queue, or set to enter it by auto-merge, leaves it first
+# (#4655): its auto-merge is turned off, and a queued one is closed and
+# reopened, the one way out of a queue for a stack member (`pr:land`). The
+# draft alone leaves a queued entry to merge. `pr:release <n>` ends either
+# hold, and the next watch lands it once green.
 ["pr:hold"]
-description = "Hold a pull request on purpose: make it a draft and comment the reason"
+description = "Hold a pull request on purpose: take it out of the merge queue, make it a draft and comment the reason"
 usage = '''
 arg "<number>" help="pull request number"
 arg "<reason>" help="why it is held: the base, ruling or sibling it waits on, or the owner's review"
@@ -3881,7 +3885,16 @@ if [[ "${usage_owner:-false}" == true ]]; then
   gh pr edit "$number" -R "$repo" --add-label hold:owner > /dev/null
   who='by the owner'
 fi
-if [[ $(gh pr view "$number" -R "$repo" --json isDraft --jq .isDraft) != true ]]; then
+IFS=$'\t' read -r draft queued auto < <(gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$number" \
+  -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { isDraft isInMergeQueue autoMergeRequest { enabledAt } } } }' \
+  --jq '.data.repository.pullRequest | [.isDraft, .isInMergeQueue, (.autoMergeRequest != null)] | @tsv')
+if [[ "$auto" == true ]]; then gh pr merge "$number" -R "$repo" --disable-auto > /dev/null; fi
+if [[ "$queued" == true ]]; then
+  gh pr close "$number" -R "$repo" > /dev/null
+  gh pr reopen "$number" -R "$repo" > /dev/null
+  echo "#$number left the merge queue"
+fi
+if [[ "$draft" != true ]]; then
   gh pr ready "$number" -R "$repo" --undo > /dev/null
 fi
 gh pr comment "$number" -R "$repo" --body "$(printf '<!-- hold -->\n**Held** %s: %s\n\n`mise run pr:release %s` ends the hold; its next `pr:watch` lands it once green, and the stack above it with it.\n' "$who" "$reason" "$number")" > /dev/null
@@ -4367,6 +4380,8 @@ exit 2
 # is the line `STALL detector-down` (`.config/stall/live.jq`).
 # `stall:watch` reads every `interval` seconds and pages each finding once
 # while it lasts, to its lane's seat and to the coordinator at once (#2972).
+# The seat's page is the finding's line. The coordinator's ends with the
+# decisions its kind admits, each with its command (`decide.jq`, #4655).
 # Each reading records its time in the detector's memory as `read`.
 # `stall:watch --install` runs it as a service that starts it again 20
 # seconds after any exit, a `systemd --user` unit on Linux and a `launchd`
@@ -4436,22 +4451,25 @@ if [[ ${usage_install:-false} == true ]]; then stall_service install; exit; fi
 mapfile -t command < <(jq -r '.command[]' <<< "$page")
 mapfile -t coordinator < <(jq -r '.coordinator[]' <<< "$page")
 mapfile -t check < <(jq -r '(.check // [])[]' <<< "$page")
-# Page lane `$1`'s seat (the triage seat for a lane without one), then the
-# coordinator unless the seat is the coordinator, with the line `$2`. A seat
-# page that fails (the page script's exit 2: no live block) is told to the
-# coordinator with the line, and fails the whole, so the next reading pages
-# again.
+# Page lane `$1`'s seat (the triage seat for a lane without one) with the
+# finding's line `$2`, then the coordinator with `$3`, the line and the
+# decisions its kind admits (`decide.jq`, #4655). A seat that is the
+# coordinator is paged `$3` alone. A seat page that fails (the page script's
+# exit 2: no live block) is told to the coordinator with `$3`, and fails the
+# whole, so the next reading pages again.
 page_seat() {
   local -a seat
   local status=0
   mapfile -t seat < <(jq -r --arg lane "$1" '(.seats[$lane] // .triage)[]' <<< "$page")
+  if [[ "${seat[*]}" == "${coordinator[*]}" ]]; then
+    "${command[@]}" "${coordinator[@]}" "$3" || status=1
+    return "$status"
+  fi
   "${command[@]}" "${seat[@]}" "$2" || status=1
-  if [[ "${seat[*]}" != "${coordinator[*]}" ]]; then
-    if (( status == 0 )); then
-      "${command[@]}" "${coordinator[@]}" "$2" || status=1
-    else
-      "${command[@]}" "${coordinator[@]}" "$2 (not delivered to \`${seat[*]}\`)" || :
-    fi
+  if (( status == 0 )); then
+    "${command[@]}" "${coordinator[@]}" "$3" || status=1
+  else
+    "${command[@]}" "${coordinator[@]}" "$3 (not delivered to \`${seat[*]}\`)" || :
   fi
   return "$status"
 }
@@ -4520,7 +4538,7 @@ while :; do
     key=$(jq -r '"\(.number // .lane):\(.kind)"' <<< "$finding")
     echo "$line"
     sent=true
-    page_seat "$(jq -r .lane <<< "$finding")" "$line" || sent=false
+    page_seat "$(jq -r .lane <<< "$finding")" "$line" "$(jq -r -f "$stall_dir/decide.jq" <<< "$finding")" || sent=false
     # A finding no lane places is filed once its pages are sent, its line
     # the observation and its sections the `stall` template's (#3112), so a
     # page sent again never files it twice.
@@ -4537,7 +4555,7 @@ while :; do
   while IFS= read -r finding; do
     line=$(jq -r .line <<< "$finding")
     echo "$line (paged again)"
-    if ! "${command[@]}" "${coordinator[@]}" "$line"; then
+    if ! "${command[@]}" "${coordinator[@]}" "$(jq -r -f "$stall_dir/decide.jq" <<< "$finding")"; then
       paged=$(jq -c --arg key "$(jq -r '"\(.number // .lane):\(.kind)"' <<< "$finding")" '.[$key].last = 0' <<< "$paged")
     fi
   done < <(jq -c '.repages[]' <<< "$reading")
