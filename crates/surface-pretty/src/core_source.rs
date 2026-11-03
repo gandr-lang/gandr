@@ -42,6 +42,7 @@ use crate::former::ModelSlot;
 use crate::former::Name;
 use crate::former::Recursion;
 use crate::former::Recursive;
+use crate::former::Returned;
 use crate::former::Source;
 use crate::former::Unreadable;
 
@@ -1932,12 +1933,16 @@ impl<'arena> CoreSource<'arena>
         | (Some(&CompType::Returns { ref results, ref effects }), Former::Returns(arity)) => usize::from(arity) == results.len()
             && effects.purity() == gandr_core_term::effect::Purity::Pure
             && !crate::walk::reads_earlier(self, results.iter().map(|&result| CoreNode::ValueType(result))),
+        | (Some(&CompType::Returns { ref results, ref effects }), Former::EffectfulReturner { result: Returned::Group(arity), tail, .. }) => usize::from(arity) == results.len()
+            && effects.purity() == gandr_core_term::effect::Purity::Effectful
+            && tail == effects.tail().map(CoreNode::ValueType)
+            && !crate::walk::reads_earlier(self, results.iter().map(|&result| CoreNode::ValueType(result))),
         | (Some(&CompType::Returns { .. }), Former::Unreadable(Unreadable::SeveralResults))
         | (Some(&CompType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (None, Former::Unreadable(Unreadable::Dangling)) => true,
         | (Some(&CompType::Codata { declaration, ref arguments }), Former::Codata { name, arity }) =>
             usize::from(arity) == arguments.len() && self.name(declaration) == name,
         | (Some(&CompType::Returner { result, ref effects }), Former::Returner(actual)) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Pure,
-        | (Some(&CompType::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, tail, .. }) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Effectful && tail == effects.tail().map(CoreNode::ValueType),
+        | (Some(&CompType::Returner { result, ref effects }), Former::EffectfulReturner { result: Returned::One(actual), tail, .. }) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Effectful && tail == effects.tail().map(CoreNode::ValueType),
         | (Some(&CompType::Arrow { domain, codomain }), Former::Arrow { domain: actual_domain, codomain: actual_codomain })
         | (Some(&CompType::Pi { domain, codomain }), Former::Pi { domain: actual_domain, codomain: actual_codomain }) =>
             actual_domain == CoreNode::ValueType(domain) && actual_codomain == CoreNode::CompType(codomain),
@@ -1961,6 +1966,14 @@ impl<'arena> CoreSource<'arena>
             )]
             return Former::Unreadable(Unreadable::Dangling);
         };
+        // Each entry over a theory as the row writes it, where one is kept.
+        let manifests = || {
+            self.rows
+                .binary_search_by_key(&id, |&(held, _)| held)
+                .ok()
+                .and_then(|at| self.rows.get(at))
+                .map_or(&[][..], |&(_, ref manifests)| manifests.as_slice())
+        };
         match *comp_type {
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
@@ -1983,13 +1996,27 @@ impl<'arena> CoreSource<'arena>
             {
                 Former::Returns(Arity::from(results.len()))
             },
+            CompType::Returns {
+                ref results,
+                ref effects,
+            } if !crate::walk::reads_earlier(
+                self,
+                results.iter().map(|&result| CoreNode::ValueType(result)),
+            ) =>
+            {
+                Former::EffectfulReturner {
+                    result: Returned::Group(Arity::from(results.len())),
+                    effects,
+                    tail: effects.tail().map(CoreNode::ValueType),
+                    manifests: manifests(),
+                }
+            },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
                     answer_totality,
-                    reason = "a returner of several results one of which reads another, or whose \
-                              computation requests an interface, which the surface grammar does \
-                              not yet write"
+                    reason = "a returner of several results one of which reads another, which the \
+                              surface grammar does not yet write"
                 )
             )]
             CompType::Returns { .. } => Former::Unreadable(Unreadable::SeveralResults),
@@ -2002,15 +2029,10 @@ impl<'arena> CoreSource<'arena>
                 }
                 else {
                     Former::EffectfulReturner {
-                        result: CoreNode::ValueType(result),
+                        result: Returned::One(CoreNode::ValueType(result)),
                         effects,
                         tail: effects.tail().map(CoreNode::ValueType),
-                        manifests: self
-                            .rows
-                            .binary_search_by_key(&id, |&(held, _)| held)
-                            .ok()
-                            .and_then(|at| self.rows.get(at))
-                            .map_or(&[], |&(_, ref manifests)| manifests.as_slice()),
+                        manifests: manifests(),
                     }
                 }
             },

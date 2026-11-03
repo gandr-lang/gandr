@@ -338,6 +338,7 @@ pub use crate::former::Notation;
 pub use crate::former::Placement;
 pub use crate::former::Recursion;
 pub use crate::former::Recursive;
+pub use crate::former::Returned;
 pub use crate::former::Source;
 pub use crate::former::Unreadable;
 pub use crate::former::Unspelled;
@@ -1420,7 +1421,10 @@ pub fn present_whole(
         (value, Rowed::No)
     }
     else if let Former::EffectfulReturner { result, .. } = read
-        && inserted(result)
+        && match result {
+            Returned::One(value) => inserted(value),
+            Returned::Group(_) => true,
+        }
     {
         (codomain, Rowed::Yes)
     }

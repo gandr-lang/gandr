@@ -6565,6 +6565,53 @@ fn an_open_row_writes_its_tail_after_its_interfaces_2270()
     );
 }
 
+/// A group of outputs under a row is written after the row, closed or open
+/// through its tail, and the empty group as `()` (#4853).
+#[test]
+fn a_group_under_a_row_is_written_after_it_4853()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+
+    let mut core = CoreArena::new();
+    let unit = core.value_type_product(&[]);
+    let integer = core.value_type_base(BaseType::Integer);
+    let proc = EffectSig::new(EffectName::from("std.process.Exit.Eff"), [EffectOp {
+        name: "go".into(),
+        payload: unit,
+        reply: unit,
+    }])
+    .expect("one operation is a signature");
+    let closed =
+        core.comp_type_returns_with_effects(&[integer, unit], EffectRow::singleton(proc.clone()));
+    let none = core.comp_type_returns_with_effects(&[], EffectRow::singleton(proc.clone()));
+    let kind = core.value_type_row();
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let tail = core.value_type_row_tail(bound);
+    let open = core.comp_type_returns_with_effects(
+        &[integer, integer],
+        EffectRow::singleton(proc).with_tail(Some(tail)),
+    );
+    let open = core.comp_type_pi(kind, open);
+    let source = CoreSource::new(&core, &[]);
+    assert_eq!(
+        spelled(&source, Root::Type(CoreNode::CompType(closed))),
+        faithful(Written("-F [std.process.Exit.Eff] (Integer, Unit)"))
+    );
+    assert_eq!(
+        spelled(&source, Root::Type(CoreNode::CompType(none))),
+        faithful(Written("-F [std.process.Exit.Eff] ()"))
+    );
+    assert_eq!(
+        spelled(&source, Root::Type(CoreNode::CompType(open))),
+        faithful(Written(
+            "(a : Row) -> -F [std.process.Exit.Eff | a] (Integer, Integer)"
+        ))
+    );
+}
+
 /// A row naming two instances of one interface writes each by its label, the
 /// name of the region binder it lives at, and a definition over them writes
 /// both binders in its telescope so the labels read back; where no binder is

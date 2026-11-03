@@ -23,6 +23,7 @@ use crate::Source;
 use crate::former::Arity;
 use crate::former::Component;
 use crate::former::Former;
+use crate::former::Returned;
 use crate::former::Unreadable;
 
 /// A checkpoint's content table, read by the presentation printer, its
@@ -680,13 +681,24 @@ impl Source for ContentSource<'_>
             {
                 Former::Returns(Arity::from(results.len()))
             },
+            ContentNode::Returns {
+                ref results,
+                ref effects,
+            } if !crate::walk::reads_earlier(self, results.iter().copied()) => {
+                Former::EffectfulReturner {
+                    result: Returned::Group(Arity::from(results.len())),
+                    effects,
+                    tail: effects.tail(),
+                    manifests: &[],
+                }
+            },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
                     answer_totality,
                     reason = "a return or a bind of several values, or a returner of several \
-                              results one of which reads another or whose computation requests \
-                              an interface, which the surface grammar does not yet write"
+                              results one of which reads another, which the surface grammar does \
+                              not yet write"
                 )
             )]
             ContentNode::ReturnAll(_) | ContentNode::BindAll(..) | ContentNode::Returns { .. } => {
@@ -742,7 +754,7 @@ impl Source for ContentSource<'_>
                 }
                 else {
                     Former::EffectfulReturner {
-                        result,
+                        result: Returned::One(result),
                         effects,
                         tail: effects.tail(),
                         manifests: &[],

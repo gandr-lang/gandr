@@ -359,6 +359,20 @@ pub struct Manifest<'text, Node>
     pub sorts: alloc::vec::Vec<(Name<'text>, Node)>,
 }
 
+/// What a returner returns: one value type, or a group of outputs, each the
+/// source's component at its place.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Returned<Node>
+{
+    /// One value type, `-F [E] A`.
+    One(Node),
+    /// A group of as many value types, `-F [E] (A, B)`.
+    Group(Arity),
+}
+
 /// How many components a product, a sum, a tuple or a record has.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -549,14 +563,15 @@ pub enum Former<'source, Node>
     /// The returner `-F (A, B)` of several value types, none of which reads
     /// the results before it: a function's group of outputs.
     Returns(Arity),
-    /// The returner `-F [I, …] A` of a value type whose computation may
-    /// request the interfaces of its row, `-F [I, … | t] A` when the row is
-    /// open through the row `t`; an entry over a theory writes the sorts it
-    /// fixes, `-F [T with sort C = A …] B`.
+    /// The returner `-F [I, …] A` of a value type, or `-F [I, …] (A, B)` of
+    /// a group of them none of which reads the results before it, whose
+    /// computation may request the interfaces of its row, `-F [I, … | t] A`
+    /// when the row is open through the row `t`; an entry over a theory
+    /// writes the sorts it fixes, `-F [T with sort C = A …] B`.
     EffectfulReturner
     {
-        /// The value returned.
-        result: Node,
+        /// What it returns.
+        result: Returned<Node>,
         /// The row of interfaces.
         effects: &'source dyn Authority,
         /// The row it is open through: a value type that reads as its row.
