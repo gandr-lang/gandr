@@ -1946,7 +1946,7 @@ gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \
   --jq '[.[] | {body: (.body // ""), head: .head.ref}]' | jq -s 'add // []' > "$board/prs.json"
 # Origin's branches working a claimed issue with no claim marker, each with
 # its head commit's time (#3951): `next.jq` places such a claim in the lane
-# its newest branch names, before the issue's areas.
+# its newest branch names, and with no branch in no lane (#4504).
 lanes=$(yq -p toml -o json '.lane | keys' "$root/.config/issues/lanes.toml" | jq -c .)
 unmarked=$(jq -r -L "$claims" 'include "markers";
   .[] | select((.labels | index("status:claimed")) and (.body | claim_lane) == null) | .number' "$board/issues.json" | tr '\n' ' ')
@@ -2020,6 +2020,9 @@ while :; do
   mv "$board/next.json" "$board/reread.json"
 done
 awk '/^focus: /' <<< "$lines" >&2
+# A claim with no marker and no branch names no lane (#4504): no lane holds
+# it, and the lane working it writes its marker.
+awk '/^unattributed: / { print; print "claim:next: " $2 " names no lane; the lane working it writes `<!-- claim: lane=<lane> -->` in its body" }' <<< "$lines" >&2
 held=$(awk '/^held: /' <<< "$lines")
 if [[ -n $held ]]; then
   echo "$held" >&2
@@ -2031,7 +2034,7 @@ while read -r _ issue; do
   echo "blocked: $issue by $(jq -r --arg n "${issue#\#}" '.[$n] | map("#\(.)") | join(", ")' <<< "$live")" >&2
 done < <(awk '/^blocked: /' <<< "$lines")
 awk '/^(observation due|sections due|restate): /' <<< "$lines"
-pick=$(awk '!/^(focus|collector|blocked|observation due|sections due|restate): /' <<< "$lines")
+pick=$(awk '!/^(focus|unattributed|collector|blocked|observation due|sections due|restate): /' <<< "$lines")
 if [[ -z "$pick" ]]; then
   echo "no claim: $lane" >&2
   exit 1

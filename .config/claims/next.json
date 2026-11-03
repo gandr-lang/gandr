@@ -1778,7 +1778,7 @@
           "title": "surface: a claim in hand",
           "labels": ["kind:defect", "area:surface", "status:claimed"],
           "parent": null,
-          "body": null,
+          "body": "<!-- claim: lane=surface -->\n",
           "blocked": null
         },
         {
@@ -1786,7 +1786,7 @@
           "title": "surface: a claim with its pull request",
           "labels": ["kind:defect", "area:surface", "status:claimed"],
           "parent": null,
-          "body": null,
+          "body": "<!-- claim: lane=surface -->\n",
           "blocked": null
         },
         {
@@ -2284,7 +2284,7 @@
     "output": "held: #73 workflow: the triage lane's newer branch"
   },
   {
-    "name": "#3951: a claim with no marker and no branch working it is placed by its areas",
+    "name": "#4504: a claim with no marker and no branch working it names no lane: the lane over its area prints it unattributed and claims beside it",
     "input": {
       "areas": ["area:workflow", "area:ci"],
       "order": {},
@@ -2301,10 +2301,18 @@
           "parent": null,
           "body": "Text.\n",
           "blocked": null
+        },
+        {
+          "number": 75,
+          "title": "workflow: an open defect",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n",
+          "blocked": null
         }
       ]
     },
-    "output": "held: #74 workflow: a claim no branch works"
+    "output": "unattributed: #74 workflow: a claim no branch works\nobservation due: #75 — mise run debug:test <package> <test>\nsections due: #75 — `## Sources` is missing\nsections due: #75 — `## Readings` is missing\nsections due: #75 — `## Concerns` is missing\nsections due: #75 — `## Ledger` is missing\nsections due: #75 — `## Not in this slice` is missing\nsections due: #75 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n75\tdefect\tworkflow: an open defect"
   },
   {
     "name": "#4470: the references-editor lane holds the claim its marker names, though the claim is in the surface area",
