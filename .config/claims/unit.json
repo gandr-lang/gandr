@@ -182,5 +182,68 @@
       "labels": ["kind:feature", "area:surface", "shape:signed"]
     },
     "output": ""
+  },
+  {
+    "name": "#4708: a paper dated before the citation window's cutoff is refused, naming its year and the two ways to keep it",
+    "args": {
+      "labels": ["kind:feature", "area:workflow"],
+      "cutoff": 2019
+    },
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `Schwarzkopf-2013-omega_flexible_scalable_schedulers` | primary | the shared-state scheduler |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "output": "`## Sources` row `| `Schwarzkopf-2013-omega_flexible_scalable_schedulers` | primary | the shared-state scheduler |` cites `Schwarzkopf-2013-omega_flexible_scalable_schedulers` from 2013, before the citation window opens in 2019: read the newest work stating what the unit takes from it and cite that, name it beside this one in What it gives as `superseded by `<key from 2019 on>``, or open What it gives `exemplar: <why no newer work states what the unit builds>`"
+  },
+  {
+    "name": "#4708: an old paper whose row names a newer work superseding it is kept",
+    "args": {
+      "labels": ["kind:feature", "area:workflow"],
+      "cutoff": 2019
+    },
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `Schwarzkopf-2013-omega_flexible_scalable_schedulers` | secondary | the shared-state scheduler, superseded by `Newer-2022-scheduling_revisited` |\n| `Newer-2022-scheduling_revisited` | primary | the scheduler as the unit builds it |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "output": ""
+  },
+  {
+    "name": "#4708: an old paper whose row opens `exemplar:` and its reason is kept",
+    "args": {
+      "labels": ["kind:feature", "area:workflow"],
+      "cutoff": 2019
+    },
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `Girard-1987-linear_logic` | primary | exemplar: no newer work states the phase semantics the unit builds |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "output": ""
+  },
+  {
+    "name": "#4708: a superseding work itself dated before the cutoff, or carrying no year, keeps nothing",
+    "args": {
+      "labels": ["kind:feature", "area:workflow"],
+      "cutoff": 2019
+    },
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `Girard-1987-linear_logic` | primary | the proof nets, superseded by `Girard-1995-linear_logic_its_syntax` |\n| `Girard-1987-linear_logic` | secondary | the phase semantics, superseded by `doi:10.1000/undated` |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "output": "`## Sources` row `| `Girard-1987-linear_logic` | primary | the proof nets, superseded by `Girard-1995-linear_logic_its_syntax` |` cites `Girard-1987-linear_logic` from 1987, before the citation window opens in 2019: read the newest work stating what the unit takes from it and cite that, name it beside this one in What it gives as `superseded by `<key from 2019 on>``, or open What it gives `exemplar: <why no newer work states what the unit builds>`\n`## Sources` row `| `Girard-1987-linear_logic` | secondary | the phase semantics, superseded by `doi:10.1000/undated` |` cites `Girard-1987-linear_logic` from 1987, before the citation window opens in 2019: read the newest work stating what the unit takes from it and cite that, name it beside this one in What it gives as `superseded by `<key from 2019 on>``, or open What it gives `exemplar: <why no newer work states what the unit builds>`"
+  },
+  {
+    "name": "#4708: an arXiv identifier carries its year, new style and old style",
+    "args": {
+      "labels": ["kind:feature", "area:workflow"],
+      "cutoff": 2019
+    },
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `arXiv:1812.00002` | primary | the construction |\n| `arXiv:math/0601001` | secondary | the lemma |\n| `arXiv:1901.00001` | secondary | the newer statement |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "output": "`## Sources` row `| `arXiv:1812.00002` | primary | the construction |` cites `arXiv:1812.00002` from 2018, before the citation window opens in 2019: read the newest work stating what the unit takes from it and cite that, name it beside this one in What it gives as `superseded by `<key from 2019 on>``, or open What it gives `exemplar: <why no newer work states what the unit builds>`\n`## Sources` row `| `arXiv:math/0601001` | secondary | the lemma |` cites `arXiv:math/0601001` from 2006, before the citation window opens in 2019: read the newest work stating what the unit takes from it and cite that, name it beside this one in What it gives as `superseded by `<key from 2019 on>``, or open What it gives `exemplar: <why no newer work states what the unit builds>`"
+  },
+  {
+    "name": "#4708: a `not read` row, a vault page, a tree path, a DOI and a paper at the cutoff are not judged",
+    "args": {
+      "labels": ["kind:feature", "area:workflow"],
+      "cutoff": 2019
+    },
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `Girard-1987-linear_logic` | not read | the unit builds no phase semantics |\n| `units.md` § units-issue | primary | the sections |\n| `crates/core-checker/src/lib.rs` | primary | the checker |\n| `doi:10.1000/old` | secondary | the construction |\n| `Kept-2019-recent_work` | primary | the newest statement |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "output": ""
+  },
+  {
+    "name": "#4708: an issue the coordinator signed is not judged against the window, so no unit signed before the rule becomes unclaimable",
+    "args": {
+      "labels": ["kind:feature", "area:workflow", "shape:signed"],
+      "cutoff": 2019
+    },
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `Girard-1987-linear_logic` | primary | the proof nets |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "output": ""
   }
 ]

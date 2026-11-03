@@ -36,6 +36,17 @@
 # - `## The shape` and `## Try first`, when the body says it is new
 #   territory.
 #
+# A `## Sources` row citing a paper dated before the citation window's cutoff
+# (`.config/references/window.toml`, #4708) names the newer work that
+# supersedes it in What it gives, `superseded by `<key>``, its key dated at or
+# after the cutoff, or opens that cell `exemplar: <why no newer work states
+# what the unit builds>`, as a `[[site]]` entry of the window does. A paper's
+# date is its key's: a library key's year, `Author-YYYY-…`, or an arXiv
+# identifier's, as `window.sql` reads them; a key carrying none is not judged.
+# The cutoff is the named argument `cutoff` (`cutoff.jq`), and a reading given
+# none judges no date. A `not read` row, and an issue the coordinator signed,
+# is not judged, so no unit signed before the rule becomes unclaimable.
+#
 # A section's HTML comments are not content, so a hint left in a section
 # leaves it unanswered until it is written. The unit form
 # (`.github/ISSUE_TEMPLATE/unit.yml`, #3113) writes its fields as these
@@ -70,6 +81,33 @@ def surface($labels):
         end
       end
   end;
+
+# The year a source's key carries (#4708), or null: a library key's,
+# `Author-YYYY-…`, or an arXiv identifier's, new style `arXiv:YYMM.…` or old
+# style `arXiv:archive/YYMM…`, as `window.sql` reads them. A DOI, a vault page,
+# a path and an issue carry none.
+def paper_year:
+  if test("^arXiv:[0-9]{4}\\.") then 2000 + (.[6:8] | tonumber)
+  elif test("^arXiv:[^/]+/[0-9]{2}") then (capture("/(?<yy>[0-9]{2})").yy | tonumber) as $yy | (if $yy >= 90 then 1900 else 2000 end) + $yy
+  elif test("^(doi|arXiv):") then null
+  elif test("^[^-\\s/]+-[12][0-9]{3}-") then capture("^[^-]+-(?<year>[0-9]{4})-").year | tonumber
+  else null
+  end;
+
+def window($labels):
+  ($ARGS.named.cutoff // null) as $cutoff
+  | if $cutoff == null or ($labels | index("shape:signed")) != null then empty
+    else source_rows
+    | select(.role != "not read")
+    | . as $row
+    | ([.text | match("superseded by `([^`]+)`"; "g") | .captures[0].string | paper_year | select(. != null and . >= $cutoff)] | length > 0) as $superseded
+    | ($row.text | test("^exemplar:\\s*\\S")) as $exemplar
+    | select(($superseded or $exemplar) | not)
+    | .keys[]
+    | (paper_year // empty) as $year
+    | select($year < $cutoff)
+    | "`## Sources` row `\($row.line)` cites `\(.)` from \($year), before the citation window opens in \($cutoff): read the newest work stating what the unit takes from it and cite that, name it beside this one in What it gives as `superseded by `<key from \($cutoff) on>``, or open What it gives `exemplar: <why no newer work states what the unit builds>`"
+    end;
 
 def findings($labels):
   . as $body
@@ -125,4 +163,5 @@ def findings($labels):
     ($body | lines[] | select(test("^after:\\s"; "i"))
       | "the line `\(.)` states a dependency in prose: list each issue in `## After` as `- #n — <what it waits for>`, and `unit:check --fix` sets it on GitHub"),
     (if $body | gsub("(?s)<!--.*?-->"; "") | test("new territory"; "i") then need("The shape"), need("Try first") else empty end),
-    surface($labels);
+    surface($labels),
+    window($labels);

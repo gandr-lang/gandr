@@ -37,6 +37,7 @@ fi
 concerns=$(jq -R -s -c -f "$here/concerns.jq" "$root/ledger/concerns.sql")
 findings=$(jq -r '.body // ""' <<< "$issued" \
   | jq -R -s -r -L "$root/.config/claims" --argjson concerns "$concerns" --argjson labels "$(jq -c '[.labels[].name]' <<< "$issued")" \
+    --argjson cutoff "$(jq -R -s -f "$root/.config/claims/cutoff.jq" "$root/.config/references/window.toml")" \
     -f "$root/.config/claims/unit.jq" \
   | jq -R -s -c 'split("\n") | map(select(length > 0))')
 comments=$(gh api --paginate "repos/$repo/issues/$issue/comments" \
