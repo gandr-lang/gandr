@@ -236,3 +236,23 @@ if ! row=$(jq -n \
 fi
 printf '| example | wall |\n| --- | --: |\n%s\n' "$row"
 {% endraw %}'''
+
+# The parser's report (#4550): today's grammar read on each axis a syntax
+# candidate is measured against, one Markdown row per measure, from the
+# driver's `parser_report` example under the release profile, its molder
+# keeping the census. The table is printed and written to the file named,
+# `target/parser-report.md` by default. The report states its axes and what
+# each is read from.
+["parser:report"]
+description = "Read the parser on each axis a syntax candidate is measured against"
+usage = '''
+arg "[report]" help="the file the table is written to" default="target/parser-report.md"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+report={{ usage.report }}
+mkdir -p "$(dirname "$report")"
+.config/mise/scope cargo run --release --locked --quiet --package gandr-lang --features census --example parser_report > "$report"
+cat "$report"
+'''

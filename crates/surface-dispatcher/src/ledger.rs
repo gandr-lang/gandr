@@ -181,6 +181,7 @@ pub use self::features::ShownFeature;
 pub use self::features::Status;
 pub use self::recovery::RecoveryFinding;
 pub use self::recovery::RecoveryReport;
+pub use self::recovery::RecoveryTally;
 
 /// The file the reading form is written to.
 const MARKDOWN: &str = "syntax.md";

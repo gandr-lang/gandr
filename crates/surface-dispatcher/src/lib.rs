@@ -321,6 +321,7 @@ pub use crate::ledger::LedgerTask;
 pub use crate::ledger::Malformed;
 pub use crate::ledger::RecoveryFinding;
 pub use crate::ledger::RecoveryReport;
+pub use crate::ledger::RecoveryTally;
 pub use crate::ledger::ShownFeature;
 pub use crate::ledger::Status;
 pub use crate::ledger::SyntaxLedger;

@@ -347,6 +347,38 @@ pub struct RecoveryReport
     findings: Vec<RecoveryFinding>,
 }
 
+/// What became of a sweep's mutants, each counted once.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `where_made`, `accepted`, `formed`, `early` and `elsewhere`
+///   partition `swept`.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary;
+///   [`RecoveryReport::tally`] answers it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sweep whose deleted opener leaves a stray closer counts
+///   that mutant closed early and every mutant in one class; a mutant counted
+///   twice or in no class changes the sum.
+/// - witness: `ledger::recovery::tests::a_closer_left_with_nothing_to_close_is_closed_early_3063`
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RecoveryTally
+{
+    /// The mutants checked.
+    pub swept: usize,
+    /// The mutants whose first error marks their mutation.
+    pub where_made: usize,
+    /// The mutants the checker accepted.
+    pub accepted: usize,
+    /// The mutants that left a well-formed source the check refused.
+    pub formed: usize,
+    /// The mutants that closed a form early.
+    pub early: usize,
+    /// The mutants whose first error marks other bytes than their mutation.
+    pub elsewhere: usize,
+}
+
 impl RecoveryReport
 {
     /// The mutants whose first error does not mark their mutation.
@@ -358,6 +390,30 @@ impl RecoveryReport
     pub fn findings(&self) -> &[RecoveryFinding]
     {
         &self.findings
+    }
+
+    /// What became of the sweep's mutants.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn tally(&self) -> RecoveryTally
+    {
+        let elsewhere = self.findings.len();
+        RecoveryTally {
+            swept: self.swept,
+            where_made: self
+                .swept
+                .saturating_sub(self.accepted)
+                .saturating_sub(self.formed)
+                .saturating_sub(self.early)
+                .saturating_sub(elsewhere),
+            accepted: self.accepted,
+            formed: self.formed,
+            early: self.early,
+            elsewhere,
+        }
     }
 }
 
@@ -408,19 +464,16 @@ impl core::fmt::Display for RecoveryReport
             }
             writeln!(f)?;
         }
-        let found = self.findings.len();
+        let tally = self.tally();
         write!(
             f,
-            "{} mutants swept: {} marked where they were made, {} accepted, {} well formed, {} closed early, {found} marked elsewhere",
-            self.swept,
-            self.swept
-                .saturating_sub(self.accepted)
-                .saturating_sub(self.formed)
-                .saturating_sub(self.early)
-                .saturating_sub(found),
-            self.accepted,
-            self.formed,
-            self.early,
+            "{} mutants swept: {} marked where they were made, {} accepted, {} well formed, {} closed early, {} marked elsewhere",
+            tally.swept,
+            tally.where_made,
+            tally.accepted,
+            tally.formed,
+            tally.early,
+            tally.elsewhere,
         )
     }
 }
@@ -1008,6 +1061,17 @@ mod tests
         assert_eq!(
             report.formed, 0_usize,
             "a stray closer is no well-formed source: {report}"
+        );
+        let tally = report.tally();
+        assert_eq!(
+            (tally.early, tally.formed, tally.elsewhere),
+            (1_usize, 0_usize, report.findings.len()),
+            "the tally counts the stray closed early: {report}"
+        );
+        assert_eq!(
+            tally.where_made + tally.accepted + tally.formed + tally.early + tally.elsewhere,
+            tally.swept,
+            "every mutant counts in one class: {report}"
         );
     }
 

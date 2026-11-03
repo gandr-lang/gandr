@@ -1517,6 +1517,220 @@ enum Procedure
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct DisagreementCount(pub usize);
 
+/// A count of a molder's decisions, of the candidates they read, or of the
+/// windows and window tokens they molded.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub struct DecisionCount(pub usize);
+
+/// How a molder settled the decisions of the streams it molded.
+///
+/// Each decision counts at the stage that left it one mold, beside what the
+/// decisions read on the way. A window's own tokens are molded greedily and
+/// are no decisions of the stream's.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the stages partition the decisions: each decision counts in
+///   exactly one of `sole`, `least_key`, `opener`, `next_token` and `window`.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; `Molder::census`
+///   answers it under the `census` feature.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source whose tokens each admit one mold, one whose tie
+///   the least key breaks, and one whose shared prefix needs a window each move
+///   their own stage; a decision counted twice or in no stage changes the
+///   totals.
+/// - witness: `mold::tests::the_census_counts_each_decision_at_the_stage_that_settles_it`
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DecisionCensus
+{
+    /// Decisions where one candidate was admissible.
+    pub sole: DecisionCount,
+    /// Decisions the least local key settled.
+    pub least_key: DecisionCount,
+    /// Decisions where refuting or folding the tied openers left one.
+    pub opener: DecisionCount,
+    /// Decisions the next token settled.
+    pub next_token: DecisionCount,
+    /// Decisions a lookahead window settled.
+    pub window: DecisionCount,
+    /// The candidate molds the decisions read.
+    pub candidates: DecisionCount,
+    /// The windows the decisions molded.
+    pub windows: DecisionCount,
+    /// The tokens those windows molded.
+    pub window_tokens: DecisionCount,
+}
+
+impl DecisionCensus
+{
+    /// Every decision the census holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn decisions(&self) -> DecisionCount
+    {
+        DecisionCount(
+            self.sole
+                .0
+                .saturating_add(self.least_key.0)
+                .saturating_add(self.opener.0)
+                .saturating_add(self.next_token.0)
+                .saturating_add(self.window.0),
+        )
+    }
+}
+
+/// The stage that left a decision one mold.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Settled
+{
+    /// One candidate was admissible.
+    #[default]
+    Sole,
+    /// The least local key.
+    LeastKey,
+    /// Refuting or folding the tied openers.
+    Opener,
+    /// The next token.
+    NextToken,
+    /// A lookahead window.
+    Window,
+}
+
+/// What one decision did: the stage that settled it, and the windows it
+/// molded and their tokens.
+#[cfg(feature = "census")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Decided
+{
+    /// The stage that settled it.
+    settled: Settled,
+    /// The windows it molded.
+    windows: usize,
+    /// The tokens those windows molded.
+    window_tokens: usize,
+}
+
+/// The census a molder keeps: the decision being taken and the counts of
+/// those taken.
+///
+/// It holds them under the `census` feature alone. Without it the census is
+/// empty, and each of its steps does nothing.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Census
+{
+    /// What the decision being taken did so far.
+    #[cfg(feature = "census")]
+    decided: Decided,
+    /// How the decisions taken were settled.
+    #[cfg(feature = "census")]
+    counts: DecisionCensus,
+}
+
+#[cfg_attr(
+    not(feature = "census"),
+    expect(
+        clippy::unused_self,
+        clippy::needless_pass_by_ref_mut,
+        unused_variables,
+        reason = "without its feature the census keeps nothing"
+    )
+)]
+impl Census
+{
+    /// Open a decision: nothing settled it yet, and it molded no window.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn begin(&mut self)
+    {
+        #[cfg(feature = "census")]
+        {
+            self.decided = Decided {
+                settled: Settled::Sole,
+                windows: 0,
+                window_tokens: 0,
+            };
+        }
+    }
+
+    /// Mark `settled` as the stage the open decision has reached.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn reach(
+        &mut self,
+        settled: Settled,
+    )
+    {
+        #[cfg(feature = "census")]
+        {
+            self.decided.settled = settled;
+        }
+    }
+
+    /// Count one window the open decision molds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn window(&mut self)
+    {
+        #[cfg(feature = "census")]
+        {
+            self.decided.windows = self.decided.windows.saturating_add(1);
+        }
+    }
+
+    /// Count one token a window of the open decision molds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn window_token(&mut self)
+    {
+        #[cfg(feature = "census")]
+        {
+            self.decided.window_tokens = self.decided.window_tokens.saturating_add(1);
+        }
+    }
+
+    /// Count the open decision, taken over `candidates` molds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn tally(
+        &mut self,
+        candidates: DecisionCount,
+    )
+    {
+        #[cfg(feature = "census")]
+        {
+            let decided = self.decided;
+            let counts = &mut self.counts;
+            let stage = match decided.settled {
+                Settled::Sole => &mut counts.sole,
+                Settled::LeastKey => &mut counts.least_key,
+                Settled::Opener => &mut counts.opener,
+                Settled::NextToken => &mut counts.next_token,
+                Settled::Window => &mut counts.window,
+            };
+            stage.0 = stage.0.saturating_add(1);
+            counts.candidates.0 = counts.candidates.0.saturating_add(candidates.0);
+            counts.windows.0 = counts.windows.0.saturating_add(decided.windows);
+            counts.window_tokens.0 = counts.window_tokens.0.saturating_add(decided.window_tokens);
+        }
+    }
+}
+
 /// What a window class's first window showed of its members' windows.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum WindowRun
@@ -1617,6 +1831,8 @@ pub struct Molder<'pbg>
     exposed: bool,
     /// How many decisions the two procedures settled differently.
     disagreements: DisagreementCount,
+    /// How the decisions of the streams this molder molded were settled.
+    census: Census,
 }
 
 impl<'pbg> Molder<'pbg>
@@ -1690,6 +1906,7 @@ impl<'pbg> Molder<'pbg>
             window_floor: None,
             exposed: false,
             disagreements: DisagreementCount(0),
+            census: Census::default(),
         }
     }
 
@@ -1703,6 +1920,20 @@ impl<'pbg> Molder<'pbg>
     pub const fn disagreements(&self) -> DisagreementCount
     {
         self.disagreements
+    }
+
+    /// How this molder settled each decision of the streams it molded, the
+    /// verdict it pushed counted once in either mode. The molder keeps the
+    /// census under the `census` feature alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "census")]
+    #[inline]
+    #[must_use]
+    pub const fn census(&self) -> DecisionCensus
+    {
+        self.census.counts
     }
 
     /// The grammar this molder molds against.
@@ -3548,7 +3779,12 @@ impl<'pbg> Molder<'pbg>
                 return self.choose_stream_both(state, tokens, index, source);
             },
         };
-        self.choose_stream_by(state, tokens, index, source, procedure)
+        let candidates = DecisionCount(self.candidates.len());
+        let chosen = self.choose_stream_by(state, tokens, index, source, procedure);
+        if chosen.is_some() {
+            self.census.tally(candidates);
+        }
+        chosen
     }
 
     /// Choose as [`choose_stream`](Self::choose_stream) does by both
@@ -3595,6 +3831,9 @@ impl<'pbg> Molder<'pbg>
         self.admit(state, &frontier, Procedure::Tables, binder);
         let admitted_alike = self.eligible == admitted;
         let oracle = self.choose_stream_by(state, tokens, index, source, Procedure::DryRuns);
+        if oracle.is_some() {
+            self.census.tally(DecisionCount(menu.len()));
+        }
         self.candidates.clone_from(&menu);
         let table = self.choose_stream_by(state, tokens, index, source, Procedure::Tables);
         self.candidates = menu;
@@ -3644,6 +3883,7 @@ impl<'pbg> Molder<'pbg>
         let token = *tokens.get(usize::from(index))?;
         let slice = token.text(source);
         let text = TokenText::from(AsRef::<str>::as_ref(&slice));
+        self.census.begin();
         // `self.candidates` is already gathered by the caller for this token.
         // Fast path: a lone admissible candidate needs no dry-run.
         // The admissibility frontier is computed once and reused per candidate.
@@ -3660,6 +3900,7 @@ impl<'pbg> Molder<'pbg>
         // window scores its own tokens into `self.tied`, so the openers move
         // to their own buffer.
         self.least_candidates(state, text, &frontier, procedure);
+        self.census.reach(Settled::LeastKey);
         if self.tied.len() <= 1 {
             return self.tied.first().copied();
         }
@@ -3672,6 +3913,7 @@ impl<'pbg> Molder<'pbg>
         // Interchangeable openers mold every later token alike, so their
         // windows tie exactly and the least would win: only it remains.
         self.drop_interchangeable();
+        self.census.reach(Settled::Opener);
         if let [sole] = *self.openers.as_slice() {
             return Some(sole);
         }
@@ -3684,8 +3926,10 @@ impl<'pbg> Molder<'pbg>
                 .continued_opener(labels.as_slice())
                 .or_else(|| self.complete_alike(labels.as_slice()))
         {
+            self.census.reach(Settled::NextToken);
             return Some(mold);
         }
+        self.census.reach(Settled::Window);
         // Through the tables, each opener's window class: its push key over
         // the chain `least_candidates` read from this state, and its window
         // signature over the window's tokens and the one after them, which
@@ -3776,6 +4020,7 @@ impl<'pbg> Molder<'pbg>
             let bound = best.map_or(WindowBound::Unbounded, |(delta, _mold)| {
                 WindowBound::Below(delta)
             });
+            self.census.window();
             let end = self.mold_window(state, tokens, start, source, &mark, bound);
             self.window_floor = None;
             if end == WindowEnd::Molded {
@@ -3879,6 +4124,7 @@ impl<'pbg> Molder<'pbg>
                 let choice = self.choose(state, text, ahead);
                 Self::push_choice(state, choice, text);
                 molded = molded.saturating_add(1);
+                self.census.window_token();
             }
             index = index.saturating_add(1);
         }
@@ -4297,7 +4543,11 @@ mod tests
 
     use super::Ahead;
     use super::CandidateLabel;
+    #[cfg(feature = "census")]
+    use super::DecisionCount;
     use super::Follow;
+    #[cfg(feature = "census")]
+    use super::MoldVerdicts;
     use super::Molder;
     use super::SourceText;
     use super::TokenIndex;
@@ -4873,6 +5123,55 @@ mod tests
         }
         Ok(())
     }
+    /// The census counts each significant token once, at the stage that left
+    /// it one mold, and counts it once in a differential molding too.
+    #[cfg(feature = "census")]
+    #[test]
+    fn the_census_counts_each_decision_at_the_stage_that_settles_it() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built()?;
+        let census = |src: &str, verdicts: MoldVerdicts| {
+            let mut molder = Molder::with_verdicts(&pbg, verdicts);
+            let mut state = MeldState::new(&pbg);
+            let tokens = crate::label(SourceFragment::from(src));
+            molder.mold_stream(&mut state, &tokens, SourceText::from(src));
+            let significant = tokens
+                .iter()
+                .filter(|token| token.lexeme != Lexeme::Space)
+                .count();
+            (molder.census(), significant)
+        };
+        let (plain, significant) = census("def answer = 42 ;", MoldVerdicts::Tables);
+        assert_eq!(
+            plain.decisions(),
+            DecisionCount(significant),
+            "every token is one decision"
+        );
+        assert_eq!(
+            (plain.window, plain.windows, plain.window_tokens),
+            (DecisionCount(0), DecisionCount(0), DecisionCount(0)),
+            "no token of a plain definition needs a window"
+        );
+        let (indexed, significant) = census("def h = x[1] ;", MoldVerdicts::Tables);
+        assert_eq!(
+            indexed.decisions(),
+            DecisionCount(significant),
+            "every token is one decision"
+        );
+        assert!(
+            indexed.window > DecisionCount(0) && indexed.windows >= indexed.window,
+            "an index's bracket ties with an instantiation's and needs a window: {indexed:?}"
+        );
+        for src in ["def answer = 42 ;", "def h = x[1] ;"] {
+            assert_eq!(
+                census(src, MoldVerdicts::Differential).0,
+                census(src, MoldVerdicts::Tables).0,
+                "a differential molding counts its pushed verdict once: {src}"
+            );
+        }
+        Ok(())
+    }
+
     /// Build the shared built-in grammar for the molder tests.
     ///
     /// # Specification

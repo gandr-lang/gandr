@@ -2174,6 +2174,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::ShownFeature'
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::features::Status','enum','Where a feature stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryFinding','struct','A mutant whose first error does not mark its mutation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryReport','struct','What a sweep of the syntax exemplars found.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','ledger::recovery::RecoveryTally','struct','What became of a sweep''s mutants, each counted once.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Manifold','struct','The binding of a program''s worlds onto sites, as its file''s `Manifold` model and `placements` state it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Secreted','enum','Where a secret was read, for a refusal naming it without its value.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Secrets','enum','Where a host reads its site''s secret from: a `Secrets` model''s file, or the environment.',NULL,'fits','sound',NULL);
@@ -3040,6 +3041,8 @@ INSERT INTO purpose VALUES('surface-parser','meld::UnitBase','enum','Where a For
 INSERT INTO purpose VALUES('surface-parser','meld::UnitSeam','enum','How a FormUnit met the state before it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::declaration_head','function','Return whether `mold` can open an item-position declaration at a fresh slot of `pbg`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','mold::CandidateLabel','struct','Candidate grammar label spelling considered for one token.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','mold::DecisionCensus','struct','How a molder settled the decisions of the streams it molded.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','mold::DecisionCount','struct','A count of a molder''s decisions, of the candidates they read, or of the windows and window tokens they molded.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','mold::DisagreementCount','struct','How many decisions a differential molder saw its two procedures settle differently: the admitted menu or the chosen mold.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','mold::MoldVerdicts','enum','How a Molder reaches its verdicts.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','mold::Molder','struct','The obligation-minimizing mold selector over a checked PBG.',NULL,'fits','sound',NULL);
