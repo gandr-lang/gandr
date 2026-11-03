@@ -4208,6 +4208,8 @@ sketch/providers/nix.gandr:parenthesized_type:425026668db5ff44 uncommented
 sketch/providers/nix.gandr:splice_expression:9b266c2047d3fc7d uncommented
 sketch/providers/provider.gandr:module_declaration:519f5859273d4a39 uncommented
 sketch/providers/provider.gandr:service:e73d88d23650be59 uncommented
+sketch/render-artifacts/codecs.gandr:versionLine:952e427d48c0f177 uncommented
+sketch/render-artifacts/fleet.gandr:Aws:e274a998d2c3a15f uncommented
 sketch/specifications/queue.gandr:drain:d568a5a779ec12f8 uncommented
 sketch/specifications/queue.gandr:push:b5eef6bbe1ed3cfe uncommented
 sketch/specifications/spec-values.gandr:listLookup:8e6853a1855f6212 uncommented

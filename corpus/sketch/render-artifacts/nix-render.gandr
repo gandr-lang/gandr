@@ -1,0 +1,70 @@
+/// A derivation computed in gandr and rendered as the JSON Nix accepts.
+///
+/// Nix builds what a derivation describes. A gandr program that computes the
+/// derivation and renders it lets Nix build what gandr checked.
+///
+/// `nix derivation add` reads a derivation as JSON. The render encodes a
+/// `Derivation` by the generic codec, and `@[render(…)]` writes the file
+/// beside its source. gandr's own builder is a later ruling.
+///
+/// - see: #4719 — the render sketch, its rulings in the issue body
+/// - see: `../../model/package/nix-derivation.gandr` — the same record, read from Nix
+
+// A module reflected as a value.
+import std.elab (Elab, Module);
+// JSON's document type and the generic codec.
+import std.codec.json (Json, jsonCodec);
+
+/// An output, an input derivation and an environment variable, each a pair.
+pub type Pair = String * String;
+
+/// A derivation, as format version 4 of `nix derivation show` prints one.
+@[derive(Json)]
+pub type Derivation = #{
+  name : String,
+  system : String,
+  builder : String,
+  args : List(String),
+  env : List(Pair),
+  inputDrvs : List(String * List(String)),
+  inputSrcs : List(String),
+  outputs : List(Pair),
+  version : Integer
+};
+
+/// What a module rendered for Nix states: the one derivation it builds.
+pub theory Built where {
+  /// The derivation Nix builds.
+  oper derivation : Derivation;
+}
+
+/// The derivation of a static site, which copies its pages into the output.
+pub def siteDerivation(pages : String, bash : String, coreutils : String) -> Derivation {
+  #{
+    name = "docs-site-1.0",
+    system = "x86_64-linux",
+    builder = bash ++ "/bin/bash",
+    args = ["-c", "mkdir -p $out && cp -r $pages/. $out"],
+    env = [("pages", pages), ("PATH", coreutils ++ "/bin"), ("out", "")],
+    inputDrvs = [],
+    inputSrcs = [pages],
+    outputs = [("out", "")],
+    version = 4
+  }
+}
+
+/// The render: the module's derivation as Nix's JSON.
+pub def derivationJson(m : Module(Built)) -> [Elab] Json {
+  Derivation.json.encode(m.derivation)
+}
+
+/// The site, rendered into `docs-site.drv.json` for `nix derivation add`.
+@[render(derivationJson)]
+pub module DocsSite : Model(Built) where {
+  /// The site's one derivation.
+  def derivation = siteDerivation(
+    "/nix/store/0c3m5hnpf1n4w0x5y5l3q6r1ijvsmq3c-pages",
+    "/nix/store/rlq03x4cwf8zn73hxaxnx0zn5q9kifls-bash-5.3p3",
+    "/nix/store/87fck6hm17chxjrxr7p1i0bgb6dz2bzm-coreutils-9.7"
+  );
+}

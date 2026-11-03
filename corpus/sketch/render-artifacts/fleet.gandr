@@ -1,0 +1,65 @@
+/// One checked program provides a cloud API's types, states a fleet, plans
+/// and renders.
+///
+/// A deployment tool splits a schema, a host language, a planner and a state
+/// file, and each checks its own part. One checker holding all four rules
+/// out a resource the API lacks and a change applied before what it needs.
+///
+/// A provider computes the resource types from the service schemas and reads
+/// the live state into them, both locked. `plan` computes the changes from
+/// the live state to the fleet in dependency order, and the codec renders
+/// them.
+///
+/// - see: #4719 — the render sketch, its rulings in the issue body
+/// - see: #4717 — the providers sketch, whose locked reads give the types
+/// - see: #3374 — the manifold, whose sites a later fixture types this way
+
+// The AWS provider.
+import std.provide.aws;
+// JSON's document type.
+import std.codec.json (Json);
+
+/// The EC2 and S3 resource types, computed from their API schemas and locked.
+@[provide(aws.services(["ec2", "s3"], region = "eu-central-1"))]
+module Aws;
+
+/// The fleet a deployment states: its buckets and its instances.
+pub type Fleet = #{ buckets : List(Aws.Bucket), instances : List(Aws.Instance) };
+
+/// A change the plan applies to one resource.
+@[derive(Json)]
+pub data Change : Type where {
+  /// A resource the fleet states and the live state lacks.
+  | Create : (r : Aws.Resource) --> Change
+  /// A resource whose live fields differ from the fleet's.
+  | Update : (before : Aws.Resource, after : Aws.Resource) --> Change
+  /// A resource the live state holds and the fleet drops.
+  | Delete : (r : Aws.Resource) --> Change
+}
+
+/// Two web instances in two zones, reading one bucket.
+pub def offers : Fleet = #{
+  buckets = [#{ name = "offers-assets", versioning = true }],
+  instances = [
+    #{ kind = Aws.InstanceType.t4gSmall, zone = Aws.Zone.euCentral1a, reads = ["offers-assets"] },
+    #{ kind = Aws.InstanceType.t4gSmall, zone = Aws.Zone.euCentral1b, reads = ["offers-assets"] }
+  ]
+};
+
+/// What runs now, as the provider reads it into the same types.
+pub def live : Aws.State = ~aws.state(region = "eu-central-1");
+
+/// The changes from the live state to the fleet, each after what it reads.
+pub def plan(now : Aws.State, fleet : Fleet) -> List(Change) {
+  topoSort(diff(now.resources, resources(fleet)), fun (c) { c.reads })
+}
+
+/// The plan as the API's change set.
+pub def changeSet(now : Aws.State, fleet : Fleet) -> Json {
+  List(Change).json.encode(plan(now, fleet))
+}
+
+/// Reading back what the plan deployed gives the fleet again.
+pub def deploysAsStated(now : Aws.State, fleet : Fleet) -> resources(apply(now, plan(now, fleet))) == resources(fleet) {
+  applyPlan(now, fleet)
+}
