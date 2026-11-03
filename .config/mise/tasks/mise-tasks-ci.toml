@@ -3966,10 +3966,12 @@ echo $$ > "$await_lock"
 trap 'rm -f "$await_lock"' EXIT
 # One poll's reading, as `awaited` reads it: an issue's state and labels, or
 # a pull request's state, merge state, the age of its head commit and
-# whether it still lacks a trunk change the branch builds on.
+# whether it still lacks a trunk change the branch builds on. The poll calls
+# it as a condition, where `set -e` does not hold, so each step that can fail
+# fails the reading itself (#4803).
 reading() {
-  local issue pull head lacks=false
-  issue=$(gh api "repos/$repo/issues/$number")
+  local issue pull age head lacked lacks=false
+  issue=$(gh api "repos/$repo/issues/$number") || return 1
   if [[ $(jq -r 'has("pull_request")' <<< "$issue") == false ]]; then
     jq -c '{kind: "issue", state: (.state | ascii_upcase), labels: [.labels[].name]}' <<< "$issue"
     return
@@ -3977,12 +3979,14 @@ reading() {
   # REST, not GraphQL: the poll runs for every armed wait, and the GraphQL
   # budget is the one the seats' gates and watches share (#4268).
   pull=$(gh api "repos/$repo/pulls/$number" \
-    --jq '{kind: "pull", state: (if .merged then "MERGED" else (.state | ascii_upcase) end), merge: (.mergeable_state | ascii_upcase), head: .head.ref, sha: .head.sha}')
-  pull=$(jq -c --argjson age "$(gh api "repos/$repo/commits/$(jq -r .sha <<< "$pull")" --jq '(now - (.commit.committer.date | fromdateiso8601) | floor)')" '. + {age: $age} | del(.sha)' <<< "$pull")
+    --jq '{kind: "pull", state: (if .merged then "MERGED" else (.state | ascii_upcase) end), merge: (.mergeable_state | ascii_upcase), head: .head.ref, sha: .head.sha}') || return 1
+  age=$(gh api "repos/$repo/commits/$(jq -r .sha <<< "$pull")" --jq '(now - (.commit.committer.date | fromdateiso8601) | floor)') || return 1
+  pull=$(jq -c --argjson age "$age" '. + {age: $age} | del(.sha)' <<< "$pull") || return 1
   if [[ $(jq -r .state <<< "$pull") == OPEN ]]; then
     head=$(jq -r .head <<< "$pull")
-    git fetch --quiet origin "$head" "$trunk"
-    if [[ -n $(trunk_lacked "$head") ]]; then lacks=true; fi
+    git fetch --quiet origin "$head" "$trunk" || return 1
+    lacked=$(trunk_lacked "$head") || return 1
+    if [[ -n $lacked ]]; then lacks=true; fi
   fi
   jq -c --argjson lacks "$lacks" '. + {lacks: $lacks}' <<< "$pull"
 }

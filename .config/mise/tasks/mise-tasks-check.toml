@@ -1460,8 +1460,12 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # server stack above another queued on its own takes no link and waits for
 # it, never asking the stack merge, while open members it links are merged
 # up to the top (#4843).
+# `.config/pr-stack/await.bash` runs `pr:await` once per case in
+# `.config/pr-stack/await.json` over a stubbed `gh`: a read that fails is a
+# failed read, and the wait runs on to its deadline, while a read that
+# succeeds ends it on its event (#4803).
 ["check:pr-stack"]
-description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a red member is cut out of its stack, a heal reports its restack, a change is measured from a fetched trunk, a top behind the trunk arms pr:await, is stacked past or is refused, the commits a rebase would replay empty are read, and a member above a queued one is merged only once linked"
+description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a red member is cut out of its stack, a heal reports its restack, a change is measured from a fetched trunk, a top behind the trunk arms pr:await, is stacked past or is refused, the commits a rebase would replay empty are read, a member above a queued one is merged only once linked, and pr:await outlasts a failed read"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1481,8 +1485,9 @@ fi
 .config/pr-stack/behind-top.bash || failed=1
 .config/pr-stack/replays.bash || failed=1
 .config/pr-stack/queue.bash || failed=1
+.config/pr-stack/await.bash || failed=1
 (( failed == 0 )) || exit 1
-echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a red member is cut out of its stack; a heal reports its restack; a change is measured from a fetched trunk; a top behind the trunk arms pr:await, is stacked past or is refused; a rebase's empty replays are read; a member above a queued one merges only once linked"
+echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a red member is cut out of its stack; a heal reports its restack; a change is measured from a fetched trunk; a top behind the trunk arms pr:await, is stacked past or is refused; a rebase's empty replays are read; a member above a queued one merges only once linked; pr:await outlasts a failed read"
 '''
 
 # The host lock the gate slots, the mutation run and `ci:act` take (#3105):
