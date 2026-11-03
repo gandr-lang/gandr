@@ -15,8 +15,8 @@
 // - see: `two-processes.gandr` — the program it hosts
 // - see: `crates/surface-driver/tests/net.rs` — the two processes
 
-// The deployment theories, from `std.manifold` by its path.
-import "../../../library/std/src/manifold.gandr";
+// The site theory.
+import std.manifold (Site);
 
 /// The far site, on a loopback socket.
 pub module Site : Model(Site) where {

@@ -1,10 +1,7 @@
 /// `std-console`: `print`, `eprint` and `read_line` write standard output and standard error and read standard input through the console capability `main` opens from its authority.
 
-// `Authority`, `console`.
-import "../../../library/std/src/authority.gandr";
-
-// `print`, `eprint`, `read_line`.
-import "../../../library/std/src/console.gandr";
+import std.authority (Authority, console);
+import std.console (print, eprint, read_line);
 
 /// A line read from standard input, written back to standard output, and a
 /// note on standard error.

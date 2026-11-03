@@ -5,8 +5,8 @@
 import text.greet (greeting);
 // The workspace above the package, whose model states its version.
 import "../../workspace.gandr";
-// The manifest theories, from `std.build` by its path (#533 p3).
-import "../../../../../library/std/src/build.gandr";
+// The manifest theories.
+import std.build (Gandr);
 
 /// The package: its name, its version and the rest of what `gandr.toml`
 /// records.

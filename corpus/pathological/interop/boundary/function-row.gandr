@@ -20,8 +20,8 @@ import "../../../model/data/data-base.gandr";
 // `Heap`, `vOpt`, `vInt`.
 import "../../../model/specification/niche-realizability.gandr";
 
-// `Code`, `niched`.
-import "../../../../library/std/src/boundary.gandr";
+// The codes and the niche test.
+import std.boundary (Code, niched);
 
 // `optRef`.
 import "../../../model/interop/boundary/function-row.gandr";

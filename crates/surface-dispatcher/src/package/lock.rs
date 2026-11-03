@@ -98,6 +98,13 @@ const WRITTEN: &str = "# Written by `gandr check` from the package's `dependenci
 /// The line that opens the lock's table.
 const TABLE: &str = "[dependencies]";
 
+/// The alias every source imports the standard library by, locked or not.
+pub const STANDARD: &str = "std";
+
+/// The standard library's package root in the tree this build was built
+/// from.
+const STANDARD_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../library/std");
+
 /// The name a source imports a dependency by.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1169,8 +1176,44 @@ pub fn through(
     else {
         return None;
     };
-    Some(rest.map_or_else(
+    Some(within(&dependency, rest))
+}
+
+/// The file an import through [`STANDARD`] names when no lock records it, the
+/// path below it `rest`: the standard library's package source for `std`
+/// alone, and the file under its sources otherwise; none when the tree this
+/// build was built from holds no standard library.
+///
+/// **Choice.** The standard library is `library/std` of the tree the driver
+/// was built from, the one every toolchain links today. **Reversal.** A
+/// toolchain that ships its standard library beside its `gandr` names it
+/// there.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn standard(rest: Option<&Path>) -> Option<PathBuf>
+{
+    let Maybe::Present(library) = Package::discover(Path::new(STANDARD_ROOT))
+    else {
+        return None;
+    };
+    Some(within(&library, rest))
+}
+
+/// The file `rest` names in `dependency`: its package source for none, and
+/// the file under its sources otherwise.
+///
+/// # Specification
+/// trivial.
+fn within(
+    dependency: &Package,
+    rest: Option<&Path>,
+) -> PathBuf
+{
+    rest.map_or_else(
         || dependency.source().to_path_buf(),
         |rest| dependency.sources().join(rest),
-    ))
+    )
 }

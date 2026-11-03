@@ -14,8 +14,7 @@ import "../../model/data/data-base.gandr";
 // `Heap`, the realisers, the equivalence and `deref_or`'s triple.
 import "../../model/specification/niche-realizability.gandr";
 
-// `Row`, `admit` and the printed layouts.
-import "../../../library/std/src/boundary.gandr";
+import std.boundary (Printed, NoParam, Param, Declared, Admission, admit);
 
 // `fRow`.
 import "../../model/interop/boundary/function-row.gandr";

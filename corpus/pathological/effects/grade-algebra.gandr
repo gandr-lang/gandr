@@ -13,8 +13,8 @@
 // - see: #2378 — a closed native reads back as an opaque constant
 // - see: #3287 — grade algebras as models of one theory
 
-// `Grade`, `Use`, `Usage` and `Count`.
-import "../../../library/std/src/grade.gandr";
+// The grade theory and its two models.
+import std.grade (Grade, Once, Many, Usage, Count);
 
 /// Many is not under once: usage keeps them apart.
 @[ refuses("EndpointMismatch") ]

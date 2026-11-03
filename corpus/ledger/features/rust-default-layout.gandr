@@ -8,8 +8,9 @@
 /// - see: corpus/model/layouts/rust-default.gandr
 /// - see: library/std/src/layout.gandr
 
-// `Field`, `Done`, `Variant`, `NoVariant`, the scalars, `structLayout` and `enumLayout`.
-import "../../../library/std/src/layout.gandr";
+import std.layout (
+  U16, U32, Flag, Done, Field, NoVariant, Variant, Layout, EnumLayout, structLayout, enumLayout
+);
 
 /// `struct Pair { flag: bool, count: u32 }` puts `count` first: rustc prints `count` at 0, `flag` at 4, in 8 bytes.
 @[ runs("Layout(8, 4, At(\"count\", 0, At(\"flag\", 4, End)))") ]

@@ -11,8 +11,8 @@
 // - see: `model/strings/joining.gandr` — the functions, run
 // - see: #525 — admits a law over a definition
 
-// `empty`, `concat`, `isEmpty`.
-import "../../../library/std/src/string.gandr";
+// Joining and its unit.
+import std.string (empty, concat);
 
 /// The empty string's unit law over the definition `concat` is refused.
 @[ refuses("IllFormedDescription") ]

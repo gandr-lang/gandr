@@ -14,11 +14,10 @@
 // - see: `../../../library/std/src/console.gandr` — `print`
 // - see: #2970 — `std.authority` and `std.console`
 
-// `Authority`, `console`.
-import "../../../library/std/src/authority.gandr";
-
-// `print`.
-import "../../../library/std/src/console.gandr";
+// The authority `main` is handed, and the console it opens.
+import std.authority (Authority, console);
+// Standard output, through the console.
+import std.console (print);
 
 /// The entry: it opens the console from its authority and prints its greeting.
 def main(authority : Authority) -> [Console] Unit {

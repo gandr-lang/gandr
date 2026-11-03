@@ -9,7 +9,7 @@
 /// - see: corpus/model/worlds/two-processes.manifold.gandr
 /// - see: crates/surface-driver/tests/net.rs
 
-import "../../../library/std/src/manifold.gandr";
+import std.manifold (Site, Manifold, Placement, At);
 
 /// The place the far world runs at.
 pub module Site : Model(Site) where {

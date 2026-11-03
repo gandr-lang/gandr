@@ -16,9 +16,21 @@
 //   does not hold, and one the native integers leave undecided
 // - see: #3287 — grade algebras as models of one theory
 
-// `Grade`, `Use`, `Usage`, `Count`, `usage`, `count`, `collapse`, `fits` and
-// `covers`.
-import "../../../library/std/src/grade.gandr";
+// The grade theory, its two models and the map between them.
+import std.grade (
+  Grade,
+  Use,
+  Once,
+  Many,
+  Usage,
+  Count,
+  usage,
+  count,
+  Hom,
+  collapse,
+  fits,
+  covers
+);
 
 /// Once is under many.
 def onceUnderMany : Path(Bool, Usage.le(Once, Many), true) = Path.here(true);

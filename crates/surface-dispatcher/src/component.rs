@@ -373,7 +373,8 @@ impl ImportPath
 
     /// The file a source in `directory` names: joined to `directory`, or to
     /// the directory of the root module of the package `directory` sits in,
-    /// or under the dependency its module path's head is an alias of.
+    /// or under the dependency its module path's head is an alias of, or
+    /// under the standard library for the head `std`.
     ///
     /// # Specification
     /// - requires: `directory` is the importing source's directory.
@@ -392,8 +393,10 @@ impl ImportPath
     ///   names its file under `src`, and a quoted path its file beside the
     ///   importer; a module path whose head is a locked alias names the
     ///   dependency's package source, and one whose head is neither is
-    ///   unlocked.
+    ///   unlocked; a module path under `std` names the standard library's file
+    ///   from a source in no package.
     /// - witness: `component::tests::a_module_path_is_named_from_its_package_s_root_2687`
+    /// - witness: `component::tests::a_std_module_path_names_the_standard_library_from_any_root_4517`
     /// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
     #[inline]
     #[must_use]
@@ -414,7 +417,7 @@ impl ImportPath
     /// The file the module path names under `sources`, the sources of
     /// `package` when it is given: under them when its head names a source or
     /// a directory there, else under the dependency the package's lock
-    /// records for the head.
+    /// records for the head, else under the standard library for `std`.
     ///
     /// # Specification
     /// - requires: the path's file is a module path's file, `hello.gandr` or
@@ -424,9 +427,9 @@ impl ImportPath
     ///   the first segment, the stem of a file alone — names a `.gandr` file or
     ///   a directory there; else [`Named::File`] of the dependency's package
     ///   source for a head alone, or of the rest of the path under its sources,
-    ///   when the lock at `package`'s root records the head as an alias;
-    ///   [`Named::Unlocked`] of the file under `sources` otherwise, and for no
-    ///   package.
+    ///   when the lock at `package`'s root records the head as an alias; else
+    ///   [`Named::File`] of [`lock::standard`]'s file for the head `std`;
+    ///   [`Named::Unlocked`] of the file under `sources` otherwise.
     /// - provides: the one rule an import through an alias reads.
     /// - fails: never.
     /// - panics: none.
@@ -459,6 +462,11 @@ impl ImportPath
         }
         package
             .and_then(|package| lock::through(package, &Alias::new(String::from(head)), rest))
+            .or_else(|| {
+                (head == lock::STANDARD)
+                    .then(|| lock::standard(rest))
+                    .flatten()
+            })
             .map_or(Named::Unlocked(local), Named::File)
     }
 }
@@ -3474,6 +3482,51 @@ mod tests
             ),
             [loose.0.join("greet.gandr")],
             "a source in no package roots its own modules"
+        );
+    }
+
+    /// #4517: a module path whose head is `std` names the standard library's
+    /// module from a source in no package and from a package that locks no
+    /// `std`, and the library for `std` alone; a source named `std` beside
+    /// the importer's root takes the name first.
+    #[test]
+    fn a_std_module_path_names_the_standard_library_from_any_root_4517()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let library = std::fs::canonicalize(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std/src"),
+        )
+        .expect("the standard library is checked out");
+        let importer =
+            SourceText::from("import std.string (concat) ;\nimport std ;\ndef two = 2 ;");
+        let standard = [library.join("string.gandr"), library.join("package.gandr")];
+        let loose = Scratch::new(Path::new("std-loose"), &[]);
+        assert_eq!(
+            imports_named(&grammar, &loose.0.join("use.gandr"), importer),
+            standard,
+            "a source in no package names the standard library"
+        );
+        let packaged = Scratch::new(Path::new("std-packaged"), &[(
+            Path::new("package.gandr"),
+            SourceText::from("def root = 0 ;"),
+        )]);
+        assert_eq!(
+            imports_named(&grammar, &packaged.0.join("use.gandr"), importer),
+            standard,
+            "a package that locks no `std` names the standard library"
+        );
+        let shadowed = Scratch::new(Path::new("std-shadowed"), &[(
+            Path::new("std.gandr"),
+            SourceText::from("def own = 0 ;"),
+        )]);
+        assert_eq!(
+            imports_named(
+                &grammar,
+                &shadowed.0.join("use.gandr"),
+                SourceText::from("import std ;\ndef two = 2 ;")
+            ),
+            [shadowed.0.join("std.gandr")],
+            "a source named `std` beside the root takes the name first"
         );
     }
 

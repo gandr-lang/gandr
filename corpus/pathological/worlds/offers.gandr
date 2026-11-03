@@ -16,8 +16,8 @@
 // - see: `corpus/model/deployments/offers.site.gandr` — a site answering it
 // - see: `crates/surface-driver/tests/cli.rs` — the check refusing all three
 
-// The deployment theories, from `std.manifold` by its path.
-import "../../../library/std/src/manifold.gandr";
+// The deployment theories.
+import std.manifold (Site, Manifold, Placement, At);
 
 /// What the site keeps: values by key.
 pub theory Kept where {

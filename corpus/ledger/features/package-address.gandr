@@ -1,8 +1,7 @@
 /// `package-address`: A package's address.
 /// Implemented: a package's address digests each item its sources declare, as its path and its content key, every inert component of its models left out and what a model asks of the toolchain kept; `gandr check` prints it on the manifest's line, and `gandr.toml` does not carry it.
 
-// The manifest theories, from `std.build` by its path.
-import "../../../library/std/src/build.gandr";
+import std.build (Gandr);
 
 /// The package's model: every field but what it asks of the toolchain inert,
 /// so an edit to any of those leaves the address where it was.

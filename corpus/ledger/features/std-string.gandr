@@ -2,8 +2,7 @@
 /// Implemented: the functions over the native `string` namespace, and the laws stated over joining presented as an operation, which the coincidence check certifies.
 /// Not implemented: the scanning functions, which #318 owes, and a law over a definition itself, which #525 owes.
 
-// `empty`, `concat`, `isEmpty`.
-import "../../../library/std/src/string.gandr";
+import std.string (concat, isEmpty);
 
 /// `named` joins a name to a greeting and asks whether the result is empty.
 @[ runs("+{.1 = unit}") ]

@@ -12,11 +12,10 @@
 //   `read_line`
 // - see: #2970 — `std.authority` and `std.console`
 
-// `Authority`, `console`.
-import "../../../library/std/src/authority.gandr";
-
-// `print`, `eprint`, `read_line`.
-import "../../../library/std/src/console.gandr";
+// The authority `main` is handed, and the console it opens.
+import std.authority (Authority, console);
+// The three standard streams, each through the console.
+import std.console (print, eprint, read_line);
 
 /// The entry: it reads one line and answers it.
 def main(authority : Authority) -> [Console, Stderr, Stdin] Unit {

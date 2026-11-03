@@ -12,8 +12,8 @@ pub theory Greeting where {
 // alias (#3072), at the signature above: its `welcome` and no other member
 // (#3098).
 import hello : Greeting;
-// The manifest theories, from `std.build` by its path (#533 p3).
-import "../../../../library/std/src/build.gandr";
+// The manifest theories, and the dependency a package source lists.
+import std.build (Gandr, Path, Dependency);
 
 /// The package: its name, the version its workspace states, and the rest of
 /// what `gandr.toml` records.

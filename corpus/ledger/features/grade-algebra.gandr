@@ -4,7 +4,7 @@
 // Counted bytes ordered in the prelude's binary naturals, and a count of uses
 // covering a need once counting collapses to usage.
 
-import "../../../library/std/src/grade.gandr";
+import std.grade (Once, Count, usage, count, collapse, covers);
 
 /// Two gibibytes are under eight.
 def twoUnderEightGiB : Path(

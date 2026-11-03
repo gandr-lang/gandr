@@ -10,10 +10,10 @@
 // - see: `../../../library/std/src/cost.gandr` — `Cost` and `Counting`
 // - see: #2288 — decalf's cost effect as a lawful theory
 
-// `Cost`, `Counting`, `costs`, `counted` and `countOf`.
-import "../../../library/std/src/cost.gandr";
-// `Count`.
-import "../../../library/std/src/grade.gandr";
+// The cost effect and its counting model.
+import std.cost (Cost, Counting, costs, counted, countOf);
+// The counting grades.
+import std.grade (Count);
 
 /// Three steps: a charge of one, a charge of two, then seven.
 def threeSteps() -> [cost : Cost with sort N = Nat => Nat] Integer {
