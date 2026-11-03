@@ -4,6 +4,9 @@
 // list case on the empty list and a cell, so a recursion on the rest descends
 // structurally, as a list's tail stands one stage below it.
 
+// The native finite lists.
+import std.list (List);
+
 /// A rubric's grade.
 data Grade : Type where {
   | Met : Grade

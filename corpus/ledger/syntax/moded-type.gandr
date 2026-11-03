@@ -1,4 +1,9 @@
 /// `moded_type`: a receiver's type at the mode its method's telescope binds.
+
+// The native finite lists.
+import std.list (List);
+
+/// A list's first element, as a method's place.
 module Places where {
   @[ checks ]
   def first[m : Mode](self : m List(Integer)) -> -F View[m](Integer) { self[0] }

@@ -8,7 +8,12 @@
 //! names the grammar rules its tiles belong to, so it fails loudly when the
 //! grammar moves.
 
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use anodized::spec;
+use gandr_core_term::CoreArena;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_parser::parse;
@@ -28,8 +33,17 @@ use quenchant_shape::shape::Maybe;
 
 use crate::attribute::AttributeRegistry;
 use crate::attribute::RegisteredAttribute;
+use crate::coincide::Decisions;
+use crate::lower::LoweringBudget;
+use crate::lower::lower_unit;
+use crate::module::LoweredModule;
+use crate::namespace::Recognition;
 use crate::origin::Origin;
 use crate::resolve::SurfaceName;
+use crate::unit::ImportTarget;
+use crate::unit::SourceIndex;
+use crate::unit::Unit;
+use crate::unit::UnitSource;
 
 /// A grammar rule, by its unique name.
 #[repr(transparent)]
@@ -110,6 +124,65 @@ pub fn repaired<'source>(
     );
 
     result.into_tree()
+}
+
+/// The line a source writes to list `List` from its home (#4520).
+pub const LISTING: &str = "import std.list (List) ;\n";
+
+/// `source` after [`LISTING`] and a newline that stands in for `std.list`,
+/// which declares nothing: the text [`listed`] lowers.
+///
+/// # Specification
+/// trivial.
+pub fn listing<Source>(source: Source) -> String
+where
+    Source: core::fmt::Display,
+{
+    format!("\n{LISTING}{source}")
+}
+
+/// `text`, which [`listing`] made, lowered as a unit of two sources: the
+/// stand-in for `std.list` and the source listing `List` from it.
+///
+/// # Specification
+/// - requires: `text` is what [`listing`] made and parses cleanly.
+/// - ensures: the second source's one path import resolves to the first.
+/// - provides: a source that names `List` lowered where it resolves.
+/// - fails: never on accepted fixtures.
+/// - panics: if the lowering refuses the unit.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every witness naming `List` reads its module through
+///   here, and a source that does not list it refuses the type head.
+/// - witness: `lower::native::tests::list_patterns_case_on_the_native_list`
+#[spec(requires: text.as_ref().starts_with('\n'))]
+pub fn listed<'source, Text>(
+    text: &'source Text,
+    arena: &mut CoreArena,
+) -> LoweredModule<'source>
+where
+    Text: AsRef<str> + ?Sized,
+{
+    let pbg = grammar();
+    let tree = parsed(&pbg, SourceText::from(text.as_ref()));
+    let unit = Unit::new(Vec::from([
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(
+            ByteOffset::from(1_usize),
+            Vec::from([ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ),
+    ]))
+    .expect("the listing imports the source before it");
+    lower_unit(
+        &pbg,
+        &tree,
+        &unit,
+        arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        &mut Decisions::none(),
+    )
+    .expect("the listed unit lowers")
 }
 
 /// The span from `start` to `end`.

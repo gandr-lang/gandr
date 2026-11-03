@@ -448,6 +448,40 @@ fn an_unsettled_run_exits_one()
     }
 }
 
+/// #4520: `List` leaves the ambient scope for `std.list`. A list type settles
+/// in a source that lists it from its home. The same type is an unresolved
+/// head in a source that does not, whose help names the listing, and an
+/// unknown member in a source that lists it from another module.
+#[test]
+fn a_list_type_needs_its_listing_from_std_list_4520()
+{
+    let scratch = Scratch::new(Path::new("list-home"));
+    let body = "def xs : List(Integer) = [1, 2] ;\n";
+    let listed_text = format!("import std.list (List) ;\n{body}");
+    let listed = scratch.file(Path::new("listed.gandr"), Text::from(listed_text.as_str()));
+    let output = ran(gandr(&[Path::new("check"), &listed]));
+    assert_eq!(code(&output), Code(0_i32), "{}", stdout(&output));
+    let elsewhere = format!("import std.string (List) ;\n{body}");
+    for (name, text, refusal) in [
+        (
+            "bare.gandr",
+            body,
+            "help: write `import std.list (List);`, the listing of `List` from its home",
+        ),
+        (
+            "elsewhere.gandr",
+            elsewhere.as_str(),
+            "has no member `List`",
+        ),
+    ] {
+        let source = scratch.file(Path::new(name), Text::from(text));
+        let output = ran(gandr(&[Path::new("check"), &source]));
+        assert_eq!(code(&output), Code(1_i32), "{name}: {}", stdout(&output));
+        let diagnostic = printed(&output);
+        assert!(diagnostic.contains(refusal), "{name}: {diagnostic}");
+    }
+}
+
 /// Two sources of one run that each declare `P` and share an import settle in
 /// either order: each run spells its value by its own `P`'s constructors, not
 /// by the first `P` the run declares (#3125).
@@ -2493,7 +2527,7 @@ fn a_workspace_checks_each_member_it_names_2687()
     let scratch = Scratch::new(Path::new("workspace"));
     let stated = |members: &str| {
         format!(
-            "{STD_PACKAGE}pub module Workspace : Model(Gandr.Workspace) where {{\n  def version = \
+            "{STD_PACKAGE}import std.list (List);\npub module Workspace : Model(Gandr.Workspace) where {{\n  def version = \
              \"0.2.0\";\n  def gandr = \"\";\n  def features = \"\";\n  def systems = \
              \"\";\n}}\npub def members : List(String) = {members};\n"
         )
@@ -4064,7 +4098,8 @@ fn a_script_that_runs_its_main_leaves_successfully()
 fn a_program_leaves_with_its_entry_s_status_1881()
 {
     let scratch = Scratch::new(Path::new("program-entry"));
-    let counted = "def rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    [] => 0,\n    \
+    let counted = "import std.list (List);\ndef rec count(xs : List(String)) -> -F Integer {\n  match \
+                   xs {\n    [] => 0,\n    \
                    [x, ..rest] => { let n = count[<](rest); n + 1 }\n  }\n}\ndef main(args : \
                    List(String)) -> -F Integer { become count(args) }\n";
     for (name, text, arguments, status) in [

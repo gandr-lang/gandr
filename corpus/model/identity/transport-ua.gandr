@@ -8,6 +8,8 @@
 import "./circle-base.gandr";
 // The equivalence of the loops at the point with the integers, `winding`.
 import "./circle.gandr";
+// The native finite lists.
+import std.list (List);
 
 /// A family that never reads its argument keeps the value, by conversion.
 def constantBeta : Path(Int, Path.walk(fun (X) { Int }, ua(winding), Z), Z) = Path.here(Z);

@@ -9,6 +9,9 @@
 // that universe reads its motive's binder there too, so the motive's body
 // decodes a large code at level one (#1837).
 
+// The native finite lists.
+import std.list (List);
+
 /// A list of values of a type it carries: a large type, since a field holds a
 /// type.
 data Packed : Type[+, 1] where {

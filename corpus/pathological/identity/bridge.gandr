@@ -11,6 +11,9 @@
 // - see: `model/identity/bridge.gandr` — the bridges admitted
 // - see: #3519 — the model laws of the fold
 
+// The native finite lists.
+import std.list (List);
+
 /// Reflexivity at a bridge is refused, because a bridge has no reflexivity.
 @[ refuses("ShapeMismatch") ]
 def fourHere : Bridge(Integer, 4, 4) = Path.here(4);

@@ -40,6 +40,8 @@ use quenchant_shape::shape::Maybe;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::fixture::grammar;
+use crate::fixture::listed;
+use crate::fixture::listing;
 use crate::fixture::parsed;
 use crate::fixture::span;
 use crate::lower::LoweringBudget;
@@ -441,7 +443,8 @@ fn a_list_moves_along_a_universe_equivalence()
     let source = format!(
         "{negation}def moved(xs: List(Bool)) -> -F List(Bool) {{\n  become Path.walk(fun (X) {{ List(X) }}, negation, xs)\n}}\ndef again(xs: List(Bool)) -> -F List(Bool) {{\n  become Path.walk(fun (X) {{ List(X) }}, negation, xs)\n}}\ndef both : List(Bool);\ndef both = cons(+{{.0 = unit}}, cons(+{{.1 = unit}}, nil));\n"
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let source = listing(&source);
+    let module = listed(&source, &mut arena);
     let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "negation".into())
     else {
         panic!("the universe path and its equivalence lower");
@@ -510,7 +513,8 @@ fn a_list_moves_along_a_universe_equivalence()
     let source = format!(
         "{negation}def named(xs: List(Bool)) -> -F List(Bool) {{\n  become Path.walk(negation, negation, xs)\n}}\ndef half = cons(unit);\n"
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let source = listing(&source);
+    let module = listed(&source, &mut arena);
     assert!(
         matches!(
             outcome_of(&module, "named".into()),
@@ -1072,12 +1076,10 @@ fn a_bridge_type_lowers_to_the_core_bridge_3427()
     // list and a relation at the universe check at the fibres the core fold
     // reads; reflexivity is no bridge's introduction.
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(
-            "def lifted : Bridge(List(Integer), [1, 2], [1, 2]);\ndef lifted = (unit, (unit, unit));\ndef related : Bridge(Type, Unit, String);\ndef related = thunk { fun (x : Unit) { fun (y : String) { return Unit } } };\n",
-        ),
-        &mut arena,
+    let source = listing(
+        "def lifted : Bridge(List(Integer), [1, 2], [1, 2]);\ndef lifted = (unit, (unit, unit));\ndef related : Bridge(Type, Unit, String);\ndef related = thunk { fun (x : Unit) { fun (y : String) { return Unit } } };\n",
     );
+    let module = listed(&source, &mut arena);
     for (name, endpoint) in [("lifted", "a list cell"), ("related", "a quoted code")] {
         let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, name.into())
         else {

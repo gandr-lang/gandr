@@ -174,7 +174,7 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
         scratch.file(
             Path::new(name),
             Text(&format!(
-                "pub module Manifold : Model(Manifold) where {{\n  def artifact = \"p.gandr\";\n}}\n{placements}"
+                "import std.list (List);\npub module Manifold : Model(Manifold) where {{\n  def artifact = \"p.gandr\";\n}}\n{placements}"
             )),
         )
     };
@@ -357,7 +357,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
     let manifold = scratch.file(
         Path::new("m.gandr"),
         Text(&format!(
-            "import \"./answered.gandr\" as answered;\nimport \"./typed.gandr\" as typed;\nimport \
+            "import std.list (List);\nimport \"./answered.gandr\" as answered;\nimport \"./typed.gandr\" as typed;\nimport \
              \"./bare.gandr\" as bare;\npub module Manifold : Model(Manifold) where {{\n  def artifact \
              = \"p.gandr\";\n}}\npub module Local : Model(Site) where {{\n  def key = \"{local}\";\n  \
              def sockets = \"\";\n  def secret = \"local\";\n}}\npub def placements : \

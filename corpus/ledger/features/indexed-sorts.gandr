@@ -1,6 +1,10 @@
 /// `indexed-sorts`: Dependent sorts in signatures.
 /// Implemented: sorts that other sorts or the host's types index, in a `theory` block and in `Model(S)`, each sort a function from its indices into the universe its classifier names: the value types at `Type`, the computation types at `Type[-]`.
 /// Not implemented: rules over indexed sorts; #522 owes it.
+
+// The native finite lists.
+import std.list (List);
+
 /// The shape of a category without its laws: a sort of morphisms indexed by
 /// two objects, an identity at each object and composition.
 @[ checks ]

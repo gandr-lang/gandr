@@ -9,6 +9,8 @@ use quenchant_shape::shape::Maybe;
 use super::Arguments;
 use super::entry_shape;
 use crate::error::LoweringRefusal;
+use crate::fixture::listed;
+use crate::fixture::listing;
 use crate::lower::native::tests::lowered;
 use crate::lower::native::tests::refusal_of;
 use crate::module::DeclarationOutcome;
@@ -77,7 +79,8 @@ fn a_main_of_another_type_is_refused_by_name_1881()
         "module Tool where { def main() -> -F String { return \"x\" } }\n",
     ] {
         let mut arena = CoreArena::new();
-        let module = lowered(SourceText::from(source), &mut arena);
+        let text = listing(source);
+        let module = listed(&text, &mut arena);
         assert!(
             module.declarations().iter().all(|declaration| matches!(
                 declaration.outcome(),

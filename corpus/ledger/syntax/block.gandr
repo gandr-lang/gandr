@@ -1,4 +1,9 @@
 /// `block`: a block: statements, then the computation it ends in.
+
+// The native finite lists.
+import std.list (List);
+
+/// A block's value bound, then read with a local beside it.
 @[ checks ]
 def answer() -> -F Integer {
   let n = { pure 40 };

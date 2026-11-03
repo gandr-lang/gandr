@@ -1,4 +1,9 @@
 /// `bridge_type`: a bridge type.
+
+// The native finite lists.
+import std.list (List);
+
+/// A list related to itself, cell by cell.
 @[ checks ]
 def lifted : Bridge(List(Integer), [1, 2], [1, 2]) ;
 def lifted = (unit, (unit, unit)) ;

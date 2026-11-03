@@ -4,6 +4,9 @@
 // a record of the old schema to the new, and riding it in the family of
 // lists moves every record of a list.
 
+// The native finite lists.
+import std.list (List);
+
 /// The old and the new schema, the translator between them and the flow it
 /// gives.
 pub module Schema where {

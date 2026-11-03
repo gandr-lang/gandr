@@ -17,6 +17,8 @@ use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
+use crate::fixture::listed;
+use crate::fixture::listing;
 use crate::form::FormName;
 use crate::lower::exits::tests::assert_same_body;
 use crate::lower::exits::tests::spelled_within;
@@ -197,7 +199,7 @@ def unwound() -> -F Unit {
 #[test]
 fn an_access_of_a_place_lowers_with_its_index()
 {
-    let source = SourceText::from(
+    let source = listing(
         r"def pair : List(Integer) ;
 def pair = cons(1, cons(2, nil)) ;
 def second() -> -F Integer {
@@ -212,7 +214,7 @@ def indexed(i : Integer) -> -F Integer {
 ",
     );
     let mut arena = CoreArena::new();
-    let module = lowered(source, &mut arena);
+    let module = listed(&source, &mut arena);
     let tail = tail_of(&arena, body_named(&module, SurfaceName::from("second")));
     assert_eq!(
         forms(&arena, tail),
@@ -407,7 +409,7 @@ def joined_by_hand(n : Nat) -> -F Integer {
 #[test]
 fn a_place_assignment_writes_through_an_exclusive_view()
 {
-    let source = SourceText::from(
+    let source = listing(
         r"def pair : List(Integer) ;
 def pair = cons(1, cons(2, nil)) ;
 def written() -> -F Integer {
@@ -425,7 +427,7 @@ def ended() -> -F Unit {
 ",
     );
     let mut arena = CoreArena::new();
-    let module = lowered(source, &mut arena);
+    let module = listed(&source, &mut arena);
     let tail = tail_of(&arena, body_named(&module, SurfaceName::from("written")));
     assert_eq!(
         forms(&arena, tail),
@@ -484,7 +486,7 @@ def field(p : #{ a : Integer }) -> -F Unit { p.a += 1; }
 #[test]
 fn a_stated_var_ascribes_its_value_or_holds_a_handle()
 {
-    let source = SourceText::from(
+    let source = listing(
         r"def listed() -> -F Integer {
   var xs : List(Integer) = #[1, 2];
   xs.#[0] += 1;
@@ -493,7 +495,7 @@ fn a_stated_var_ascribes_its_value_or_holds_a_handle()
 ",
     );
     let mut arena = CoreArena::new();
-    let module = lowered(source, &mut arena);
+    let module = listed(&source, &mut arena);
     let listed = tail_of(&arena, body_named(&module, SurfaceName::from("listed")));
     let Some(&Computation::Memory(MemoryForm::Hold { value, .. })) = arena.computation(listed)
     else {

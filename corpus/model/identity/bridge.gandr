@@ -18,6 +18,8 @@
 
 // The sealed points whose relation is their identity.
 import "./atom-identity.gandr";
+// The native finite lists.
+import std.list (List);
 
 /// The total relation between the unit type and the string type, at the
 /// relation type `Unit => String => Type`.

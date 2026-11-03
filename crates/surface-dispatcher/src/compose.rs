@@ -7249,22 +7249,20 @@ def delivered() -> -F Unit {
     #[test]
     fn each_binder_no_variable_reads_is_unused()
     {
-        let grammar = grammar();
+        // Each source is laid after `std.list`, which a corpus source naming
+        // `List` imports (#4520); a span is read back from the source's base.
         let unused = |written: &str| {
-            let mut lowerings = LoweringCount::default();
-            let Ok(Composed::Settled { unused, .. }) = compose(
-                &grammar,
-                CorpusRoot::Fixture,
-                SourceText::from(written),
-                &mut lowerings,
-            )
+            let listed = crate::tests::Listed::new(SourceText::from(written));
+            let Composed::Settled { unused, .. } = listed.composed(CorpusRoot::Fixture)
             else {
                 panic!("the source composes");
             };
+            let base = usize::from(listed.base);
             unused
                 .iter()
                 .map(|span| {
-                    let start = usize::from(span.start());
+                    let start = usize::from(span.start()).saturating_sub(base);
+                    let end = usize::from(span.end()).saturating_sub(base);
                     let line = written
                         .get(.. start)
                         .unwrap_or_default()
@@ -7273,9 +7271,7 @@ def delivered() -> -F Unit {
                     std::format!(
                         "{}:{}",
                         line.saturating_add(1),
-                        written
-                            .get(start .. usize::from(span.end()))
-                            .unwrap_or_default()
+                        written.get(start .. end).unwrap_or_default()
                     )
                 })
                 .collect::<Vec<_>>()

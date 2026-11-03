@@ -8,8 +8,8 @@
 //! package source, and the checker writes no manifest for it. It states what
 //! its members share as a model of `Gandr.Workspace`, which each member's
 //! `package.gandr` imports and reads, and it names its members by a
-//! free-standing `pub def members : List(String)`, each a directory below the
-//! workspace that roots a package.
+//! free-standing `pub def members : List(String)`, its `List` listed from
+//! `std.list`, each a directory below the workspace that roots a package.
 //!
 //! [`Workspace::members`] reads that list by checking the workspace's source
 //! alone and running `members`, so the list is gandr and never a second
@@ -771,7 +771,7 @@ impl core::fmt::Display for Unmembered
             Self::Undeclared => write!(
                 f,
                 "`{WORKSPACE}` declares no `{MEMBERS}`: declare `pub def {MEMBERS} : \
-                 List(String)` naming its packages"
+                 List(String)`, its `List` from `std.list`, naming its packages"
             ),
             Self::Unlisted { ref came } => write!(
                 f,

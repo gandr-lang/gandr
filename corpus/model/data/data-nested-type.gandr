@@ -2,6 +2,8 @@
 // optional integers. `Maybe` is the one `data-maybe.gandr` declares.
 
 import "./data-maybe.gandr";
+// The native finite lists.
+import std.list (List);
 
 /// Binds a list of optional integers, then returns. The list is annotated
 /// where it is run as a value, and each element takes the element type,

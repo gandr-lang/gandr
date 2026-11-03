@@ -1,7 +1,7 @@
 error[RideUnsupported]: `Flow.ride` moves a run of the moving endpoint, a value whose type does not depend on it, or a value the flow's translator computes
-   ╭▸ corpus/ledger/diagnostics/RideUnsupported.gandr:16:22
+   ╭▸ corpus/ledger/diagnostics/RideUnsupported.gandr:21:22
    │
-16 │ def listed = thunk { Flow.ride(fun (X) { List(X) }, Evolution.keep, []) } ;
+21 │ def listed = thunk { Flow.ride(fun (X) { List(X) }, Evolution.keep, []) } ;
    │              ┬───────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──
    │              │       │
    │              │       a motive the ride cannot move

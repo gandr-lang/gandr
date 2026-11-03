@@ -5,6 +5,9 @@
 // fields, so a translator that only moves fields between constructors gives
 // a flow, and riding it moves a value of the old type to the new.
 
+// The native finite lists.
+import std.list (List);
+
 /// The old type: one constructor of one integer field.
 data Old : Type where {
   | Mk : (n : Integer) --> Old

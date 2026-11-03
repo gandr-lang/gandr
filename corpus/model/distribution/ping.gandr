@@ -13,6 +13,9 @@
 // - see: `crates/surface-driver/tests/net.rs` — the two processes
 // - see: `crates/runtime-net/README.md` — the network the host binds
 
+// The native finite lists.
+import std.list (List);
+
 /// Accept one stream, read its ping, answer `pong`, disconnect, and return
 /// the ping.
 pub def serve() -> [std.net.Eff] String {

@@ -1,6 +1,9 @@
 // A list pattern's refusals: a match that leaves a list shape unmatched, and
 // a list pattern beside a pattern of another kind in one column.
 
+// The native finite lists.
+import std.list (List);
+
 /// No arm matches the empty list.
 @[ refuses("NonExhaustiveMatch") ]
 def unmatched(xs : List(Integer)) -> -F Integer {

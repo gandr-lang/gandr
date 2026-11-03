@@ -1,6 +1,9 @@
 // Two data types with one shape stay distinct under a type former: a list of
 // `Celsius` is no list of `Fahrenheit`, in any definition that ascribes it.
 
+// The native finite lists.
+import std.list (List);
+
 /// A temperature in Celsius.
 data Celsius : Type where {
   | Cel : (x : Integer) --> Celsius

@@ -3279,13 +3279,20 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
 #[test]
 fn a_mistake_is_reported_before_what_it_causes_2048()
 {
-    let text = "dat Circle : Type {\n  Base : Circle;\n}\ndef twice : Path(Circle, Base, Base) ;\ndef \
-                twice = refl(Base) ;\ndef none(xs : List()) -> -F Unit { pure unit }\n";
-    let printed = printed(
-        Path::new("strayed.gandr"),
-        SourceRoot::Strict,
-        SourceText::from(text),
-        Verb::Check(Goals::Gated),
+    let text = "import std.list (List) ;\ndat Circle : Type {\n  Base : Circle;\n}\ndef twice : \
+                Path(Circle, Base, Base) ;\ndef twice = refl(Base) ;\ndef none(xs : List()) -> -F \
+                Unit { pure unit }\n";
+    // The source lists `List` from `std.list`, so it is walked from a file,
+    // which lays it after the module it imports (#4520).
+    let scratch = Scratch::new(Path::new("strayed"));
+    scratch.file(Path::new("strict/strayed.gandr"), SourceText::from(text));
+    let mut printed = Vec::new();
+    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
+            printed.extend(entries(&step, Verb::Check(Goals::Gated)));
+            ControlFlow::Continue(())
+        },
     );
     let first = printed.first().expect("the stray is reported");
     assert_eq!(

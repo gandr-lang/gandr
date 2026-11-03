@@ -2789,6 +2789,7 @@ INSERT INTO purpose VALUES('surface-lowering','resolve::TypeAtom','enum','Names 
 INSERT INTO purpose VALUES('surface-lowering','resolve::TypeFormer','enum','Names a type former, so the former''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','resolve::binder::Absent','enum','Names why the binder scope answers nothing for a name, so the absence''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','resolve::binder_type::Absent','enum','Names why a binder carries no written type, so the absence''s kind is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','resolve::former_home','function','Names the module that homes a type former, so a refusal of the bare name names its listing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','resolve::type_atom','function','Names the type atom a type head answers, so the atom''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','resolve::type_former','function','Names the type former a type head answers, so the former''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','resolve::type_head::Absent','enum','Names why a type-head table answers nothing for a spelling, so the absence''s kind is read.',NULL,'fits','sound',NULL);

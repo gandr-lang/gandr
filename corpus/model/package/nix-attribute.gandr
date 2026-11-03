@@ -9,6 +9,9 @@
 /// - see: `corpus/model/package/nix/hello.meta.json`
 /// - see: `corpus/model/package/nix-derivation.gandr`
 
+// The native finite lists.
+import std.list (List);
+
 /// A package's license, as `nixpkgs`' `lib.licenses` records one.
 pub type License = #{
   deprecated : Bool,

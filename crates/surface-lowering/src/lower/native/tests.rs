@@ -37,6 +37,8 @@ use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
 use crate::fixture::grammar;
+use crate::fixture::listed;
+use crate::fixture::listing;
 use crate::fixture::parsed;
 use crate::fixture::registered;
 use crate::form::FormName;
@@ -3157,7 +3159,8 @@ fn a_listed_constructor_takes_the_element_type_1544()
          def signed : List(Maybe(Integer)) ;\ndef signed = [Some(3), None] ;\n\
          def nested = ([[Some(3)], [], [None]] : List(List(Maybe(Integer)))) ;\n"
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let source = listing(&source);
+    let module = listed(&source, &mut arena);
     let integer = |argument| matches!(arena.value(argument), Some(&Value::Quote(quoted)) if arena.value_type(quoted) == Some(&ValueType::Base(gandr_kernel_term::BaseType::Integer)));
     for name in ["annotated", "signed", "nested"].map(SurfaceName::from) {
         let mut pending = Vec::from([body_named(&module, name)]);
@@ -3205,7 +3208,8 @@ fn a_listed_constructor_takes_the_answered_element_type_1602()
          def nested() -> -F List(List(Maybe(Integer))) {{ [[Some(3)], [None]] }}\n\
          def polymorphic(a : Type, x : a) -> -F List(Maybe(a)) {{ [Some(x), None] }}\n"
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let source = listing(&source);
+    let module = listed(&source, &mut arena);
     for name in ["returned", "alias", "nested", "polymorphic"].map(SurfaceName::from) {
         assert!(
             matches!(
@@ -3233,7 +3237,8 @@ fn a_tuple_gives_its_members_the_product_s_components_1877()
          def listed() -> -F List(Maybe(Integer) * Maybe(Integer)) {{ [(Some(1), None)] }}\n\
          def nested = ((Some(1), (None, Some(2))) : Maybe(Integer) * (Maybe(Integer) * Maybe(Integer))) ;\n"
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let source = listing(&source);
+    let module = listed(&source, &mut arena);
     for name in ["annotated", "returned", "listed", "nested"].map(SurfaceName::from) {
         assert!(
             matches!(
@@ -3657,12 +3662,10 @@ fn a_non_exhaustive_match_is_refused()
 fn list_patterns_case_on_the_native_list()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(
-            "def empty(xs : List(Integer)) -> -F Integer { match xs { #[] => return 0, _ => return 1 } }\ndef pair(xs : List(Integer)) -> -F Integer { match xs { #[a, b] => return b, _ => return 0 } }\ndef rest(xs : List(Integer)) -> -F List(Integer) { match xs { #[a, ..tail] => return tail, #[] => return #[] } }\ndef whole(xs : List(Integer)) -> -F List(Integer) { match xs { all @ #[a, .._] => return all, #[] => return #[] } }\n",
-        ),
-        &mut arena,
+    let source = listing(
+        "def empty(xs : List(Integer)) -> -F Integer { match xs { #[] => return 0, _ => return 1 } }\ndef pair(xs : List(Integer)) -> -F Integer { match xs { #[a, b] => return b, _ => return 0 } }\ndef rest(xs : List(Integer)) -> -F List(Integer) { match xs { #[a, ..tail] => return tail, #[] => return #[] } }\ndef whole(xs : List(Integer)) -> -F List(Integer) { match xs { all @ #[a, .._] => return all, #[] => return #[] } }\n",
     );
+    let module = listed(&source, &mut arena);
     let cases = |name: &str| -> Vec<ComputationId> {
         reachable(
             &arena,
@@ -3711,9 +3714,11 @@ fn list_patterns_case_on_the_native_list()
 fn an_as_pattern_names_its_match_with_a_name()
 {
     let mut arena = CoreArena::new();
-    let source = "def whole(xs : List(Integer)) -> -F List(Integer) { match xs { [a, .._] @ all => \
-                  return all, [] => return [] } }\n";
-    let module = lowered(SourceText::from(source), &mut arena);
+    let source = listing(
+        "def whole(xs : List(Integer)) -> -F List(Integer) { match xs { [a, .._] @ all => \
+         return all, [] => return [] } }\n",
+    );
+    let module = listed(&source, &mut arena);
     let start = source.find("[a, .._]").unwrap_or(0_usize);
     assert!(
         matches!(

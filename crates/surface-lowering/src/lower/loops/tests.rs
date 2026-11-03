@@ -17,6 +17,8 @@ use quenchant_shape::shape::Maybe;
 use crate::error::FragmentBoundary;
 use crate::error::LoopExit;
 use crate::error::LoweringRefusal;
+use crate::fixture::listed;
+use crate::fixture::listing;
 use crate::lower::exits::Leaves;
 use crate::lower::exits::tests::assert_same_body;
 use crate::lower::exits::tests::assert_surveyed;
@@ -492,7 +494,8 @@ fn a_for_steps_through_its_list()
          def inner(xs : List(Nat)) -> -F [Partial] Unit {{ for x in xs {{ loop {{ continue }} }} }}\n"
     );
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let source = listing(&source);
+    let module = listed(&source, &mut arena);
     for name in ["each", "skipped", "inner"] {
         let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
         let structural = |head| match arena.computation(head) {

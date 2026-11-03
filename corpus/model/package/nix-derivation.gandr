@@ -10,6 +10,9 @@
 /// - see: #3010
 /// - see: `corpus/model/package/nix/hello.drv.json`
 
+// The native finite lists.
+import std.list (List);
+
 /// An output of a derivation: its name, then the store path it is built at.
 pub type Output = String * String;
 

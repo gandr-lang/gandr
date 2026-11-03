@@ -344,7 +344,7 @@ fn a_workspace_walks_every_member_it_names_2687()
     let source = directory.join("workspace.gandr");
     let stated = |members: &str| {
         format!(
-            "pub module Workspace : Model(Gandr.Workspace) where {{ def version = \"0.2.0\"; }}\n{members}\n"
+            "import std.list (List);\npub module Workspace : Model(Gandr.Workspace) where {{ def version = \"0.2.0\"; }}\n{members}\n"
         )
     };
     std::fs::write(

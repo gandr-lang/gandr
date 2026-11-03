@@ -3,6 +3,9 @@
 // reached by projection from the `list` namespace, which the lowering admits
 // for no builtin yet (#1106).
 
+// The native finite lists.
+import std.list (List);
+
 /// Three tens, annotated as a list of integers (#1544).
 def tens = ([10, 20, 30] : List(Integer));
 

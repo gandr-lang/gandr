@@ -1,4 +1,9 @@
 /// `list_pattern`: a list pattern.
+
+// The native finite lists.
+import std.list (List);
+
+/// The first element of a list, or zero for the empty list.
 @[ checks ]
 def head(xs : List(Integer)) -> -F Integer {
   match xs {

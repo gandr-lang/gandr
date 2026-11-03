@@ -18,6 +18,8 @@
 
 // The deployment theories.
 import std.manifold (Site, Manifold, Placement, At);
+// The native finite lists.
+import std.list (List);
 
 /// What the site keeps: values by key.
 pub theory Kept where {

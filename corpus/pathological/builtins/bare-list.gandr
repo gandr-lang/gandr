@@ -1,0 +1,13 @@
+// A list type written with no import of its home names no type.
+//
+// `List` lives in `std.list`, and the ambient scope answers it nowhere. A
+// source that names it lists it, as it lists any other module's name.
+//
+// The source writes `List(Integer)` without `import std.list (List);`, and
+// the type head is refused where it is written.
+//
+// - see: #4520
+
+/// Two numbers in a list, the list type unimported.
+@[ refuses("UnresolvedTypeHead") ]
+def xs : List(Integer) = [1, 2];

@@ -1,5 +1,10 @@
 /// `rest_pattern`: a rest pattern, matching the remainder of a list; here a
 /// hole, which leaves the arm that runs undecided.
+
+// The native finite lists.
+import std.list (List);
+
+/// A list's first element, its rest a hole.
 @[ refuses("UndecidedCoverage") ]
 def head(xs : List(Integer)) -> -F Integer {
   match xs { [x, ..?] => return x, [] => return 0 }

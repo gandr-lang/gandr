@@ -7811,6 +7811,7 @@ mod tests
     fn an_unread_binder_of_a_list_a_model_or_a_bind_answers_2181()
     {
         let source = SourceText::from(concat!(
+            "import std.list (List) ;\n",
             "def shortLength(xs : List(Integer)) -> -F Integer {\n",
             "  match xs {\n    [] => 0,\n    [a] => 1,\n    [c, d] => 2,\n    _ => 3\n  }\n}\n",
             "def secondOf(xs : List(Integer)) -> -F Integer {\n",
@@ -7824,7 +7825,15 @@ mod tests
             "def split() -> -F Integer {\n",
             "  let (y, z) : Integer * Integer = (1, 2);\n  y\n}\n",
         ));
-        let table = table(source);
+        let listed = crate::tests::Listed::new(source);
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = TypeTable::of_unit(
+            &grammar,
+            SourceText::from(listed.text.as_str()),
+            &listed.unit,
+            listed.base,
+        )
+        .expect("the unit parses");
         for (needle, ty) in [
             ("a] =>", "Integer"),
             ("c, d]", "Integer"),

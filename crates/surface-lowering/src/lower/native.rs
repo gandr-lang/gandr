@@ -7182,7 +7182,7 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Present(typed) = self.unwrapped(stated)?
             && typed.former == Former::TypeApplication
             && typed.keyword.is_some_and(|head| {
-                type_former(self.name_at(head)) == Maybe::Present(TypeFormer::List)
+                self.former(self.name_at(head)) == Maybe::Present(TypeFormer::List)
             })
             && let [element] = typed.operands[..]
         {

@@ -5,6 +5,9 @@
 // Safety_, 2025, arXiv:2510.23517). An unwind that calls a declaration owed
 // its body blames the run, which shows the abandonment ran it.
 
+// The native finite lists.
+import std.list (List);
+
 /// A declaration owed its body: a run that calls it is blamed.
 @[ owes(1) ]
 def later : Integer => Unit;
