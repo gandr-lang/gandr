@@ -234,13 +234,15 @@ fn a_run_lowers_each_source_once()
 }
 
 /// The identity subject's base source is lowered once, in the one
-/// component every source importing it is judged in.
+/// component every source importing it is judged in, and `std.list`, which
+/// the walk reaches and is not given, once in each component that imports it.
 #[test]
 fn the_identity_base_is_lowered_once_for_its_importers()
 {
     let subject = fixture_root().join("model/identity");
     let base = subject.join("circle-base.gandr");
     let mut certificates = Vec::new();
+    let mut list_importers = 0_usize;
     let ControlFlow::Continue(report) = Walk::new(vec![subject]).visit(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
@@ -258,9 +260,13 @@ fn the_identity_base_is_lowered_once_for_its_importers()
             else {
                 panic!("each identity source is judged and admitted: {step:?}");
             };
-            let imports_base = <&str>::from(text)
+            let written = <&str>::from(text)
                 .get(usize::from(own) ..)
-                .is_some_and(|written| written.contains("import \"./circle-base.gandr\""));
+                .unwrap_or_default();
+            let imports_base = written.contains("import \"./circle-base.gandr\"");
+            if written.contains("import std.list") {
+                list_importers = list_importers.saturating_add(1);
+            }
             if path == base || imports_base {
                 certificates.push((path.to_path_buf(), kernel.as_ref().to_vec()));
             }
@@ -269,9 +275,9 @@ fn the_identity_base_is_lowered_once_for_its_importers()
     );
     assert_eq!(
         usize::from(report.lowerings()),
-        usize::from(report.sources().read()).saturating_add(1_usize),
-        "each source of the subject is lowered once, the base among them, and `std.list`, which \
-         several of them import, once beside them (#4520)"
+        usize::from(report.sources().read()).saturating_add(list_importers),
+        "each source of the subject is lowered once, the base among them, and `std.list` once in \
+         each component that imports it: once per importer, none of which imports another"
     );
     let Some((first, rest)) = certificates.split_first()
     else {
