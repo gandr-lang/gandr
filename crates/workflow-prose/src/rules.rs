@@ -44,9 +44,11 @@ const PASSIVES: [&str; 6] = [
 /// The longest run of nouns a sentence may stack.
 const STACK: usize = 3;
 
-/// The most words a sentence of a body or a comment may hold, a code span
-/// counted as one.
+/// The most words a description sentence may hold, a code span counted as one.
 const WORDS: usize = 25;
+
+/// The most words a procedure sentence may hold.
+const PROCEDURE_WORDS: usize = 20;
 
 /// The most sentences a comment paragraph may hold.
 const WALL: usize = 5;
@@ -94,8 +96,10 @@ pub enum Rule
     IngMain,
     /// A glossary word in a part of speech the glossary refuses.
     Glossary,
-    /// A sentence of a body or a comment longer than the word limit.
+    /// A sentence of a description longer than twenty-five words.
     Length,
+    /// A procedure sentence longer than twenty words.
+    ProcedureLength,
     /// A semicolon joining two sentences of a body or a comment.
     Semicolon,
     /// A dash joining two clauses of a body or a comment.
@@ -116,13 +120,14 @@ pub enum Rule
 }
 
 /// Every rule, in the order they are stated.
-const RULES: [Rule; 14] = [
+const RULES: [Rule; 15] = [
     Rule::Passive,
     Rule::Tense,
     Rule::NounStack,
     Rule::IngMain,
     Rule::Glossary,
     Rule::Length,
+    Rule::ProcedureLength,
     Rule::Semicolon,
     Rule::Dash,
     Rule::InlineReference,
@@ -151,20 +156,21 @@ impl fmt::Display for Rule
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            Self::Passive => "Passive",
-            Self::Tense => "Tense",
-            Self::NounStack => "NounStack",
-            Self::IngMain => "IngMain",
-            Self::Glossary => "Glossary",
-            Self::Length => "Length",
-            Self::Semicolon => "Semicolon",
+            Self::Passive => "STE-3.6",
+            Self::Tense => "STE-3.2",
+            Self::NounStack => "STE-2.1",
+            Self::IngMain => "STE-3.5",
+            Self::Glossary => "STE-1.2",
+            Self::Length => "STE-6.3",
+            Self::ProcedureLength => "STE-5.1",
+            Self::Semicolon => "STE-8.1",
             Self::Dash => "Dash",
             Self::InlineReference => "InlineReference",
-            Self::Wall => "Wall",
+            Self::Wall => "STE-6.6",
             Self::Head => "Head",
             Self::What => "What",
             Self::Item => "Item",
-            Self::Procedure => "Procedure",
+            Self::Procedure => "STE-5.3",
         })
     }
 }
@@ -236,6 +242,7 @@ impl fmt::Display for Fix
                 "use the glossary word only as its part of speech, or choose another word"
             },
             Rule::Length => "split it into sentences of at most 25 words, one clause each",
+            Rule::ProcedureLength => "split the procedure into sentences of at most 20 words",
             Rule::Semicolon => "end the first sentence with a full stop and start the next",
             Rule::Dash => {
                 "end the first clause with a full stop, or make the text after the dash a phrase \
@@ -427,7 +434,22 @@ fn clauses(
     let prose = |token: &Token| read(readings, token) == Reading::Prose;
     let worded = |token: &Token| !UNWORDED.contains(&token.pos.as_str());
     let mut rules = Vec::new();
-    if words(readings, sentence).0 > WORDS {
+    let count = words(readings, sentence).0;
+    let procedure = match sentence.root() {
+        Maybe::Present(root)
+            if root.tag == "VB"
+                && !sentence
+                    .children(root)
+                    .any(|child| child.dep == "nsubj" || child.dep == "nsubjpass") =>
+        {
+            true
+        },
+        Maybe::Present(_) | Maybe::Absent(_) => false,
+    };
+    if procedure && count > PROCEDURE_WORDS {
+        rules.push(Rule::ProcedureLength);
+    }
+    else if count > WORDS {
         rules.push(Rule::Length);
     }
     let after = |mark: &dyn Fn(&Token) -> bool, follows: &dyn Fn(&Token) -> bool| {
@@ -505,7 +527,18 @@ fn broken(
             .children(root)
             .any(|child| child.dep == "auxpass" && (child.tag == "VBZ" || child.tag == "VBP"))
     };
-    if root.is_some_and(|root| root.tag == "VBD" || (root.tag == "VBN" && !present_passive(root))) {
+    let complex = sentence.tokens.iter().any(|token| {
+        prose(token)
+            && token.dep == "aux"
+            && matches!(
+                token.lemma.to_lowercase().as_str(),
+                "will" | "shall" | "have" | "has"
+            )
+    });
+    if complex
+        || root
+            .is_some_and(|root| root.tag == "VBD" || (root.tag == "VBN" && !present_passive(root)))
+    {
         rules.push(Rule::Tense);
     }
     if source == Source::Body {
@@ -526,7 +559,12 @@ fn broken(
     if stacked {
         rules.push(Rule::NounStack);
     }
-    if root.is_some_and(|root| root.tag == "VBG") {
+    let ing = root.is_some_and(|root| root.tag == "VBG")
+        || sentence
+            .tokens
+            .iter()
+            .any(|token| prose(token) && token.tag == "VBG" && token.dep == "amod");
+    if ing {
         rules.push(Rule::IngMain);
     }
     let misused = sentence.tokens.iter().any(|token| {

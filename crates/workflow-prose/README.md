@@ -30,22 +30,91 @@ Each finding prints its file, the line its passage starts on, the rule, the sent
 
 | Rule | Fires when | Fix |
 | ---- | ---------- | --- |
-| `Passive` | a token is `auxpass` and its head's lemma is not `refuse`, `admit`, `replay`, `check` or `normalise` | name the agent and make it the subject; a passive is allowed only as `is refused`, `is admitted`, `is replayed`, `is checked` or `is normalised` |
-| `Tense` | the root is tagged `VBD`, or `VBN` without a present-tense `auxpass` child | state it in the present tense |
-| `NounStack` | four or more consecutive tokens are `NOUN` or `PROPN` | break the stack of nouns with a preposition or a verb |
-| `IngMain` | the root is tagged `VBG` | make the main verb a finite verb, not an `-ing` form |
-| `Glossary` | a token's lemma is in the glossary and its coarse tag is not the glossary's part of speech | use the glossary word only as its part of speech, or choose another word |
-| `Length` | a body's or a comment's sentence holds more than 25 words, each code span one word | split it into sentences of at most 25 words, one clause each |
-| `Semicolon` | a semicolon in a body's or a comment's sentence has a word after it | end the first sentence with a full stop and start the next |
-| `Dash` | an em or en dash in a body's or a comment's sentence has a verb after it | end the first clause with a full stop, or make the text after the dash a phrase with no verb |
-| `InlineReference` | a comment's sentence holds a word that names a URL (`://`), an issue (`#` and digits) or a path (a `/` and a tree directory or a file extension), its brackets, quotes and closing punctuation left out | move the path, the issue or the URL to a `- see:` line after the paragraph |
-| `Wall` | a comment paragraph holds more than five sentences, a sentence ending on a full stop, a question mark or an exclamation mark outside a code span | split the paragraph into paragraphs of at most five sentences, one idea each |
-| `Head` | a corpus source's opening comment run is not four paragraphs, or a references line opens with neither `- see:` nor `- owes:` | open the source on four paragraphs: what, why, how and references |
-| `What` | the first sentence of that head's first prose paragraph holds more than twenty words, each code span one word | cut the first sentence to at most twenty words |
-| `Item` | an item `///` comment holds more than two sentences | cut the item comment to at most two sentences |
-| `Procedure` | a rendered diagnostic labels no span, or ends with no `help:` line and no note naming an issue, or its `help:` line does not start with an imperative | state what is wrong in the headline, label the span, and end with an imperative `help:` or the issue that tracks it |
+| `STE-3.6` | a token is `auxpass` and its head's lemma is not `refuse`, `admit`, `replay`, `check` or `normalise` | name the agent and make it the subject; a passive is allowed only as `is refused`, `is admitted`, `is replayed`, `is checked` or `is normalised` |
+| `STE-3.2` | the root is past, or an auxiliary is `will`, `shall`, `have` or `has` | state it in the present tense |
+| `STE-2.1` | four or more consecutive tokens are `NOUN` or `PROPN` | break the stack of nouns with a preposition or a verb |
+| `STE-3.5` | the root is `VBG`, or a `VBG` token is a noun modifier | make the `-ing` form a finite verb |
+| `STE-1.2` | a glossary lemma is not in its part of speech | use the glossary word only as its part of speech |
+| `STE-6.3` | a description holds more than 25 words | split it into sentences of at most 25 words |
+| `STE-5.1` | a procedure sentence holds more than 20 words | split the procedure into sentences of at most 20 words |
+| `STE-8.1` | a semicolon in a body or a comment has a word after it | end the first sentence and start the next |
+| `Dash` | an em or en dash in a body or a comment has a verb after it | end the first clause, or make the text after the dash a phrase |
+| `InlineReference` | a comment names a URL, an issue or a path | move it to a `- see:` line |
+| `STE-6.6` | a comment paragraph holds more than five sentences | split the paragraph |
+| `Head` | a corpus head is not four paragraphs, or a references line is malformed | open the source on four paragraphs |
+| `What` | the head's first sentence holds more than 20 words | cut the first sentence |
+| `Item` | an item comment holds more than two sentences | cut the item comment |
+| `STE-5.3` | a diagnostic lacks its what, its where or an imperative | state the procedure |
 
-A comment keeps every rule but `Procedure`. `Head`, `What` and `Item` bind a corpus source outside the features ledger. A library source and a fixture keep the other comment rules. A README and a diagnostic keep `Passive`, `Tense`, `NounStack`, `IngMain` and `Glossary`. `Procedure` binds a diagnostic.
+A comment keeps every rule but `STE-5.3`. `Head`, `What` and `Item` bind a corpus source outside the features ledger. A library source and a fixture keep the other comment rules. A README and a diagnostic keep `STE-3.6`, `STE-3.2`, `STE-2.1`, `STE-3.5` and `STE-1.2`. `STE-5.3` binds a diagnostic.
+
+### Issue 9
+
+The gate is ASD-STE100 with unrestricted technical vocabulary. A finding names the rule it holds. A reader checks a rule the parse cannot read.
+
+| Item | Gate |
+| ---- | ---- |
+| 1.1 | review: no dictionary in the tree |
+| 1.2 | partial: `STE-1.2` |
+| 1.3 | review: meaning needs a reader |
+| 1.4 | review: a dictionary form is not in the tree |
+| 1.5 | review: a technical category needs an owner |
+| 1.6 | review: a technical noun needs an owner |
+| 1.7 | partial: `STE-1.2` |
+| 1.8 | review: a subject field needs an owner |
+| 1.9 | review: ease needs a reader |
+| 1.10 | review: no slang list in the tree |
+| 1.11 | review: identity needs the document |
+| 1.12 | review: a technical verb needs an owner |
+| 1.13 | partial: `STE-1.2` |
+| 1.14 | review: no spelling map in the tree |
+| 2.1 | gated: `STE-2.1` |
+| 2.2 | review: first form needs document order |
+| 3.1 | review: a dictionary form is not in the tree |
+| 3.2 | partial: `STE-3.2` |
+| 3.3 | review: an adjectival `-ing` needs a reader |
+| 3.4 | review: an auxiliary policy needs a reader |
+| 3.5 | partial: `STE-3.5` |
+| 3.6 | partial: `STE-3.6` |
+| 3.7 | partial: `STE-1.2` |
+| 4.1 | review: clarity needs a reader |
+| 4.2 | review: a contraction needs a reader |
+| 4.3 | review: purpose needs the document |
+| 4.4 | review: topic relation needs a reader |
+| 4.5 | review: article use needs a reader |
+| 5.1 | gated: `STE-5.1` |
+| 5.2 | review: simultaneous acts need a reader |
+| 5.3 | partial: `STE-5.3` |
+| 5.4 | review: a condition's relevance needs a reader |
+| 5.5 | review: a note's command needs a reader |
+| 6.1 | review: information order needs a reader |
+| 6.2 | review: logical structure needs a reader |
+| 6.3 | gated: `STE-6.3` |
+| 6.4 | review: related information needs a reader |
+| 6.5 | review: one topic needs a reader |
+| 6.6 | partial: `STE-6.6` holds five sentences |
+| 7.1 | review: a safety heading needs a reader |
+| 7.2 | review: a safety block needs a reader |
+| 7.3 | review: a risk needs a reader |
+| 8.1 | gated: `STE-8.1` |
+| 8.2 | review: related words need a reader |
+| 8.3 | review: a parenthesis needs a reader |
+| 8.4 | review: a colon in a count needs a reader |
+| 8.5 | review: a parenthesis in a count needs a reader |
+| 8.6 | review: a token class in a count needs a reader |
+| 8.7 | review: a hyphen in a count needs a reader |
+| 9.1 | review: a replacement needs an earlier text |
+| 9.2 | review: a sense needs a dictionary |
+| 9.3 | review: a phrasal verb needs a dictionary |
+| 9.4 | review: style needs the document |
+| GR-1 | review: `that` needs a reader |
+| GR-2 | review: `with` needs a reader |
+| GR-3 | review: a pronoun needs a reader |
+| GR-4 | review: `this` needs a reader |
+| GR-5 | review: a false friend needs a reader |
+| GR-6 | review: no abbreviation list in the tree |
+| GR-7 | review: no inclusive-language list in the tree |
+| GR-8 | review: a possessive needs a reader |
 
 The small English model misreads some technical sentences. A misreading is debt like any other finding: reword the sentence so the parse reads it, or leave the line in the ledger.
 
