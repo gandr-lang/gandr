@@ -1,0 +1,39 @@
+/// A seal names an abstract type once, and its representation stays visible
+/// only inside the seal.
+///
+/// A seal mints a fresh atom for the abstract type and an unfolding name
+/// derived from it. The author writes one name, and the core keeps the pair.
+///
+/// Inside the seal the representation unfolds. After the seal a client sees
+/// the type, its operations and its laws, never the representation.
+///
+/// - see: #4570 — the opacity sketch, its rulings in the issue body
+
+/// A counter: a carrier, a start and a step.
+theory Counter where {
+  /// The carrier.
+  sort C : Type;
+  /// The start.
+  oper start : () --> C;
+  /// One step.
+  oper tick : (c : C) --> C;
+}
+
+/// A counter over the naturals behind a seal. Inside, `C` is `Nat`, and
+/// outside it is a fresh type.
+module Clock :> Model(Counter) where {
+  /// The representation, visible inside the seal.
+  type C = Nat;
+
+  /// The start.
+  def start() -> Nat { 0 }
+
+  /// One step, which unfolds to a successor inside the seal.
+  def tick(c : Nat) -> Nat { c + 1 }
+}
+
+/// A client counts two ticks. It holds no unfolding name for `Clock`, so
+/// `Clock.C` stays abstract here.
+def twice(c : Clock.C) -> Clock.C {
+  Clock.tick(Clock.tick(c))
+}
