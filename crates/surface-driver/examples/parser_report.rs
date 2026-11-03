@@ -6,12 +6,17 @@
 //!
 //! | Axis | Measure | Read from |
 //! | ---- | ------- | --------- |
+//! | latency | each keystroke's time from its change to its settled answer, p50 and p99 | a language-server session per [`SAMPLE`] source, one line typed back a character per change |
 //! | throughput | bytes and significant tokens per second of the corpus's cold parse | each corpus source parsed [`RUNS`] times, the fastest run kept |
 //! | recovery | each mutant's fate over the syntax exemplars | `gandr ledger recovery`'s sweep |
 //! | ambiguity | each decision's settling stage, the candidates it read, and the windows and window tokens it molded | the molder's [`DecisionCensus`] over every corpus source |
 //!
 //! The corpus is the sweeps' corpus, its strict and fixture roots, listed by
-//! `gandr-workflow-sweep`.
+//! `gandr-workflow-sweep`. The latency workload's client is the benchmark
+//! report's (`benches/shared/lsp.rs`).
+
+#[path = "../benches/shared/lsp.rs"]
+mod lsp;
 
 use core::fmt;
 use core::fmt::Write as _;
@@ -38,6 +43,7 @@ use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use gandr_workflow_sweep::SweepError;
+use quenchant_shape::shape::Maybe;
 
 /// How many times each source is parsed cold; the fastest run stands for it,
 /// as the acceptance test's latency budget reads it.
@@ -45,6 +51,25 @@ const RUNS: u32 = 5;
 
 /// The directory of syntax exemplars the recovery sweep mutates.
 const EXEMPLARS: &str = "corpus/ledger";
+
+/// The latency workload's sources, from the repository root: eight model
+/// sources from 1.3 kB to 15 kB, the largest model closure among them. Every
+/// candidate types the same keystrokes into them.
+const SAMPLE: [&str; 8] = [
+    "corpus/model/deployments/offers.gandr",
+    "corpus/model/control/accessor-place.gandr",
+    "corpus/model/universe/decoded-descent.gandr",
+    "corpus/model/identity/group-laws.gandr",
+    "corpus/model/modules/prelude-resolve.gandr",
+    "corpus/model/identity/model-counter-manifest.gandr",
+    "corpus/model/desc/lc/model-record.gandr",
+    "corpus/model/specification/niche-realizability.gandr",
+];
+
+/// The least code a typed line holds past its indentation: the workload types
+/// the first line at or after a source's middle that holds this much and is
+/// no comment.
+const TYPED: usize = 20;
 
 /// Why the report stopped.
 #[derive(Debug)]
@@ -60,6 +85,10 @@ enum Failure
     Parse(MeldError),
     /// The recovery sweep faulted, its fault rendered.
     Recovery(String),
+    /// A latency session stopped before its keystrokes were answered.
+    Session(lsp::Fault),
+    /// A sample source holds no line the latency workload types, by its path.
+    Untyped(&'static str),
 }
 
 impl From<PbgError> for Failure
@@ -110,6 +139,18 @@ impl From<MeldError> for Failure
     }
 }
 
+impl From<lsp::Fault> for Failure
+{
+    /// A latency session's fault.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from(fault: lsp::Fault) -> Self
+    {
+        Self::Session(fault)
+    }
+}
+
 impl From<fmt::Error> for Failure
 {
     /// The table's formatting refusal.
@@ -139,6 +180,11 @@ impl fmt::Display for Failure
             Self::Io(ref fault) => write!(f, "a source or the table refused: {fault}"),
             Self::Parse(ref fault) => write!(f, "a parse could not assemble its tree: {fault}"),
             Self::Recovery(ref fault) => write!(f, "the recovery sweep faulted: {fault}"),
+            Self::Session(ref fault) => write!(f, "a latency session stopped: {fault}"),
+            Self::Untyped(path) => write!(
+                f,
+                "`{path}` holds no line of {TYPED} code characters at or after its middle"
+            ),
         }
     }
 }
@@ -389,6 +435,160 @@ fn recovery() -> Result<RecoveryTally, Failure>
     }
 }
 
+/// A wall time written in milliseconds with one decimal, `61.3`.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Millis(Duration);
+
+impl fmt::Display for Millis
+{
+    /// Writes the time in tenths of a millisecond, rounded down.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        let tenths = self.0.as_micros().checked_div(100).unwrap_or(0);
+        write!(
+            f,
+            "{}.{}",
+            tenths.checked_div(10).unwrap_or(0),
+            tenths.checked_rem(10).unwrap_or(0)
+        )
+    }
+}
+
+/// What the latency workload read: how many keystrokes it typed, and the
+/// median and the 99th percentile of their times to a settled answer.
+#[derive(Clone, Copy, Debug)]
+struct Latency
+{
+    /// The keystrokes typed over every sample source.
+    keystrokes: Tally,
+    /// The nearest-rank median.
+    p50: Duration,
+    /// The nearest-rank 99th percentile.
+    p99: Duration,
+}
+
+/// Why a source yields no keystrokes.
+#[derive(Clone, Copy, Debug)]
+enum Untyped
+{
+    /// No line at or after the source's middle holds [`TYPED`] code
+    /// characters past its indentation outside a comment.
+    NoLine,
+}
+
+/// The texts one sample source passes through: the text it opens at, and the
+/// text after each keystroke.
+struct Keystrokes
+{
+    /// The source with its typed line's code left out, its indentation kept.
+    opened: String,
+    /// The source after each keystroke, the last the source itself.
+    typed: Vec<String>,
+}
+
+/// The texts `text` passes through when its typed line is typed back one
+/// character per change: the first line at or after its middle that holds
+/// [`TYPED`] code characters past its indentation and is no comment.
+///
+/// # Specification
+/// trivial.
+fn keystrokes(text: SourceText<'_>) -> Maybe<Keystrokes, Untyped>
+{
+    let text = <&str>::from(text);
+    let lines: Vec<(usize, &str)> = text
+        .split_inclusive('\n')
+        .scan(0_usize, |start, line| {
+            let at = *start;
+            *start = start.saturating_add(line.len());
+            Some((at, line))
+        })
+        .collect();
+    let middle = lines.len().checked_div(2).unwrap_or(0);
+    let found = lines.iter().skip(middle).find_map(|&(at, line)| {
+        let content = line.trim_end_matches(['\n', '\r']);
+        let code = content.trim_start();
+        let typed = code.chars().count() >= TYPED && !code.starts_with("//");
+        typed.then(|| {
+            let start = at.saturating_add(content.len().saturating_sub(code.len()));
+            (start, start.saturating_add(code.len()))
+        })
+    });
+    let Some((start, end)) = found
+    else {
+        return Maybe::Absent(Untyped::NoLine);
+    };
+    let (Some(before), Some(code), Some(after)) =
+        (text.get(.. start), text.get(start .. end), text.get(end ..))
+    else {
+        return Maybe::Absent(Untyped::NoLine);
+    };
+    let typed = code
+        .char_indices()
+        .map(|(at, character)| at.saturating_add(character.len_utf8()))
+        .filter_map(|typed| code.get(.. typed))
+        .map(|typed| format!("{before}{typed}{after}"))
+        .collect();
+    Maybe::Present(Keystrokes {
+        opened: format!("{before}{after}"),
+        typed,
+    })
+}
+
+/// The latency workload: each [`SAMPLE`] source opened in a language-server
+/// session with its typed line's code left out, then typed back one
+/// character per change, each change timed from its write to its settled
+/// answer.
+///
+/// # Specification
+/// trivial.
+fn latency() -> Result<Latency, Failure>
+{
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut times = Vec::new();
+    for relative in SAMPLE {
+        let path = std::fs::canonicalize(root.join(relative))?;
+        let text = std::fs::read_to_string(&path)?;
+        let Maybe::Present(Keystrokes { opened, typed }) =
+            keystrokes(SourceText::from(text.as_str()))
+        else {
+            return Err(Failure::Untyped(relative));
+        };
+        let taken = lsp::live(&path, opened, move |client| {
+            let mut taken = Vec::with_capacity(typed.len());
+            for text in &typed {
+                let start = Instant::now();
+                client.change(core::slice::from_ref(text))?;
+                taken.push(start.elapsed());
+            }
+            Ok(taken)
+        })?;
+        times.extend(taken);
+    }
+    times.sort_unstable();
+    // The nearest rank of the `percent`th percentile, as an index into the
+    // sorted times.
+    let rank = |percent: usize| {
+        times
+            .len()
+            .saturating_mul(percent)
+            .div_ceil(100)
+            .saturating_sub(1)
+    };
+    let at = |percent| times.get(rank(percent)).copied().unwrap_or_default();
+    Ok(Latency {
+        keystrokes: Tally(times.len()),
+        p50: at(50),
+        p99: at(99),
+    })
+}
+
 /// Read every axis this report holds and print its table.
 ///
 /// # Specification
@@ -408,6 +608,7 @@ fn main() -> Result<(), Failure>
         throughput.tokens = throughput.tokens.and(tokens);
     }
     let tally = recovery()?;
+    let latency = latency()?;
     let swept = Tally(tally.swept);
     let of_swept = |part: usize| Share {
         part: Tally(part),
@@ -419,7 +620,18 @@ fn main() -> Result<(), Failure>
         whole: decisions,
     };
     let mut table = String::from("| Axis | Measure | Reading |\n| --- | --- | --- |\n");
-    let rows: [(&str, &str, &dyn fmt::Display); 19] = [
+    let rows: [(&str, &str, &dyn fmt::Display); 22] = [
+        ("latency", "keystrokes typed", &latency.keystrokes),
+        (
+            "latency",
+            "time from a keystroke to its settled answer, ms, p50",
+            &Millis(latency.p50),
+        ),
+        (
+            "latency",
+            "time from a keystroke to its settled answer, ms, p99",
+            &Millis(latency.p99),
+        ),
         ("throughput", "sources", &throughput.sources),
         ("throughput", "bytes", &throughput.bytes),
         ("throughput", "significant tokens", &throughput.tokens),
