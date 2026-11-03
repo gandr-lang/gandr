@@ -10,6 +10,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::host::partiality;
 use gandr_core_term::equal_comp_type_syntax;
+use gandr_core_term::session::SessionAction;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -22,7 +23,9 @@ use gandr_kernel_term::RuleVariable;
 use quenchant_shape::shape::Maybe;
 
 use super::Divergence;
+use super::Protocol;
 use super::calls;
+use super::follows;
 use super::returning;
 use super::stated;
 use crate::context::CheckBudget;
@@ -378,5 +381,109 @@ fn an_unread_call_converts_only_where_its_row_is_empty()
             "the call converts away with the empty row and stands with `Partial`: {returning:?} \
              {related:?}"
         );
+    }
+}
+
+/// `(force k) x` with the loop's own binder `k` at `own`.
+///
+/// # Specification
+/// trivial.
+fn pass_again(
+    arena: &mut CoreArena,
+    own: DeBruijnIndex,
+) -> ComputationId
+{
+    let looped = arena.value_variable(Zone::Intuitionistic, own);
+    let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(looped);
+    arena.computation_application(forced, argument)
+}
+
+/// `λ x. place x { pass }`, the body of a loop threading one endpoint.
+///
+/// # Specification
+/// trivial.
+fn threading(
+    arena: &mut CoreArena,
+    pass: ComputationId,
+) -> ComputationId
+{
+    let slot = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let placed = arena.computation_session(SessionAction::Place {
+        payload: slot,
+        body: pass,
+    });
+    arena.computation_lambda(placed)
+}
+
+/// A loop follows its protocol when every path to its next pass moves on the
+/// endpoint it places first: a receive before the call, a send bound before
+/// it. A case with one arm calling again untouched, a bind whose first part
+/// only returns, and a loop that places no endpoint each owe `Partial`.
+#[test]
+fn a_loop_follows_its_protocol_only_when_every_pass_acts_first()
+{
+    let mut arena = CoreArena::new();
+    let endpoint = DeBruijnIndex::from(0_u32);
+    let (outer, inner) = (DeBruijnIndex::from(1_u32), DeBruijnIndex::from(2_u32));
+    let unit = arena.value_unit();
+
+    let again = pass_again(&mut arena, outer);
+    let received = arena.computation_session(SessionAction::Receive {
+        endpoint,
+        body: again,
+    });
+    let moving = threading(&mut arena, received);
+
+    let untouched = pass_again(&mut arena, inner);
+    let again = pass_again(&mut arena, inner);
+    let acted = arena.computation_session(SessionAction::Receive {
+        endpoint,
+        body: again,
+    });
+    let flag = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let either = arena.computation_case(flag, &[untouched, acted]);
+    let idle = threading(&mut arena, either);
+
+    let sent = arena.computation_session(SessionAction::Send {
+        endpoint,
+        payload: unit,
+    });
+    let again = pass_again(&mut arena, inner);
+    let bound = arena.computation_bind(sent, again);
+    let sending = threading(&mut arena, bound);
+
+    let returned = arena.computation_return(unit);
+    let again = pass_again(&mut arena, inner);
+    let bound = arena.computation_bind(returned, again);
+    let returning = threading(&mut arena, bound);
+
+    let again = pass_again(&mut arena, outer);
+    let unthreaded = arena.computation_lambda(again);
+
+    for (body, expected, what) in [
+        (moving, Protocol::Followed, "a receive before the next pass"),
+        (
+            idle,
+            Protocol::Unfollowed,
+            "an arm that runs again untouched",
+        ),
+        (
+            sending,
+            Protocol::Followed,
+            "a send bound before the next pass",
+        ),
+        (
+            returning,
+            Protocol::Unfollowed,
+            "a bind whose first part only returns",
+        ),
+        (
+            unthreaded,
+            Protocol::Unfollowed,
+            "a loop that places no endpoint",
+        ),
+    ] {
+        assert_eq!(follows(&arena, body), Ok(expected), "{what}");
     }
 }

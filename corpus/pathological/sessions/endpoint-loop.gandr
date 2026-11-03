@@ -2,10 +2,13 @@
 //
 // A pass that runs again before it finishes a turn of the protocol hands the
 // next pass an endpoint at another state. An arm that leaves the loop with the
-// endpoint open leaves it otherwise than an arm that runs again.
+// endpoint open leaves it otherwise than an arm that runs again. A pass that
+// can run again with the endpoint untouched waits on no peer.
 //
 // The checker refuses the first at the `continue` as `TypeMismatch` against
-// the head's state, and the second at the `offer` as `ArmsDisagree`.
+// the head's state, and the second at the `offer` as `ArmsDisagree`. It
+// refuses the third at the loop as `TypeMismatch`, wanting the `Partial` every
+// loop owes that does not follow its protocol.
 //
 // - see: corpus/model/sessions/endpoint-loop.gandr
 
@@ -33,6 +36,24 @@ def abandoned(operator : mu open. &{
     offer(operator) {
       report => { let next = recv(operator); continue },
       retire => { let last = recv(operator); break }
+    }
+  }
+}
+
+/// A desk that runs its next pass without acting on the endpoint when told
+/// to wait.
+@[ refuses("TypeMismatch") ]
+def idle(waiting : Bool, operator : mu open. &{
+  report : ?Integer. open,
+  retire : ?Integer. end
+}) -> Unit {
+  loop {
+    match waiting {
+      true => continue,
+      false => offer(operator) {
+        report => { let next = recv(operator); continue },
+        retire => { let last = recv(operator); close(operator); break }
+      }
     }
   }
 }
