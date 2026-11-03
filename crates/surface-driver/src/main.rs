@@ -10,7 +10,7 @@
 //! | Code | Meaning |
 //! | ---- | ------- |
 //! | `0` | every declaration settled, a script's run returned a value, every staged certificate was readmitted, every source was laid out, a ledger was written, every exemplar held, or a census read every path; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a Model Context Protocol session whose input ended, an engine hub that lingered out or found another serving its socket, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
-//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a package's library states no manifest, or its `gandr.toml` was edited by hand; a manifold `check` reads deploys a world its program lacks or its site does not offer; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; `gandr ledger exemplars` found an exemplar that does not hold; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
+//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a package's source states no manifest, or its `gandr.toml` was edited by hand; a manifold `check` reads deploys a world its program lacks or its site does not offer; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; `gandr ledger exemplars` found an exemplar that does not hold; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
 //! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, `check`, `test` or `fmt` given no path outside every package, a user configuration file that cannot be read or names a spelling there is none of, output the driver could not write, a package manifest that could not be read or written, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a ledger that could not be generated, written or listed, or a source a census could not parse or lower, or that the lowering refused whole |
 //!
 //! A fault outranks an unsettled declaration: a run with both exits `2`. The
@@ -67,13 +67,13 @@
 //! sources. The directories a source sits in decide its root — `strict`,
 //! `fixture`, or `fixture/pending` — and a source under none is strict
 //! (`gandr-surface-dispatcher`'s `root` module). A path inside a package — the
-//! sources beside a `lib.gandr`, rooted above it when it sits in `src` — stands
-//! for the whole package, and `check`, `test` and `fmt` given no path work on
-//! the package the working directory sits in, or, in no package, on every
-//! member a `workspace.gandr` above it names, as they do given the workspace's
-//! directory (`gandr-surface-dispatcher`'s `package` and `workspace` modules).
-//! After its walk, `check` reconciles each such package's
-//! `gandr.toml` with the library's `Package` model, `manifest: <path>:
+//! sources beside a `package.gandr`, rooted above it when it sits in `src` —
+//! stands for the whole package, and `check`, `test` and `fmt` given no path
+//! work on the package the working directory sits in, or, in no package, on
+//! every member a `workspace.gandr` above it names, as they do given the
+//! workspace's directory (`gandr-surface-dispatcher`'s `package` and
+//! `workspace` modules). After its walk, `check` reconciles each such package's
+//! `gandr.toml` with the package source's `Package` model, `manifest: <path>:
 //! written`, `rewritten` or `unchanged` on standard output; a manifest edited
 //! by hand is left as it stands and is `gandr: <path>: drifted: …` on standard
 //! error. Each manifold the walk settles, a source declaring
@@ -3019,9 +3019,9 @@ fn ungranted(refused: &AuthorityError) -> ExitCode
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `check` with no path in a directory with no library above
-///   it, and in a workspace naming a directory that roots no package, each
-///   exits two before any source is read.
+/// - hypothesis: L3 — `check` with no path in a directory with no package
+///   source above it, and in a workspace naming a directory that roots no
+///   package, each exits two before any source is read.
 /// - witness: `tests::cli::a_verb_with_no_path_checks_the_package_it_runs_in_2687`
 /// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
 #[spec(ensures: |ret| ret == ExitCode::from(FAULTED))]
@@ -3515,16 +3515,16 @@ fn stage(
 ///   states, and under `check --report cells` by its discharged cells, as
 ///   [`discharged_cells`] states. Under `check`, each package of the pass first
 ///   prints what locking its dependencies before the walk came to, as
-///   [`locked`] states; then each whose library settled with no refusal has its
-///   manifest read from the library's program and reconciled: each written,
-///   rewritten or unchanged is the line `manifest: <path>: <what>` on standard
-///   output, at the JSON level an object whose `level` is `manifest`; a library
-///   that states no manifest, and a manifest refused as drift, are each `gandr:
-///   <path>: <why>` on standard error and unsettle the run, and one that cannot
-///   be read or written faults it. Each package whose lock is held and whose
-///   sources all settled then commits its export, the artifacts the walk
-///   admitted for its sources as [`Exporting`] keeps them, into the pass's
-///   store under its address's root, as
+///   [`locked`] states; then each whose package source settled with no refusal
+///   has its manifest read from the package source's program and reconciled:
+///   each written, rewritten or unchanged is the line `manifest: <path>:
+///   <what>` on standard output, at the JSON level an object whose `level` is
+///   `manifest`; a package source that states no manifest, and a manifest
+///   refused as drift, are each `gandr: <path>: <why>` on standard error and
+///   unsettle the run, and one that cannot be read or written faults it. Each
+///   package whose lock is held and whose sources all settled then commits its
+///   export, the artifacts the walk admitted for its sources as [`Exporting`]
+///   keeps them, into the pass's store under its address's root, as
 ///   [`Export::commit`](gandr_surface_dispatcher::Export::commit) states,
 ///   printing nothing; a store that refuses the commit is `gandr: <root>:
 ///   <why>` on standard error and faults the run, and so is an artifact that
@@ -3607,7 +3607,7 @@ fn run(
     else {
         walk
     };
-    // The manifest each package's library states, and the export its sources
+    // The manifest each package's source states, and the export its sources
     // build, by the package's place.
     let mut manifests: Vec<Option<Result<Manifest, Unmanifested>>> =
         packages.iter().map(|_| None).collect();
@@ -3960,29 +3960,30 @@ fn locked<'packaged>(
     }
 }
 
-/// Check that the running toolchain meets what `package`'s library asks of
-/// it, then reconcile the manifest with what the library states, and print
-/// the package's address, printing what came of each, and the verdict it
+/// Check that the running toolchain meets what `package`'s package source asks
+/// of it, then reconcile the manifest with what the package source states, and
+/// print the package's address, printing what came of each, and the verdict it
 /// leaves the run at.
 ///
 /// # Specification
-/// - requires: `manifest` is what `package`'s library states, and `address`,
-///   when given, the package's address over the lock its dependencies resolve
-///   to, as [`locking`] computed it.
-/// - ensures: a library that states no manifest is `gandr: <library>: <why>` on
-///   standard error and unsettles the run. A manifest whose toolchain the
-///   running one leaves unmet ([`gandr_surface_dispatcher::Toolchain::unmet`]
-///   against the built-in features ledger) is `gandr: <library>: <clause>: …`
-///   on standard error, one line per constraint unmet, writes nothing and
-///   unsettles. Otherwise the manifest is reconciled at `package`'s root:
-///   written, rewritten or unchanged is `manifest: <path>: <what> (address
-///   <hex>)` on standard output, the address `address` holds, at the JSON level
-///   an object whose `level` is `manifest` carrying `address`, and settles. A
-///   package with no address prints the line without it, then `gandr:
-///   <library>: <why>` on standard error, and unsettles; one given no address
-///   prints the line without it and settles, its lock having unsettled the run
-///   already; drift is `gandr: <path>: <why>` on standard error and unsettles;
-///   a file that cannot be read or written likewise, and faults.
+/// - requires: `manifest` is what `package`'s package source states, and
+///   `address`, when given, the package's address over the lock its
+///   dependencies resolve to, as [`locking`] computed it.
+/// - ensures: a package source that states no manifest is `gandr: <source>:
+///   <why>` on standard error and unsettles the run. A manifest whose toolchain
+///   the running one leaves unmet
+///   ([`gandr_surface_dispatcher::Toolchain::unmet`] against the built-in
+///   features ledger) is `gandr: <source>: <clause>: …` on standard error, one
+///   line per constraint unmet, writes nothing and unsettles. Otherwise the
+///   manifest is reconciled at `package`'s root: written, rewritten or
+///   unchanged is `manifest: <path>: <what> (address <hex>)` on standard
+///   output, the address `address` holds, at the JSON level an object whose
+///   `level` is `manifest` carrying `address`, and settles. A package with no
+///   address prints the line without it, then `gandr: <source>: <why>` on
+///   standard error, and unsettles; one given no address prints the line
+///   without it and settles, its lock having unsettled the run already; drift
+///   is `gandr: <path>: <why>` on standard error and unsettles; a file that
+///   cannot be read or written likewise, and faults.
 /// - provides: the manifest step `run` takes for each package.
 /// - fails: the first write error on either stream.
 /// - panics: none.
@@ -3994,8 +3995,8 @@ fn locked<'packaged>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a manifest written, unchanged, rewritten and drifted, and
-///   a library stating no version, each print and exit as stated; the address
-///   stays across an inert edit and moves with a content one.
+///   a package source stating no version, each print and exit as stated; the
+///   address stays across an inert edit and moves with a content one.
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
 /// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
 /// - witness: `tests::cli::a_package_s_toolchain_is_met_or_refused_by_its_clause_3135`
@@ -4014,7 +4015,7 @@ fn manifested(
             writeln!(
                 stderr,
                 "gandr: {}: {unmanifested}",
-                package.library().display()
+                package.source().display()
             )?;
             return Ok(RunVerdict::Unsettled);
         },
@@ -4029,7 +4030,7 @@ fn manifested(
     let unmet = manifest.toolchain().unmet(&Running::this(&ledger));
     if !unmet.is_empty() {
         for clause in &unmet {
-            writeln!(stderr, "gandr: {}: {clause}", package.library().display())?;
+            writeln!(stderr, "gandr: {}: {clause}", package.source().display())?;
         }
         return Ok(RunVerdict::Unsettled);
     }
@@ -4064,7 +4065,7 @@ fn manifested(
                     writeln!(
                         stderr,
                         "gandr: {}: {unaddressed}",
-                        package.library().display()
+                        package.source().display()
                     )?;
                     Ok(RunVerdict::Unsettled)
                 },
@@ -4109,8 +4110,8 @@ struct Attributed
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a package checked whole exports what its walk admitted
-///   and writes the manifest its library states, and two libraries sharing an
-///   import each write their own.
+///   and writes the manifest its package source states, and two package sources
+///   sharing an import each write their own.
 /// - witness: `tests::cli::a_checked_package_s_export_is_named_by_its_address_3225`
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
 /// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
@@ -4130,27 +4131,28 @@ fn attributed(
     Some(Attributed { canonical, place })
 }
 
-/// Read the manifest a package's library states, when `step` is that library
-/// and settled, into the package's place in `manifests`.
+/// Read the manifest a package's source states, when `step` is that package
+/// source and settled, into the package's place in `manifests`.
 ///
 /// # Specification
 /// - requires: `manifests` holds one place per package, in order, and
 ///   `attributed` is the step's attribution.
-/// - ensures: a settled source step whose canonical path is the library of the
-///   package it is attributed to has that package's place set to
-///   [`Manifest::of`] its program, its report of the library's own
+/// - ensures: a settled source step whose canonical path is the package source
+///   of the package it is attributed to has that package's place set to
+///   [`Manifest::of`] its program, its report of the package source's own
 ///   declarations, and the package; any other step changes nothing.
 /// - provides: the manifest `run` reconciles after the walk.
-/// - fails: never; a library that states no manifest is the place's error.
+/// - fails: never; a package source that states no manifest is the place's
+///   error.
 /// - panics: none.
 /// - executable: none — the clause is the body's one match; the CLI witness
-///   observes the manifest written from the library and none from an unsettled
-///   one.
+///   observes the manifest written from the package source and none from an
+///   unsettled one.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a package checked whole writes the manifest its library
-///   states, one whose library is unsettled writes none, and two libraries
-///   sharing an import each write their own.
+/// - hypothesis: L3 — a package checked whole writes the manifest its package
+///   source states, one whose package source is unsettled writes none, and two
+///   package sources sharing an import each write their own.
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
 /// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
 fn read_manifest(
@@ -4176,7 +4178,7 @@ fn read_manifest(
     if let (Some(packaged), Some(slot)) = (
         packages.get(attributed.place),
         manifests.get_mut(attributed.place),
-    ) && packaged.package.library() == attributed.canonical
+    ) && packaged.package.source() == attributed.canonical
     {
         *slot = Some(Manifest::of(program, report, &packaged.package));
     }

@@ -13,13 +13,14 @@
 //! with no export. So the export costs the walk no second judgement, and a
 //! package checked whole exports the same value however often it is checked.
 //!
-//! **Choice.** Every artifact the walk admitted for the package's sources,
-//! each under its sources' paths, read from the package's root.
-//! **Alternatives.** The library's artifact alone, which holds what an import
-//! of the library reads but leaves out every source no import reaches, and
-//! which the walk admits apart from the library only when nothing else joins
-//! its component. **Reversal.** A dependent that admits a dependency's export
-//! whole reads the library's own unit, and the export narrows to it.
+//! **Choice.** Every artifact the walk admitted for the package's sources, each
+//! under its sources' paths, read from the package's root. **Alternatives.**
+//! The package source's artifact alone, which holds what an import of the
+//! package source reads but leaves out every source no import reaches, and
+//! which the walk admits apart from the package source only when nothing else
+//! joins its component. **Reversal.** A dependent that admits a dependency's
+//! export whole reads the package source's own unit, and the export narrows to
+//! it.
 //!
 //! # A pointer names bytes, never an admission
 //!

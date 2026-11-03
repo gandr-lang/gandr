@@ -1,24 +1,24 @@
-//! A package: the sources beside a `lib.gandr`, and the `gandr.toml` the
+//! A package: the sources beside a `package.gandr`, and the `gandr.toml` the
 //! checker writes at its root from the package's own model.
 //!
-//! # A package is found by its library
+//! # A package is found by its package source
 //!
-//! [`Package::discover`] walks up from a path to the first directory that
-//! holds `lib.gandr`, or holds it in a `src` directory of its own. The package
-//! is every source under the library's directory. Its root, where the manifest
-//! lives, is that directory, or the directory above it when the library sits
-//! in a directory named `src`. So a package laid out as `hello/src/lib.gandr`
-//! is rooted at `hello`, and one laid out as `hello/lib.gandr` at `hello`
-//! too. The search is Cargo's upward search for `Cargo.toml` and Go's for
-//! `go.mod`, keyed by the library a gandr package always has rather than by
-//! the manifest, since the manifest is the checker's output. A layout that
-//! roots a package elsewhere reverses the convention, by a root the
-//! package's model states.
+//! [`Package::discover`] walks up from a path to the first directory that holds
+//! `package.gandr`, or holds it in a `src` directory of its own. The package is
+//! every source under the package source's directory. Its root, where the
+//! manifest lives, is that directory, or the directory above it when the
+//! package source sits in a directory named `src`. So a package laid out as
+//! `hello/src/package.gandr` is rooted at `hello`, and one laid out as
+//! `hello/package.gandr` at `hello` too. The search is Cargo's upward search
+//! for `Cargo.toml` and Go's for `go.mod`, keyed by the package source a gandr
+//! package always has rather than by the manifest, since the manifest is the
+//! checker's output. A layout that roots a package elsewhere reverses the
+//! convention, by a root the package's model states.
 //!
 //! # The manifest is written, never read
 //!
 //! `gandr check` evaluates `Package.name` and `Package.version` of the
-//! library and renders them as [`Manifest::render`] does. The file opens
+//! package source and renders them as [`Manifest::render`] does. The file opens
 //! with a header naming the model it was written from and a BLAKE3 digest
 //! of the rest of the file, so [`reconcile`] tells the checker's own file
 //! from one edited by hand: the first is rewritten when the model changes,
@@ -27,7 +27,7 @@
 //!
 //! # A package's dependencies are locked by address
 //!
-//! [`lock`] resolves the dependencies a library declares and writes the
+//! [`lock`] resolves the dependencies a package source declares and writes the
 //! `gandr.lock` its imports read them through (#533 p3).
 //!
 //! # A package's toolchain constraints are checked
@@ -38,8 +38,8 @@
 //!
 //! # A manifest's fields have identity roles
 //!
-//! A package's metadata is its library's `Package` model, a model of
-//! `std.package`'s `Gandr.Package`, not a manifest language, and each field
+//! A package's metadata is its package source's `Package` model, a model of
+//! `std.build`'s `Gandr.Package`, not a manifest language, and each field
 //! has one role in the package's address:
 //!
 //! | Role | Fields | Address |
@@ -110,14 +110,15 @@ use self::lock::SignatureKey;
 use self::toolchain::Separated;
 use self::toolchain::Toolchain;
 
-/// The file name of a package's library, the source that declares the
+/// The file name of a package's source, the source that declares the
 /// package's model.
-pub const LIBRARY: &str = "lib.gandr";
+pub const PACKAGE: &str = "package.gandr";
 
 /// The file name of the manifest the checker writes at a package's root.
 pub const MANIFEST: &str = "gandr.toml";
 
-/// The directory name that roots a package one directory above its library.
+/// The directory name that roots a package one directory above its package
+/// source.
 const SOURCES: &str = "src";
 
 /// The line that opens a manifest the checker wrote.
@@ -127,44 +128,45 @@ const WRITTEN: &str = "# Written by `gandr check` from the package's `Package` m
 /// The prefix of the header line that carries the digest of the body.
 const DIGEST: &str = "# blake3: ";
 
-/// A package: its library and the root its manifest is written at.
+/// A package: its package source and the root its manifest is written at.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Package
 {
     /// The directory the manifest is written in.
     root: PathBuf,
-    /// The library, `lib.gandr`.
-    library: PathBuf,
+    /// The package source, `package.gandr`.
+    source: PathBuf,
 }
 
 impl Package
 {
     /// The package `from` sits in, found by walking up from it to the first
-    /// directory holding a library.
+    /// directory holding a package source.
     ///
     /// # Specification
     /// - requires: nothing; a relative path is read against the working
     ///   directory.
     /// - ensures: the first directory from `from` up — `from` itself when it is
-    ///   a directory, else the directory holding it — that holds [`LIBRARY`],
-    ///   or holds it in a [`SOURCES`] directory, names the package; its library
-    ///   is that file, and its root the directory above the library's when that
-    ///   is named [`SOURCES`], else the library's own. Each path is canonical.
-    ///   `Unpackaged` when no directory up to the filesystem's root holds one,
-    ///   or `from` cannot be canonicalized.
+    ///   a directory, else the directory holding it — that holds [`PACKAGE`],
+    ///   or holds it in a [`SOURCES`] directory, names the package; its package
+    ///   source is that file, and its root the directory above the package
+    ///   source's when that is named [`SOURCES`], else the package source's
+    ///   own. Each path is canonical. `Unpackaged` when no directory up to the
+    ///   filesystem's root holds one, or `from` cannot be canonicalized.
     /// - provides: the root search every verb run without a path reads.
     /// - fails: an unpackaged path is the typed absence.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a leaf two directories below `src/lib.gandr`, the
-    ///   package's root, its `src` directory and a flat `lib.gandr` each find
-    ///   their package at its root, an inner library is found before an outer
-    ///   one, and a directory with no library above it is unpackaged.
+    /// - hypothesis: L3 — a leaf two directories below `src/package.gandr`, the
+    ///   package's root, its `src` directory and a flat `package.gandr` each
+    ///   find their package at its root, an inner package source is found
+    ///   before an outer one, and a directory with no package source above it
+    ///   is unpackaged.
     /// - witness: `tests::package::a_package_is_found_from_any_path_in_it_2687`
     #[spec(ensures: |ret| match ret {
-        Maybe::Present(ref package) => package.library.ends_with(LIBRARY)
-            && package.library.starts_with(&package.root),
+        Maybe::Present(ref package) => package.source.ends_with(PACKAGE)
+            && package.source.starts_with(&package.root),
         Maybe::Absent(package_root::Absent::Unpackaged) => true,
     })]
     #[inline]
@@ -185,14 +187,14 @@ impl Package
             }
         };
         for directory in start.ancestors() {
-            let library = [
-                directory.join(LIBRARY),
-                directory.join(SOURCES).join(LIBRARY),
+            let source = [
+                directory.join(PACKAGE),
+                directory.join(SOURCES).join(PACKAGE),
             ]
             .into_iter()
-            .find(|library| library.is_file());
-            if let Some(library) = library {
-                let sources = library.parent().unwrap_or(directory);
+            .find(|source| source.is_file());
+            if let Some(source) = source {
+                let sources = source.parent().unwrap_or(directory);
                 let root = if sources.file_name().is_some_and(|name| name == SOURCES) {
                     sources.parent().unwrap_or(sources)
                 }
@@ -201,7 +203,7 @@ impl Package
                 };
                 return Maybe::Present(Self {
                     root: root.to_path_buf(),
-                    library,
+                    source,
                 });
             }
         }
@@ -219,18 +221,19 @@ impl Package
         &self.root
     }
 
-    /// The package's library, `lib.gandr`.
+    /// The package's source, `package.gandr`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn library(&self) -> &Path
+    pub fn source(&self) -> &Path
     {
-        &self.library
+        &self.source
     }
 
-    /// The directory every source of the package sits under: the library's.
+    /// The directory every source of the package sits under: the package
+    /// source's.
     ///
     /// # Specification
     /// trivial.
@@ -238,7 +241,7 @@ impl Package
     #[must_use]
     pub fn sources(&self) -> &Path
     {
-        self.library.parent().unwrap_or(&self.root)
+        self.source.parent().unwrap_or(&self.root)
     }
 
     /// The path of the package's manifest, [`MANIFEST`] at its root.
@@ -256,10 +259,10 @@ impl Package
 quenchant_shape::reason_enum! {
     /// Why a path stands in no package.
     pub mod package_root {
-        /// No directory from the path up holds a library.
+        /// No directory from the path up holds a package source.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// No `lib.gandr` stands in, or in a `src` directory of, any
+            /// No `package.gandr` stands in, or in a `src` directory of, any
             /// directory from the path up.
             Unpackaged,
         }
@@ -339,7 +342,7 @@ pub fn packaged(
     let mut packages: Vec<Package> = Vec::new();
     let mut seen: BTreeSet<PathBuf> = BTreeSet::new();
     let mut reach = |package: Package, walked: &mut Vec<PathBuf>| {
-        if seen.insert(package.library.clone()) {
+        if seen.insert(package.source.clone()) {
             walked.push(shown(package.sources()));
             packages.push(package);
         }
@@ -421,7 +424,7 @@ impl core::fmt::Display for Unpathed
         match *self {
             Self::Nowhere { ref working } => write!(
                 f,
-                "no path given, and no `{LIBRARY}` stands in `{}` or a directory above it, or in \
+                "no path given, and no `{PACKAGE}` stands in `{}` or a directory above it, or in \
                  a `{SOURCES}` directory of one, and no `{WORKSPACE}` above it",
                 working.display()
             ),
@@ -462,7 +465,7 @@ pub struct Manifest
     toolchain: Toolchain,
     /// `Package.spelling`: a spelling's name, or empty for the reader's own.
     spelling: String,
-    /// Each dependency the library's `dependencies` lists, in order.
+    /// Each dependency the package source's `dependencies` lists, in order.
     dependencies: Vec<lock::Dependency>,
 }
 
@@ -470,11 +473,11 @@ impl Manifest
 {
     /// The manifest `program`'s `Package` model states, each of its fields run
     /// to its string, the modules of `package`, and the dependencies the
-    /// library lists.
+    /// package source lists.
     ///
     /// # Specification
-    /// - requires: `program` is the program of the package's library, and `own`
-    ///   the report of the library's own declarations.
+    /// - requires: `program` is the program of the package's source, and `own`
+    ///   the report of the package source's own declarations.
     /// - ensures: each field read by its path among the declarations `own`
     ///   reports, in [`Field`] order, run once, and its string decoded from the
     ///   value's spelling; the first field none of them declares is
@@ -506,8 +509,8 @@ impl Manifest
     /// - hypothesis: L3 — a model holding every field, one of them escaped,
     ///   reads each; one missing `version` and one whose name is an integer are
     ///   refused at that field; a `gandr` with no `>=` and a `spelling` naming
-    ///   no spelling are refused; a library listing a dependency renders its
-    ///   table.
+    ///   no spelling are refused; a package source listing a dependency renders
+    ///   its table.
     /// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
     /// - witness: `tests::package::a_manifest_renders_the_dependencies_its_library_lists_3072`
     /// - witness: `tests::package::a_manifest_renders_the_toolchain_its_model_asks_for_3135`
@@ -573,7 +576,7 @@ impl Manifest
     ///   `gandr` as written and `features` and `systems` arrays of their
     ///   entries, written as `modules` is; then, when `spelling` names one, a
     ///   `[presentation]` table with `spelling`, the table the user's
-    ///   configuration file writes; then, when the library lists any, a
+    ///   configuration file writes; then, when the package source lists any, a
     ///   `[dependencies]` table, one line per dependency in order, `alias = {
     ///   path = "…" }`, the alias bare when it is a TOML bare key and a basic
     ///   string otherwise. The same manifest renders the same bytes.
@@ -683,7 +686,8 @@ fn strung(
         .ok_or(Unmanifested::Unstrung { field, came })
 }
 
-/// The dependencies the library's `dependencies` lists, run on `program`.
+/// The dependencies the package source's `dependencies` lists, run on
+/// `program`.
 ///
 /// # Specification
 /// - requires: as [`Manifest::of`].
@@ -763,13 +767,13 @@ pub struct Identity
 
 impl Package
 {
-    /// The package's identity: each of its sources, its library then its
+    /// The package's identity: each of its sources, its package source then its
     /// modules in [`modules`] order, read as `shadows` holds it, laid out over
     /// its imports and lowered, and each of the source's own items digested in
     /// admission order as its path and its content key, a model's inert
-    /// component and the library's `dependencies` left out; then the addresses
-    /// `lock`'s pointers read back through `store`; and the paths the library
-    /// exports, keyed.
+    /// component and the package source's `dependencies` left out; then the
+    /// addresses `lock`'s pointers read back through `store`; and the paths the
+    /// package source exports, keyed.
     ///
     /// # Specification
     /// - requires: `grammar` is the grammar the package's sources are read
@@ -777,17 +781,18 @@ impl Package
     ///   store that lock's pointers were committed to.
     /// - ensures: the address is the BLAKE3 digest, over the sources in that
     ///   order and each one's own items in its unit's admission order, of each
-    ///   item that is no [`Inertness::Inert`] declaration and not the library's
-    ///   top-level `dependencies`, as its path's dotted spelling prefixed by
-    ///   its length and then its content key's bytes, followed by each address
-    ///   of [`Lock::addresses`] read back through `store` in order, prefixed by
-    ///   `u64::MAX`. An item of an import is the importer's to leave out: only
-    ///   the declarations each source writes are digested, so each enters once.
-    ///   Equal content at equal paths over equal dependencies is one address,
-    ///   whatever the inert fields state and wherever and under whatever alias
-    ///   each dependency is found. The signature key is the BLAKE3 digest of
-    ///   each dotted path of a [`Visibility::Public`] item the library digests,
-    ///   ascending, prefixed by its length.
+    ///   item that is no [`Inertness::Inert`] declaration and not the package
+    ///   source's top-level `dependencies`, as its path's dotted spelling
+    ///   prefixed by its length and then its content key's bytes, followed by
+    ///   each address of [`Lock::addresses`] read back through `store` in
+    ///   order, prefixed by `u64::MAX`. An item of an import is the importer's
+    ///   to leave out: only the declarations each source writes are digested,
+    ///   so each enters once. Equal content at equal paths over equal
+    ///   dependencies is one address, whatever the inert fields state and
+    ///   wherever and under whatever alias each dependency is found. The
+    ///   signature key is the BLAKE3 digest of each dotted path of a
+    ///   [`Visibility::Public`] item the package source digests, ascending,
+    ///   prefixed by its length.
     /// - provides: the identity a dependent's lock commits to the store.
     /// - fails: [`Unaddressed`] at the first source or item that has no key, or
     ///   at the first dependency whose pointer `store` cannot read back.
@@ -826,7 +831,7 @@ impl Package
         let mut exported = BTreeSet::new();
         digested(
             grammar,
-            &self.library,
+            &self.source,
             shadows,
             &mut hasher,
             Some(&mut exported),
@@ -851,7 +856,7 @@ impl Package
 
 /// Digest into `hasher` the own items of the source at `source`, as
 /// [`Package::identity`] states, filing each exported path into `exported`
-/// when it is given: the library's, whose `dependencies` is left out.
+/// when it is given: the package source's, whose `dependencies` is left out.
 ///
 /// # Specification
 /// - requires: as [`Package::identity`].
@@ -1065,13 +1070,13 @@ impl core::fmt::Display for Unaddressed
 /// # Specification
 /// - requires: `sources` is a package's sources directory.
 /// - ensures: one entry per `.gandr` file under `sources`, its directories and
-///   its file stem joined by `.`, the root module `lib.gandr` beside `sources`
-///   left out; a directory holding a `lib.gandr` of its own is another
-///   package's, and nothing under it is named. A directory that does not list
-///   names nothing.
+///   its file stem joined by `.`, the root module `package.gandr` beside
+///   `sources` left out; a directory holding a `package.gandr` of its own is
+///   another package's, and nothing under it is named. A directory that does
+///   not list names nothing.
 /// - provides: the membership the manifest records, a module being a file that
 ///   nothing declares, and the sources a package's address reads after its
-///   library.
+///   package source.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause reads the file system again.
@@ -1091,8 +1096,8 @@ fn modules(sources: &Path) -> BTreeMap<String, PathBuf>
 }
 
 /// File the entries of `directory`, under the package's `sources`: each
-/// directory that holds no library onto `pending`, and each source but the
-/// root's into `named`, by its module path.
+/// directory that holds no package source onto `pending`, and each source but
+/// the root's into `named`, by its module path.
 ///
 /// # Specification
 /// trivial.
@@ -1109,14 +1114,14 @@ fn listed(
     };
     for path in entries.filter_map(Result::ok).map(|entry| entry.path()) {
         if path.is_dir() {
-            if !path.join(LIBRARY).is_file() {
+            if !path.join(PACKAGE).is_file() {
                 pending.push(path);
             }
         }
         else if path
             .extension()
             .is_some_and(|extension| extension == "gandr")
-            && path != sources.join(LIBRARY)
+            && path != sources.join(PACKAGE)
             && let Some(module) = module_path(sources, &path)
         {
             let _fresh = named.insert(module, path);
@@ -1171,7 +1176,7 @@ pub enum Field
 
 impl Field
 {
-    /// The field's path from the library's top level.
+    /// The field's path from the package source's top level.
     ///
     /// # Specification
     /// trivial.
@@ -1192,11 +1197,11 @@ impl Field
     }
 }
 
-/// Why a library's model gives no manifest.
+/// Why a package source's model gives no manifest.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Unmanifested
 {
-    /// The library declares no such field.
+    /// The package source declares no such field.
     Undeclared(Field),
     /// The field does not run to a string.
     Unstrung
@@ -1206,19 +1211,21 @@ pub enum Unmanifested
         /// What its run came to, spelled.
         came: String,
     },
-    /// The library's `dependencies` does not run to a list of dependencies.
+    /// The package source's `dependencies` does not run to a list of
+    /// dependencies.
     Undepended
     {
         /// What its run came to, spelled.
         came: String,
     },
-    /// The library's `Package.gandr` states no constraint the check reads.
+    /// The package source's `Package.gandr` states no constraint the check
+    /// reads.
     Unconstrained
     {
         /// What it runs to.
         came: String,
     },
-    /// The library's `Package.spelling` names no spelling.
+    /// The package source's `Package.spelling` names no spelling.
     Unspelled
     {
         /// What it runs to.
@@ -1239,7 +1246,7 @@ impl core::fmt::Display for Unmanifested
         match *self {
             Self::Undeclared(field) => write!(
                 f,
-                "the library declares no `{}`, so no `{MANIFEST}` is written: import `std.package` \
+                "the package source declares no `{}`, so no `{MANIFEST}` is written: import `std.build` \
                  and declare `module Package : Model(Gandr.Package)` in it",
                 field.path()
             ),
