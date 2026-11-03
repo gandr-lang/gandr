@@ -541,6 +541,9 @@ pub struct CoreSource<'arena>
     /// The model implicits of each function whose telescope writes one, in
     /// telescope order, ascending by the function's constant.
     slots: &'arena [(ConstantIndex, Vec<ModelSlot<'arena, CoreNode>>)],
+    /// The name the source writes for each homed type head it does not write
+    /// bare, by the head's bare spelling.
+    homes: &'arena [(Name<'arena>, Name<'arena>)],
 }
 
 impl<'arena> CoreSource<'arena>
@@ -583,6 +586,7 @@ impl<'arena> CoreSource<'arena>
             implied: &[],
             telescopes: &[],
             slots: &[],
+            homes: &[],
         }
     }
 
@@ -974,6 +978,21 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { slots, ..self }
+    }
+
+    /// This source, writing each homed type head `homes` holds by the name
+    /// beside its bare spelling: `(List, std.list.List)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn homing(
+        self,
+        homes: &'arena [(Name<'arena>, Name<'arena>)],
+    ) -> Self
+    {
+        Self { homes, ..self }
     }
 
     /// The model implicits this source records for the function `constant`,
@@ -3105,6 +3124,21 @@ impl Source for CoreSource<'_>
             return None;
         };
         written(self.seconds, id)
+    }
+
+    /// The name recorded for the homed head `head`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn homed(
+        &self,
+        head: Name<'_>,
+    ) -> Option<Name<'_>>
+    {
+        self.homes
+            .iter()
+            .find_map(|&(bare, written)| (bare.as_ref() == head.as_ref()).then_some(written))
     }
 
     /// The reduct recorded at a crossed value, named by its admission

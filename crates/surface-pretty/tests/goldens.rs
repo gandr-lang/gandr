@@ -862,6 +862,32 @@ fn n_ary_products_and_sums_spell_between_their_braces()
     }
 }
 
+/// #4835: a homed type former spells bare by default, and after the name its
+/// source records for its head otherwise, `std.list.List(Integer)`, its
+/// argument where the bare spelling writes it.
+#[test]
+fn a_homed_former_spells_as_its_reader_reads_it_4835()
+{
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let list = core.value_type_list(integer);
+    let nested = core.value_type_list(list);
+    let bare = CoreSource::new(&core, &[]);
+    let homes = [(Name::from("List"), Name::from("std.list.List"))];
+    let homed = CoreSource::new(&core, &[]).homing(&homes);
+    for (source, root, spelling) in [
+        (&bare, list, "List(Integer)"),
+        (&homed, list, "std.list.List(Integer)"),
+        (&homed, nested, "std.list.List(std.list.List(Integer))"),
+    ] {
+        assert_eq!(
+            spelled(source, Root::Type(CoreNode::ValueType(root))),
+            faithful(Written(spelling)),
+            "{root:?} spells as `{spelling}`"
+        );
+    }
+}
+
 /// A session type spells its protocol as the grammar writes it, each
 /// payload where its send or receive reads it, parenthesized past an
 /// atom; a state inside a recursion unfolds its binder once, so the

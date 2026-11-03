@@ -1900,6 +1900,36 @@ pub trait Source
         None
     }
 
+    /// The name the source writes for the type head a `std` module homes,
+    /// spelled `head` bare, where it does not write it bare: `std.list.List`
+    /// in a source that imports nothing of `std.list`, `l.List` in one that
+    /// imports it as `l`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the name the source records for `head`, or none, where the
+    ///   head is written bare; the default records none.
+    /// - provides: the head a homed type former is written with.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list type spells bare by default and after the name
+    ///   a source records.
+    /// - witness: `tests::goldens::a_homed_former_spells_as_its_reader_reads_it_4835`
+    #[inline]
+    fn homed(
+        &self,
+        head: Name<'_>,
+    ) -> Option<Name<'_>>
+    {
+        let _ = head;
+        None
+    }
+
     /// The forgetting map the checker applies to the value `node`, where it
     /// reads a model whose sorts are manifest as a model of its theory.
     ///

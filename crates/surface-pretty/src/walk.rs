@@ -2895,6 +2895,37 @@ enum Join
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Production(&'static str);
 
+/// The name `source` writes for the head of the homed type former `former`
+/// where it does not write it bare, `std.list.List` for a list type; none
+/// for a source that writes it bare and for every other former.
+///
+/// # Specification
+/// trivial.
+fn homed_head<'source, S>(
+    source: &'source S,
+    former: &Former<'_, S::Node>,
+) -> Option<Name<'source>>
+where
+    S: Source + ?Sized,
+{
+    let bare = if matches!(*former, Former::List(_)) {
+        "List"
+    }
+    else if matches!(*former, Former::RunType(_)) {
+        "Run"
+    }
+    else if matches!(*former, Former::PrefixType(_)) {
+        "Prefix"
+    }
+    else if matches!(*former, Former::DialogueType(_)) {
+        "Dialogue"
+    }
+    else {
+        return None;
+    };
+    source.homed(Name::from(bare))
+}
+
 /// `produced`, the production of `rule`.
 ///
 /// # Specification
@@ -8783,6 +8814,17 @@ impl Walk<'_, '_>
                 Production("call_expression"),
                 Join::Bracket(Bracket::Arrow),
             )),
+            // A homed type former its source writes through its home's path
+            // rather than bare, `std.list.List(A)` or `l.List(A)`, is written
+            // by parts after that path.
+            Former::List(_)
+            | Former::RunType(_)
+            | Former::PrefixType(_)
+            | Former::DialogueType(_)
+                if homed_head(source, &former).is_some() =>
+            {
+                Some(self.form(source, node, &former, admits))
+            },
             Former::RunType(_) => Some(writes(
                 Production("type_application"),
                 Join::Bracket(Bracket::Run),
@@ -10806,13 +10848,14 @@ impl Walk<'_, '_>
     ///   ascription as `(v : T)`, its two pieces the value and the type, but a
     ///   binary natural ascribed `Nat` as its numeral, `(5 : Nat)`, its one
     ///   piece the type; a truth value ascribed `Bool` the visit writes as its
-    ///   word. The forms the grammar does not write — native transport, a
-    ///   fixpoint `rec f { c }`, a fold, any other resumption `resume(k, c)`,
-    ///   `reset { c }`, `shift k { c }`, a lazy product `&{c, …}` and its
-    ///   observation `c.0`, and a positional projection off anything but a
-    ///   name, `(v.1).0` — make the presentation approximate, and so does a
-    ///   nested computation or a returned value, which the visit leaves for its
-    ///   slot to brace.
+    ///   word; a homed type former whose source records a name for its head as
+    ///   that name applied to its one piece, `std.list.List(A)`. The forms the
+    ///   grammar does not write — native transport, a fixpoint `rec f { c }`, a
+    ///   fold, any other resumption `resume(k, c)`, `reset { c }`, `shift k { c
+    ///   }`, a lazy product `&{c, …}` and its observation `c.0`, and a
+    ///   positional projection off anything but a name, `(v.1).0` — make the
+    ///   presentation approximate, and so does a nested computation or a
+    ///   returned value, which the visit leaves for its slot to brace.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -10827,6 +10870,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
     /// - witness: `tests::goldens::a_prelude_operator_is_written_as_its_operator`
     /// - witness: `tests::goldens::an_annotated_return_spells_as_written_1107`
+    /// - witness: `tests::goldens::a_homed_former_spells_as_its_reader_reads_it_4835`
     #[spec(
         captures: [forms = self.forms.len()],
         ensures: |ret| self.forms.len() == forms.saturating_add(1_usize)
@@ -11724,6 +11768,19 @@ impl Walk<'_, '_>
                 };
                 let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
                 writes(Production("parenthesized_expression"), Binding::Atom)
+            },
+            // A homed type former written through its home's path: the path,
+            // then its one argument, `std.list.List(A)`.
+            Former::List(_)
+            | Former::RunType(_)
+            | Former::PrefixType(_)
+            | Former::DialogueType(_)
+                if let Some(head) = homed_head(source, former) =>
+            {
+                let _ = parts
+                    .text(String::from(head.as_ref()))
+                    .arguments(Arity(1_usize));
+                writes(Production("type_path"), Binding::Atom)
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
