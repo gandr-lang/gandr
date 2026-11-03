@@ -30,7 +30,8 @@ done | LC_ALL=C sort -k2 > "$out"
 echo "corpus manifest: $(wc -l < "$out") files to $out"
 '''
 
-# The page-28 stress, as far as the library writes it: `library/math` checked
+# The page-28 stress, as far as the library writes it: `library/std`, which
+# holds `std.math`, checked
 # whole, every verdict rechecked and each declaration measured, timed by
 # `.config/bench/timed.py` (#4191), which reads the wall time and the peak
 # resident set alike on Linux and macOS, where `/usr/bin/time` may be absent
@@ -55,7 +56,7 @@ echo "corpus manifest: $(wc -l < "$out") files to $out"
 # scratch configuration, cache and data directories, so it reads no verdict
 # and commits nothing to the user's store.
 #
-# The library holds rows at n = 3, so the check carries the host's memory
+# `std.math` holds rows at n = 3, so the check carries the host's memory
 # bound (`.config/mise/bounded`) and a wall-clock limit, 1800 s unless
 # `--limit` names another (#3855). Where no bound takes, as on macOS, the task
 # refuses before the check runs. A check past either bound prints `past bound`
@@ -63,7 +64,7 @@ echo "corpus manifest: $(wc -l < "$out") files to $out"
 # window instead. `.config/bench/stress.jq` decides the outcome, held to
 # `check:bench`'s cases.
 ["bench:stress"]
-description = "Check library/math measured and timed under the host's memory bound, its cylinder composites beside Catt's artifact sizes"
+description = "Check library/std measured and timed under the host's memory bound, std.math's cylinder composites beside Catt's artifact sizes"
 usage = 'flag "--limit <seconds>" help="the wall-clock limit" default="1800"'
 tools.jq = "1.8.1"
 tools.python = "3.15.2"
@@ -79,7 +80,7 @@ trap 'rm -rf "$scratch"' EXIT
 status=0
 XDG_CONFIG_HOME="$scratch/config" XDG_CACHE_HOME="$scratch/cache" XDG_DATA_HOME="$scratch/data" \
   .config/mise/bounded bench:stress python .config/bench/timed.py "$scratch/time" \
-  timeout "$limit" target/release/gandr check --recheck --measure library/math \
+  timeout "$limit" target/release/gandr check --recheck --measure library/std \
   > "$scratch/check" 2> "$scratch/errors" || status=$?
 out_of_memory=false
 if [[ $(< "$scratch/errors") == *'memory allocation of'* ]]; then

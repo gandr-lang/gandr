@@ -8,14 +8,14 @@
 // run answer.gandr` prints `agreed` on standard output for it, and `declined`
 // on standard error for anything else.
 //
-// - see: `../../../library/std/src/console.gandr` — `print`, `eprint` and
+// - see: `../../../library/std/src/io.gandr` — `print`, `eprint` and
 //   `read_line`
-// - see: #2970 — `std.authority` and `std.console`
+// - see: #2970 — `std.authority` and `std.io`
 
 // The authority `main` is handed, and the console it opens.
 import std.authority (Authority, console);
 // The three standard streams, each through the console.
-import std.console (print, eprint, read_line);
+import std.io (print, eprint, read_line);
 
 /// The entry: it reads one line and answers it.
 def main(authority : Authority) -> [Console, Stderr, Stdin] Unit {

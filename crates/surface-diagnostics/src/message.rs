@@ -614,10 +614,6 @@ fn lowered(
             f,
             "the theory cannot stand as the interface its handler reads at `{name}`, which {fault}"
         ),
-        LoweringRefusal::LowercaseModuleName { name, .. } => write!(
-            f,
-            "the module `{name}` must start with an uppercase letter at the top level"
-        ),
         LoweringRefusal::UnlabelledRequirement { name, .. } => write!(
             f,
             "the world requires `{name}` under no label, so its code cannot perform it"
@@ -1859,7 +1855,6 @@ pub mod tests
                 name,
                 fault: InterfaceFault::Unfixed,
             },
-            LoweringRefusal::LowercaseModuleName { span, name },
             LoweringRefusal::UnlabelledRequirement { span, name },
             LoweringRefusal::ImplicitTelescope { span },
             LoweringRefusal::TelescopeCycle {

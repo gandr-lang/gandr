@@ -3,7 +3,7 @@
 //
 // A stated law is the theory's generator cell: no rule orients it, and no
 // default fills its component. The Path reading is a model of the cells
-// reading, so `math.path`'s associator writes the cell.
+// reading, so `std.math.path`'s associator writes the cell.
 //
 // The model writes the right unit law by conversion and the associator by the
 // theorem. A model leaving the associator out has it discharged by `Path.here`: the
@@ -14,7 +14,7 @@
 // - see: `cat-shape.gandr` — the same theory with its associator a rule
 
 // `assoc`, the associator of path composition.
-import "../../../library/math/src/path.gandr";
+import std.math.path (assoc);
 
 /// The circle: one point and a loop at it.
 data Circle : Type where {
@@ -24,7 +24,7 @@ data Circle : Type where {
   | loop : Base <-> Base
 }
 
-/// `math.path`'s associator over the circle.
+/// `std.math.path`'s associator over the circle.
 def associator(
   a : Circle,
   b : Circle,
@@ -98,7 +98,7 @@ module PathCells : Model(Glob) where {
     Path.here(f)
   }
 
-  /// The associator cell, by `math.path`'s theorem.
+  /// The associator cell, by `std.math.path`'s theorem.
   def assoc(
     a : Circle,
     b : Circle,

@@ -1,4 +1,4 @@
-// `math.cylinder`: cylinders and cones of paths, composed.
+// `std.math.cylinder`: cylinders and cones of paths, composed.
 //
 // A square of paths is a 2-cylinder. Its top and bottom are paths, its
 // sides are paths between their ends, and its filler is a path between the
@@ -7,7 +7,7 @@
 // and cones.
 //
 // Each composite at dimension 2 stands in two readings. The Path reading is
-// the term Catt's built-in prints, written over `math.path`. The associator
+// the term Catt's built-in prints, written over `std.math.path`. The associator
 // regroups a composite, and a whisker carries a filler along a fixed path. A
 // stacking is the side-by-side composite of its transposed squares, read back.
 //
@@ -32,7 +32,7 @@
 // - see: #4198 — suspension, opposites and the interchangers
 
 // `assoc`, `join`, `whiskerLeft`, `whiskerRight`.
-import "path.gandr";
+import math.path (assoc, join, whiskerLeft, whiskerRight);
 
 /// Two squares side by side compose to a square: Catt's `cylcomp(2,1,2)`.
 pub def cylinderComposite2(

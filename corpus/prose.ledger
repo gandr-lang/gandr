@@ -1212,7 +1212,6 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InstanceUn
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LevelMismatch.txt Procedure 4243b91b89fd9499
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LoopNotRespected.txt Procedure 5acc3f19f3b29f8d
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LoopUndecided.txt Procedure 3c428e27119f4b66
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LowercaseModuleName.txt Procedure c19daeae09bf229d
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/MarkUnfounded.txt Procedure b924bafc122697e0
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/MismatchedPattern.txt Procedure 9861b85a5613cd7c
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/MissingPayload.txt Procedure b0bae31b8e56887c
@@ -1457,7 +1456,6 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/metaprograms/tac
 crates/surface-render-terminal/tests/golden/corpus/pathological/metaprograms/tactics-over-goals.txt Procedure 93c38e17aac983f3
 crates/surface-render-terminal/tests/golden/corpus/pathological/metaprograms/tactics-over-goals.txt Procedure e282304ab956501c
 crates/surface-render-terminal/tests/golden/corpus/pathological/module-forward-member-reference.txt Procedure edf7840fae365a2b
-crates/surface-render-terminal/tests/golden/corpus/pathological/modules/dotted-prefix-clash.txt Procedure 166f0ad23afef005
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/generative-distinctness.txt Procedure 264148eb8bb73011
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/import-cycle-a.txt Procedure f639a857061553b4
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/import-cycle-b.txt Procedure f639a857061553b4

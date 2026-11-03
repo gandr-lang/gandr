@@ -269,6 +269,7 @@
 451 Operator codata_declaration <=> L[<expression>] R[<expression>]
 452 Operator codata_declaration ~> L[<expression>] R[<expression>]
 454 Other codata_declaration , L[) <expression> <type>] R[}]
+458 VariableDef module_declaration identifier L[module] R[( . : :> = where]
 466 Other module_declaration . L[type_identifier] R[identifier type_identifier]
 467 Type module_declaration type_identifier L[.] R[)]
 468 Member module_declaration identifier L[.] R[)]

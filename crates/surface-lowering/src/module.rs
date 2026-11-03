@@ -215,8 +215,8 @@
 //! of the body gives the component its meaning, and `:>` declares one abstract
 //! type per component.
 //!
-//! A refusal that belongs to no member — a top-level module with a lowercase
-//! name, an unread module body, a missing component, an abstract component
+//! A refusal that belongs to no member — an unread module body, a missing
+//! component, an abstract component
 //! the body writes no type member for, and a type component that declares a
 //! family or binds parameters — is carried by a held declaration under the
 //! module's or the component's name. A held declaration owns nothing a
@@ -7287,13 +7287,13 @@ struct Opened<'source>
 ///   consuming operations.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — readable, lowercase and unread bodies take separate
-///   header outcomes.
+/// - hypothesis: L3 — readable and unread bodies take separate header outcomes,
+///   and a module named in either case is read.
 /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
 /// - witness: `tests::modules::module_members_admit_in_source_order`
 /// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
 /// - witness: `tests::modules::opaque_ascription_seals`
-/// - witness: `tests::modules::module_name_case_boundary_covers_single_and_multi_names`
+/// - witness: `tests::modules::a_top_level_module_is_named_in_either_case_4529`
 /// - witness: `tests::modules::an_unread_module_body_is_refused_not_emptied`
 #[derive(Clone, Debug)]
 enum Header<'source>
@@ -7517,8 +7517,8 @@ impl<'source> Collector<'_, 'source>
     ///   each module is recorded before the modules nested in it, its
     ///   definition members are admitted in source order under it, and once its
     ///   body is read it is matched against its signatures. A module refused as
-    ///   a whole — unread, sealed, misnamed or declared twice — files a held
-    ///   slot carrying the refusal under its name, and its body is not read; a
+    ///   a whole — unread, sealed or declared twice — files a held slot
+    ///   carrying the refusal under its name, and its body is not read; a
     ///   malformed member files one under its module's name and the module's
     ///   other members are kept.
     /// - provides: the module half of [`collect_source`].
@@ -7534,16 +7534,17 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — nesting separated by depth one and depth eight, a
-    ///   sealed module whose abstract type its clients read, and the refusals
-    ///   of the module as a whole by an unread body, an empty body, a lowercase
-    ///   name and a malformed member, each asserted as the exact declaration
-    ///   list. The predicate reads only the structures this call appended.
+    ///   sealed module whose abstract type its clients read, a module named in
+    ///   either case, and the refusals of the module as a whole by an unread
+    ///   body, an empty body and a malformed member, each asserted as the exact
+    ///   declaration list. The predicate reads only the structures this call
+    ///   appended.
     /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
     /// - witness: `tests::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
     /// - witness: `tests::modules::an_unread_module_body_is_refused_not_emptied`
     /// - witness: `tests::modules::an_empty_module_is_not_an_unread_one`
     /// - witness: `tests::modules::opaque_ascription_seals`
-    /// - witness: `tests::modules::module_name_case_boundary_covers_single_and_multi_names`
+    /// - witness: `tests::modules::a_top_level_module_is_named_in_either_case_4529`
     /// - witness: `tests::modules::an_unread_member_keeps_its_own_report`
     /// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
     /// - witness: `tests::modules::a_nested_module_declares_under_either_case_spelling`
@@ -7591,7 +7592,7 @@ impl<'source> Collector<'_, 'source>
             None => Ok(top),
         };
         let opened_at = StructureIndex(self.collected.structures.len());
-        match self.header(module, &pieces, top)? {
+        match self.header(module, &pieces)? {
             Header::Opened(opened) => match (within, dotted) {
                 (Ok(_), Some(segment)) if matches!(opened.parameter, Maybe::Present(_)) => {
                     let refusal = misplaced_in(FormName::MODULE, segment.span);
@@ -7651,17 +7652,15 @@ impl<'source> Collector<'_, 'source>
     /// member forms, or the functor application it binds.
     ///
     /// # Specification
-    /// - requires: `pieces` is the reading of the module form `form`, declared
-    ///   in `container`.
+    /// - requires: `pieces` is the reading of the module form `form`.
     /// - ensures: the opened module when its tiles read `module Name ((X : #{ …
-    ///   }))? ((: | :>) (#{ … } | Model(S)))? { members }`, a top-level name
-    ///   taking the uppercase spelling and a nested one either, sealed exactly
-    ///   when the ascription is `:>`, carrying the model signature `Model(S)`
-    ///   derives and the functor parameter when one is written; the application
-    ///   when they read `module Name = F(P(.p)*) ;`; a top-level module named
-    ///   in lowercase, a repair no operand carries, or a parameter, signature,
-    ///   application or body out of shape refuses the module under its name; a
-    ///   form with no name is unnamed.
+    ///   }))? ((: | :>) (#{ … } | Model(S)))? { members }`, its name and each
+    ///   dotted segment in either case, sealed exactly when the ascription is
+    ///   `:>`, carrying the model signature `Model(S)` derives and the functor
+    ///   parameter when one is written; the application when they read `module
+    ///   Name = F(P(.p)*) ;`; a repair no operand carries, or a parameter,
+    ///   signature, application or body out of shape refuses the module under
+    ///   its name; a form with no name is unnamed.
     /// - provides: the per-module reading of [`Self::module`] and
     ///   [`Self::member`].
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold; every
@@ -7679,7 +7678,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
     /// - witness: `tests::modules::an_empty_module_is_not_an_unread_one`
     /// - witness: `tests::modules::opaque_ascription_seals`
-    /// - witness: `tests::modules::module_name_case_boundary_covers_single_and_multi_names`
+    /// - witness: `tests::modules::a_top_level_module_is_named_in_either_case_4529`
     /// - witness: `tests::modules::a_repaired_container_keeps_its_member`
     #[spec(
         ensures: |ret| {
@@ -7713,7 +7712,6 @@ impl<'source> Collector<'_, 'source>
         &mut self,
         form: Placed,
         pieces: &Pieces,
-        container: Container,
     ) -> Result<Header<'source>, LoweringRefusal<'source>>
     {
         let mut cursor = Cursor::new(&pieces.pieces, form.span);
@@ -7732,17 +7730,6 @@ impl<'source> Collector<'_, 'source>
                 if label == TileName::TYPE_IDENTIFIER || label == TileName::IDENTIFIER =>
             {
                 let _name = cursor.read();
-                if label == TileName::IDENTIFIER && matches!(container, Container::TopLevel(_)) {
-                    let name = self.name_of(at);
-                    return Ok(Header::Refused {
-                        name,
-                        named: at,
-                        refusal: LoweringRefusal::LowercaseModuleName {
-                            span: form.span,
-                            name,
-                        },
-                    });
-                }
                 at
             },
             Maybe::Present(_) | Maybe::Absent(_) => return Ok(unnamed(&cursor)),
@@ -8803,7 +8790,7 @@ impl<'source> Collector<'_, 'source>
             self.fault_at(structure, member, misplaced_in(form, cursor.here()));
             return Ok(());
         }
-        match self.header(member, pieces, container)? {
+        match self.header(member, pieces)? {
             Header::Opened(opened) => self.open(container, member, opened, stack),
             Header::Applied(applied) => {
                 self.fault_at(structure, member, misplaced_in(form, applied.named.span));
@@ -9313,11 +9300,9 @@ impl<'source> Collector<'_, 'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — unread and lowercase-named modules, missing
-    ///   components and manifest types use held slots without introducing
-    ///   referenceable names.
+    /// - hypothesis: L3 — unread modules, missing components and manifest types
+    ///   use held slots without introducing referenceable names.
     /// - witness: `tests::modules::an_unread_module_body_is_refused_not_emptied`
-    /// - witness: `tests::modules::module_name_case_boundary_covers_single_and_multi_names`
     /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
     /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
     #[spec(

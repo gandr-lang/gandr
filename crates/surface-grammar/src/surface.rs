@@ -503,7 +503,6 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "grade_prefix",
     "if_answer_type",
     "import_statement",
-    "lowercase_module_name",
     "match_answer_type",
     "match_with_view",
     "node_statement",

@@ -11,13 +11,13 @@
 //
 // - see: `../../../library/std/src/authority.gandr` — `Authority` and
 //   `console`
-// - see: `../../../library/std/src/console.gandr` — `print`
-// - see: #2970 — `std.authority` and `std.console`
+// - see: `../../../library/std/src/io.gandr` — `print`
+// - see: #2970 — `std.authority` and `std.io`
 
 // The authority `main` is handed, and the console it opens.
 import std.authority (Authority, console);
 // Standard output, through the console.
-import std.console (print);
+import std.io (print);
 
 /// The entry: it opens the console from its authority and prints its greeting.
 def main(authority : Authority) -> [Console] Unit {

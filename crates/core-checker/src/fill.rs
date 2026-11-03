@@ -27,7 +27,7 @@
 //! path in `X` and as `here` outside it. Of dimension two, a side's lift is
 //! built over its composite structure: a cell of `X` lifts as its path, any
 //! other cell stays, and a composite whose one half lifts is that half
-//! whiskered by the other, the level-two composite `math.path` writes as
+//! whiskered by the other, the level-two composite `std.math.path` writes as
 //! `whiskerLeft` and `whiskerRight`. A composite both of whose halves lift
 //! is the right whisker then the left.
 //!

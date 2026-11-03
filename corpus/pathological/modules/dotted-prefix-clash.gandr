@@ -1,7 +1,6 @@
 // #2687: a dotted name's prefix opens a module only where the source declares
 // none of that name; one naming a module a form of its own writes is refused
-// at the segment, as the module defined twice. A lowercase top segment is
-// refused as any top-level module named in lowercase is.
+// at the segment, as the module defined twice.
 
 /// A written module.
 module Kit where {
@@ -21,11 +20,4 @@ theory Kit.Labelled where {
 module Tag : Model(Kit.Missing) where {
   /// Its label.
   def label : String = "tag";
-}
-
-/// A dotted module whose top segment is lowercase.
-@[ refuses("LowercaseModuleName") ]
-module low.Tools where {
-  /// A value.
-  def k = 1;
 }

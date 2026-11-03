@@ -1,18 +1,18 @@
 /// `naturality`: a term's naturality along a path in one of its arguments, the action of the term on that path.
 ///
-/// Implemented: `math.path` holds `natural`, the operation at one variable, a homotopy's naturality along a path. `assoc_nat` states the associator's naturality in its first argument, at the square that Example 1.3 of the paper states. Its term is `natural` at the associator, and the kernel replays it. `natassoc` writes the same naturality as the filler generator over the 3-chain, `fill[5, 7](chain(3), t, (fa, g, h))`.
+/// Implemented: `std.math.path` holds `natural`, the operation at one variable, a homotopy's naturality along a path. `assoc_nat` states the associator's naturality in its first argument, at the square that Example 1.3 of the paper states. Its term is `natural` at the associator, and the kernel replays it. `natassoc` writes the same naturality as the filler generator over the 3-chain, `fill[5, 7](chain(3), t, (fa, g, h))`.
 ///
 /// The square is the type Catt answers for `assoc [a] g h`. Its source is the associator at `fm`, then `fa` whiskered by `Path.step(g, h)`. Its target is `fa` whiskered by `g` and then by `h`, then the associator at `fp`. `natural` acts on `fa` by the composite function instead, so `apComp` carries its target side to the two whiskers.
 ///
-/// The filler generator whiskers by a transport along `fa`, which converts with `math.path`'s `whiskerRight`, the level-two composite. `natassoc` states the square by `whiskerRight`. At `fa = Path.here(fm)` both squares reduce to the associator, and `natassocAtHere` relates the two terms there by `Path.here`. At a general `fa` the two terms are two inductions on `fa`, and neither converts with the other. `natassocAgrees` relates them by a path, the induction on `fa` from `natassocAtHere`.
+/// The filler generator whiskers by a transport along `fa`, which converts with `std.math.path`'s `whiskerRight`, the level-two composite. `natassoc` states the square by `whiskerRight`. At `fa = Path.here(fm)` both squares reduce to the associator, and `natassocAtHere` relates the two terms there by `Path.here`. At a general `fa` the two terms are two inductions on `fa`, and neither converts with the other. `natassocAgrees` relates them by a path, the induction on `fa` from `natassocAtHere`.
 ///
-/// - see: library/math/src/path.gandr
+/// - see: library/std/src/math/path.gandr
 /// - see: #3711 — the paper, arXiv:2501.11620, and its Example 1.3
 /// - see: #3922 — `natural`, and this instance of it
 /// - see: crates/surface-corpus/README.md
 
-// `apComp`, `assoc`, `natural`, `whiskerRight`.
-import "../../../library/math/src/path.gandr";
+// `ap`, `apComp`, `assoc`, `natural`, `whiskerRight`.
+import std.math.path (ap, apComp, assoc, natural, whiskerRight);
 
 /// The associator's naturality in its first argument: the square whose sides are the associators at `fm` and `fp` and whose other sides whisker `fa`.
 def assoc_nat(

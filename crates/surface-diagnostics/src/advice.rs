@@ -198,7 +198,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::UninterfacedMember { .. }
         | LoweringRefusal::UndescribedMember { .. }
         | LoweringRefusal::FamilyTelescope { .. }
-        | LoweringRefusal::LowercaseModuleName { .. }
         | LoweringRefusal::ImplicitTelescope { .. }
         | LoweringRefusal::TelescopeCycle { .. }
         | LoweringRefusal::ImplicitUnsupplied { .. }
