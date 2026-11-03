@@ -2906,5 +2906,47 @@
       }
     },
     "output": "observation due: #80 — mise run debug:test <package> <test>\nsections due: #80 — `## Sources` is missing\nsections due: #80 — `## Readings` is missing\nsections due: #80 — `## Concerns` is missing\nsections due: #80 — `## Ledger` is missing\nsections due: #80 — `## Not in this slice` is missing\nsections due: #80 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n80\tdefect\tworkflow: the first defect"
+  },
+  {
+    "name": "#4839: an issue whose prose quotes a claim marker in a code span is no lane's claim; the lane whose areas take it claims it",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage",
+      "now": 1760000000,
+      "prs": [],
+      "issues": [
+        {
+          "number": 40,
+          "title": "workflow: an issue quoting the markers",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text quoting `<!-- claim: lane=x -->` and `<!-- released: lane=surface at=2025-10-09T07:53:20Z -->` in code spans.\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "observation due: #40 — mise run debug:test <package> <test>\nsections due: #40 — `## Sources` is missing\nsections due: #40 — `## Readings` is missing\nsections due: #40 — `## Concerns` is missing\nsections due: #40 — `## Ledger` is missing\nsections due: #40 — `## Not in this slice` is missing\nsections due: #40 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n40\tdefect\tworkflow: an issue quoting the markers"
+  },
+  {
+    "name": "#4839: an issue whose prose quotes another lane's release marker within 2 hours is no release; another lane claims it",
+    "input": {
+      "areas": ["area:workflow", "area:ci"],
+      "order": {},
+      "lane": "triage",
+      "now": 1760000000,
+      "prs": [],
+      "issues": [
+        {
+          "number": 41,
+          "title": "workflow: an issue quoting a release",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text quoting `<!-- released: lane=surface at=2025-10-09T07:53:20Z -->` in a code span.\n",
+          "blocked": null
+        }
+      ]
+    },
+    "output": "observation due: #41 — mise run debug:test <package> <test>\nsections due: #41 — `## Sources` is missing\nsections due: #41 — `## Readings` is missing\nsections due: #41 — `## Concerns` is missing\nsections due: #41 — `## Ledger` is missing\nsections due: #41 — `## Not in this slice` is missing\nsections due: #41 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n41\tdefect\tworkflow: an issue quoting a release"
   }
 ]

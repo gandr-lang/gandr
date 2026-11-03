@@ -53,5 +53,25 @@
       "body": "Text.\n\n<!-- claim: lane=surface -->\n"
     },
     "output": { "kept": false, "body": null }
+  },
+  {
+    "name": "#4839: a claim on a body quoting a marker in a code span leaves the quotation and writes its own",
+    "input": {
+      "lane": "triage",
+      "step": "write",
+      "body": "Quotes `<!-- claim: lane=x -->` and `<!-- released: lane=triage at=2026-11-03T01:00:00Z -->`.\n"
+    },
+    "output": {
+      "body": "Quotes `<!-- claim: lane=x -->` and `<!-- released: lane=triage at=2026-11-03T01:00:00Z -->`.\n\n<!-- claim: lane=triage -->\n"
+    }
+  },
+  {
+    "name": "#4839: a run whose marker is the first alone on its line keeps the claim, a quoted marker before it read as text",
+    "input": {
+      "lane": "triage",
+      "step": "check",
+      "body": "Quotes `<!-- claim: lane=x -->`.\n\n<!-- claim: lane=triage -->\n"
+    },
+    "output": { "kept": true }
   }
 ]
