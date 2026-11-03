@@ -1,0 +1,52 @@
+/// A natural read as even or odd through a view whose evidence is a cover.
+///
+/// Halving algorithms take a natural apart by its parity. A view names that split
+/// once, and every match reads it.
+///
+/// `Parity` takes a natural apart as twice a half or one more. Its evidence
+/// shows the two injections apart and covering. A match through it reads its
+/// arms by the cover's decision.
+///
+/// - see: #4561 — the views and layouts sketch, its rulings in the issue body
+/// - see: corpus/sketch/views-and-layouts/snoc.gandr — a view whose evidence is an equivalence
+
+/// Twice a natural.
+def double(n : Nat) -> Nat { n + n }
+
+/// One more than twice a natural.
+def doubleSucc(n : Nat) -> Nat { double(n) + 1 }
+
+/// Every natural is twice a half or one more. The two injections are apart,
+/// and the remainder by two decides which one reaches a natural.
+def parityCover() -> Cover(Nat, [double, doubleSucc]) {
+  Cover.decide(fun (n) { n % 2 == 0 })
+}
+
+/// A natural read as even or odd, each with its half.
+view Parity : Nat
+  | even(half : Nat)
+  | odd(half : Nat)
+  with parityCover
+
+/// `b` to the power `n`, halving the exponent at each step.
+def rec power(b : Nat, n : Nat) -> Nat {
+  match n with Parity {
+    even(0) => 1,
+    even(h) => {
+      let r = power[<](b, h);
+      r * r
+    },
+    odd(h) => {
+      let r = power[<](b, h);
+      b * r * r
+    }
+  }
+}
+
+/// Whether a natural is even, read off the view's arm.
+def isEven(n : Nat) -> Bool {
+  match n with Parity {
+    even(_) => true,
+    odd(_) => false
+  }
+}

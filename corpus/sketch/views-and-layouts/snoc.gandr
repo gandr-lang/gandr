@@ -1,0 +1,88 @@
+/// A view that takes a list apart from its end.
+///
+/// Some functions take a list apart from its last element. A view gives that
+/// reading without a second list type at every call.
+///
+/// `Snoc` declares a second way to take a list apart. Its evidence is an
+/// equivalence with the snoc list, so a match through it computes by transport.
+/// A match names the view with `with`, as `handle` names a model.
+///
+/// - see: #4561 — the views and layouts sketch, its rulings in the issue body
+/// - see: corpus/sketch/views-and-layouts/parity.gandr — a view whose evidence is a cover
+
+/// The list built from its end: empty, or an initial list before a last element.
+pub data SnocList(a : Type) : Type where {
+  /// The empty list.
+  | Lin : SnocList(a)
+  /// `init` before `last`.
+  | Snoc : (init : SnocList(a), last : a) --> SnocList(a)
+}
+
+/// A snoc list with one more element at its front.
+def rec cons[a : Type](x : a, xs : SnocList(a)) -> SnocList(a) {
+  match xs {
+    Lin => Snoc(Lin, x),
+    Snoc(front, y) => Snoc(cons[<](x, front), y)
+  }
+}
+
+/// A list built again from its end.
+def rec toSnoc[a : Type](xs : List(a)) -> SnocList(a) {
+  match xs {
+    Nil => Lin,
+    Cons(x, rest) => cons(x, toSnoc[<](rest))
+  }
+}
+
+/// A snoc list as a list from its front.
+def rec fromSnoc[a : Type](xs : SnocList(a)) -> List(a) {
+  match xs {
+    Lin => Nil,
+    Snoc(front, y) => append(fromSnoc[<](front), Cons(y, Nil))
+  }
+}
+
+/// The two lists are one type, read from either end. `equiv` decides the
+/// round trips.
+def snocList[a : Type]() -> List(a) ≃ SnocList(a) { equiv(toSnoc, fromSnoc) }
+
+/// A list from its end, through its equivalence with the snoc list.
+view Snoc[a : Type] : List(a)
+  | lin
+  | snoc(init : List(a), last : a)
+  with snocList
+
+/// The last element of a list, if it has one.
+def last[a : Type](xs : List(a)) -> Maybe(a) {
+  match xs with Snoc {
+    lin => none,
+    snoc(_, y) => some(y)
+  }
+}
+
+/// A list without its last element, empty for the empty list.
+def init[a : Type](xs : List(a)) -> List(a) {
+  match xs with Snoc {
+    lin => Nil,
+    snoc(front, _) => front
+  }
+}
+
+/// The list in reverse order, one last element at a time.
+def rec reverse[a : Type](xs : List(a)) -> List(a) {
+  match xs with Snoc {
+    lin => Nil,
+    snoc(front, y) => Cons(y, reverse[<](front))
+  }
+}
+
+/// The last `n` elements of a list, from its end.
+def rec lastN[a : Type](n : Nat, xs : List(a)) -> List(a) {
+  match xs with Snoc {
+    lin => Nil,
+    snoc(front, y) => match n {
+      Zero => Nil,
+      Succ(k) => append(lastN[<](k, front), Cons(y, Nil))
+    }
+  }
+}

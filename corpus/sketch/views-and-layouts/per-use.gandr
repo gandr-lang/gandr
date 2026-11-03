@@ -1,0 +1,54 @@
+/// A layout other than the default, chosen per use.
+///
+/// A foreign call, a wire format or a hot loop can want another layout than
+/// the type's default. A module-wide default would make meaning depend on
+/// scope state.
+///
+/// A per-use layout is a type, not a selector. `Repr(Ints, packed)` is the
+/// type of a list in the packed layout. A value moves there and back along the
+/// derived equivalence, by transport.
+///
+/// - see: #4561 — the views and layouts sketch, its rulings in the issue body
+/// - see: corpus/sketch/views-and-layouts/layouts.gandr — the layouts this file uses
+
+// The layout type, its `#ribbit` reader and the moves along a layout.
+import std.mem (Layout);
+// The list and its tagged and packed layouts.
+import "./layouts.gandr";
+
+/// A wire format's checksum, over a list in the packed layout whatever the
+/// list's default: two elements per step, as the frame holds them.
+def rec checksum(frame : Repr(Ints, packed)) -> i64 {
+  match frame with packed {
+    Empty => 0i64,
+    One(x) => widen(x),
+    Many(x, y, rest) => widen(x) * 31i64 + widen(y) + checksum[<](rest)
+  }
+}
+
+/// A list's checksum in the wire's layout. The list moves to the packed
+/// representation along the layout's equivalence.
+def framed(xs : Ints) -> i64 {
+  let frame : Repr(Ints, packed) = Layout.into(packed, xs);
+  checksum(frame)
+}
+
+/// A hot loop over the tagged layout, one load per element, chosen for this
+/// loop alone.
+def rec scan(xs : Repr(Ints, tagged), acc : i64) -> i64 {
+  match xs with tagged {
+    TagNil => acc,
+    TagCons(x, rest) => scan[<](rest, acc + widen(x))
+  }
+}
+
+/// The tagged loop over a list of the default layout, by transport there and
+/// back.
+def sumTagged(xs : Ints) -> i64 { scan(Layout.into(tagged, xs), 0i64) }
+
+/// One, two and three, in the packed layout after the tagged one, along the
+/// composite of the two equivalences.
+def relaid() -> Repr(Ints, packed) {
+  let tagged123 = Layout.into(tagged, Cons(1i32, Cons(2i32, Cons(3i32, Nil))));
+  Layout.relay(tagged, packed, tagged123)
+}
