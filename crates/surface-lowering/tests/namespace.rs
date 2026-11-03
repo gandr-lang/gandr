@@ -3187,6 +3187,58 @@ fn a_module_path_import_binds_its_module_qualified_2687()
     );
 }
 
+/// #2874: a type behind a module path of three names or four reads its
+/// module's type, as the term path reads its value, and a type the module does
+/// not declare is refused naming the whole path.
+#[test]
+fn a_type_reads_through_a_module_path_of_any_length_2874()
+{
+    let pbg = grammar();
+    let token = "pub data Token : Type where { | Tok : Token }\npub def made : Token ;\ndef made = \
+                 Tok ;";
+    let (text, unit) = laid(&[
+        (SourceText::from(token), &[]),
+        (SourceText::from(token), &[]),
+        (
+            SourceText::from(
+                "import a.b.c ;\nimport a.b.c.d ;\ndef three : a.b.c.Token ;\ndef three = \
+                 a.b.c.made ;\ndef four : a.b.c.d.Token ;\ndef four = a.b.c.d.made ;\ndef lost : \
+                 a.b.c.Lost ;\ndef lost = a.b.c.made ;",
+            ),
+            &[
+                ImportTarget::Source(SourceIndex::from(0_usize)),
+                ImportTarget::Source(SourceIndex::from(1_usize)),
+            ],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+
+    let refusals: Vec<(String, String)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                Some((
+                    String::from(declaration.name().as_ref()),
+                    format!("{refusal:?}"),
+                ))
+            }
+            else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        matches!(refusals.as_slice(), [(name, refusal)] if name == "lost"
+            && refusal.starts_with("UnknownMember")
+            && refusal.contains("\"a.b.c\"")
+            && refusal.contains("\"Lost\"")),
+        "`three` and `four` read their types through the path, and `lost` is refused naming \
+         it: {refusals:?}"
+    );
+}
+
 /// #2687: an import's list binds the names it lists by their own names,
 /// beside the module the path binds qualified, and binds no other name by its
 /// own; a quoted import with a list binds only those. A listed name its module

@@ -3246,8 +3246,7 @@ impl<'source> Lowerer<'_, 'source>
         if link.is_none() {
             let mut pieces = Pieces::new();
             read_pieces(self.pbg, self.tree, family.node, &mut pieces)?;
-            if let Ok((module, Maybe::Absent(_), selected)) =
-                Self::type_link(site, &pieces.pieces, family.span)
+            if let Ok((module, &[], selected)) = Self::type_link(site, &pieces.pieces, family.span)
             {
                 link = Some((module, selected));
             }
