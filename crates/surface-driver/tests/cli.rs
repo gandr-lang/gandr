@@ -4567,8 +4567,27 @@ fn fake_toolchain(
         .to_path_buf()
 }
 
-/// `gandr` with `arguments` in `working`, its data directory `data`, and
-/// `GANDR_TOOLCHAIN` set to `selecting` when it names one.
+/// The driver as an install holds it: a hard link outside any cargo profile
+/// directory, under this test's [`homes`], so it selects as an installed
+/// `gandr` does rather than running itself in place.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn installed() -> PathBuf
+{
+    let directory = homes().join("installed");
+    let driver = directory.join("gandr");
+    if !driver.is_file() {
+        std::fs::create_dir_all(&directory).expect("the install directory is made");
+        std::fs::hard_link(env!("CARGO_BIN_EXE_gandr"), &driver)
+            .expect("the driver is linked outside its profile directory");
+    }
+    driver
+}
+
+/// The installed driver with `arguments` in `working`, its data directory
+/// `data`, and `GANDR_TOOLCHAIN` set to `selecting` when it names one.
 ///
 /// # Specification
 /// trivial.
@@ -4587,7 +4606,30 @@ where
     if let Maybe::Present(name) = selecting {
         let _selected = command.env("GANDR_TOOLCHAIN", name);
     }
-    ran(command)
+    ran_installed(&command)
+}
+
+/// The finished run of `command` by the installed driver rather than the one
+/// in its profile directory, with the same arguments, environment and working
+/// directory, its output captured.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn ran_installed(command: &Command) -> Output
+{
+    let mut moved = Command::new(installed());
+    let _arguments = moved.args(command.get_args());
+    for (key, value) in command.get_envs() {
+        let _set = match value {
+            Some(value) => moved.env(key, value),
+            None => moved.env_remove(key),
+        };
+    }
+    if let Some(working) = command.get_current_dir() {
+        let _placed = moved.current_dir(working);
+    }
+    moved.output().expect("the installed driver runs")
 }
 
 /// A linked build runs in the driver's place with the driver's arguments and
@@ -4672,7 +4714,7 @@ fn a_cargo_run_of_the_driver_runs_its_own_build_4511()
             .current_dir(&scratch.0)
             .env("XDG_DATA_HOME", &data)
             .env("CARGO_MANIFEST_DIR", manifest);
-        let output = ran(command);
+        let output = ran_installed(&command);
         assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
         stdout(&output)
     };
@@ -4685,6 +4727,53 @@ fn a_cargo_run_of_the_driver_runs_its_own_build_4511()
         under(&scratch.0),
         "ran fake --version\n",
         "another package's manifest directory leaves the selection to the default"
+    );
+}
+
+/// #4510: a build run from the profile directory cargo built it into runs
+/// itself, whatever the default names, so a task or a probe that runs
+/// `target/<profile>/gandr` judges that build; the same directory linked as a
+/// toolchain selects as an installed build does.
+#[cfg(unix)]
+#[test]
+fn a_build_run_from_its_profile_directory_runs_itself_4510()
+{
+    let scratch = Scratch::new(Path::new("toolchain-in-place"));
+    let data = scratch.0.join("data");
+    let build = fake_toolchain(&scratch, Path::new("fake"));
+    let link = proxied(
+        &["toolchain", "link", "fake", &build.to_string_lossy()],
+        &scratch.0,
+        &data,
+        Maybe::Absent(()),
+    );
+    assert_eq!(code(&link), Code(0_i32), "{}", stderr(&link));
+    let in_place = || {
+        let mut command = gandr(&["--version"]);
+        let _placed = command.current_dir(&scratch.0).env("XDG_DATA_HOME", &data);
+        let output = ran(command);
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+        stdout(&output)
+    };
+    assert_eq!(
+        in_place(),
+        format!("gandr {}\n", env!("CARGO_PKG_VERSION")),
+        "a build run from its profile directory runs itself, not the default"
+    );
+    let profile = Path::new(env!("CARGO_BIN_EXE_gandr"))
+        .parent()
+        .expect("the driver has a directory");
+    let dev = proxied(
+        &["toolchain", "link", "dev", &profile.to_string_lossy()],
+        &scratch.0,
+        &data,
+        Maybe::Absent(()),
+    );
+    assert_eq!(code(&dev), Code(0_i32), "{}", stderr(&dev));
+    assert_eq!(
+        in_place(),
+        "ran fake --version\n",
+        "a profile directory linked as a toolchain selects as an installed build does"
     );
 }
 

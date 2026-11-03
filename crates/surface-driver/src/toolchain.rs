@@ -22,9 +22,11 @@
 //! follows a later switch. The driver runs itself when nothing
 //! names a toolchain, when the selection names the running executable, when
 //! cargo runs the driver's own package (`cargo run` and `cargo test` set
-//! `CARGO_MANIFEST_DIR` to the directory it was built from), and for `gandr
-//! toolchain`, which manages the toolchains whatever is selected. A name
-//! that names no installed toolchain is refused before any verb runs.
+//! `CARGO_MANIFEST_DIR` to the directory it was built from), when the running
+//! executable sits in a cargo profile directory no toolchain links (cargo
+//! writes `.cargo-lock` into each), and for `gandr toolchain`, which manages
+//! the toolchains whatever is selected. A name that names no installed
+//! toolchain is refused before any verb runs.
 //!
 //! The nearest package manifest's `[toolchain]` constraint then holds the
 //! selection: [`constraint`] refuses a toolchain named outright that leaves
@@ -500,12 +502,13 @@ pub enum Proxied
 /// - requires: called before the driver reads its arguments.
 /// - ensures: [`Proxied::Itself`] when nothing names a toolchain, when the
 ///   arguments open with `toolchain`, when `CARGO_MANIFEST_DIR` is the
-///   directory this build was built from, or when the selected toolchain's
-///   `gandr` is the running executable. The selection is [`select`]'s, held to
-///   the nearest manifest's constraint as [`constraint::constrained`] holds it.
-///   Otherwise, on Unix, the process is replaced by that executable with the
-///   same arguments and environment; elsewhere it runs as a child and its
-///   status is returned.
+///   directory this build was built from, when the running executable sits in a
+///   cargo profile directory no toolchain links, or when the selected
+///   toolchain's `gandr` is the running executable. The selection is
+///   [`select`]'s, held to the nearest manifest's constraint as
+///   [`constraint::constrained`] holds it. Otherwise, on Unix, the process is
+///   replaced by that executable with the same arguments and environment;
+///   elsewhere it runs as a child and its status is returned.
 /// - fails: [`ToolchainFault`] when the selection cannot be read, names no
 ///   installed toolchain, leaves the constraint unmet, or the exec fails.
 /// - panics: none.
@@ -517,11 +520,13 @@ pub enum Proxied
 /// # Adequacy
 /// - hypothesis: L3 — a linked toolchain runs in the driver's place, the
 ///   selection's sources rank in order, an unknown name is refused, and a cargo
-///   run of the driver's own package runs that build.
+///   run of the driver's own package, or a run from its profile directory, runs
+///   that build.
 /// - witness: `tests::cli::a_linked_toolchain_is_the_one_the_proxy_runs`
 /// - witness: `tests::cli::the_environment_outranks_the_pin_and_the_pin_the_default`
 /// - witness: `tests::cli::a_name_no_toolchain_answers_is_refused_by_its_source`
 /// - witness: `tests::cli::a_cargo_run_of_the_driver_runs_its_own_build_4511`
+/// - witness: `tests::cli::a_build_run_from_its_profile_directory_runs_itself_4510`
 pub fn proxy() -> Result<Proxied, ToolchainFault>
 {
     let mut arguments = std::env::args_os();
@@ -548,6 +553,9 @@ pub fn proxy() -> Result<Proxied, ToolchainFault>
         None if matches!(environment, Maybe::Absent(_)) => return Ok(Proxied::Itself),
         None => return Err(ToolchainFault::Homeless),
     };
+    if InPlace::now(&toolchains)? == InPlace(true) {
+        return Ok(Proxied::Itself);
+    }
     let chosen = constraint::constrained(
         &toolchains,
         &working,
@@ -706,7 +714,9 @@ quenchant_shape::reason_enum! {
             /// The selection, or the image it names, cannot be read.
             Unreadable,
             /// The face follows no selection: its socket is named, its own
-            /// image cannot be read, or cargo runs its own build.
+            /// image cannot be read, or it runs a build of its own, which
+            /// cargo runs or which sits in a profile directory no toolchain
+            /// links.
             Unfollowed,
         }
     }
@@ -720,7 +730,8 @@ quenchant_shape::reason_enum! {
 /// - ensures: the path when the selection, made as [`proxy`] makes it, names a
 ///   `gandr` that is another file than `running`. A selection that cannot be
 ///   read keeps the running image, so a face never stops serving because a
-///   toolchain broke; a face cargo runs from its own package follows none.
+///   toolchain broke; a face cargo runs from its own package, or one whose
+///   image sits in a profile directory no toolchain links, follows none.
 /// - panics: none.
 /// - executable: none — the answer is the file system's.
 ///
@@ -737,6 +748,11 @@ pub fn moved(running: Image) -> Maybe<PathBuf, unmoved::Absent>
     else {
         return Maybe::Absent(unmoved::Absent::Unreadable);
     };
+    match InPlace::now(&toolchains) {
+        Ok(InPlace(true)) => return Maybe::Absent(unmoved::Absent::Unfollowed),
+        Ok(InPlace(false)) => {},
+        Err(_unreadable) => return Maybe::Absent(unmoved::Absent::Unreadable),
+    }
     let Ok(working) = std::env::current_dir()
     else {
         return Maybe::Absent(unmoved::Absent::Unreadable);
@@ -829,6 +845,62 @@ impl CargoRun
             std::env::var_os("CARGO_MANIFEST_DIR")
                 .is_some_and(|directory| directory == env!("CARGO_MANIFEST_DIR")),
         )
+    }
+}
+
+/// Whether the running executable sits in a cargo profile directory that no
+/// toolchain links: a build run from where cargo put it runs itself, whatever
+/// the selection names, so a probe or a task that runs `target/<profile>/gandr`
+/// judges that build.
+///
+/// Cargo writes `.cargo-lock` into each profile directory it builds into. An
+/// installed driver, a build the follower copied and a `cargo install` copy
+/// sit beside none. A profile directory a toolchain links is that toolchain,
+/// and its build selects as an installed one does.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct InPlace(bool);
+
+impl InPlace
+{
+    /// The reading of the running executable's directory against the links
+    /// under `toolchains`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `InPlace(true)` exactly when the running executable's
+    ///   canonical directory holds `.cargo-lock` and no link under `toolchains`
+    ///   names that directory; `InPlace(false)` when the running executable
+    ///   cannot be read.
+    /// - fails: [`ToolchainFault::Io`] when the toolchains directory or a link
+    ///   cannot be read.
+    /// - panics: none.
+    /// - executable: none — the answer is the file system's.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a build run from its profile directory runs itself,
+    ///   the same build linked as a toolchain selects, and a copy outside a
+    ///   profile directory selects.
+    /// - witness: `tests::cli::a_build_run_from_its_profile_directory_runs_itself_4510`
+    fn now(toolchains: &Path) -> Result<Self, ToolchainFault>
+    {
+        let Some(directory) = std::env::current_exe()
+            .and_then(std::fs::canonicalize)
+            .ok()
+            .and_then(|running| running.parent().map(Path::to_path_buf))
+        else {
+            return Ok(Self(false));
+        };
+        if !directory.join(".cargo-lock").is_file() {
+            return Ok(Self(false));
+        }
+        let linked = links(toolchains)?
+            .into_values()
+            .any(|linked| std::fs::canonicalize(&linked).is_ok_and(|linked| linked == directory));
+        Ok(Self(!linked))
     }
 }
 
@@ -937,12 +1009,33 @@ pub fn make_default(name: &Name) -> Result<(), ToolchainFault>
 pub fn installed() -> Result<BTreeMap<Name, PathBuf>, ToolchainFault>
 {
     let (toolchains, _default) = homes()?;
-    let entries = match std::fs::read_dir(&toolchains) {
+    links(&toolchains)
+}
+
+/// Each link under `toolchains` and the directory it names, by name.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one entry per link `toolchains` holds; none when it does not
+///   exist.
+/// - fails: [`ToolchainFault::Io`] when the directory or a link cannot be read.
+/// - panics: none.
+/// - executable: none — the answer is the file system's.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`installed`].
+/// - witness: `tests::cli::a_linked_toolchain_is_the_one_the_proxy_runs`
+fn links(toolchains: &Path) -> Result<BTreeMap<Name, PathBuf>, ToolchainFault>
+{
+    let entries = match std::fs::read_dir(toolchains) {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
         Err(error) => {
             return Err(ToolchainFault::Io {
-                path: toolchains,
+                path: toolchains.to_path_buf(),
                 error,
             });
         },
@@ -950,7 +1043,7 @@ pub fn installed() -> Result<BTreeMap<Name, PathBuf>, ToolchainFault>
     let mut installed = BTreeMap::new();
     for entry in entries {
         let entry = entry.map_err(|error| ToolchainFault::Io {
-            path: toolchains.clone(),
+            path: toolchains.to_path_buf(),
             error,
         })?;
         let Ok(name) = entry.file_name().to_string_lossy().parse::<Name>()
