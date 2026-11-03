@@ -2013,6 +2013,104 @@ fn a_call_of_outputs_standing_as_one_value_is_their_record()
     );
 }
 
+#[test]
+fn a_labelled_group_returns_each_value_at_its_output()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (.r = m, .q = n) \
+         }\ndef nothing(a : Integer) -> () { () }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "divmod"),
+        ["thunk", "lambda", "lambda", "return2", "#0", "#1"],
+        "each value returns at the output its label names, whatever order the group writes"
+    );
+    assert_eq!(
+        body(&arena, &module, "nothing"),
+        ["thunk", "lambda", "return0"],
+        "`()` ending a body of no outputs returns none"
+    );
+    let loose = "def loose(a : Integer) -> Integer { (.q = a, .r = a) }";
+    assert!(
+        matches!(refused(loose), LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::WrongSort,
+            ..
+        }),
+        "a labelled group is no value"
+    );
+    let stray = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (.q = n, .x = \
+                 m) }";
+    assert!(
+        matches!(refused(stray), LoweringRefusal::MalformedForm {
+            fault: FormFault::MisplacedTile,
+            ..
+        }),
+        "a group's labels are its outputs' names"
+    );
+}
+
+#[test]
+fn a_labelled_pattern_binds_each_output_by_its_label()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
+         punned(a : Integer, b : Integer) -> Integer { let (.r, .q) = divmod(a, b); r }\ndef \
+         renamed(a : Integer, b : Integer) -> Integer { let (.r = rem, .q = quo) = divmod(a, b); \
+         quo }",
+        &mut arena,
+    );
+
+    let punned = body(&arena, &module, "punned");
+    assert!(
+        punned.iter().any(|token| token == "bindall2"),
+        "a labelled pattern binds every output of the call, {punned:?}"
+    );
+    assert_eq!(
+        punned.last().map(String::as_str),
+        Some("#0"),
+        "`.r` binds the last output, written first"
+    );
+    assert_eq!(
+        body(&arena, &module, "renamed").last().map(String::as_str),
+        Some("#1"),
+        "`.q = quo` binds the first output to `quo`, written last"
+    );
+    let divmod = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\n";
+    let stray =
+        format!("{divmod}def stray(a : Integer) -> Integer {{ let (.x, .q) = divmod(a, a); q }}");
+    assert!(
+        matches!(refused(stray.as_str()), LoweringRefusal::MalformedForm {
+            fault: FormFault::MisplacedTile,
+            ..
+        }),
+        "a label names an output of the call"
+    );
+    let mixed =
+        format!("{divmod}def mixed(a : Integer) -> Integer {{ let (.q, r) = divmod(a, a); r }}");
+    let mixed = refused(mixed.as_str());
+    assert!(
+        matches!(mixed, LoweringRefusal::OutOfFragment {
+            sort: FragmentSort::Pattern,
+            ..
+        }),
+        "a group is all positional or all labelled: a dotted entry among positional ones is no \
+         pattern, {mixed:?}"
+    );
+    let record = "def pair(a : Integer) -> Integer * Integer { (a, a) }\ndef split(a : Integer) -> \
+                  Integer { let (.x, .y) = pair(a); x }";
+    assert!(
+        matches!(refused(record), LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::WrongSort,
+            ..
+        }),
+        "labels name a call's outputs, never a product's components"
+    );
+}
+
 /// #2179: a dependent arrow and a telescope whose binder is named as a type
 /// is, `(A : Type) -> A -> -F A`, bind it as the lowercase binder does, so
 /// the type a parameter list naming `A` declares reads back as written.

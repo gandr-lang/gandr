@@ -1687,17 +1687,28 @@ fn patterns(
             opt(seq([t(TileLabel("(")), comma1(h(s)), t(TileLabel(")"))])),
         ]),
     ));
+    // A group of patterns receiving a call's outputs, positional `(q, r)` or
+    // labelled `(.q, .r)`, `(.r = rem, .q = quo)`. The labelled group takes a
+    // `(` of its own, decided by the very next tile, as the labelled telescope
+    // does, so a dot after an operand is never a label's.
     out.push(r(
         RuleName("tuple_pattern"),
         Provenance("tuple_pattern"),
         s,
         atom,
-        seq([
-            t(TileLabel("(")),
-            h(s),
-            repeat1(seq([t(TileLabel(",")), h(s)])),
-            opt(t(TileLabel(","))),
-            t(TileLabel(")")),
+        alt([
+            seq([
+                t(TileLabel("(")),
+                comma1(seq([dotted_label(), opt(seq([t(TileLabel("=")), h(s)]))])),
+                t(TileLabel(")")),
+            ]),
+            seq([
+                t(TileLabel("(")),
+                h(s),
+                repeat1(seq([t(TileLabel(",")), h(s)])),
+                opt(t(TileLabel(","))),
+                t(TileLabel(")")),
+            ]),
         ]),
     ));
     // The telescope pattern `#{ x, y }`, `#{ .n, .v }` punning its labels and
@@ -4265,33 +4276,46 @@ fn primary_expressions(
     // the choice is locally decidable — the discriminator `≐`-continues exactly
     // one tail. The concrete language is unchanged; the folded kinds are
     // recorded as adaptations for the parity inventory.
+    //
+    // A labelled group of outputs, `( .l = E, … )`, takes a `(` of its own,
+    // decided by the very next tile, as the labelled telescope `*{ .l = E }`
+    // does: a `(` admitting both a hole and a `.` after it would read the
+    // projection dot of `(p.x, p.y)` as a label's.
     let mut paren = r(
         RuleName("parenthesized_expression"),
         Provenance("parenthesized_expression"),
         s,
         p,
-        seq([
-            t(TileLabel("(")),
-            alt([
-                // unit: `( )`
+        alt([
+            // a labelled group of outputs: `( .l = E , … )`
+            seq([
+                t(TileLabel("(")),
+                comma1(seq([dotted_label(), t(TileLabel("=")), h(s)])),
                 t(TileLabel(")")),
-                seq([
-                    h(s),
-                    alt([
-                        // parenthesized: `( E )`
-                        t(TileLabel(")")),
-                        // tuple: `( E , )` or `( E , E (, E)* ,? )`
-                        seq([
-                            t(TileLabel(",")),
-                            opt(seq([
-                                h(s),
-                                opt(repeat1(seq([t(TileLabel(",")), h(s)]))),
-                                opt(t(TileLabel(","))),
-                            ])),
+            ]),
+            seq([
+                t(TileLabel("(")),
+                alt([
+                    // unit: `( )`
+                    t(TileLabel(")")),
+                    seq([
+                        h(s),
+                        alt([
+                            // parenthesized: `( E )`
                             t(TileLabel(")")),
+                            // tuple: `( E , )` or `( E , E (, E)* ,? )`
+                            seq([
+                                t(TileLabel(",")),
+                                opt(seq([
+                                    h(s),
+                                    opt(repeat1(seq([t(TileLabel(",")), h(s)]))),
+                                    opt(t(TileLabel(","))),
+                                ])),
+                                t(TileLabel(")")),
+                            ]),
+                            // annotation: `( E : T )`
+                            seq([t(TileLabel(":")), h(Sort::Type), t(TileLabel(")"))]),
                         ]),
-                        // annotation: `( E : T )`
-                        seq([t(TileLabel(":")), h(Sort::Type), t(TileLabel(")"))]),
                     ]),
                 ]),
             ]),

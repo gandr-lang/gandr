@@ -2292,6 +2292,10 @@ quenchant_shape::reason_enum! {
     }
 }
 
+/// The components of a tuple pattern, in written order: each its label when
+/// written `.l` or `.l = p`, and its pattern, the label itself for `.l`.
+type TupleComponents = Vec<(Option<Placed>, Placed)>;
+
 quenchant_shape::reason_enum! {
     /// Why a `let` statement's at pattern opens no handle.
     pub mod unopened {
@@ -9515,11 +9519,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `site` is a parenthesised expression in term position.
     /// - ensures: `(e)` reads its operand at its own reading and adopts it, the
     ///   answer its position states passed on; a comma list is read as a pair;
-    ///   `(e : T)` is read as [`Self::annotated`] reads it, adopting a
-    ///   constructor that takes `T` as its classifier, or the value an
-    ///   ascription its position makes carries, and otherwise planned as a
-    ///   value ascription, an injection among them, its label read in the sum
-    ///   `T` states.
+    ///   a labelled group as [`Self::labelled_outputs`] reads it; `()` ending a
+    ///   body of no outputs returns none; `(e : T)` is read as
+    ///   [`Self::annotated`] reads it, adopting a constructor that takes `T` as
+    ///   its classifier, or the value an ascription its position makes carries,
+    ///   and otherwise planned as a value ascription, an injection among them,
+    ///   its label read in the sum `T` states.
     /// - provides: the reading of every form the grammar folds into
     ///   parentheses.
     /// - fails: yields the pair's own refusal, the annotation's refusal as
@@ -9544,7 +9549,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Transparent(_) | Plan::Tuple(_) | Plan::Ascribed(..)))
+                    Some(&(Plan::Transparent(_) | Plan::Tuple(_) | Plan::ReturnAll(_) | Plan::Ascribed(..)))
                 )
         },
     )]
@@ -9556,6 +9561,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let list = cursor.clone();
         let _open = cursor.tile(TileName::PAREN_OPEN);
+        if let Maybe::Present(_) = cursor.at(TileName::DOT) {
+            return self.labelled_outputs(site, list);
+        }
         let run = cursor.operands();
         if let Maybe::Present(_) = cursor.at(TileName::COMMA) {
             return self.pair(site, list);
@@ -9565,6 +9573,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         if let Run::Empty(_) = run {
+            // `()` ending a body of no outputs returns none.
+            if let Some(outputs) = self.answered_outputs(site)
+                && outputs.start == outputs.end
+            {
+                let _frame = self.require(site, Produced::Computation)?;
+                let none = self.operands.len();
+                self.plan(
+                    site,
+                    Plan::ReturnAll(Stretch {
+                        start: none,
+                        end: none,
+                    }),
+                );
+                return Ok(());
+            }
             let unit = Site {
                 name: FormName::UNIT,
                 ..site
@@ -11348,29 +11371,91 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let run = statement.at;
         if let Maybe::Present(components) = self.tuple_binders(statement, binder)? {
             let mut names = Vec::with_capacity(components.len());
-            for &component in &components {
-                let name = self.binder_name(statement, component)?;
+            for &(label, component) in &components {
+                // A punned `.l` binds its own label.
+                let name = if label == Some(component) {
+                    self.name_at(component)
+                }
+                else {
+                    self.binder_name(statement, component)?
+                };
                 self.note_binder(component, name)?;
-                names.push((name, component.span));
+                names.push((
+                    label.map(|label| (self.name_at(label), label)),
+                    name,
+                    component.span,
+                ));
             }
+            let pattern = Site {
+                at: binder,
+                name: FormName::TUPLE_PATTERN,
+                reading: Reading::Computation(frame),
+            };
+            // The grammar holds a group all positional or all labelled.
+            let labelled = names.iter().filter(|&&(label, ..)| label.is_some()).count();
             self.read(bound.node, Reading::Computation(frame));
             let arity = gandr_core_term::ComponentCount::from(names.len());
             let outputs = match annotation {
-                None => self
-                    .called_outputs(frame, bound, run.node)?
-                    .map(|outputs| outputs.len()),
+                None => self.called_outputs(frame, bound, run.node)?,
                 Some(_) => None,
             };
             // A pattern of a call returning outputs binds every one of them.
-            if outputs.is_some_and(|outputs| outputs != names.len()) {
-                let pattern = Site {
-                    at: binder,
-                    name: FormName::TUPLE_PATTERN,
-                    reading: Reading::Computation(frame),
-                };
+            if outputs
+                .as_ref()
+                .is_some_and(|outputs| outputs.len() != names.len())
+            {
                 return Err(pattern.out(FragmentBoundary::Arity(OperandCount::from(names.len()))));
             }
-            if outputs == Some(names.len()) {
+            if let Some(outputs) = outputs {
+                // A labelled pattern binds each output by its label, in the
+                // order the callee writes them.
+                let ordered: Vec<(SurfaceName<'source>, ByteSpan)> = if labelled == 0 {
+                    names.iter().map(|&(_, name, span)| (name, span)).collect()
+                }
+                else {
+                    let called: Vec<SurfaceName<'source>> = outputs
+                        .iter()
+                        .filter_map(|output| match output.key {
+                            arity::Key::Label(written, _) => Some(written),
+                            arity::Key::Positional | arity::Key::Index(..) => None,
+                        })
+                        .collect();
+                    // Labels name the outputs of a callee that names each.
+                    if called.len() != outputs.len() {
+                        return Err(pattern.out(FragmentBoundary::WrongSort));
+                    }
+                    let mut ordered = Vec::with_capacity(names.len());
+                    let mut seen: Vec<(SurfaceName<'source>, Placed)> =
+                        Vec::with_capacity(names.len());
+                    for &(label, ..) in &names {
+                        let Some((written, key)) = label
+                        else {
+                            continue;
+                        };
+                        if !called.contains(&written) {
+                            return Err(statement.fault(key.span, FormFault::MisplacedTile));
+                        }
+                        if let Some(&(_, first)) =
+                            seen.iter().find(|&&(earlier, _)| earlier == written)
+                        {
+                            return Err(LoweringRefusal::DuplicateDefinition {
+                                span: key.span,
+                                name: written,
+                                first: first.span,
+                            });
+                        }
+                        seen.push((written, key));
+                    }
+                    for written in called {
+                        if let Some(&(_, name, span)) = names
+                            .iter()
+                            .find(|&&(label, ..)| label.is_some_and(|(label, _)| label == written))
+                        {
+                            ordered.push((name, span));
+                        }
+                    }
+                    ordered
+                };
                 self.statements.push(Statement {
                     origin: run.node,
                     bound: bound.node,
@@ -11381,11 +11466,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     rest: exits::Rest::Bound,
                 });
                 let mut inner = frame;
-                for (name, written) in names {
+                for (name, written) in ordered {
                     inner = Frame::Inner(self.scope.extend(inner, name, Maybe::Present(written)));
                 }
                 return Ok(inner);
             }
+            // Labels name a call's outputs; a record value is matched by
+            // `*{ … }`.
+            if labelled != 0 {
+                return Err(pattern.out(FragmentBoundary::WrongSort));
+            }
+            let names: Vec<_> = names
+                .into_iter()
+                .map(|(_label, name, written)| (name, written))
+                .collect();
             let binding = annotation.map_or_else(
                 || StatementBinding::Split {
                     arity,
@@ -11640,8 +11734,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `binder` is the pattern operand of the statement at
     ///   `statement`.
-    /// - ensures: each component operand of a tuple pattern, in order; absent
-    ///   for any other pattern.
+    /// - ensures: each component of a tuple pattern, in order, with its label
+    ///   when it is written `.l` or `.l = p`: the label tile itself is the
+    ///   component of a punned `.l`; absent for any other pattern.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold, and a
     ///   fault naming the `let` statement for a repaired pattern or a tile out
     ///   of place among the components.
@@ -11652,16 +11747,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a two-component tuple binds both names in order, and
-    ///   three components bind all three, and a name pattern reads as no tuple.
+    ///   three components bind all three, and a name pattern reads as no tuple;
+    ///   a labelled group binds each output by its label.
     /// - witness: `lower::tests::a_tuple_binder_splits_the_returned_tuple_in_order`
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     /// - witness: `lower::tests::a_split_of_three_components_lowers`
+    /// - witness: `lower::arity::tests::a_labelled_pattern_binds_each_output_by_its_label`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |components| match *components { Maybe::Present(ref parts) => parts.len() >= 2, Maybe::Absent(_) => true }))]
     fn tuple_binders(
         &self,
         statement: Site,
         binder: Placed,
-    ) -> Result<Maybe<Vec<Placed>, untupled::Absent>, LoweringRefusal<'source>>
+    ) -> Result<Maybe<TupleComponents, untupled::Absent>, LoweringRefusal<'source>>
     {
         let Some(node) = self.tree.node(binder.node)
         else {
@@ -11683,7 +11780,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
         closed(statement, &mut cursor, TileName::PAREN_OPEN)?;
         let mut components = Vec::new();
         loop {
-            components.push(statement.one(cursor.operands())?);
+            let component = if let Maybe::Present(_dot) = cursor.tile(TileName::DOT) {
+                let Maybe::Present(label) = cursor.tile(TileName::IDENTIFIER)
+                else {
+                    return Err(statement.fault(cursor.here(), FormFault::MisplacedTile));
+                };
+                match cursor.tile(TileName::EQUALS) {
+                    Maybe::Present(_) => (Some(label), statement.one(cursor.operands())?),
+                    Maybe::Absent(_) => (Some(label), label),
+                }
+            }
+            else {
+                (None, statement.one(cursor.operands())?)
+            };
+            components.push(component);
             if let Maybe::Present(_) = cursor.tile(TileName::COMMA)
                 && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
             {

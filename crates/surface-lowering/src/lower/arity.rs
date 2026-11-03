@@ -163,6 +163,7 @@ use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::SourceFragment;
 use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
@@ -202,6 +203,7 @@ use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::origin::Origin;
 use crate::resolve::Mentioned;
+use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::binder_site;
@@ -3842,6 +3844,107 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(None);
         }
         Ok(Some(self.domain_entries(result, frame)?))
+    }
+
+    /// Classify a labelled group, `(.r = e, .q = e)`, ending a body whose
+    /// result is a group of named outputs, as the return of each value at the
+    /// output its label names.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the group's `(`.
+    /// - ensures: each entry's value read as a value under the computation's
+    ///   frame and planned as a [`Plan::ReturnAll`] in the order the result
+    ///   writes its outputs, whatever order the group writes them in.
+    /// - fails: the wrong-sort refusal where no body of outputs ends, or where
+    ///   an output has no name; the arity refusal for a group of another size
+    ///   than the outputs; a misplaced tile at a label that names no output, at
+    ///   an indexed label, or at an entry out of shape; a duplicate definition
+    ///   for a label written twice.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The group's refusal.
+    ///
+    /// # Termination
+    /// Every round consumes at least one piece of the finite cursor or
+    /// refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a group written in the other order than its outputs
+    ///   returns each value at its own output, and a group standing as a value
+    ///   is refused.
+    /// - witness: `lower::arity::tests::a_labelled_group_returns_each_value_at_its_output`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::ReturnAll(_))))]
+    pub(super) fn labelled_outputs(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(outputs) = self.answered_outputs(site)
+        else {
+            return Err(site.out(FragmentBoundary::WrongSort));
+        };
+        let frame = self.require(site, Produced::Computation)?;
+        closed(site, &mut cursor, TileName::PAREN_OPEN)?;
+        let mut written: Vec<(SurfaceName<'source>, Placed, Placed)> = Vec::new();
+        while let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
+            let Key::Label(label, key) = self.dotted(site, &mut cursor)?
+            else {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            closed(site, &mut cursor, TileName::EQUALS)?;
+            let value = site.one(cursor.operands())?;
+            if let Some(&(_, earlier, _)) = written.iter().find(|&&(seen, ..)| seen == label) {
+                return Err(LoweringRefusal::DuplicateDefinition {
+                    span: key.span,
+                    name: label,
+                    first: earlier.span,
+                });
+            }
+            written.push((label, key, value));
+            separated(site, &mut cursor, TileName::PAREN_CLOSE)?;
+        }
+        if written.len() != outputs.end.saturating_sub(outputs.start) {
+            return Err(site.out(FragmentBoundary::Arity(OperandCount::from(written.len()))));
+        }
+        let mut names = Vec::with_capacity(written.len());
+        for position in outputs.start .. outputs.end {
+            let Some(&output) = self.parameters.get(position)
+            else {
+                continue;
+            };
+            // An unnamed output's binder is its declared type.
+            if matches!(output.declared, Maybe::Present(declared) if declared == output.binder) {
+                return Err(site.out(FragmentBoundary::WrongSort));
+            }
+            names.push(SurfaceName::from(
+                self.tree
+                    .fragment(output.binder)
+                    .unwrap_or_else(|| SourceFragment::from("")),
+            ));
+        }
+        if let Some(&(_, key, _)) = written.iter().find(|&&(label, ..)| !names.contains(&label)) {
+            return Err(site.fault(key.span, FormFault::MisplacedTile));
+        }
+        // Each label names a distinct output and there are as many: every
+        // output has its value.
+        let start = self.operands.len();
+        for name in names {
+            if let Some(&(_, _, value)) = written.iter().find(|&&(label, ..)| label == name) {
+                self.operands.push(value.node);
+                self.read(value.node, Reading::Value(frame));
+            }
+        }
+        self.plan(
+            site,
+            Plan::ReturnAll(Stretch {
+                start,
+                end: self.operands.len(),
+            }),
+        );
+
+        Ok(())
     }
 
     /// Classify a selection `f(a, …).l` off a call whose result is a group of
