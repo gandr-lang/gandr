@@ -653,6 +653,43 @@ def spun : Path(
     }
 }
 
+/// #4645: a map's action on a path between paths moves both ways. The
+/// printer quotes the motive, `fun (y) { type(Path(…)) }`, since no expression
+/// reads a path over a path, and sugared back the quoted transport is the
+/// action again.
+#[test]
+fn an_action_under_a_quoted_motive_moves_both_ways_4645()
+{
+    let grammar = grammar();
+    let source = "def congInAType(
+  A : Type,
+  x : A,
+  y : A,
+  w : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  F : Path(A, x, y) => Path(A, x, w)
+) -> Path(Path(Path(A, x, w), F(f1), F(f2)), cong(F, a), cong(F, a)) {
+  here(cong(F, a))
+}
+";
+    let explicit = spelled(&grammar, source, Form::Explicit, Selection::Every);
+    assert!(
+        explicit.contains("{ type(Path(Path(A, x, w), F(f1), F(b))) }"),
+        "the motive is quoted: {explicit}"
+    );
+    let back = spelled(&grammar, explicit.as_str(), Form::Sugared, Selection::Every);
+    assert_eq!(
+        (
+            back.matches("cong(F, a)").count(),
+            back.contains("transport")
+        ),
+        (3_usize, false),
+        "the quoted transport is the action again: {back}"
+    );
+}
+
 /// #985: a composite read as a value, alone or under `back`, moves both
 /// ways: desugared, each composite is its transport, written where a value
 /// is read, and sugared back it is the composite again, since a written

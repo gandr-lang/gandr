@@ -3108,12 +3108,12 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// The derived path operation the transport call whose parts are `parts`
-    /// spells, when its motive `fun (y) { Path(A, l, r) }` is one the
-    /// lowering derives: `p then q` for `transport(fun (y) { Path(A, a, y) },
-    /// q, p)`, `back(p)` for `transport(fun (y) { Path(A, y, a) }, p,
-    /// here(a))` and `cong(f, p)` for `transport(fun (y) { Path(B, f(a),
-    /// f(y)) }, p, here(f(a)))`, where neither the carrier, the fixed endpoint
-    /// nor the map names `y`.
+    /// spells, when its motive `fun (y) { Path(A, l, r) }`, its body quoted
+    /// or not, is one the lowering derives: `p then q` for `transport(fun (y) {
+    /// Path(A, a, y) }, q, p)`, `back(p)` for `transport(fun (y) { Path(A,
+    /// y, a) }, p, here(a))` and `cong(f, p)` for `transport(fun (y) {
+    /// Path(B, f(a), f(y)) }, p, here(f(a)))`, where neither the carrier,
+    /// the fixed endpoint nor the map names `y`.
     ///
     /// # Specification
     /// trivial.
@@ -3147,10 +3147,27 @@ impl<'source> Respelling<'_, 'source>
         else {
             return None;
         };
-        // The block molds `Path(A, l, r)` as a call of `Path`.
-        if self.rule(body) != Some(MoldName("call_expression")) {
-            return None;
+        // The block molds `Path(A, l, r)` as a call of `Path`, and a quote
+        // `type(Path(A, l, r))`, which the printer writes over a carrier no
+        // expression reads, holds it as a path type.
+        let body = if self.rule(body) == Some(MoldName("type_quote_expression")) {
+            let (quote, _) = self.parts(body);
+            let (_, quoted) = split(&quote);
+            let &[Child::Node(quoted)] = quoted.as_slice()
+            else {
+                return None;
+            };
+            if self.rule(quoted) != Some(MoldName("path_type")) {
+                return None;
+            }
+            quoted
         }
+        else if self.rule(body) == Some(MoldName("call_expression")) {
+            body
+        }
+        else {
+            return None;
+        };
         let (typed, _) = self.parts(body);
         // The endpoints by their tokens and the operands they hold, split at
         // the type's own commas: a carrier the grammar keeps as its own tile,
@@ -3394,7 +3411,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 35] = [
+const RULES: [MoldName; 36] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -3423,6 +3440,7 @@ const RULES: [MoldName; 35] = [
     MoldName("call_expression"),
     MoldName("forget_model_expression"),
     MoldName("path_type"),
+    MoldName("type_quote_expression"),
     MoldName("binary_expression.then"),
     MoldName("send_session_type"),
     MoldName("receive_session_type"),
