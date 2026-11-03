@@ -1,6 +1,6 @@
 [
   {
-    "name": "the open pull requests read as the detector reads them: removals, check verdicts and an app's pull request (#2785)",
+    "name": "the open pull requests read as the detector reads them: removals, check verdicts, an app's pull request, and the lanes their closing issues' claim markers name (#2785, #4524)",
     "program": "facts.jq",
     "input": {
       "pullRequests": {
@@ -22,6 +22,16 @@
               "mergeQueue": {
                 "resourcePath": "/gandr-lang/gandr/queue/main"
               }
+            },
+            "closingIssuesReferences": {
+              "nodes": [
+                {
+                  "body": "The brief.\n\n<!-- claim: lane=corpus -->\n"
+                },
+                {
+                  "body": "An unclaimed issue."
+                }
+              ]
             },
             "timelineItems": {
               "nodes": [
@@ -98,7 +108,7 @@
         ]
       }
     },
-    "output": "{\"prs\":[{\"number\":2776,\"draft\":false,\"bot\":false,\"head\":\"corpus-2444\",\"base\":\"main\",\"oid\":\"5e1f\",\"created\":1793044800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"queue\":\"main\",\"removals\":[{\"at\":1793046735,\"reason\":\"stack_invalidated\"}],\"checks\":[{\"name\":\"test the workspace (linux)\",\"verdict\":\"pass\",\"conclusion\":\"SUCCESS\",\"started\":1793048400,\"completed\":1793049600},{\"name\":\"check Clippy wall\",\"verdict\":\"pending\",\"conclusion\":null,\"started\":1793048460,\"completed\":null},{\"name\":\"lint the pull request title\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793048520,\"completed\":1793048520}]},{\"number\":2800,\"draft\":true,\"bot\":true,\"head\":\"dependabot/cargo/serde\",\"base\":\"main\",\"oid\":\"aa\",\"created\":1793044800,\"mergeable\":\"UNKNOWN\",\"queued\":false,\"queue\":null,\"removals\":[],\"checks\":[]}],\"merged\":[],\"filed\":[],\"claimed\":[]}"
+    "output": "{\"prs\":[{\"number\":2776,\"draft\":false,\"bot\":false,\"head\":\"corpus-2444\",\"base\":\"main\",\"oid\":\"5e1f\",\"created\":1793044800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"queue\":\"main\",\"removals\":[{\"at\":1793046735,\"reason\":\"stack_invalidated\"}],\"claims\":[\"corpus\"],\"checks\":[{\"name\":\"test the workspace (linux)\",\"verdict\":\"pass\",\"conclusion\":\"SUCCESS\",\"started\":1793048400,\"completed\":1793049600},{\"name\":\"check Clippy wall\",\"verdict\":\"pending\",\"conclusion\":null,\"started\":1793048460,\"completed\":null},{\"name\":\"lint the pull request title\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793048520,\"completed\":1793048520}]},{\"number\":2800,\"draft\":true,\"bot\":true,\"head\":\"dependabot/cargo/serde\",\"base\":\"main\",\"oid\":\"aa\",\"created\":1793044800,\"mergeable\":\"UNKNOWN\",\"queued\":false,\"queue\":null,\"removals\":[],\"claims\":[],\"checks\":[]}],\"merged\":[],\"filed\":[],\"claimed\":[]}"
   },
   {
     "name": "a green mergeable root out of the queue past the threshold is root-unqueued (#2785)",
@@ -666,6 +676,101 @@
       ]
     },
     "output": "{\"findings\":[{\"kind\":\"red-unrevised\",\"number\":2784,\"lane\":\"triage-2\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2784 triage-2 90m: `test` cancelled, no new head since\"},{\"kind\":\"red-unrevised\",\"number\":2785,\"lane\":\"triage\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2785 triage 90m: `test` cancelled, no new head since\"}],\"pages\":[{\"kind\":\"red-unrevised\",\"number\":2784,\"lane\":\"triage-2\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2784 triage-2 90m: `test` cancelled, no new head since\"},{\"kind\":\"red-unrevised\",\"number\":2785,\"lane\":\"triage\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #2785 triage 90m: `test` cancelled, no new head since\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"2784:red-unrevised\":{\"first\":100000,\"last\":100000},\"2785:red-unrevised\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
+  },
+  {
+    "name": "#4524: a pull request is the lane its closing issue's claim marker names, whatever its branch, and a branch with no claimed closing issue is still read by its first word",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "areas": {
+        "triage": ["workflow", "ci"],
+        "triage-2": ["workflow", "ci"],
+        "surface": ["surface"]
+      },
+      "lanes": ["triage", "triage-2", "surface"],
+      "prs": [
+        {
+          "number": 4505,
+          "draft": false,
+          "bot": false,
+          "head": "trailing-as-130",
+          "base": "main",
+          "oid": "o4505",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "claims": ["surface"],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "fail",
+              "conclusion": "CANCELLED",
+              "started": 94000,
+              "completed": 94600
+            }
+          ]
+        },
+        {
+          "number": 4506,
+          "draft": false,
+          "bot": false,
+          "head": "trailing-as-131",
+          "base": "main",
+          "oid": "o4506",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "claims": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "fail",
+              "conclusion": "CANCELLED",
+              "started": 94000,
+              "completed": 94600
+            }
+          ]
+        },
+        {
+          "number": 4507,
+          "draft": false,
+          "bot": false,
+          "head": "triage-4507-claimed-by-surface",
+          "base": "main",
+          "oid": "o4507",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "claims": ["surface"],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "fail",
+              "conclusion": "CANCELLED",
+              "started": 94000,
+              "completed": 94600
+            }
+          ]
+        }
+      ]
+    },
+    "output": "{\"findings\":[{\"kind\":\"red-unrevised\",\"number\":4505,\"lane\":\"surface\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #4505 surface 90m: `test` cancelled, no new head since\"},{\"kind\":\"red-unrevised\",\"number\":4506,\"lane\":\"trailing\",\"placed\":false,\"age\":90,\"line\":\"STALL red-unrevised #4506 trailing 90m: `test` cancelled, no new head since\"},{\"kind\":\"red-unrevised\",\"number\":4507,\"lane\":\"surface\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #4507 surface 90m: `test` cancelled, no new head since\"}],\"pages\":[{\"kind\":\"red-unrevised\",\"number\":4505,\"lane\":\"surface\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #4505 surface 90m: `test` cancelled, no new head since\"},{\"kind\":\"red-unrevised\",\"number\":4506,\"lane\":\"trailing\",\"placed\":false,\"age\":90,\"line\":\"STALL red-unrevised #4506 trailing 90m: `test` cancelled, no new head since\"},{\"kind\":\"red-unrevised\",\"number\":4507,\"lane\":\"surface\",\"placed\":true,\"age\":90,\"line\":\"STALL red-unrevised #4507 surface 90m: `test` cancelled, no new head since\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"4505:red-unrevised\":{\"first\":100000,\"last\":100000},\"4506:red-unrevised\":{\"first\":100000,\"last\":100000},\"4507:red-unrevised\":{\"first\":100000,\"last\":100000}},\"stalled\":{}}"
   },
   {
     "name": "a check that is not required never makes a pull request red (#2785)",
@@ -2312,7 +2417,7 @@
         ]
       }
     },
-    "output": "{\"prs\":[{\"number\":4669,\"draft\":false,\"bot\":false,\"head\":\"surface-4642-restack-past-red\",\"base\":\"main\",\"oid\":\"d470fa2c1\",\"created\":1793656800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"queue\":\"main\",\"removals\":[],\"checks\":[]}],\"merged\":[{\"number\":4666,\"head\":\"triage-4643-off-trunk\",\"merged\":1793671606,\"verdict\":\"no\",\"rows\":0}],\"filed\":[],\"claimed\":[]}"
+    "output": "{\"prs\":[{\"number\":4669,\"draft\":false,\"bot\":false,\"head\":\"surface-4642-restack-past-red\",\"base\":\"main\",\"oid\":\"d470fa2c1\",\"created\":1793656800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"queue\":\"main\",\"removals\":[],\"claims\":[],\"checks\":[]}],\"merged\":[{\"number\":4666,\"head\":\"triage-4643-off-trunk\",\"merged\":1793671606,\"verdict\":\"no\",\"rows\":0}],\"filed\":[],\"claimed\":[]}"
   },
   {
     "name": "#4655: a root left unqueued pages the coordinator to queue it, hold it with `pr:hold` and its arguments, or reassign it",
