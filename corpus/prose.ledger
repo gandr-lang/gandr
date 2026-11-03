@@ -769,9 +769,8 @@ corpus/model/package/build-stage.gandr Passive 8fa6a27734a14358
 corpus/model/package/build-stage.gandr Tense d8aa53e394c8798b
 corpus/model/package/nix-derivation.gandr Passive 58cca8d42e35ac34
 corpus/model/package/nix-derivation.gandr Tense 2f3a9b429ed57c1c
-corpus/model/packages/packages.gandr Passive ddf5628b4de3c257
-corpus/model/packages/packages.gandr Tense 630c598496599c72
-corpus/model/packages/packages.gandr Tense a1b34288023a686c
+corpus/model/packages/packages.gandr Tense 63c9da1eb8ea94c4
+corpus/model/packages/packages.gandr Tense 9743b5dd9dc3e7a8
 corpus/model/records/nested-record-update.gandr Tense 7bd50ff6dd171feb
 corpus/model/records/record-extend.gandr Tense 8fa1ed277c90dec8
 corpus/model/records/record-update-field-retype.gandr Tense 1eaf1a20d408a498
@@ -1006,11 +1005,6 @@ corpus/pathological/moves/closed-after-move.gandr Passive 35ccee0e8cb6f987
 corpus/pathological/moves/closed-after-move.gandr Tense 35ccee0e8cb6f987
 corpus/pathological/packages/model-pack-sealed.gandr Tense 2ba6a38573d3f02e
 corpus/pathological/packages/model-pack-sealed.gandr Tense e9647dac99c48c2f
-corpus/pathological/packages/package-abstraction-leak.gandr Passive 3c5312454f1e61f6
-corpus/pathological/packages/package-grade-zero-unpack.gandr Passive 98eb2342ae0835df
-corpus/pathological/packages/package-grade-zero-unpack.gandr Tense 98eb2342ae0835df
-corpus/pathological/packages/package-pack-never-infers.gandr Passive a497526d917ead67
-corpus/pathological/packages/package-payload-not-a-thunk.gandr Passive a497526d917ead67
 corpus/pathological/records/record-update-non-record.gandr Tense cfa4af2d620f0f26
 corpus/pathological/records/shared-then-updated.gandr Tense 7d0b6fd7b4307541
 corpus/pathological/records/wide-record-update.gandr Tense 932c5db697781e22
@@ -1238,6 +1232,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotADataTy
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotADataType.txt Procedure 3e8ce436153ed57e
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAFunctor.txt Procedure 121f8d03d163ff0f
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAHandle.txt Procedure 1c469c3d291c451e
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAModel.txt Procedure bc5563107c6859ec
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAView.txt Procedure 0b132a8e4770a4d9
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAnAbstractType.txt Procedure b924bafc122697e0
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAnAbstractType.txt Procedure f28dd220311c8b1b
@@ -1494,10 +1489,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/modules/top-leve
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/top-level-type.txt Procedure 79d1485c67a7b464
 crates/surface-render-terminal/tests/golden/corpus/pathological/moves/closed-after-move.txt Procedure 1d1fb70664e31997
 crates/surface-render-terminal/tests/golden/corpus/pathological/moves/moved-twice.txt Procedure 1d1fb70664e31997
-crates/surface-render-terminal/tests/golden/corpus/pathological/packages/package-abstraction-leak.txt Procedure 7cbbe7a24b5fbceb
-crates/surface-render-terminal/tests/golden/corpus/pathological/packages/package-grade-zero-unpack.txt Procedure 7cbbe7a24b5fbceb
-crates/surface-render-terminal/tests/golden/corpus/pathological/packages/package-pack-never-infers.txt Procedure 7cbbe7a24b5fbceb
-crates/surface-render-terminal/tests/golden/corpus/pathological/packages/package-payload-not-a-thunk.txt Procedure 7cbbe7a24b5fbceb
+crates/surface-render-terminal/tests/golden/corpus/pathological/packages/package-abstraction-leak.txt Procedure b3bc6f1cc17c1ad1
 crates/surface-render-terminal/tests/golden/corpus/pathological/record-absent-label.txt Procedure 78d260f6f97f6678
 crates/surface-render-terminal/tests/golden/corpus/pathological/record-absent-selection.txt Procedure 78d260f6f97f6678
 crates/surface-render-terminal/tests/golden/corpus/pathological/records/record-field-absent.txt Procedure 78d260f6f97f6678

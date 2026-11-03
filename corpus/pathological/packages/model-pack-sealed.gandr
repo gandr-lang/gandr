@@ -1,7 +1,6 @@
-// A module that seals its carrier does not pack at its theory's models: the
-// bundled record would name the representation the seal hides. A package over
-// the abstract carrier carries such a module (#1108), so the pack is refused
-// in front of it.
+// A module that seals its carrier does not pack at its theory's models. The
+// bundled record would name the representation the seal hides, so the pack is
+// refused (#1108).
 
 /// A counter: a carrier, a zero and a step.
 theory Counter where {

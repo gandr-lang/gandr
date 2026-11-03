@@ -256,6 +256,7 @@ impl LoweringRefusal<'_>
             | Self::UnknownMember { .. }
             | Self::PartialField { .. }
             | Self::NotAFunctor { .. }
+            | Self::NotAModel { .. }
             | Self::NotATranslation { .. }
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
@@ -330,6 +331,7 @@ impl LoweringRefusal<'_>
             | Self::UnknownMember { .. }
             | Self::PartialField { .. }
             | Self::NotAFunctor { .. }
+            | Self::NotAModel { .. }
             | Self::NotATranslation { .. }
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
@@ -797,7 +799,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 79_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 80_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1124,6 +1126,10 @@ mod tests
                 span: empty,
                 kind: CellsKind::Fill,
             },
+            LoweringRefusal::NotAModel {
+                span: empty,
+                name: SurfaceName::from("count"),
+            },
         ]
     }
 
@@ -1210,6 +1216,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::PASTING_READING),
+            FailureClass::MalformedSource,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {
@@ -1241,9 +1248,9 @@ mod tests
                 FailureClass::Unimplemented(TrackingIssue::UNHELD_INDEX),
             ),
             (
-                "unpack_statement",
-                FragmentSort::Computation,
-                FragmentBoundary::Unadmitted(Unbuilt::Unpack),
+                "pack_model_expression",
+                FragmentSort::Value,
+                FragmentBoundary::Unadmitted(Unbuilt::PackModel),
                 FailureClass::Unimplemented(TrackingIssue::PACKAGES),
             ),
             (

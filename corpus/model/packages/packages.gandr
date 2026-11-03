@@ -1,41 +1,45 @@
-// An existential package hides its representation type: two counters at
-// different types share one package type, and a consumer reads either
-// without knowing which. The lowering admits no package type, `pack` or
-// `unpack` yet (#1108).
+/// An existential package is a model whose sort its type leaves abstract.
+///
+/// Two counters at different types share one model type. A consumer opens
+/// either with `module m = p ;` and reads it without knowing which.
+
+/// A counter: a seed and a reading of it.
+theory Seeded where {
+  /// What the counter counts in.
+  sort T : Type;
+  /// The reading of a count.
+  oper read : (t : T) --> Integer;
+  /// The first count.
+  oper seed : T;
+}
+
+/// A counter over integers, its seed read as itself.
+module Ints : Model(Seeded) where {
+  /// Counts are integers.
+  type T = Integer;
+  /// A count reads as itself.
+  def read(n : Integer) -> Integer { n }
+  /// Seven.
+  def seed = 7;
+}
+
+/// A counter over strings, its seed read as a constant.
+module Texts : Model(Seeded) where {
+  /// Counts are strings.
+  type T = String;
+  /// Every count reads as 42.
+  def read(s : String) -> Integer { 42 }
+  /// The word seven.
+  def seed = "seven";
+}
 
 /// Opens a counter and reads its seed through its own reader.
-@[ refuses("OutOfFragment.unpack_statement") ]
-def consume(p : package [T] +U[ω] (-F #{read : +U[ω] (T -> -F Integer), seed : T})) -> -F Integer {
-  unpack m : package [T] +U[ω] (-F #{read : +U[ω] (T -> -F Integer), seed : T}) = p;
-  let r = force m;
-  let f = r.read;
-  let s = r.seed;
-  f(s)
+def consume(p : Model(Seeded)) -> Integer {
+  module m = p;
+  let r = m.read;
+  r(m.seed)
 }
 
-/// A counter over integers, packed.
-@[ refuses("OutOfFragment.package_type") ]
-def int_counter : package [T] +U[ω] (-F #{read : +U[ω] (T -> -F Integer), seed : T});
-def int_counter = pack [Integer] thunk {
-  return #{read = thunk { fun (n : Integer) { return n } }, seed = 7}
-};
-
-/// A counter over strings, packed at the same package type.
-@[ refuses("OutOfFragment.package_type") ]
-def text_counter : package [T] +U[ω] (-F #{read : +U[ω] (T -> -F Integer), seed : T});
-def text_counter = pack [String] thunk {
-  return #{read = thunk { fun (s : String) { return 42 } }, seed = "seven"}
-};
-
-/// Both counters read and summed; `consume`'s type is unknown while it is
-/// refused (#1108).
-@[ refuses("UnknownConstant") ]
-def total() -> Integer {
-  let a = consume(int_counter);
-  let b = consume(text_counter);
-  return (a + b)
-}
-
-/// A call of `total`: it checks against `total`'s signature, whose body is
-/// refused above, so it is not run.
-def totalled() -> Integer { total() }
+/// Both counters read and summed.
+@[ runs("49") ]
+def total() -> Integer { consume(Ints) + consume(Texts) }

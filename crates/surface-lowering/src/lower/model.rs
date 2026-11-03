@@ -4636,6 +4636,8 @@ mod flattened;
 
 mod forget;
 
+mod opening;
+
 mod reduct;
 
 mod signed;

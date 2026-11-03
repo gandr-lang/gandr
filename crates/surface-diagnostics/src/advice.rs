@@ -207,6 +207,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::InertRead { .. }
         | LoweringRefusal::PartialField { .. }
         | LoweringRefusal::NotAFunctor { .. }
+        | LoweringRefusal::NotAModel { .. }
         | LoweringRefusal::ProjectionFromApplication { .. }
         | LoweringRefusal::UnreadAscription { .. }
         | LoweringRefusal::UnreadCells { .. }

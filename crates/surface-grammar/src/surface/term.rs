@@ -132,7 +132,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 114 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=12 => Sort::Item, 13..=19 => Sort::ModuleMember, 20..=31 | 103..=104 => Sort::Pattern, 32..=36 => Sort::Instantiation, 113 => Sort::Block, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "statement_block")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 113 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=12 => Sort::Item, 13..=19 => Sort::ModuleMember, 20..=31 | 102..=103 => Sort::Pattern, 32..=36 => Sort::Instantiation, 112 => Sort::Block, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "statement_block")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -1944,7 +1944,7 @@ fn instantiations(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 66 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "bind_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.cons", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "run_expression", "hold_expression", "splice_expression", "pack_expression", "pack_model_expression", "call_expression", "instantiation_expression", "projection_expression", "record_selection_expression", "view_expression", "index_expression", "hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "recv_expression", "acquire_expression", "release_expression", "fork_expression", "access_expression", "resume_expression", "abort_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "bind_expression" | "pack_expression" | "pack_model_expression" => p.pure, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.cons" => p.cons, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" | "splice_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" | "record_selection_expression" | "view_expression" | "index_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 65 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "bind_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.cons", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "run_expression", "hold_expression", "splice_expression", "pack_model_expression", "call_expression", "instantiation_expression", "projection_expression", "record_selection_expression", "view_expression", "index_expression", "hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "recv_expression", "acquire_expression", "release_expression", "fork_expression", "access_expression", "resume_expression", "abort_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "bind_expression" | "pack_model_expression" => p.pure, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.cons" => p.cons, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" | "splice_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" | "record_selection_expression" | "view_expression" | "index_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
 fn expressions(
     out: &mut Vec<Rule>,
     p: ExprPrecs,
@@ -2122,35 +2122,10 @@ fn expressions(
         p.unary,
         seq([t(TileLabel("~")), h(s)]),
     ));
-    // `pack [ T , U ] E` — the package introduction. The bracketed types are
-    // the **witnesses**, one per abstract type component of the signature this
-    // is checked against, and they are written rather than inferred: the
-    // components exist only in the signature, so recovering them from the
-    // payload would mean guessing which of its types were meant to be
-    // abstract.
-    out.push(r(
-        RuleName("pack_expression"),
-        Provenance("pack_expression"),
-        s,
-        // `pure`'s precedence, not `force`'s: a pack takes a whole expression,
-        // and the payload a module is packed from is normally a `thunk { … }`
-        // — itself a unary form, which a non-associative unary `pack` could
-        // not take as an operand without parentheses.
-        p.pure,
-        seq([
-            t(TileLabel("pack")),
-            t(TileLabel("[")),
-            comma1(h(Sort::Type)),
-            t(TileLabel("]")),
-            h(s),
-        ]),
-    ));
     // `pack M at Model(T)` — a module packed at the model type its signature
-    // states: the bundled record of its members, read off the module. Every
-    // sort the module gives is manifest, so nothing is hidden and no witness
-    // is written; a module that keeps a sort abstract is the package former's,
-    // `pack [ τ ] M`. At `pure`'s precedence for the reason the package
-    // introduction is. PBG-only, parity-exempt.
+    // states: the bundled record of its members, read off the module. At
+    // `pure`'s precedence, not `force`'s: a pack takes a whole expression.
+    // PBG-only, parity-exempt.
     out.push(r(
         RuleName("pack_model_expression"),
         Provenance("pack_model_expression"),
@@ -2606,7 +2581,7 @@ fn statement_alt() -> Regex
 {
     alt([
         let_statement(),
-        unpack_statement(),
+        module_statement(),
         var_statement(),
         seq([h(Sort::Expression), t(TileLabel(";"))]),
         assignment_statement(),
@@ -2720,19 +2695,17 @@ fn let_statement() -> Regex
     ])
 }
 
-/// Build a package-eliminating statement: `unpack m : Sig = E ;`.
+/// Build the opening statement: `module m = E ;`, the model `E` opened as
+/// `m` over the rest of its block.
 ///
-/// The module variable binds over the **rest of its block**, which is what
-/// makes the elimination check-only and the avoidance fence structural: the
-/// block's answer is fixed from outside, so an atom minted here can never reach
-/// it. The ascribed signature is the elimination's own half of the
-/// both-directions annotation, and it names the abstract type components the
-/// lowerer mints atoms for — so no separate binder list is needed or admitted.
+/// The name binds over the **rest of its block**, so each sort the model's
+/// type leaves abstract is a bound variable's there, fresh at each opening,
+/// and the block's answer, fixed from outside, never names it.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an unpack binding with a mandatory signature before its source
-///   expression.
+/// - ensures: the `module` keyword, the opened name, then an equals-delimited
+///   expression and a semicolon.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2742,14 +2715,12 @@ fn let_statement() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 7 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "unpack")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type)) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
-fn unpack_statement() -> Regex
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "module")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
+fn module_statement() -> Regex
 {
     seq([
-        t(TileLabel("unpack")),
+        t(TileLabel("module")),
         t(TileLabel("identifier")),
-        t(TileLabel(":")),
-        h(Sort::Type),
         t(TileLabel("=")),
         h(Sort::Expression),
         t(TileLabel(";")),
@@ -4390,7 +4361,7 @@ fn primary_expressions(
     );
     for statement in [
         "let_statement",
-        "unpack_statement",
+        "module_statement",
         "var_statement",
         "expression_statement",
         "assignment_statement",

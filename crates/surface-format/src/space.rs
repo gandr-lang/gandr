@@ -31,14 +31,12 @@ const OPERANDS: [&str; 6] = [
 /// parameters. A data declaration's `[` is apart too, a constructor's
 /// decoration list, but for a field's grade, `x[1] : A`, which touches the
 /// field's name.
-const APART: [&str; 10] = [
+const APART: [&str; 8] = [
     "f_type.result",
     "f_type.result.labelled",
     "f_type.row",
     "f_type.row.labelled",
     "migrate_expression",
-    "pack_expression",
-    "package_type",
     "theory_declaration",
     "world_declaration",
     "offers_declaration",
