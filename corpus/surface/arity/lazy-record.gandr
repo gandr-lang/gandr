@@ -49,16 +49,6 @@ def only(m : +U &{get : -F Integer}) -> Integer {
 @[ runs("1") ]
 def singled() -> Integer { only(single) }
 
-/// A `co` bundle is the lazy record written over bare labels, its fields in
-/// any order (#1053).
-def bundled() -> &{get : -F Integer, put : -F String} {
-  co { put = "s", get = 7 }
-}
-
-/// The bundle's entry is the one its label names.
-@[ runs("7") ]
-def bundle_got() -> Integer { observe(bundled) }
-
 /// A lazy record written at its labels answers each label's entry. The
 /// printer spells its signature under those labels.
 def signed : +U &{get : -F Integer, put : -F String} = &{.put => "s", .get => 9};
@@ -66,6 +56,14 @@ def signed : +U &{get : -F Integer, put : -F String} = &{.put => "s", .get => 9}
 /// `observe` reads the entry `signed` writes at `get`. It runs to that entry.
 @[ runs("9") ]
 def signed_got() -> Integer { observe(signed) }
+
+/// `co` is an ordinary name. The lazy record takes its labels from its
+/// signature, so no bundle keyword spells it.
+def co : +U &{get : -F Integer} = &{.get => 4};
+
+/// The entry the record named `co` writes at `get`.
+@[ runs("4") ]
+def co_got() -> Integer { only(co) }
 
 /// An entry observed by its position, counted from zero, is the entry its
 /// label names: `m.1` is `m.put`.

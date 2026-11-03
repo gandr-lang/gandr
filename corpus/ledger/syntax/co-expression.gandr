@@ -1,4 +1,0 @@
-/// `co_expression`: a copattern bundle, the lazy record `&{.l => c, …}`
-/// written over bare labels.
-@[ checks ]
-def sized() -> &{size : -F Integer, name : -F String} { co { name = "unit", size = 1 } }

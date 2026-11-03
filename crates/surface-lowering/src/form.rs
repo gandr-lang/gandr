@@ -191,7 +191,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 69_usize] = [
+    pub const ALL: [Self; 68_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -252,7 +252,6 @@ impl FormName
         Self::LIST_PATTERN,
         Self::REST_PATTERN,
         Self::CHARACTER,
-        Self::CO_BUNDLE,
         Self::DROP,
         Self::UNION_TYPE,
         Self::DUP,
@@ -412,8 +411,6 @@ impl FormName
     pub const STRING: Self = Self("string");
     /// A character literal.
     pub const CHARACTER: Self = Self("character");
-    /// The bundle `co { id = e, … }`.
-    pub const CO_BUNDLE: Self = Self("co_expression");
     /// The endpoint drop `drop(e)`.
     pub const DROP: Self = Self("drop_expression");
     /// The union type `A | B`.
@@ -529,8 +526,6 @@ impl TileName
     pub const COLON: Self = Self(":");
     /// The comma separating list members.
     pub const COMMA: Self = Self(",");
-    /// The bundle keyword `co`, opening a lazy record over bare labels.
-    pub const CO: Self = Self("co");
     /// The declaration keyword `def`.
     pub const DEF: Self = Self("def");
     /// The selection dot `.` of a path.
@@ -1164,7 +1159,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 139_usize] = [
+pub const FORMERS: [(&str, Former); 138_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1199,7 +1194,6 @@ pub const FORMERS: [(&str, Former); 139_usize] = [
     ("pack_model_expression", Former::PackModel),
     ("forget_model_expression", Former::ForgetModel),
     ("lazy_record_expression", Former::LazyRecord),
-    ("co_expression", Former::LazyRecord),
     ("binary_expression", Former::Binary),
     ("unary_expression", Former::Unary),
     ("projection_expression", Former::Projection),

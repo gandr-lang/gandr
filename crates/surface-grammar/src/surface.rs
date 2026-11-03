@@ -308,8 +308,6 @@ pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
     "call_expression",
     "character",
     "close_expression",
-    "co_expression",
-    "co_field",
     "command",
     "command_name",
     "command_substitution",

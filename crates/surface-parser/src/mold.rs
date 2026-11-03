@@ -962,7 +962,7 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// tells the two apart at an expression slot (`{` against anything else).
 /// `codata`
 /// reserves as one whole word — the labeler munches the maximal
-/// `[A-Za-z0-9_]` run, so `codata` never lexes as `co` + `data` (the
+/// `[A-Za-z0-9_]` run, so `codata` never lexes as two words (the
 /// longest-match hazard is a non-issue here). The operator-declaration fixity
 /// classes (`infixl` / `infixr` / `infix` / `prefix` / `postfix`) are
 /// deliberately NOT reserved: they mold as contextual tiles only where the
@@ -1011,7 +1011,7 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// type, and opens the block of its members.
 pub const KEYWORDS: &[&str] = &[
     "def", "run", "as", "extern", "type", "fun", "pure", "return", "become", "thunk", "force",
-    "match", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close", "select", "offer",
+    "match", "if", "else", "hold", "dup", "drop", "send", "recv", "close", "select", "offer",
     "fork", "acquire", "release", "migrate", "at", "true", "false", "unit", "mu", "end", "data",
     "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue", "with", "import",
     "module", "theory", "oper", "handle", "access", "unwind", "resume", "abort", "world", "mobile",

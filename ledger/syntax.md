@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x2ad539c3d415e4d1`
-- Rules: 174 — 173 committed, 1 internal
-- Molds: 2930
+- Grammar fingerprint: `0xf4fbf35fa745356e`
+- Rules: 173 — 172 committed, 1 internal
+- Molds: 2921
 - Attributes: 17
 
 ## Reading a form
@@ -65,7 +65,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`identifier.pattern`](../corpus/ledger/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | admitted | Variable |
 | [`unit.pattern`](../corpus/ledger/syntax/unit.pattern.gandr) | `unit` | `pattern.atom` | `unit` | admitted | Keyword |
 
-## `expression` — 90 rules
+## `expression` — 89 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -116,7 +116,6 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`break_expression`](../corpus/ledger/syntax/break-expression.gandr) | `break` | `expression.atom` | `break_expression` * | admitted | Keyword |
 | [`break_value_expression`](../corpus/ledger/syntax/break-value-expression.gandr) | `break ( EXPRESSION )` | `expression.atom` | `break_value_expression` * | admitted | Keyword, Other |
 | [`continue_expression`](../corpus/ledger/syntax/continue-expression.gandr) | `continue` | `expression.atom` | `continue_expression` * | admitted | Keyword |
-| [`co_expression`](../corpus/ledger/syntax/co-expression.gandr) | `co { ‹identifier› = EXPRESSION ⦅ , ‹identifier› = EXPRESSION ⦆* ⦅ , ⦆? }` | `expression.atom` | `co_expression` | admitted | Keyword, Other, Member |
 | [`glob_expression`](../corpus/ledger/syntax/glob-expression.gandr) | `glob { ⦅ ‹identifier› = EXPRESSION ; ⦆* }` | `expression.atom` | `glob_expression` * | admitted | Keyword, Other, Member |
 | [`telescope_expression`](../corpus/ledger/syntax/telescope-expression.gandr) | `#{ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ‖ #{ ⦅ } ‖ EXPRESSION ⦅ = EXPRESSION ⦆? ⦅ \| ‹identifier› = EXPRESSION ⦅ , ‹identifier› = EXPRESSION ⦆* ⦅ , ⦆? } ‖ ⦅ , EXPRESSION ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `telescope_expression` * | admitted | Other, Member, Number, Operator |
 | [`labelled_sum_expression`](../corpus/ledger/syntax/labelled-sum-expression.gandr) | `+ { . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION }` | `expression.atom` | `labelled_sum_expression` * | admitted | Operator, Other, Member, Number |
@@ -265,7 +264,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
 
-## Decisions — 109 of 174 rules decided at every token
+## Decisions — 109 of 173 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -355,7 +354,6 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `break_expression` | expression | 1 | `break` | `break_value_expression` | 0 |
 | `break_value_expression` | expression | 3 | `break` | `break_expression` | 0 |
 | `continue_expression` | expression | 1 | `continue` | — | 0 |
-| `co_expression` | expression | 9 | `co` | — | 2 |
 | `glob_expression` | expression | 6 | `glob` | — | 0 |
 | `telescope_expression` | expression | 27 | `#{` | — | 12 |
 | `labelled_sum_expression` | expression | 7 | `+` | — | 0 |
@@ -446,26 +444,26 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `f_type.row.labelled` | type | 24 | `-F` | `f_type`, `f_type.row` | 12 |
 | `f_type.result.labelled` | type | 23 | `[` | `f_type.result` | 12 |
 
-## Menus — 200 labels
+## Menus — 199 labels
 
 Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.
 
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
-| `identifier` | 381 | 59 | 3 |
-| `,` | 275 | 53 | 0 |
+| `identifier` | 379 | 58 | 3 |
+| `,` | 273 | 52 | 0 |
 | `:` | 263 | 32 | 0 |
 | `type_identifier` | 183 | 34 | 2 |
-| `=` | 131 | 32 | 0 |
+| `=` | 129 | 31 | 0 |
 | `)` | 127 | 43 | 0 |
 | `;` | 124 | 26 | 1 |
 | `(` | 123 | 42 | 4 |
 | `.` | 83 | 39 | 3 |
-| `}` | 79 | 41 | 0 |
+| `}` | 78 | 40 | 0 |
 | `type_variable` | 70 | 15 | 3 |
 | `]` | 67 | 41 | 0 |
-| `{` | 62 | 32 | 2 |
 | `[` | 61 | 38 | 7 |
+| `{` | 61 | 31 | 2 |
 | `number` | 52 | 30 | 3 |
 | `_` | 48 | 7 | 2 |
 | `=>` | 45 | 10 | 1 |
@@ -582,7 +580,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `boundary` | 1 | 1 | 0 |
 | `character` | 1 | 1 | 1 |
 | `close` | 1 | 1 | 1 |
-| `co` | 1 | 1 | 1 |
 | `codata` | 1 | 1 | 1 |
 | `command_substitution_start` | 1 | 1 | 1 |
 | `continue` | 1 | 1 | 1 |

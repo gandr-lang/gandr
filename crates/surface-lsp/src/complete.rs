@@ -1255,7 +1255,6 @@ mod tests
             row("while", "while ${1:value} { ${2:computation} \\}"),
             word("break"),
             word("continue"),
-            row("co", "co { ${1:identifier} = ${2:value} \\}"),
             row(
                 "offer",
                 "offer (${1:value}) { ${2:pattern} => ${3:computation} \\}",

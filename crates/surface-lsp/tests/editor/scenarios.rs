@@ -95,8 +95,6 @@ const COUNTED: &[&str] = &[
     "expression match_expression",
     "expression character",
     "expression close_expression",
-    "expression co_expression",
-    "expression co_expression name",
     "expression constructor",
     "expression continue_expression",
     "expression double_quoted_string",
