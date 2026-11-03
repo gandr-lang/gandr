@@ -257,6 +257,30 @@ sqlite3 "$db" .dump > ledger/references.sql
 echo "read $((read)) at $site, against $path as blob ${blob:0:12}"
 {% endraw %}'''
 
+# The weekly paper watch (#2544, `.config/references/watch.bash`): asks
+# OpenAlex for the works published since the last run that cite a work the
+# tree cites, that a library author wrote, or that a library venue printed on
+# a subject of the term map, and comments them on the one open issue titled
+# `Paper watch` in the configured repository, opening it when none is open.
+# A work the state already reported, or the vault ledger's `paper` table
+# holds, is never reported again. It reads the research library, which no
+# tree holds, so it runs on a local host, never in CI.
+["refs:watch"]
+description = "Comment the works new since the last run, by seed, on the paper watch's review issue"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+usage = '''
+flag "--dry-run" help="print the review comment; file nothing and leave the state"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+source .config/references/ledger.bash
+source .config/references/watch.bash
+trap 'rm -rf "${WATCH_DIR:-}"' EXIT
+references_watch "${usage_dry_run:-false}"
+{% endraw %}'''
+
 # The recovery sweep over the syntax exemplars (`gandr-surface-dispatcher`'s
 # `ledger::recovery` module): every literal tile written as its near miss and
 # deleted, each mutant's first error read against the mutation. The whole
