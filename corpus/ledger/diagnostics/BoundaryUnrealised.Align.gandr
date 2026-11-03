@@ -1,8 +1,7 @@
 /// `BoundaryUnrealised.Align`: an `extern "rust"` block whose member declares a type of its row's size at another alignment.
-// `Row`, `Codes`, `Code` and `admitBlock`.
-import "../../../library/std/src/boundary.gandr";
-// `U32`, `Field`, `Done`, `Variant`, `NoVariant`.
-import "../../../library/std/src/layout.gandr";
+// The boundary check reads `admitBlock` here, whatever the listing names.
+import std.boundary (Arg, Code, NoCode, Plain, Row, Sum);
+import std.layout (Done, Field, NoVariant, U32, Variant);
 
 /// `Option<u32>`: eight bytes, aligned to four, its tag beside the payload.
 def optU32 : Code = Sum(Variant("Some", Field("0", U32, Done), Variant("None", Done, NoVariant)));

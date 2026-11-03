@@ -22,11 +22,11 @@
 // - see: `model/interop/boundary/function-row.gandr` — the function row an
 //   `extern` is admitted against
 
-// `Row`, `Codes`, `Code` and `admitBlock`.
-import "../../../../library/std/src/boundary.gandr";
+// The boundary check reads `admitBlock` here, whatever the listing names.
+import std.boundary (Arg, NoCode, Plain, Row);
 
 // `U32`, the scalar a `u32` is coded as.
-import "../../../../library/std/src/layout.gandr";
+import std.layout (U32);
 
 /// `add`'s row: two `u32` to a `u32`.
 pub def addRow : Row = Row(Arg(Plain(U32), Arg(Plain(U32), NoCode)), Plain(U32));

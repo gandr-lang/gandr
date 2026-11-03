@@ -20,11 +20,11 @@
 // - see: `model/layouts/ribbit-list.gandr` — the two layouts and `length`
 // - see: `model/specification/niche-realizability.gandr` — `deref_or`'s triple
 
-// `Row`, `Code` and `admitBlock`.
-import "../../../../library/std/src/boundary.gandr";
+// The boundary check reads `admitBlock` here, whatever the listing names.
+import std.boundary (Arg, NoCode, Plain, Row);
 
 // `U32` and `U64`, the scalars a `u32` and a `u64` are coded as.
-import "../../../../library/std/src/layout.gandr";
+import std.layout (U32, U64);
 
 // `Nat`.
 import "../../data/data-base.gandr";
