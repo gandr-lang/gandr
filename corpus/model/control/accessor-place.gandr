@@ -6,6 +6,9 @@
 // list stand together only when both are shared. The place follows Rust's
 // index expression on a place (_The Rust Reference_, § Index expressions).
 
+// The native finite lists.
+import std.list (List);
+
 /// The list each access below holds; a list's type is declared, never
 /// inferred.
 @[ runs("cons(1, cons(2, nil))") ]

@@ -1,7 +1,7 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/nested-nominal-mismatch.gandr:17:16
+   ╭▸ corpus/pathological/data/nested-nominal-mismatch.gandr:20:16
    │
-17 │ def listed = ([Cel(20)] : List(Fahrenheit));
+20 │ def listed = ([Cel(20)] : List(Fahrenheit));
    │               ┬┯━━━━━━─        ────────── the type it is checked against
    │               ││
    │               │its type does not convert: expected `Fahrenheit`, found `Celsius`
@@ -12,9 +12,9 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/nested-nominal-mismatch.gandr:22:15
+   ╭▸ corpus/pathological/data/nested-nominal-mismatch.gandr:25:15
    │
-22 │ def again = ([Cel(20)] : List(Fahrenheit));
+25 │ def again = ([Cel(20)] : List(Fahrenheit));
    │              ┬┯━━━━━━─        ────────── the type it is checked against
    │              ││
    │              │its type does not convert: expected `Fahrenheit`, found `Celsius`

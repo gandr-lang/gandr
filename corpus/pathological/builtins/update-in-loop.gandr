@@ -1,6 +1,9 @@
 // Pushing in a fold copies the accumulated list at each step, so the fold's
 // cost is the square of the list's length.
 
+// The native finite lists.
+import std.list (List);
+
 /// Four integers, annotated as a list of them (#1544).
 def steps = ([1, 2, 3, 4] : List(Integer));
 

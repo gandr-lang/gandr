@@ -539,6 +539,7 @@ pub use crate::resolve::SurfaceName;
 pub use crate::resolve::TypeAtom;
 pub use crate::resolve::TypeFormer;
 pub use crate::resolve::binder_site;
+pub use crate::resolve::former_home;
 pub use crate::resolve::type_atom;
 pub use crate::resolve::type_former;
 pub use crate::unbuilt::Unbuilt;

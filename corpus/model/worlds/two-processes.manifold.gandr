@@ -18,6 +18,8 @@
 import std.manifold (Site, Manifold, Placement, At);
 // The site `far` is placed at.
 import "./two-processes.site.gandr" as far;
+// The native finite lists.
+import std.list (List);
 
 /// The program this manifold deploys.
 pub module Manifold : Model(Manifold) where {

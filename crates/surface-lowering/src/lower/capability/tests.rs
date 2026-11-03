@@ -38,6 +38,8 @@ use crate::error::CrossedExit;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::fixture::grammar;
+use crate::fixture::listed;
+use crate::fixture::listing;
 use crate::fixture::parsed;
 use crate::lower::LoweringBudget;
 use crate::lower::lower_module;
@@ -2479,7 +2481,8 @@ fn a_member_abbreviating_no_stack_states_none()
         "def plain(j : Others.P) -> -F Integer { return j }\n",
         "def boxed(j : Others.A) -> -F Integer { return 0 }\n",
     );
-    let module = lowered(SourceText::from(source), &mut arena);
+    let source = listing(source);
+    let module = listed(&source, &mut arena);
     for name in ["plain", "boxed"] {
         let mut at = tail_of(&module, &arena, name.into());
         while let Some(&Computation::Lambda(body)) = arena.computation(at) {

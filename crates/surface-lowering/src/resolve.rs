@@ -464,7 +464,9 @@ const TYPE_ATOMS: [(&str, TypeAtom); 14_usize] = [
     ("Row", TypeAtom::Row),
 ];
 
-/// The unary type heads, with the spellings the surface writes them as.
+/// The unary type heads the ambient scope answers, with the spellings the
+/// surface writes them as. `List` is no row: its home is `std.list`, and
+/// [`HOMED_FORMERS`] answers it where a source imports it from there (#4520).
 ///
 /// # Specification
 /// - requires: nothing.
@@ -479,14 +481,30 @@ const TYPE_ATOMS: [(&str, TypeAtom); 14_usize] = [
 ///   near spellings separating the absent branch.
 /// - witness: `resolve::tests::every_unary_type_head_answers_its_former`
 /// - witness: `resolve::tests::a_nullary_head_answers_no_former`
-const TYPE_FORMERS: [(&str, TypeFormer); 6_usize] = [
+const TYPE_FORMERS: [(&str, TypeFormer); 5_usize] = [
     ("+U", TypeFormer::Thunk),
     ("-F", TypeFormer::Returner),
-    ("List", TypeFormer::List),
     ("Run", TypeFormer::Run),
     ("Prefix", TypeFormer::Prefix),
     ("Dialogue", TypeFormer::Dialogue),
 ];
+
+/// The unary type heads a `std` module homes, each by the module's path and
+/// the name a listed import of it binds: `import std.list (List);`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: exactly the module path and the name select a former; neither
+///   alone does.
+/// - provides: the homed half of the unary type-head inventory.
+/// - executable: none — the specification attribute does not support constant
+///   items; the lookup predicate checks the corresponding table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the one row answers at its home and nowhere else, and its
+///   name is absent from the ambient table.
+/// - witness: `resolve::tests::a_homed_former_answers_only_at_its_home_4520`
+const HOMED_FORMERS: [(&str, &str, TypeFormer); 1_usize] = [("std.list", "List", TypeFormer::List)];
 
 /// The value-type atom `name` spells, when the nullary table answers it.
 ///
@@ -571,6 +589,88 @@ pub fn type_former(name: SurfaceName<'_>) -> Maybe<TypeFormer, type_head::Absent
         Maybe::Absent(type_head::Absent::Unregistered),
         Maybe::Present,
     )
+}
+
+/// The type former `name` spells when the module spelled `module` homes it.
+///
+/// # Specification
+/// - requires: nothing — every module path and identifier is admissible input.
+/// - ensures: exactly the former whose home is `module` and whose spelling is
+///   `name`, and the absence for every other pair, a homed name read at another
+///   module included.
+/// - provides: the homed half of the unary type-head resolution table.
+/// - fails: never; a pair the table does not hold is an absence.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the table is a finite class, its row asserted at its home
+///   and refused at another module and at a near spelling.
+/// - witness: `resolve::tests::a_homed_former_answers_only_at_its_home_4520`
+#[spec(
+    ensures: |ret| match ret {
+        | Maybe::Present(answer) => HOMED_FORMERS
+            .iter()
+            .any(|&(home, spelling, value)| home == module.as_ref() && spelling == name.as_ref() && value == answer),
+        | Maybe::Absent(type_head::Absent::Unregistered) => HOMED_FORMERS
+            .iter()
+            .all(|&(home, spelling, _)| home != module.as_ref() || spelling != name.as_ref()),
+    },
+)]
+#[inline]
+pub fn homed_former(
+    module: SurfaceName<'_>,
+    name: SurfaceName<'_>,
+) -> Maybe<TypeFormer, type_head::Absent>
+{
+    let (home, spelled): (&str, &str) = (module.as_ref(), name.as_ref());
+    let found = HOMED_FORMERS
+        .into_iter()
+        .find_map(|(entry, spelling, former)| {
+            (entry == home && spelling == spelled).then_some(former)
+        });
+
+    found.map_or(
+        Maybe::Absent(type_head::Absent::Unregistered),
+        Maybe::Present,
+    )
+}
+
+/// The module that homes the type former spelled `name`, which a listed
+/// import of that module binds: `std.list` for `List` (#4520).
+///
+/// # Specification
+/// - requires: nothing — every identifier is admissible input.
+/// - ensures: exactly the home of the row whose spelling is `name`, and the
+///   absence for every other identifier, an ambient former's spelling included.
+/// - provides: the home a refusal of an unlisted head names.
+/// - fails: never; an identifier no row homes is an absence.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the table is a finite class, its row's home asserted and
+///   an ambient former and a near spelling asserted absent.
+/// - witness: `resolve::tests::a_homed_former_answers_only_at_its_home_4520`
+#[spec(
+    ensures: |ret| match ret {
+        | Maybe::Present(answer) => HOMED_FORMERS
+            .iter()
+            .any(|&(home, spelling, _)| home == answer.as_ref() && spelling == name.as_ref()),
+        | Maybe::Absent(type_head::Absent::Unregistered) => HOMED_FORMERS
+            .iter()
+            .all(|&(_, spelling, _)| spelling != name.as_ref()),
+    },
+)]
+#[inline]
+pub fn former_home(name: SurfaceName<'_>) -> Maybe<SurfaceName<'static>, type_head::Absent>
+{
+    let spelled: &str = name.as_ref();
+    let found = HOMED_FORMERS
+        .into_iter()
+        .find_map(|(home, spelling, _)| (spelling == spelled).then_some(home));
+
+    found.map_or(Maybe::Absent(type_head::Absent::Unregistered), |home| {
+        Maybe::Present(SurfaceName::from(home))
+    })
 }
 
 /// The identity of one binder frame inside a [`Scope`].
@@ -2078,6 +2178,8 @@ mod tests
     use super::binder;
     use super::binder_site;
     use super::binder_type;
+    use super::former_home;
+    use super::homed_former;
     use super::type_atom;
     use super::type_former;
     use super::type_head;
@@ -2280,7 +2382,6 @@ mod tests
         let expected = [
             ("+U", TypeFormer::Thunk),
             ("-F", TypeFormer::Returner),
-            ("List", TypeFormer::List),
             ("Run", TypeFormer::Run),
             ("Prefix", TypeFormer::Prefix),
             ("Dialogue", TypeFormer::Dialogue),
@@ -2303,6 +2404,44 @@ mod tests
                 type_former(SurfaceName::from(spelling)),
                 Maybe::Absent(type_head::Absent::Unregistered),
                 "an atom applied to an argument is an unresolved head, not a former"
+            );
+        }
+    }
+
+    #[test]
+    fn a_homed_former_answers_only_at_its_home_4520()
+    {
+        assert_eq!(
+            type_former(SurfaceName::from("List")),
+            Maybe::Absent(type_head::Absent::Unregistered),
+            "the ambient scope no longer answers the list former"
+        );
+        assert_eq!(
+            homed_former(SurfaceName::from("std.list"), SurfaceName::from("List")),
+            Maybe::Present(TypeFormer::List),
+            "a listing of `std.list` answers it"
+        );
+        for (module, name) in [
+            ("std.string", "List"),
+            ("list", "List"),
+            ("std.list", "Lists"),
+        ] {
+            assert_eq!(
+                homed_former(SurfaceName::from(module), SurfaceName::from(name)),
+                Maybe::Absent(type_head::Absent::Unregistered),
+                "the former answers at its home, by its own spelling, only"
+            );
+        }
+        assert_eq!(
+            former_home(SurfaceName::from("List")),
+            Maybe::Present(SurfaceName::from("std.list")),
+            "the list former's home is `std.list`"
+        );
+        for name in ["-F", "Run", "Lists"] {
+            assert_eq!(
+                former_home(SurfaceName::from(name)),
+                Maybe::Absent(type_head::Absent::Unregistered),
+                "an ambient former and a near spelling have no home"
             );
         }
     }

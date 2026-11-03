@@ -12,6 +12,8 @@
 
 // Negation and the identity on the booleans.
 import "../../model/identity/funext.gandr" ;
+// The native finite lists.
+import std.list (List);
 
 /// The booleans to themselves by negation, its own inverse.
 @[ checks ]

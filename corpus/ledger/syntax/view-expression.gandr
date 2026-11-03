@@ -1,4 +1,9 @@
 /// `view_expression`: a call's place lent to a block, at the mode it asks.
+
+// The native finite lists.
+import std.list (List);
+
+/// Two integers in a list.
 @[ checks ]
 def pair : List(Integer) ;
 def pair = cons(1, cons(2, nil)) ;

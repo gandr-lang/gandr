@@ -1,0 +1,6 @@
+// `std.list`: the home of the native finite lists. `List(A)` is the list type
+// over a value type `A`, its values `nil`, `cons` and the literal `[a, b]`,
+// and a source names it by listing it, `import std.list (List);` (#4520).
+// The former is native, so no declaration here states it: the lowering
+// answers `List` in a source that lists it from this module, and nowhere
+// else. The everyday functions and their laws wait for demand.

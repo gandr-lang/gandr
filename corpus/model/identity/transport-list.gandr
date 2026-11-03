@@ -9,6 +9,8 @@
 
 // Negation and the identity on the booleans.
 import "./funext.gandr";
+// The native finite lists.
+import std.list (List);
 
 /// The booleans to themselves by negation, its own inverse.
 pub def negation : Path(Type, Bool, Bool) = equiv(not, not);

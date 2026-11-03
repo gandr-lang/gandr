@@ -1,0 +1,8 @@
+error[UnresolvedTypeHead]: no type named `List` is written applied to one argument
+   ╭▸ corpus/pathological/builtins/bare-list.gandr:13:10
+   │
+13 │ def xs : List(Integer) = [1, 2];
+   │          ━━━━ no type head of this name and arity
+   │
+   ├ note: `xs` is refused with UnresolvedTypeHead, as its expectation states
+   ╰ help: write `import std.list (List);`, the listing of `List` from its home

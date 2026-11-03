@@ -1,3 +1,8 @@
 /// `TypeMismatch`: a synthesised type that does not convert to the expected one.
+
+// The native finite lists.
+import std.list (List);
+
+/// A list of integers holding a string.
 @[ refuses("TypeMismatch") ]
 def mixed = ([1, "two"] : List(Integer));

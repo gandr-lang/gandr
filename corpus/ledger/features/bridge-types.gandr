@@ -2,6 +2,9 @@
 /// Implemented: `Bridge(A, a, b)` relates two points of `A` at the fibre the bridge fold reads. The core checks it and the kernel replays it.
 /// Not implemented: the model laws of the fold; #3519 owes them.
 
+// The native finite lists.
+import std.list (List);
+
 /// The total relation between the unit type and the string type.
 @[ checks ]
 def unitString : Bridge(Type, Unit, String) = thunk {

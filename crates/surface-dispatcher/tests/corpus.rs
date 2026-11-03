@@ -269,8 +269,9 @@ fn the_identity_base_is_lowered_once_for_its_importers()
     );
     assert_eq!(
         usize::from(report.lowerings()),
-        usize::from(report.sources().read()),
-        "each source of the subject is lowered once, the base among them"
+        usize::from(report.sources().read()).saturating_add(1_usize),
+        "each source of the subject is lowered once, the base among them, and `std.list`, which \
+         several of them import, once beside them (#4520)"
     );
     let Some((first, rest)) = certificates.split_first()
     else {

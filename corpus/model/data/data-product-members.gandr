@@ -7,6 +7,8 @@
 
 /// Optional values, `None` and `Some(x)`.
 import "./data-maybe.gandr";
+// The native finite lists.
+import std.list (List);
 
 /// A present value and an absent one, annotated as their product.
 def paired = ((Some(1), None) : Maybe(Integer) * Maybe(Integer));

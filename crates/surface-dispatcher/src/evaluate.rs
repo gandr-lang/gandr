@@ -3714,6 +3714,25 @@ mod tests
         }
     }
 
+    /// The program `listed` composes to under the fixture root (#4520).
+    ///
+    /// # Specification
+    /// - requires: as [`program`], over the laid unit.
+    /// - ensures: as [`program`].
+    /// - panics: if the composition refuses the source as a whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::tests::Listed::new`].
+    /// - witness: `evaluate::entry::tests::the_entry_is_the_main_of_the_source_run_1881`
+    #[spec(ensures: |ref ret| ret.declarations.keys().all(|&constant| ret.definitions.get(constant).is_some()))]
+    pub(super) fn listed_program(listed: &crate::tests::Listed) -> Program<'_>
+    {
+        match listed.composed(CorpusRoot::Fixture) {
+            Composed::Settled { program, .. } => program,
+            Composed::Refused(refusal) => panic!("refused as a whole: {refusal}"),
+        }
+    }
+
     /// What running the declaration named `name` of `program` comes to.
     ///
     /// # Specification
@@ -3910,15 +3929,17 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     #[test]
     fn a_run_answering_an_unmarked_sealed_type_is_opaque_at_its_seal_3375()
     {
-        let mut sealed = program(
-            "pub module Secret :> #{ type T, seal : String => T } where {\n  type T = String;\n  def \
-             seal(text : String) -> String { text }\n}\npub module Counter :> #{ type T, zero : \
-             T } where {\n  type T = Integer;\n  def zero = 0;\n}\npub module Seat :> #{ mobile type \
-             Report, progress : Report } where {\n  type Report = String;\n  def progress = \
-             \"progress\";\n}\ndef returned() -> Secret.T { Secret.seal(\"x\") }\ndef listed() \
-             -> List(Secret.T) {\n  let s = Secret.seal(\"z\");\n  pure [s]\n}\ndef reported() \
-             -> Seat.Report { pure Seat.progress }\n",
-        );
+        let listed = crate::tests::Listed::new(SourceText::from(
+            "import std.list (List) ;\npub module Secret :> #{ type T, seal : String => T } where \
+             {\n  type T = String;\n  def seal(text : String) -> String { text }\n}\npub module \
+             Counter :> #{ type T, zero : T } where {\n  type T = Integer;\n  def zero = 0;\n}\npub \
+             module Seat :> #{ mobile type Report, progress : Report } where {\n  type Report = \
+             String;\n  def progress = \"progress\";\n}\ndef returned() -> Secret.T { \
+             Secret.seal(\"x\") }\ndef listed() -> List(Secret.T) {\n  let s = \
+             Secret.seal(\"z\");\n  pure [s]\n}\ndef reported() -> Seat.Report { pure \
+             Seat.progress }\n",
+        ));
+        let mut sealed = listed_program(&listed);
         for (path, spelled) in [
             ("returned", "⟨opaque at Secret⟩ : () => Secret.T"),
             ("listed", "⟨opaque at Secret⟩ : () => List(Secret.T)"),

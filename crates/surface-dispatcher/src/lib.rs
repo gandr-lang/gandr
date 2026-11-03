@@ -749,6 +749,102 @@ mod tests
     use super::Width;
     use super::dispatch;
 
+    /// A source laid after `std.list`, as the driver lays a source after the
+    /// module it imports: the module's text first, then the source, whose one
+    /// path import resolves to it (#4520).
+    pub struct Listed
+    {
+        /// The unit's text.
+        pub text: alloc::string::String,
+        /// Where each source starts and what the source's import resolves to.
+        pub unit: gandr_surface_lowering::Unit,
+        /// Where the source's own text starts in `text`.
+        pub base: gandr_surface_syntax::ByteOffset,
+    }
+
+    impl Listed
+    {
+        /// `source` laid after the standard library's `std.list`.
+        ///
+        /// # Specification
+        /// - requires: the source's only path import, if any, is `std.list`.
+        /// - ensures: the text ends with `source`, which starts at `base`.
+        /// - provides: a source naming `List` composed where it resolves.
+        /// - fails: never.
+        /// - panics: if the standard library is not checked out.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — the entry witnesses compose a source reading
+        ///   `List(String)` through here, and its entry is found.
+        /// - witness: `evaluate::entry::tests::the_entry_is_the_main_of_the_source_run_1881`
+        #[spec(ensures: |ref ret| ret.text.ends_with(<&str>::from(source)) && ret.text.len() == usize::from(ret.base).saturating_add(<&str>::from(source).len()))]
+        pub fn new(source: gandr_surface_syntax::SourceText<'_>) -> Self
+        {
+            use gandr_surface_lowering::ImportTarget;
+            use gandr_surface_lowering::SourceIndex;
+            use gandr_surface_lowering::Unit;
+            use gandr_surface_lowering::UnitSource;
+            use gandr_surface_syntax::ByteOffset;
+
+            let module = std::fs::read_to_string(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../library/std/src/list.gandr"),
+            )
+            .expect("the standard library is checked out");
+            let base = ByteOffset::from(module.len());
+            let unit = Unit::new(alloc::vec![
+                UnitSource::new(ByteOffset::from(0_usize), alloc::vec::Vec::new()),
+                UnitSource::new(base, alloc::vec![ImportTarget::Source(SourceIndex::from(
+                    0_usize
+                ))]),
+            ])
+            .expect("the source imports the module before it");
+            Self {
+                text: alloc::format!("{module}{}", <&str>::from(source)),
+                unit,
+                base,
+            }
+        }
+
+        /// The laid source composed as [`crate::compose()`] composes one source
+        /// alone, under `root`.
+        ///
+        /// # Specification
+        /// - requires: the unit lowers and judges without a fault.
+        /// - ensures: the composition of the source at `base`.
+        /// - provides: the listed counterpart of [`crate::compose()`].
+        /// - fails: never.
+        /// - panics: on a composition fault.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — as [`Listed::new`].
+        /// - witness: `evaluate::entry::tests::the_entry_is_the_main_of_the_source_run_1881`
+        #[spec(requires: !self.text.is_empty())]
+        pub fn composed(
+            &self,
+            root: gandr_surface_corpus::CorpusRoot,
+        ) -> super::Composed<'_>
+        {
+            let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
+            let text = gandr_surface_syntax::SourceText::from(self.text.as_str());
+            super::lower_unit_source(
+                &grammar,
+                text,
+                &self.unit,
+                &mut super::LoweringCount::default(),
+            )
+            .and_then(|lowering| {
+                crate::compose::judge_lowering(
+                    root,
+                    (lowering, text),
+                    &HostGrant::UNBOUNDED,
+                    self.base,
+                )
+            })
+            .unwrap_or_else(|fault| panic!("the listed source composes: {fault}"))
+        }
+    }
+
     /// The first fault a walk over `paths` reports, which names the first path
     /// it visited when no path exists.
     ///

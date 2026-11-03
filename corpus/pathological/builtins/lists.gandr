@@ -1,6 +1,9 @@
 // A list literal refused at the element type it is stated at: the twin of
 // `model/builtins/lists.gandr`.
 
+// The native finite lists.
+import std.list (List);
+
 /// A text among integers: the second element does not convert to the element
 /// type the annotation states (#1544).
 @[ refuses("TypeMismatch") ]

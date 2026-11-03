@@ -1,5 +1,8 @@
 // A list literal at a stated element type, and a list extended at its front.
 
+// The native finite lists.
+import std.list (List);
+
 /// Three integers, annotated as a list of them: the cons cells over `1`, `2`
 /// and `3`, ending in the empty list (#1544).
 def xs = ([1, 2, 3] : List(Integer));

@@ -6,8 +6,9 @@
 //! declares `module Site : Model(Site)` of `std.manifold`, the key one place
 //! proves, the sockets it is reached at, and the name of the secret proving
 //! the key. A manifold's file declares `module Manifold : Model(Manifold)`, the
-//! program it deploys, beside `pub def placements : List(Placement)`, each
-//! world of the program placed at a site's model the manifold imports.
+//! program it deploys, beside `pub def placements : List(Placement)`, its
+//! `List` listed from `std.list`, each world of the program placed at a site's
+//! model the manifold imports.
 //! [`Site::read`] and [`Manifold::read`] read them into exactly what the
 //! driver's `--net-bind` and `--world` flags build: the sockets a host binds
 //! and the key it proves, and the [`WorldBindings`] a run ships by.
@@ -1038,7 +1039,9 @@ impl fmt::Display for Undeployed
                         "`module Site : Model(Site)` from `std.manifold`"
                     },
                     Stated::Artifact => "`module Manifold : Model(Manifold)` from `std.manifold`",
-                    Stated::Placements => "`pub def placements : List(Placement)`",
+                    Stated::Placements => {
+                        "`pub def placements : List(Placement)`, its `List` from `std.list`"
+                    },
                     Stated::Secrets => {
                         "`module Secrets : Model(Secrets) with sort K = Secret.T` from `std.secret`"
                     },

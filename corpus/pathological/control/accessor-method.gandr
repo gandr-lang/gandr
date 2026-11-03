@@ -8,6 +8,8 @@
 // The list each call below holds; the list's places.
 import "../../model/control/accessor-place.gandr";
 import "../../model/control/accessor-method.gandr";
+// The native finite lists.
+import std.list (List);
 
 /// A list's places out of shape.
 module Misplaced where {

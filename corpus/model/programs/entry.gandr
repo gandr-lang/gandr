@@ -4,6 +4,9 @@
 // Reference, § Crates and source files, "Main functions"). `gandr run
 // entry.gandr a b c` exits 3.
 
+// The native finite lists.
+import std.list (List);
+
 /// The number of strings in a list.
 pub def rec count(xs : List(String)) -> Integer {
   match xs {

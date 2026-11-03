@@ -705,8 +705,10 @@ use crate::resolve::TypeAtom;
 use crate::resolve::TypeFormer;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
+use crate::resolve::homed_former;
 use crate::resolve::type_atom;
 use crate::resolve::type_former;
+use crate::resolve::type_head;
 use crate::unbuilt::Unbuilt;
 use crate::unit::ImportTarget;
 use crate::unit::SourceIndex;
@@ -5614,7 +5616,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   states holds [`LoweringRefusal::SignatureMismatch`] at the flow's
     ///   name, naming the first such member — except a slot of a functor's
     ///   template, which declares nothing; each slot of a source whose import
-    ///   lists a name its module does not declare holds
+    ///   lists a name its module neither declares nor homes holds
     ///   [`LoweringRefusal::UnknownMember`], and one its module keeps private
     ///   [`LoweringRefusal::UnexportedName`], at the listed name; each
     ///   top-level declared name, and each family whose constructor, a source
@@ -5769,6 +5771,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 for &(name, at) in listed {
                     let found = collected.listed_in(imported, name);
                     if let Some((Visibility::Public, _)) = found {
+                        continue;
+                    }
+                    // A former the module homes is listed though no source
+                    // declares it: `import std.list (List);` (#4520).
+                    if found.is_none() && matches!(homed_former(module, name), Maybe::Present(_)) {
                         continue;
                     }
                     for (index, slot) in collected.slots.iter().enumerate() {
@@ -9637,7 +9644,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && let Maybe::Present(typed) = self.unwrapped(stated)?
             && typed.former == Former::TypeApplication
             && typed.keyword.is_some_and(|head| {
-                type_former(self.name_at(head)) == Maybe::Present(TypeFormer::List)
+                self.former(self.name_at(head)) == Maybe::Present(TypeFormer::List)
             })
             && let [element_type] = typed.operands[..]
         {
@@ -14187,7 +14194,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             return self.relation_of(site, Relation::Isomorphism, written);
         }
-        let former = type_former(name);
+        let former = self.former(name);
         // A head that spells a former is applied at an arity it does not take:
         // the fault is the application's, and the arguments are marked with
         // it, where one left out was written.
@@ -14218,6 +14225,65 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
 
         self.apply_former(site, former, argument)
+    }
+
+    /// The unary type former `name` spells in the source being lowered: an
+    /// ambient former, or one a listed import of its home binds,
+    /// `import std.list (List);` (#4520).
+    ///
+    /// # Specification
+    /// - requires: nothing — every identifier is admissible input.
+    /// - ensures: the ambient table's answer when it has one; else the former
+    ///   that the home of a resolved listed import of the current source
+    ///   answers under `name`; else the absence.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list type in a source that lists `List` from
+    ///   `std.list` lowers to the native list, and one in a source that does
+    ///   not is an unresolved head.
+    /// - witness: `lower::tests::a_list_type_resolves_only_through_its_listing_4520`
+    #[spec(
+        ensures: |ret| match type_former(name) {
+            | Maybe::Present(ambient) => ret == Maybe::Present(ambient),
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    pub(crate) fn former(
+        &self,
+        name: SurfaceName<'source>,
+    ) -> Maybe<TypeFormer, type_head::Absent>
+    {
+        let ambient = type_former(name);
+        if let Maybe::Present(_) = ambient {
+            return ambient;
+        }
+        self.collected
+            .imports
+            .declarations()
+            .iter()
+            .filter(|import| {
+                import.source() == self.current.source
+                    && matches!(
+                        import.resolution(),
+                        ImportResolution::Path(ImportTarget::Source(_))
+                    )
+            })
+            .find_map(|import| match *import.opening() {
+                Opening::Listed { module, ref listed }
+                    if listed
+                        .iter()
+                        .any(|&(held, _)| held.as_ref() == name.as_ref()) =>
+                {
+                    match homed_former(module, name) {
+                        Maybe::Present(former) => Some(former),
+                        Maybe::Absent(_) => None,
+                    }
+                },
+                Opening::Listed { .. } | Opening::Every | Opening::Nothing => None,
+            })
+            .map_or(ambient, Maybe::Present)
     }
 
     /// The type former `head`, the head of a call written at `site`, spells.
@@ -14283,7 +14349,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             TERMS,
         ]
         .contains(&name.as_ref())
-            || matches!(type_former(name), Maybe::Present(_));
+            || matches!(self.former(name), Maybe::Present(_));
         if !spelled {
             return Ok(unformed);
         }
@@ -14751,7 +14817,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let _keyword = cursor.tile(label);
         let name = self.name_at(at);
-        let Maybe::Present(former) = type_former(name)
+        let Maybe::Present(former) = self.former(name)
         else {
             return Err(LoweringRefusal::UnresolvedTypeHead {
                 span: at.span,
@@ -24657,17 +24723,46 @@ mod tests
         );
     }
 
+    /// #4520: a list type lowers to the native list where its source lists
+    /// `List` from `std.list`, and the same type in a source that lists
+    /// nothing is an unresolved head at its name.
+    #[test]
+    fn a_list_type_resolves_only_through_its_listing_4520()
+    {
+        let body = "def xs : List(Integer) = [1, 2] ;";
+        let mut arena = CoreArena::new();
+        let source = crate::fixture::listing(body);
+        let module = crate::fixture::listed(&source, &mut arena);
+        let Some(DeclarationOutcome::Completed { declared_type, .. }) =
+            outcomes(&module).first().copied()
+        else {
+            panic!("the listed list type lowers: {:?}", outcomes(&module));
+        };
+        assert!(
+            matches!(arena.value_type(declared_type), Some(&ValueType::List(_))),
+            "the listed head is the native list former"
+        );
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        assert_eq!(
+            refusal(SourceText::from(body)),
+            LoweringRefusal::UnresolvedTypeHead {
+                span: at(9_usize, 13_usize),
+                name: SurfaceName::from("List"),
+                arity: HeadArity::Unary,
+            },
+            "an unlisted `List` is no type head"
+        );
+    }
+
     #[test]
     fn a_type_where_a_value_is_read_is_quoted()
     {
         let mut arena = CoreArena::new();
-        let module = lowered(
-            SourceText::from(
-                "def a = Integer ; def b = -F Integer ; def c = Type ; def d = +U (-F Integer) ; \
-                 def e = Path(Integer, 1, 1) ; def f = List(Integer) ;",
-            ),
-            &mut arena,
+        let source = crate::fixture::listing(
+            "def a = Integer ; def b = -F Integer ; def c = Type ; def d = +U (-F Integer) ; def e \
+             = Path(Integer, 1, 1) ; def f = List(Integer) ;",
         );
+        let module = crate::fixture::listed(&source, &mut arena);
         let quoted = |declaration: usize| {
             let body = body_of(outcomes(&module)[declaration]);
             let provenance = module
@@ -26426,14 +26521,19 @@ def ended() -> -F [Partial] Unit {
             "def a = thunk { match 1 { 1 => return zz, _ => return 0 } } ;",
         ];
         for source in rows {
-            let refused = refusal(SourceText::from(source));
-            let (LoweringRefusal::UnresolvedName { span, name }
-            | LoweringRefusal::UnresolvedTypeHead { span, name, .. }) = refused
+            // `List` is listed from its home, so only `Zz` goes unresolved.
+            let text = crate::fixture::listing(source);
+            let module = crate::fixture::listed(&text, &mut CoreArena::new());
+            let first = outcomes(&module).first().copied();
+            let Some(DeclarationOutcome::Refused(
+                LoweringRefusal::UnresolvedName { span, name }
+                | LoweringRefusal::UnresolvedTypeHead { span, name, .. },
+            )) = first
             else {
-                panic!("`{source}` is refused at its name, not {refused:?}");
+                panic!("`{source}` is refused at its name, not {first:?}");
             };
             let spelled = (
-                source.get(usize::from(span.start()) .. usize::from(span.end())),
+                text.get(usize::from(span.start()) .. usize::from(span.end())),
                 name,
             );
             assert!(

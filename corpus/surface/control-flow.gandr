@@ -4,6 +4,9 @@
 // it in its own row, and an entry runs at `+U (-F [Partial] T)`. A `for` over a
 // list descends on the list and needs no entry; each `become` is an exit.
 
+// The native finite lists.
+import std.list (List);
+
 data Nat : Type where {
   | Zero : Nat
   | Succ : (n : Nat) --> Nat

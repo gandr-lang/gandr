@@ -1,3 +1,8 @@
 /// `list_expression`: a list, at the element type its annotation states.
+
+// The native finite lists.
+import std.list (List);
+
+/// Three integers in a list.
 @[ checks ]
 def three = (#[1, 2, 3] : List(Integer)) ;

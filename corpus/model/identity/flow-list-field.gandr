@@ -4,6 +4,9 @@
 // unread is decided at the empty list and at one cell over a rigid tail, and
 // riding the flow moves a record holding any list.
 
+// The native finite lists.
+import std.list (List);
+
 /// A record with a list field, migrated by reordering its fields.
 module Roster where {
   type Old = String * List(Integer);

@@ -16,6 +16,8 @@ use gandr_surface_syntax::SourceText;
 use crate::CandidateCount;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
+use crate::fixture::listed;
+use crate::fixture::listing;
 use crate::lower::access::tests::forms;
 use crate::lower::native::tests::assert_accepted;
 use crate::lower::native::tests::body_named;
@@ -176,7 +178,8 @@ fn a_mode_word_off_a_receiver_is_refused()
                   def nested(xs : List(m Integer)) -> -F Integer { pure 0 }\n\
                   def pick(t : Type, x : t) -> -F t { pure x }\n";
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source), &mut arena);
+    let source = listing(source);
+    let module = listed(&source, &mut arena);
     for (name, mode) in [
         ("top", "shared"),
         ("second", "consumed"),
@@ -205,7 +208,8 @@ fn a_mode_variable_off_a_receiver_is_refused_over_its_moded_type_3813()
     let source = "def nested(xs : List(m Integer)) -> -F Integer { pure 0 }\n\
                   def misspelt(x : Type) -> -F Type { return type(x wit) }\n";
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source), &mut arena);
+    let source = listing(source);
+    let module = listed(&source, &mut arena);
     for (name, moded) in [("nested", "m Integer"), ("misspelt", "x wit")] {
         let start = source.find(moded).unwrap_or_default();
         let end = start.saturating_add(moded.len());
@@ -277,7 +281,8 @@ fn a_deduced_mode_is_erased_from_the_telescope()
          View[m](Integer) {{ self.#[0] }}\n}}\n"
     );
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let source = listing(&source);
+    let module = listed(&source, &mut arena);
     let Some(declaration) = module
         .declarations()
         .iter()
@@ -326,7 +331,8 @@ fn a_deduced_mode_is_erased_from_the_telescope()
 fn a_view_method_answers_its_place_index()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(PLACES), &mut arena);
+    let source = listing(PLACES);
+    let module = listed(&source, &mut arena);
     for (name, place) in [("first", "literal"), ("nth", "%0")] {
         let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
         assert_eq!(
@@ -350,7 +356,8 @@ fn a_view_method_answering_no_place_is_refused()
          -> -F Integer {{ let y = xs.#[i]; pure y }}\n"
     );
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let source = listing(&source);
+    let module = listed(&source, &mut arena);
     for name in ["valued", "computed", "crossed", "stray"] {
         assert!(
             matches!(
@@ -382,7 +389,8 @@ fn a_bare_index_reads_its_held_element()
          y }}\ndef zeroth() -> -F Integer {{ var xs = pair; let y = xs.#[0]; pure y }}\n"
     );
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let source = listing(&source);
+    let module = listed(&source, &mut arena);
     for (name, place) in [("element", "%0"), ("zeroth", "literal")] {
         let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
         assert_eq!(
@@ -398,7 +406,8 @@ fn a_bare_index_reads_its_held_element()
 fn a_view_block_lends_at_the_mode_it_asks()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(PLACES), &mut arena);
+    let source = listing(PLACES);
+    let module = listed(&source, &mut arena);
     for (name, lent) in [
         (
             "head",

@@ -10,6 +10,8 @@
 /// - see: crates/surface-driver/tests/net.rs
 
 import std.manifold (Site, Manifold, Placement, At);
+// The native finite lists.
+import std.list (List);
 
 /// The place the far world runs at.
 pub module Site : Model(Site) where {

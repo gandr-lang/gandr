@@ -13,6 +13,8 @@ use gandr_theory_sites::ShapeSize;
 
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
+use crate::fixture::listed;
+use crate::fixture::listing;
 use crate::lower::identity::tests::lowered;
 use crate::lower::identity::tests::outcome_of;
 use crate::lower::native::tests::assert_accepted;
@@ -251,7 +253,8 @@ fn a_recursive_function_named_compose_recurses_through_its_claim()
     let source = "def rec compose(xs : List(Integer)) -> Integer {\n  match xs {\n    [] => 0,\n    [_, \
                   ..rest] => compose[<](rest)\n  }\n}\n";
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source), &mut arena);
+    let source = listing(source);
+    let module = listed(&source, &mut arena);
     assert!(
         matches!(
             outcome_of(&module, "compose".into()),

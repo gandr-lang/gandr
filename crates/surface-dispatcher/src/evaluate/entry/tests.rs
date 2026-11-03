@@ -9,6 +9,7 @@ use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
 use gandr_surface_lowering::Arguments;
+use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use super::Entered;
@@ -22,7 +23,9 @@ use crate::evaluate::Evaluation;
 use crate::evaluate::Input;
 use crate::evaluate::Line;
 use crate::evaluate::Printed;
+use crate::evaluate::tests::listed_program;
 use crate::evaluate::tests::program;
+use crate::tests::Listed;
 
 /// The entry is the `main` the source run declares at its top level, with
 /// the arguments its type reads; a source with no `main`, and a module's
@@ -40,7 +43,7 @@ fn the_entry_is_the_main_of_the_source_run_1881()
             }),
         ),
         (
-            "def one = 1 ;\ndef main(args : List(String)) -> -F Integer { return 0 }\n",
+            "import std.list (List) ;\ndef one = 1 ;\ndef main(args : List(String)) -> -F Integer { return 0 }\n",
             Maybe::Present(Entry {
                 constant: ConstantIndex::from(1_usize),
                 arguments: Arguments::Read,
@@ -62,7 +65,8 @@ fn the_entry_is_the_main_of_the_source_run_1881()
             }),
         ),
     ] {
-        assert_eq!(program(source).entry(), wanted, "{source}");
+        let listed = Listed::new(SourceText::from(source));
+        assert_eq!(listed_program(&listed).entry(), wanted, "{source}");
     }
 }
 
@@ -76,7 +80,7 @@ fn an_entry_runs_to_its_exit_status_1881()
     for (source, wanted) in [
         ("def main() -> -F Integer { return 3 }\n", 3_u8),
         (
-            "def rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    [] => 0,\n    [x, ..rest] => { let n = count[<](rest); n + 1 }\n  }\n}\ndef main(args : List(String)) -> -F Integer { become count(args) }\n",
+            "import std.list (List) ;\ndef rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    [] => 0,\n    [x, ..rest] => { let n = count[<](rest); n + 1 }\n  }\n}\ndef main(args : List(String)) -> -F Integer { become count(args) }\n",
             3_u8,
         ),
         (
@@ -84,7 +88,8 @@ fn an_entry_runs_to_its_exit_status_1881()
             7_u8,
         ),
     ] {
-        let mut ran = program(source);
+        let listed = Listed::new(SourceText::from(source));
+        let mut ran = listed_program(&listed);
         let Maybe::Present(entry) = ran.entry()
         else {
             panic!("an entry: {source}");
@@ -168,8 +173,9 @@ fn an_exit_status_keeps_the_low_byte_1881()
 #[test]
 fn a_hole_reached_stops_the_entry_by_name_1881()
 {
-    let source = "def helper(n : Integer) -> -F Integer { return n + 1 }\ndef main(args : List(String)) -> -F Integer {\n  match args {\n    [] => 2,\n    [x, ..rest] => { let y = helper(41); ?todo }\n  }\n}\n";
-    let mut ran = program(source);
+    let source = "import std.list (List) ;\ndef helper(n : Integer) -> -F Integer { return n + 1 }\ndef main(args : List(String)) -> -F Integer {\n  match args {\n    [] => 2,\n    [x, ..rest] => { let y = helper(41); ?todo }\n  }\n}\n";
+    let listed = Listed::new(SourceText::from(source));
+    let mut ran = listed_program(&listed);
     let Maybe::Present(entry) = ran.entry()
     else {
         panic!("an entry: {source}");
@@ -179,7 +185,8 @@ fn a_hole_reached_stops_the_entry_by_name_1881()
         Entered::Exited(ExitStatus(2)),
         "the branch holding the hole is not taken"
     );
-    let written = source.find("?todo").expect("the hole is written");
+    let written =
+        usize::from(listed.base).saturating_add(source.find("?todo").expect("the hole is written"));
     match ran.enter(
         entry,
         &[String::from("a")],

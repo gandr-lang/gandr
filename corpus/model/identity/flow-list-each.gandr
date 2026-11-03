@@ -5,6 +5,9 @@
 // the rigid tail, and the cell it returns over that image and the head's
 // leaves is natural, so the translator is natural at every list.
 
+// The native finite lists.
+import std.list (List);
+
 /// A list of records migrated by riding each cell along the records' flow.
 module Cells where {
   type Old = String * Integer;

@@ -1,3 +1,16 @@
+// An empty case and a case read through a view.
+//
+// A value of an empty type never arrives, so its case needs no arm. A view
+// over a list is a form the lowering does not read yet.
+//
+// `absurd` cases on `Void` with no arm. `classify` and `classify_annotated`
+// case on a list through its length, and each is refused at the view.
+//
+// - see: corpus/model/builtins/list-patterns.gandr
+
+// The native finite lists.
+import std.list (List);
+
 def absurd(x : Void) -> Integer {
   match x {}
 }

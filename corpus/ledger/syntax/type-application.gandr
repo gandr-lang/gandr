@@ -1,4 +1,9 @@
 /// `type_application`: a type family applied.
+
+// The native finite lists.
+import std.list (List);
+
+/// One integer in a list.
 @[ checks ]
 def numbers : List(Integer) ;
 def numbers = cons(1, nil) ;
