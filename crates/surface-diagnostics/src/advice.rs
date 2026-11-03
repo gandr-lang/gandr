@@ -36,6 +36,7 @@ use alloc::string::String;
 
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::EndpointMiss;
+use gandr_core_checker::RunSource;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::session::ForkSide;
 use gandr_core_checker::session::LinearityDefect;
@@ -551,8 +552,23 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::UndischargedLaw { .. } => String::from(
             "prove the law by a definition at its type, or admit it where the host asserts it",
         ),
+        // A crossing's call carries a written value, a literal read by its
+        // reader or a model by its reduct, to its type: only a body runs it
+        // (#4806). A written run's remedy depends on where it stands, which
+        // the refusal does not hold.
+        CheckRefusal::UnenclosedRun {
+            source: RunSource::Crossing,
+            ..
+        } => String::from(
+            "write the value in a function's body, `def name() -> T { … }`, where the reader's or \
+             reduct's call that carries it to its type runs",
+        ),
         // Unworded: a later slice words each, most-seen first.
-        CheckRefusal::NotADataType(_)
+        CheckRefusal::UnenclosedRun {
+            source: RunSource::Written,
+            ..
+        }
+        | CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
         | CheckRefusal::DataFieldLevel { .. }
         | CheckRefusal::RuleNotPresentable { .. }
@@ -618,7 +634,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::Access { .. }
         | CheckRefusal::Codata { .. }
         | CheckRefusal::Located { .. }
-        | CheckRefusal::UnenclosedRun { .. }
         | CheckRefusal::ModelUnanswered { .. }
         | CheckRefusal::ModelAmbiguous { .. }
         | CheckRefusal::TacticRefused { .. }
@@ -656,7 +671,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 35] = [
+    const WORDED: [&str; 36] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -692,6 +707,8 @@ mod tests
         "NoFiller",
         "NoFiller.Omitted",
         "DerivedComponent",
+        // Worded for a crossing's run, the one the vocabulary's refusal holds.
+        "UnenclosedRun",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

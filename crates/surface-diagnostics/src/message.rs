@@ -2522,7 +2522,10 @@ pub mod tests
                 cell: value,
                 family: gandr_core_checker::fill::UnsupportedFamily::Bridge,
             },
-            CheckRefusal::UnenclosedRun { at: value },
+            CheckRefusal::UnenclosedRun {
+                at: value,
+                source: gandr_core_checker::RunSource::Crossing,
+            },
             CheckRefusal::ImplicitUnsolved {
                 at: value,
                 reason: gandr_core_checker::Unsolved::Unforced,

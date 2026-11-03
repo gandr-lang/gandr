@@ -130,6 +130,18 @@ pub enum Nesting
     Filled(gandr_core_term::ComputationId),
 }
 
+/// What an unenclosed run is: one the source writes, or the call a crossing
+/// minted where the value bridge carried a value by a map (#4806).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RunSource
+{
+    /// A nested computation or a run the source writes.
+    Written,
+    /// The call of a reduct, a forgetting map or a literal reader that a
+    /// crossing applies to the written value it carries.
+    Crossing,
+}
+
 /// What elaborating one declaration's body did: every decision the judgement
 /// made, every node the rebuild carried over from one it was built from, and
 /// every bind minted beside the run it was minted for.
@@ -352,26 +364,35 @@ pub fn elaborate(
 /// - requires: `body` is live in `arena`; `crossings` and `decisions` are what
 ///   the judgement recorded over it.
 /// - ensures: the rebuilt body, every node the rebuild carried over beside the
-///   node it was built from, and `decisions` keyed by what each node stands as
-///   in the rebuilt body, with each run the rebuild minted decided a pure run;
-///   `body`, nothing carried and `decisions` unchanged when `crossings` names
-///   nothing it reaches.
+///   node it was built from, `decisions` keyed by what each node stands as in
+///   the rebuilt body, with each run the rebuild minted decided a pure run, and
+///   each minted run beside the written value it crossed; `body`, nothing
+///   carried, `decisions` unchanged and no run when `crossings` names nothing
+///   it reaches.
 /// - provides: the body and decisions [`elaborate`] reads where the value
-///   bridge crossed by a map between models.
+///   bridge crossed by a map between models or a literal reader, and the
+///   written value a refusal of a minted run names (#4806).
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a monoid's model passed where a semigroup's is asked,
 ///   beside a nested call, elaborates the reduct into a bind and keeps the
-///   call's decision.
+///   call's decision; a literal read in a definition's own value is refused at
+///   the literal.
 /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
-#[spec(ensures: |ret| ret.2.len() >= decisions.len())]
+/// - witness: `module::tests::a_literal_read_in_a_definition_s_own_value_is_refused_at_the_literal_4806`
+#[spec(ensures: |ret| ret.2.len() >= decisions.len() && ret.3.keys().all(|run| ret.2.contains_key(run)))]
 pub fn cross(
     arena: &mut CoreArena,
     body: ValueId,
     crossings: &BTreeMap<ValueId, gandr_core_term::Crossing>,
     decisions: &BTreeMap<ValueId, Nesting>,
-) -> (ValueId, Vec<Carried>, BTreeMap<ValueId, Nesting>)
+) -> (
+    ValueId,
+    Vec<Carried>,
+    BTreeMap<ValueId, Nesting>,
+    BTreeMap<ValueId, ValueId>,
+)
 {
     let (mut carried, mut runs) = (Vec::new(), Vec::new());
     let crossed = gandr_core_term::cross_reducts(arena, body, crossings, &mut carried, &mut runs);
@@ -386,9 +407,29 @@ pub fn cross(
         .iter()
         .map(|(&at, &decided)| (rebuilt.get(&at).copied().unwrap_or(at), decided))
         .collect();
+    // A minted run is `run(r(x₁, …, xₙ, v))`: its last argument is what the
+    // crossed value stands as inside it, carried from the written value when
+    // the rebuild rewrote it.
+    let written: BTreeMap<ValueId, ValueId> =
+        rebuilt.iter().map(|(&from, &to)| (to, from)).collect();
+    let minted: BTreeMap<ValueId, ValueId> = runs
+        .iter()
+        .filter_map(|&run| {
+            let Some(&gandr_core_term::Value::Run(applied)) = arena.value(run)
+            else {
+                return None;
+            };
+            let Some(&gandr_core_term::Computation::Application(_, within)) =
+                arena.computation(applied)
+            else {
+                return None;
+            };
+            Some((run, written.get(&within).copied().unwrap_or(within)))
+        })
+        .collect();
     read.extend(
         runs.into_iter()
             .map(|run| (run, Nesting::Ran(Purity::Pure))),
     );
-    (crossed, carried, read)
+    (crossed, carried, read, minted)
 }

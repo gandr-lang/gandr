@@ -1616,6 +1616,53 @@ fn a_natural_literal_crosses_by_the_reader_of_its_type_4528()
     );
 }
 
+/// #4806: a natural literal written as a definition's own value, at a type a
+/// reader answers, crosses by the reader, and the reader's call has no
+/// computation to run before: the refusal names the literal, as a crossing's
+/// run, and the pursuit stands at the literal.
+#[test]
+fn a_literal_read_in_a_definition_s_own_value_is_refused_at_the_literal_4806()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let text = arena.value_type_base(BaseType::String);
+    let word_type = {
+        let returns = arena.comp_type_returner(text);
+        let arrow = arena.comp_type_arrow(integer, returns);
+        arena.value_type_thunk(arrow)
+    };
+    let word = {
+        let read = arena.value_literal(text_literal());
+        let returned = arena.computation_return(read);
+        let lambda = arena.computation_lambda(returned);
+        arena.value_thunk(lambda)
+    };
+    let literal = arena.value_literal(integer_literal());
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.keep_readers(&naturals(&[ConstantIndex::from(0_usize)]));
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(word_type), Maybe::Present(word)),
+            declaration(At(1), Maybe::Present(text), Maybe::Present(literal)),
+        ])
+    };
+    assert_eq!(
+        report.judged()[1].verdict(),
+        Verdict::Refused(CheckRefusal::UnenclosedRun {
+            at: literal,
+            source: crate::nested::RunSource::Crossing,
+        }),
+        "the reader's call stands in the definition's own value, and the refusal names the literal"
+    );
+    assert_eq!(
+        report.failures()[&ConstantIndex::from(1_usize)]
+            .pursuit()
+            .at(),
+        CoreNode::Term(TermNode::Value(literal)),
+        "the pursuit stands at the literal, which the source wrote"
+    );
+}
+
 /// #4528: a literal at a type two kept readers answer is refused naming the
 /// literal and the type, and one reader of it crosses.
 #[test]
@@ -2533,7 +2580,10 @@ fn a_run_in_a_definition_s_own_value_is_unenclosed()
             declaration(At(1), Maybe::Present(integer), Maybe::Present(nested)),
         ])
     };
-    let refusal = CheckRefusal::UnenclosedRun { at: nested };
+    let refusal = CheckRefusal::UnenclosedRun {
+        at: nested,
+        source: crate::nested::RunSource::Written,
+    };
     assert_eq!(
         report.judged()[1].verdict(),
         Verdict::Refused(refusal),

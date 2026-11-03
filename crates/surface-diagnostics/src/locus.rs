@@ -1006,7 +1006,7 @@ fn checked(
         | CheckRefusal::ComposeNotAShape { at, .. }
         | CheckRefusal::ComposeDoesNotFill { at, .. }
         | CheckRefusal::FillUncertified { at, .. }
-        | CheckRefusal::UnenclosedRun { at }
+        | CheckRefusal::UnenclosedRun { at, .. }
         | CheckRefusal::ImplicitUnsolved { at, .. }
         | CheckRefusal::ModelUnanswered { at, .. }
         | CheckRefusal::ModelAmbiguous { at, .. }
@@ -3218,7 +3218,10 @@ mod tests
                 cell: value,
                 family: gandr_core_checker::fill::UnsupportedFamily::Flow,
             },
-            CheckRefusal::UnenclosedRun { at: value },
+            CheckRefusal::UnenclosedRun {
+                at: value,
+                source: gandr_core_checker::RunSource::Written,
+            },
             CheckRefusal::ImplicitUnsolved {
                 at: value,
                 reason: gandr_core_checker::Unsolved::Unforced,

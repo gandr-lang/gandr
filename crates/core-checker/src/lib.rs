@@ -693,6 +693,7 @@ pub use crate::module::type_module;
 pub use crate::module::unmarked;
 pub use crate::nested::NestedElaboration;
 pub use crate::nested::Nesting;
+pub use crate::nested::RunSource;
 pub use crate::refusal::ArgumentPosition;
 pub use crate::refusal::CheckRefusal;
 pub use crate::refusal::CheckingForm;

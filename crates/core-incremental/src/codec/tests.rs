@@ -2864,7 +2864,14 @@ fn every_refusal() -> Vec<Refusal>
             synthesised: ty(),
             expected: ty(),
         },
-        Refusal::UnenclosedRun { at },
+        Refusal::UnenclosedRun {
+            at,
+            source: gandr_core_checker::RunSource::Written,
+        },
+        Refusal::UnenclosedRun {
+            at,
+            source: gandr_core_checker::RunSource::Crossing,
+        },
         Refusal::ImplicitUnsolved {
             at,
             reason: gandr_core_checker::Unsolved::Escape,

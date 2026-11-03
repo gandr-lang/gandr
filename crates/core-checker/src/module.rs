@@ -1610,11 +1610,11 @@ fn decide(
             let updates = context.take_updates();
             // A value the bridge carried by a reduct runs the reduct at it, a
             // run the nested elaboration binds before its region.
-            let (solved, crossed, decisions) = if first.is_ok() && !crossings.is_empty() {
+            let (solved, crossed, decisions, minted) = if first.is_ok() && !crossings.is_empty() {
                 crate::nested::cross(context.arena_mut(), solved, &crossings, &decisions)
             }
             else {
-                (solved, Vec::new(), decisions)
+                (solved, Vec::new(), decisions, BTreeMap::new())
             };
             let judged = match first {
                 Ok(_) if !decisions.is_empty() || !updates.is_empty() => {
@@ -1638,7 +1638,7 @@ fn decide(
                             let _second = context.take_crossings();
                             second
                         },
-                        Err(unenclosed) => Err(unenclosed_failure(unenclosed.run())),
+                        Err(unenclosed) => Err(unenclosed_failure(unenclosed.run(), &minted)),
                     }
                 },
                 Ok(_) | Err(_) => {
@@ -2305,16 +2305,23 @@ fn call_failure(
 
 /// The failure of a body whose elaboration found `run` with no computation
 /// around it: no rule of the judgement is pending, and the refusal names the
-/// run.
+/// run, or the written value a crossing's run carries (#4806).
 ///
 /// # Specification
 /// trivial.
-fn unenclosed_failure(run: ValueId) -> Failure
+fn unenclosed_failure(
+    run: ValueId,
+    minted: &BTreeMap<ValueId, ValueId>,
+) -> Failure
 {
+    let (at, source) = match minted.get(&run) {
+        Some(&written) => (written, crate::nested::RunSource::Crossing),
+        None => (run, crate::nested::RunSource::Written),
+    };
     Failure::bare(
-        CheckRefusal::UnenclosedRun { at: run },
+        CheckRefusal::UnenclosedRun { at, source },
         Pursuit::new(
-            CoreNode::Term(TermNode::Value(run)),
+            CoreNode::Term(TermNode::Value(at)),
             Maybe::Absent(judged::Absent::Synthesised),
             Stage::Starting,
         ),
