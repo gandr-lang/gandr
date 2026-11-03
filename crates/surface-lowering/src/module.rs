@@ -4355,13 +4355,17 @@ fn first_token<'source>(
     SurfaceName::from("")
 }
 
-/// Whether an import's address names a scheme, a path or a module.
+/// Whether an import's address names a scheme, a package's coordinate, a
+/// path or a module.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Address
 {
     /// `scheme:…`: a letter, then letters, digits, `+`, `-` or `.`, then a
-    /// colon (RFC 3986 § 3.1).
+    /// colon (RFC 3986 § 3.1), the scheme no coordinate's.
     Scheme,
+    /// `path:…`: the coordinate of a package rooted at the directory the rest
+    /// names, whose root module the import reads.
+    Coordinate,
     /// Anything else written between quotes: a path relative to the importing
     /// source.
     Path,
@@ -4376,16 +4380,18 @@ impl Address
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Address::Scheme`] exactly when `uri` opens with an RFC 3986
-    ///   scheme and its colon; [`Address::Path`] otherwise.
+    /// - ensures: [`Address::Coordinate`] exactly when `uri` opens with the
+    ///   scheme [`COORDINATE`] and its colon; [`Address::Scheme`] when it opens
+    ///   with another RFC 3986 scheme and its colon; [`Address::Path`]
+    ///   otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a `file:` URL, a relative path, a path holding a
-    ///   colon after a slash and a scheme opening with a digit each classify
-    ///   exactly.
-    /// - witness: `module::tests::an_address_names_a_scheme_or_a_path`
+    /// - hypothesis: L3 — a `file:` URL, a `path:` coordinate, a relative path,
+    ///   a path holding a colon after a slash and a scheme opening with a digit
+    ///   each classify exactly.
+    /// - witness: `module::tests::an_address_names_a_scheme_a_coordinate_or_a_path`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret == Self::Path || uri.as_ref().contains(':'))]
@@ -4403,14 +4409,21 @@ impl Address
             .is_some_and(|first| first.is_ascii_alphabetic());
         let rest = characters
             .all(|later| later.is_ascii_alphanumeric() || matches!(later, '+' | '-' | '.'));
-        if opens && rest {
-            Self::Scheme
+        if !(opens && rest) {
+            Self::Path
+        }
+        else if scheme == COORDINATE {
+            Self::Coordinate
         }
         else {
-            Self::Path
+            Self::Scheme
         }
     }
 }
+
+/// The scheme of a package's coordinate, `path:../hello`: a directory, read
+/// from the importing package's root, that roots the package.
+pub const COORDINATE: &str = "path";
 
 /// One import as its tiles spell it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -6256,7 +6269,7 @@ impl<'source> Collector<'_, 'source>
         let source = self.collected.unit.source_at(import.span.start());
         let resolution = match written.address {
             Address::Scheme => ImportResolution::Foreign,
-            Address::Path | Address::Module => {
+            Address::Path | Address::Coordinate | Address::Module => {
                 let ordinal = self.ordinals.entry(source).or_default();
                 let target = self.collected.unit.target(source, *ordinal);
                 *ordinal = ordinal.next();
@@ -13947,7 +13960,7 @@ mod tests
     }
 
     #[test]
-    fn an_address_names_a_scheme_or_a_path()
+    fn an_address_names_a_scheme_a_coordinate_or_a_path()
     {
         let of = |uri: &str| Address::of(&ImportUri::from(alloc::string::String::from(uri)));
         assert_eq!(
@@ -13970,6 +13983,16 @@ mod tests
             of("git+ssh:repo"),
             Address::Scheme,
             "a scheme continues with letters, digits, `+`, `-` and `.`"
+        );
+        assert_eq!(
+            of("path:../hello"),
+            Address::Coordinate,
+            "the `path` scheme names a package's coordinate"
+        );
+        assert_eq!(
+            of("paths:../hello"),
+            Address::Scheme,
+            "a longer scheme is no coordinate"
         );
     }
 

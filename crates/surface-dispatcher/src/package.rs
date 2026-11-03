@@ -27,8 +27,8 @@
 //!
 //! # A package's dependencies are locked by address
 //!
-//! [`lock`] resolves the dependencies a package source declares and writes the
-//! `gandr.lock` its imports read them through (#533 p3).
+//! [`lock`] resolves the coordinates a package's sources import and writes the
+//! `gandr.lock` those imports read them through (#533 p3).
 //!
 //! # A package's toolchain constraints are checked
 //!
@@ -45,7 +45,7 @@
 //! | Role | Fields | Address |
 //! | --- | --- | --- |
 //! | inert | `name`, `version`, `authors`, `licence`, `documentation`, `endpoint`, `spelling` | left out: an edit leaves it |
-//! | resolution | `dependencies` | each dependency's address enters through `gandr.lock`, never its alias or its coordinate |
+//! | resolution | an import's coordinate, `import "path:…" as name ;` | written in the importer's source; each dependency's address enters through `gandr.lock`, never its alias or its coordinate |
 //! | syntax | an import's signature, `import <address> : S ;` | written in the importer's source, not in the model |
 //! | toolchain | `gandr`, `features`, `systems` | content: an edit moves it |
 //!
@@ -53,7 +53,7 @@
 //! output, so identity enters through the items, the lock and the
 //! constraints, never through the file. A reference is an address and a
 //! coordinate kept apart: the address says what the package is, and a resolve
-//! that finds another is refused `LockDrift.<alias>`; the coordinate says
+//! that finds another is refused `LockDrift.<coordinate>`; the coordinate says
 //! where it is found and is never part of identity. The capabilities a package
 //! requires join the syntax role with #533 p6.
 //!
@@ -94,7 +94,6 @@ use crate::evaluate::Evaluation;
 use crate::evaluate::Program;
 use crate::evaluate::declaration_name;
 use crate::root::classify;
-use crate::workspace::Spelling;
 use crate::workspace::Unmembered;
 use crate::workspace::WORKSPACE;
 use crate::workspace::Workspace;
@@ -104,7 +103,6 @@ pub mod export;
 pub mod lock;
 pub mod toolchain;
 
-use self::lock::DEPENDENCIES;
 use self::lock::Lock;
 use self::lock::SignatureKey;
 use self::toolchain::Separated;
@@ -465,15 +463,12 @@ pub struct Manifest
     toolchain: Toolchain,
     /// `Package.spelling`: a spelling's name, or empty for the reader's own.
     spelling: String,
-    /// Each dependency the package source's `dependencies` lists, in order.
-    dependencies: Vec<lock::Dependency>,
 }
 
 impl Manifest
 {
     /// The manifest `program`'s `Package` model states, each of its fields run
-    /// to its string, the modules of `package`, and the dependencies the
-    /// package source lists.
+    /// to its string, and the modules of `package`.
     ///
     /// # Specification
     /// - requires: `program` is the program of the package's source, and `own`
@@ -487,14 +482,10 @@ impl Manifest
     ///   `gandr` it cannot read is [`Unmanifested::Unconstrained`]. `spelling`
     ///   is empty or a name [`gandr_surface_grammar::Spelling`] reads, and any
     ///   other is [`Unmanifested::Unspelled`]. The modules are [`modules`] of
-    ///   `package`'s sources, in order. The dependencies are `dependencies`
-    ///   among the same declarations, run once, each element its alias and
-    ///   path; none when none declares it, and [`Unmanifested::Undepended`]
-    ///   with what it came to when it runs to no list of dependencies.
+    ///   `package`'s sources, in order.
     /// - provides: the manifest `gandr check` writes.
     /// - fails: a field undeclared, or run to no string; a `gandr` stating no
-    ///   constraint; a `spelling` naming none; `dependencies` run to no list of
-    ///   them.
+    ///   constraint; a `spelling` naming none.
     /// - panics: none.
     /// - executable: none — each field is run on the program's machine, which a
     ///   predicate could only check by running it again; the witness observes
@@ -502,17 +493,14 @@ impl Manifest
     ///
     /// # Errors
     /// The first field that is undeclared, or does not run to a string; a
-    /// `gandr` stating no constraint; a `spelling` naming none; then
-    /// `dependencies`, when it runs to no list of dependencies.
+    /// `gandr` stating no constraint; a `spelling` naming none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a model holding every field, one of them escaped,
     ///   reads each; one missing `version` and one whose name is an integer are
     ///   refused at that field; a `gandr` with no `>=` and a `spelling` naming
-    ///   no spelling are refused; a package source listing a dependency renders
-    ///   its table.
+    ///   no spelling are refused.
     /// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
-    /// - witness: `tests::package::a_manifest_renders_the_dependencies_its_library_lists_3072`
     /// - witness: `tests::package::a_manifest_renders_the_toolchain_its_model_asks_for_3135`
     /// - witness: `tests::package::a_manifest_renders_the_presentation_its_model_names_3135`
     #[inline]
@@ -547,7 +535,6 @@ impl Manifest
             modules: modules(package.sources()).into_keys().collect(),
             toolchain,
             spelling,
-            dependencies: depended(program, own)?,
         })
     }
 
@@ -576,10 +563,7 @@ impl Manifest
     ///   `gandr` as written and `features` and `systems` arrays of their
     ///   entries, written as `modules` is; then, when `spelling` names one, a
     ///   `[presentation]` table with `spelling`, the table the user's
-    ///   configuration file writes; then, when the package source lists any, a
-    ///   `[dependencies]` table, one line per dependency in order, `alias = {
-    ///   path = "…" }`, the alias bare when it is a TOML bare key and a basic
-    ///   string otherwise. The same manifest renders the same bytes.
+    ///   configuration file writes. The same manifest renders the same bytes.
     /// - provides: the file [`reconcile`] writes.
     /// - fails: never.
     /// - panics: none.
@@ -611,18 +595,6 @@ impl Manifest
                 body,
                 "\n[presentation]\nspelling = {}\n",
                 Basic(&self.spelling)
-            );
-        }
-        if !self.dependencies.is_empty() {
-            body.push_str("\n[dependencies]\n");
-        }
-        for dependency in &self.dependencies {
-            let lock::Coordinate::Path(ref path) = dependency.coordinate;
-            let _written = writeln!(
-                body,
-                "{} = {{ path = {} }}",
-                Key(dependency.alias.as_ref()),
-                Basic(path)
             );
         }
         format!(
@@ -686,48 +658,6 @@ fn strung(
         .ok_or(Unmanifested::Unstrung { field, came })
 }
 
-/// The dependencies the package source's `dependencies` lists, run on
-/// `program`.
-///
-/// # Specification
-/// - requires: as [`Manifest::of`].
-/// - ensures: as [`Manifest::of`] states for the dependencies.
-/// - fails: [`Unmanifested::Undepended`].
-/// - panics: none.
-/// - executable: none — as [`Manifest::of`].
-///
-/// # Errors
-/// [`Unmanifested::Undepended`].
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`Manifest::of`].
-/// - witness: `tests::package::a_manifest_renders_the_dependencies_its_library_lists_3072`
-fn depended(
-    program: &mut Program<'_>,
-    own: &SettleReport<'_>,
-) -> Result<Vec<lock::Dependency>, Unmanifested>
-{
-    let Maybe::Present(constant) = program.named_among(
-        SurfaceName::from(DEPENDENCIES),
-        own.declarations().iter().map(DeclarationReport::constant),
-    )
-    else {
-        return Ok(Vec::new());
-    };
-    let came = program.evaluate(constant).to_string();
-    let Some(listed) = Spelling::from(came.as_str()).dependencies()
-    else {
-        return Err(Unmanifested::Undepended { came });
-    };
-    Ok(listed
-        .into_iter()
-        .map(|(alias, path)| lock::Dependency {
-            alias: lock::Alias::new(alias),
-            coordinate: lock::Coordinate::Path(path),
-        })
-        .collect())
-}
-
 /// A package's address: the BLAKE3 digest of what the package is.
 ///
 /// It digests its items' content keys, every inert component of its models
@@ -771,7 +701,7 @@ impl Package
     /// modules in [`modules`] order, read as `shadows` holds it, laid out over
     /// its imports and lowered, and each of the source's own items digested in
     /// admission order as its path and its content key, a model's inert
-    /// component and the package source's `dependencies` left out; then the
+    /// component left out; then the
     /// addresses `lock`'s pointers read back through `store`; and the paths the
     /// package source exports, keyed.
     ///
@@ -781,13 +711,12 @@ impl Package
     ///   store that lock's pointers were committed to.
     /// - ensures: the address is the BLAKE3 digest, over the sources in that
     ///   order and each one's own items in its unit's admission order, of each
-    ///   item that is no [`Inertness::Inert`] declaration and not the package
-    ///   source's top-level `dependencies`, as its path's dotted spelling
-    ///   prefixed by its length and then its content key's bytes, followed by
-    ///   each address of [`Lock::addresses`] read back through `store` in
-    ///   order, prefixed by `u64::MAX`. An item of an import is the importer's
-    ///   to leave out: only the declarations each source writes are digested,
-    ///   so each enters once. Equal content at equal paths over equal
+    ///   item that is no [`Inertness::Inert`] declaration, as its path's dotted
+    ///   spelling prefixed by its length and then its content key's bytes,
+    ///   followed by each address of [`Lock::addresses`] read back through
+    ///   `store` in order, prefixed by `u64::MAX`. An item of an import is the
+    ///   importer's to leave out: only the declarations each source writes are
+    ///   digested, so each enters once. Equal content at equal paths over equal
     ///   dependencies is one address, whatever the inert fields state and
     ///   wherever and under whatever alias each dependency is found. The
     ///   signature key is the BLAKE3 digest of each dotted path of a
@@ -813,7 +742,7 @@ impl Package
     ///   fields, each edited, leave its address unchanged; a dependency's
     ///   content edit moves its dependent's address, and its inert edit does
     ///   not; a lock whose pointer the store never held leaves the dependent
-    ///   unaddressed by the alias.
+    ///   unaddressed by the coordinate.
     /// - witness: `tests::package::an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030`
     /// - witness: `tests::package::every_corpus_package_s_address_ignores_its_inert_fields_3030`
     /// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
@@ -856,7 +785,7 @@ impl Package
 
 /// Digest into `hasher` the own items of the source at `source`, as
 /// [`Package::identity`] states, filing each exported path into `exported`
-/// when it is given: the package source's, whose `dependencies` is left out.
+/// when it is given: the package source's.
 ///
 /// # Specification
 /// - requires: as [`Package::identity`].
@@ -929,9 +858,6 @@ fn digested(
             let segment: &str = segment.as_ref();
             path.push_str(segment);
         }
-        if exported.is_some() && path == DEPENDENCIES {
-            continue;
-        }
         if refused {
             return Err(Unaddressed::Refused {
                 source: source.to_path_buf(),
@@ -1000,7 +926,7 @@ pub enum Unaddressed
     Unstored
     {
         /// The dependency.
-        alias: lock::Alias,
+        coordinate: lock::Coordinate,
         /// Why the store cannot.
         fault: Box<gandr_storage_store::StoreError>,
     },
@@ -1052,11 +978,11 @@ impl core::fmt::Display for Unaddressed
                 source.display()
             ),
             Self::Unstored {
-                ref alias,
+                ref coordinate,
                 ref fault,
             } => write!(
                 f,
-                "the dependency `{alias}` is locked to a pointer the store cannot read back, so \
+                "the dependency `{coordinate}` is locked to a pointer the store cannot read back, so \
                  the package has no address: {fault}; run `gandr lock` to lock it again"
             ),
         }
@@ -1211,13 +1137,6 @@ pub enum Unmanifested
         /// What its run came to, spelled.
         came: String,
     },
-    /// The package source's `dependencies` does not run to a list of
-    /// dependencies.
-    Undepended
-    {
-        /// What its run came to, spelled.
-        came: String,
-    },
     /// The package source's `Package.gandr` states no constraint the check
     /// reads.
     Unconstrained
@@ -1254,12 +1173,6 @@ impl core::fmt::Display for Unmanifested
                 f,
                 "`{}` runs to `{came}`, not to a string, so no `{MANIFEST}` is written",
                 field.path()
-            ),
-            Self::Undepended { ref came } => write!(
-                f,
-                "`{DEPENDENCIES}` runs to `{came}`, not to a list of dependencies, so no \
-                 `{MANIFEST}` is written: list each as `#{{ alias = \"…\", coordinate = \
-                 Path(\"…\") }}`"
             ),
             Self::Unconstrained { ref came } => write!(
                 f,
@@ -1612,34 +1525,6 @@ impl<'file> Split<'file>
         }
         else {
             Authorship::Hand
-        }
-    }
-}
-
-/// A string written as a TOML key: bare when it is a bare key, letters,
-/// digits, `_` and `-` alone, and a basic string otherwise.
-#[repr(transparent)]
-struct Key<'text>(&'text str);
-
-impl core::fmt::Display for Key<'_>
-{
-    /// # Specification
-    /// trivial.
-    fn fmt(
-        &self,
-        f: &mut core::fmt::Formatter<'_>,
-    ) -> core::fmt::Result
-    {
-        if !self.0.is_empty()
-            && self
-                .0
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-        {
-            f.write_str(self.0)
-        }
-        else {
-            Basic(self.0).fmt(f)
         }
     }
 }

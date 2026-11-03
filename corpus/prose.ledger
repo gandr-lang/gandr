@@ -204,7 +204,7 @@ corpus/ledger/features/specification-monads.gandr Tense f32bc3c0e5b58f4d
 corpus/ledger/features/spinal-duplication.gandr Tense 0f7bf85f8890fdff
 corpus/ledger/features/spinal-duplication.gandr Tense 230726ff60b0ada4
 corpus/ledger/features/spinal-duplication.gandr Glossary 0f7bf85f8890fdff
-corpus/ledger/features/std-build.gandr Passive 1a5c0118912a83da
+corpus/ledger/features/std-build.gandr Passive a15efffcb8c5196b
 corpus/ledger/features/std-build.gandr Tense f5e17851c8523bea
 corpus/ledger/features/std-string.gandr Tense 240a1f21bd78d871
 corpus/ledger/features/std-string.gandr Tense 3475dfd94a80588d
@@ -1309,7 +1309,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnknownCon
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnknownGenerator.txt Procedure 501323a4a2c6a177
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnknownTactic.txt Procedure 93c38e17aac983f3
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/Unlocated.txt Procedure c7bd7e2325683c3a
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnlockedDependency.txt Procedure 52efa636d41f96c0
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnlockedDependency.txt Procedure 1828db136ebde16d
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnmarkedSelfReference.txt Procedure 4db31bd807aaf1cf
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnofferedLabel.txt Procedure b4dcad7d404f7cf3
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnprovenLaw.Admitted.txt Procedure 6dd4420754dc5df4

@@ -231,10 +231,10 @@ pub enum ImportTarget
     Unresolved,
     /// A source whose imports lead back to the importer.
     Cycle,
-    /// A module path whose head names nothing among the package's sources and
-    /// no dependency its lock records: an alias the package's `dependencies`
-    /// may declare and its `gandr.lock` does not yet hold (#533 p3). The import
-    /// binds nothing, and a name read through it is refused at that name.
+    /// A module path whose head names nothing among the package's sources, or
+    /// a coordinate the package's `gandr.lock` does not yet record (#533 p3,
+    /// #4527). The import binds nothing, and a name read through it is refused
+    /// at that name.
     Unlocked,
 }
 

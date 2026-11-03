@@ -180,7 +180,6 @@ use gandr_surface_dispatcher::lay_out_shadowed;
 use gandr_surface_dispatcher::named_path;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RoleTable;
-use gandr_surface_lowering::Address;
 use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::SourceIndex;
@@ -980,12 +979,7 @@ fn imported(
     let resolution = import.ordinal.map_or_else(
         || Gap::Foreign.closing(),
         |ordinal| {
-            let base = if import.written.address == Address::Module {
-                ImportBase::Root
-            }
-            else {
-                ImportBase::Importer
-            };
+            let base = ImportBase::of(import.written.address).unwrap_or(ImportBase::Importer);
             let named = ImportPath::new(String::from(import.written.uri.as_ref()), base)
                 .resolved(hovering.document.parent().unwrap_or(&hovering.document));
             let file = named_path(named.file());
@@ -1006,7 +1000,7 @@ fn imported(
                 },
                 Some(&ImportTarget::Unlocked) => format!(
                     "`{}` names no module of this package and no dependency its `gandr.lock` \
-                     records: declare it in `dependencies` and run `gandr lock`.",
+                     records: run `gandr lock` to lock the coordinate it imports.",
                     import.written.uri.as_ref()
                 ),
                 Some(&ImportTarget::Cycle) => format!(

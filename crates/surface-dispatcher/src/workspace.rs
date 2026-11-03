@@ -227,8 +227,8 @@ impl Workspace
 ///   the program's machine in order, its value spelled; `Undeclared` at a name
 ///   the source declares nowhere.
 /// - provides: the one reading of the values a source states about its own
-///   package, workspace, site or manifold: a workspace's `members`, a package
-///   source's `dependencies`, a site's model and a manifold's.
+///   workspace, site or manifold: a workspace's `members`, a site's model and a
+///   manifold's.
 /// - fails: [`Unran::Unread`] for a source that cannot be read, and
 ///   [`Unran::Refused`] for one that does not compose or is refused as a whole.
 /// - panics: none.
@@ -239,10 +239,9 @@ impl Workspace
 /// [`Unran`], as above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the witnesses of [`Workspace::members`],
-///   [`Package::dependencies`], [`Site::read`] and [`Manifold::read`].
+/// - hypothesis: L3 — the witnesses of [`Workspace::members`], [`Site::read`]
+///   and [`Manifold::read`].
 /// - witness: `tests::package::a_workspace_walks_every_member_it_names_2687`
-/// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
 /// - witness: `manifold::tests::a_site_and_a_manifold_read_from_their_files_3374`
 ///
 /// [`Site::read`]: crate::manifold::Site::read
@@ -611,34 +610,6 @@ impl Spelling<'_>
         self.listed_as(Self::quoted)
     }
 
-    /// The dependencies the spelling lists: `cons(#{.alias = "a", .coordinate
-    /// = Path("../a")}, nil)` is the alias `a` at the path `../a`, each string
-    /// decoded; none for any other spelling.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the alias and path of each element of a spelling `cons(d₁,
-    ///   cons(d₂, … nil))`, each `dᵢ` written `#{.alias = a, .coordinate =
-    ///   Path(p)}` with `a` and `p` quoted strings, in order; none when
-    ///   anything else stands anywhere in it.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — as [`Self::listed`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — two dependencies, none, and a record missing its
-    ///   coordinate each read as listed or not.
-    /// - witness: `workspace::tests::a_run_s_spelling_lists_its_dependencies_3072`
-    #[inline]
-    pub fn dependencies(self) -> Option<Vec<(String, String)>>
-    {
-        self.listed_as(|spelling| {
-            let (alias, Self(rest)) = Self(spelling.0.strip_prefix("#{.alias = ")?).quoted()?;
-            let (path, Self(rest)) = Self(rest.strip_prefix(", .coordinate = Path(")?).quoted()?;
-            Some(((alias, path), Self(rest.strip_prefix(")}")?)))
-        })
-    }
-
     /// The placements the spelling lists: `cons(At("far", #{.key = "<key>",
     /// .secret = "far", .sockets = "127.0.0.1:4733"}), nil)` is the world
     /// `far` at the site of that key and socket, once, and `Instances("far",
@@ -850,34 +821,6 @@ mod tests
         ] {
             assert_eq!(Spelling(other).listed(), None, "`{other}` lists no strings");
         }
-    }
-
-    #[test]
-    fn a_run_s_spelling_lists_its_dependencies_3072()
-    {
-        let pair = |alias: &str, path: &str| (String::from(alias), String::from(path));
-        assert_eq!(
-            Spelling(
-                "cons(#{.alias = \"hello\", .coordinate = Path(\"../hello\")}, cons(#{.alias = \
-                 \"tools\", .coordinate = Path(\"../tools\")}, nil))"
-            )
-            .dependencies(),
-            Some(Vec::from([
-                pair("hello", "../hello"),
-                pair("tools", "../tools")
-            ])),
-            "two dependencies read in order"
-        );
-        assert_eq!(
-            Spelling("nil").dependencies(),
-            Some(Vec::new()),
-            "no dependency reads as none"
-        );
-        assert_eq!(
-            Spelling("cons(#{.alias = \"hello\"}, nil)").dependencies(),
-            None,
-            "a dependency without its coordinate lists nothing"
-        );
     }
 
     #[test]

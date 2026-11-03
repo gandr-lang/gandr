@@ -2066,7 +2066,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','cells::Census','struct','The ce
 INSERT INTO purpose VALUES('surface-dispatcher','cells::CensusFault','enum','Why a path''s cells could not be read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','cells::CensusStep','enum','One step of a census.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::Freshness','enum','How a read held of a file is known to be current.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','component::ImportBase','enum','The directory an import''s file is named relative to: the importer''s, or the package''s root module''s.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','component::ImportBase','enum','The directory an import''s file is named relative to: the importer''s, the package''s root for a coordinate, or the package''s root module''s.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::ImportPath','struct','The file a path or module import names, and the directory it is named relative to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::Laid','struct','A source''s import closure laid out as one unit.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::Named','enum','The file an import names: of the package, beside the importer or of a locked dependency, or a module path no module and no locked dependency answers.',NULL,'fits','sound',NULL);
@@ -2204,15 +2204,12 @@ INSERT INTO purpose VALUES('surface-dispatcher','package::export::Export','struc
 INSERT INTO purpose VALUES('surface-dispatcher','package::export::Exporting','struct','A package''s export as a walk''s steps build it, until a source that does not settle leaves the package with none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::export::Unexported','enum','Why a package has no export: a source that did not settle, was not checked, has no UTF-8 path, or whose artifact does not cut into declaration records.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::export::Unreadmitted','enum','Why a stored export does not re-admit: an artifact the kernel''s decoder refuses, or one whose replay the kernel refuses at a declaration, named by the first source it was admitted for.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Alias','struct','The name a source imports a dependency by.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Coordinate','enum','Where a dependency is found, never part of what it is: a path from the dependent''s root.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Dependency','struct','A dependency as a library''s `dependencies` declares it: its alias and its coordinate.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Coordinate','enum','Where a dependency is found, as an import writes it and never part of what it is: a path from the dependent''s root.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::lock::LOCK','constant','The file name of the lock the checker writes at a package''s root.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Lock','struct','A package''s lock: each dependency by its alias, at its coordinate, address and signature key.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Lock','struct','A package''s lock: each coordinate its sources import, at the pointer its address and signature key stand at.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::lock::LockFault','enum','Why a lock was not reconciled: it drifted from what the dependencies resolve to, was edited by hand, or could not be read or written.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Locked','struct','One dependency as its dependent''s lock records it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::lock::SignatureKey','struct','A package''s signature key: the digest of the dotted paths its root exports.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Unresolved','enum','Why a package''s dependencies resolve to no lock: an unreadable `dependencies`, a coordinate rooting no package, a cycle, a stale dependency lock, an alias twice, or a dependency with no address.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::lock::Unresolved','enum','Why a package''s dependencies resolve to no lock: an unreadable source, a coordinate rooting no package, a cycle, a stale dependency lock, or a dependency with no address.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::lock::relock','function','Write a package''s lock as its dependencies resolve, whatever stands there.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::packaged','function','The paths a verb walks, each path inside a package widened to the whole package and a workspace''s directory to its members, and the packages they reach.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::reconcile','function','Bring a file the checker writes, a package''s manifest or its lock, to its model, refusing one edited by hand or drifted.',NULL,'fits','sound',NULL);
@@ -2671,7 +2668,8 @@ INSERT INTO purpose VALUES('surface-lowering','model::SortTerm','struct','Holds 
 INSERT INTO purpose VALUES('surface-lowering','model::StatedLaw','struct','Holds a stated law, so the law''s sides are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','model::Variable','struct','Holds a variable a model''s component binds, so the component''s variable is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','model::derive','function','Derives a model''s signature from a theory''s presentation, so the signature''s components are read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lowering','module::Address','enum','Names a module''s address, so the module''s address is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','module::Address','enum','Names what an import''s address is: a scheme, a package''s coordinate, a path or a module path.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','module::COORDINATE','constant','Names the scheme of a package''s coordinate, so an import of `path:` reads a package''s root module.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::CodataIndex','struct','Names the index of a codata family, so the family''s index is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::Coerced','struct','Holds a coerced component, so the component''s coercion is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::ConstructorSpelling','enum','Names a constructor''s spelling, so the constructor''s spelling is read.',NULL,'fits','sound',NULL);

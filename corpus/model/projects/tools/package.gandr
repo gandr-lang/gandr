@@ -8,12 +8,12 @@ pub theory Greeting where {
   oper welcome : String;
 }
 
-// The sibling package this one depends on, read through `gandr.lock` by its
-// alias (#3072), at the signature above: its `welcome` and no other member
-// (#3098).
-import hello : Greeting;
-// The manifest theories, and the dependency a package source lists.
-import std.build (Gandr, Path, Dependency);
+// The sibling package this one depends on, found at its coordinate and read
+// through `gandr.lock` (#3072, #4527), at the signature above: its `welcome`
+// and no other member (#3098).
+import "path:../hello" as hello : Greeting;
+// The manifest theories.
+import std.build (Gandr);
 
 /// The package: its name, the version its workspace states, and the rest of
 /// what `gandr.toml` records.
@@ -41,11 +41,6 @@ pub module Package : Model(Gandr.Package) where {
   /// the user's own: ASCII.
   def spelling = "ascii";
 }
-
-/// The packages this one depends on: `hello`, found at its sibling's root.
-pub def dependencies : List(Dependency) = [
-  #{alias = "hello", coordinate = Path("../hello")},
-];
 
 /// hello's greeting, which the alias reads through the lock.
 @[ runs("\"hello, world\"") ]

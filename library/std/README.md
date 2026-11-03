@@ -14,7 +14,7 @@ Packages and modules are lowercase, and types and theories are capitalized: `std
 
 | module | holds | absorbs | seam | status |
 | ------ | ----- | ------- | ---- | ------ |
-| `std.build` | `Versioned` and `Toolchain`, which `Project` joins, `Presentation`, `Gandr.Package`, `Gandr.Workspace`, `Gandr.Module` with no model yet, and `Dependency` and `Coordinate`, which a library's `dependencies` lists (#533 p2, p3, p5) | the prelude's manifest theories; `corpus/model/projects/` imports it | none: no host access | landed |
+| `std.build` | `Versioned` and `Toolchain`, which `Project` joins, `Presentation`, `Gandr.Package`, `Gandr.Workspace`, and `Gandr.Module` with no model yet (#533 p2, p5) | the prelude's manifest theories; `corpus/model/projects/` imports it | none: no host access | landed |
 | `std.layout` | Rust's default layout as a program over codes: `Scalar`, `Fields`, `Variants`, `structLayout`, `enumLayout` (#2804) | the program of `corpus/model/layouts/rust-default.gandr`, which keeps its rustc witnesses | none: no host access | landed |
 | `std.boundary` | a function row of the foreign boundary: `Code`, `Row`, the witness record `summary` reads off `std.layout`, `Printed`, `Declared` and `admit` with the `Clause` it names (#2900) | the row and `admit` of `corpus/model/interop/boundary/function-row.gandr`, which keeps its externs | none: no host access | landed |
 | `std.grade` | `Grade`, an ordered semiring's operations, with its models `Usage`, the grades the tree writes, and `Count` over the prelude's binary `Nat`; `Hom`, a named map between two algebras, with `collapse`; `fits` and `covers`, each order decided by conversion (#3287) | none | none: no host access | landed |
