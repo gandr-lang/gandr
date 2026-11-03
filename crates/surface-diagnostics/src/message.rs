@@ -589,6 +589,13 @@ fn lowered(
         LoweringRefusal::NotAFunctor { name, .. } => {
             write!(f, "`{name}` is not a functor declared before this binding")
         },
+        LoweringRefusal::NotAModel { name, .. } => {
+            write!(
+                f,
+                "`{name}` is no binder or definition declared at a model type, so it has no \
+                 members to open"
+            )
+        },
         LoweringRefusal::ProjectionFromApplication { functor, .. } => write!(
             f,
             "an application of `{functor}` is read before it is bound; bind it with `module A = \
@@ -1826,6 +1833,7 @@ pub mod tests
                 constructor: name,
             },
             LoweringRefusal::NotAFunctor { span, name },
+            LoweringRefusal::NotAModel { span, name },
             LoweringRefusal::NotATranslation {
                 span,
                 name,
@@ -2754,7 +2762,7 @@ pub mod tests
         for (form, opening) in [
             (FormName::IDENTIFIER, "an identifier "),
             (FormName::INSTANTIATION, "an instantiation expression "),
-            (FormName::UNPACK_STATEMENT, "an unpack statement "),
+            (FormName::MODULE_STATEMENT, "a module statement "),
             (FormName::UNIT, "a unit "),
             (FormName::HOLE, "a hole "),
             (

@@ -255,6 +255,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::UnknownMember { .. } => "no member of this name",
         LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
         LoweringRefusal::NotAFunctor { .. } => "not a functor",
+        LoweringRefusal::NotAModel { .. } => "not a model",
         LoweringRefusal::NotATranslation { .. } => "no flow of this name",
         LoweringRefusal::ProjectionFromApplication { .. } => {
             "an application read before it is bound"
@@ -782,6 +783,7 @@ mod tests
             LoweringRefusal::UnknownMember { .. } => "no member of this name",
             LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
             LoweringRefusal::NotAFunctor { .. } => "not a functor",
+            LoweringRefusal::NotAModel { .. } => "not a model",
             LoweringRefusal::NotATranslation { .. } => "no flow of this name",
             LoweringRefusal::ProjectionFromApplication { .. } => {
                 "an application read before it is bound"
@@ -1070,6 +1072,7 @@ mod tests
                 constructor: name,
             },
             LoweringRefusal::NotAFunctor { span: at, name },
+            LoweringRefusal::NotAModel { span: at, name },
             LoweringRefusal::NotATranslation {
                 span: at,
                 name,

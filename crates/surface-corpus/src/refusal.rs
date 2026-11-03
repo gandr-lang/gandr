@@ -964,6 +964,8 @@ pub enum RefusalName
     PartialField,
     /// A module binding applying a name that is not a functor.
     NotAFunctor,
+    /// A block's module statement opening a name no model type declares.
+    NotAModel,
     /// An import read through a name that is no flow.
     NotATranslation,
     /// A path read off a functor application rather than off its binding.
@@ -1289,7 +1291,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 236_usize] = [
+    pub const VOCABULARY: [Self; 237_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1396,6 +1398,7 @@ impl RefusalName
         Self::UnknownMember,
         Self::PartialField,
         Self::NotAFunctor,
+        Self::NotAModel,
         Self::NotATranslation,
         Self::ProjectionFromApplication,
         Self::UnreadAscription,
@@ -1615,6 +1618,7 @@ impl RefusalName
         (Self::PhaseDependence, b"PhaseDependence") | (Self::InertRead, b"InertRead") |
         (Self::UnknownMember, b"UnknownMember") | (Self::UnprovenLaw, b"UnprovenLaw") | (Self::PartialField, b"PartialField")
         | (Self::NotAFunctor, b"NotAFunctor")
+        | (Self::NotAModel, b"NotAModel")
         | (Self::NotATranslation, b"NotATranslation")
         | (Self::ProjectionFromApplication, b"ProjectionFromApplication")
         | (Self::UnreadAscription,
@@ -1991,6 +1995,7 @@ impl RefusalName
             Self::UnprovenLaw => "UnprovenLaw",
             Self::PartialField => "PartialField",
             Self::NotAFunctor => "NotAFunctor",
+            Self::NotAModel => "NotAModel",
             Self::NotATranslation => "NotATranslation",
             Self::ProjectionFromApplication => "ProjectionFromApplication",
             Self::UnreadAscription => "UnreadAscription",
@@ -2739,7 +2744,8 @@ impl Refusal<'_>
         RefusalName::InertRead) | (LoweringRefusal::UnknownMember { .. },
         RefusalName::UnknownMember) | (LoweringRefusal::PartialField { .. },
         RefusalName::PartialField) | (LoweringRefusal::NotAFunctor { .. },
-        RefusalName::NotAFunctor) | (LoweringRefusal::NotATranslation { .. },
+        RefusalName::NotAFunctor) | (LoweringRefusal::NotAModel { .. },
+        RefusalName::NotAModel) | (LoweringRefusal::NotATranslation { .. },
         RefusalName::NotATranslation) | (LoweringRefusal::ProjectionFromApplication { .. },
         RefusalName::ProjectionFromApplication) | (LoweringRefusal::UnreadAscription { .. },
         RefusalName::UnreadAscription) | (LoweringRefusal::UnreadCells { .. },
@@ -2845,6 +2851,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::UnknownMember { .. } => RefusalName::UnknownMember,
         LoweringRefusal::PartialField { .. } => RefusalName::PartialField,
         LoweringRefusal::NotAFunctor { .. } => RefusalName::NotAFunctor,
+        LoweringRefusal::NotAModel { .. } => RefusalName::NotAModel,
         LoweringRefusal::NotATranslation { .. } => RefusalName::NotATranslation,
         LoweringRefusal::ProjectionFromApplication { .. } => RefusalName::ProjectionFromApplication,
         LoweringRefusal::UnreadAscription { .. } => RefusalName::UnreadAscription,

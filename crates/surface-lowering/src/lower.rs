@@ -838,21 +838,6 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a tile in a block names no statement.
-    pub mod statement {
-        /// The tile opens none of the statements a block refuses.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The tile is no statement's keyword.
-            NotAKeyword,
-            /// The tile opens a statement the block reads: `let`, `var` or
-            /// `import`.
-            Read,
-        }
-    }
-}
-
-quenchant_shape::reason_enum! {
     /// Why a node sees no manifest type component.
     pub mod scoped {
         /// The node lies in no module signature.
@@ -1859,6 +1844,18 @@ enum StatementBinding
         name: NodeIndex,
         /// The value type `A` written, read in the statement's own frame.
         annotation: NodeIndex,
+    },
+    /// `module m = p ;` ascribes `return p` the returner of the model type
+    /// `p` is declared at, as [`Self::Typed`] does, so the checker binds `m`
+    /// as a variable of that type rather than reading it as `p`.
+    Opening
+    {
+        /// The name's own node.
+        name: NodeIndex,
+        /// The model type `p` is declared at, read in its own frame.
+        stated: NodeIndex,
+        /// The frame the statement stands in, which the type is carried to.
+        frame: Frame,
     },
     /// `let (x, y, …) : A = c ;` ascribes `c` the returner `-F A`, as
     /// [`Self::Typed`] does, and splits the tuple it returns, as
@@ -3484,6 +3481,9 @@ struct Lowerer<'run, 'source>
     /// of one. A value there is returned to the handler's return clause, as
     /// the subject's result; neither it nor a computation there is an exit.
     results: BTreeSet<NodeIndex>,
+    /// The operand of each block's `module m = p ;`, with the type node `p`
+    /// is declared at, which must plan as a model type's bundle.
+    opened_models: BTreeMap<NodeIndex, NodeIndex>,
     /// The value positions a `let` binding a name binds: a computation there
     /// is carried nested at [`Insertion::Bound`], the run the `let` writes.
     let_bound: BTreeSet<NodeIndex>,
@@ -5439,6 +5439,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             reheld: BTreeMap::new(),
             carries: BTreeMap::new(),
             results: BTreeSet::new(),
+            opened_models: BTreeMap::new(),
             let_bound: BTreeSet::new(),
             framed: BTreeSet::new(),
             looped_past: BTreeSet::new(),
@@ -8502,7 +8503,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.resolved(site.at.span, resolved);
                 let plan = self.resolved_term(site, frame, resolved)?;
                 self.plan(site, plan);
-                Ok(())
+                self.opened_model(site)
             },
             Maybe::Absent(_) => {
                 if name.as_ref() == identity::NIL {
@@ -10843,23 +10844,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     return Err(as_block.out(FragmentBoundary::Arity(OperandCount::from(0_usize))));
                 },
                 Maybe::Present(Piece::Tile { label, at }) => {
-                    match statement_form(label) {
-                        Maybe::Present((form, boundary)) => {
-                            return Err(LoweringRefusal::OutOfFragment {
-                                span: at.span,
-                                form,
-                                sort: FragmentSort::Computation,
-                                boundary,
-                            });
-                        },
-                        Maybe::Absent(statement::Absent::NotAKeyword) => {
-                            return Err(site.fault(at.span, FormFault::MisplacedTile));
-                        },
-                        Maybe::Absent(statement::Absent::Read) => {},
+                    if !STATEMENT_KEYWORDS.contains(&label) {
+                        return Err(site.fault(at.span, FormFault::MisplacedTile));
                     }
                     let _keyword = cursor.read();
-                    frame = if label == TileName::LET {
-                        let after = self.let_statement(cursor, at, frame)?;
+                    frame = if label == TileName::LET || label == TileName::MODULE {
+                        let after = if label == TileName::LET {
+                            self.let_statement(cursor, at, frame)?
+                        }
+                        else {
+                            self.module_statement(cursor, at, frame)?
+                        };
                         match self.statements.last() {
                             Some(&Statement { bound, .. }) => {
                                 self.threads(site, bound, (frame, after))?
@@ -19091,6 +19086,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | StatementBinding::Let(_)
                 | StatementBinding::TypedLet { .. }
                 | StatementBinding::Typed { .. }
+                | StatementBinding::Opening { .. }
                 | StatementBinding::Forked { .. }
                 | StatementBinding::Received { .. }
                 | StatementBinding::Held { .. }
@@ -19175,6 +19171,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     sink.origins.record_computation(ascribed, origin);
                     ascribed
                 },
+                StatementBinding::Opening { stated, frame, .. } => {
+                    let Maybe::Present(written) = self.value_type_at(stated)
+                    else {
+                        return Maybe::Absent(lowered::Absent::Unminted);
+                    };
+                    // The model type was read where `p` is declared, a frame
+                    // of the statement's chain; the ascription stands in the
+                    // statement's body context.
+                    let result = self.annotation_in_context(
+                        statement.bound,
+                        written,
+                        self.reading(stated).frame(),
+                        frame,
+                        sink,
+                        origin,
+                    );
+                    let returner = sink.arena.comp_type_returner(result);
+                    sink.origins.record_comp_type(returner, origin);
+                    let ascribed = sink.arena.computation_ascribe(bound, returner);
+                    sink.origins.record_computation(ascribed, origin);
+                    ascribed
+                },
                 StatementBinding::Named(_)
                 | StatementBinding::Placed(_)
                 | StatementBinding::Let(_)
@@ -19191,7 +19209,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             sink.origins.record_computation(id, origin);
             if let StatementBinding::Named(name)
             | StatementBinding::Placed(name)
-            | StatementBinding::Typed { name, .. } = statement.binding
+            | StatementBinding::Typed { name, .. }
+            | StatementBinding::Opening { name, .. } = statement.binding
                 && let Maybe::Present(name) = self.origin_at(name)
             {
                 sink.origins.record_binder(id, name);
@@ -19205,6 +19224,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let StatementBinding::Named(written)
             | StatementBinding::Placed(written)
             | StatementBinding::Typed { name: written, .. }
+            | StatementBinding::Opening { name: written, .. }
             | StatementBinding::Split {
                 pattern: written, ..
             }
@@ -19258,7 +19278,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         | StatementBinding::Held { value, stated: Maybe::Present(stated), .. } => (ret == Maybe::Present(())) == (matches!(self.value_at(value), Maybe::Present(_)) && matches!(self.value_type_at(stated), Maybe::Present(_))),
         | StatementBinding::Let(_) => (ret == Maybe::Present(())) == matches!(self.value_at(statement.bound), Maybe::Present(_)),
         | StatementBinding::TypedLet { annotation, .. } | StatementBinding::Located { annotation, .. } => (ret == Maybe::Present(())) == (matches!(self.value_at(statement.bound), Maybe::Present(_)) && matches!(self.value_type_at(annotation), Maybe::Present(_))),
-        | StatementBinding::Typed { annotation, .. } | StatementBinding::TypedSplit { annotation, .. } => (ret == Maybe::Present(())) == (matches!(self.computation_at(statement.bound), Maybe::Present(_)) && matches!(self.value_type_at(annotation), Maybe::Present(_))),
+        | StatementBinding::Typed { annotation, .. } | StatementBinding::TypedSplit { annotation, .. } | StatementBinding::Opening { stated: annotation, .. } => (ret == Maybe::Present(())) == (matches!(self.computation_at(statement.bound), Maybe::Present(_)) && matches!(self.value_type_at(annotation), Maybe::Present(_))),
         | _ => (ret == Maybe::Present(())) == matches!(self.computation_at(statement.bound), Maybe::Present(_)),
     })]
     fn statement_parts(
@@ -19295,7 +19315,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .and_then(|_value| self.value_type_at(annotation))
                 .map(|_annotation| ()),
             StatementBinding::Typed { annotation, .. }
-            | StatementBinding::TypedSplit { annotation, .. } => self
+            | StatementBinding::TypedSplit { annotation, .. }
+            | StatementBinding::Opening {
+                stated: annotation, ..
+            } => self
                 .computation_at(statement.bound)
                 .and_then(|_bound| self.value_type_at(annotation))
                 .map(|_annotation| ()),
@@ -22900,76 +22923,14 @@ fn parameter<'source>(
     }
 }
 
-/// The statements a block opens with a keyword the fragment does not read, by
-/// that keyword, with the form a refusal names each by and the way each
-/// leaves the fragment: `unpack` is not admitted.
-///
-/// # Specification
-/// - requires: lookup is by a block’s leading keyword.
-/// - ensures: each listed keyword retains its distinct refused statement form
-///   and boundary.
-/// - provides: the keyword-to-refusal naming table.
-/// - fails: no default entry for an unlisted keyword.
-/// - panics: none.
-/// - executable: none — the specification attribute does not accept constant
-///   items; `statement_form` checks the lookup.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the refused statement cases retain their own form names
-///   and boundaries.
-/// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
-const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 1_usize] = [(
-    TileName::UNPACK,
-    FormName::UNPACK_STATEMENT,
-    FragmentBoundary::Unadmitted(Unbuilt::Unpack),
-)];
-
-/// The refused statement the tile `label` opens, with the way it leaves the
-/// fragment.
-///
-/// # Specification
-/// - requires: `label` is a tile in a block, at a place a statement may start.
-/// - ensures: a keyword of the table its form and boundary; `let`, `var` and
-///   `import` open statements the block reads, [`statement::Absent::Read`].
-/// - provides: the names a block's refused statements are written as;
-///   [`statement::Absent::NotAKeyword`] for a tile no statement starts with.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the refused statement spellings receive their own form
-///   names and boundaries.
-/// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
-#[spec(
-    ensures: |ret| {
-        ret == if label == TileName::LET || label == TileName::VAR || label == TileName::IMPORT {
-            Maybe::Absent(statement::Absent::Read)
-        }
-        else {
-            UNREAD_STATEMENTS
-                .iter()
-                .find(|&&(keyword, _form, _boundary)| keyword == label)
-                .map_or(
-                    Maybe::Absent(statement::Absent::NotAKeyword),
-                    |&(_keyword, form, boundary)| Maybe::Present((form, boundary)),
-                )
-        }
-    },
-)]
-fn statement_form(label: TileName) -> Maybe<(FormName, FragmentBoundary), statement::Absent>
-{
-    if label == TileName::LET || label == TileName::VAR || label == TileName::IMPORT {
-        return Maybe::Absent(statement::Absent::Read);
-    }
-
-    UNREAD_STATEMENTS
-        .iter()
-        .find(|&&(keyword, _form, _boundary)| keyword == label)
-        .map_or(
-            Maybe::Absent(statement::Absent::NotAKeyword),
-            |&(_keyword, form, boundary)| Maybe::Present((form, boundary)),
-        )
-}
+/// The keywords a block statement opens with: `let`, `var`, `import` and
+/// `module`.
+const STATEMENT_KEYWORDS: [TileName; 4_usize] = [
+    TileName::LET,
+    TileName::VAR,
+    TileName::IMPORT,
+    TileName::MODULE,
+];
 
 /// The feature a form named `name`, written where a pattern is read and taken
 /// by no pattern reading, is refused by.

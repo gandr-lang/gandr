@@ -1223,6 +1223,16 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
+    /// A block's `module m = p ;` whose `p` names no binder or definition
+    /// declared at a model type: the opening has no members to read.
+    NotAModel
+    {
+        /// The bytes of the opened operand.
+        span: ByteSpan,
+        /// The operand as the statement wrote it.
+        name: SurfaceName<'source>,
+    },
+
     /// An import read `via f` whose `f` names no flow declared before the
     /// import in its source, nor one its source publishes: every declaration
     /// of the importing source is refused at the name.
@@ -2134,6 +2144,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 "`{name}` is applied as a functor, and no functor `{name}` is declared before \
                  the binding"
             ),
+            Self::NotAModel { name, .. } => write!(
+                f,
+                "`{name}` is opened as a model, and no binder or definition declares it at a \
+                 model type"
+            ),
             Self::NotATranslation { name, .. } => write!(
                 f,
                 "the import is read via `{name}`, and no flow `{name}` is declared before the \
@@ -2573,6 +2588,7 @@ impl LoweringRefusal<'_>
             | Self::UnknownMember { span, .. }
             | Self::PartialField { span, .. }
             | Self::NotAFunctor { span, .. }
+            | Self::NotAModel { span, .. }
             | Self::NotATranslation { span, .. }
             | Self::ProjectionFromApplication { span, .. }
             | Self::UnreadAscription { span, .. }
@@ -2690,7 +2706,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 76_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 77_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -3035,6 +3051,10 @@ mod tests
                 span: s(143_usize, 144_usize),
                 kind: CellsKind::Compose,
             },
+            LoweringRefusal::NotAModel {
+                span: s(145_usize, 146_usize),
+                name: SurfaceName::from("count"),
+            },
         ]
     }
 
@@ -3122,6 +3142,7 @@ mod tests
             s(137_usize, 138_usize),
             s(139_usize, 140_usize),
             s(143_usize, 144_usize),
+            s(145_usize, 146_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

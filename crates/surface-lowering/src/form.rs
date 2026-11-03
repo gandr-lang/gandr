@@ -191,7 +191,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 68_usize] = [
+    pub const ALL: [Self; 66_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -208,7 +208,7 @@ impl FormName
         Self::ATTRIBUTE,
         Self::DECLARATION,
         Self::LET_STATEMENT,
-        Self::UNPACK_STATEMENT,
+        Self::MODULE_STATEMENT,
         Self::VAR_STATEMENT,
         Self::RECV_EXPRESSION,
         Self::FORK_EXPRESSION,
@@ -242,10 +242,8 @@ impl FormName
         Self::BOOLEAN,
         Self::NUMBER,
         Self::STRING,
-        Self::PACK,
         Self::PACK_MODEL,
         Self::FORGET_MODEL,
-        Self::PACKAGE_TYPE,
         Self::PROJECTION,
         Self::SHELL_BLOCK,
         Self::TYPED_NUMBER,
@@ -291,15 +289,11 @@ impl FormName
     pub const INSTANTIATION: Self = Self("instantiation_expression");
     /// The module family `module M …`, its members included.
     pub const MODULE: Self = Self("module_declaration");
-    /// The pack `pack [T, …] e`, a module packed into a value.
-    pub const PACK: Self = Self("pack_expression");
     /// The pack `pack M at Model(T)`, a module packed at its model type.
     pub const PACK_MODEL: Self = Self("pack_model_expression");
     /// The forgetting `forget[sort C = A, …](m) at Model(T)`, a model whose
     /// sorts are manifest read as a model of its theory.
     pub const FORGET_MODEL: Self = Self("forget_model_expression");
-    /// The package type `package [T, …] P`, the type of a packed module.
-    pub const PACKAGE_TYPE: Self = Self("package_type");
     /// One typed parameter `name : T`, folded into its parameter list.
     pub const PARAMETER: Self = Self("parameter");
     /// A parameter list, explicit `( … )` or implicit `@[ … ]`, folded into the
@@ -325,8 +319,9 @@ impl FormName
     /// grammar folds into the parenthesised expression, which the lowering
     /// refuses as an empty list.
     pub const UNIT: Self = Self("unit");
-    /// The statement `unpack … = e ;`, inlined into its block.
-    pub const UNPACK_STATEMENT: Self = Self("unpack_statement");
+    /// The statement `module m = e ;`, which opens the model `e` as `m` over
+    /// the rest of its block, inlined into its block.
+    pub const MODULE_STATEMENT: Self = Self("module_statement");
     /// The statement `let p = e ;` or `let p : A = e ;`, inlined into its
     /// block.
     pub const LET_STATEMENT: Self = Self("let_statement");
@@ -690,8 +685,6 @@ impl TileName
     pub const TYPE_VARIABLE: Self = Self("type_variable");
     /// The universe keyword `Type`.
     pub const UNIVERSE: Self = Self("Type");
-    /// The unpack keyword `unpack`, opening a statement.
-    pub const UNPACK: Self = Self("unpack");
     /// The unwind of a temporary access, `unwind`.
     pub const UNWIND: Self = Self("unwind");
     /// The mode word `shared` of a temporary access.
@@ -1159,7 +1152,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 138_usize] = [
+pub const FORMERS: [(&str, Former); 136_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1310,8 +1303,6 @@ pub const FORMERS: [(&str, Former); 138_usize] = [
     ),
     ("manifest_sort", Former::Unadmitted(Unbuilt::ManifestSort)),
     ("or_pattern", Former::Unadmitted(Unbuilt::OrPattern)),
-    ("pack_expression", Former::Unadmitted(Unbuilt::Pack)),
-    ("package_type", Former::Unadmitted(Unbuilt::PackageType)),
     ("pipeline", Former::Unadmitted(Unbuilt::Pipeline)),
     (
         "redirection_operator",

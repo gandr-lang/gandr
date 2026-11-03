@@ -1,22 +1,54 @@
-// A package's hidden type cannot leak: a consumer that returns the seed at
-// the hidden type `T` as an `Integer` is refused. The lowering admits no
-// package type, `pack` or `unpack` yet (#1108), so that refusal stands in
-// front of the leak.
+/// An opened model's sort cannot leave its block.
+///
+/// Each `module m = p ;` binds a fresh sort. A seed read at the integers the
+/// model hides is refused, and two openings of one model are two types. A
+/// block whose type names the sort is refused at the opening.
 
-/// Opens a package and returns its seed as an integer (#1108).
-@[ refuses("OutOfFragment.unpack_statement") ]
-def leak(p : package [T] +U[ω] (-F #{seed : T})) -> -F Integer {
-  unpack m : package [T] +U[ω] (-F #{seed : T}) = p;
-  let r = force m;
-  r.seed
+/// A counter: a seed and a reading of it.
+theory Seeded where {
+  /// What the counter counts in.
+  sort T : Type;
+  /// The reading of a count.
+  oper read : (t : T) --> Integer;
+  /// The first count.
+  oper seed : T;
 }
 
-/// A counter over integers, packed (#1108).
-@[ refuses("OutOfFragment.package_type") ]
-def counter : package [T] +U[ω] (-F #{seed : T});
-def counter = pack [Integer] thunk { return #{seed = 7} };
+/// A counter over integers.
+module Ints : Model(Seeded) where {
+  /// Counts are integers.
+  type T = Integer;
+  /// A count reads as itself.
+  def read(n : Integer) -> Integer { n }
+  /// Seven.
+  def seed = 7;
+}
 
-/// The counter's seed leaked; `leak` is refused above, so it names a
-/// declaration whose type is not known.
-@[ refuses("UnknownConstant") ]
-def leaked() -> Integer { leak(counter) }
+/// The counter as a value at its model type.
+def ints : Model(Seeded) = Ints;
+
+/// Returns the seed at the integers its sort stands for.
+@[ refuses("TypeMismatch") ]
+def leak() -> Integer {
+  module m = ints;
+  m.seed
+}
+
+/// Reads one opening's seed through another opening's reader.
+@[ refuses("TypeMismatch") ]
+def mixed() -> Integer {
+  module a = ints;
+  module b = ints;
+  let r = a.read;
+  r(b.seed)
+}
+
+/// Binds a block whose type is the opened sort.
+@[ refuses("DependentBind") ]
+def escaped() -> Integer {
+  let y = {
+    module m = ints;
+    m.seed
+  };
+  7
+}

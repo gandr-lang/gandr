@@ -11197,12 +11197,9 @@ mod tests
             "an operand after the grade is the bridge's, below the arrow"
         );
         assert_eq!(
-            vec!["package [ T ] Integer".to_owned()],
-            spans_of(
-                "def bad : package [ T ] Integer;\ndef bad = pure 1;",
-                "package_type"
-            )?,
-            "a package's operand stays its own when another declaration follows"
+            vec!["+U[1] Integer".to_owned()],
+            spans_of("def bad : +U[1] Integer;\ndef bad = pure 1;", "u_type")?,
+            "a bridge's operand stays its own when another declaration follows"
         );
         assert_eq!(
             vec!["Type[+, 1] -> -F Integer".to_owned()],
