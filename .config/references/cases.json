@@ -20,7 +20,7 @@
     },
     "output": [
       "file\t\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs",
-      "refused\ta References line gives its key a role and what it decides: - `Maillard-2019-dijkstra_monads_all` — <exemplar|lineage|background>: <what it decides>\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs:5",
+      "refused\ta References line gives its key a role and what it decides: - `Maillard-2019-dijkstra_monads_all` — <newest|dependency|anchor|exemplar>: <what it decides>\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs:5",
       "refused\ta key is the library's citation key or `vault:<uuid>`, never a locator: the locator belongs in the README's entry\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs:6",
       "refused\ta vault key is `vault:` and the page's `mint:` uuid, in lower case\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs:7",
       "cite\tvault:01a16c8c-a658-7c31-8c33-b2e2142c0b73\tdemo-crate\tmemo\tlineage\tcrates/demo-crate/src/memo.rs:8"
@@ -64,7 +64,7 @@
       "file\t\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs",
       "cite\tGavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems\tdemo-crate\t\texemplar\tcrates/demo-crate/src/lib.rs:6",
       "locator\tarXiv:1507.01234\tdemo-crate\t\tbackground\tcrates/demo-crate/src/lib.rs:9",
-      "refused\ta References line gives its key a role and what it decides: - `Wrapped-2020-a_key_with_no_role` — <exemplar|lineage|background>: <what it decides>\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs:11",
+      "refused\ta References line gives its key a role and what it decides: - `Wrapped-2020-a_key_with_no_role` — <newest|dependency|anchor|exemplar>: <what it decides>\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs:11",
       "mirror\tGavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems\tdemo-crate\t\texemplar\tcrates/demo-crate/README.md:5"
     ]
   },
@@ -89,6 +89,20 @@
       "corpus\tdoi:10.1051/ita:2002009\tcorpus\tmodel/demo/a.gandr\tbackground\tcorpus/model/demo/a.gandr:2",
       "corpus\tarXiv:2407.09146\tcorpus\tmodel/demo/a.gandr\tbackground\tcorpus/model/demo/a.gandr:2",
       "corpus\tarXiv:2501.11620\tcorpus\tmodel/demo/a.gandr\tbackground\tcorpus/model/demo/a.gandr:3"
+    ]
+  },
+  {
+    "name": "the four roles of a refreshed site are read, and a dependency naming no section is refused (#4533)",
+    "files": {
+      "crates/demo-crate/src/memo.rs": "//! The memo.\n//!\n//! # References\n//!\n//! - `New-2025-a_work` — newest: the construction this module builds.\n//! - `Dep-2024-a_theorem` — dependency: the lemma the fold implements, § 4.2.\n//! - `Dep-2024-another` — dependency: a lemma with no section.\n//! - `Anchor-2023-the_statement` — anchor: the statement the newest work narrows.\n//! - `Old-1998-a_classic` — exemplar: no newer work states it.\n"
+    },
+    "output": [
+      "file\t\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs",
+      "cite\tNew-2025-a_work\tdemo-crate\tmemo\tnewest\tcrates/demo-crate/src/memo.rs:5",
+      "cite\tDep-2024-a_theorem\tdemo-crate\tmemo\tdependency\tcrates/demo-crate/src/memo.rs:6",
+      "refused\ta dependency names the section the site implements: - `Dep-2024-another` — dependency: <what it decides>, § <section>\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs:7",
+      "cite\tAnchor-2023-the_statement\tdemo-crate\tmemo\tanchor\tcrates/demo-crate/src/memo.rs:8",
+      "cite\tOld-1998-a_classic\tdemo-crate\tmemo\texemplar\tcrates/demo-crate/src/memo.rs:9"
     ]
   }
 ]

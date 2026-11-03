@@ -150,8 +150,10 @@ sqlite3 -bail -header -separator $'\t' "$db" "
 # module cites, by a key line of its `# References` or by a DOI or arXiv
 # locator, its README's at the crate root. Beside them, its `work` rows state
 # the year of a work the crates or the corpus cite, written by hand; a row no
-# citation names is dropped. This task rewrites the file from the tree, each
-# row keeping its committed reading, as `sqlite3`'s own dump.
+# citation names is dropped. Its `fidelity` rows, written by hand, record the
+# sites the citation refresh has read, and are kept as written (#4533). This
+# task rewrites the file from the tree, each row keeping its committed
+# reading, as `sqlite3`'s own dump.
 # `check:references` fails while the file is not what this task writes.
 ["ledger:references"]
 description = "Write ledger/references.sql from the citations in the crates' documentation"

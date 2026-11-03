@@ -1258,13 +1258,21 @@ echo "purposes check OK: $(sqlite3 "$db" 'SELECT count(*) FROM purpose;') rows, 
 # crates or the corpus cite that appeared before the cutoff year
 # `.config/references/window.toml` states, at a site no entry there covers;
 # a work whose year neither its key nor a `work` row of the ledger states; and
-# an entry covering no such work (`window.sql`). Each case in
-# `.config/references/cases.json` holds sources and the lines `cites.awk`
-# prints for them, and each case in `.config/references/window.json` the
-# citations, the years and the policy, and the window's findings. Every
-# finding is printed before the gate fails.
+# an entry covering no such work (`window.sql`). A site the citation
+# refresh records in the ledger's `fidelity` table is held to its record
+# (`fidelity.sql`, #4533): a historical site names its follow-up, a site
+# citing one work its traced works, and a narrower newest work its anchor or
+# the statement that none exists; the site no longer cites the work the
+# refresh replaced, and a crate site cites each work by a key line stating
+# what the site takes, never `lineage`, `background` or a bare locator. Each
+# case in `.config/references/cases.json` holds sources and the lines
+# `cites.awk` prints for them, each case in `.config/references/window.json`
+# the citations, the years and the policy, and the window's findings, and
+# each case in `.config/references/fidelity.json` the citations, the corpus
+# sources and the `fidelity` rows, and the refresh's findings. Every finding
+# is printed before the gate fails.
 ["check:references"]
-description = "The references ledger is the crates' citations, each key line keyed and given its role, each README listing its crate's keys, and every work older than the citation window allowed where it is cited"
+description = "The references ledger is the crates' citations, each key line keyed and given its role, each README listing its crate's keys, every work older than the citation window allowed where it is cited, and every site the citation refresh records held to its record"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1303,6 +1311,25 @@ while IFS= read -r case; do
     failed=1
   fi
 done < <(jq -c '.[]' .config/references/window.json)
+while IFS= read -r case; do
+  dir=$(mktemp -d "$fresh/fidelity.XXXXXX")
+  jq -r '.cite[]' <<< "$case" > "$dir/cites.tsv"
+  jq -r '.corpus[]' <<< "$case" > "$dir/corpus"
+  jq -c '.fidelity' <<< "$case" > "$dir/fidelity.json"
+  sqlite3 -bail "$dir/case.db" < ledger/references.sql
+  sqlite3 -bail -tabs "$dir/case.db" 'DELETE FROM reference;' 'DELETE FROM work;' 'DELETE FROM fidelity;' \
+    "INSERT INTO fidelity SELECT value ->> 'crate', value ->> 'module', value ->> 'old', value ->> 'verdict', value ->> 'follow_up',
+       value ->> 'followed', value ->> 'scope', value ->> 'anchor', value ->> 'unanchored' FROM json_each(readfile('$dir/fidelity.json'));" \
+    'CREATE TABLE cite(kind TEXT, key TEXT, crate TEXT, module TEXT, role TEXT, location TEXT);' \
+    ".import $dir/cites.tsv cite" \
+    'CREATE TABLE corpus(path TEXT PRIMARY KEY);' \
+    ".import $dir/corpus corpus"
+  got=$(references_fidelity "$dir/case.db")
+  if [[ "$got" != "$(jq -r '.output | join("\n")' <<< "$case")" ]]; then
+    printf 'references fidelity case FAILED: %s\n  gave:\n%s\n' "$(jq -r .name <<< "$case")" "$got" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/references/fidelity.json)
 db=$fresh/references.db
 references_load "$db"
 references_fresh "$db"
@@ -1357,6 +1384,11 @@ elif [[ -n $window ]]; then
   printf '%s\n' "$window" >&2
   failed=1
 fi
+fidelity=$(references_fidelity "$db")
+if [[ -n $fidelity ]]; then
+  printf '%s\n' "$fidelity" >&2
+  failed=1
+fi
 sqlite3 -bail "$db" "
 SELECT s.shown || ': \`' || r.key || '\` was read on ' || r.read_date || ' at ' || substr(r.read_commit, 1, 12) || ', and ' || s.path || ' has changed since; read it again against the change, then run \`mise run refs:read ' || s.shown || ' ' || r.key || '\`'
 FROM reference r JOIN source s USING (crate, module)
@@ -1371,7 +1403,7 @@ SELECT count(*) || ' rows, ' || count(DISTINCT key) || ' sources at ' || count(D
   || count(*) FILTER (WHERE key NOT GLOB 'doi:*' AND key NOT GLOB 'arXiv:*') || ' by key, the rest by locator; '
   || count(*) FILTER (WHERE read_blob IS NOT NULL) || ' read, '
   || (SELECT count(*) FROM reference r JOIN source s USING (crate, module) WHERE r.read_blob <> s.blob) || ' of them stale'
-FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation window opens in ' || (SELECT cutoff FROM window) || ', ' || count(*) || ' allowlist entries holding what it refuses' FROM allow;")"
+FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation window opens in ' || (SELECT cutoff FROM window) || ', ' || count(*) || ' allowlist entries holding what it refuses' FROM allow;"); $(sqlite3 "$db" "SELECT count(DISTINCT crate || ' ' || module) || ' sites the citation refresh records' FROM fidelity;")"
 {% endraw %}'''
 
 # The stacking rule's readings (#1264): `open.jq` reads the open pull
