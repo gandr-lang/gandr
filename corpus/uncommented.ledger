@@ -4155,6 +4155,10 @@ pending/surface/data-operation-members.gandr:NatRule:cfa503c6a3597141 uncommente
 pending/surface/desc-declined-metadata.gandr:<file> uncommented
 pending/surface/desc-declined-metadata.gandr:Declared.Mk:8ebba07737aad3eb uncommented
 pending/surface/desc-declined-metadata.gandr:Declared:5bc45bf773d25595 uncommented
+sketch/oracles/proofs.gandr:disjoint:914bb60ff1585184 uncommented
+sketch/oracles/proofs.gandr:midpoint:fdc31bb1ea7ce0e4 uncommented
+sketch/oracles/solver.gandr:checkedZ3:82f3b0a195ce85a5 uncommented
+sketch/oracles/solver.gandr:satisfiable:fd0d835eb561709c uncommented
 sketch/specifications/queue.gandr:drain:d568a5a779ec12f8 uncommented
 sketch/specifications/queue.gandr:push:b5eef6bbe1ed3cfe uncommented
 sketch/specifications/spec-values.gandr:listLookup:8e6853a1855f6212 uncommented
