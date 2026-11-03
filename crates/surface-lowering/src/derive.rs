@@ -1,4 +1,4 @@
-//! `derive r : l <=> r in T`: an equation over the operations of the theory
+//! `rule T.r : l <=> r;`: an equation over the operations of the theory
 //! `T` that every model of `T` keeps.
 //!
 //! The statement holds because the theory's completed rules rewrite both

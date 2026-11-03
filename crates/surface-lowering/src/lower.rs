@@ -3713,7 +3713,7 @@ struct Lowerer<'run, 'source>
     nominations: BTreeMap<gandr_core_term::hole::HoleId, implicit::Nomination<'source>>,
     /// Each callable operation's minted type and body, by slot.
     operated: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
-    /// Each derived rule's minted type and proof, by slot: a `derive`
+    /// Each derived rule's minted type and proof, by slot: a derived rule
     /// declaration's statement and each lemma its proof rests on.
     derivations: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// The prelude's `Eq.generic`, once the prelude is declared.
@@ -5834,7 +5834,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: the collection pass has run.
     /// - ensures: each top-level declaration is declared as a definition — a
-    ///   `theory` block's governing the path `T.r` of each rule a `derive`
+    ///   `theory` block's governing the path `T.r` of each rule a derived rule
     ///   declaration of its source derives in it, and the path `T.S` of the
     ///   reduct to each theory `S` it includes, as a component, and a theory an
     ///   earlier source declares gaining `T.r` from the deriving source on —

@@ -1078,7 +1078,7 @@ pub enum RefusalName
     /// A critical pair of a block's rules the coincidence check's budget left
     /// undecided.
     RulesUndecided,
-    /// A `derive` declaration whose statement its theory's completed rules
+    /// A derived rule declaration whose statement its theory's completed rules
     /// do not prove.
     UnderivedRule,
     /// A model writing a component under the name of a rule its theory

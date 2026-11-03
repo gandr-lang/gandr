@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xd806681e3a52f996`
+- Grammar fingerprint: `0xbb127bca48267c01`
 - Rules: 174 — 173 committed, 1 internal
-- Molds: 2929
+- Molds: 2930
 - Attributes: 17
 
 ## Reading a form
@@ -44,7 +44,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`extern_block`](../corpus/ledger/syntax/extern-block.gandr) | `extern ⦅ " ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* " ‖ ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ⦆ from " ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* " ⦅ as ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦆? { ⦅ type ‹type_identifier› ; ‖ def ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> TYPE ⦆? ; ⦆* }` | `item.singleton` | `extern_block` | unadmitted | Keyword, StringLit, Escape, Type, Variable, Other, Member, VariableDef, FunctionDef, VariableParam, TypeVariable, Operator |
 | [`theory_declaration`](../corpus/ledger/syntax/theory-declaration.gandr) | `theory ‹type_identifier› ⦅ . ‹type_identifier› ⦆* where { ⦅ ⦅ ⟨attribute_block⟩ ⦆* ⦅ sort ‹type_identifier› ⦅ ( ⦅ ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ‖ bind ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ‖ ‹type_identifier› : TYPE ⦆ ⦅ , ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ‖ bind ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ‖ ‹type_identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆? : TYPE ‖ data ‹constructor› : ⦅ TYPE ‖ ( ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ‖ bind ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦅ , ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ‖ bind ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦅ ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ⦅ TYPE ‖ ( ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦆? ‖ ⦅ ⦅ oper ‖ obs ⦆ ‹identifier› ⦅ : ⦅ TYPE ‖ ( ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ‖ bind ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦅ , ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ‖ bind ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦅ ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ⦅ TYPE ‖ ( ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦆? ⦅ { ⦅ node ⦅ ‹identifier› ⦆? : ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ‖ feed ⦅ ‹identifier› ⦆? : ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ⦆* } ⦆? ‖ ( ⦅ ‹identifier› ⦅ : TYPE ⦆? ⦅ , ‹identifier› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⦅ -> TYPE ⦆? ⦆ ‖ rule ‹identifier› ⦅ : ⦅ ( ⦅ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ‖ ‹identifier› : TYPE ⦆ ⦅ , ⦅ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ‖ ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ‖ EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ⦅ where { ⦅ \| ⦅ ‹identifier› # ‹identifier› ‖ under [ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ⦅ \| ‹identifier› ⦆? ] ⦆ ⦆* } ⦆? ⦆ ⦅ { ⦅ node ⦅ ‹identifier› ⦆? : ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ‖ feed ⦅ ‹identifier› ⦆? : ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ⦆* } ⦆? ‖ EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ⦆ ⦆ ‖ shape ‹type_identifier› : ‹number› { ⦅ ‹identifier› = { ⦅ ‹number› ⦅ , ‹number› ⦆* ⦆? } ; ⦆* } ‖ include ‹type_identifier› ‖ ext ‹type_identifier› = ‹type_identifier› on ‹identifier› is ‹identifier› ‖ law ‹identifier› : TYPE ‖ boundary ‹type_identifier› { ⦅ ‹identifier› ⦅ , ‹identifier› ⦆* ⦆? } ‖ face ‹identifier› = { ⦅ ‹identifier› ⦅ , ‹identifier› ⦆* ⦆? } ⦆ ; ⦆* }` | `item.singleton` | `theory_declaration` * | admitted | Keyword, Type, Other, VariableParam, Operator, Constructor, FunctionDef, VariableDef, FunctionCall, Member, Number |
 | [`circuit_declaration`](../corpus/ledger/syntax/circuit-declaration.gandr) | `⦅ oper ‖ rule ⦆ ‹identifier› : ( ⦅ ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ‖ bind ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦅ , ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : ⦅ pi+ ( ‹identifier› : TYPE ) . ‖ bind ( ‹identifier› : TYPE ) . ⦆* TYPE ‖ TYPE ⦆ ‖ rule ‹identifier› : TYPE ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ TYPE ‖ data ‹identifier› : TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦅ , ⦅ ⦅ ‹identifier› ‖ _ ⦆ : TYPE ‖ TYPE ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦆? ⦅ { ⦅ node ⦅ ‹identifier› ⦆? : ‹identifier› ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ‖ feed ⦅ ‹identifier› ⦆? : ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ ( ⦅ ⦅ ‹identifier› ‖ _ ⦆ ⦅ , ⦅ ‹identifier› ‖ _ ⦆ ⦆* ⦅ , ⦆? ⦆? ) ; ⦆* } ⦆?` | `item.singleton` | `circuit_declaration` * | admitted | Keyword, FunctionDef, Other, VariableParam, Operator, VariableDef, FunctionCall |
-| [`derive_declaration`](../corpus/ledger/syntax/derive-declaration.gandr) | `derive ‹identifier› : EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION in ‹type_identifier›` | `item.singleton` | `derive_declaration` * | admitted | Keyword, FunctionDef, Other, Operator, Type |
+| [`derived_rule_declaration`](../corpus/ledger/syntax/derived-rule-declaration.gandr) | `rule ‹type_identifier› . ‹identifier› : EXPRESSION ⦅ --> ‖ <-> ‖ ==> ‖ <=> ⦆ EXPRESSION ;` | `item.singleton` | `derived_rule_declaration` * | admitted | Keyword, Type, Other, Member, Operator |
 
 ## `pattern` — 14 rules
 
@@ -265,7 +265,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
 
-## Decisions — 110 of 174 rules decided at every token
+## Decisions — 109 of 174 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -440,13 +440,13 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `file_descriptor` | expression | 1 | `file_descriptor` | — | 0 |
 | `redirection_operator` | expression | 6 | `<` `<&` `<>` `>` `>&` `>>` | — | 0 |
 | `theory_declaration` | item | 446 | `theory` | — | 122 |
-| `circuit_declaration` | item | 123 | `oper` `rule` | — | 38 |
-| `derive_declaration` | item | 9 | `derive` | — | 0 |
+| `circuit_declaration` | item | 123 | `oper` `rule` | `derived_rule_declaration` | 38 |
+| `derived_rule_declaration` | item | 10 | `rule` | `circuit_declaration` | 0 |
 | `forget_model_expression` | expression | 8 | `forget` | — | 2 |
 | `f_type.row.labelled` | type | 24 | `-F` | `f_type`, `f_type.row` | 12 |
 | `f_type.result.labelled` | type | 23 | `[` | `f_type.result` | 12 |
 
-## Menus — 202 labels
+## Menus — 201 labels
 
 Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.
 
@@ -458,9 +458,9 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `type_identifier` | 183 | 34 | 2 |
 | `=` | 129 | 31 | 0 |
 | `)` | 127 | 43 | 0 |
+| `;` | 124 | 26 | 1 |
 | `(` | 123 | 42 | 4 |
-| `;` | 123 | 25 | 1 |
-| `.` | 82 | 38 | 3 |
+| `.` | 83 | 39 | 3 |
 | `}` | 79 | 41 | 0 |
 | `type_variable` | 70 | 15 | 3 |
 | `]` | 67 | 41 | 0 |
@@ -481,12 +481,12 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `<` | 18 | 9 | 3 |
 | `ω` | 17 | 5 | 0 |
 | `import` | 16 | 12 | 1 |
+| `rule` | 16 | 5 | 2 |
 | `*=` | 15 | 11 | 0 |
 | `+=` | 15 | 11 | 0 |
 | `-=` | 15 | 11 | 0 |
 | `if` | 15 | 5 | 1 |
 | `let` | 15 | 11 | 0 |
-| `rule` | 15 | 4 | 1 |
 | `unpack` | 15 | 11 | 0 |
 | `var` | 15 | 11 | 0 |
 | `with` | 15 | 8 | 1 |
@@ -538,7 +538,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `else` | 2 | 1 | 0 |
 | `false` | 2 | 2 | 2 |
 | `hole_name` | 2 | 2 | 0 |
-| `in` | 2 | 2 | 0 |
 | `include` | 2 | 2 | 1 |
 | `module` | 2 | 2 | 2 |
 | `pack` | 2 | 2 | 2 |
@@ -588,7 +587,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `codata` | 1 | 1 | 1 |
 | `command_substitution_start` | 1 | 1 | 1 |
 | `continue` | 1 | 1 | 1 |
-| `derive` | 1 | 1 | 1 |
 | `double_string_fragment` | 1 | 1 | 0 |
 | `drop` | 1 | 1 | 1 |
 | `dup` | 1 | 1 | 1 |
@@ -612,6 +610,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `hold` | 1 | 1 | 1 |
 | `i32` | 1 | 1 | 1 |
 | `i64` | 1 | 1 | 1 |
+| `in` | 1 | 1 | 0 |
 | `is` | 1 | 1 | 0 |
 | `loop` | 1 | 1 | 1 |
 | `match` | 1 | 1 | 1 |

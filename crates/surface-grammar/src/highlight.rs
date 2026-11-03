@@ -159,8 +159,8 @@ const CLOSERS: &[&str] = &[")", "]", "subshell_close", "}"];
 /// compound bridge tiles and the binders' tiles included.
 const KEYWORDS: &[&str] = &[
     "+U", "-F", "abort", "access", "acquire", "admitted", "as", "at", "become", "bind", "boundary",
-    "break", "close", "co", "codata", "continue", "data", "def", "derive", "drop", "dup", "else",
-    "end", "ext", "extern", "face", "feed", "flow", "for", "force", "fork", "from", "fun", "glob",
+    "break", "close", "co", "codata", "continue", "data", "def", "drop", "dup", "else", "end",
+    "ext", "extern", "face", "feed", "flow", "for", "force", "fork", "from", "fun", "glob",
     "handle", "hold", "if", "import", "in", "include", "infix", "infixl", "infixr", "is", "law",
     "let", "loop", "match", "migrate", "mobile", "module", "mu", "node", "obs", "offer", "offers",
     "on", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pub", "pure", "rec",
@@ -185,7 +185,7 @@ const PRIMITIVE_TYPES: &[&str] = &[
 
 /// The keywords whose next identifier names what the declaration defines.
 const DEFINERS: &[&str] = &[
-    "data", "def", "derive", "flow", "law", "obs", "op", "oper", "rec", "rule",
+    "data", "def", "flow", "law", "obs", "op", "oper", "rec", "rule",
 ];
 
 /// The keywords whose next identifier binds a name.

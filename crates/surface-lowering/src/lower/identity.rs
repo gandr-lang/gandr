@@ -3274,7 +3274,7 @@ impl<'source> Lowerer<'_, 'source>
                 Err(unannotated)
             };
         }
-        // A capitalised name is read as a constructor; `derive` refuses one
+        // A capitalised name is read as a constructor; a derived rule refuses one
         // that names a constructor, so here it names a function (#3772).
         let Shape::Form {
             former: Former::Name | Former::Constructor,

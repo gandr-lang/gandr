@@ -509,7 +509,7 @@ pub struct WrittenUse
     pub named: ByteSpan,
 }
 
-/// Where a `derive` declaration writes the two sides of the rule it states
+/// Where a derived rule declaration writes the two sides of the rule it states
 /// over a theory: each side's term and its nodes in pre-order.
 ///
 /// # Specification
@@ -593,7 +593,7 @@ pub struct WrittenMembers
     /// The names an `ext` member writes for the face and the boundary
     /// constant it is stated over.
     pub uses: Vec<WrittenUse>,
-    /// For a `theory`, the rules `derive` declarations state over it, in the
-    /// order they are collected.
+    /// For a `theory`, the rules derived rule declarations state over it, in
+    /// the order they are collected.
     pub derived: Vec<WrittenDerived>,
 }

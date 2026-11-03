@@ -1848,7 +1848,7 @@ const GROUP: &str = "theory Grp where {\n  sort G : Type;\n  oper e : G;\n  oper
                      rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));\n  rule invL : \
                      mul(inv(x), x) <=> e();\n}\n";
 
-/// `derive invMul` takes nine slots, one for each of the eight rules
+/// `rule Grp.invMul` takes nine slots, one for each of the eight rules
 /// completion derives on the way to it and then its own, each stating its law
 /// over every model of the group with the model's operations and laws read
 /// off it, and each proof checks; a later declaration reads the rule through
@@ -1857,7 +1857,7 @@ const GROUP: &str = "theory Grp where {\n  sort G : Type;\n  oper e : G;\n  oper
 fn a_derived_rule_reads_the_model_it_quantifies_over()
 {
     let source = format!(
-        "{GROUP}derive invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Grp\ndef \
+        "{GROUP}rule Grp.invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x));\ndef \
          uses(m : Model(Grp)) -> -F Unit {{\n  let law = Grp.invMul(m);\n  return unit\n}}\n"
     );
     let mut lowered = lower(source.as_str());
@@ -1902,7 +1902,7 @@ fn a_derived_rule_reads_the_model_it_quantifies_over()
 #[test]
 fn a_rule_the_theory_does_not_derive_is_refused()
 {
-    let written = "derive comm : mul(x, y) <=> mul(y, x) in Grp";
+    let written = "rule Grp.comm : mul(x, y) <=> mul(y, x);";
     let source = format!("{GROUP}{written}\n");
     let found = rows(&lower(source.as_str()));
     assert_eq!(
@@ -1923,16 +1923,15 @@ fn a_rule_the_theory_does_not_derive_is_refused()
 
 /// #4106: the associator of four is a filler the monoid derives, so a model
 /// writing a component of its name is refused there, naming the derivation,
-/// whether the model stands before the `derive` or after it; a model writing
-/// only its rules' witnesses holds no such refusal.
+/// whether the model stands before the derived rule or after it; a model
+/// writing only its rules' witnesses holds no such refusal.
 #[test]
 fn a_model_writing_a_derived_rule_is_refused_naming_it_4106()
 {
     let theory = "theory Mon where {\n  sort M : Type;\n  oper e : M;\n  oper mul : (x : M, y : M) --> \
                   M;\n  rule unitL : mul(e(), x) <=> x;\n  rule unitR : mul(x, e()) <=> x;\n  rule \
                   assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));\n}\n";
-    let derivation =
-        "derive assoc4 : mul(mul(mul(a, b), c), d) <=> mul(a, mul(b, mul(c, d))) in Mon";
+    let derivation = "rule Mon.assoc4 : mul(mul(mul(a, b), c), d) <=> mul(a, mul(b, mul(c, d)));";
     let model = |module: &str, extra: &str| {
         format!(
             "module {module} : Model(Mon) with sort M = Integer where {{\n  def e = 0;\n  def mul(x : \

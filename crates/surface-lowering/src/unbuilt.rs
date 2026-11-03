@@ -150,7 +150,7 @@ pub enum Unbuilt
     /// A constructor pattern where a term is read.
     ConstructorPattern,
     /// A derived rule where a term is read.
-    Derive,
+    DerivedRule,
     /// An extern block.
     ExternBlock,
     /// A host escape.
@@ -309,7 +309,7 @@ impl Unbuilt
         Self::Codata,
         Self::ConsPattern,
         Self::ConstructorPattern,
-        Self::Derive,
+        Self::DerivedRule,
         Self::ExternBlock,
         Self::HostEscape,
         Self::LabelledSumPattern,
@@ -416,7 +416,7 @@ impl Unbuilt
             Self::Codata => "codata_declaration",
             Self::ConsPattern => "cons_pattern",
             Self::ConstructorPattern => "constructor_pattern",
-            Self::Derive => "derive_declaration",
+            Self::DerivedRule => "derived_rule_declaration",
             Self::ExternBlock => "extern_block",
             Self::HostEscape => "host_escape",
             Self::LabelledSumPattern => "labelled_sum_pattern",
@@ -530,7 +530,7 @@ impl Unbuilt
             Self::Bind
             | Self::Circuit
             | Self::Codata
-            | Self::Derive
+            | Self::DerivedRule
             | Self::ManifestSort
             | Self::Theory => TrackingIssue::DECLARATION_AS_TERM,
             Self::AsPattern

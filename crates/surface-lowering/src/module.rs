@@ -799,7 +799,7 @@ pub enum Role
     /// An operation a `data` family declares and the module can call: entered
     /// in no namespace, its body compiled from its rules.
     Operation,
-    /// A rule a theory's completion derives, `derive r : l <=> r in T`, or a
+    /// A rule a theory's completion derives, `rule T.r : l <=> r;`, or a
     /// lemma its proof rests on: entered in no name table, the statement read
     /// through its theory's path `T.r`. Also the check an extern block
     /// carrying `boundary` takes, entered in no name table either.
@@ -1595,7 +1595,7 @@ pub struct Collected<'source>
     pub shadowed: BTreeSet<(SlotIndex, SurfaceName<'source>)>,
     /// Each callable operation's plan, by its slot.
     pub operations: BTreeMap<SlotIndex, crate::operation::OperationPlan>,
-    /// Each derived rule's plan, by its slot: the statement of a `derive`
+    /// Each derived rule's plan, by its slot: the statement of a derived rule
     /// declaration, and each lemma its proof rests on.
     pub derived: BTreeMap<SlotIndex, DerivedSlot>,
     /// Each reduct's plan, by its slot: one per theory a `theory` block

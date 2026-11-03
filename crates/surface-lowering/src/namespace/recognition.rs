@@ -1044,7 +1044,7 @@ impl Recognition
     /// - ensures: `path` resolves to a module component; the export and the
     ///   shadow record are unchanged, and the visible namespace holds at most
     ///   one binding more.
-    /// - provides: a rule a `derive` declaration derives in a theory it
+    /// - provides: a rule a derived rule declaration derives in a theory it
     ///   imports, read as `T.r` from the deriving source.
     /// - fails: never.
     /// - panics: none.

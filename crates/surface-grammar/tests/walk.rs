@@ -60,16 +60,16 @@ use gandr_theory_graphs::WalkChainLength;
 /// lowercase home: a row entry, a `handle` head and an `offers` entry each
 /// read a theory path or a type, `std.io.Console.Eff`, and an offer's label
 /// is an operand.
-const BUILT_IN_FINGERPRINT: u64 = 0xd806_681e_3a52_f996;
+const BUILT_IN_FINGERPRINT: u64 = 0xbb12_7bca_4826_7c01;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2929);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2930);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 95;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 94;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
@@ -99,14 +99,14 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("-=", 15),
     ("->", 12),
     ("-F", 3),
-    (".", 82),
+    (".", 83),
     (".#[", 2),
     (".#{", 1),
     ("..", 3),
     (".@", 1),
     (":", 263),
     (":>", 2),
-    (";", 123),
+    (";", 124),
     ("<", 18),
     ("<&", 1),
     ("<->", 24),
@@ -165,7 +165,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("continue", 1),
     ("data", 12),
     ("def", 4),
-    ("derive", 1),
     ("double_string_fragment", 1),
     ("drop", 1),
     ("dup", 1),
@@ -198,7 +197,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("identifier", 381),
     ("if", 15),
     ("import", 16),
-    ("in", 2),
+    ("in", 1),
     ("include", 2),
     ("is", 1),
     ("law", 3),
@@ -229,7 +228,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("requires", 1),
     ("resume", 1),
     ("return", 1),
-    ("rule", 15),
+    ("rule", 16),
     ("run", 1),
     ("select", 1),
     ("send", 1),

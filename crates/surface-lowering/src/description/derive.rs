@@ -1,6 +1,6 @@
-//! The statement a `derive` declaration writes, `derive r : l <=> r in T`:
-//! the rule's name, its two sides read as terms over the theory's
-//! operations, as a theory's own rule reads them, and the theory it holds in.
+//! The statement a derived rule declaration writes, `rule T.r : l <=> r;`:
+//! the theory it holds in, the rule's name, and its two sides read as terms
+//! over the theory's operations, as a theory's own rule reads them.
 
 use alloc::collections::BTreeSet;
 
@@ -21,8 +21,8 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::read_pieces;
 
-/// What `derive r : l <=> r in T` states: the equation `l = r` between two
-/// terms over the operations of the theory `T`, named `r`.
+/// What `rule T.r : l <=> r;` states: the equation `l = r` between two terms
+/// over the operations of the theory `T`, named `r`.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -49,14 +49,15 @@ pub struct DerivedStatement
     pub sides: WrittenDerived,
 }
 
-/// Read the `derive` declaration at `at`.
+/// Read the derived rule declaration at `at`.
 ///
 /// # Specification
-/// - requires: `at` is a derive declaration of `tree`, molded under `grammar`.
-/// - ensures: the name after `derive`; the two sides either side of the face
-///   arrow, `<=>` or `==>`, each read as [`Reader::free_term`] reads a rule's
-///   side, the right one's applied variables those the left binds; the name
-///   after `in`.
+/// - requires: `at` is a derived rule declaration of `tree`, molded under
+///   `grammar`.
+/// - ensures: the theory's name after `rule` and the rule's name after its `.`;
+///   the two sides either side of the face arrow, `<=>` or `==>`, each read as
+///   [`Reader::free_term`] reads a rule's side, the right one's applied
+///   variables those the left binds.
 /// - fails: the parser's repair of the form, as the repair's refusal; a piece
 ///   out of place, or a side that is no term, as the description diagnostic
 ///   locating it.
@@ -71,7 +72,7 @@ pub struct DerivedStatement
 ///   and a statement its theory keeps apart reads as its sides too.
 /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
 /// - witness: `tests::modules::models::a_rule_the_theory_does_not_derive_is_refused`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.as_ref().map_or(true, |statement| statement.named.span.start() >= at.span.start())))]
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.as_ref().map_or(true, |statement| statement.theory.span.start() >= at.span.start())))]
 pub fn derived_statement<'source>(
     grammar: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -81,7 +82,7 @@ pub fn derived_statement<'source>(
     let mut pieces = Pieces::new();
     read_pieces(grammar, tree, at.node, &mut pieces)?;
     if let Maybe::Present(repair) = pieces.repair {
-        return Err(repair.refusal(FormName::DERIVE_DECLARATION));
+        return Err(repair.refusal(FormName::DERIVED_RULE_DECLARATION));
     }
     let reader = Reader { grammar, tree };
     let mut run = Run::new(&pieces.pieces, at.span);
@@ -93,10 +94,10 @@ impl Reader<'_, '_>
     /// The statement `run` writes, past nothing.
     ///
     /// # Specification
-    /// - requires: `run` stands before the declaration's `derive` tile.
+    /// - requires: `run` stands before the declaration's `rule` tile.
     /// - ensures: as [`derived_statement`].
-    /// - fails: a tile out of place, a missing piece, a piece past the theory's
-    ///   name, or a side that is no term, located.
+    /// - fails: a tile out of place, a missing piece, a piece past the closing
+    ///   `;`, or a side that is no term, located.
     /// - panics: none.
     ///
     /// # Errors
@@ -106,13 +107,17 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`derived_statement`].
     /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |statement| statement.named.span.start() < statement.left.span.start() && statement.left.span.start() < statement.right.span.start() && statement.right.span.start() < statement.theory.span.start()))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |statement| statement.theory.span.start() < statement.named.span.start() && statement.named.span.start() < statement.left.span.start() && statement.left.span.start() < statement.right.span.start()))]
     fn derived(
         &self,
         run: &mut Run<'_>,
     ) -> Result<DerivedStatement, DescriptionDiagnostic>
     {
-        if !run.eat(Spelling("derive")).0 {
+        if !run.eat(Spelling("rule")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        let theory = run.take()?;
+        if !run.eat(Spelling(".")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
         let named = run.take()?;
@@ -124,10 +129,9 @@ impl Reader<'_, '_>
             return Err(run.fault(DescriptionFault::Malformed));
         }
         let right = run.take()?;
-        if !run.eat(Spelling("in")).0 {
+        if !run.eat(Spelling(";")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
-        let theory = run.take()?;
         run.end()?;
         let (lhs, left_nodes) = self.free_term(left, &BTreeSet::new())?;
         let (rhs, right_nodes) = self.free_term(right, &lhs.to_node().vars().collect())?;
