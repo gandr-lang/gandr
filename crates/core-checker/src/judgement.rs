@@ -6415,7 +6415,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   `expected` and its cell branch, under a binder of the element and one
     ///   of the tail at that stage, against `expected` shifted past both; an
     ///   applied fixpoint synthesises its argument's type and checks the
-    ///   fixpoint against the arrow from it to `expected`; a data case at its
+    ///   fixpoint against the arrow from it to `expected`, except that a loop's
+    ///   threaded endpoint, alone or in a tuple of held slots, is spent at the
+    ///   state it stands in, which the arrow's domain reads; a data case at its
     ///   written motive with the result read at a stage
     ///   ([`crate::recursion::motive_at`]) synthesises its branches at that
     ///   reading; a synthesising computation synthesises, then crosses the
@@ -6574,6 +6576,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     Some(&Computation::Fixpoint { .. })
                 ) =>
             {
+                // A loop threading an endpoint hands its first pass the
+                // endpoint whole, at the state it stands in, the loop head's,
+                // alone or beside the held slots it threads.
+                if let Some(taken) = self.threaded_argument(argument)? {
+                    let arrow = self.context.arena_mut().comp_type_arrow(taken, expected);
+                    return Ok(Step::Descend(Goal::Computation {
+                        term: head,
+                        direction: Direction::Check(arrow),
+                    }));
+                }
                 self.wait(Frame::FixpointArgument { head, expected });
                 Ok(Step::Descend(Goal::Value {
                     term: argument,

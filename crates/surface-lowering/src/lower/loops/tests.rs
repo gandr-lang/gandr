@@ -8,9 +8,11 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::session::SessionAction;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
 
 use crate::error::FragmentBoundary;
 use crate::error::LoopExit;
@@ -398,6 +400,84 @@ fn a_loop_threads_the_slots_it_names_through_its_passes()
         (arity, first, second),
         (2, 1, 0),
         "the outer slot is held again from the first component, the inner from the second"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_loop_threads_the_endpoint_it_names_4502()
+{
+    let source = "def follow(operator : mu open. &{ report : ?Integer. open, retire : ?Integer. end }) -> [Div] Unit {\n\
+                  \x20 loop { offer(operator) { report => { let next = recv(operator); continue }, retire => { let last = recv(operator); close(operator); break } } }\n\
+                  }\n\
+                  def tally(operator : mu open. &{ report : ?Integer. open, retire : ?Integer. end }) -> [Div] Integer {\n\
+                  \x20 var seen = 0;\n\
+                  \x20 loop { offer(operator) { report => { let next = recv(operator); access seen as v { resume(v, v + 1) }; continue }, retire => { let last = recv(operator); close(operator); break } } };\n\
+                  \x20 pure seen\n\
+                  }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("follow")));
+    let nodes = reachable(&arena, tail);
+    let entered: Vec<(Vec<DeBruijnIndex>, ComputationId)> = nodes
+        .iter()
+        .filter_map(|&node| match arena.computation(node) {
+            Some(&Computation::Application(head, first)) => match arena.computation(head) {
+                Some(&Computation::Fixpoint { body, .. }) => Some((linear(&arena, first), body)),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    let passed: Vec<Vec<DeBruijnIndex>> = nodes
+        .iter()
+        .filter_map(|&node| match arena.computation(node) {
+            Some(&Computation::Application(head, next))
+                if matches!(arena.computation(head), Some(Computation::Force(_))) =>
+            {
+                Some(linear(&arena, next))
+            },
+            _ => None,
+        })
+        .collect();
+    let &[(ref first, body)] = entered.as_slice()
+    else {
+        panic!("`follow`'s loop is entered once, at the endpoint: {entered:?}");
+    };
+    assert_eq!(
+        (first.as_slice(), passed.as_slice()),
+        (
+            [DeBruijnIndex::from(0_u32)].as_slice(),
+            [Vec::from([DeBruijnIndex::from(1_u32)])].as_slice()
+        ),
+        "the first pass takes the endpoint, and the `report` arm hands it to the next past \
+         the payload it received"
+    );
+    let placed = match arena.computation(body) {
+        Some(&Computation::Lambda(each)) => matches!(
+            arena.computation(each),
+            Some(&Computation::Session(SessionAction::Place { .. }))
+        ),
+        _ => false,
+    };
+    assert!(placed, "each pass places the endpoint it takes again");
+    // `tally` threads its count beside the endpoint, and what follows the
+    // loop runs at the `break` inside the offer's arm: the receive it rebuilds
+    // there keeps the name it binds.
+    let tally = tail_of(&arena, body_named(&module, SurfaceName::from("tally")));
+    let unnamed: Vec<ComputationId> = reachable(&arena, tally)
+        .into_iter()
+        .filter(|&node| {
+            matches!(
+                arena.computation(node),
+                Some(&Computation::Session(SessionAction::Receive { .. }))
+            ) && matches!(module.origins().binder(node), Maybe::Absent(_))
+        })
+        .collect();
+    assert_eq!(
+        unnamed,
+        Vec::new(),
+        "every receive in `tally` keeps its name"
     );
     assert_accepted(&judged(&module, &mut arena));
 }

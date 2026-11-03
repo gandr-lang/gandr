@@ -9,6 +9,7 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::session::SessionAction;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
@@ -120,7 +121,8 @@ pub(in crate::lower) fn assert_surveyed(
 }
 
 /// Every computation reachable from `root` through binds, lambdas, matches,
-/// list cases, splits, fixpoints, holds and the heads of applications.
+/// list cases, splits, fixpoints, holds, placements, receives, offers and
+/// the heads of applications.
 ///
 /// # Specification
 /// trivial.
@@ -140,9 +142,16 @@ pub(in crate::lower) fn reachable(
                 | &Computation::Split { body: under, .. }
                 | &Computation::Fixpoint { body: under, .. }
                 | &Computation::Application(under, _)
-                | &Computation::Memory(MemoryForm::Hold { body: under, .. }),
+                | &Computation::Memory(MemoryForm::Hold { body: under, .. })
+                | &Computation::Session(
+                    SessionAction::Place { body: under, .. }
+                    | SessionAction::Receive { body: under, .. },
+                ),
             ) => {
                 pending.push(under);
+            },
+            Some(&Computation::Session(SessionAction::Offer { ref arms, .. })) => {
+                pending.extend(arms.values().copied());
             },
             Some(&Computation::ListCase {
                 on_nil, on_cons, ..

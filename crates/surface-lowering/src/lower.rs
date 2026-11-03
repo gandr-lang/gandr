@@ -3464,16 +3464,17 @@ struct Lowerer<'run, 'source>
     /// The parameters at a session type each function body places, stretch
     /// by stretch.
     endpoints: Vec<session::PlacedEndpoint>,
-    /// The loops that thread held slots, by the loop's node: each slot's
-    /// linear index where the loop stands, and its name, outermost first.
-    threading: BTreeMap<NodeIndex, Vec<(DeBruijnIndex, SurfaceName<'source>)>>,
-    /// The slots each threading loop holds again for its passes, by the
-    /// loop's own binder, outermost first.
+    /// The loops that thread held slots or endpoints, by the loop's node: each
+    /// slot's linear index where the loop stands, its name and what it is,
+    /// outermost first.
+    threading: BTreeMap<NodeIndex, Vec<(DeBruijnIndex, SurfaceName<'source>, loops::Carry)>>,
+    /// The slots each threading loop holds or places again for its passes, by
+    /// the loop's own binder, outermost first.
     reheld: BTreeMap<ScopeId, Vec<ScopeId>>,
     /// The slots each threading loop's first pass takes, by the loop body's
-    /// last computation: their linear indices where the loop stands,
-    /// outermost first.
-    carries: BTreeMap<NodeIndex, Vec<DeBruijnIndex>>,
+    /// last computation: their linear indices where the loop stands and what
+    /// each is, outermost first.
+    carries: BTreeMap<NodeIndex, Vec<(DeBruijnIndex, loops::Carry)>>,
     /// The computation positions where a path through a handled subject
     /// ends: the subject's last computation, and what stands in tail position
     /// of one. A value there is returned to the handler's return clause, as

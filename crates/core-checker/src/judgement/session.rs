@@ -1634,6 +1634,109 @@ impl Machine<'_, '_>
         Ok(HandedOn::Endpoint)
     }
 
+    /// The type a loop's first pass takes when the loop threads an endpoint:
+    /// the endpoint's state where the loop starts, the loop head's, alone or
+    /// beside the held slots in the tuple the loop threads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a linear variable naming a live endpoint, its state read
+    ///   where the argument stands, the endpoint spent; for a tuple of linear
+    ///   variables at least one of which names an endpoint, the product of each
+    ///   component's type, each endpoint spent at its state and each other
+    ///   component read as [`Self::linear_read`] reads it; none for any other
+    ///   argument, nothing changed.
+    /// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Closed`]
+    ///   for an endpoint already consumed; as [`Self::linear_read`] for another
+    ///   component.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a loop over an endpoint at a recursive protocol hands
+    ///   it to its first pass at that protocol and checks, alone and beside a
+    ///   held counter; a pass that runs again before it receives is refused
+    ///   against the head's state.
+    /// - witness: `judgement::session::tests::a_loop_takes_the_endpoint_it_is_applied_to_4502`
+    #[spec(
+        captures: depth = self.context.depth(Zone::Linear),
+        ensures: |ret| self.context.depth(Zone::Linear) == depth,
+    )]
+    pub(super) fn threaded_argument(
+        &mut self,
+        argument: ValueId,
+    ) -> Result<Option<ValueTypeId>, CheckRefusal>
+    {
+        let components = if let Value::Tuple(ref components) = *self.value(argument)? {
+            components.to_vec()
+        }
+        else {
+            alloc::vec::Vec::from([argument])
+        };
+        let mut endpoints = 0_usize;
+        for &component in &components {
+            let Value::Variable {
+                zone: Zone::Linear,
+                index,
+            } = *self.value(component)?
+            else {
+                return Ok(None);
+            };
+            let node = CoreNode::Term(TermNode::Value(component));
+            if let Resident::Endpoint(_) = self.resided(node, index)?.resident {
+                endpoints = endpoints.saturating_add(1);
+            }
+        }
+        if endpoints == 0 {
+            return Ok(None);
+        }
+        let mut types = alloc::vec::Vec::with_capacity(components.len());
+        for &component in &components {
+            let Value::Variable {
+                zone: Zone::Linear,
+                index,
+            } = *self.value(component)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            let node = CoreNode::Term(TermNode::Value(component));
+            let read = self.resided(node, index)?;
+            if let Resident::Endpoint(endpoint) = read.resident {
+                if read.use_state == LinearUse::Consumed {
+                    return Err(CheckRefusal::Linearity {
+                        at: node,
+                        defect: LinearityDefect::Closed { endpoint },
+                    });
+                }
+                let state = self.here(read.state, read.depth)?;
+                if self.handed_endpoint(component, state)? != HandedOn::Endpoint {
+                    return Err(CheckRefusal::MachineInvariant);
+                }
+                types.push(state);
+                continue;
+            }
+            let Step::Ascend(Produced::ValueType(ty)) = self.linear_read(component, index)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            types.push(self.context.settle_value_type(ty));
+        }
+        if let &[one] = types.as_slice() {
+            return Ok(Some(one));
+        }
+        let product = self.context.arena_mut().value_type_product(&types);
+        if self.context.recording() == Recording::On {
+            self.context.keep_typing(Typing {
+                term: TermNode::Value(argument),
+                ty: TypeNode::Value(product),
+                depth: self.context.depth(Zone::Intuitionistic),
+            });
+        }
+        Ok(Some(product))
+    }
+
     /// Move the endpoint `argument` names into a call whose parameter stands
     /// at `domain`, when `domain` is a session type at its weak head.
     ///
@@ -1641,9 +1744,10 @@ impl Machine<'_, '_>
     /// - requires: `domain` is the call's domain, read where the call stands.
     /// - ensures: [`HandedOn::Endpoint`] when `domain` is a session type at its
     ///   weak head and the argument a linear variable naming an endpoint, which
-    ///   [`Self::handed_endpoint`] spends; [`HandedOn::Other`], nothing
-    ///   changed, otherwise, so the argument's check refuses an endpoint read
-    ///   as a value.
+    ///   [`Self::handed_endpoint`] spends, or a product and the argument a
+    ///   tuple of slots [`Self::handed_slots`] hands on; [`HandedOn::Other`],
+    ///   nothing changed, otherwise, so the argument's check refuses an
+    ///   endpoint read as a value.
     /// - fails: as [`Self::handed_endpoint`]; [`CheckRefusal::StageNotBelow`]
     ///   at the argument, standing at no stage, when `domain` is a session type
     ///   staged by a recursion and the argument names an endpoint, which never
@@ -1676,6 +1780,10 @@ impl Machine<'_, '_>
         if matches!(view, ValueTypeView::Session(_)) {
             return self.handed_endpoint(argument, domain);
         }
+        if let ValueTypeView::Product(parts) = view {
+            let parts = parts.to_vec();
+            return self.handed_slots(argument, domain, &parts);
+        }
         let ValueTypeView::Staged { base, stage } = view
         else {
             return Ok(HandedOn::Other);
@@ -1705,6 +1813,101 @@ impl Machine<'_, '_>
             found: gandr_kernel_term::Standing::Top,
             bound: stage,
         })
+    }
+
+    /// Hand on the tuple of slots a loop's pass threads to its next pass,
+    /// when an endpoint stands among them: each endpoint moves whole into its
+    /// factor of the product `parts` spells, and each other slot is read and
+    /// converted to its factor.
+    ///
+    /// # Specification
+    /// - requires: `parts` are the factors of `domain`, read where the call
+    ///   stands.
+    /// - ensures: [`HandedOn::Endpoint`] when the argument is a tuple of linear
+    ///   variables, as many as `parts`, at least one naming an endpoint: each
+    ///   endpoint spent as [`Self::handed_endpoint`] spends it, each other
+    ///   component read as [`Self::linear_read`] reads it and converted to its
+    ///   factor, the tuple's typing kept; [`HandedOn::Other`], nothing changed,
+    ///   otherwise.
+    /// - fails: as [`Self::handed_endpoint`] and [`Self::linear_read`], and the
+    ///   value bridge's refusal for a component whose type is not its factor.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a loop counting an endpoint's reports in a held slot
+    ///   hands both to its next pass and checks.
+    /// - witness: `judgement::session::tests::a_loop_takes_the_endpoint_it_is_applied_to_4502`
+    #[spec(
+        captures: depth = self.context.depth(Zone::Linear),
+        ensures: |ret| self.context.depth(Zone::Linear) == depth,
+    )]
+    fn handed_slots(
+        &mut self,
+        argument: ValueId,
+        domain: ValueTypeId,
+        parts: &[ValueTypeId],
+    ) -> Result<HandedOn, CheckRefusal>
+    {
+        let Value::Tuple(ref components) = *self.value(argument)?
+        else {
+            return Ok(HandedOn::Other);
+        };
+        let components = components.to_vec();
+        if components.len() != parts.len() {
+            return Ok(HandedOn::Other);
+        }
+        let mut endpoints = 0_usize;
+        for &component in &components {
+            let Value::Variable {
+                zone: Zone::Linear,
+                index,
+            } = *self.value(component)?
+            else {
+                return Ok(HandedOn::Other);
+            };
+            let node = CoreNode::Term(TermNode::Value(component));
+            if let Resident::Endpoint(_) = self.resided(node, index)?.resident {
+                endpoints = endpoints.saturating_add(1);
+            }
+        }
+        if endpoints == 0 {
+            return Ok(HandedOn::Other);
+        }
+        for (&component, &part) in components.iter().zip(parts) {
+            let Value::Variable {
+                zone: Zone::Linear,
+                index,
+            } = *self.value(component)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            if self.handed_endpoint(component, part)? == HandedOn::Endpoint {
+                continue;
+            }
+            let Step::Ascend(Produced::ValueType(found)) = self.linear_read(component, index)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            let found = self.context.settle_value_type(found);
+            crate::conversion::value_bridge(
+                self.context,
+                component,
+                found,
+                part,
+                &mut self.conversions,
+            )?;
+        }
+        if self.context.recording() == Recording::On {
+            self.context.keep_typing(Typing {
+                term: TermNode::Value(argument),
+                ty: TypeNode::Value(domain),
+                depth: self.context.depth(Zone::Intuitionistic),
+            });
+        }
+        Ok(HandedOn::Endpoint)
     }
 
     /// Finish a send whose payload checked: advance the endpoint.
