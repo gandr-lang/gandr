@@ -1,0 +1,32 @@
+/// The π-calculus as a theory, its restriction a name abstraction.
+///
+/// A process that creates a private channel binds a name no outside process
+/// knows. The theory states that binding and the rules that hold of it.
+///
+/// `sort Name : Atom` declares the names. `(a : Name) ->[#] Proc` is a name
+/// abstraction, a function that consumes only fresh names, and `fun (a) { … }`
+/// writes one. A rule's conditions are a bar block, and `a # p` says `a` is
+/// fresh for `p`.
+///
+/// - see: #4568 — the nominal surface sketch, its rulings in the issue body
+/// - see: corpus/sketch/nominal/fresh.gandr — fresh names in a program
+
+/// The π-calculus: names, processes, restriction and parallel composition.
+pub theory Pi where {
+  /// The channel names.
+  sort Name : Atom;
+  /// The processes.
+  sort Proc : Type;
+  /// The process that does nothing.
+  oper nil : () --> Proc;
+  /// A process under a private name.
+  oper nu : (p : (a : Name) ->[#] Proc) --> Proc;
+  /// Two processes side by side.
+  oper par : (p : Proc, q : Proc) --> Proc;
+  /// A restriction whose name the body never uses is garbage.
+  rule gc : nu(fun (a) { p }) <=> p where { a # p };
+  /// A restriction moves past a process the name is fresh for.
+  rule extrude : par(nu(fun (a) { p }), q) <=> nu(fun (a) { par(p, q) }) where { a # q };
+  /// Two restrictions commute.
+  rule swapNu : nu(fun (a) { nu(fun (b) { p }) }) <=> nu(fun (b) { nu(fun (a) { p }) });
+}

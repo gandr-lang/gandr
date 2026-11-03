@@ -1,0 +1,41 @@
+/// One arrow family, `->[m]`: a mode or a grade in the bracket.
+///
+/// A function used once, a function used freely and a name abstraction are
+/// three arrows. One family spells all three, so a reader learns one form.
+///
+/// `->[1]` is a graded function used once and `->[ω]` one used freely, after
+/// sketch 5. `->[#]` is a name abstraction, the freshness glyph its mnemonic.
+/// A plain `->` is the unmarked function. `~name(x)` reads a binder's name as
+/// data, a macro as `~env` is.
+///
+/// - see: #4568 — the nominal surface sketch, its rulings in the issue body
+/// - see: corpus/sketch/nominal/fresh.gandr — the `Fresh` effect these abstractions consume
+
+// The effect and the abstraction type.
+import std.nominal (Fresh, fresh, Abs);
+
+/// Applies a function exactly once.
+def once[a : Type, b : Type](f : a ->[1] b, x : a) -> b {
+  f(x)
+}
+
+/// Applies a function to every element, as often as the list is long.
+def mapAll[a : Type, b : Type](f : a ->[ω] b, xs : List(a)) -> List(b) {
+  map(f, xs)
+}
+
+/// A term with one bound variable, its body an abstraction over a fresh name.
+pub data Lam : Type where {
+  /// A variable.
+  | Var : (n : Name) --> Lam
+  /// An abstraction over a name.
+  | Abs : (body : (x : Name) ->[#] Lam) --> Lam
+  /// An application.
+  | App : (f : Lam, a : Lam) --> Lam
+}
+
+/// The identity function, its bound variable named for diagnostics.
+def identity() -> [Fresh] (Lam, String) {
+  let body = fun (x) { Var(x) };
+  (Abs(body), ~name(x))
+}

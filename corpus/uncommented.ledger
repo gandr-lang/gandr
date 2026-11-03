@@ -4186,6 +4186,13 @@ sketch/grades/polymorphic.gandr:universe_type:184466608a09f8b1 uncommented
 sketch/grades/tagged.gandr:if_expression:fba3230608c66904 uncommented
 sketch/grades/tagged.gandr:retries:7f24500cac8c12ee uncommented
 sketch/grades/tagged.gandr:retries:f95b7ca66858134e uncommented
+sketch/nominal/arrows.gandr:f_type:ad962d0f34e34240 uncommented
+sketch/nominal/arrows.gandr:function_type:2e841b75bb9ac14d uncommented
+sketch/nominal/arrows.gandr:universe_type:184466608a09f8b1 uncommented
+sketch/nominal/fresh.gandr:Proc:561db82eb9c8d4bd uncommented
+sketch/nominal/fresh.gandr:function_type:17a964b982ff5ac5 uncommented
+sketch/nominal/pi-calculus.gandr:f_type:13b49200ccf1bf47 uncommented
+sketch/nominal/pi-calculus.gandr:function_type:17a964b982ff5ac5 uncommented
 sketch/oracles/proofs.gandr:disjoint:914bb60ff1585184 uncommented
 sketch/oracles/proofs.gandr:midpoint:fdc31bb1ea7ce0e4 uncommented
 sketch/oracles/solver.gandr:checkedZ3:82f3b0a195ce85a5 uncommented
