@@ -94,11 +94,12 @@ tracing-subscriber = { workspace = true, optional = true }
 
 # The parser's report example reads the corpus the sweeps list, molds it
 # with the parser and counts the molder's decisions. Its latency workload
-# types into a language-server session through the hotpath bench's client,
-# and its incremental workload parses each revision through the session's
-# form store, on the serial fork.
+# types into a language-server session through the language server's client,
+# as the hotpath bench's workloads do, and its incremental workload parses
+# each revision through the session's form store, on the serial fork.
 [dev-dependencies]
 gandr-core-fork.workspace = true
+gandr-surface-lsp = { workspace = true, features = ["client"] }
 gandr-surface-parser.workspace = true
 gandr-surface-session.workspace = true
 gandr-surface-syntax.workspace = true

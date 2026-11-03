@@ -380,6 +380,8 @@ mod build;
 #[cfg(unix)]
 mod bus;
 mod calls;
+#[cfg(feature = "client")]
+pub mod client;
 mod complete;
 #[cfg(unix)]
 mod disk;
