@@ -1,7 +1,7 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:19:65
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:22:65
    │
-19 │ def apart : Path(Dialogue(Seat.SeatEnd), retiring, handedOff) = Path.here(retiring);
+22 │ def apart : Path(Dialogue(Seat.SeatEnd), retiring, handedOff) = Path.here(retiring);
    │                                          ┬───────  ┬────────    ━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
    │                                          │         │
    │                                          │         an endpoint the point does not convert to
@@ -11,56 +11,56 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:28:5
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:31:5
    │
-26 │   decompose(retiring),
+29 │   decompose(retiring),
    │   ─────────────────── an endpoint the point does not convert to
-27 │   decompose(handedOff)
+30 │   decompose(handedOff)
    │   ──────────────────── an endpoint the point does not convert to
-28 │ ) = Path.here(decompose(retiring));
+31 │ ) = Path.here(decompose(retiring));
    │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
    │
    ├ note: `apartWebs` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[DialogueUnmatched]: this dialogue's message is not received as it was sent
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:33:39
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:36:39
    │
-33 │   def misheard : Dialogue(Ask.Asking) = dialogue(
+36 │   def misheard : Dialogue(Ask.Asking) = dialogue(
    │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-34 │ ┃   left(sent("yes")),
-35 │ ┃   right(received("no")),
-36 │ ┃   left(closed),
-37 │ ┃   right(closed)
-38 │ ┃ );
+37 │ ┃   left(sent("yes")),
+38 │ ┃   right(received("no")),
+39 │ ┃   left(closed),
+40 │ ┃   right(closed)
+41 │ ┃ );
    │ ┗━┛ a move the other endpoint does not match
    │
    ╰ note: `misheard` is refused with DialogueUnmatched, as its expectation states
 
 error[DialogueInverted]: this dialogue is logged out of its causal order
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:42:39
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:45:39
    │
-42 │   def foretold : Dialogue(Ask.Asking) = dialogue(
+45 │   def foretold : Dialogue(Ask.Asking) = dialogue(
    │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-43 │ ┃   right(received("yes")),
-44 │ ┃   left(sent("yes")),
-45 │ ┃   left(closed),
-46 │ ┃   right(closed)
-47 │ ┃ );
+46 │ ┃   right(received("yes")),
+47 │ ┃   left(sent("yes")),
+48 │ ┃   left(closed),
+49 │ ┃   right(closed)
+50 │ ┃ );
    │ ┗━┛ a move logged before the move it follows
    │
    ╰ note: `foretold` is refused with DialogueInverted, as its expectation states
 
 error[RunNotAdmitted]: the protocol does not admit this run
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:52:39
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:55:39
    │
-52 │   def answered : Dialogue(Ask.Asking) = dialogue(
+55 │   def answered : Dialogue(Ask.Asking) = dialogue(
    │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-53 │ ┃   left(received("yes")),
-54 │ ┃   right(sent("yes")),
-55 │ ┃   left(closed),
-56 │ ┃   right(closed)
-57 │ ┃ );
+56 │ ┃   left(received("yes")),
+57 │ ┃   right(sent("yes")),
+58 │ ┃   left(closed),
+59 │ ┃   right(closed)
+60 │ ┃ );
    │ ┗━┛ a move in the other direction
    │
    ├ note: `answered` is refused with RunNotAdmitted, as its expectation states

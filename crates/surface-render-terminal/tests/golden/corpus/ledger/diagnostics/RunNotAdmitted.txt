@@ -1,7 +1,7 @@
 error[RunNotAdmitted]: the protocol does not admit this run
-   ╭▸ corpus/ledger/diagnostics/RunNotAdmitted.gandr:27:69
+   ╭▸ corpus/ledger/diagnostics/RunNotAdmitted.gandr:33:69
    │
-27 │ def retired = thunk { Flow.ride(fun (X) { Run(X) }, Evolution.keep, served) } ;
+33 │ def retired = thunk { Flow.ride(fun (X) { Run(X) }, Evolution.keep, served) } ;
    │               ┬───────┬─────────────────────────────────────────────┯━━━━━───
    │               │       │                                             │
    │               │       │                                             a label the protocol does not admit here

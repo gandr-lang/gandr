@@ -2364,7 +2364,8 @@ fn a_run_rides_a_flow_between_sessions()
     let source = format!(
         "{PROTOCOLS}  def sub : Flow(Type, Old, New);\n  def sub = Flow.sim(Old, New);\n}}\ndef served : Run(Evolution.Old);\ndef served = recorded(selected(report), sent(\"progress\"), closed);\ndef forward(receipt: Run(Evolution.Old)) -> -F Run(Evolution.New) {{\n  become Flow.ride(fun (X) {{ Run(X) }}, Evolution.sub, receipt)\n}}\n"
     );
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let source = crate::fixture::session_listing(source);
+    let module = crate::fixture::listed(&source, &mut arena);
     let DeclarationOutcome::Completed {
         declared_type,
         body,
@@ -2540,16 +2541,14 @@ fn a_move_out_of_shape_is_refused()
 fn a_dialogue_lowers_its_moves_beside_their_endpoints()
 {
     let mut arena = CoreArena::new();
-    let module = crate::fixture::listed(
-        concat!(
-            "\nimport std.buffer (Web) ;\n",
-            "module Ask where {\n  type Asking = !String. end;\n}\n",
-            "def played : Dialogue(Ask.Asking);\n",
-            "def played = dialogue(left(sent(\"yes\")), right(received(\"yes\")), right(closed), left(closed));\n",
-            "def web() -> -F Web {\n  become decompose(played)\n}\n",
-        ),
-        &mut arena,
-    );
+    let source = crate::fixture::session_listing(concat!(
+        "import std.buffer (Web) ;\n",
+        "module Ask where {\n  type Asking = !String. end;\n}\n",
+        "def played : Dialogue(Ask.Asking);\n",
+        "def played = dialogue(left(sent(\"yes\")), right(received(\"yes\")), right(closed), left(closed));\n",
+        "def web() -> -F Web {\n  become decompose(played)\n}\n",
+    ));
+    let module = crate::fixture::listed(&source, &mut arena);
     let DeclarationOutcome::Completed {
         declared_type,
         body,

@@ -141,20 +141,41 @@ where
     format!("\n{LISTING}{source}")
 }
 
-/// `text`, which [`listing`] made, lowered as a unit of two sources: the
-/// stand-in for `std.list` and the source listing `List` from it.
+/// The line a source writes to list the session formers from their home
+/// (#4521).
+pub const SESSION_LISTING: &str = "import std.session (Run, Prefix, Dialogue) ;\n";
+
+/// `source` after [`SESSION_LISTING`] and a newline that stands in for
+/// `std.session`, which declares nothing: the text [`listed`] lowers.
 ///
 /// # Specification
-/// - requires: `text` is what [`listing`] made and parses cleanly.
-/// - ensures: the second source's one path import resolves to the first.
-/// - provides: a source that names `List` lowered where it resolves.
+/// trivial.
+pub fn session_listing<Source>(source: Source) -> String
+where
+    Source: core::fmt::Display,
+{
+    format!("\n{SESSION_LISTING}{source}")
+}
+
+/// `text`, which [`listing`] or [`session_listing`] made, lowered as a unit
+/// of two sources: the stand-in for the `std` modules and the source listing
+/// their formers.
+///
+/// # Specification
+/// - requires: `text` is what [`listing`] or [`session_listing`] made and
+///   parses cleanly.
+/// - ensures: the second source's path imports, at most two, resolve to the
+///   first.
+/// - provides: a source that names a homed former lowered where it resolves.
 /// - fails: never on accepted fixtures.
 /// - panics: if the lowering refuses the unit.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — every witness naming `List` reads its module through
-///   here, and a source that does not list it refuses the type head.
+/// - hypothesis: L3 — every witness naming `List` or a session former reads its
+///   module through here, and a source that does not list it refuses the type
+///   head.
 /// - witness: `lower::native::tests::list_patterns_case_on_the_native_list`
+/// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
 #[spec(requires: text.as_ref().starts_with('\n'))]
 pub fn listed<'source, Text>(
     text: &'source Text,
@@ -165,12 +186,10 @@ where
 {
     let pbg = grammar();
     let tree = parsed(&pbg, SourceText::from(text.as_ref()));
+    let stand_in = ImportTarget::Source(SourceIndex::from(0_usize));
     let unit = Unit::new(Vec::from([
         UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
-        UnitSource::new(
-            ByteOffset::from(1_usize),
-            Vec::from([ImportTarget::Source(SourceIndex::from(0_usize))]),
-        ),
+        UnitSource::new(ByteOffset::from(1_usize), Vec::from([stand_in, stand_in])),
     ]))
     .expect("the listing imports the source before it");
     lower_unit(

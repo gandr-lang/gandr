@@ -6,6 +6,9 @@
 // protocol accepts so far, complete or not; `Run(S)` holds only the complete
 // ones (`./seat-evolution.gandr`).
 
+// The native session formers.
+import std.session (Prefix);
+
 // The seat's protocol and its messages.
 import "./seat-base.gandr";
 

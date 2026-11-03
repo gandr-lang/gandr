@@ -19,7 +19,10 @@
 //! - its tree holds a tile molded by its rule, or, for an attribute, the source
 //!   lowers, no declaration is refused and the attribute is filed on one. The
 //!   `doc` attribute is filed as documentation, so its exemplar's declaration
-//!   must carry documentation beyond the opening comment's lines;
+//!   must carry documentation beyond the opening comment's lines. The source
+//!   lowers alone, so an import names no source it holds: a declaration that
+//!   import refuses is read past, and `check:exemplars` settles it under its
+//!   root, the library among what it reads;
 //! - a glyph rule's exemplar writes each spelling the spelling table gives: a
 //!   tile of the rule written as the glyph, and one written as its ASCII token,
 //!   or, for a glyph the table pairs with a head, a call of the head. The table
@@ -96,6 +99,7 @@ use gandr_surface_grammar::Spelled;
 use gandr_surface_lowering::AttributeRegistry;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweringBudget;
+use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::RegisteredAttribute;
 use gandr_surface_lowering::lower_module;
 use gandr_surface_lowering::namespace::Recognition;
@@ -962,9 +966,11 @@ struct Header
 /// - requires: `tree` parsed with no obligation, from a source opening with
 ///   `header`.
 /// - ensures: `Ok` exactly when the lowering accepts the source, refuses none
-///   of its declarations, and files `attribute` on one of them: in the
-///   attribute table, or, for `doc`, as documentation holding more lines than
-///   `header`.
+///   of its declarations but for an unresolved import, and files `attribute` on
+///   one of them: in the attribute table, or, for `doc`, as documentation
+///   holding more lines than `header`. The source lowers alone, so its imports
+///   resolve to nothing here, and `check:exemplars` settles what they bind
+///   under the fixture root.
 /// - fails: the lowering refuses, or the attribute is filed nowhere.
 /// - panics: none.
 ///
@@ -999,7 +1005,9 @@ fn filed(
     })?;
     let mut filed = false;
     for declaration in module.declarations() {
-        if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+        if let DeclarationOutcome::Refused(refusal) = declaration.outcome()
+            && !matches!(refusal, LoweringRefusal::ImportUnresolved { .. })
+        {
             return Err(ExemplarFault::Refused {
                 refusal: refusal.to_string(),
             });

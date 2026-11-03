@@ -4,6 +4,9 @@
 // it is covariant in every payload type, sent or received. The machine runs
 // the transport as a match on the run's moves, to the run conversion gives.
 
+// The native session formers.
+import std.session (Run);
+
 /// A bit.
 pub data Bit : Type where {
   | Zero : Bit

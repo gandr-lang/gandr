@@ -8,6 +8,9 @@
 // data (Gallai, _Transitiv orientierbare Graphen_,
 // doi:10.1007/BF02020961).
 
+// The native session formers.
+import std.session (Dialogue);
+
 // The seat's protocol and its messages.
 import "./seat-base.gandr";
 // The modular decomposition of a dialogue's web.

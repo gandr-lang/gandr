@@ -1,13 +1,13 @@
 error[DialogueInverted]: this dialogue is logged out of its causal order
-   ╭▸ corpus/ledger/diagnostics/DialogueInverted.gandr:9:16
+   ╭▸ corpus/ledger/diagnostics/DialogueInverted.gandr:14:16
    │
- 9 │   def foretold = dialogue(
+14 │   def foretold = dialogue(
    │ ┏━━━━━━━━━━━━━━━━┛
-10 │ ┃   right(received("yes")),
-11 │ ┃   left(sent("yes")),
-12 │ ┃   left(closed),
-13 │ ┃   right(closed)
-14 │ ┃ ) ;
+15 │ ┃   right(received("yes")),
+16 │ ┃   left(sent("yes")),
+17 │ ┃   left(closed),
+18 │ ┃   right(closed)
+19 │ ┃ ) ;
    │ ┗━┛ a move logged before the move it follows
    │
    ╰ note: `foretold` is refused with DialogueInverted, as its expectation states

@@ -5207,7 +5207,8 @@ fn each_import_a_name_is_read_through_is_reached()
 /// import, though a source laid before it in the unit, which it does not
 /// import, declares a module of the same name with neither. A third source
 /// reads the module through the same import first, as a walk's component
-/// lays them.
+/// lays them. The base's private module refuses its importer as unexported,
+/// and a source importing the importer reads the base's module through it.
 #[test]
 fn a_module_path_reads_the_module_its_source_sees_4797()
 {
@@ -5218,12 +5219,19 @@ fn a_module_path_reads_the_module_its_source_sees_4797()
             .map(|&source| ImportTarget::Source(SourceIndex::from(source)))
             .collect::<Vec<_>>()
     };
-    let (both, shared, base) = (on(&[0_usize, 1_usize]), on(&[0_usize]), on(&[1_usize]));
+    let (both, shared, base, reader) = (
+        on(&[0_usize, 1_usize]),
+        on(&[0_usize]),
+        on(&[1_usize]),
+        on(&[4_usize]),
+    );
     let (text, unit) = laid(&[
         (SourceText::from("def shared : Integer = 0;\n"), &[]),
         (
             SourceText::from(
-                "pub module Seat where {\n  type Task = Integer;\n  def task : Integer = 1;\n}\n",
+                "pub module Seat where {\n  type Task = Integer;\n  def task : Integer = 1;\n}\nmodule \
+                 Quiet where {\n  def hush : Integer = 3;\n}\npub module Stage where {\n  def deep \
+                 : Integer = 5;\n}\n",
             ),
             &[],
         ),
@@ -5236,29 +5244,47 @@ fn a_module_path_reads_the_module_its_source_sees_4797()
         ),
         (
             SourceText::from(
-                "import \"./shared.gandr\" ;\nmodule Seat where {\n  def other : Integer = 2;\n}\n",
+                "import \"./shared.gandr\" ;\nmodule Seat where {\n  def other : Integer = 2;\n}\nmodule \
+                 Quiet where {\n  def loud : Integer = 4;\n}\nmodule Stage where {\n  def shallow : \
+                 Integer = 6;\n}\n",
             ),
             &shared,
         ),
         (
             SourceText::from(
-                "import \"./base.gandr\" ;\ndef read : Seat.Task ;\ndef read = Seat.task ;\n",
+                "import \"./base.gandr\" ;\ndef read : Seat.Task ;\ndef read = Seat.task ;\ndef \
+                 hushed : Integer = Quiet.hush ;\n",
             ),
             &base,
+        ),
+        (
+            SourceText::from(
+                "import \"./read.gandr\" ;\ndef far : Seat.Task ;\ndef far = Stage.deep ;\n",
+            ),
+            &reader,
         ),
     ]);
     let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
         .expect("the unit lowers");
-    let refused: Vec<String> = module
+    let refused: Vec<(String, bool)> = module
         .declarations()
         .iter()
-        .filter(|declaration| matches!(declaration.outcome(), DeclarationOutcome::Refused(_)))
-        .map(|declaration| String::from(declaration.name().as_ref()))
+        .filter_map(|declaration| {
+            let DeclarationOutcome::Refused(refusal) = declaration.outcome()
+            else {
+                return None;
+            };
+            Some((
+                String::from(declaration.name().as_ref()),
+                matches!(refusal, LoweringRefusal::UnexportedName { .. }),
+            ))
+        })
         .collect();
     assert_eq!(
         refused,
-        Vec::<String>::new(),
-        "`read` reads `Seat` through its import, past the later source's `Seat`"
+        [(String::from("hushed"), true)],
+        "`read` and `far` read the base's modules past the later source's, and `hushed` is \
+         refused the base's private module, not sent to the later source's"
     );
 }
 

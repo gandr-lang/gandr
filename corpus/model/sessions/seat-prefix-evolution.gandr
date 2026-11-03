@@ -4,6 +4,9 @@
 // there, the seat's next move still owed (Gay and Hole, _Subtyping for
 // Session Types in the Pi Calculus_, doi:10.1007/s00236-005-0177-z).
 
+// The native session formers.
+import std.session (Prefix);
+
 // The seat's protocol, its messages and the widening.
 import "./seat-evolution.gandr";
 

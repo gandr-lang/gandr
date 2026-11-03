@@ -3,6 +3,9 @@
 // prefix of the target and is refused at that move, and a play held by a
 // variable, which may yet take it, is refused as narrowing.
 
+// The native session formers.
+import std.session (Prefix);
+
 /// The seat's protocol and one that no longer offers `retire`, related by
 /// simulation.
 module Evolution where {
