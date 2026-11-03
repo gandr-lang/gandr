@@ -1,0 +1,228 @@
+[
+  {
+    "name": "#4911: a workflow-only change, #4902's paths, selects no Rust check",
+    "program": "select.jq",
+    "input": {
+      "tasks": [
+        "check:claims",
+        "check:corpus",
+        "check:doc",
+        "check:extension",
+        "check:fmt",
+        "check:tests",
+        "check:typos"
+      ],
+      "changed": [
+        ".config/coverage/cases.json",
+        ".config/coverage/jobs.jq",
+        ".config/mise/tasks/mise-tasks-check.toml",
+        ".github/workflows/coverage.yml"
+      ]
+    },
+    "output": ["check:claims", "check:typos"]
+  },
+  {
+    "name": "#4911: a crate's source selects the whole wall",
+    "program": "select.jq",
+    "input": {
+      "tasks": [
+        "check:claims",
+        "check:corpus",
+        "check:doc",
+        "check:extension",
+        "check:fmt",
+        "check:tests",
+        "check:typos"
+      ],
+      "changed": [".config/claims/epic-deps.bash", "crates/core-term/src/lib.rs"]
+    },
+    "output": [
+      "check:claims",
+      "check:corpus",
+      "check:doc",
+      "check:extension",
+      "check:fmt",
+      "check:tests",
+      "check:typos"
+    ]
+  },
+  {
+    "name": "#4911: the lockfile selects the whole wall",
+    "program": "select.jq",
+    "input": {
+      "tasks": [
+        "check:claims",
+        "check:corpus",
+        "check:doc",
+        "check:extension",
+        "check:fmt",
+        "check:tests",
+        "check:typos"
+      ],
+      "changed": ["Cargo.lock"]
+    },
+    "output": [
+      "check:claims",
+      "check:corpus",
+      "check:doc",
+      "check:extension",
+      "check:fmt",
+      "check:tests",
+      "check:typos"
+    ]
+  },
+  {
+    "name": "#4911: a path no row maps selects every check",
+    "program": "select.jq",
+    "input": {
+      "tasks": [
+        "check:claims",
+        "check:corpus",
+        "check:doc",
+        "check:extension",
+        "check:fmt",
+        "check:tests",
+        "check:typos"
+      ],
+      "changed": ["README.md", "mise.toml"]
+    },
+    "output": [
+      "check:claims",
+      "check:corpus",
+      "check:doc",
+      "check:extension",
+      "check:fmt",
+      "check:tests",
+      "check:typos"
+    ]
+  },
+  {
+    "name": "#4911: a row maps a file only by its whole path",
+    "program": "select.jq",
+    "input": {
+      "tasks": ["check:claims", "check:corpus", "check:doc", "check:typos"],
+      "changed": ["README.md.orig"]
+    },
+    "output": ["check:claims", "check:corpus", "check:doc", "check:typos"]
+  },
+  {
+    "name": "#4911: a corpus source selects the corpus checks and no Rust check",
+    "program": "select.jq",
+    "input": {
+      "tasks": [
+        "check:claims",
+        "check:corpus",
+        "check:doc",
+        "check:extension",
+        "check:fmt",
+        "check:tests",
+        "check:typos"
+      ],
+      "changed": ["corpus/model/basics/definitions.gandr", "library/std/list.gandr"]
+    },
+    "output": ["check:claims", "check:corpus", "check:typos"]
+  },
+  {
+    "name": "#4911: a narrower row stands above a wider one",
+    "program": "select.jq",
+    "input": {
+      "tasks": [
+        "check:claims",
+        "check:corpus",
+        "check:doc",
+        "check:extension",
+        "check:fmt",
+        "check:tests",
+        "check:typos"
+      ],
+      "changed": [".config/nextest.toml"]
+    },
+    "output": ["check:claims", "check:doc", "check:fmt", "check:tests", "check:typos"]
+  },
+  {
+    "name": "#4911: the extension's source selects the extension's checks",
+    "program": "select.jq",
+    "input": {
+      "tasks": [
+        "check:claims",
+        "check:corpus",
+        "check:doc",
+        "check:extension",
+        "check:fmt",
+        "check:tests",
+        "check:typos"
+      ],
+      "changed": ["contrib/gandr-vscode/src/extension.ts"]
+    },
+    "output": ["check:claims", "check:extension", "check:typos"]
+  },
+  {
+    "name": "#4911: no change selects the light checks alone",
+    "program": "select.jq",
+    "input": {
+      "tasks": ["check:claims", "check:corpus", "check:doc", "check:typos"],
+      "changed": []
+    },
+    "output": ["check:claims", "check:typos"]
+  },
+  {
+    "name": "#4911: a check building the toolchain outside every group is a finding",
+    "program": "unmapped.jq",
+    "input": {
+      "table": { "groups": { "rust": ["check:tests"] }, "light": [], "paths": [] },
+      "tasks": [
+        {
+          "name": "check:tests",
+          "run": [".config/mise/scope cargo nextest run --workspace"],
+          "depends": []
+        },
+        {
+          "name": "check:new",
+          "run": [".config/mise/scope cargo build --workspace"],
+          "depends": []
+        },
+        {
+          "name": "check:map",
+          "run": ["cargo metadata --locked --format-version 1"],
+          "depends": []
+        },
+        {
+          "name": "check:cases",
+          "run": [".config/cases/run.bash x x.json --program x.jq"],
+          "depends": []
+        }
+      ]
+    },
+    "output": "check:new: it builds or runs the toolchain and sits in no group of .config/gate-scope/table.json"
+  },
+  {
+    "name": "#4911: a check depending on a grouped check is heavy",
+    "program": "unmapped.jq",
+    "input": {
+      "table": { "groups": { "rust": ["check:dylint"] }, "paths": [] },
+      "tasks": [
+        { "name": "check:dylint", "run": ["cargo dylint --lib x"], "depends": [] },
+        { "name": "check:obligations", "run": ["jq -n 1"], "depends": ["check:dylint"] }
+      ]
+    },
+    "output": "check:obligations: it builds or runs the toolchain and sits in no group of .config/gate-scope/table.json"
+  },
+  {
+    "name": "#4911: a light check is no finding",
+    "program": "unmapped.jq",
+    "input": {
+      "table": { "groups": {}, "light": ["check:prose"], "paths": [] },
+      "tasks": [{ "name": "check:prose", "run": ["cargo run --package prose"], "depends": [] }]
+    },
+    "output": ""
+  },
+  {
+    "name": "#4911: a group naming no check task is a finding",
+    "program": "unmapped.jq",
+    "input": {
+      "table": { "groups": { "rust": ["check:tests", "check:test-groups"] }, "paths": [] },
+      "tasks": [{ "name": "check:tests", "run": ["cargo nextest run"], "depends": [] }]
+    },
+    "output": "rust: it names check:test-groups, which is no check task"
+  }
+]
