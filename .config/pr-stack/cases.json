@@ -3567,5 +3567,97 @@
       "held": [4162, 4158]
     },
     "output": "{\"wait\":[4162],\"off\":[{\"number\":4158,\"base\":\"triage-4058-stall-lane\"}]}"
+  },
+  {
+    "name": "#4638: #4615's branch, its unit #4548, holds four other units' commits, each with the pull request working it; its own and an unnamed commit are not foreign",
+    "program": "foreign.jq",
+    "input": {
+      "units": [4548],
+      "commits": [
+        {
+          "oid": "4e4230db6",
+          "subject": "feat(surface): ghost text shows as the author types by default",
+          "body": "gandr.inlineCompletion.trigger defaults to automatic in the server and\nthe VS Code extension. The README says how to turn ghost text off.\n\nCloses #4548\n\nAssisted-by: LLM\nCo-authored-by: silvanshade <silvanshade@users.noreply.github.com>"
+        },
+        {
+          "oid": "df7022f73",
+          "subject": "refactor(surface): one rule braces a statement in a value slot",
+          "body": "The printer's braced and tuple joins take each entry through\nbare_up_to, so the visit's block arm for a nested or returned bind\nretires. The formatter writes a motive's tokens with the printer's\nspacing, and its `;` case retires.\n\nCloses #4024\n\nAssisted-by: LLM\nCo-authored-by: silvanshade <silvanshade@users.noreply.github.com>"
+        },
+        {
+          "oid": "71fc698b1",
+          "subject": "feat(surface): a data declaration is a module member",
+          "body": "A module body admits a data declaration. Its family takes a slot in\nthe module's container, beside its words and operations. Outside the\nmodule M.Box names the family, and M.B and M.Box.B its constructor,\nin a value and in a pattern. A sealed module keeps refusing it.\n\nCloses #4298\n\nAssisted-by: LLM\nCo-authored-by: silvanshade <silvanshade@users.noreply.github.com>"
+        },
+        {
+          "oid": "0840e2a56",
+          "subject": "feat(surface): the static abstraction folds into fun",
+          "body": "`fun (X) { T }` is the static lambda wherever its position states a\nstatic arrow: a transport's or a ride's motive, a definition's body\nunder a static signature, an operator's argument at a static\nparameter, and a body under a static codomain. The `\\` tile and the\n`static_abstraction` rule retire, and `\\` lexes as an unknown\nspelling.\n\nCloses #4508\n\nAssisted-by: LLM\nCo-authored-by: silvanshade <silvanshade@users.noreply.github.com>"
+        },
+        {
+          "oid": "5c79abb95",
+          "subject": "refactor(surface): key node tables by layout block (#4372)",
+          "body": "A node position is now its layout block and its offset in that block.\nThe root with its children is the first block, and each top-level\nform's descendants are a block of their own. A node of one form keeps\nits position whatever another form holds.\n\nAssisted-by: LLM\nCo-authored-by: silvanshade <silvanshade@users.noreply.github.com>"
+        },
+        {
+          "oid": "8059504bf",
+          "subject": "feat(workflow): refuse a citation older than the window",
+          "body": "check:references refuses a work the crates or the corpus cite that\nappeared before the cutoff year .config/references/window.toml states,\nat a site no entry there covers. The cutoff is 2019, and every crate\nand corpus subject citing an older work starts allowed whole.\n\nAssisted-by: LLM\nCo-authored-by: silvanshade <silvanshade@users.noreply.github.com>"
+        }
+      ],
+      "pulls": [
+        {
+          "number": 4541,
+          "body": "Closes #4372",
+          "head": "refactor-lowering-keys-4372"
+        },
+        {
+          "number": 4547,
+          "body": "Closes #4508",
+          "head": "toolchain-4508-static-fun"
+        },
+        {
+          "number": 4557,
+          "body": "Closes #4298",
+          "head": "triage-4298-module-data"
+        },
+        {
+          "number": 4606,
+          "body": "Closes #4024",
+          "head": "toolchain-4024-consolidate"
+        },
+        {
+          "number": 4615,
+          "body": "Closes #4548",
+          "head": "feat-ghost-text-default-4548"
+        }
+      ]
+    },
+    "output": "[{\"oid\":\"df7022f73\",\"subject\":\"refactor(surface): one rule braces a statement in a value slot\",\"units\":[4024],\"pulls\":[4606]},{\"oid\":\"71fc698b1\",\"subject\":\"feat(surface): a data declaration is a module member\",\"units\":[4298],\"pulls\":[4557]},{\"oid\":\"0840e2a56\",\"subject\":\"feat(surface): the static abstraction folds into fun\",\"units\":[4508],\"pulls\":[4547]},{\"oid\":\"5c79abb95\",\"subject\":\"refactor(surface): key node tables by layout block (#4372)\",\"units\":[4372],\"pulls\":[4541]}]"
+  },
+  {
+    "name": "#4638: commits naming the pull request's unit, alone or beside another, or naming none, are its own",
+    "program": "foreign.jq",
+    "input": {
+      "units": [4511],
+      "commits": [
+        {
+          "oid": "fb62535ee",
+          "subject": "fix(workflow): a cargo run of the driver runs its own build",
+          "body": "Closes #4511\n\nAssisted-by: LLM"
+        },
+        {
+          "oid": "aaaaaaaaa",
+          "subject": "fix(workflow): the follow-up",
+          "body": "Advances #4511, closes #3816."
+        },
+        {
+          "oid": "bbbbbbbbb",
+          "subject": "test(workflow): a case",
+          "body": "Assisted-by: LLM"
+        }
+      ]
+    },
+    "output": "[]"
   }
 ]

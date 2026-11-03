@@ -84,6 +84,27 @@ record_stack_base() {
   git rev-parse "$1" > "$(git rev-parse --git-path gandr-stack-base)"
 }
 
+# The commits from `$1` to HEAD that are another unit's (#4638, `foreign.jq`),
+# `$2` the units the pull request works as a JSON array of numbers. Prints
+# one line per such commit, naming the units it names and the pull requests
+# that work them, and nothing when every commit names one of `$2`, or none.
+foreign_commits() {
+  local commits copies pulls
+  commits=$(git rev-list --no-merges "$1..HEAD" | while IFS= read -r commit; do
+    jq -n -c --arg oid "$commit" --arg subject "$(git log -1 --format=%s "$commit")" --arg body "$(git log -1 --format=%b "$commit")" \
+      '{oid: $oid, subject: $subject, body: $body}'
+  done | jq -s -c .)
+  copies=$(jq -c --argjson units "$2" '{units: $units, commits: .}' <<< "$commits" | jq -c -f "$pr_stack_dir/foreign.jq")
+  [[ $copies != '[]' ]] || return 0
+  pulls=$(jq -r '[.[].units[]] | unique[]' <<< "$copies" | while IFS= read -r unit; do
+    gh pr list -R "$repo" --state all --limit 20 --search "$unit" --json number,body,headRefName --jq '.[] | {number, body, head: .headRefName}'
+  done | jq -s -c 'unique_by(.number)')
+  printf '%s\n%s\n' "$commits" "$pulls" | jq -s -c --argjson units "$2" '{units: $units, commits: .[0], pulls: .[1]}' \
+    | jq -c -f "$pr_stack_dir/foreign.jq" \
+    | jq -r '.[] | "\(.oid[0:9]) \(.subject): names \(.units | map("#\(.)") | join(", ")), "
+        + (if .pulls == [] then "which no pull request works" else "worked by \(.pulls | map("#\(.)") | join(", "))" end)'
+}
+
 # The commit below the checked-out branch `$1`'s own commits, where its rebase
 # onto the top's branch `$2` starts (#1298). Its own commits are those above
 # `origin/$trunk` and the branch's stack base (`stack_base`, #3877) that no

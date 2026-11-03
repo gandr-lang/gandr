@@ -11,6 +11,7 @@ query($owner: String!, $name: String!) {
         createdAt
         mergeable
         isInMergeQueue
+        body
         timelineItems(last: 30, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) {
           nodes {
             ... on RemovedFromMergeQueueEvent { createdAt reason }
@@ -30,6 +31,9 @@ query($owner: String!, $name: String!) {
               }
             }
           }
+        }
+        own: commits(first: 100) {
+          nodes { commit { oid messageHeadline messageBody } }
         }
       }
     }
