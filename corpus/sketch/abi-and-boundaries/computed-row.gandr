@@ -1,0 +1,48 @@
+// Foreign functions admitted against the rows their ABI computes, as the
+// writer states them.
+//
+// Today a writer builds each foreign row by hand, value by value. Here the
+// writer states the foreign signature alone, and the checker computes the
+// row from the types.
+//
+// The checker derives each argument's witness record from its type's layout
+// under `std.abi.C`: size, alignment and niche. A signature the library's
+// layout does not realise is refused `BoundaryUnrealised` at the clause it
+// fails. No parser accepts the extern block's `fun` yet.
+//
+// - see: #4562 — the ABI sketch, its rulings in the issue body
+// - see: `../../model/interop/boundary/function-row.gandr` — the same `f`,
+//   its row and each refused neighbour built by hand
+// - see: Wagner, Eisbach and Ahmed, "Realistic Realizability: Specifying
+//   ABIs You Can Count On", OOPSLA 2024, doi:10.1145/3689755, § 3.1
+
+// The C calling convention, as an `Abi` value.
+import std.abi.C;
+
+/// The demo library's two functions. `Option(&u32)` is one word with `None`
+/// as null, so the computed row matches the library's.
+extern C from "lib:demo" {
+  fun f(x : Option(&u32), n : u32) -> u32;
+  fun sum(xs : Ptr(u32), len : usize) -> u64;
+}
+
+/// zlib's running checksum, as `zlib.h` declares it on an LP64 target, where
+/// `unsigned long` is eight bytes and `unsigned int` four.
+extern C from "lib:z" {
+  fun crc32(crc : u64, buf : Ptr(u8), len : u32) -> u64;
+}
+
+/// The value behind a reference that may be absent, the default otherwise.
+pub def orDefault(x : Option(&u32), d : u32) -> u32 {
+  f(x, d)
+}
+
+/// The checksum of `len` bytes from zlib's initial value.
+pub def checksum(buf : Ptr(u8), len : u32) -> u64 {
+  crc32(0, buf, len)
+}
+
+/// Two buffers' checksum, the second continuing the first's.
+pub def checksumBoth(a : Ptr(u8), alen : u32, b : Ptr(u8), blen : u32) -> u64 {
+  crc32(crc32(0, a, alen), b, blen)
+}

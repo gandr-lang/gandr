@@ -1,0 +1,51 @@
+// One function admitted under the C, Rust and Swift ABIs, one module and one
+// `Abi` value each.
+//
+// The ABIs differ in the rows they compute, not in how a writer states a
+// foreign function. So one extern block form serves every language, naming
+// the ABI it is admitted under.
+//
+// Each language's importer supplies its rows from the language's own type
+// sizes: rustc's printed layouts for Rust, Clang's record layouts for C. No
+// parser accepts the extern block's `fun` yet.
+//
+// - see: #4562 — the ABI sketch, its rulings in the issue body
+// - see: #4720 — sketch 17, whose importers supply each ABI's rows
+// - see: `computed-row.gandr` — the C rows, and the clause a mismatch fails
+// - see: `../../model/interop/boundary/function-row.gandr` — Rust's `f`,
+//   admitted by hand against rustc's printed layouts
+
+// The C calling convention.
+import std.abi.C;
+// The Rust calling convention.
+import std.abi.Rust;
+// The Swift calling convention.
+import std.abi.Swift;
+
+/// A Rust crate's exported function. rustc's layouts give its row, where
+/// `Option(&u32)` is one word with `None` in the reference's niche.
+extern Rust from "crate:demo" {
+  fun f(x : Option(&u32), n : u32) -> u32;
+}
+
+/// The same function behind `extern "C"`, admitted under the C row: a C
+/// caller sees a nullable pointer, one word.
+extern C from "lib:demo" {
+  fun f_c(x : Ptr(u32), n : u32) -> u32;
+}
+
+/// A Swift package's function. Swift passes a two-word `String` by value, and
+/// its row says so.
+extern Swift from "package:Greeting" {
+  fun greetingLength(name : SwiftString) -> i64;
+}
+
+/// The Rust function, called with a reference.
+pub def fromRust(x : &u32, n : u32) -> u32 {
+  f(Some(x), n)
+}
+
+/// The Rust function, called with no reference.
+pub def fallback(n : u32) -> u32 {
+  f(None, n)
+}

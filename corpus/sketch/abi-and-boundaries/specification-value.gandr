@@ -1,0 +1,70 @@
+// Foreign contracts written once as values, each met by a foreign function
+// and by its gandr replacement.
+//
+// A caller reads one contract, whichever implementation answers it. A
+// replacement written in gandr then leaves the trust set without a caller
+// changing.
+//
+// A `#spec{ … }` with no body after it is a value of `Spec(E, A)`. On an
+// extern, `@[realizes(V)]` records the foreign realisation as an entry of the
+// trust set. A gandr definition meets the value by its type, an obligation
+// the kernel replays, and no parser accepts the attribute yet.
+//
+// - see: #4562 — the ABI sketch, its rulings in the issue body
+// - see: #4564 — sketch 6, the specification values this file follows
+// - see: `trusted-contract.gandr` — contracts written in the head
+// - see: `../specifications/spec-values.gandr` — specifications as values,
+//   met by gandr definitions
+
+// The C calling convention.
+import std.abi.C;
+// The Rust calling convention.
+import std.abi.Rust;
+// Points-to over `std.abi`'s heap.
+import std.abi (|->);
+// The specification theory.
+import std.spec (Spec);
+// The heap a pointer reads.
+import std.mem (Heap);
+
+/// The word behind a pointer that may be null, or a default.
+pub def derefOr(p : Ptr(i32), d : i32) -> Spec(State(Heap), i32) {
+  #spec{
+    ghost v : i32
+    requires { p |-> v }
+    ensures r {
+      | r == v
+      | p |-> v
+    }
+  }
+}
+
+/// The vendor's implementation of `derefOr`.
+@[realizes(derefOr)]
+@[trusted(by: assumed, note: "the vendor's documented contract, demo 2.4")]
+extern C from "lib:demo" {
+  fun deref_or(p : Ptr(i32), d : i32) -> i32;
+}
+
+/// A value held between two bounds.
+pub def clamped(x : i32, lo : i32, hi : i32) -> Spec(Pure, i32) {
+  #spec{
+    requires { lo <= hi }
+    ensures r {
+      | lo <= r
+      | r <= hi
+    }
+  }
+}
+
+/// A Rust crate's clamp, until the gandr one below replaces it.
+@[realizes(clamped)]
+@[trusted(by: tested("demo::tests::clamp"), note: "the crate's property tests")]
+extern Rust from "crate:demo" {
+  fun clamp(x : i32, lo : i32, hi : i32) -> i32;
+}
+
+/// The same clamp written in gandr, with no foreign body left to trust.
+pub def clampLocal(x : i32, lo : i32, hi : i32) -> clamped(x, lo, hi) {
+  max(lo, min(x, hi))
+}
