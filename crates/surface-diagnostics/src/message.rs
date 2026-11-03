@@ -384,10 +384,6 @@ fn lowered(
                     f,
                     "the {spoken} reads a family at an index, which the fragment does not read here"
                 ),
-                FragmentBoundary::Unannotated if form == FormName::NUMBER => f.write_str(
-                    "a number with a fraction states no type of its own; write the type, as \
-                     `(0.5 : f64)` or `0.5f64`",
-                ),
                 FragmentBoundary::Unannotated => write!(f, "the {spoken} needs a type annotation"),
                 FragmentBoundary::NonUniform => f.write_str(
                     "a recursive call must pass the parameters before the one it descends on \
@@ -1187,6 +1183,7 @@ fn checked(
                 CheckingForm::Offer(_) => "an offer",
                 CheckingForm::Scope(_) => "a capability scope",
                 CheckingForm::Run(_) => "a recorded run",
+                CheckingForm::Decimal(_) => "a decimal literal",
             }
         ),
         CheckRefusal::UnknownConstant { .. } => {
@@ -1509,8 +1506,8 @@ fn checked(
             "a capability cannot be made from a term; only one held or granted can stand here",
         ),
         CheckRefusal::LiteralAmbiguous { .. } => f.write_str(
-            "more than one model of `FromNat` or `FromNeg` reads a literal at this type; apply \
-             the meant model's reader to it by name",
+            "more than one model of `FromNat`, `FromNeg` or `FromDecimal` reads a literal at this \
+             type; apply the meant model's reader to it by name",
         ),
         CheckRefusal::CapabilityAmplified(_) => {
             f.write_str("this capability grants less than the one expected here")

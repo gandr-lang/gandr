@@ -702,7 +702,7 @@ fn kept_crossing(
             )? == Agreement::Convertible
         {
             return Ok(Maybe::Present(gandr_core_term::Crossing {
-                by: map,
+                by: Maybe::Present(map),
                 carriers,
                 operand: gandr_core_term::CrossedOperand::Itself,
             }));
@@ -786,13 +786,295 @@ fn literal_reader(
                 },
             };
             Ok(Maybe::Present(gandr_core_term::Crossing {
-                by,
+                by: Maybe::Present(by),
                 carriers: Vec::new(),
                 operand,
             }))
         },
         Readers::Several => Err(CheckRefusal::LiteralAmbiguous { at, expected }),
     }
+}
+
+/// Check the decimal literal `at` at `expected`: as the float it rounds to
+/// where `expected` reduces to `f64`, and otherwise through the one kept
+/// decimal reader whose carrier is the type `expected` reduces to, applied to
+/// the literal's digits and its exponent (#4807).
+///
+/// # Specification
+/// - requires: `at` is a decimal literal; `expected` is formed in the context's
+///   arena.
+/// - ensures: `tally` counts one more crossing. On success a crossing is
+///   recorded at `at`: at `f64` one with no map whose operand is the float the
+///   literal's exact value rounds to, minted in the arena; at any other type
+///   one by the only kept decimal reader whose signature is a thunk of `Integer
+///   → Integer → F B`, either arrow perhaps a `Π`, at which `B` converts to the
+///   head `expected` reduces to, its carrier the literal's digits `m` and its
+///   operand its exponent `e`, minted in the arena, for the value `m × 10^e`.
+///   The collector is in the state it was before, whatever the answer.
+/// - fails: [`CheckRefusal::LiteralAmbiguous`] naming `at` and `expected` when
+///   two readers carry the literal; [`CheckRefusal::TypeMismatch`] naming `at`,
+///   `f64` and `expected` when none does, the literal read as the float it is
+///   with no reader; [`CheckRefusal::MachineInvariant`] when `at` is no decimal
+///   literal; the refusals [`convert`] yields, and a view's of a signature.
+/// - panics: none.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decimal at `f64` crosses by no map to its float, a
+///   decimal at a type one decimal reader carries crosses by it at its digits
+///   and exponent, a decimal two readers carry is refused naming the type, and
+///   a decimal at a type no reader carries is refused as a float.
+/// - witness: `module::tests::a_decimal_at_f64_stands_as_its_float_4807`
+/// - witness: `module::tests::a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807`
+#[spec(
+    captures: [before = context.deferrals().collecting, counted = tally.0],
+    ensures: context.deferrals().collecting == before && tally.0 == counted.saturating_add(1),
+)]
+pub fn decimal_bridge(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+    expected: ValueTypeId,
+    tally: &mut ConversionCount,
+) -> Result<(), CheckRefusal>
+{
+    *tally = tally.crossed();
+    let Some(&Value::Literal(gandr_kernel_term::Literal::Numeric(ref decimal))) =
+        context.arena().value(at)
+    else {
+        return Err(CheckRefusal::MachineInvariant);
+    };
+    let decimal = decimal.clone();
+    let wanted = context.whnf_value_type(expected)?;
+    if matches!(
+        value_type_view(context.arena(), wanted)?,
+        ValueTypeView::Float64
+    ) {
+        let float = rounded(&decimal);
+        let standing = context
+            .arena_mut()
+            .value_literal(gandr_kernel_term::Literal::Float64(float));
+        context.record_crossing(at, gandr_core_term::Crossing {
+            by: Maybe::Absent(()),
+            carriers: Vec::new(),
+            operand: gandr_core_term::CrossedOperand::Standing(standing),
+        });
+        return Ok(());
+    }
+    // With no reader the literal is the float it reads as at `f64`, so a
+    // refusal names that type beside the one asked.
+    let unread = CheckRefusal::TypeMismatch(Mismatch::Value {
+        at,
+        synthesised: context.atom(crate::context::Atom::Float64).id(),
+        expected,
+    });
+    if !context
+        .readers()
+        .iter()
+        .any(|reader| reader.reads == gandr_core_term::LiteralKind::Decimal)
+    {
+        return Err(unread);
+    }
+    let (digits, exponent) = exact(&decimal);
+    let digits = context
+        .arena_mut()
+        .value_literal(gandr_kernel_term::Literal::Integer(digits));
+    let exponent = context
+        .arena_mut()
+        .value_literal(gandr_kernel_term::Literal::Integer(exponent));
+    // A reader applies a map the elaboration runs, so the owed decode is
+    // compared rigidly, as a reduct's is.
+    let collecting = core::mem::replace(
+        &mut context.deferrals_mut().collecting,
+        crate::elaboration::Collecting::Off,
+    );
+    let read = decimal_reader(context, [digits, exponent], wanted);
+    context.deferrals_mut().collecting = collecting;
+    match read? {
+        Readers::None => Err(unread),
+        Readers::One(by) => {
+            context.record_crossing(at, gandr_core_term::Crossing {
+                by: Maybe::Present(by),
+                carriers: Vec::from([digits]),
+                operand: gandr_core_term::CrossedOperand::Standing(exponent),
+            });
+            Ok(())
+        },
+        Readers::Several => Err(CheckRefusal::LiteralAmbiguous { at, expected }),
+    }
+}
+
+/// The float the decimal `decimal` rounds to, to nearest with ties to even.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the binary64 value nearest the decimal's exact value, its sign
+///   the decimal's.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the rounding is the platform's correctly rounded parse,
+///   which a predicate would perform again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decimal_bridge`].
+/// - witness: `module::tests::a_decimal_at_f64_stands_as_its_float_4807`
+fn rounded(decimal: &gandr_kernel_term::NumericLiteral) -> gandr_kernel_term::Float64Literal
+{
+    let whole: &str = decimal.integer_part().as_ref();
+    let fraction: &str = decimal.fraction().as_ref();
+    let spelled = if fraction.is_empty() {
+        alloc::string::String::from(whole)
+    }
+    else {
+        alloc::format!("{whole}.{fraction}")
+    };
+    // A canonical decimal's digits always parse, and the parse reads no sign,
+    // so the magnitude is rounded and the sign applied after. A failure would
+    // be an engine fault, and NaN stands for no decimal, so it is never
+    // mistaken for one.
+    let magnitude = spelled
+        .parse::<gandr_kernel_term::Float64Literal>()
+        .map_or(f64::NAN, f64::from);
+    gandr_kernel_term::Float64Literal::from(match decimal.sign() {
+        gandr_kernel_term::Sign::NonNegative => magnitude,
+        gandr_kernel_term::Sign::Negative => -magnitude,
+    })
+}
+
+/// The exact digits and exponent of the decimal `decimal`: the integer `m`
+/// and the integer `e` with `m × 10^e` its value, `e` the negated count of its
+/// fraction's digits.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `m` carries the decimal's sign and its integral digits followed
+///   by its fraction's, canonical; `e` is zero for a decimal with no fraction
+///   and the negated count of its fraction's digits otherwise.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the digits are the literal's own, which a predicate
+///   would join again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decimal_bridge`].
+/// - witness: `module::tests::a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807`
+fn exact(
+    decimal: &gandr_kernel_term::NumericLiteral
+) -> (
+    gandr_kernel_term::IntegerLiteral,
+    gandr_kernel_term::IntegerLiteral,
+)
+{
+    let whole: &str = decimal.integer_part().as_ref();
+    let fraction: &str = decimal.fraction().as_ref();
+    let digits =
+        gandr_kernel_term::Magnitude::from_decimal_text(alloc::format!("{whole}{fraction}"))
+            .unwrap_or_else(gandr_kernel_term::Magnitude::zero);
+    let places =
+        gandr_kernel_term::Magnitude::from_decimal_text(alloc::format!("{}", fraction.len()))
+            .unwrap_or_else(gandr_kernel_term::Magnitude::zero);
+    let exponent_sign = if fraction.is_empty() {
+        gandr_kernel_term::Sign::NonNegative
+    }
+    else {
+        gandr_kernel_term::Sign::Negative
+    };
+    (
+        gandr_kernel_term::IntegerLiteral::new(decimal.sign(), digits),
+        gandr_kernel_term::IntegerLiteral::new(exponent_sign, places),
+    )
+}
+
+/// The kept decimal readers that carry a decimal, at the digits and the
+/// exponent `[digits, exponent]`, to the type `wanted`, counted to two.
+///
+/// # Specification
+/// - requires: as [`decimal_bridge`]; both values are integer literals in the
+///   context's arena.
+/// - ensures: [`Readers::One`] for the only decimal reader whose signature
+///   carries the two integers to `wanted` as [`decimal_bridge`] states it,
+///   [`Readers::None`] for none and [`Readers::Several`] for two or more.
+/// - fails: the refusals [`convert`] yields, and a view's of a signature.
+/// - panics: none.
+/// - executable: none — as [`kept_reader`].
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decimal_bridge`].
+/// - witness: `module::tests::a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807`
+fn decimal_reader(
+    context: &mut CheckingContext<'_>,
+    arguments: [ValueId; 2],
+    wanted: ValueTypeId,
+) -> Result<Readers, CheckRefusal>
+{
+    let integer = Relocated::from(context.atom(crate::context::Atom::Integer).id());
+    let mut read = Readers::None;
+    let mut next = 0_usize;
+    while let Some(&reader) = context.readers().get(next) {
+        next = next.saturating_add(1);
+        if reader.reads != gandr_core_term::LiteralKind::Decimal {
+            continue;
+        }
+        let reader = reader.by;
+        let Maybe::Present(signature) = context.signature(reader)
+        else {
+            continue;
+        };
+        let ValueTypeView::Thunk(mut chain) = value_type_view(context.arena(), signature.id())?
+        else {
+            continue;
+        };
+        let mut carries = true;
+        for argument in arguments {
+            let (domain, codomain) = match comp_type_view(context.arena(), chain)? {
+                CompTypeView::Arrow { domain, codomain } => (domain, codomain),
+                CompTypeView::Pi { domain, codomain } => (
+                    domain,
+                    gandr_core_term::instantiate_comp_type(context.arena_mut(), codomain, argument),
+                ),
+                CompTypeView::Returner { .. }
+                | CompTypeView::Element { .. }
+                | CompTypeView::With(..)
+                | CompTypeView::Codata { .. }
+                | CompTypeView::Unknown => {
+                    carries = false;
+                    break;
+                },
+            };
+            if convert(
+                context,
+                Pairing::Assignable(integer, Relocated::from(domain)),
+            )? != Agreement::Convertible
+            {
+                carries = false;
+                break;
+            }
+            chain = codomain;
+        }
+        if !carries {
+            continue;
+        }
+        let CompTypeView::Returner { result, .. } = comp_type_view(context.arena(), chain)?
+        else {
+            continue;
+        };
+        if convert(
+            context,
+            Pairing::Assignable(Relocated::from(result), Relocated::from(wanted)),
+        )? == Agreement::Convertible
+        {
+            read = match read {
+                Readers::None => Readers::One(reader),
+                Readers::One(_) | Readers::Several => return Ok(Readers::Several),
+            };
+        }
+    }
+
+    Ok(read)
 }
 
 /// What a literal reader is applied to: a natural literal itself, or a

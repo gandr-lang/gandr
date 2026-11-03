@@ -1448,15 +1448,21 @@ impl<'arena> Engine<'arena>
         if let (Node::Value(held), Node::Value(id)) = (node, rewritten)
             && let Some(crossing) = self.crossings.get(&held)
         {
-            let constant = self.arena.value_constant(crossing.by);
-            let mut applied = self.arena.computation_force(constant);
-            for &carrier in &crossing.carriers {
-                applied = self.arena.computation_application(applied, carrier);
-            }
             let operand = match crossing.operand {
                 CrossedOperand::Itself => id,
                 CrossedOperand::Standing(standing) => standing,
             };
+            let Maybe::Present(by) = crossing.by
+            else {
+                // No map: the value stands as its operand, a decimal at `f64`
+                // as its float, with no run around it.
+                return Node::Value(operand);
+            };
+            let constant = self.arena.value_constant(by);
+            let mut applied = self.arena.computation_force(constant);
+            for &carrier in &crossing.carriers {
+                applied = self.arena.computation_application(applied, carrier);
+            }
             let applied = self.arena.computation_application(applied, operand);
             let run = self.arena.value_run(applied);
             self.crossed.push((id, run));
@@ -6123,10 +6129,11 @@ pub fn wrap_marks(
 ///   rebuilt first, standing as the run `run(r(x₁, …, xₙ, o))` of its
 ///   crossing's map `r` applied to the crossing's carriers `xᵢ`, outermost
 ///   first, then to its operand `o`: `v` itself, or the value the crossing
-///   names to stand for it; `subject` itself when `crossings` names nothing it
-///   reaches; `carried` gains one pair per node the rebuild carried over — a
-///   named value beside the value it stands as inside its run, when that is
-///   another — and `runs` each run minted, in minting order.
+///   names to stand for it; a crossing with no map stands `v` as `o` itself,
+///   with no run; `subject` itself when `crossings` names nothing it reaches;
+///   `carried` gains one pair per node the rebuild carried over — a named value
+///   beside the value it stands as inside its run, when that is another — and
+///   `runs` each run minted, in minting order.
 /// - provides: the body whose runs the nested elaboration binds before their
 ///   regions, as a run the source wrote.
 /// - fails: never.
@@ -6137,13 +6144,15 @@ pub fn wrap_marks(
 ///   separate the run minted at the one from the identity on the other; a
 ///   crossing with a carrier applies the map to the carrier before the value; a
 ///   crossing with a standing operand applies the map to it in place of the
-///   value.
+///   value; a crossing with no map stands the value as its operand.
 /// - witness: `rewrite::tests::a_crossing_runs_its_reduct_at_exactly_the_named_values`
 /// - witness: `rewrite::tests::a_crossing_applies_its_carriers_before_the_value`
 /// - witness: `rewrite::tests::a_standing_operand_takes_the_crossed_value_s_place_4732`
+/// - witness: `rewrite::tests::an_unmapped_crossing_stands_the_value_as_its_operand_4807`
 #[spec(captures: [held = carried.len(), minted = runs.len()],
     ensures: |ret| carried.len() >= held && runs.len() >= minted
-        && (runs.len() > minted || ret == subject))]
+        && (runs.len() > minted || ret == subject
+            || crossings.values().any(|crossing| matches!(crossing.by, Maybe::Absent(())))))]
 #[inline]
 pub fn cross_reducts(
     arena: &mut CoreArena,
@@ -6270,8 +6279,11 @@ pub fn build_type_updates(
 ///
 /// The map is a reduct, a forgetting map or a literal reader; its carriers
 /// are what it takes before the value, outermost first, read where the value
-/// stands. A reduct and a reader take none; a forgetting map takes the type
-/// each manifest sort it forgets is fixed to.
+/// stands. A reduct and a natural or negative reader take none; a decimal
+/// reader takes the decimal's digits before its exponent; a forgetting map
+/// takes the type each manifest sort it forgets is fixed to. A crossing with
+/// no map stands the value as its operand: a decimal checked at `f64` stands
+/// as the float it rounds to (#4807).
 ///
 /// # Specification
 /// - executable: none — a data declaration the checker records and
@@ -6279,8 +6291,8 @@ pub fn build_type_updates(
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Crossing
 {
-    /// The map's constant.
-    pub by: ConstantIndex,
+    /// The map's constant, absent where the value stands as its operand.
+    pub by: Maybe<ConstantIndex, ()>,
     /// The values the map is applied to before the crossed value, outermost
     /// first.
     pub carriers: Vec<ValueId>,
@@ -6299,7 +6311,9 @@ pub enum CrossedOperand
     /// The crossed value itself, as a reduct or a forgetting map takes it.
     Itself,
     /// A value standing for it: a negative literal's magnitude, which
-    /// `fromNeg` takes in place of the literal (#4732).
+    /// `fromNeg` takes in place of the literal (#4732), a decimal's exponent,
+    /// which `fromDecimal` takes after its digits, or the float a decimal
+    /// stands as at `f64` (#4807).
     Standing(ValueId),
 }
 
@@ -6316,6 +6330,9 @@ pub enum LiteralKind
     Natural,
     /// A negative literal, read by a model of `FromNeg` at its magnitude.
     Negative,
+    /// A decimal literal, read by a model of `FromDecimal` at its digits and
+    /// its exponent (#4807).
+    Decimal,
 }
 
 /// A literal reader a module lends: a model's reading member, and the kind
@@ -6327,7 +6344,8 @@ pub enum LiteralKind
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LiteralReader
 {
-    /// The member's constant: a model's `fromNat` or `fromNeg`.
+    /// The member's constant: a model's `fromNat`, `fromNeg` or
+    /// `fromDecimal`.
     pub by: ConstantIndex,
     /// The literal it reads.
     pub reads: LiteralKind,

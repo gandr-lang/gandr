@@ -933,7 +933,10 @@ fn read(
         };
     let crossings: Vec<(ValueId, ConstantIndex)> = crossed
         .iter()
-        .map(|(&value, crossing)| (value, crossing.by))
+        .filter_map(|(&value, crossing)| match crossing.by {
+            Maybe::Present(by) => Some((value, by)),
+            Maybe::Absent(()) => None,
+        })
         .filter(|&(_, reduct)| module.reducts().binary_search(&reduct).is_ok())
         .collect();
     let forgettings = gandr_surface_format::forgettings(&module, &arena, &crossed);

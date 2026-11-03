@@ -556,11 +556,13 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::FixedInteger;
 use gandr_kernel_term::Float64Literal;
+use gandr_kernel_term::FractionDigits;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::IntegerWidth;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
+use gandr_kernel_term::NumericLiteral;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::Summand;
@@ -8985,16 +8987,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   `f64` suffix or annotated `(n : f64)`, rounded to nearest from its
     ///   decimal text; as the binary natural it names when it is decimal digits
     ///   annotated `(n : Nat)`, `Nat` resolving to the prelude's ([`natural`]);
-    ///   otherwise a lexeme of decimal digits is planned as its canonical
-    ///   integer.
+    ///   a lexeme of decimal digits is planned as its canonical integer; a
+    ///   fraction or an exponent with neither suffix nor annotation is planned
+    ///   as its exact decimal, which the checker reads at the type it is
+    ///   checked at (#4807).
     /// - provides: the literal reading of numbers.
     /// - fails: yields the wrong-sort refusal outside value position; the `f32`
     ///   suffix is a typed number the fragment does not admit; digits that do
     ///   not fit an integer width, or a fraction or an exponent before one, are
     ///   a malformed literal; so is anything but decimal digits annotated `(n :
-    ///   Nat)`; a fraction or an exponent with neither suffix nor annotation
-    ///   states no type, the unannotated refusal; any other text is a malformed
-    ///   literal; the annotation's name propagates its resolution's refusal.
+    ///   Nat)`, and a decimal whose exact value spells more digits than the
+    ///   lowering holds; any other text is a malformed literal; the
+    ///   annotation's name propagates its resolution's refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -9012,6 +9016,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_malformed_integer_literal_is_refused`
     /// - witness: `lower::tests::a_number_takes_float64_from_its_suffix_or_annotation_1830`
     /// - witness: `lower::tests::a_typed_number_is_its_value_at_its_width`
+    /// - witness: `lower::tests::a_decimal_reads_as_its_exact_value_4807`
     /// - witness: `lower::natural::tests::a_numeral_at_nat_is_its_binary_constructor_term_3287`
     /// - witness: `lower::natural::tests::a_numeral_at_a_source_s_own_nat_stays_an_integer_3287`
     #[spec(
@@ -9019,7 +9024,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Literal(Literal::Integer(_) | Literal::Fixed(_) | Literal::Float64(_)) | Plan::Natural(..)))
+                    Some(&(Plan::Literal(Literal::Integer(_) | Literal::Fixed(_) | Literal::Float64(_) | Literal::Numeric(_)) | Plan::Natural(..)))
                 )
         },
     )]
@@ -9084,8 +9089,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.plan(site, Plan::Literal(literal));
             return Ok(());
         }
-        if fractional(text).0 {
-            return Err(site.out(FragmentBoundary::Unannotated));
+        // A bare fraction states no type of its own: it lowers to its exact
+        // decimal, which the checker reads at the type it is checked at.
+        if let Maybe::Present(decimal) = decimal_literal(text) {
+            self.plan(site, Plan::Literal(Literal::Numeric(decimal)));
+            return Ok(());
         }
 
         Err(LoweringRefusal::MalformedLiteral {
@@ -12252,11 +12260,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   from the operands ([`Self::through_prelude`]); a prefix `-` written
     ///   directly on a natural literal is one negative integer literal, a
     ///   value, so `-4` stands at `Integer` with no call and reads through
-    ///   `FromNeg` elsewhere (#4732); a prefix `-` before a number written with
-    ///   the `f64` suffix is `float64.neg`, so the printers' spelling of a
-    ///   negative float, `-0.5f64`, lowers back to that float; the infix `then`
-    ///   is the composite of two paths, or of two flows where a flow is
-    ///   answered, as [`Self::derive`] plans it; the cons `g ∷ p` is a word, as
+    ///   `FromNeg` elsewhere (#4732); a prefix `-` written directly on a bare
+    ///   fraction is one negative decimal literal, read at its type as the
+    ///   fraction is (#4807); a prefix `-` before a number written with the
+    ///   `f64` suffix is `float64.neg`, so the printers' spelling of a negative
+    ///   float, `-0.5f64`, lowers back to that float; the infix `then` is the
+    ///   composite of two paths, or of two flows where a flow is answered, as
+    ///   [`Self::derive`] plans it; the cons `g ∷ p` is a word, as
     ///   [`Self::cons`] plans it.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
     ///   are refused; `then` refuses as [`Self::derive`] does, and the cons as
@@ -12277,9 +12287,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_prefix_operator_takes_its_one_operand`
     /// - witness: `lower::tests::a_negated_float_literal_is_float64_negation_1830`
     /// - witness: `lower::tests::a_negated_natural_literal_is_one_negative_literal_4732`
+    /// - witness: `lower::tests::a_decimal_reads_as_its_exact_value_4807`
     /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
     /// - witness: `lower::implicit::tests::an_order_calls_the_prelude_s_order_2333`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Application(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_) | Plan::Literal(Literal::Integer(_)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Application(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_) | Plan::Literal(Literal::Integer(_) | Literal::Numeric(_)))))]
     fn operator(
         &mut self,
         site: Site,
@@ -12308,6 +12319,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let _frame = self.require(site, Produced::Value)?;
             let negative = IntegerLiteral::new(Sign::Negative, natural.magnitude().clone());
             self.plan(site, Plan::Literal(Literal::Integer(negative)));
+            return Ok(());
+        }
+        // `-d` written on a bare fraction is one negative decimal, read at its
+        // type as the fraction is.
+        if let [Piece::Tile { label, .. }, Piece::Operand(operand)] = *pieces.pieces.as_slice()
+            && label.as_ref() == "-"
+            && let Maybe::Present(decimal) = decimal_literal(self.text_at(operand))
+        {
+            let _frame = self.require(site, Produced::Value)?;
+            let negative = NumericLiteral::new(
+                Sign::Negative,
+                decimal.integer_part().clone(),
+                decimal.fraction().clone(),
+            );
+            self.plan(site, Plan::Literal(Literal::Numeric(negative)));
             return Ok(());
         }
         let frame = self.require(site, Produced::Computation)?;
@@ -23766,6 +23792,101 @@ fn fractional(text: SourceFragment<'_>) -> Fractional
     Fractional(marked && digits(whole) && fraction_ok && exponent_ok)
 }
 
+/// The most digits a decimal literal's exact value may spell: an exponent past
+/// it would ask the lowering for more digits than any reader reads.
+const DECIMAL_DIGITS: usize = 1_usize << 16_u32;
+
+/// The exact decimal value of the unsigned numeric lexeme `text`, a fraction,
+/// an exponent or both (#4807).
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a [`fractional`] lexeme `w.f` or `w.fEx` or `wEx`, the
+///   canonical non-negative numeric literal of `wf × 10^(x − |f|)`, its digits
+///   moved across the point by the exponent; nothing for any other.
+/// - fails: [`literal::Absent::Malformed`] for a lexeme [`fractional`] refuses,
+///   and for one whose exact value spells more than [`DECIMAL_DIGITS`] digits.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a plain fraction, an exponent above and below the point,
+///   an exponent past every digit, trailing and leading zeros, and an exponent
+///   past the bound separate each reading from the refusal.
+/// - witness: `lower::tests::a_decimal_reads_as_its_exact_value_4807`
+#[spec(
+    ensures: |ret| match ret {
+        | Maybe::Present(ref decimal) => fractional(text).0 && decimal.sign() == Sign::NonNegative,
+        | Maybe::Absent(absent) => absent == literal::Absent::Malformed,
+    },
+)]
+fn decimal_literal(text: SourceFragment<'_>) -> Maybe<NumericLiteral, literal::Absent>
+{
+    if !fractional(text).0 {
+        return Maybe::Absent(literal::Absent::Malformed);
+    }
+    let spelled: &str = text.as_ref();
+    let (mantissa, exponent) = spelled
+        .split_once(['e', 'E'])
+        .map_or((spelled, None), |(left, right)| (left, Some(right)));
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let shift = match exponent {
+        None => 0_i64,
+        Some(written) => match written.parse::<i64>() {
+            Ok(shift) => shift,
+            Err(_) => return Maybe::Absent(literal::Absent::Malformed),
+        },
+    };
+    // The point stands `point` digits into the whole digit string.
+    let digits = alloc::format!("{whole}{fraction}");
+    let Some(point) = i64::try_from(whole.len())
+        .ok()
+        .and_then(|written| written.checked_add(shift))
+    else {
+        return Maybe::Absent(literal::Absent::Malformed);
+    };
+    let spelled_digits = i64::try_from(digits.len()).unwrap_or(i64::MAX);
+    // The digits the exact value spells: zeros after the point before the
+    // written digits, or zeros after them before the point.
+    let produced = if point <= 0 {
+        point
+            .unsigned_abs()
+            .saturating_add(spelled_digits.unsigned_abs())
+    }
+    else {
+        point.max(spelled_digits).unsigned_abs()
+    };
+    if usize::try_from(produced).map_or(true, |produced| produced > DECIMAL_DIGITS) {
+        return Maybe::Absent(literal::Absent::Malformed);
+    }
+    let (integral, fractional_digits) = if point <= 0 {
+        let zeros = usize::try_from(point.abs()).unwrap_or_default();
+        (
+            String::from("0"),
+            alloc::format!("{}{digits}", "0".repeat(zeros)),
+        )
+    }
+    else if point >= spelled_digits {
+        let zeros = usize::try_from(point.saturating_sub(spelled_digits)).unwrap_or_default();
+        (
+            alloc::format!("{digits}{}", "0".repeat(zeros)),
+            String::new(),
+        )
+    }
+    else {
+        let at = usize::try_from(point).unwrap_or_default();
+        let (left, right) = digits.split_at(at);
+        (String::from(left), String::from(right))
+    };
+    let (Some(integral), Some(fraction)) = (
+        Magnitude::from_decimal_text(integral),
+        FractionDigits::from_decimal_text(fractional_digits),
+    )
+    else {
+        return Maybe::Absent(literal::Absent::Malformed);
+    };
+    Maybe::Present(NumericLiteral::new(Sign::NonNegative, integral, fraction))
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -28017,22 +28138,6 @@ def ended() -> -F [Partial] Unit {
             Float64Literal::from(1000.0_f64),
             "an exponent reads as written"
         );
-        let refused = refusal(SourceText::from("def a = 0.2 ;"));
-        assert_eq!(
-            refused,
-            LoweringRefusal::OutOfFragment {
-                span: span(ByteOffset::from(8_usize), ByteOffset::from(11_usize)),
-                form: FormName::from(NamedKind("number")),
-                sort: FragmentSort::Value,
-                boundary: FragmentBoundary::Unannotated,
-            },
-            "a fraction states no type of its own"
-        );
-        assert_eq!(
-            refused.classify(),
-            FailureClass::MalformedSource,
-            "the source owes the type, so the refusal is the source's"
-        );
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
@@ -28047,6 +28152,49 @@ def ended() -> -F [Partial] Unit {
             ),
             "`f64` passed where a type is read stands as the type, as `Integer` does: {:?}",
             outcome_named(&module, "chosen")
+        );
+    }
+
+    /// #4807: a bare fraction or exponent lowers to its exact decimal, its
+    /// digits moved across the point by the exponent, and `-d` written on one
+    /// to the negative decimal; an exponent past the digits the lowering
+    /// holds is a malformed literal.
+    #[test]
+    fn a_decimal_reads_as_its_exact_value_4807()
+    {
+        let decimal = |source: &'static str| {
+            let mut arena = CoreArena::new();
+            let module = lowered(SourceText::from(source), &mut arena);
+            match arena.value(body_of(outcomes(&module)[0])) {
+                Some(&Value::Literal(Literal::Numeric(ref decimal))) => (
+                    decimal.sign(),
+                    String::from(decimal.integer_part().as_ref()),
+                    String::from(decimal.fraction().as_ref()),
+                ),
+                other => panic!("`{source}` lowers to a decimal, not {other:?}"),
+            }
+        };
+        for (source, sign, whole, fraction) in [
+            ("def a = 0.2 ;", Sign::NonNegative, "0", "2"),
+            ("def a = 1.250 ;", Sign::NonNegative, "1", "25"),
+            ("def a = 1e-3 ;", Sign::NonNegative, "0", "001"),
+            ("def a = 1.5e2 ;", Sign::NonNegative, "150", ""),
+            ("def a = 12.5E-1 ;", Sign::NonNegative, "1", "25"),
+            ("def a = 1e3 ;", Sign::NonNegative, "1000", ""),
+            ("def a = -1.5 ;", Sign::Negative, "1", "5"),
+        ] {
+            assert_eq!(
+                decimal(source),
+                (sign, String::from(whole), String::from(fraction)),
+                "`{source}` reads as its exact value"
+            );
+        }
+        assert!(
+            matches!(
+                refusal(SourceText::from("def a = 1e99999999 ;")),
+                LoweringRefusal::MalformedLiteral { .. }
+            ),
+            "an exponent past the digits the lowering holds is malformed"
         );
     }
 

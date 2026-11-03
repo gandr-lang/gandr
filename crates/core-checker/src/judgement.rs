@@ -4856,7 +4856,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 BaseType::Character => produced(self.context.atom(Atom::Character)),
                 BaseType::Float64 => produced(self.context.atom(Atom::Float64)),
                 BaseType::Fixed(width) => produced(self.context.atom(Atom::Fixed(width))),
-                BaseType::Numeric => Err(unadmitted_value(term, UnadmittedFormer::NumericLiteral)),
+                BaseType::Numeric => Err(CheckRefusal::NotSynthesisable {
+                    form: CheckingForm::Decimal(term),
+                }),
             },
             Value::Quote(quoted) => Ok(self.quote(TypeNode::Value(quoted))),
             Value::QuoteComputation(quoted) => Ok(self.quote(TypeNode::Computation(quoted))),
@@ -5659,6 +5661,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     term,
                     direction: Direction::Synthesise,
                 }))
+            },
+            // A decimal states no type of its own: it reads at the type it is
+            // checked at, a float at `f64` and a reader's carrier elsewhere.
+            Value::Literal(gandr_kernel_term::Literal::Numeric(_)) => {
+                crate::conversion::decimal_bridge(
+                    self.context,
+                    term,
+                    entered,
+                    &mut self.conversions,
+                )?;
+                Ok(Step::Ascend(Produced::Checked))
             },
             Value::PathRefl(_)
             | Value::Returned(_)

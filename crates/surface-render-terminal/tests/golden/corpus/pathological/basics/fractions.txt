@@ -1,18 +1,18 @@
-error[OutOfFragment.Unannotated]: a number with a fraction states no type of its own; write the type, as `(0.5 : f64)` or `0.5f64`
+error[NotSynthesisable]: the type of a decimal literal cannot be inferred where it stands
   ╭▸ corpus/pathological/basics/fractions.gandr:8:11
   │
 8 │ def low = 0.2;
-  │           ━━━ needs a stated type
+  │           ━━━ needs a type to be checked against
   │
-  ╰ note: `low` is refused with OutOfFragment.Unannotated, as its expectation states
+  ╰ note: `low` is refused with NotSynthesisable, as its expectation states
 
-error[OutOfFragment.Unannotated]: a number with a fraction states no type of its own; write the type, as `(0.5 : f64)` or `0.5f64`
+error[NotSynthesisable]: the type of a decimal literal cannot be inferred where it stands
    ╭▸ corpus/pathological/basics/fractions.gandr:12:13
    │
 12 │ def small = 1e-3;
-   │             ━━━━ needs a stated type
+   │             ━━━━ needs a type to be checked against
    │
-   ╰ note: `small` is refused with OutOfFragment.Unannotated, as its expectation states
+   ╰ note: `small` is refused with NotSynthesisable, as its expectation states
 
 error[OutOfFragment.typed_number]: the typed number is not supported yet
    ╭▸ corpus/pathological/basics/fractions.gandr:16:14

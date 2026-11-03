@@ -1441,7 +1441,7 @@ fn a_model_crosses_to_an_included_theory_s_by_its_reduct()
             .iter()
             .map(|(&at, crossing)| (at, crossing.by, crossing.carriers.len()))
             .collect::<Vec<_>>(),
-        [(site, ConstantIndex::from(0_usize), 0)],
+        [(site, Maybe::Present(ConstantIndex::from(0_usize)), 0)],
         "the crossing is recorded at the argument, by the reduct, at no carrier"
     );
     let readmission = crate::bridge::readmit(&mut arena, &report);
@@ -1594,7 +1594,7 @@ fn a_natural_literal_crosses_by_the_reader_of_its_type_4528()
             .iter()
             .map(|(&at, crossing)| (at, crossing.by, crossing.carriers.len()))
             .collect::<Vec<_>>(),
-        [(literal, ConstantIndex::from(0_usize), 0)],
+        [(literal, Maybe::Present(ConstantIndex::from(0_usize)), 0)],
         "the crossing is recorded at the literal, by the text reader alone"
     );
     let readmission = crate::bridge::readmit(&mut arena, &report);
@@ -1749,7 +1749,7 @@ fn a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732()
     };
     assert_eq!(
         (at, crossing.by),
-        (literal, ConstantIndex::from(0_usize)),
+        (literal, Maybe::Present(ConstantIndex::from(0_usize))),
         "the crossing is recorded at the literal, by the negative reader"
     );
     let gandr_core_term::CrossedOperand::Standing(standing) = crossing.operand
@@ -1786,6 +1786,238 @@ fn a_negative_literal_crosses_by_from_neg_at_its_magnitude_4732()
         ),
         "a natural reader does not carry a negative literal: {:?}",
         natural.judged()[5].verdict()
+    );
+}
+
+/// The decimal literal `1.25`.
+///
+/// # Specification
+/// trivial.
+fn decimal_literal() -> gandr_kernel_term::Literal
+{
+    gandr_kernel_term::Literal::Numeric(gandr_kernel_term::NumericLiteral::new(
+        gandr_kernel_term::Sign::NonNegative,
+        gandr_kernel_term::Magnitude::from_decimal_text(alloc::string::String::from("1"))
+            .expect("decimal digits"),
+        gandr_kernel_term::FractionDigits::from_decimal_text(alloc::string::String::from("25"))
+            .expect("decimal digits"),
+    ))
+}
+
+/// Assert that the kernel re-derives or assumes every declaration of
+/// `report`, a decimal's crossing among them.
+///
+/// # Specification
+/// trivial.
+fn assert_readmitted(
+    arena: &mut CoreArena,
+    report: &super::ModuleReport,
+)
+{
+    let readmission = crate::bridge::readmit(arena, report);
+    assert!(
+        readmission.readmitted().iter().all(|readmitted| matches!(
+            readmitted.outcome(),
+            crate::bridge::Outcome::Defined { .. } | crate::bridge::Outcome::Assumed { .. }
+        )),
+        "the kernel re-derives every declaration, the decimal's crossing among them: \
+         {readmission:?}"
+    );
+}
+
+/// #4807: a decimal checked at `f64` crosses by no map and stands as the
+/// float it rounds to, so the kernel re-derives a float where the source
+/// wrote a decimal; a decimal synthesised with no type stated is refused.
+#[test]
+fn a_decimal_at_f64_stands_as_its_float_4807()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let float = arena.value_type_base(BaseType::Float64);
+    let taker_type = {
+        let returns = arena.comp_type_returner(integer);
+        let arrow = arena.comp_type_arrow(float, returns);
+        arena.value_type_thunk(arrow)
+    };
+    let user_type = {
+        let returns = arena.comp_type_returner(integer);
+        arena.value_type_thunk(returns)
+    };
+    let literal = arena.value_literal(decimal_literal());
+    let user = {
+        let called = call(&mut arena, ConstantIndex::from(0_usize), literal);
+        arena.value_thunk(called)
+    };
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(taker_type), HOLE),
+            declaration(At(1), Maybe::Present(user_type), Maybe::Present(user)),
+        ])
+    };
+    assert!(
+        matches!(report.judged()[1].verdict(), Verdict::Checked { .. }),
+        "the decimal checks where a float is asked: {:?}",
+        report.judged()[1].verdict()
+    );
+    let crossings = report.nested_elaborations()[&ConstantIndex::from(1_usize)].crossings();
+    let [(&at, crossing)] = crossings.iter().collect::<Vec<_>>()[..]
+    else {
+        panic!("one crossing is recorded: {crossings:?}");
+    };
+    let gandr_core_term::CrossedOperand::Standing(standing) = crossing.operand
+    else {
+        panic!("the decimal stands as a value of its own: {crossing:?}");
+    };
+    assert_eq!(
+        (at, crossing.by, arena.value(standing)),
+        (
+            literal,
+            Maybe::Absent(()),
+            Some(&gandr_core_term::Value::Literal(
+                gandr_kernel_term::Literal::Float64(gandr_kernel_term::Float64Literal::from(
+                    1.25_f64
+                ))
+            ))
+        ),
+        "the decimal stands as its float, by no map"
+    );
+    assert_readmitted(&mut arena, &report);
+    let unsigned = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[declaration(
+            At(0),
+            UNSIGNED,
+            Maybe::Present(literal),
+        )])
+    };
+    assert!(
+        matches!(
+            unsigned.judged()[0].verdict(),
+            Verdict::Refused(CheckRefusal::NotSynthesisable {
+                form: crate::refusal::CheckingForm::Decimal(_),
+            })
+        ),
+        "a decimal with no type stated is refused: {:?}",
+        unsigned.judged()[0].verdict()
+    );
+}
+
+/// #4807: a decimal checked at a type a kept decimal reader carries crosses
+/// by it, applied to the decimal's digits and then its exponent; two readers
+/// refuse it naming the type, and with none it is refused as a float.
+#[test]
+fn a_decimal_crosses_by_from_decimal_at_its_digits_and_exponent_4807()
+{
+    let judged = |kept: &[ConstantIndex]| {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let text = arena.value_type_base(BaseType::String);
+        let reader_type = {
+            let returns = arena.comp_type_returner(text);
+            let inner = arena.comp_type_arrow(integer, returns);
+            let outer = arena.comp_type_arrow(integer, inner);
+            arena.value_type_thunk(outer)
+        };
+        let reader = {
+            let read = arena.value_literal(text_literal());
+            let returned = arena.computation_return(read);
+            let inner = arena.computation_lambda(returned);
+            let outer = arena.computation_lambda(inner);
+            arena.value_thunk(outer)
+        };
+        let taker_type = {
+            let returns = arena.comp_type_returner(integer);
+            let arrow = arena.comp_type_arrow(text, returns);
+            arena.value_type_thunk(arrow)
+        };
+        let user_type = {
+            let returns = arena.comp_type_returner(integer);
+            arena.value_type_thunk(returns)
+        };
+        let literal = arena.value_literal(decimal_literal());
+        let user = {
+            let called = call(&mut arena, ConstantIndex::from(2_usize), literal);
+            arena.value_thunk(called)
+        };
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            let readers: Vec<gandr_core_term::LiteralReader> = kept
+                .iter()
+                .map(|&by| gandr_core_term::LiteralReader {
+                    by,
+                    reads: gandr_core_term::LiteralKind::Decimal,
+                })
+                .collect();
+            context.keep_readers(&readers);
+            check_module(&mut context, &[
+                declaration(At(0), Maybe::Present(reader_type), Maybe::Present(reader)),
+                declaration(At(1), Maybe::Present(reader_type), Maybe::Present(reader)),
+                declaration(At(2), Maybe::Present(taker_type), HOLE),
+                declaration(At(3), Maybe::Present(user_type), Maybe::Present(user)),
+            ])
+        };
+        (arena, report, literal)
+    };
+    let (mut arena, report, literal) = judged(&[ConstantIndex::from(0_usize)]);
+    assert!(
+        matches!(report.judged()[3].verdict(), Verdict::Checked { .. }),
+        "the decimal checks where text is asked: {:?}",
+        report.judged()[3].verdict()
+    );
+    let crossings = report.nested_elaborations()[&ConstantIndex::from(3_usize)].crossings();
+    let [(&at, crossing)] = crossings.iter().collect::<Vec<_>>()[..]
+    else {
+        panic!("one crossing is recorded: {crossings:?}");
+    };
+    let (&[digits], gandr_core_term::CrossedOperand::Standing(exponent)) =
+        (crossing.carriers.as_slice(), crossing.operand)
+    else {
+        panic!("the reader takes the digits, then the exponent: {crossing:?}");
+    };
+    let integer_of = |value| match arena.value(value) {
+        Some(&gandr_core_term::Value::Literal(gandr_kernel_term::Literal::Integer(
+            ref integer,
+        ))) => Some((
+            integer.sign(),
+            alloc::string::String::from(integer.magnitude().as_ref()),
+        )),
+        _ => None,
+    };
+    assert_eq!(
+        (at, crossing.by, integer_of(digits), integer_of(exponent)),
+        (
+            literal,
+            Maybe::Present(ConstantIndex::from(0_usize)),
+            Some((
+                gandr_kernel_term::Sign::NonNegative,
+                alloc::string::String::from("125")
+            )),
+            Some((
+                gandr_kernel_term::Sign::Negative,
+                alloc::string::String::from("2")
+            )),
+        ),
+        "1.25 crosses by the reader at 125 and -2"
+    );
+    assert_readmitted(&mut arena, &report);
+    let (_, both, _) = judged(&[ConstantIndex::from(0_usize), ConstantIndex::from(1_usize)]);
+    assert!(
+        matches!(
+            both.judged()[3].verdict(),
+            Verdict::Refused(CheckRefusal::LiteralAmbiguous { .. })
+        ),
+        "two readers of the type refuse the decimal: {:?}",
+        both.judged()[3].verdict()
+    );
+    let (_, none, _) = judged(&[]);
+    assert!(
+        matches!(
+            none.judged()[3].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "with no reader the decimal is refused: {:?}",
+        none.judged()[3].verdict()
     );
 }
 
@@ -1933,7 +2165,7 @@ fn a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier()
     };
     assert_eq!(
         (at, crossing.by),
-        (site, ConstantIndex::from(0_usize)),
+        (site, Maybe::Present(ConstantIndex::from(0_usize))),
         "the crossing is recorded at the argument, by the forgetting map"
     );
     let &[carrier] = crossing.carriers.as_slice()

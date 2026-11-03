@@ -134,6 +134,8 @@ pub enum Form
     Scope(Site),
     /// A recorded run.
     Run(Site),
+    /// A decimal literal.
+    Decimal(Site),
 }
 
 /// An endpoint, by the site of the fork that bound it and its side.
@@ -985,8 +987,8 @@ pub enum Refusal
         /// The capability type it was checked at.
         expected: TypeContent,
     },
-    /// An integer literal stood at a type two models of `FromNat` or
-    /// `FromNeg` read it into.
+    /// A numeric literal stood at a type two models of `FromNat`, `FromNeg`
+    /// or `FromDecimal` read it into.
     LiteralAmbiguous
     {
         /// The literal.
@@ -1609,7 +1611,8 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             | (CheckingForm::Thunk(id), Form::Thunk(at))
             | (CheckingForm::StaticLambda(id), Form::StaticLambda(at))
             | (CheckingForm::Nested(id), Form::Nested(at))
-            | (CheckingForm::Run(id), Form::Run(at)) => {
+            | (CheckingForm::Run(id), Form::Run(at))
+            | (CheckingForm::Decimal(id), Form::Decimal(at)) => {
                 at == self.site(ArenaNode::Value(id))
             },
             | (CheckingForm::Case(id), Form::Case(at))
@@ -1965,6 +1968,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                     },
                     CheckingForm::Nested(id) => Form::Nested(self.site(ArenaNode::Value(id))),
                     CheckingForm::Run(id) => Form::Run(self.site(ArenaNode::Value(id))),
+                    CheckingForm::Decimal(id) => Form::Decimal(self.site(ArenaNode::Value(id))),
                     CheckingForm::Offer(id) => Form::Offer(self.site(ArenaNode::Computation(id))),
                     CheckingForm::Scope(id) => Form::Scope(self.site(ArenaNode::Computation(id))),
                 },

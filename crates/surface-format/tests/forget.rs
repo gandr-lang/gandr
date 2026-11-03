@@ -110,7 +110,7 @@ fn a_forgetting_map_is_written_only_at_quoted_carriers_onto_its_own_theory_2130(
     .into_iter()
     .map(|(value, by, carriers)| {
         (value, Crossing {
-            by,
+            by: quenchant_shape::shape::Maybe::Present(by),
             carriers,
             operand: gandr_core_term::CrossedOperand::Itself,
         })

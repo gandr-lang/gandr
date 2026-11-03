@@ -7366,6 +7366,10 @@ where
                     writer.tag(Tag(18));
                     write_site(writer, site)?;
                 },
+                Form::Decimal(site) => {
+                    writer.tag(Tag(19));
+                    write_site(writer, site)?;
+                },
             }
         },
         Refusal::UnknownConstant { at, ref constant } => {
@@ -7889,6 +7893,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 16 => Form::Offer(read_site(reader)?),
                 17 => Form::Scope(read_site(reader)?),
                 18 => Form::Run(read_site(reader)?),
+                19 => Form::Decimal(read_site(reader)?),
                 _ => return Err(CodecError::Corrupt),
             };
             Refusal::NotSynthesisable { form }

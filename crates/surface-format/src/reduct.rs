@@ -155,9 +155,11 @@ impl Reducts
         let mut crossings: Vec<(ByteSpan, Crossed)> = elaboration
             .crossings
             .iter()
-            .filter(|&(_, crossing)| names.contains_key(&crossing.by))
-            .filter_map(|(&value, crossing)| {
-                Some((located(module, value, base)?, Crossed::Reduct(crossing.by)))
+            .filter_map(|(&value, crossing)| match crossing.by {
+                Maybe::Present(by) if names.contains_key(&by) => {
+                    Some((located(module, value, base)?, Crossed::Reduct(by)))
+                },
+                Maybe::Present(_) | Maybe::Absent(()) => None,
             })
             .collect();
         let forgettings = crate::forget::forgettings(module, arena, &elaboration.crossings);

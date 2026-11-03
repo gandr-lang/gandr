@@ -1803,8 +1803,10 @@ impl TypeTable
         let reducts: BTreeSet<ConstantIndex> = module.reducts().iter().copied().collect();
         let mut crossings: BTreeMap<ValueId, CrossedBy> = carried
             .iter()
-            .filter(|&(_, crossing)| reducts.contains(&crossing.by))
-            .map(|(&at, crossing)| (at, CrossedBy::Reduct(crossing.by)))
+            .filter_map(|(&at, crossing)| match crossing.by {
+                Maybe::Present(by) if reducts.contains(&by) => Some((at, CrossedBy::Reduct(by))),
+                Maybe::Present(_) | Maybe::Absent(()) => None,
+            })
             .collect();
         for (at, forgetting) in gandr_surface_format::forgettings(&module, &arena, &carried) {
             let sorts: Vec<(String, ValueTypeId)> = forgetting
