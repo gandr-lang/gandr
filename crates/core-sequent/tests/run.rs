@@ -1053,7 +1053,7 @@ fn an_access_at_a_place_views_the_element_at_its_index()
             body,
         })
     };
-    // hold xs = [1, 2]; access shared xs[1] as v { return v }
+    // hold xs = [1, 2]; access shared xs.#[1] as v { return v }
     let read = at(&mut core, AccessMode::Shared, one, ret_resident);
     let held = core.computation_memory(MemoryForm::Hold {
         value: listed,
@@ -1062,7 +1062,7 @@ fn an_access_at_a_place_views_the_element_at_its_index()
     });
     assert_control(&mut core, held, ControlExpectation::Value(two));
 
-    // hold xs = [1, 2] or [1, 2, 3]; access xs[i] as v { n <- v + 1 ;
+    // hold xs = [1, 2] or [1, 2, 3]; access xs.#[i] as v { n <- v + 1 ;
     // resume(v, n) } unwind {} ; return xs
     let successor = core.computation_primitive(
         add,
@@ -1098,7 +1098,7 @@ fn an_access_at_a_place_views_the_element_at_its_index()
         assert_control(&mut core, held, ControlExpectation::Value(expected));
     }
 
-    // hold xs = [1, 2]; access xs[1] as v { abort(v) } unwind {} ; return xs
+    // hold xs = [1, 2]; access xs.#[1] as v { abort(v) } unwind {} ; return xs
     let abort = core.computation_memory(MemoryForm::Abort { view });
     let exclusive = AccessMode::Exclusive { unwind: ret_unit };
     let aborted = at(&mut core, exclusive, one, abort);
@@ -1110,7 +1110,7 @@ fn an_access_at_a_place_views_the_element_at_its_index()
     });
     assert_control(&mut core, kept, ControlExpectation::Value(listed));
 
-    // hold xs = [2]; access shared xs[1] as v { return v }
+    // hold xs = [2]; access shared xs.#[1] as v { return v }
     let past = at(&mut core, AccessMode::Shared, one, ret_resident);
     let short = core.computation_memory(MemoryForm::Hold {
         value: tail,

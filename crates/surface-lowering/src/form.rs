@@ -3181,6 +3181,100 @@ pub fn misspelt_keyword(
     })
 }
 
+/// The bare bracket that is open at the refusal `at` inside `within`. This is
+/// the innermost `[` directly after the operand of a value, with no `.#`
+/// before it. No `]` closes it before the start of `at`.
+///
+/// A bracket after an operand holds static arguments. Thus the parser reads
+/// an element index `xs[i]` as an instantiation. Some indices do not parse as
+/// a static argument, for example `self[i + 1]`. Some forms take no
+/// instantiation, for example `access xs[1] as v`. In these cases the form is
+/// malformed at the bracket or after it. The refusal must show the bracket
+/// (#4944).
+///
+/// The operand of a value ends in a `)`, in a `]`, or in a lowercase name. The
+/// grammar must not spell this name as a tile. A type has a capital letter.
+/// The bracket after a keyword, for example `forget[ … ]`, belongs to the
+/// form of the keyword. The scan reads the bytes of the source, because the
+/// tree of the form is malformed at this location. A string or a comment can
+/// hold a bracket. Then the moved refusal still shows a bracket that the
+/// declaration writes.
+///
+/// # Specification
+/// - requires: `within` holds `at`, both spans of `tree`.
+/// - ensures: the span of the innermost `[` in `within` from its start to
+///   `at`'s start inclusive that no `]` after it before `at`'s start closes,
+///   counting brackets as they nest, when the bytes before it are a `)`, a `]`,
+///   or a word of ASCII letters, digits, `_` and `'` that opens on a lowercase
+///   letter or `_` and that `pbg` spells as no tile; `None` when no such
+///   bracket is open.
+/// - provides: what moves a malformed-form refusal onto the bare index it
+///   stands in.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the scan.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `access xs[1] as v` and `self[i + 1]` are refused at
+///   their bracket; a malformed form after a closed `f[T]`, and one inside a
+///   keyword's bracket, keep their refusal.
+/// - witness: `lower::tests::a_bare_index_that_parses_as_no_argument_is_refused_at_its_bracket_4944`
+/// - witness: `tests::modules::models::a_written_forgetting_map_names_only_its_theory_s_sorts_2130`
+#[must_use]
+pub fn bare_bracket(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    within: ByteSpan,
+    at: ByteSpan,
+) -> Option<ByteSpan>
+{
+    let source = tree.source();
+    let text: &str = source.as_ref();
+    let start = usize::from(within.start());
+    let end = usize::from(at.start()).saturating_add(1).min(text.len());
+    let bytes = text.as_bytes().get(start .. end)?;
+    let worded = |byte: u8| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'\'');
+    // Whether the bracket at `offset` is after the operand of a value.
+    let bare = |offset: usize| {
+        let before = bytes.get(.. offset).unwrap_or_default();
+        if matches!(before.last(), Some(b')' | b']')) {
+            return true;
+        }
+        let from = before
+            .iter()
+            .rposition(|&byte| !worded(byte))
+            .map_or(0_usize, |gap| gap.saturating_add(1));
+        let word = before.get(from ..).unwrap_or_default();
+        let valued = word
+            .first()
+            .is_some_and(|&first| first.is_ascii_lowercase() || first == b'_');
+        valued
+            && core::str::from_utf8(word)
+                .is_ok_and(|word| pbg.tile_label(LabelText(word)).is_none())
+    };
+    // Each open bracket, with its offset and whether it is bare.
+    let mut open: Vec<(usize, bool)> = Vec::new();
+    for (offset, &byte) in bytes.iter().enumerate() {
+        match byte {
+            b'[' => open.push((offset, bare(offset))),
+            b']' if offset.saturating_add(start) < usize::from(at.start()) => {
+                let _closed = open.pop();
+            },
+            _ => {},
+        }
+    }
+    let &(offset, bare) = open.last()?;
+    if !bare {
+        return None;
+    }
+    let from = start.saturating_add(offset);
+    ByteSpan::new(
+        ByteOffset::from(from),
+        ByteOffset::from(from.saturating_add(1)),
+    )
+    .ok()
+}
+
 /// The repair a grout child `grout` of shape `shape` reads as: a
 /// [`Repair::Keyword`] when it is convex and stands over a lowercase word the
 /// grammar spells as a tile of its own, plain grout otherwise.

@@ -382,7 +382,7 @@ fn a_view_method_answering_no_place_is_refused()
 }
 
 #[test]
-fn a_bare_index_reads_its_held_element()
+fn an_index_reads_its_held_element()
 {
     let source = format!(
         "{PLACES}def element(i : Integer) -> -F Integer {{ var xs = pair; let y = xs.#[i]; pure \
@@ -400,6 +400,43 @@ fn a_bare_index_reads_its_held_element()
         );
     }
     assert_accepted(&judged(&module, &mut arena));
+}
+
+/// #4944: a bracket after the name of a value holds no static arguments. The
+/// lowering refuses an element index without its selector at the bracket.
+/// The refusal names `.#[ … ]`. The cases are the body of a view method and
+/// an element of a held list.
+#[test]
+fn a_bare_index_is_refused_naming_the_selector_4944()
+{
+    let source = format!(
+        "{PLACES}module Bare where {{\n  def zeroth[m : Mode](self : m List(Integer)) -> -F \
+         View[m](Integer) {{ self[0] }}\n}}\ndef held() -> -F Integer {{ var xs = pair; let y = \
+         xs[1]; pure y }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let source = listing(&source);
+    let module = listed(&source, &mut arena);
+    let text = source.as_str();
+    for (name, written) in [("zeroth", "self[0]"), ("held", "xs[1]")] {
+        let bracket = text
+            .find(written)
+            .and_then(|at| at.checked_add(written.find('[').unwrap_or_default()))
+            .unwrap_or_default();
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::MalformedForm {
+                span: gandr_surface_syntax::ByteSpan::new(
+                    gandr_surface_syntax::ByteOffset::from(bracket),
+                    gandr_surface_syntax::ByteOffset::from(bracket.saturating_add(1)),
+                )
+                .expect("a bracket's span"),
+                form: crate::FormName::INSTANTIATION,
+                fault: crate::FormFault::BareIndex,
+            },
+            "`{written}` in `{name}` is refused at its bracket"
+        );
+    }
 }
 
 #[test]

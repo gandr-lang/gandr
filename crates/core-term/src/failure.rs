@@ -103,7 +103,7 @@ impl TrackingIssue
     pub const MODEL_CIRCUIT: Self = Self(1323);
     /// A model signature's law over a binding port.
     pub const MODEL_BINDING: Self = Self(2565);
-    /// A bare index `ys[i]` of a list no hold holds.
+    /// An index `ys.#[i]` of a list no hold holds.
     pub const UNHELD_INDEX: Self = Self(2670);
     /// A model signature's operation abstracting an atom over a port.
     pub const MODEL_ABSTRACTION: Self = Self(1561);

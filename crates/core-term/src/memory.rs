@@ -17,7 +17,7 @@
 //! |hold at grade one|`hold[1] x = v; t`|`x`, a linear slot holding `v`, never copied, over `t`|
 //! |access|`access x as w { t } unwind { u }`|the view `w`, a linear slot, over `t`|
 //! |shared access|`access shared x as w { t }`|the view `w`, a linear slot, over `t`|
-//! |access at a place|`access x[i] as w { t } unwind { u }`, `access shared x[i] as w { t }`|the view `w`, a linear slot, over `t`|
+//! |access at a place|`access x.#[i] as w { t } unwind { u }`, `access shared x.#[i] as w { t }`|the view `w`, a linear slot, over `t`|
 //! |resume|`resume(w, v)`|nothing; writes `v` back through `w`|
 //! |abort|`abort(w)`|nothing; ends `w` with nothing written|
 //! |consume|`s.f(a)`, `f`'s receiver consumed|nothing; moves the value `x` holds out|
@@ -235,7 +235,7 @@ pub enum MemoryForm<V = ValueId, C = ComputationId>
         grade: HoldGrade,
     },
     /// `access x as w { t } unwind { u }`, `access shared x as w { t }`, or
-    /// either at an index, `x[i]`: `body` runs with the view `w` of `place`
+    /// either at an index, `x.#[i]`: `body` runs with the view `w` of `place`
     /// in the held slot `held`, under the view's linear binder, lent in
     /// `mode`.
     Access

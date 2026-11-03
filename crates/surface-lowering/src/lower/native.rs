@@ -13732,29 +13732,28 @@ impl<'source> Lowerer<'_, 'source>
     ///   arm of a copattern block stands as the same variable, passes its
     ///   arguments as a descent call does, and claims nothing: the fixpoint
     ///   stays partial. An instantiation whose residents supply a function's
-    ///   implicits by name is planned as [`Self::supplied_value`] plans it; one
-    ///   whose head names a held slot and whose bracket holds one number is the
-    ///   element there, as [`Self::element`] plans it.
+    ///   implicits by name is planned as [`Self::supplied_value`] plans it.
     /// - provides: the head of a recursive call, and the self reference a value
     ///   position passes on.
-    /// - fails: the reserved refusal for any other resident, a termination
-    ///   claim the grammar reserves, marking the resident under a named head
-    ///   and the whole instantiation under any other head (#3811); the
-    ///   unguarded-corecursion refusal for a `>` call that is not the whole arm
-    ///   of a copattern block; the foreign-claim refusal for an instantiation
-    ///   whose head names a function other than a recursive one in scope; the
-    ///   unresolved-name refusal, at the head, for a head that names nothing;
-    ///   the unadmitted refusal for a call through a joint member that stages a
-    ///   parameter after its first, for a joint member's claim standing
-    ///   unapplied, whose thunk is the joint's at the sum of the block's
-    ///   domains, and for a `>` claim standing unapplied or naming a joint
-    ///   member; the arity refusal, at the call, for a call passing other than
-    ///   one argument per parameter; the non-uniform refusal, at the argument,
-    ///   for a parameter before the staged one passed as anything but itself,
-    ///   and at the call for a joint member over leading parameters; the
-    ///   several-parameters refusal [`Self::claim`] raises; the wrong-sort
-    ///   refusal outside a head or value position; and the allowance refusal
-    ///   from the binder walk.
+    /// - fails: the bare-index refusal at the bracket for an instantiation that
+    ///   [`Self::bare_index`] reads as an element index; the reserved refusal
+    ///   for any other resident, a termination claim the grammar reserves,
+    ///   marking the resident under a named head and the whole instantiation
+    ///   under any other head (#3811); the unguarded-corecursion refusal for a
+    ///   `>` call that is not the whole arm of a copattern block; the
+    ///   foreign-claim refusal for an instantiation whose head names a function
+    ///   other than a recursive one in scope; the unresolved-name refusal, at
+    ///   the head, for a head that names nothing; the unadmitted refusal for a
+    ///   call through a joint member that stages a parameter after its first,
+    ///   for a joint member's claim standing unapplied, whose thunk is the
+    ///   joint's at the sum of the block's domains, and for a `>` claim
+    ///   standing unapplied or naming a joint member; the arity refusal, at the
+    ///   call, for a call passing other than one argument per parameter; the
+    ///   non-uniform refusal, at the argument, for a parameter before the
+    ///   staged one passed as anything but itself, and at the call for a joint
+    ///   member over leading parameters; the several-parameters refusal
+    ///   [`Self::claim`] raises; the wrong-sort refusal outside a head or value
+    ///   position; and the allowance refusal from the binder walk.
     /// - panics: none.
     ///
     /// # Errors
@@ -13779,21 +13778,23 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722`
     /// - witness: `lower::tests::a_self_call_a_body_quotes_reads_its_fixpoint_at_its_index_3562`
     /// - witness: `lower::native::tests::a_reserved_claim_under_a_head_that_is_no_name_marks_the_whole_instantiation_3811`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _) | Plan::Application(..) | Plan::Access(_)))))]
+    /// - witness: `lower::method::tests::a_bare_index_is_refused_naming_the_selector_4944`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _) | Plan::Application(..)))))]
     pub(super) fn instantiation(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        if let Some(&place) = self.view_places.get(&site.at.node) {
-            return self.view_place(site, cursor, place);
-        }
-        if let Maybe::Present(lent) = self.lent_head(site)? {
-            return self.element(site, cursor, lent);
-        }
         if self.supplied_value(site)? == arity::Planned(true) {
             return Ok(());
+        }
+        if let Maybe::Present(bracket) = self.bare_index(site)? {
+            return Err(LoweringRefusal::MalformedForm {
+                span: bracket,
+                form: FormName::INSTANTIATION,
+                fault: FormFault::BareIndex,
+            });
         }
         let frame = self.require(site, Produced::Value)?;
         let head = site.one(cursor.operands())?;

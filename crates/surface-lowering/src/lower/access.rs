@@ -578,11 +578,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
-        let opened = match cursor.tile(TileName::SELECT_OPEN) {
-            Maybe::Present(at) => Maybe::Present(at),
-            Maybe::Absent(_) => cursor.tile(TileName::BRACKET_OPEN),
-        };
-        let place = match opened {
+        let place = match cursor.tile(TileName::SELECT_OPEN) {
             Maybe::Present(_) => {
                 let index = site.one(cursor.operands())?;
                 closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
@@ -731,7 +727,7 @@ impl<'source> Lowerer<'_, 'source>
                         ..
                     },
                 ],
-            ) if (opener == TileName::SELECT_OPEN || opener == TileName::BRACKET_OPEN)
+            ) if opener == TileName::SELECT_OPEN
                 && matches!(self.form_at(head)?, Some((_, Former::Name))) =>
             {
                 self.read(index.node, Reading::Value(frame));
@@ -796,7 +792,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   element.
     /// - witness: `lower::access::tests::the_counter_lowers_to_its_memory_forms`
     /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
-    /// - witness: `lower::method::tests::a_bare_index_reads_its_held_element`
+    /// - witness: `lower::method::tests::an_index_reads_its_held_element`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
         | Maybe::Present(_) => false,

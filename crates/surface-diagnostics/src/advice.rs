@@ -332,6 +332,7 @@ fn malformed(
             )
         },
         FormFault::NotAName => String::from("write a name before the `@`"),
+        FormFault::BareIndex => String::from("write the index as the selector `.#[ … ]`"),
         FormFault::MissingOpen(close) => {
             format!(
                 "add the `{}` that this `{}` closes",

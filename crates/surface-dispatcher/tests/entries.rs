@@ -89,6 +89,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression +", Standing::Owed(0)),
     ("Expression -", Standing::Owed(0)),
     ("Expression .", Standing::Owed(0)),
+    ("Expression .#[", Standing::Owed(0)),
     (
         "Expression ;",
         Standing::Design(
@@ -388,6 +389,11 @@ enum Placed
     /// theory's operation qualified by the theory whose terms it builds,
     /// `Mag.mul(…)`: the call is the one core node, and answers.
     Head,
+    /// The name of a held slot in an element read, for example `xs` in `let
+    /// y = xs.#[1] ;`. The read lends the slot shared at the index. The slot
+    /// is in the linear zone, so no core node holds its name. Thus the read
+    /// answers. The name that an `access` form lends also has no node.
+    Lent,
     /// A count of the stratum an annotation on a head writes, `1` and `4`
     /// in `ua[1, 4](a, b, f, g)`: the degree and the catalogue bound the
     /// former reads off the literal's digits, never a term, so the call
@@ -629,6 +635,16 @@ fn gated(
     let regions: BTreeSet<String> = source
         .match_indices(": Region")
         .filter_map(|(at, _)| named(source.get(.. at).unwrap_or("")))
+        .collect();
+    // The names of the slots that the source holds, for example `xs` in `var
+    // xs = pair ;`.
+    let slots: BTreeSet<&str> = source
+        .match_indices("var ")
+        .filter_map(|(at, _)| {
+            let after = source.get(at.saturating_add(4) ..)?;
+            after.get(.. after.find(|letter: char| !(letter.is_alphanumeric() || letter == '_'))?)
+        })
+        .filter(|name| !name.is_empty())
         .collect();
     let rules: Vec<(usize, usize)> = source
         .match_indices("rule ")
@@ -940,7 +956,9 @@ fn gated(
                 .map(|(&child, discards)| {
                     let headed = melded
                         && opener == Some(child)
-                        && (def.label == "[" || (def.label == "(" && def.sort == Sort::Expression));
+                        && (def.label == "["
+                            || def.label == ".#["
+                            || (def.label == "(" && def.sort == Sort::Expression));
                     let qualifying = melded && opener == Some(child) && def.label == ".";
                     (
                         child,
@@ -1054,6 +1072,10 @@ fn gated(
         let counted = !melded
             && def.label == "number"
             && parent.is_some_and(|(_, label, headed, ..)| label == "[" && !headed);
+        let lent = !melded
+            && def.label == "identifier"
+            && slots.contains(text.trim())
+            && parent.is_some_and(|(_, label, headed, ..)| label == ".#[" && headed);
         let sized = !melded
             && def.label == "type_identifier"
             && text == "Size"
@@ -1145,7 +1167,8 @@ fn gated(
             .or_else(|| unstated.then_some(Placed::Unstated))
             .or_else(|| packed.then_some(Placed::Packed))
             .or_else(|| interfaced.then_some(Placed::Interface))
-            .or_else(|| conditioned.then_some(Placed::Theory));
+            .or_else(|| conditioned.then_some(Placed::Theory))
+            .or_else(|| lent.then_some(Placed::Lent));
         gated.push((kind(grammar, tree, position, *def), span, placed));
     }
     gated

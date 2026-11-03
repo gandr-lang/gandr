@@ -615,6 +615,7 @@ use crate::form::Placed;
 use crate::form::Run;
 use crate::form::Shape;
 use crate::form::TileName;
+use crate::form::bare_bracket;
 use crate::form::declined_feature;
 use crate::form::misspelt_keyword;
 use crate::form::read_pieces;
@@ -4662,6 +4663,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.refuse_misshapen_entries(sink);
         self.place_by_layout();
         self.place_misspelt();
+        self.place_bare_index();
         self.refused_declarations();
 
         self.end_source();
@@ -7522,6 +7524,74 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     span: word,
                     form,
                     fault: FormFault::Misspelt(keyword),
+                }));
+            }
+        }
+    }
+
+    /// Move each malformed-form refusal of a declaration of the current
+    /// source onto the bare bracket that is open there ([`bare_bracket`]).
+    /// The parser reads an element index `xs[i]` as static arguments. The
+    /// operand of an index does not always parse as a static argument.
+    ///
+    /// # Specification
+    /// - requires: every pass that refuses a declaration of the current source
+    ///   has run.
+    /// - ensures: each slot of the current source refused as a malformed form,
+    ///   where the half holding the refusal, or the line it stands on when no
+    ///   half holds it, holds a bare bracket that [`bare_bracket`] finds open
+    ///   at the refusal, is refused at that bracket instead, at the same node
+    ///   and naming the same form, as a bare index; every other refusal is
+    ///   unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk over the slots.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`bare_bracket`].
+    /// - witness: `lower::tests::a_bare_index_that_parses_as_no_argument_is_refused_at_its_bracket_4944`
+    fn place_bare_index(&mut self)
+    {
+        let pbg = self.pbg;
+        let tree = self.tree;
+        for slot in self.collected.slots.iter_mut().skip(self.current.slots) {
+            let Maybe::Present((position, LoweringRefusal::MalformedForm { span, form, fault })) =
+                slot.refusal
+            else {
+                continue;
+            };
+            if fault == FormFault::BareIndex {
+                continue;
+            }
+            let half = [slot.signature, slot.definition]
+                .into_iter()
+                .find_map(|half| match half {
+                    Maybe::Present(half)
+                        if half.declaration.span.start() <= span.start()
+                            && span.end() <= half.declaration.span.end() =>
+                    {
+                        Some(half.declaration.span)
+                    },
+                    Maybe::Present(_) | Maybe::Absent(_) => None,
+                });
+            // The parser repaired the declaration, so it has no half. The
+            // scan reads the line of the refusal.
+            let source = tree.source();
+            let text: &str = source.as_ref();
+            let line = text
+                .get(.. usize::from(span.start()))
+                .and_then(|before| before.rfind('\n'))
+                .map_or(0_usize, |newline| newline.saturating_add(1));
+            let Some(within) =
+                half.or_else(|| ByteSpan::new(ByteOffset::from(line), span.end()).ok())
+            else {
+                continue;
+            };
+            if let Some(bracket) = bare_bracket(pbg, tree, within, span) {
+                slot.refusal = Maybe::Present((position, LoweringRefusal::MalformedForm {
+                    span: bracket,
+                    form,
+                    fault: FormFault::BareIndex,
                 }));
             }
         }
@@ -28958,6 +29028,63 @@ def ended() -> -F [Partial] Unit {
                 fault: FormFault::ExtraOperand,
             },
             "a word that misspells no keyword keeps the refusal at the extra operand"
+        );
+    }
+
+    /// #4944: the bracket of an element index `xs[i]` can parse as no static
+    /// argument. Or the form can take no static argument. Then the form is
+    /// malformed at the bracket or after it. The refusal is at the bracket,
+    /// as a bare index that names `.#[ … ]`. A malformed form after a closed
+    /// static bracket keeps its refusal.
+    #[test]
+    fn a_bare_index_that_parses_as_no_argument_is_refused_at_its_bracket_4944()
+    {
+        let pbg = grammar();
+        for (source, written) in [
+            (
+                "def passed(xs : Integer, i : Integer) -> -F Integer { let y = xs[i]; pure y }\n",
+                "xs[i]",
+            ),
+            (
+                "def summed(xs : Integer, i : Integer) -> -F Integer { xs[i + 1] }\n",
+                "xs[i + 1]",
+            ),
+            (
+                "def lent() -> -F Integer { var xs = 0; access shared xs[1] as w { pure w } }\n",
+                "xs[1]",
+            ),
+        ] {
+            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
+                .expect("the parser reads the source")
+                .into_tree();
+            let bracket = source
+                .find(written)
+                .map_or(0_usize, |at| at.saturating_add(2));
+            assert!(
+                matches!(
+                    refusal_in(&pbg, &tree),
+                    LoweringRefusal::MalformedForm {
+                        span,
+                        fault: FormFault::BareIndex,
+                        ..
+                    } if usize::from(span.start()) == bracket
+                        && usize::from(span.end()) == bracket.saturating_add(1)
+                ),
+                "`{written}` is refused at its bracket: {:?}",
+                refusal_in(&pbg, &tree)
+            );
+        }
+        let tree = parsed(
+            &pbg,
+            SourceText::from("def f[a : Type](x : a) -> -F a {\n  zebra x\n}\n"),
+        );
+        assert!(
+            matches!(refusal_in(&pbg, &tree), LoweringRefusal::MalformedForm {
+                fault: FormFault::ExtraOperand,
+                ..
+            }),
+            "a static bracket closed before the refusal leaves it where it was: {:?}",
+            refusal_in(&pbg, &tree)
         );
     }
 

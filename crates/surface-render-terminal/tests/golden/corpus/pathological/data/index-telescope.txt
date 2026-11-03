@@ -7,14 +7,14 @@ error[MalformedForm]: an operand is missing in this data declaration
    ├ note: `Unended` is refused with MalformedForm, as its expectation states
    ╰ help: write the missing operand
 
-error[MalformedForm]: a keyword or symbol of this data declaration is out of place
-   ╭▸ corpus/pathological/data/index-telescope.gandr:48:18
+error[MalformedForm]: this bracket after an operand indexes an element
+   ╭▸ corpus/pathological/data/index-telescope.gandr:48:17
    │
 48 │ data Graded : (n[1] : Nat) --> Type where {
-   │                  ━ out of place
+   │                 ━ a bare index
    │
    ├ note: `Graded` is refused with MalformedForm, as its expectation states
-   ╰ help: move the keyword or symbol to its place in the data declaration
+   ╰ help: write the index as the selector `.#[ … ]`
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/index-telescope.gandr:21:48

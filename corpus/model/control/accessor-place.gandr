@@ -1,4 +1,4 @@
-// Access at a place. `access xs[i] as w { … }` lends one element of a held
+// Access at a place. `access xs.#[i] as w { … }` lends one element of a held
 // list to a view: the index is a value read where the access stands, and the
 // view is the element at it. An exclusive view writes its element back at its
 // index and the rest of the list stands as it was; a shared view reads it.
@@ -18,7 +18,7 @@ pub def pair : List(Integer) = cons(1, cons(2, nil));
 @[ runs("2") ]
 def second() -> Integer {
   var xs = pair;
-  access shared xs[1] as w { pure w }
+  access shared xs.#[1] as w { pure w }
 }
 
 /// The element at an index written back through an exclusive view, then the
@@ -26,7 +26,7 @@ def second() -> Integer {
 @[ runs("cons(1, cons(3, nil))") ]
 def bumped() -> List(Integer) {
   var xs = pair;
-  access xs[1] as v { resume(v, v + 1) };
+  access xs.#[1] as v { resume(v, v + 1) };
   pure xs
 }
 
@@ -42,7 +42,7 @@ def tagged(a : Integer) -> List(Integer * Integer) {
 def rebuilt() -> List(Integer * Integer) {
   let l = tagged(1);
   var xs = l;
-  access xs[1] as v { resume(v, (5, 5)) };
+  access xs.#[1] as v { resume(v, (5, 5)) };
   pure cons((9, 9), xs)
 }
 
@@ -50,12 +50,12 @@ def rebuilt() -> List(Integer * Integer) {
 @[ runs("cons(1, cons(2, nil))") ]
 def kept() -> List(Integer) {
   var xs = pair;
-  access xs[0] as v { abort(v) } unwind { pure unit };
+  access xs.#[0] as v { abort(v) } unwind { pure unit };
   pure xs
 }
 
 /// The index is any value where the access stands, here a parameter.
 def indexed(i : Integer) -> Integer {
   var xs = pair;
-  access shared xs[i] as w { pure w }
+  access shared xs.#[i] as w { pure w }
 }

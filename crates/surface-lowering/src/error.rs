@@ -502,6 +502,10 @@ pub enum FormFault
     /// A pattern stands where the form binds a name: the left side of an
     /// as-pattern, `x @ p`.
     NotAName,
+    /// A bracket after an operand that reads as an element index `xs[i]`. A
+    /// bracket at this location holds static arguments. An index uses the
+    /// selector `xs.#[i]`.
+    BareIndex,
 }
 
 impl fmt::Display for FormFault
@@ -544,6 +548,7 @@ impl fmt::Display for FormFault
                 )
             },
             Self::NotAName => f.write_str("binds a pattern where it takes a name"),
+            Self::BareIndex => f.write_str("indexes an element with a bare bracket"),
         }
     }
 }
@@ -1487,7 +1492,7 @@ pub enum LoweringRefusal<'source>
 
     /// A method whose receiver is at a mode its telescope binds, `self : m T`,
     /// whose result is no `-F View[m](a)` over that mode, or whose body is no
-    /// place of its receiver, `{ self[i] }`; or a view type `View[m](a)`
+    /// place of its receiver, `{ self.#[i] }`; or a view type `View[m](a)`
     /// anywhere but such a method's result.
     ViewNotPlace
     {
@@ -2279,7 +2284,7 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::ViewNotPlace { .. } => f.write_str(
                 "a method whose receiver's mode is deduced answers a place of its receiver: its \
                  result is `-F View[m](a)` at the receiver's mode `m`, and its body is that \
-                 place, `{ self[i] }`",
+                 place, `{ self.#[i] }`",
             ),
             Self::ViewOfNoPlace { .. } => f.write_str(
                 "`e as w { … }` lends a view only of the place a method whose receiver's mode is \

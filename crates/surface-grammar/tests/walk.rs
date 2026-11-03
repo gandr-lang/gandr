@@ -63,14 +63,15 @@ use gandr_theory_graphs::WalkChainLength;
 /// `&{ .l => c }` (#4488), then by `module m = e ;` opening a model in a
 /// block, with `unpack`, `pack [T]` and `package [T]` gone (#4788), then by
 /// a module's family applied through its name, `M.F(Integer)` (#3051), then
-/// by a list read only through its reader, `#[ … ]` (#4828).
-const BUILT_IN_FINGERPRINT: u64 = 0x1f4a_9ac2_7a6a_acc2;
+/// by a list read only through its reader, `#[ … ]` (#4828), then by an
+/// element index read only through its selector, `.#[ … ]` (#4944).
+const BUILT_IN_FINGERPRINT: u64 = 0xaef8_a7a4_843e_3c5b;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2896);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2894);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 91;
@@ -145,7 +146,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Unit", 1),
     ("Unknown", 1),
     ("Void", 1),
-    ("[", 57),
+    ("[", 55),
     ("]", 65),
     ("_", 48),
     ("abort", 1),

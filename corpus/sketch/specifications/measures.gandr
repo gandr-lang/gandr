@@ -22,7 +22,7 @@ pub def rec search(xs : Array(Integer), x : Integer, lo : Nat, hi : Nat) -> Mayb
     | sorted(xs)
     | hi <= length(xs)
   }
-  ensures r { r == none || xs[unwrap(r)] == x }
+  ensures r { r == none || xs.#[unwrap(r)] == x }
   measure Additive {
     | decreases hi - lo
     | cost log2(hi - lo) + 1
@@ -32,8 +32,8 @@ pub def rec search(xs : Array(Integer), x : Integer, lo : Nat, hi : Nat) -> Mayb
     none
   } else {
     let mid = lo + (hi - lo) / 2;
-    if xs[mid] == x { some(mid) }
-    else if xs[mid] < x { search(xs, x, mid + 1, hi) }
+    if xs.#[mid] == x { some(mid) }
+    else if xs.#[mid] < x { search(xs, x, mid + 1, hi) }
     else { search(xs, x, lo, mid) }
   }
 }
@@ -72,7 +72,7 @@ pub def pop[a : Type](q : Banker(a)) -> [State(Banker(a))] Maybe(a) #spec{
 
 /// The shortest distance to every node, its bound in the tropical semiring.
 pub def shortest(g : Graph, source : Node) -> Map(Node, Distance) #spec{
-  ensures d { d[source] == 0 }
+  ensures d { d.#[source] == 0 }
   measure Tropical {
     | cost edges(g) + nodes(g) * log2(nodes(g))
   }

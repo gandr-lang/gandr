@@ -471,7 +471,7 @@ pub fn named() -> Vec<Named>
         grade: HoldGrade::Many,
     });
     push(
-        "hold xs = [(1, 1), (1, 2)]; access xs[1] as w { resume(w, (5, 5)) }; return ((9, 9), xs)",
+        "hold xs = [(1, 1), (1, 2)]; access xs.#[1] as w { resume(w, (5, 5)) }; return ((9, 9), xs)",
         "⟨pair(pair(9, 9), cons(pair(1, 1), cons(pair(5, 5), nil()))) |+ ★⟩",
         core,
         root,

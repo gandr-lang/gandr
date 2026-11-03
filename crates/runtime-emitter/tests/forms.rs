@@ -366,7 +366,7 @@ fn forms() -> Vec<Form>
             ends: Ends::Shows("⟨1180591620717411303425 |+ ★⟩"),
         },
         Form {
-            what: "hold x = [1, 2, 3]; access x[1] as w { resume(w, 20) }; consume x",
+            what: "hold x = [1, 2, 3]; access x.#[1] as w { resume(w, 20) }; consume x",
             build: |core| written_at(core, Integer(1)),
             ends: Ends::Shows("⟨cons(1, cons(20, cons(3, nil()))) |+ ★⟩"),
         },
@@ -458,7 +458,7 @@ fn forms() -> Vec<Form>
             }),
         },
         Form {
-            what: "hold x = [1, 2, 3]; access x[5] as w { resume(w, 20) }; consume x",
+            what: "hold x = [1, 2, 3]; access x.#[5] as w { resume(w, 20) }; consume x",
             build: |core| written_at(core, Integer(5)),
             ends: Ends::Stuck(|stuck| matches!(*stuck, Stuck::Outside(_))),
         },
@@ -572,7 +572,7 @@ fn forms() -> Vec<Form>
             ends: Ends::Stuck(|stuck| matches!(*stuck, Stuck::Unended(_))),
         },
         Form {
-            what: "hold x = [1, 2, 3]; access shared x[2] as w { return w }",
+            what: "hold x = [1, 2, 3]; access shared x.#[2] as w { return w }",
             build: |core| {
                 let list = list(core);
                 let index = integer(core, Integer(2));
@@ -951,7 +951,7 @@ fn standing(
     core.computation_bind(bound, rest)
 }
 
-/// `hold x = [1, 2, 3]; access x[at] as w { resume(w, 20) } unwind { () };
+/// `hold x = [1, 2, 3]; access x.#[at] as w { resume(w, 20) } unwind { () };
 /// consume x`.
 ///
 /// # Specification

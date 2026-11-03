@@ -1133,7 +1133,7 @@ pub enum Former<'source, Node>
         grade: gandr_core_term::memory::HoldGrade,
     },
     /// An access, `access x as w { t } unwind { u }` or
-    /// `access shared x as w { t }`, either at a place `x[i]`: the body under
+    /// `access shared x as w { t }`, either at a place `x.#[i]`: the body under
     /// the view's linear binder.
     Access
     {

@@ -810,7 +810,7 @@ fn a_place_of_a_held_list_is_lent_at_its_index()
     let integers = integers(&mut arena);
     let zero = arena.value_literal(integer_literal());
     let unwind = done(&mut arena);
-    // hold xs = [0]; access xs[0] as v { let x = (v,).0; resume(v, x) } unwind {}
+    // hold xs = [0]; access xs.#[0] as v { let x = (v,).0; resume(v, x) } unwind {}
     let (_viewed, read) = copied(&mut arena, l0());
     let copy = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let written = resume(&mut arena, l0(), copy);
@@ -822,7 +822,7 @@ fn a_place_of_a_held_list_is_lent_at_its_index()
         [Ok(()), Ok(())],
         "an exclusive view of a held list's element reads it and writes an element back"
     );
-    // hold xs = [0]; access shared xs[0] as v { (v,).0 }
+    // hold xs = [0]; access shared xs.#[0] as v { (v,).0 }
     let (_viewed, viewed) = copied(&mut arena, l0());
     let element = shared_at(&mut arena, l0(), zero, viewed);
     let element = listed(&mut arena, element);
@@ -839,7 +839,7 @@ fn a_place_of_a_held_list_is_lent_at_its_index()
         [Err(at(unindexed, AccessDefect::Unindexed)); 2],
         "a held integer has no element at an index"
     );
-    // hold i = 0; hold xs = [0]; access shared xs[i] as v { (i,).0 }; (i,).0
+    // hold i = 0; hold xs = [0]; access shared xs.#[i] as v { (i,).0 }; (i,).0
     let index = arena.value_variable(Zone::Linear, l1());
     let (_index, index_read) = copied(&mut arena, DeBruijnIndex::from(2_u32));
     let reading = shared_at(&mut arena, l0(), index, index_read);
@@ -853,7 +853,7 @@ fn a_place_of_a_held_list_is_lent_at_its_index()
         "a held index reads beside its lend and again once the access ends"
     );
     // hold i = 0; hold xs = [0];
-    //   access shared xs[i] as v { access i as w { resume(w, 0) } unwind {} }
+    //   access shared xs.#[i] as v { access i as w { resume(w, 0) } unwind {} }
     let resumed = resume(&mut arena, l0(), zero);
     let inner = access(&mut arena, DeBruijnIndex::from(2_u32), resumed, unwind);
     let frozen = shared_at(&mut arena, l0(), index, inner);

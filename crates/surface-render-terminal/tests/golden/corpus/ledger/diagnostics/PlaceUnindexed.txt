@@ -4,8 +4,8 @@ error[PlaceUnindexed]: an access at a place reads an element at an index; the he
 3 │ ┌ def unindexed() -> -F Integer {
 4 │ │   var c = 0;
   │ │   ─── checked against `-F Integer`; while checking the scope of this hold
-5 │ │   access shared c[0] as w { pure w }
-  │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a held value with no elements to index
+5 │ │   access shared c.#[0] as w { pure w }
+  │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a held value with no elements to index
 6 │ │ }
   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
   │

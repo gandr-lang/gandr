@@ -2,5 +2,5 @@
 @[ refuses("PlaceUnindexed") ]
 def unindexed() -> -F Integer {
   var c = 0;
-  access shared c[0] as w { pure w }
+  access shared c.#[0] as w { pure w }
 }

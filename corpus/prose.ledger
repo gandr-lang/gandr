@@ -442,7 +442,7 @@ corpus/ledger/features/places.gandr STE-3.2 687fc345809dcee2
 corpus/ledger/features/places.gandr STE-3.2 c34709c8e80af67c
 corpus/ledger/features/places.gandr STE-3.2 d787ccb6b2d253a7
 corpus/ledger/features/places.gandr STE-6.3 6457d2847ea7bf2e
-corpus/ledger/features/places.gandr STE-6.3 f4261a751997c940
+corpus/ledger/features/places.gandr STE-6.3 d1dba6be82192d9d
 corpus/ledger/features/places.gandr STE-8.1 0609a5154362461e
 corpus/ledger/features/places.gandr STE-8.1 c34709c8e80af67c
 corpus/ledger/features/project-manifest.gandr STE-6.3 7a3248c92effd2c9
@@ -981,11 +981,9 @@ corpus/model/control/accessor-loop.gandr STE-6.3 0b45c55ed5d74e7d
 corpus/model/control/accessor-loop.gandr STE-6.3 7a990bba3f3aed23
 corpus/model/control/accessor-loop.gandr Head 7ffeb0f63edb2700
 corpus/model/control/accessor-method.gandr STE-3.2 0ecaa15f664a34a4
-corpus/model/control/accessor-method.gandr STE-3.2 e865c79f3c36f34e
 corpus/model/control/accessor-method.gandr STE-6.3 6d7e3615417d9214
-corpus/model/control/accessor-method.gandr STE-6.3 6d9021773004c1f4
 corpus/model/control/accessor-method.gandr STE-6.3 8b850c12467ea009
-corpus/model/control/accessor-method.gandr STE-6.3 92c5e91cef8c33ed
+corpus/model/control/accessor-method.gandr STE-6.3 f4e86c8a695ab1e4
 corpus/model/control/accessor-method.gandr Dash 8b850c12467ea009
 corpus/model/control/accessor-method.gandr Head 7ffeb0f63edb2700
 corpus/model/control/accessor-place.gandr STE-3.6 06c1e031552d9970
@@ -995,7 +993,7 @@ corpus/model/control/accessor-place.gandr STE-3.2 6717a7f7212f9838
 corpus/model/control/accessor-place.gandr STE-3.2 687fc345809dcee2
 corpus/model/control/accessor-place.gandr STE-3.2 c34709c8e80af67c
 corpus/model/control/accessor-place.gandr STE-6.3 6457d2847ea7bf2e
-corpus/model/control/accessor-place.gandr STE-6.3 f4261a751997c940
+corpus/model/control/accessor-place.gandr STE-6.3 d1dba6be82192d9d
 corpus/model/control/accessor-place.gandr STE-8.1 0609a5154362461e
 corpus/model/control/accessor-place.gandr STE-8.1 c34709c8e80af67c
 corpus/model/control/accessor-place.gandr Head 7ffeb0f63edb2700
@@ -3507,11 +3505,13 @@ corpus/pathological/control/accessor-method.gandr STE-6.3 1388946d6deef36e
 corpus/pathological/control/accessor-method.gandr STE-8.1 56eb39cb9cc2e651
 corpus/pathological/control/accessor-method.gandr Head 7ffeb0f63edb2700
 corpus/pathological/control/accessor-method.gandr What 0580121cb0bd6a6c
+corpus/pathological/control/accessor-method.gandr Item b953d6ca9d496a18
 corpus/pathological/control/accessor-place.gandr STE-3.6 3bec2c387ead2fac
 corpus/pathological/control/accessor-place.gandr STE-3.6 8af3df1dda61ded0
 corpus/pathological/control/accessor-place.gandr STE-6.3 3bec2c387ead2fac
 corpus/pathological/control/accessor-place.gandr STE-6.3 8af3df1dda61ded0
 corpus/pathological/control/accessor-place.gandr Head 7ffeb0f63edb2700
+corpus/pathological/control/accessor-place.gandr Item b9cd91310e949348
 corpus/pathological/control/accessor-shared.gandr STE-3.6 751e3f59b1c705d1
 corpus/pathological/control/accessor-shared.gandr STE-3.6 812378ef5d6f9fd9
 corpus/pathological/control/accessor-shared.gandr STE-3.6 befdd84112c06748
@@ -4909,7 +4909,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedCo
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedComponent.Unsorted.txt STE-5.3 913d618e84e71673
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnwindEffect.txt STE-5.3 ff1fb69733b87ac1
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ViewMoved.txt STE-5.3 8bca00861f3d6554
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ViewNotPlace.txt STE-5.3 2978d83e36f1e57f
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ViewNotPlace.txt STE-5.3 c33d45211aec6c3c
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ViewOfNoPlace.txt STE-5.3 99cbeb6bf8011644
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ViewReadOnly.txt STE-5.3 fd9e9d7a789773fe
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ViewSpent.txt STE-5.3 48671335456e38f6
@@ -4945,9 +4945,9 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/completion/buffe
 crates/surface-render-terminal/tests/golden/corpus/pathological/completion/stack-resumed-twice.txt STE-5.3 0bb1302fce75dd05
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor-abort-effect.txt STE-5.3 ff1fb69733b87ac1
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor-method.txt STE-5.3 1c54bda22b67e265
-crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor-method.txt STE-5.3 2978d83e36f1e57f
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor-method.txt STE-5.3 82c8edff8c319a9e
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor-method.txt STE-5.3 99cbeb6bf8011644
+crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor-method.txt STE-5.3 c33d45211aec6c3c
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor-place.txt STE-5.3 5c1639620339d6c0
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor-shared.txt STE-5.3 fd9e9d7a789773fe
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor-twice.txt STE-5.3 48671335456e38f6

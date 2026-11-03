@@ -2218,22 +2218,16 @@ fn expressions(
         ]),
     ));
     // A place of a value, `s.#[e]`, its index a whole expression: the body a
-    // view-answering method ends in, `{ self.#[i] }`. The bare `s[e]` is read
-    // beside it until the corpus moves; it follows the instantiation, so a
-    // bracket an instantiation resident reads as well, `f[<]`, `f[tail]` or
-    // `f[T]`, keeps the instantiation's mold. The tree-sitter grammar has no
-    // places, so the kind is in `PBG_ONLY_KINDS`.
+    // view-answering method ends in, `{ self.#[i] }`. A bracket after an
+    // operand with no `.#` before it holds static arguments, so `f[T]` and
+    // `xs.#[i]` never read alike. The tree-sitter grammar has no places, so
+    // the kind is in `PBG_ONLY_KINDS`.
     out.push(r(
         RuleName("index_expression"),
         Provenance("index_expression"),
         s,
         p.postfix,
-        seq([
-            h(s),
-            alt([t(TileLabel(".#[")), t(TileLabel("["))]),
-            h(s),
-            t(TileLabel("]")),
-        ]),
+        seq([h(s), t(TileLabel(".#[")), h(s), t(TileLabel("]"))]),
     ));
     primary_expressions(out, p.atom);
 }
@@ -3565,8 +3559,8 @@ fn session_expressions(
 /// view `v` over the body `t`; the optional `unwind` block runs when an
 /// `abort` ends the view and defaults to nothing. A mode word after `access`,
 /// `shared` or `exclusive`, names the mode; the grammar admits an `unwind`
-/// after either, and lowering refuses one after `shared`. An index after the
-/// held name, `x[e]`, lends the place of `x` at `e`. `resume(v, e)` ends
+/// after either, and lowering refuses one after `shared`. A selector after the
+/// held name, `x.#[e]`, lends the place of `x` at `e`. `resume(v, e)` ends
 /// the view writing `e` back and `abort(v)` ends it with nothing written. Each
 /// opens on its own reserved lead and names its view by an identifier tile,
 /// so no expression hole competes with the name. The tree-sitter grammar has
@@ -3599,11 +3593,7 @@ fn access_expressions(
             t(TileLabel("access")),
             opt(alt([t(TileLabel("shared")), t(TileLabel("exclusive"))])),
             t(TileLabel("identifier")),
-            opt(seq([
-                alt([t(TileLabel(".#[")), t(TileLabel("["))]),
-                h(s),
-                t(TileLabel("]")),
-            ])),
+            opt(seq([t(TileLabel(".#[")), h(s), t(TileLabel("]"))])),
             t(TileLabel("as")),
             t(TileLabel("identifier")),
             block(),

@@ -30,7 +30,7 @@
 //! |hold at grade one|`hold[1] x = v; t`|as the hold, `v` made in place; `x` is never read, and each view of it is read at most once|
 //! |access|`access x as w { t } unwind { u }`|`x` is lent exclusively; `t` runs with `w`, a slot of `Σ` at `A`|
 //! |shared access|`access shared x as w { t }`|`x` is lent shared; `t` runs with `w`, a slot of `Σ` at `A`|
-//! |access at a place|`access x[i] as w { t } unwind { u }`, `access shared x[i] as w { t }`|`A` is `List E`; `i` checks against the integer type; `x` is lent in the mode; `t` runs with `w`, a slot of `Σ` at `E`|
+//! |access at a place|`access x.#[i] as w { t } unwind { u }`, `access shared x.#[i] as w { t }`|`A` is `List E`; `i` checks against the integer type; `x` is lent in the mode; `t` runs with `w`, a slot of `Σ` at `E`|
 //! |resume|`resume(w, v)`|`w` is exclusive; `v` checks against `A`; `w` is spent; synthesises `F 1`|
 //! |abort|`abort(w)`|`w` is exclusive; `w` is spent; synthesises `F 1`|
 //! |consume|`s.f(a)`, `f`'s receiver consumed|`x` is held, not lent and not kept; its value moves out; synthesises `F A`|
@@ -96,7 +96,7 @@
 //! # Places
 //!
 //! An access lends a place of its held slot: the held value whole, or the
-//! element at an index, `x[i]`. The index is a value checked against the
+//! element at an index, `x.#[i]`. The index is a value checked against the
 //! integer type where the access stands; a linear index is lent shared with
 //! the place for the body and never consumed. A place needs a list
 //! ([`AccessDefect::Unindexed`] otherwise), and the view is declared at the

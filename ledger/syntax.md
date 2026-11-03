@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x1f4a9ac27a6aacc2`
+- Grammar fingerprint: `0xaef8a7a4843e3c5b`
 - Rules: 171 — 170 committed, 1 internal
-- Molds: 2896
+- Molds: 2894
 - Attributes: 17
 
 ## Reading a form
@@ -97,7 +97,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`projection_expression`](../corpus/ledger/syntax/projection-expression.gandr) | `EXPRESSION . ⦅ ‹identifier› ‖ ‹constructor› ‖ ‹number› ⦆` | `expression.postfix` | `projection_expression` | admitted | Other, Member, Constructor, Number |
 | [`record_selection_expression`](../corpus/ledger/syntax/record-selection-expression.gandr) | `EXPRESSION .#{ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦆* ⦅ , ⦆? }` | `expression.postfix` | `record_selection_expression` * | admitted | Other, Member, Number |
 | [`view_expression`](../corpus/ledger/syntax/view-expression.gandr) | `EXPRESSION as ‹identifier› ⟨block⟩` | `expression.postfix` | `view_expression` * | admitted | Keyword, VariableDef, Other, Number, Type, Member |
-| [`index_expression`](../corpus/ledger/syntax/index-expression.gandr) | `EXPRESSION ⦅ .#[ ‖ [ ⦆ EXPRESSION ]` | `expression.postfix` | `index_expression` * | admitted | Other |
+| [`index_expression`](../corpus/ledger/syntax/index-expression.gandr) | `EXPRESSION .#[ EXPRESSION ]` | `expression.postfix` | `index_expression` * | admitted | Other |
 | [`hole`](../corpus/ledger/syntax/hole.gandr) | `? ⦅ ‹hole_name› ⦆?` | `expression.atom` | `hole` | admitted | Hole, Label |
 | [`wildcard.expression`](../corpus/ledger/syntax/wildcard.expression.gandr) | `_` | `expression.atom` | `wildcard` | admitted | Variable |
 | [`parenthesized_expression`](../corpus/ledger/syntax/parenthesized-expression.gandr) | `( ⦅ ) ‖ EXPRESSION ⦅ ) ‖ , ⦅ EXPRESSION ⦅ , EXPRESSION ⦅ , EXPRESSION ⦆* ⦆? ⦅ , ⦆? ⦆? ) ‖ : TYPE ) ⦆ ⦆` | `expression.atom` | `parenthesized_expression` | admitted | Other |
@@ -130,7 +130,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`acquire_expression`](../corpus/ledger/syntax/acquire-expression.gandr) | `acquire ( EXPRESSION )` | `expression.atom` | `acquire_expression` * | reserved | Keyword, Other |
 | [`release_expression`](../corpus/ledger/syntax/release-expression.gandr) | `release ( EXPRESSION )` | `expression.atom` | `release_expression` * | reserved | Keyword, Other |
 | [`fork_expression`](../corpus/ledger/syntax/fork-expression.gandr) | `fork ⦅ ! ⦆? ( ‹identifier› : TYPE ) EXPRESSION` | `expression.atom` | `fork_expression` * | admitted | Keyword, Other, VariableParam |
-| [`access_expression`](../corpus/ledger/syntax/access-expression.gandr) | `access ⦅ shared ‖ exclusive ⦆? ‹identifier› ⦅ ⦅ .#[ ‖ [ ⦆ EXPRESSION ] ⦆? as ‹identifier› BLOCK ⦅ unwind BLOCK ⦆?` | `expression.atom` | `access_expression` * | admitted | Keyword, Other, Variable, VariableDef |
+| [`access_expression`](../corpus/ledger/syntax/access-expression.gandr) | `access ⦅ shared ‖ exclusive ⦆? ‹identifier› ⦅ .#[ EXPRESSION ] ⦆? as ‹identifier› BLOCK ⦅ unwind BLOCK ⦆?` | `expression.atom` | `access_expression` * | admitted | Keyword, Other, Variable, VariableDef |
 | [`resume_expression`](../corpus/ledger/syntax/resume-expression.gandr) | `resume ( ‹identifier› , EXPRESSION )` | `expression.atom` | `resume_expression` * | admitted | Keyword, Other, Variable |
 | [`abort_expression`](../corpus/ledger/syntax/abort-expression.gandr) | `abort ( ‹identifier› )` | `expression.atom` | `abort_expression` * | admitted | Keyword, Other, Variable |
 | [`shell_block`](../corpus/ledger/syntax/shell-block.gandr) | `#!{ ⦅ EXPRESSION ⦆? }` | `expression.atom` | `shell_block` | unadmitted | Other |
@@ -262,7 +262,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
 
-## Decisions — 109 of 171 rules decided at every token
+## Decisions — 110 of 171 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -329,11 +329,11 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `splice_expression` | expression | 1 | `~` | — | 0 |
 | `pack_model_expression` | expression | 2 | `pack` | — | 0 |
 | `call_expression` | expression | 4 | `(` | — | 2 |
-| `instantiation_expression` | expression | 4 | `[` | `index_expression` | 2 |
+| `instantiation_expression` | expression | 4 | `[` | — | 2 |
 | `projection_expression` | expression | 4 | `.` | — | 0 |
 | `record_selection_expression` | expression | 10 | `.#{` | — | 4 |
 | `view_expression` | expression | 33 | `as` | — | 0 |
-| `index_expression` | expression | 3 | `.#[` `[` | `instantiation_expression` | 0 |
+| `index_expression` | expression | 2 | `.#[` | — | 0 |
 | `hole` | expression | 2 | `?` | — | 0 |
 | `wildcard.expression` | expression | 1 | `_` | — | 0 |
 | `parenthesized_expression` | expression | 10 | `(` | — | 4 |
@@ -366,7 +366,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `acquire_expression` | expression | 3 | `acquire` | — | 0 |
 | `release_expression` | expression | 3 | `release` | — | 0 |
 | `fork_expression` | expression | 6 | `fork` | — | 0 |
-| `access_expression` | expression | 10 | `access` | — | 0 |
+| `access_expression` | expression | 9 | `access` | — | 0 |
 | `resume_expression` | expression | 5 | `resume` | — | 0 |
 | `abort_expression` | expression | 4 | `abort` | — | 0 |
 | `shell_block` | expression | 2 | `#!{` | — | 0 |
@@ -459,7 +459,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `type_variable` | 70 | 15 | 3 |
 | `]` | 65 | 39 | 0 |
 | `{` | 61 | 31 | 2 |
-| `[` | 57 | 34 | 5 |
+| `[` | 55 | 32 | 4 |
 | `number` | 52 | 30 | 3 |
 | `_` | 48 | 7 | 2 |
 | `=>` | 45 | 10 | 1 |

@@ -204,12 +204,12 @@ fn an_access_of_a_place_lowers_with_its_index()
 def pair = cons(1, cons(2, nil)) ;
 def second() -> -F Integer {
   var xs = pair;
-  access xs[1] as v { resume(v, v + 1) };
-  access shared xs[1] as w { pure w }
+  access xs.#[1] as v { resume(v, v + 1) };
+  access shared xs.#[1] as w { pure w }
 }
 def indexed(i : Integer) -> -F Integer {
   var xs = pair;
-  access shared xs[i] as w { pure w }
+  access shared xs.#[i] as w { pure w }
 }
 ",
     );

@@ -15,17 +15,17 @@ import std.list (List);
 module Misplaced where {
   /// A method at a deduced mode whose result is a value, not a view.
   @[ refuses("ViewNotPlace") ]
-  def valued[m : Mode](self : m List(Integer)) -> -F Integer { self[0] }
+  def valued[m : Mode](self : m List(Integer)) -> -F Integer { self.#[0] }
   /// A method answering a view whose body computes a value rather than
   /// naming a place.
   @[ refuses("ViewNotPlace") ]
   def computed[m : Mode](self : m List(Integer)) -> -F View[m](Integer) { pure 0 }
   /// A view at a mode other than the receiver's.
   @[ refuses("ViewNotPlace") ]
-  def crossed[m : Mode, n : Mode](self : m List(Integer)) -> -F View[n](Integer) { self[0] }
+  def crossed[m : Mode, n : Mode](self : m List(Integer)) -> -F View[n](Integer) { self.#[0] }
   /// A view whose element type is not the list's.
   @[ refuses("TypeMismatch") ]
-  def mistyped[m : Mode](self : m List(Integer)) -> -F View[m](String) { self[0] }
+  def mistyped[m : Mode](self : m List(Integer)) -> -F View[m](String) { self.#[0] }
   /// The length, read from a list lent for reading: a method answering no
   /// place.
   def size(self : shared List(Integer)) -> -F Integer { pure 2 }
@@ -52,10 +52,19 @@ def raisedWhileRead() -> Integer {
   access shared xs as v { xs.first() as w { resume(w, 3) }; pure 0 }
 }
 
-/// A bare index of a list no var holds: there is no place to lend.
+/// An index of a list no var holds: there is no place to lend.
 @[ refuses("OutOfFragment.index_expression") ]
 def unheldIndex(ys : List(Integer), i : Integer) -> -F Integer {
-  let y = ys[i];
+  let y = ys.#[i];
+  pure y
+}
+
+/// An element index with a bare bracket for static arguments. An index uses
+/// the selector `.#[ … ]`.
+@[ refuses("MalformedForm") ]
+def bareIndex() -> -F Integer {
+  var xs = pair;
+  let y = xs[1];
   pure y
 }
 
