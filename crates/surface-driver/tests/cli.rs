@@ -2279,6 +2279,143 @@ fn check_writes_a_lock_and_refuses_its_drift_3072()
     );
 }
 
+/// What `git` writes to standard output run with `arguments` in `directory`,
+/// as a test's own commits are made: unsigned, by a fixed author.
+///
+/// # Specification
+/// trivial.
+fn git<Argument>(
+    directory: &Path,
+    arguments: &[Argument],
+) -> String
+where
+    Argument: AsRef<std::ffi::OsStr> + core::fmt::Debug,
+{
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(directory)
+        .args([
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "user.name=gandr",
+            "-c",
+            "user.email=gandr@invalid",
+        ])
+        .args(arguments)
+        .output()
+        .expect("git runs");
+    assert!(
+        output.status.success(),
+        "git {arguments:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}
+
+/// #4714: `check` of a package importing `gh:acme-org/hello` its lock does not
+/// record is refused, naming `gandr lock`; `gandr lock` fetches the remote's
+/// `HEAD` into the user's cache and records its revision; `check` then reads
+/// the checkout, and fetches it again once it is removed. The remote is a
+/// local repository `git` reads in GitHub's place.
+#[test]
+fn a_gh_coordinate_is_fetched_locked_and_read_again_4714()
+{
+    let scratch = Scratch::new(Path::new("gh"));
+    let _hello = scratch.file(
+        Path::new("hello/src/package.gandr"),
+        Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
+    );
+    let _sibling = scratch.file(
+        Path::new("sibling/src/package.gandr"),
+        Text::from(
+            format!(
+                "import \"gh:acme-org/hello\" as hello;\n{STD_PACKAGE}{}pub def greeting = \
+                 hello.welcome;\n",
+                LIBRARY.replace("\"hello\"", "\"sibling\"")
+            )
+            .as_str(),
+        ),
+    );
+    let remote = scratch.0.join("remote");
+    let bare = remote.join("acme-org/hello");
+    std::fs::create_dir_all(&bare).expect("the remote's directory is made");
+    let _bare = git(&bare, &[
+        "init",
+        "--quiet",
+        "--bare",
+        "--initial-branch",
+        "main",
+    ]);
+    let hello = scratch.0.join("hello");
+    let _working = git(&hello, &["init", "--quiet"]);
+    let _added = git(&hello, &["add", "--all"]);
+    let _committed = git(&hello, &["commit", "--quiet", "--message", "hello"]);
+    let _pushed = git(&hello, &[
+        "push",
+        "--quiet",
+        &bare.display().to_string(),
+        "HEAD:main",
+    ]);
+    let revision = git(&hello, &["rev-parse", "HEAD"]);
+    let verb = |name: &str| {
+        let mut command = gandr(&[Path::new(name), Path::new("sibling")]);
+        command
+            .current_dir(&scratch.0)
+            .env("GIT_CONFIG_COUNT", "1")
+            .env(
+                "GIT_CONFIG_KEY_0",
+                format!("url.file://{}/.insteadOf", remote.display()),
+            )
+            .env("GIT_CONFIG_VALUE_0", "https://github.com/");
+        ran(command)
+    };
+    let unrevisioned = verb("check");
+    assert_eq!(
+        code(&unrevisioned),
+        Code(1_i32),
+        "{}",
+        stderr(&unrevisioned)
+    );
+    assert!(
+        stderr(&unrevisioned)
+            .contains("records no revision of `gh:acme-org/hello`: run `gandr lock"),
+        "{}",
+        stderr(&unrevisioned)
+    );
+    let locked = verb("lock");
+    assert_eq!(code(&locked), Code(0_i32), "{}", stderr(&locked));
+    let lock =
+        std::fs::read_to_string(scratch.0.join("sibling/gandr.lock")).expect("the lock reads");
+    assert!(
+        lock.contains(&format!(
+            "\"gh:acme-org/hello\" = {{ revision = \"{revision}\", pointer = "
+        )),
+        "the lock records the revision: {lock}"
+    );
+    let checkout = homes()
+        .join("cache/gandr/checkouts/acme-org/hello")
+        .join(&revision);
+    assert!(
+        checkout.join("src/package.gandr").is_file(),
+        "the checkout sits under the user's cache"
+    );
+    let checked = verb("check");
+    assert_eq!(code(&checked), Code(0_i32), "{}", stderr(&checked));
+    std::fs::remove_dir_all(&checkout).expect("the checkout is removed");
+    let refetched = verb("check");
+    assert_eq!(code(&refetched), Code(0_i32), "{}", stderr(&refetched));
+    assert!(
+        checkout.join("src/package.gandr").is_file(),
+        "the check fetches the recorded revision again"
+    );
+    assert_eq!(
+        std::fs::read_to_string(scratch.0.join("sibling/gandr.lock")).ok(),
+        Some(lock),
+        "no check moves the lock"
+    );
+}
+
 /// #3157: `check` of a package depending on a sibling opens the store under
 /// the XDG data home and locks the sibling by a pointer into it, whose chunk
 /// the store holds; removing the store leaves the lock as it stands on the

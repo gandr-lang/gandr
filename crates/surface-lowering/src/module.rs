@@ -4381,16 +4381,16 @@ impl Address
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Address::Coordinate`] exactly when `uri` opens with the
-    ///   scheme [`COORDINATE`] and its colon; [`Address::Scheme`] when it opens
-    ///   with another RFC 3986 scheme and its colon; [`Address::Path`]
-    ///   otherwise.
+    ///   scheme [`PATH_SCHEME`] or [`GITHUB_SCHEME`] and its colon;
+    ///   [`Address::Scheme`] when it opens with another RFC 3986 scheme and its
+    ///   colon; [`Address::Path`] otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a `file:` URL, a `path:` coordinate, a relative path,
-    ///   a path holding a colon after a slash and a scheme opening with a digit
-    ///   each classify exactly.
+    /// - hypothesis: L3 — a `file:` URL, a `path:` and a `gh:` coordinate, a
+    ///   relative path, a path holding a colon after a slash and a scheme
+    ///   opening with a digit each classify exactly.
     /// - witness: `module::tests::an_address_names_a_scheme_a_coordinate_or_a_path`
     #[inline]
     #[must_use]
@@ -4412,7 +4412,7 @@ impl Address
         if !(opens && rest) {
             Self::Path
         }
-        else if scheme == COORDINATE {
+        else if scheme == PATH_SCHEME || scheme == GITHUB_SCHEME {
             Self::Coordinate
         }
         else {
@@ -4421,9 +4421,14 @@ impl Address
     }
 }
 
-/// The scheme of a package's coordinate, `path:../hello`: a directory, read
-/// from the importing package's root, that roots the package.
-pub const COORDINATE: &str = "path";
+/// The scheme of a package's coordinate on disk, `path:../hello`: a
+/// directory, read from the importing package's root, that roots the package.
+pub const PATH_SCHEME: &str = "path";
+
+/// The scheme of a package's coordinate on GitHub, `gh:acme-org/rope`: the
+/// repository whose top directory roots the package, at the revision the
+/// importing package's lock records.
+pub const GITHUB_SCHEME: &str = "gh";
 
 /// One import as its tiles spell it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -14058,6 +14063,11 @@ mod tests
             of("path:../hello"),
             Address::Coordinate,
             "the `path` scheme names a package's coordinate"
+        );
+        assert_eq!(
+            of("gh:acme-org/rope"),
+            Address::Coordinate,
+            "the `gh` scheme names a package's coordinate"
         );
         assert_eq!(
             of("paths:../hello"),

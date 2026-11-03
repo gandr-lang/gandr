@@ -395,6 +395,34 @@ pub fn verdicts() -> Option<PathBuf>
     )
 }
 
+/// The directory the checkouts of `gh:` coordinates are kept under,
+/// `gandr/checkouts` under the cache directory [`checkpoints`] sits in.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `<home>/gandr/checkouts` under `$XDG_CACHE_HOME` and `$HOME` by
+///   [`directory`]'s rule; absent when neither names a directory.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the result depends on the environment.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `gh:` dependency locked by one run is read from its
+///   checkout by the next.
+/// - witness: `tests::cli::a_gh_coordinate_is_fetched_locked_and_read_again_4714`
+pub fn checkouts() -> Option<PathBuf>
+{
+    Some(
+        directory(
+            std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from),
+            std::env::var_os("HOME").map(PathBuf::from),
+            Path::new(".cache"),
+        )?
+        .join("gandr")
+        .join("checkouts"),
+    )
+}
+
 /// The user's configuration file, read and parsed at most once a process: its
 /// `[presentation]` and its `[kernel]` are two tables of the one file.
 ///

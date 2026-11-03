@@ -446,6 +446,7 @@ INSERT INTO reference VALUES('vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f','theor
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','kernel-term','decode','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','package','background','789bc36ba84f20d6634372c6b1f1a66e5c430e92','2026-10-27','20e46b8104c5c27d7eafb30d517d4929d769231e');
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','package::export','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','package::fetch','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','package::lock','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-dispatcher','workspace','background','2ced5da8a41bbf07bfb346a91b1c898985dcd293','2026-10-28','ec86c18a244f7869da25774f1cd9e8c036e54687');
 INSERT INTO reference VALUES('vault:01a178aa-d585-7822-9cf0-40459729a925','surface-driver','','background',NULL,NULL,NULL);
@@ -469,6 +470,7 @@ INSERT INTO reference VALUES('vault:01a178ab-289d-7702-b010-1c47ae9fd427','surfa
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','core-incremental','record','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','storage-store','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','surface-dispatcher','package::export','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','surface-dispatcher','package::fetch','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','surface-dispatcher','package::lock','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','surface-dispatcher','receipts','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de','surface-driver','verdicts','lineage',NULL,NULL,NULL);
