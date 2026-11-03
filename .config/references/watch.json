@@ -224,7 +224,8 @@
       "reported": [],
       "dismissed": [],
       "cap": 200,
-      "per_author": 3
+      "per_author": 3,
+      "library": []
     },
     "output": {
       "followups": [
@@ -234,6 +235,7 @@
           "date": "2026-10-30",
           "venue": "Journal of Functional Programming",
           "doi": "10.1145/9999",
+          "link": "https://doi.org/10.1145/9999",
           "authors": "Jesper Cockx, New Coauthor",
           "because": "follows Elaborating dependent (co)pattern matching"
         }
@@ -245,6 +247,7 @@
           "date": "2026-10-29",
           "venue": "Journal of Functional Programming",
           "doi": null,
+          "link": "https://openalex.org/W101",
           "authors": "Somebody Else",
           "because": "cites Elaborating dependent (co)pattern matching"
         }
@@ -256,6 +259,7 @@
           "date": "2026-10-28",
           "venue": "Journal of Functional Programming",
           "doi": null,
+          "link": "https://openalex.org/W102",
           "authors": "Held Person",
           "because": "by Held Person"
         }
@@ -267,10 +271,12 @@
           "date": "2026-10-27",
           "venue": "LICS",
           "doi": null,
+          "link": "https://openalex.org/W103",
           "authors": "V One",
           "because": "LICS, on rewriting"
         }
       ],
+      "versions": [],
       "capped": null,
       "reported": ["W100", "W101", "W102", "W103"]
     }
@@ -500,13 +506,15 @@
       "reported": ["W100", "W101", "W102", "W103"],
       "dismissed": [],
       "cap": 200,
-      "per_author": 3
+      "per_author": 3,
+      "library": []
     },
     "output": {
       "followups": [],
       "cited": [],
       "authors": [],
       "venues": [],
+      "versions": [],
       "capped": null,
       "reported": []
     }
@@ -745,7 +753,8 @@
         }
       ],
       "cap": 200,
-      "per_author": 3
+      "per_author": 3,
+      "library": []
     },
     "output": {
       "followups": [],
@@ -757,6 +766,7 @@
           "date": "2026-10-28",
           "venue": "Journal of Functional Programming",
           "doi": null,
+          "link": "https://openalex.org/W102",
           "authors": "Held Person",
           "because": "by Held Person"
         }
@@ -768,10 +778,12 @@
           "date": "2026-10-27",
           "venue": "LICS",
           "doi": null,
+          "link": "https://openalex.org/W103",
           "authors": "V One",
           "because": "LICS, on rewriting"
         }
       ],
+      "versions": [],
       "capped": null,
       "reported": ["W102", "W103"]
     }
@@ -869,13 +881,15 @@
       "reported": [],
       "dismissed": [],
       "cap": 200,
-      "per_author": 3
+      "per_author": 3,
+      "library": []
     },
     "output": {
       "followups": [],
       "cited": [],
       "authors": [],
       "venues": [],
+      "versions": [],
       "capped": null,
       "reported": []
     }
@@ -1057,7 +1071,8 @@
       "reported": [],
       "dismissed": [],
       "cap": 3,
-      "per_author": 2
+      "per_author": 2,
+      "library": []
     },
     "output": {
       "followups": [],
@@ -1069,6 +1084,7 @@
           "date": "2026-10-15",
           "venue": "Journal of Functional Programming",
           "doi": null,
+          "link": "https://openalex.org/W205",
           "authors": "Other Held",
           "because": "by Other Held"
         },
@@ -1078,6 +1094,7 @@
           "date": "2026-10-14",
           "venue": "Journal of Functional Programming",
           "doi": null,
+          "link": "https://openalex.org/W204",
           "authors": "Other Held",
           "because": "by Other Held"
         },
@@ -1087,6 +1104,7 @@
           "date": "2026-10-13",
           "venue": "Journal of Functional Programming",
           "doi": null,
+          "link": "https://openalex.org/W203",
           "authors": "Held Person",
           "because": "by Held Person"
         },
@@ -1096,11 +1114,13 @@
           "date": "2026-10-12",
           "venue": "Journal of Functional Programming",
           "doi": null,
+          "link": "https://openalex.org/W202",
           "authors": "Held Person",
           "because": "by Held Person"
         }
       ],
       "venues": [],
+      "versions": [],
       "capped": {
         "before": 6,
         "after": 4
@@ -1207,7 +1227,8 @@
       "reported": [],
       "dismissed": [],
       "cap": 200,
-      "per_author": 3
+      "per_author": 3,
+      "library": []
     },
     "output": {
       "followups": [],
@@ -1218,6 +1239,7 @@
           "date": "2026-10-21",
           "venue": "Journal of Functional Programming",
           "doi": null,
+          "link": "https://openalex.org/W301",
           "authors": "X",
           "because": "cites Elaborating dependent (co)pattern matching"
         },
@@ -1227,14 +1249,448 @@
           "date": "2026-10-20",
           "venue": "Journal of Functional Programming",
           "doi": null,
+          "link": "https://openalex.org/W300",
           "authors": "Jesper Cockx",
           "because": "cites Elaborating dependent (co)pattern matching"
         }
       ],
       "authors": [],
       "venues": [],
+      "versions": [],
       "capped": null,
       "reported": ["W300", "W301"]
+    }
+  },
+  {
+    "name": "a work a library entry holds by an arXiv location, a HAL location, or its title and first author, accents folded, is reported once as a version naming the entry, never as a new work; each row links its arXiv version, else its HAL one, else its DOI (#4709)",
+    "input": {
+      "cited_works": [],
+      "held": [],
+      "held_authors": ["A1"],
+      "terms": [],
+      "seeds": {
+        "cited": [],
+        "authors": [
+          {
+            "id": "https://openalex.org/W501",
+            "doi": "https://doi.org/10.1007/978-94-007-0954-6_2",
+            "display_name": "Call-By-Push-Value: A Subsuming Paradigm",
+            "publication_date": "2026-10-02",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A9",
+                  "display_name": "Paul Blain Levy"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": []
+          },
+          {
+            "id": "https://openalex.org/W502",
+            "doi": "https://doi.org/10.1145/3776695",
+            "display_name": "A Lazy, Concurrent Convertibility Checker",
+            "publication_date": "2026-10-03",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A9",
+                  "display_name": "Nathanaëlle Courant"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": [
+              {
+                "landing_page_url": "https://doi.org/10.1145/3776695",
+                "pdf_url": null
+              },
+              {
+                "landing_page_url": "http://arxiv.org/abs/2510.18418v2",
+                "pdf_url": null
+              },
+              {
+                "landing_page_url": "https://hal.science/hal-05322705",
+                "pdf_url": null
+              }
+            ]
+          },
+          {
+            "id": "https://openalex.org/W503",
+            "doi": "https://doi.org/10.23638/lmcs-15(1:3)2019",
+            "display_name": "Probabilistic Call By Push Value",
+            "publication_date": "2026-10-04",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A9",
+                  "display_name": "Thomas Ehrhard"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": [
+              {
+                "landing_page_url": "https://hal.science/hal-01345847v3",
+                "pdf_url": null
+              }
+            ]
+          },
+          {
+            "id": "https://openalex.org/W504",
+            "doi": "https://doi.org/10.1145/3408983",
+            "display_name": "Elaboration with first-class implicit function types",
+            "publication_date": "2026-10-05",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A9",
+                  "display_name": "András Kovács"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": []
+          },
+          {
+            "id": "https://openalex.org/W505",
+            "doi": "https://doi.org/10.1000/new-one",
+            "display_name": "A New Construction",
+            "publication_date": "2026-10-06",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A1",
+                  "display_name": "Ada Held"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": [
+              {
+                "landing_page_url": "https://doi.org/10.1000/new-one",
+                "pdf_url": null
+              },
+              {
+                "landing_page_url": "https://hal.science/hal-04000001",
+                "pdf_url": null
+              },
+              {
+                "landing_page_url": "https://arxiv.org/abs/2610.00001v1",
+                "pdf_url": null
+              }
+            ]
+          },
+          {
+            "id": "https://openalex.org/W506",
+            "doi": "https://doi.org/10.1000/new-two",
+            "display_name": "Another New Construction",
+            "publication_date": "2026-10-07",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A1",
+                  "display_name": "Ada Held"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": [
+              {
+                "landing_page_url": "https://inria.hal.science/hal-04000002v2",
+                "pdf_url": null
+              }
+            ]
+          },
+          {
+            "id": "https://openalex.org/W507",
+            "doi": "https://doi.org/10.1000/new-three",
+            "display_name": "A Third New Construction",
+            "publication_date": "2026-10-08",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A1",
+                  "display_name": "Ada Held"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": [
+              {
+                "landing_page_url": "https://doi.org/10.1000/new-three",
+                "pdf_url": null
+              }
+            ]
+          }
+        ],
+        "venues": []
+      },
+      "reported": [],
+      "dismissed": [],
+      "cap": 200,
+      "per_author": 3,
+      "library": [
+        {
+          "key": "Levy-1999-call_by_push_value",
+          "doi": "10.1007/3-540-48959-2_17",
+          "title": "Call-by-Push-Value: A Subsuming Paradigm",
+          "arxiv": "",
+          "hal": "",
+          "family": "Levy"
+        },
+        {
+          "key": "Courant-2025-lazy_concurrent_convertibility_checker",
+          "doi": "",
+          "title": "A Lazy, Concurrent Convertibility Checker",
+          "arxiv": "2510.18418",
+          "hal": "",
+          "family": "Courant"
+        },
+        {
+          "key": "Ehrhard-2016-probabilistic_call_by_push_value",
+          "doi": "",
+          "title": "Probabilistic call by push value",
+          "arxiv": "",
+          "hal": "hal-01345847",
+          "family": "Ehrhard"
+        },
+        {
+          "key": "Kovacs-2020-elaboration_first_class_implicit_function_types",
+          "doi": "",
+          "title": "Elaboration with First-Class Implicit Function Types",
+          "arxiv": "",
+          "hal": "",
+          "family": "Kov\\'acs"
+        }
+      ]
+    },
+    "output": {
+      "followups": [],
+      "cited": [],
+      "authors": [
+        {
+          "id": "W507",
+          "title": "A Third New Construction",
+          "date": "2026-10-08",
+          "venue": "A Venue",
+          "doi": "10.1000/new-three",
+          "link": "https://doi.org/10.1000/new-three",
+          "authors": "Ada Held",
+          "because": "by Ada Held"
+        },
+        {
+          "id": "W506",
+          "title": "Another New Construction",
+          "date": "2026-10-07",
+          "venue": "A Venue",
+          "doi": "10.1000/new-two",
+          "link": "https://hal.science/hal-04000002",
+          "authors": "Ada Held",
+          "because": "by Ada Held"
+        },
+        {
+          "id": "W505",
+          "title": "A New Construction",
+          "date": "2026-10-06",
+          "venue": "A Venue",
+          "doi": "10.1000/new-one",
+          "link": "https://arxiv.org/abs/2610.00001",
+          "authors": "Ada Held",
+          "because": "by Ada Held"
+        }
+      ],
+      "venues": [],
+      "versions": [
+        {
+          "id": "W504",
+          "title": "Elaboration with first-class implicit function types",
+          "date": "2026-10-05",
+          "venue": "A Venue",
+          "doi": "10.1145/3408983",
+          "link": "https://doi.org/10.1145/3408983",
+          "authors": "András Kovács",
+          "because": "a version of `Kovacs-2020-elaboration_first_class_implicit_function_types`"
+        },
+        {
+          "id": "W503",
+          "title": "Probabilistic Call By Push Value",
+          "date": "2026-10-04",
+          "venue": "A Venue",
+          "doi": "10.23638/lmcs-15(1:3)2019",
+          "link": "https://hal.science/hal-01345847",
+          "authors": "Thomas Ehrhard",
+          "because": "a version of `Ehrhard-2016-probabilistic_call_by_push_value`"
+        },
+        {
+          "id": "W502",
+          "title": "A Lazy, Concurrent Convertibility Checker",
+          "date": "2026-10-03",
+          "venue": "A Venue",
+          "doi": "10.1145/3776695",
+          "link": "https://arxiv.org/abs/2510.18418",
+          "authors": "Nathanaëlle Courant",
+          "because": "a version of `Courant-2025-lazy_concurrent_convertibility_checker`"
+        },
+        {
+          "id": "W501",
+          "title": "Call-By-Push-Value: A Subsuming Paradigm",
+          "date": "2026-10-02",
+          "venue": "A Venue",
+          "doi": "10.1007/978-94-007-0954-6_2",
+          "link": "https://doi.org/10.1007/978-94-007-0954-6_2",
+          "authors": "Paul Blain Levy",
+          "because": "a version of `Levy-1999-call_by_push_value`"
+        }
+      ],
+      "capped": null,
+      "reported": ["W501", "W502", "W503", "W504", "W505", "W506", "W507"]
+    }
+  },
+  {
+    "name": "a work sharing a library entry's title under another first author is a new work, not a version (#4709)",
+    "input": {
+      "cited_works": [],
+      "held": [],
+      "held_authors": ["A1"],
+      "terms": [],
+      "seeds": {
+        "cited": [],
+        "authors": [
+          {
+            "id": "https://openalex.org/W508",
+            "doi": "https://doi.org/10.1000/same-title",
+            "display_name": "Call-By-Push-Value: A Subsuming Paradigm",
+            "publication_date": "2026-10-09",
+            "authorships": [
+              {
+                "author": {
+                  "id": "https://openalex.org/A1",
+                  "display_name": "Ada Held"
+                }
+              }
+            ],
+            "primary_location": {
+              "source": {
+                "display_name": "A Venue"
+              }
+            },
+            "primary_topic": {
+              "id": "https://openalex.org/T1"
+            },
+            "locations": []
+          }
+        ],
+        "venues": []
+      },
+      "reported": [],
+      "dismissed": [],
+      "cap": 200,
+      "per_author": 3,
+      "library": [
+        {
+          "key": "Levy-1999-call_by_push_value",
+          "doi": "10.1007/3-540-48959-2_17",
+          "title": "Call-by-Push-Value: A Subsuming Paradigm",
+          "arxiv": "",
+          "hal": "",
+          "family": "Levy"
+        },
+        {
+          "key": "Courant-2025-lazy_concurrent_convertibility_checker",
+          "doi": "",
+          "title": "A Lazy, Concurrent Convertibility Checker",
+          "arxiv": "2510.18418",
+          "hal": "",
+          "family": "Courant"
+        },
+        {
+          "key": "Ehrhard-2016-probabilistic_call_by_push_value",
+          "doi": "",
+          "title": "Probabilistic call by push value",
+          "arxiv": "",
+          "hal": "hal-01345847",
+          "family": "Ehrhard"
+        },
+        {
+          "key": "Kovacs-2020-elaboration_first_class_implicit_function_types",
+          "doi": "",
+          "title": "Elaboration with First-Class Implicit Function Types",
+          "arxiv": "",
+          "hal": "",
+          "family": "Kov\\'acs"
+        }
+      ]
+    },
+    "output": {
+      "followups": [],
+      "cited": [],
+      "authors": [
+        {
+          "id": "W508",
+          "title": "Call-By-Push-Value: A Subsuming Paradigm",
+          "date": "2026-10-09",
+          "venue": "A Venue",
+          "doi": "10.1000/same-title",
+          "link": "https://doi.org/10.1000/same-title",
+          "authors": "Ada Held",
+          "because": "by Ada Held"
+        }
+      ],
+      "venues": [],
+      "versions": [],
+      "capped": null,
+      "reported": ["W508"]
     }
   }
 ]

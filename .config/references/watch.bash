@@ -22,7 +22,7 @@
 
 WATCH_API=https://api.openalex.org/works
 WATCH_PAGES=20
-WATCH_SELECT=id,doi,display_name,publication_date,authorships,primary_location,primary_topic
+WATCH_SELECT=id,doi,display_name,publication_date,authorships,primary_location,primary_topic,locations
 WATCH_TITLE='Paper watch'
 
 # Prints the OpenAlex works `filter` names, every page up to `WATCH_PAGES`,
@@ -128,7 +128,7 @@ references_watch() {
   LC_ALL=C awk -f .config/references/library.awk "$library" > "$dir/library.tsv"
   references_load "$dir/references.db"
   sqlite3 -bail -tabs "$dir/references.db" \
-    'CREATE TABLE library(key TEXT, doi TEXT, year TEXT, title TEXT);' ".import $dir/library.tsv library" \
+    'CREATE TABLE library(key TEXT, doi TEXT, year TEXT, title TEXT, arxiv TEXT, hal TEXT, family TEXT);' ".import $dir/library.tsv library" \
     "CREATE VIEW cited AS SELECT DISTINCT key FROM cite WHERE kind IN ('cite', 'locator', 'corpus') AND key NOT GLOB 'vault:*';" \
     '.output '"$dir"'/cited-dois' \
     "SELECT lower(substr(key, 5)) FROM cited WHERE key GLOB 'doi:*'
@@ -167,12 +167,14 @@ references_watch() {
   [[ -s $dir/dismissed.json ]] || echo '[]' > "$dir/dismissed.json"
   if [[ -f $state ]]; then jq '.reported' "$state" > "$dir/reported.json"; else echo '[]' > "$dir/reported.json"; fi
   yq -o json '.term' .config/references/terms.toml | jq -c 'map({name, match})' > "$dir/terms.json"
+  jq -R -s -c 'split("\n") | map(select(. != "") | split("\t") | {key: .[0], doi: .[1], title: .[3], arxiv: .[4], hal: .[5], family: .[6]})' "$dir/library.tsv" > "$dir/library.json"
 
   jq -n -L .config/references 'include "watch";
     {
       cited_works: $cited[0],
       held: ($held[0] | map(.id | short)),
       held_authors: ([$held[0][].authorships[]?.author.id | select(. != null) | short] | unique),
+      library: $library[0],
       terms: $terms[0],
       seeds: {cited: $seed_cited[0], authors: $seed_authors[0], venues: $seed_venues[0]},
       reported: $reported[0],
@@ -180,7 +182,7 @@ references_watch() {
       cap: 200,
       per_author: 3
     } | delta' \
-    --slurpfile cited "$dir/cited.json" --slurpfile held "$dir/held.json" --slurpfile terms "$dir/terms.json" \
+    --slurpfile cited "$dir/cited.json" --slurpfile held "$dir/held.json" --slurpfile terms "$dir/terms.json" --slurpfile library "$dir/library.json" \
     --slurpfile seed_cited "$dir/seed-cited.json" --slurpfile seed_authors "$dir/seed-authors.json" \
     --slurpfile seed_venues "$dir/seed-venues.json" --slurpfile reported "$dir/reported.json" \
     --slurpfile dismissed "$dir/dismissed.json" > "$dir/delta.json"
