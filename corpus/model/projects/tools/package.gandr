@@ -12,6 +12,9 @@ pub theory Greeting where {
 // through `gandr.lock` (#3072, #4527), at the signature above: its `welcome`
 // and no other member (#3098).
 import "path:../hello" as hello : Greeting;
+// A module of `hello` beyond its root, named by a module path through the
+// alias (#4715).
+import hello.text.greet (greeting);
 // The manifest theories.
 import std.build (Gandr);
 
@@ -45,3 +48,8 @@ pub module Package : Model(Gandr.Package) where {
 /// hello's greeting, which the alias reads through the lock.
 @[ runs("\"hello, world\"") ]
 pub def relayed = hello.welcome;
+
+/// hello's `text.greet` greeting, which the module path under the alias
+/// reads.
+@[ runs("\"hello, world\"") ]
+pub def greeted = greeting;

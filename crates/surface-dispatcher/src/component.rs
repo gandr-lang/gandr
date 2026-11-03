@@ -322,6 +322,11 @@ pub enum ImportBase
     /// The package's root: a coordinate, `import "path:../hello" as hello ;`,
     /// whose file is the package source of the package `../hello` roots.
     Coordinate,
+    /// A dependency's sources: a module path whose head is the alias a
+    /// coordinate import of the same source binds, `import hello.text.greet ;`,
+    /// whose file is `text/greet.gandr` beside the package source of the
+    /// package the coordinate roots.
+    Dependency,
 }
 
 impl ImportBase
@@ -345,13 +350,16 @@ impl ImportBase
     }
 }
 
-/// The file one path or module import names, as its source writes it, and
-/// the directory it is named relative to.
+/// The file one path or module import names, as its source writes it, the
+/// directory it is named relative to, and the coordinate a module path reads
+/// through its alias.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `file` is the address with escapes decoded, or the file a module
-///   path names; `base` is what it is relative to.
+///   path names, below the alias for one through a coordinate's alias; `base`
+///   is what it is relative to, and `through` the coordinate exactly when
+///   `base` is [`ImportBase::Dependency`].
 /// - panics: none.
 /// - executable: none — a data type; [`ImportPath::resolved`] carries the
 ///   clauses.
@@ -367,6 +375,9 @@ pub struct ImportPath
     file: String,
     /// What it is relative to.
     base: ImportBase,
+    /// The coordinate whose alias heads the module path, for
+    /// [`ImportBase::Dependency`] alone.
+    through: Option<Coordinate>,
 }
 
 impl ImportPath
@@ -382,7 +393,29 @@ impl ImportPath
         base: ImportBase,
     ) -> Self
     {
-        Self { file, base }
+        Self {
+            file,
+            base,
+            through: None,
+        }
+    }
+
+    /// The module path naming `file` under the sources of the package
+    /// `coordinate` roots, as a module path through the coordinate's alias
+    /// writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn through(
+        file: String,
+        coordinate: Coordinate,
+    ) -> Self
+    {
+        Self {
+            file,
+            base: ImportBase::Dependency,
+            through: Some(coordinate),
+        }
     }
 
     /// What the file is named relative to.
@@ -398,8 +431,10 @@ impl ImportPath
 
     /// The file a source in `directory` names: joined to `directory`, or the
     /// package source of the dependency its coordinate locks, or under the
-    /// directory of the root module of the package `directory` sits in, or
-    /// under the standard library for the head `std`.
+    /// directory of that package source for a module path through the
+    /// coordinate's alias, or under the directory of the root module of the
+    /// package `directory` sits in, or under the standard library for the head
+    /// `std`.
     ///
     /// # Specification
     /// - requires: `directory` is the importing source's directory.
@@ -409,6 +444,9 @@ impl ImportPath
     ///   finds from `directory`, or as [`lock::unpackaged`] names it from
     ///   `directory` when it finds none, and [`Named::Unlocked`] of the
     ///   coordinate's directory where neither names one; an
+    ///   [`ImportBase::Dependency`] file under the directory of the package
+    ///   source its coordinate names so, and [`Named::Unlocked`] of the file
+    ///   under the coordinate's directory where none is named; an
     ///   [`ImportBase::Root`] file as [`ImportPath::in_package`] names it under
     ///   the sources of the package [`Package::discover`] finds from
     ///   `directory`, or under `directory` when it finds none: a source in no
@@ -423,10 +461,12 @@ impl ImportPath
     ///   importer; a locked coordinate names the dependency's package source,
     ///   and a module path whose head names no source is unlocked; a module
     ///   path under `std` names the standard library's file from a source in no
-    ///   package.
+    ///   package; a module path through a locked coordinate's alias names the
+    ///   file under the dependency's sources.
     /// - witness: `component::tests::a_module_path_is_named_from_its_package_s_root_2687`
     /// - witness: `component::tests::a_std_module_path_names_the_standard_library_from_any_root_4517`
     /// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
+    /// - witness: `tests::package::a_module_path_through_a_coordinate_s_alias_reads_the_dependency_s_module_4715`
     #[inline]
     #[must_use]
     pub fn resolved(
@@ -451,11 +491,45 @@ impl ImportPath
                         .map_or_else(|| Named::Unlocked(coordinate.named(directory)), Named::File),
                 }
             },
+            ImportBase::Dependency => {
+                let Some(ref coordinate) = self.through
+                else {
+                    return Named::Unlocked(directory.join(&self.file));
+                };
+                match Package::discover(directory) {
+                    Maybe::Present(package) => self
+                        .under(lock::locked_source(&package, coordinate).as_deref(), || {
+                            coordinate.named(package.root())
+                        }),
+                    Maybe::Absent(_) => self
+                        .under(lock::unpackaged(directory, coordinate).as_deref(), || {
+                            coordinate.named(directory)
+                        }),
+                }
+            },
             ImportBase::Root => match Package::discover(directory) {
                 Maybe::Present(package) => self.in_package(package.sources()),
                 Maybe::Absent(_) => self.in_package(directory),
             },
         }
+    }
+
+    /// The file under the directory of `source`, a dependency's package
+    /// source; unlocked under the coordinate's directory `unlocked` gives when
+    /// no source is named.
+    ///
+    /// # Specification
+    /// trivial.
+    fn under(
+        &self,
+        source: Option<&Path>,
+        unlocked: impl FnOnce() -> PathBuf,
+    ) -> Named
+    {
+        source.and_then(Path::parent).map_or_else(
+            || Named::Unlocked(unlocked().join(&self.file)),
+            |sources| Named::File(sources.join(&self.file)),
+        )
     }
 
     /// The file the module path names under `sources`: under them when its
@@ -1905,9 +1979,11 @@ impl Component
     /// # Adequacy
     /// - hypothesis: L3 — a component of an importer and its sibling confirms;
     ///   a source whose import sits inside a module, laid beside the base the
-    ///   import names, does not.
+    ///   import names, does not; a module path through a coordinate's alias
+    ///   confirms as its forms read it.
     /// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
     /// - witness: `component::tests::a_component_read_whole_confirms_without_reading_its_imports`
+    /// - witness: `component::tests::a_module_path_through_an_alias_confirms_as_its_forms_read_it_4715`
     /// - witness: `walk::tests::an_import_parses_its_importer_once_617`
     #[must_use]
     #[inline]
@@ -1926,13 +2002,12 @@ impl Component
         else {
             return Confirmation::Unconfirmed;
         };
-        let mut found: Vec<Vec<ImportPath>> = vec![Vec::new(); self.members.len()];
-        for import in written {
+        let mut found: Vec<Vec<&WrittenImport>> = vec![Vec::new(); self.members.len()];
+        for import in &written {
             let at = import.span.shifted(past).start();
-            let Some(path) = import_path(&import)
-            else {
+            if ImportBase::of(import.address).is_none() {
                 continue;
-            };
+            }
             let Some(member) = self
                 .members
                 .iter()
@@ -1941,12 +2016,12 @@ impl Component
             else {
                 return Confirmation::Unconfirmed;
             };
-            member.push(path);
+            member.push(import);
         }
         let confirmed = found
             .iter()
             .zip(&self.sources)
-            .all(|(paths, source)| *paths == source.written);
+            .all(|(imports, source)| source_paths(tree, imports.iter().copied()) == source.written);
         if confirmed {
             Confirmation::Confirmed
         }
@@ -2012,8 +2087,10 @@ fn paths_formed(
 /// # Specification
 /// - requires: `tree` was molded under `grammar`.
 /// - ensures: each root import whose address has no scheme, as [`import_path`]
-///   names it; none when the root's imports do not read, its own lowering
-///   refusing it.
+///   names it, a module path whose head is the alias of a coordinate import at
+///   the root, with names after it, naming the rest of the path through that
+///   coordinate, [`ImportBase::Dependency`]; none when the root's imports do
+///   not read, its own lowering refusing it.
 /// - provides: the reading [`lay_out_written`] is given: a parse of a source's
 ///   text, read here, names the imports its lay-out reads them as.
 /// - fails: never.
@@ -2023,10 +2100,12 @@ fn paths_formed(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the closure witnesses read a path import and a scheme
-///   import beside it, and a module path beside a quoted path.
+///   import beside it, and a module path beside a quoted path; a module path
+///   through a coordinate's alias reads the dependency's module.
 /// - witness: `component::tests::an_importer_is_laid_after_what_it_imports`
 /// - witness: `component::tests::an_importer_given_its_imports_is_laid_out_as_read_2439`
 /// - witness: `component::tests::a_module_path_is_named_from_its_package_s_root_2687`
+/// - witness: `tests::package::a_module_path_through_a_coordinate_s_alias_reads_the_dependency_s_module_4715`
 #[inline]
 #[must_use]
 pub fn path_imports(
@@ -2034,10 +2113,52 @@ pub fn path_imports(
     tree: &SyntaxTree<'_>,
 ) -> Vec<ImportPath>
 {
-    written_imports(grammar, tree).map_or_else(
-        |_| Vec::new(),
-        |written| written.iter().filter_map(import_path).collect(),
-    )
+    written_imports(grammar, tree)
+        .map_or_else(|_| Vec::new(), |written| source_paths(tree, &written))
+}
+
+/// The paths one source's imports `written`, read off `tree`, name: each as
+/// [`import_path`] names it, a module path headed by the alias of a
+/// coordinate import among them, with names after it, naming the rest of the
+/// path through that coordinate.
+///
+/// # Specification
+/// trivial.
+fn source_paths<'imports>(
+    tree: &SyntaxTree<'_>,
+    written: impl IntoIterator<Item = &'imports WrittenImport, IntoIter: Clone>,
+) -> Vec<ImportPath>
+{
+    let written = written.into_iter();
+    let aliases: BTreeMap<&str, Coordinate> = written
+        .clone()
+        .filter_map(|import| {
+            let Maybe::Present(alias) = import.alias
+            else {
+                return None;
+            };
+            let coordinate = Coordinate::of(&import_path(import)?)?;
+            Some((<&str>::from(tree.fragment(alias.node)?), coordinate))
+        })
+        .collect();
+    written
+        .filter_map(|import| {
+            let path = import_path(import)?;
+            if path.base != ImportBase::Root {
+                return Some(path);
+            }
+            let through = path
+                .file
+                .split_once('/')
+                .and_then(|(head, rest)| Some((rest, aliases.get(head)?)));
+            Some(match through {
+                Some((rest, coordinate)) => {
+                    ImportPath::through(String::from(rest), coordinate.clone())
+                },
+                None => path,
+            })
+        })
+        .collect()
 }
 
 /// The file `import` names and what it is relative to, as [`ImportBase::of`]
@@ -2528,7 +2649,8 @@ mod tests
 
     impl Scratch
     {
-        /// A fresh scratch directory named for `name`, holding `files`.
+        /// A fresh scratch directory named for `name`, holding `files`, each
+        /// under the directories its path names.
         ///
         /// # Specification
         /// trivial.
@@ -2545,8 +2667,12 @@ mod tests
             let _cleared = std::fs::remove_dir_all(&directory);
             std::fs::create_dir_all(&directory).expect("the scratch directory is created");
             for &(file, text) in files {
-                std::fs::write(directory.join(file), <&str>::from(text))
-                    .expect("the scratch source is written");
+                let path = directory.join(file);
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent)
+                        .expect("the scratch source's directory is created");
+                }
+                std::fs::write(path, <&str>::from(text)).expect("the scratch source is written");
             }
             Self(
                 std::fs::canonicalize(&directory)
@@ -3456,6 +3582,63 @@ mod tests
                 .collect::<Vec<_>>(),
             [format!("{}\n{nested}", prelude::TEXT)],
             "read whole, the nested source imports nothing and stands after the prelude alone"
+        );
+    }
+
+    /// #4715: a module path through a coordinate's alias, read from the
+    /// importer's forms alone, names the dependency's module as the
+    /// component's parse reads it, so the component confirms and the walk
+    /// parses the importer once.
+    #[test]
+    fn a_module_path_through_an_alias_confirms_as_its_forms_read_it_4715()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let importer = "import \"path:../dep\" as dep ;\nimport dep.text.greet (greeting) ;\ndef two : \
+                        Integer ;\ndef two = greeting ;";
+        let tree = Scratch::new(Path::new("aliased"), &[
+            (
+                Path::new("dep/package.gandr"),
+                SourceText::from("def one : Integer ;\ndef one = 1 ;"),
+            ),
+            (
+                Path::new("dep/text/greet.gandr"),
+                SourceText::from("pub def greeting : Integer ;\npub def greeting = 2 ;"),
+            ),
+            (Path::new("app/importer.gandr"), SourceText::from(importer)),
+        ]);
+        let written = super::paths_written(&grammar, SourceText::from(importer));
+        assert_eq!(
+            written,
+            Maybe::Present(Vec::from([
+                super::ImportPath::new(String::from("path:../dep"), super::ImportBase::Coordinate),
+                super::ImportPath::through(
+                    String::from("text/greet.gandr"),
+                    super::Coordinate::Path(String::from("../dep"))
+                ),
+            ])),
+            "the module path carries the coordinate its alias names"
+        );
+        let grouped = group(
+            &grammar,
+            Vec::from([tree.given(Path::new("app/importer.gandr"))]),
+            Reading::ImportForms,
+            &BTreeSet::new(),
+        );
+        let [ref component] = *grouped.components.as_slice()
+        else {
+            panic!("one component: {:?}", grouped.components);
+        };
+        assert_eq!(
+            component.members.len(),
+            3_usize,
+            "the importer is laid after the dependency's root and its module"
+        );
+        let parsed = parse(&grammar, SourceText::from(component.text.as_str()))
+            .expect("the component parses");
+        assert_eq!(
+            component.confirms(&grammar, parsed.tree(), ByteLength::from(0_usize)),
+            Confirmation::Confirmed,
+            "the component's parse reads the module path as the forms did"
         );
     }
 
