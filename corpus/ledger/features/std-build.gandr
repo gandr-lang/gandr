@@ -1,8 +1,8 @@
 /// `std-build`: The standard library's manifest theories.
-/// Implemented: `std.build`, `library/std/src/build.gandr`, states `Versioned` and `Toolchain`, which `Project` joins once, `Presentation`, `Gandr.Package`, including `Project` and `Presentation`, and `Gandr.Workspace`, including `Project`, which a package source's and a workspace's models implement, `Gandr.Module`, which no source models yet, and `Dependency` and `Coordinate`, which a package source's `dependencies` lists (#3072); every field of a package but what it asks of the toolchain, its `name`, `version`, `authors`, `licence`, `documentation`, `endpoint` and `spelling`, is inert, read only by the manifest step and another inert field (#3029), while `gandr`, `features` and `systems` are content (#3135); a source under any root imports it by name, `import std.build (Gandr);`.
-/// Not implemented: `authors`, `features` and `systems` are no lists, and `dependencies` is no operation of `Gandr.Package`, which #2993 owes.
+/// Implemented: `std.build`, `library/std/src/build.gandr`, states `Versioned` and `Toolchain`, which `Project` joins once, `Presentation`, `Gandr.Package`, including `Project` and `Presentation`, and `Gandr.Workspace`, including `Project`, which a package source's and a workspace's models implement, `Gandr.Module`, which no source models yet, and no type of a dependency, which an import's coordinate names (#4527); every field of a package but what it asks of the toolchain, its `name`, `version`, `authors`, `licence`, `documentation`, `endpoint` and `spelling`, is inert, read only by the manifest step and another inert field (#3029), while `gandr`, `features` and `systems` are content (#3135); a source under any root imports it by name, `import std.build (Gandr);`.
+/// Not implemented: `authors`, `features` and `systems` are no lists, which #2993 owes.
 
-import std.build (Gandr, Dependency);
+import std.build (Gandr);
 
 /// A package's model, every field but what it asks of the toolchain inert:
 /// only the manifest step reads them (#3029).
@@ -29,7 +29,3 @@ pub module Package : Model(Gandr.Package) where {
   /// The spelling the package asks for: the reader's own.
   def spelling = "";
 }
-
-/// The package's dependencies: each an alias and the path its root stands at.
-@[ runs("nil") ]
-pub def dependencies : List(Dependency) = [];

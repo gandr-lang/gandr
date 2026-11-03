@@ -938,13 +938,13 @@ pub enum LoweringRefusal<'source>
     },
 
     /// A name read through a module path whose head names no module of the
-    /// package and no dependency its `gandr.lock` records: an alias its
-    /// `dependencies` declare is read only once `gandr lock` has locked it.
+    /// package, or through the alias of a coordinate its `gandr.lock` does not
+    /// record: a coordinate is read only once `gandr lock` has locked it.
     UnlockedDependency
     {
         /// The bytes of the alias where the name is read through it.
         span: ByteSpan,
-        /// The alias, the head of the import's module path.
+        /// The alias, or the head of the import's module path.
         alias: SurfaceName<'source>,
     },
 

@@ -3301,10 +3301,11 @@ fn an_import_closing_a_cycle_refuses_its_source()
     );
 }
 
-/// #3072: a module path naming no module of the package and no dependency
-/// its lock records binds nothing, and refuses only the declarations reading
+/// #3072: an import naming no module of the package and no dependency its
+/// lock records binds nothing, and refuses only the declarations reading
 /// through it, at the alias; every other declaration of the source stands,
-/// so a library's `dependencies` runs before its lock is written.
+/// so the coordinates a package's sources import are read before its lock is
+/// written.
 #[test]
 fn a_name_read_through_an_unlocked_alias_is_refused_at_it_3072()
 {

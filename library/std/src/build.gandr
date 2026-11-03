@@ -7,10 +7,11 @@
 // only the manifest step and another inert field read (#3029), and a package's
 // address leaves out (#3030): a package's name, version, authors and licence,
 // and where it is documented and fetched from, say what it is called, not what
-// it is. What a package depends on is not inert: a package source's
-// `dependencies` lists each `Dependency`, `gandr check` commits each one's
-// address to the store and locks the pointer to it in `gandr.lock`, and the
-// package's address digests those addresses (#3072). Nor is what a package asks
+// it is. What a package depends on is not inert, and no model states it: a
+// source imports a dependency by its coordinate, `import "path:../hello" as
+// hello;`, `gandr check` commits each coordinate's address to the store and
+// locks the pointer to it in `gandr.lock`, and the package's address digests
+// those addresses (#3072, #4527). Nor is what a package asks
 // of the toolchain that checks it: `gandr check` refuses a package whose
 // `Toolchain` the running toolchain does not meet, and the package's address
 // digests it.
@@ -100,17 +101,3 @@ pub theory Gandr.Module where {
   /// The module's path, its segments joined by `.`.
   oper path : String;
 }
-
-/// Where a dependency is found: never part of what it is, which its address,
-/// read back from the store at the pointer the dependent's `gandr.lock`
-/// records, says.
-pub data Coordinate : Type where {
-  /// A directory rooting the dependency, read from the dependent's root.
-  | Path : (path : String) --> Coordinate
-}
-
-/// A package another depends on: the alias the dependent's sources import it
-/// by, `import hello;` of `alias = "hello"`, and where it is found. A package
-/// source lists its dependencies as `pub def dependencies : List(Dependency)`,
-/// a definition of its own until an operation's port can be a list (#2993).
-pub type Dependency = #{alias : String, coordinate : Coordinate};

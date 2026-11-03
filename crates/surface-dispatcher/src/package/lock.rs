@@ -1,36 +1,38 @@
-//! A package's lock: each dependency its package source declares, at the
-//! address it was resolved to.
+//! A package's lock: each coordinate its sources import, at the address it
+//! was resolved to.
 //!
-//! # A dependency is named by an alias and found by a coordinate
+//! # A dependency is found by the coordinate an import writes
 //!
-//! A package source declares `pub def dependencies : List(Dependency)`, each an
-//! alias a source imports the dependency by and a coordinate saying where it is
-//! found. A path coordinate is a directory, read from the dependent's root,
-//! that roots a package. [`Package::resolve`] reads each one and checks it as
-//! the package it roots, recursively, so a dependency's own dependencies are
-//! resolved before it is. A path met twice on one chain is a cycle, refused
-//! with the chain.
+//! A source imports a package by its coordinate, `import "path:../hello" as
+//! hello ;`, and binds its root module under the alias it writes. A path
+//! coordinate is a directory, read from the dependent's root, that roots a
+//! package. [`Package::dependencies`] collects the coordinates every source of
+//! the package imports, each once, and [`Package::resolve`] reads each one and
+//! checks it as the package it roots, recursively, so a dependency's own
+//! dependencies are resolved before it is. A path met twice on one chain is a
+//! cycle, refused with the chain.
 //!
 //! # The lock records pointers, and the address never records a coordinate
 //!
-//! `gandr.lock` at the package's root maps each alias to its coordinate and a
-//! content pointer into the store, the one store of the storage tier a run
-//! opens: resolving a dependency commits its address and its signature key
-//! there, and the lock records the pointer the value plane returns, as
-//! `<digest>:<offset>`. The checker writes the lock once, and every import
-//! through the alias reads it back. A lock that says another thing than what
-//! the dependencies resolve to is refused as drift, alias by alias, until
-//! `gandr lock` writes it again, so a dependency never changes under its
-//! dependent unseen. The package's own address digests the addresses its
-//! lock's pointers name, read back through the store, and never their
-//! coordinates or aliases: where a dependency is found and what it is called
-//! are not what the package is.
+//! `gandr.lock` at the package's root maps each coordinate to a content pointer
+//! into the store, the one store of the storage tier a run opens: resolving a
+//! dependency commits its address and its signature key there, and the lock
+//! records the pointer the value plane returns, as `<digest>:<offset>`. The
+//! checker writes the lock once, and every import of the coordinate reads it
+//! back, so two sources importing one coordinate read one address. A lock that
+//! says another thing than what the coordinates resolve to is refused as
+//! drift, coordinate by coordinate, until `gandr lock` writes it again, so a
+//! dependency never changes under its dependent unseen. The package's own
+//! address digests the addresses its lock's pointers name, read back through
+//! the store, and never their coordinates or the aliases its imports bind:
+//! where a dependency is found and what it is called are not what the package
+//! is.
 //!
 //! # References
 //!
 //! - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: a package
 //!   reference is a content address and a separate coordinate never part of
-//!   identity, and resolution produces a lock mapping aliases to verified
+//!   identity, and resolution produces a lock mapping coordinates to verified
 //!   addresses.
 //! - `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — background: the storage
 //!   tier is the one store the lock, the build layer and the verdict cache
@@ -59,7 +61,7 @@ use gandr_storage_values::TokenOffset;
 use gandr_storage_values::TokenReader;
 use gandr_storage_values::TokenSink;
 use gandr_storage_values::ValueError;
-use gandr_surface_lowering::SurfaceName;
+use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use super::Absence;
@@ -70,7 +72,6 @@ use super::DIGEST;
 use super::Differing;
 use super::Held;
 use super::Identity;
-use super::Key;
 use super::Manifested;
 use super::Opening;
 use super::Package;
@@ -79,64 +80,89 @@ use super::Reconciled;
 use super::Split;
 use super::Unaddressed;
 use super::package_root;
+use crate::component::ImportBase;
+use crate::component::ImportPath;
 use crate::component::Unshadowed;
-use crate::evaluate::declaration_name;
-use crate::workspace::Spelling;
-use crate::workspace::Unran;
-use crate::workspace::ran_alone;
+use crate::component::path_imports;
 
 /// The file name of the lock the checker writes at a package's root.
 pub const LOCK: &str = "gandr.lock";
 
-/// The declaration of a package source that names its dependencies.
-pub(super) const DEPENDENCIES: &str = "dependencies";
-
 /// The line that opens a lock the checker wrote.
-const WRITTEN: &str = "# Written by `gandr check` from the package's `dependencies`: relock with \
-                       `gandr lock`, never by hand.";
+const WRITTEN: &str = "# Written by `gandr check` from the coordinates the package's sources \
+                       import: relock with `gandr lock`, never by hand.";
 
 /// The line that opens the lock's table.
 const TABLE: &str = "[dependencies]";
 
-/// The alias every source imports the standard library by, locked or not.
+/// The head every module path names the standard library by.
 pub const STANDARD: &str = "std";
 
 /// The standard library's package root in the tree this build was built
 /// from.
 const STANDARD_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../library/std");
 
-/// The name a source imports a dependency by.
-#[repr(transparent)]
+/// Where a dependency is found, as an import writes it: never part of what
+/// it is.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Alias(String);
-
-impl Alias
+pub enum Coordinate
 {
-    /// The alias `name`.
+    /// `path:<directory>`: a directory rooting the dependency, read from the
+    /// dependent's root, as the import writes it.
+    Path(String),
+}
+
+impl Coordinate
+{
+    /// The coordinate `import` writes, `path:../hello`; none for an import
+    /// of no coordinate.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn new(name: String) -> Self
+    pub fn of(import: &ImportPath) -> Option<Self>
     {
-        Self(name)
+        if import.base() != ImportBase::Coordinate {
+            return None;
+        }
+        written(Text(import.as_ref()))
     }
-}
 
-impl AsRef<str> for Alias
-{
+    /// The directory the coordinate names, read from `root`.
+    ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn as_ref(&self) -> &str
+    #[must_use]
+    pub fn from(
+        &self,
+        root: &Path,
+    ) -> PathBuf
     {
-        &self.0
+        let Self::Path(ref directory) = *self;
+        root.join(directory)
     }
 }
 
-impl core::fmt::Display for Alias
+/// The coordinate `address` writes, `path:../hello`; none for an address of
+/// another scheme or none.
+///
+/// # Specification
+/// trivial.
+fn written(address: Text<'_>) -> Option<Coordinate>
 {
+    let directory = address
+        .0
+        .strip_prefix(gandr_surface_lowering::COORDINATE)?
+        .strip_prefix(':')?;
+    Some(Coordinate::Path(String::from(directory)))
+}
+
+impl core::fmt::Display for Coordinate
+{
+    /// The coordinate as an import writes it, `path:../hello`.
+    ///
     /// # Specification
     /// trivial.
     #[inline]
@@ -145,27 +171,9 @@ impl core::fmt::Display for Alias
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result
     {
-        f.write_str(&self.0)
+        let Self::Path(ref directory) = *self;
+        write!(f, "{}:{directory}", gandr_surface_lowering::COORDINATE)
     }
-}
-
-/// Where a dependency is found: never part of what it is.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Coordinate
-{
-    /// A directory rooting the dependency, read from the dependent's root, as
-    /// the package source writes it.
-    Path(String),
-}
-
-/// A dependency as a package source declares it.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Dependency
-{
-    /// The name its dependent imports it by.
-    pub alias: Alias,
-    /// Where it is found.
-    pub coordinate: Coordinate,
 }
 
 /// A package's signature key: the BLAKE3 digest of the dotted paths its root
@@ -201,17 +209,6 @@ impl core::fmt::Display for SignatureKey
     {
         self.0.iter().try_for_each(|byte| write!(f, "{byte:02x}"))
     }
-}
-
-/// A dependency as its dependent's lock records it.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Locked
-{
-    /// Where it is found.
-    pub coordinate: Coordinate,
-    /// Where what it resolved to, its address and its signature key, stands
-    /// in the store.
-    pub pointer: ContentPtr,
 }
 
 /// The tag a package's identity opens with in the store.
@@ -297,14 +294,15 @@ impl Stored for Identity
     }
 }
 
-/// A package's lock: each dependency by its alias.
+/// A package's lock: each dependency by its coordinate, at the pointer its
+/// identity stands at in the store.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Lock(BTreeMap<Alias, Locked>);
+pub struct Lock(BTreeMap<Coordinate, ContentPtr>);
 
 impl Lock
 {
-    /// The dependency the lock records under `alias`.
+    /// The pointer the lock records for `coordinate`.
     ///
     /// # Specification
     /// trivial.
@@ -312,30 +310,29 @@ impl Lock
     #[must_use]
     pub fn locked(
         &self,
-        alias: &Alias,
-    ) -> Option<&Locked>
+        coordinate: &Coordinate,
+    ) -> Option<ContentPtr>
     {
-        self.0.get(alias)
+        self.0.get(coordinate).copied()
     }
 
-    /// Each alias the lock records, in order.
+    /// Each coordinate the lock records, in order.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub fn aliases(&self) -> impl Iterator<Item = &Alias>
+    pub fn coordinates(&self) -> impl Iterator<Item = &Coordinate>
     {
         self.0.keys()
     }
 
-    /// Each alias the lock records, in order, with the dependency it locks and
-    /// the address of the identity its pointer names, read back through
-    /// `store`.
+    /// Each coordinate the lock records, in order, with the address of the
+    /// identity its pointer names, read back through `store`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one entry per alias, in order: the alias, its locked
-    ///   dependency, and the address of the identity its pointer names, or
+    /// - ensures: one entry per coordinate, in order: the coordinate and the
+    ///   address of the identity its pointer names, or
     ///   [`Unaddressed::Unstored`] where the store cannot read the pointer back
     ///   as an identity.
     /// - provides: the one reading of the lock's pointers that
@@ -354,23 +351,17 @@ impl Lock
     pub fn resolved<'lock>(
         &'lock self,
         store: &'lock Store,
-    ) -> impl Iterator<
-        Item = (
-            &'lock Alias,
-            &'lock Locked,
-            Result<PackageAddress, Unaddressed>,
-        ),
-    > + 'lock
+    ) -> impl Iterator<Item = (&'lock Coordinate, Result<PackageAddress, Unaddressed>)> + 'lock
     {
-        self.0.iter().map(|(alias, locked)| {
+        self.0.iter().map(|(coordinate, &pointer)| {
             let address = store
-                .deref::<Identity>(locked.pointer)
+                .deref::<Identity>(pointer)
                 .map(|identity| identity.address)
                 .map_err(|fault| Unaddressed::Unstored {
-                    alias: alias.clone(),
+                    coordinate: coordinate.clone(),
                     fault: Box::new(fault),
                 });
-            (alias, locked, address)
+            (coordinate, address)
         })
     }
 
@@ -382,8 +373,8 @@ impl Lock
     /// - ensures: the address of the identity each pointer names, once each, in
     ///   order, as [`Lock::resolved`] reads them.
     /// - provides: the dependencies' part of [`Package::identity`].
-    /// - fails: [`Unaddressed::Unstored`] at the first alias whose pointer the
-    ///   store cannot read back as an identity.
+    /// - fails: [`Unaddressed::Unstored`] at the first coordinate whose pointer
+    ///   the store cannot read back as an identity.
     /// - panics: none.
     /// - executable: none — the identities are the store's.
     ///
@@ -393,7 +384,7 @@ impl Lock
     /// # Adequacy
     /// - hypothesis: L3 — a dependency's content edit moves its dependent's
     ///   address, and a pointer the store cannot answer leaves the dependent
-    ///   unaddressed by the alias.
+    ///   unaddressed by the coordinate.
     /// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
     /// - witness: `tests::package::a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157`
     #[inline]
@@ -402,9 +393,7 @@ impl Lock
         store: &Store,
     ) -> Result<BTreeSet<PackageAddress>, Unaddressed>
     {
-        self.resolved(store)
-            .map(|(_, _, address)| address)
-            .collect()
+        self.resolved(store).map(|(_, address)| address).collect()
     }
 
     /// The lock as the checker writes it: the header, then the body.
@@ -413,12 +402,11 @@ impl Lock
     /// - requires: nothing.
     /// - ensures: the [`WRITTEN`] line, the digest line carrying the BLAKE3
     ///   digest of the body in lowercase hexadecimal, then the body: a
-    ///   `[dependencies]` table holding one line per alias in order, `alias = {
-    ///   path = "…", pointer = "<digest>:<offset>" }`, the alias bare when it
-    ///   is a TOML bare key and a basic string otherwise, the path a basic
-    ///   string, the digest lowercase hexadecimal and the offset decimal. The
-    ///   same lock renders the same bytes wherever it is rendered, and
-    ///   [`Lock::read`] reads the render back as the lock.
+    ///   `[dependencies]` table holding one line per coordinate in order,
+    ///   `"path:…" = { pointer = "<digest>:<offset>" }`, the coordinate a basic
+    ///   string as an import writes it, the digest lowercase hexadecimal and
+    ///   the offset decimal. The same lock renders the same bytes wherever it
+    ///   is rendered, and [`Lock::read`] reads the render back as the lock.
     /// - provides: the file [`reconcile`](super::reconcile) and [`relock`]
     ///   write.
     /// - fails: never.
@@ -435,15 +423,16 @@ impl Lock
     pub fn render(&self) -> String
     {
         let mut body = format!("\n{TABLE}\n");
-        for (alias, locked) in &self.0 {
-            let Coordinate::Path(ref path) = locked.coordinate;
+        let mut key = String::new();
+        for (coordinate, pointer) in &self.0 {
+            key.clear();
+            let _keyed = write!(key, "{coordinate}");
             let _written = writeln!(
                 body,
-                "{} = {{ path = {}, pointer = \"{}:{}\" }}",
-                Key(&alias.0),
-                Basic(path),
-                locked.pointer.digest(),
-                locked.pointer.offset()
+                "{} = {{ pointer = \"{}:{}\" }}",
+                Basic(&key),
+                pointer.digest(),
+                pointer.offset()
             );
         }
         format!(
@@ -460,7 +449,7 @@ impl Lock
     ///   package's [`LOCK`] stands; `Unwritten` when no file stands there or it
     ///   cannot be read, `Edited` when its header does not carry its body's
     ///   digest, and `Unread` when its body is not a render.
-    /// - provides: the lock every import through an alias, and every check of a
+    /// - provides: the lock every import of a coordinate, and every check of a
     ///   dependency's own lock, reads.
     /// - fails: never; a missing or foreign file is the typed absence.
     /// - panics: none.
@@ -498,15 +487,9 @@ fn parsed(body: Text<'_>) -> Option<Lock>
     }
     let mut lock = BTreeMap::new();
     for line in lines {
-        let (alias, Text(rest)) = if line.starts_with('"') {
-            Text(line).basic()?
-        }
-        else {
-            let (alias, _) = line.split_once(' ')?;
-            (String::from(alias), Text(line.get(alias.len() ..)?))
-        };
-        let (path, Text(rest)) = Text(rest.strip_prefix(" = { path = ")?).basic()?;
-        let (digest, Text(rest)) = Text(rest.strip_prefix(", pointer = \"")?).digest()?;
+        let (coordinate, Text(rest)) = Text(line).basic()?;
+        let coordinate = written(Text(&coordinate))?;
+        let (digest, Text(rest)) = Text(rest.strip_prefix(" = { pointer = \"")?).digest()?;
         let (offset, rest) = rest.strip_prefix(':')?.split_once('"')?;
         let parsed: u32 = offset.parse().ok()?;
         let canonical = offset.bytes().all(|digit| digit.is_ascii_digit())
@@ -514,10 +497,10 @@ fn parsed(body: Text<'_>) -> Option<Lock>
         if rest != " }" || !canonical {
             return None;
         }
-        let _first = lock.insert(Alias(alias), Locked {
-            coordinate: Coordinate::Path(path),
-            pointer: ContentPtr::new(ChunkDigest::from(digest.0), TokenOffset::from(parsed)),
-        });
+        let _first = lock.insert(
+            coordinate,
+            ContentPtr::new(ChunkDigest::from(digest.0), TokenOffset::from(parsed)),
+        );
     }
     Some(Lock(lock))
 }
@@ -610,52 +593,52 @@ quenchant_shape::reason_enum! {
 
 impl Package
 {
-    /// The dependencies the package's source declares, in the order it lists
-    /// them.
+    /// The coordinates the package's sources import, each once.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the package source checked alone over the sources it imports
-    ///   and its `dependencies` run, as [`ran_alone`] does; each element of the
-    ///   list its alias and its path coordinate. None when the package source
-    ///   declares no `dependencies`.
+    /// - requires: `grammar` is the grammar the package's sources are read
+    ///   under.
+    /// - ensures: the [`Coordinate`] of each import whose address is one, read
+    ///   off the package source and every module under the package's sources,
+    ///   each once, in the coordinates' order. A source that does not parse
+    ///   writes none, its own check refusing it.
     /// - provides: the dependencies [`Package::resolve`] resolves.
-    /// - fails: [`Unresolved::Undeclared`] for a package source that cannot be
-    ///   read or is refused as a whole, or whose `dependencies` runs to no list
-    ///   of dependencies.
+    /// - fails: [`Unresolved::Unread`] for a source that cannot be read.
     /// - panics: none.
-    /// - executable: none — as [`ran_alone`].
+    /// - executable: none — the clause reads the file system.
     ///
     /// # Errors
-    /// [`Unresolved::Undeclared`], as above.
+    /// [`Unresolved::Unread`], as above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a package source naming one dependency reads it, and
-    ///   one naming none reads none.
+    /// - hypothesis: L3 — two sources importing one coordinate collect it once,
+    ///   and a package importing none collects none.
     /// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
     #[inline]
-    pub fn dependencies(&self) -> Result<Vec<Dependency>, Unresolved>
+    pub fn dependencies(
+        &self,
+        grammar: &gandr_surface_grammar::Pbg,
+    ) -> Result<BTreeSet<Coordinate>, Unresolved>
     {
-        let undeclared = |why: String| Unresolved::Undeclared {
-            package: self.root.clone(),
-            why,
-        };
-        let came = match ran_alone(&self.source, [SurfaceName::from(DEPENDENCIES)]) {
-            Ok([Maybe::Present(came)]) => came,
-            Ok([Maybe::Absent(declaration_name::Absent::Undeclared)]) => return Ok(Vec::new()),
-            Err(Unran::Unread { message }) => return Err(undeclared(message)),
-            Err(Unran::Refused { why }) => return Err(undeclared(why)),
-        };
-        let listed = Spelling::from(came.as_str())
-            .dependencies()
-            .ok_or_else(|| undeclared(format!("`{DEPENDENCIES}` runs to `{came}`")))?;
-        Ok(listed
-            .into_iter()
-            .map(|(alias, path)| Dependency {
-                alias: Alias(alias),
-                coordinate: Coordinate::Path(path),
-            })
-            .collect())
+        let mut sources = BTreeSet::from([self.source.clone()]);
+        sources.extend(super::modules(self.sources()).into_values());
+        let mut coordinates = BTreeSet::new();
+        for source in sources {
+            let text = std::fs::read_to_string(&source).map_err(|error| Unresolved::Unread {
+                source: source.clone(),
+                why: error.to_string(),
+            })?;
+            let Ok(read) = gandr_surface_parser::parse(grammar, SourceText::from(text.as_str()))
+            else {
+                continue;
+            };
+            coordinates.extend(
+                path_imports(grammar, read.tree())
+                    .iter()
+                    .filter_map(Coordinate::of),
+            );
+        }
+        Ok(coordinates)
     }
 
     /// The lock the package's dependencies resolve to: each one found at its
@@ -673,9 +656,9 @@ impl Package
     ///   over its own items and that lock's addresses, read back through
     ///   `store`, and its signature key, as [`Package::identity`] gives them,
     ///   committed to `store` together. Each dependency is locked under its
-    ///   alias at its coordinate by the pointer the commit returns. The lock is
-    ///   a function of the packages' contents and coordinates alone, whatever
-    ///   directory the process runs in and whatever the store held.
+    ///   coordinate by the pointer the commit returns. The lock is a function
+    ///   of the packages' contents and coordinates alone, whatever directory
+    ///   the process runs in and whatever the store held.
     /// - provides: the lock `gandr check` reconciles and `gandr lock` writes.
     /// - fails: [`Unresolved`], at the first dependency that does not resolve.
     /// - panics: none.
@@ -686,10 +669,9 @@ impl Package
     /// [`Unresolved::Unpackaged`] for a coordinate rooting no package,
     /// [`Unresolved::Cycle`] for a root met twice on one chain,
     /// [`Unresolved::Unlocked`] for a dependency whose own lock is missing or
-    /// stale, [`Unresolved::Twice`] for an alias declared twice,
-    /// [`Unresolved::Unaddressed`] for a dependency with no address,
+    /// stale, [`Unresolved::Unaddressed`] for a dependency with no address,
     /// [`Unresolved::Unstored`] for an identity the store cannot commit, and
-    /// [`Unresolved::Undeclared`] as [`Package::dependencies`].
+    /// [`Unresolved::Unread`] as [`Package::dependencies`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one dependency resolves alike from two working
@@ -707,21 +689,20 @@ impl Package
     ) -> Result<Lock, Unresolved>
     {
         let mut open = BTreeSet::from([self.root.clone()]);
-        let mut frames = Vec::from([Frame::of(self.clone(), None)?]);
+        let mut frames = Vec::from([Frame::of(self.clone(), None, grammar)?]);
         loop {
             let Some(frame) = frames.last_mut()
             else {
                 return Ok(Lock::default());
             };
-            if let Some(Dependency { alias, coordinate }) = frame.pending.next() {
-                let Coordinate::Path(ref path) = coordinate;
-                let directory = frame.package.root.join(path);
+            if let Some(coordinate) = frame.pending.next() {
+                let directory = coordinate.from(&frame.package.root);
                 let rooted = directory.canonicalize().ok();
                 let dependency = match Self::discover(&directory) {
                     Maybe::Present(found) if rooted.as_deref() == Some(found.root()) => found,
                     Maybe::Present(_) | Maybe::Absent(package_root::Absent::Unpackaged) => {
                         return Err(Unresolved::Unpackaged {
-                            alias,
+                            coordinate,
                             path: directory,
                         });
                     },
@@ -729,7 +710,7 @@ impl Package
                 if !open.insert(dependency.root.clone()) {
                     return Err(cycle(&frames, dependency.root));
                 }
-                frames.push(Frame::of(dependency, Some((alias, coordinate)))?);
+                frames.push(Frame::of(dependency, Some(coordinate), grammar)?);
                 continue;
             }
             let Some(Frame {
@@ -743,7 +724,7 @@ impl Package
             };
             let _closed = open.remove(&package.root);
             let own = Lock(entries);
-            let (Some(parent), Some((alias, coordinate))) = (frames.last_mut(), via)
+            let (Some(parent), Some(coordinate)) = (frames.last_mut(), via)
             else {
                 return Ok(own);
             };
@@ -753,35 +734,23 @@ impl Package
             };
             if standing != own {
                 return Err(Unresolved::Unlocked {
-                    alias,
+                    coordinate,
                     root: package.root,
                 });
             }
             let identity = package
                 .identity(grammar, &Unshadowed, &own, store)
                 .map_err(|fault| Unresolved::Unaddressed {
-                    alias: alias.clone(),
+                    coordinate: coordinate.clone(),
                     fault,
                 })?;
             let pointer = store
                 .commit(&identity)
                 .map_err(|fault| Unresolved::Unstored {
-                    alias: alias.clone(),
+                    coordinate: coordinate.clone(),
                     fault: Box::new(fault),
                 })?;
-            let twice = Unresolved::Twice {
-                alias: alias.clone(),
-            };
-            if parent
-                .entries
-                .insert(alias, Locked {
-                    coordinate,
-                    pointer,
-                })
-                .is_some()
-            {
-                return Err(twice);
-            }
+            let _first = parent.entries.insert(coordinate, pointer);
         }
     }
 }
@@ -792,28 +761,28 @@ struct Frame
 {
     /// The package.
     package: Package,
-    /// The alias and coordinate its dependent names it by; none for the
-    /// package resolution started at.
-    via: Option<(Alias, Coordinate)>,
-    /// Its dependencies not yet resolved, in the order its package source lists
-    /// them.
-    pending: alloc::vec::IntoIter<Dependency>,
-    /// Its dependencies resolved so far, by alias.
-    entries: BTreeMap<Alias, Locked>,
+    /// The coordinate its dependent imports it by; none for the package
+    /// resolution started at.
+    via: Option<Coordinate>,
+    /// Its dependencies not yet resolved, in the coordinates' order.
+    pending: alloc::collections::btree_set::IntoIter<Coordinate>,
+    /// Its dependencies resolved so far, by coordinate.
+    entries: BTreeMap<Coordinate, ContentPtr>,
 }
 
 impl Frame
 {
-    /// `package`, named by `via`, its dependencies all left to resolve.
+    /// `package`, imported by `via`, its dependencies all left to resolve.
     ///
     /// # Specification
     /// trivial.
     fn of(
         package: Package,
-        via: Option<(Alias, Coordinate)>,
+        via: Option<Coordinate>,
+        grammar: &gandr_surface_grammar::Pbg,
     ) -> Result<Self, Unresolved>
     {
-        let pending = package.dependencies()?.into_iter();
+        let pending = package.dependencies(grammar)?.into_iter();
         Ok(Self {
             package,
             via,
@@ -847,12 +816,11 @@ fn cycle(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Unresolved
 {
-    /// A package source's `dependencies` cannot be read, or runs to no list of
-    /// dependencies.
-    Undeclared
+    /// A source of a package cannot be read for the coordinates it imports.
+    Unread
     {
-        /// The root of the package declaring it.
-        package: PathBuf,
+        /// The source.
+        source: PathBuf,
         /// Why, spelled.
         why: String,
     },
@@ -860,7 +828,7 @@ pub enum Unresolved
     Unpackaged
     {
         /// The dependency.
-        alias: Alias,
+        coordinate: Coordinate,
         /// The directory its coordinate names.
         path: PathBuf,
     },
@@ -876,21 +844,15 @@ pub enum Unresolved
     Unlocked
     {
         /// The dependency.
-        alias: Alias,
+        coordinate: Coordinate,
         /// Its root, where `gandr lock` writes its lock.
         root: PathBuf,
-    },
-    /// An alias is declared twice.
-    Twice
-    {
-        /// The alias.
-        alias: Alias,
     },
     /// A dependency has no address.
     Unaddressed
     {
         /// The dependency.
-        alias: Alias,
+        coordinate: Coordinate,
         /// Why it has none.
         fault: Unaddressed,
     },
@@ -898,7 +860,7 @@ pub enum Unresolved
     Unstored
     {
         /// The dependency.
-        alias: Alias,
+        coordinate: Coordinate,
         /// Why the store refused it.
         fault: Box<StoreError>,
     },
@@ -915,22 +877,21 @@ impl core::fmt::Display for Unresolved
     ) -> core::fmt::Result
     {
         match *self {
-            Self::Undeclared {
-                ref package,
+            Self::Unread {
+                ref source,
                 ref why,
             } => write!(
                 f,
-                "the dependencies of `{}` cannot be read: {why}; declare `pub def {DEPENDENCIES} \
-                 : List(Dependency)` in its package source",
-                package.display()
+                "the imports of `{}` cannot be read: {why}",
+                source.display()
             ),
             Self::Unpackaged {
-                ref alias,
+                ref coordinate,
                 ref path,
             } => write!(
                 f,
-                "the dependency `{alias}` names `{}`, which roots no package: point its \
-                 coordinate at a directory holding `package.gandr` or `src/package.gandr`",
+                "the coordinate `{coordinate}` names `{}`, which roots no package: point it at a \
+                 directory holding `package.gandr` or `src/package.gandr`",
                 path.display()
             ),
             Self::Cycle { ref chain } => {
@@ -944,27 +905,23 @@ impl core::fmt::Display for Unresolved
                 f.write_str(" depend on each other: remove one of the dependencies")
             },
             Self::Unlocked {
-                ref alias,
+                ref coordinate,
                 ref root,
             } => write!(
                 f,
-                "the dependency `{alias}` at `{}` is not locked to what its own dependencies \
-                 resolve to: run `gandr lock {}`",
+                "the dependency `{coordinate}` at `{}` is not locked to what its own \
+                 dependencies resolve to: run `gandr lock {}`",
                 root.display(),
                 root.display()
             ),
-            Self::Twice { ref alias } => write!(
-                f,
-                "the dependency `{alias}` is declared twice: give each dependency its own alias"
-            ),
             Self::Unaddressed {
-                ref alias,
+                ref coordinate,
                 ref fault,
-            } => write!(f, "the dependency `{alias}` has no address: {fault}"),
+            } => write!(f, "the dependency `{coordinate}` has no address: {fault}"),
             Self::Unstored {
-                ref alias,
+                ref coordinate,
                 ref fault,
-            } => write!(f, "the dependency `{alias}` cannot be locked: {fault}"),
+            } => write!(f, "the dependency `{coordinate}` cannot be locked: {fault}"),
         }
     }
 }
@@ -977,10 +934,9 @@ impl core::error::Error for Unresolved
 #[derive(Debug)]
 pub enum LockFault
 {
-    /// The lock standing records the aliases given otherwise than the
-    /// dependencies resolve to, each `LockDrift.<alias>`. It was left as it
-    /// stands.
-    Drifted(Vec<Alias>),
+    /// The lock standing records the coordinates given otherwise than they
+    /// resolve to, each `LockDrift.<coordinate>`. It was left as it stands.
+    Drifted(Vec<Coordinate>),
     /// The lock was edited since the checker wrote it. It was left as it
     /// stands.
     Edited,
@@ -999,12 +955,12 @@ impl core::fmt::Display for LockFault
     ) -> core::fmt::Result
     {
         match *self {
-            Self::Drifted(ref aliases) => {
-                for (index, alias) in aliases.iter().enumerate() {
+            Self::Drifted(ref coordinates) => {
+                for (index, coordinate) in coordinates.iter().enumerate() {
                     if index > 0 {
                         f.write_str(", ")?;
                     }
-                    write!(f, "LockDrift.{alias}")?;
+                    write!(f, "LockDrift.{coordinate}")?;
                 }
                 f.write_str(
                     ": the lock records another dependency than it resolves to, so it is left as \
@@ -1028,7 +984,7 @@ impl core::error::Error for LockFault
 /// written only where none stands. A lock standing otherwise is left as it
 /// stands until `gandr lock` relocks it ([`relock`]): [`LockFault::Edited`]
 /// for a file edited by hand or no render, and [`LockFault::Drifted`] naming,
-/// in order, each alias whose entry the standing lock and this one record
+/// in order, each coordinate whose entry the standing lock and this one record
 /// differently or only one records. A lock recording no dependency leaves no
 /// file where none stands.
 impl Held for Lock
@@ -1079,11 +1035,11 @@ impl Held for Lock
         if standing == *self {
             return Ok(Differing::Kept);
         }
-        let aliases: BTreeSet<&Alias> = standing.0.keys().chain(self.0.keys()).collect();
+        let coordinates: BTreeSet<&Coordinate> = standing.0.keys().chain(self.0.keys()).collect();
         Err(LockFault::Drifted(
-            aliases
+            coordinates
                 .into_iter()
-                .filter(|alias| standing.0.get(*alias) != self.0.get(*alias))
+                .filter(|coordinate| standing.0.get(*coordinate) != self.0.get(*coordinate))
                 .cloned()
                 .collect(),
         ))
@@ -1152,31 +1108,45 @@ pub fn relock(
         .map_err(LockFault::Io)
 }
 
-/// The file an import through the alias `head` of a module path names in
-/// `package`, the path below it `rest`: the dependency's package source for the
-/// alias alone, and the file under its sources otherwise; none when the lock
-/// standing at `package`'s root records no such alias, or the dependency it
-/// records roots no package.
+/// The package source of the dependency `coordinate` names from `package`'s
+/// root; none when the lock standing at `package`'s root does not record the
+/// coordinate, or its directory roots no package.
 ///
 /// # Specification
 /// trivial.
 #[inline]
+#[must_use]
 pub fn through(
     package: &Package,
-    head: &Alias,
-    rest: Option<&Path>,
+    coordinate: &Coordinate,
 ) -> Option<PathBuf>
 {
     let Maybe::Present(lock) = Lock::read(package)
     else {
         return None;
     };
-    let Coordinate::Path(ref path) = lock.locked(head)?.coordinate;
-    let Maybe::Present(dependency) = Package::discover(&package.root().join(path))
+    lock.locked(coordinate)?;
+    unpackaged(package.root(), coordinate)
+}
+
+/// The package source of the dependency `coordinate` names from `directory`,
+/// where a source in no package reads it with no lock; none when its
+/// directory roots no package.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn unpackaged(
+    directory: &Path,
+    coordinate: &Coordinate,
+) -> Option<PathBuf>
+{
+    let Maybe::Present(dependency) = Package::discover(&coordinate.from(directory))
     else {
         return None;
     };
-    Some(within(&dependency, rest))
+    Some(dependency.source().to_path_buf())
 }
 
 /// The file an import through [`STANDARD`] names when no lock records it, the

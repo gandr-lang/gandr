@@ -1,4 +1,4 @@
-/// `UnlockedDependency`: a source reads a name through a module path that names no module of the package and no dependency its lock records.
+/// `UnlockedDependency`: a source reads a name through a module path that names no module of the package, or through a coordinate its lock does not record.
 import circle;
 
 /// A declaration reading nothing through the path stands.

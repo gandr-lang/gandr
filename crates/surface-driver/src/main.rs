@@ -340,7 +340,6 @@ use gandr_surface_dispatcher::Census;
 use gandr_surface_dispatcher::CensusStep;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Console;
-use gandr_surface_dispatcher::Coordinate;
 use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Export;
@@ -1408,7 +1407,7 @@ fn opened() -> Result<Store, ExitCode>
 }
 
 /// Resolve `package`'s dependencies into `store` and hold its lock to them,
-/// as `gandr check` does before it walks, so every import through an alias
+/// as `gandr check` does before it walks, so every import of a coordinate
 /// reads the lock from the walk's first source, and address the package over
 /// the lock.
 ///
@@ -1439,8 +1438,8 @@ fn locking(
     let grammar = match built_in() {
         Ok(grammar) => grammar,
         Err(error) => {
-            return Locking::Unresolved(Unresolved::Undeclared {
-                package: package.root().to_path_buf(),
+            return Locking::Unresolved(Unresolved::Unread {
+                source: package.source().to_path_buf(),
                 why: error.to_string(),
             });
         },
@@ -3924,7 +3923,7 @@ fn locked<'packaged>(
     let path = packaged.package.root().join(LOCK);
     match packaged.locking {
         Locking::Held(reconciled, ref lock, ref address) => {
-            if lock.aliases().next().is_some() || reconciled != Reconciled::Unchanged {
+            if lock.coordinates().next().is_some() || reconciled != Reconciled::Unchanged {
                 if verbosity == Verbosity::Json {
                     let line = serde_json::json!({
                         "level": "lock",
@@ -4359,18 +4358,18 @@ fn exported(
 ///
 /// # Specification
 /// - requires: `lock` is the lock `package` holds.
-/// - ensures: for each alias of `lock`, in order, the address of the identity
-///   its pointer names is read from `store` as [`Lock::resolved`] reads it, and
-///   the root of the address, [`Export::root`], looked up. An export that the
-///   root names and that re-admits ([`Export::readmit`]) settles, and at the
-///   detailed and debug levels prints `export: <root>: <alias>: <n>
-///   declarations re-admitted from <export root>` on standard output. A root
-///   that names nothing is `gandr: <root>: <alias>: no export at <export root>;
-///   check <dependency> first` on standard error and leaves the verdict, the
-///   dependency being judged from its sources in the dependent's unit. An
-///   identity or an export the store cannot read back, and an export the kernel
-///   refuses, are `gandr: <root>: <alias>: <why>` on standard error and fault
-///   the run.
+/// - ensures: for each coordinate of `lock`, in order, the address of the
+///   identity its pointer names is read from `store` as [`Lock::resolved`]
+///   reads it, and the root of the address, [`Export::root`], looked up. An
+///   export that the root names and that re-admits ([`Export::readmit`])
+///   settles, and at the detailed and debug levels prints `export: <root>:
+///   <coordinate>: <n> declarations re-admitted from <export root>` on standard
+///   output. A root that names nothing is `gandr: <root>: <coordinate>: no
+///   export at <export root>; check <dependency> first` on standard error and
+///   leaves the verdict, the dependency being judged from its sources in the
+///   dependent's unit. An identity or an export the store cannot read back, and
+///   an export the kernel refuses, are `gandr: <root>: <coordinate>: <why>` on
+///   standard error and fault the run.
 /// - provides: the read of each dependency's export `run` takes for each
 ///   package whose lock is held, after every export of the run committed.
 /// - fails: the first write error on either stream.
@@ -4397,16 +4396,16 @@ fn depended(
 {
     let root = package.root().display();
     let mut verdict = RunVerdict::Settled;
-    for (alias, locked, address) in lock.resolved(store) {
+    for (coordinate, address) in lock.resolved(store) {
         let address = match address {
             Ok(address) => address,
             Err(Unaddressed::Unstored { ref fault, .. }) => {
-                writeln!(stderr, "gandr: {root}: {alias}: {fault}")?;
+                writeln!(stderr, "gandr: {root}: {coordinate}: {fault}")?;
                 verdict = RunVerdict::Faulted;
                 continue;
             },
             Err(ref unaddressed) => {
-                writeln!(stderr, "gandr: {root}: {alias}: {unaddressed}")?;
+                writeln!(stderr, "gandr: {root}: {coordinate}: {unaddressed}")?;
                 verdict = RunVerdict::Faulted;
                 continue;
             },
@@ -4414,12 +4413,11 @@ fn depended(
         let name = Export::root(&address);
         let Maybe::Present(pointer) = store.roots().root(&name)
         else {
-            let Coordinate::Path(ref path) = locked.coordinate;
-            let dependency = package.root().join(path);
+            let dependency = coordinate.from(package.root());
             let dependency = dependency.canonicalize().unwrap_or(dependency);
             writeln!(
                 stderr,
-                "gandr: {root}: {alias}: no export at {name}; check {} first",
+                "gandr: {root}: {coordinate}: no export at {name}; check {} first",
                 dependency.display()
             )?;
             continue;
@@ -4433,13 +4431,13 @@ fn depended(
                 if matches!(verbosity, Verbosity::Detailed | Verbosity::Debug) {
                     writeln!(
                         stdout,
-                        "export: {root}: {alias}: {} declarations re-admitted from {name}",
+                        "export: {root}: {coordinate}: {} declarations re-admitted from {name}",
                         usize::from(declarations)
                     )?;
                 }
             },
             Err(why) => {
-                writeln!(stderr, "gandr: {root}: {alias}: {name}: {why}")?;
+                writeln!(stderr, "gandr: {root}: {coordinate}: {name}: {why}")?;
                 verdict = RunVerdict::Faulted;
             },
         }

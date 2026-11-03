@@ -27,10 +27,8 @@ use gandr_storage_store::StoreError;
 use gandr_storage_values::ValueError;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::SettleReport;
-use gandr_surface_dispatcher::Alias;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Coordinate;
-use gandr_surface_dispatcher::Dependency;
 use gandr_surface_dispatcher::Export;
 use gandr_surface_dispatcher::Exporting;
 use gandr_surface_dispatcher::Field;
@@ -38,7 +36,6 @@ use gandr_surface_dispatcher::Identity;
 use gandr_surface_dispatcher::LOCK;
 use gandr_surface_dispatcher::Lock;
 use gandr_surface_dispatcher::LockFault;
-use gandr_surface_dispatcher::Locked;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Manifest;
@@ -591,41 +588,6 @@ fn a_manifest_reads_the_package_model_2687()
         ))),
         Err(Unmanifested::Undeclared(Field::Name)),
         "top-level fields are not the package's"
-    );
-}
-
-/// #3072: a package source's `dependencies` renders the manifest's dependency
-/// table, each alias with its path, and one that runs to no list of
-/// dependencies is refused with what it came to.
-#[test]
-fn a_manifest_renders_the_dependencies_its_library_lists_3072()
-{
-    let read = manifest_of(SourceText::from(concat!(
-        "data Coordinate : Type where { | Path : (path : String) --> Coordinate } ",
-        "type Dependency = #{ alias : String, coordinate : Coordinate }; ",
-        "module Package where { def name = \"tools\" ; def version = \"0.1.0\" ; ",
-        rest!(),
-        " } def dependencies : List(Dependency) = [ #{ alias = \"hello\", coordinate = \
-         Path(\"../hello\") } ] ;"
-    )))
-    .expect("the model and its dependencies read");
-    assert!(
-        read.render().ends_with(&format!(
-            "modules = []\n{TOOLCHAIN}\n[dependencies]\nhello = {{ path = \"../hello\" }}\n"
-        )),
-        "the table follows the package's: {}",
-        read.render()
-    );
-    assert_eq!(
-        manifest_of(SourceText::from(concat!(
-            "module Package where { def name = \"tools\" ; def version = \"0.1.0\" ; ",
-            rest!(),
-            " } def dependencies = 3 ;"
-        ))),
-        Err(Unmanifested::Undepended {
-            came: String::from("3"),
-        }),
-        "dependencies that are no list"
     );
 }
 
@@ -1294,8 +1256,9 @@ struct Hello
 }
 
 /// A scratch directory named for `test` holding the package `hello` as
-/// `written`, and the package `sibling` depending on it by the path
-/// `../hello` and reading `hello.welcome`.
+/// `written`, and the package `sibling` importing it by the coordinate
+/// `path:../hello` from two sources, each reading `welcome` through its own
+/// alias.
 ///
 /// # Specification
 /// trivial.
@@ -1307,19 +1270,24 @@ fn siblings(
     let directory = scratch(test, &[
         Path::new("hello/src/package.gandr"),
         Path::new("sibling/src/package.gandr"),
+        Path::new("sibling/src/again.gandr"),
     ]);
     write_hello(&directory, written);
     std::fs::write(
         directory.join("sibling/src/package.gandr"),
         Library {
-            imports: "import hello;\n",
+            imports: "import \"path:../hello\" as hello;\n",
             version: "0.1.0",
-            rest: "pub def dependencies : List(Dependency) = [#{ alias = \"hello\", coordinate = \
-                   Path(\"../hello\") }];\npub def greeting = hello.welcome;\n",
+            rest: "pub def greeting = hello.welcome;\n",
         }
         .source(),
     )
     .expect("the sibling is written");
+    std::fs::write(
+        directory.join("sibling/src/again.gandr"),
+        "import \"path:../hello\" as hi;\npub def again = hi.welcome;\n",
+    )
+    .expect("the sibling's second source is written");
     directory
 }
 
@@ -1359,12 +1327,12 @@ fn rooted(root: &Path) -> Package
     }
 }
 
-/// #3072, #3157: a package source's `dependencies` runs before its lock is
-/// written, the use through the alias alone refused; the lock records the
-/// dependency's coordinate and the pointer its identity commits to, is written
-/// once, read back equal and unchanged on a second run, and is the same bytes
-/// resolved from another directory into another store; with it, the use reads
-/// the dependency.
+/// #3072, #3157, #4527: the coordinate two sources of a package import is
+/// collected once before its lock is written, the use through the alias alone
+/// refused; the lock records the coordinate and the pointer its identity
+/// commits to, is written once, read back equal and unchanged on a second run,
+/// and is the same bytes resolved from another directory into another store;
+/// with it, the use reads the dependency.
 #[test]
 fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
 {
@@ -1375,13 +1343,11 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
     });
     let sibling = rooted(&directory.join("sibling"));
     let hello = rooted(&directory.join("hello"));
+    let coordinate = Coordinate::Path(String::from("../hello"));
     assert_eq!(
-        sibling.dependencies(),
-        Ok(Vec::from([Dependency {
-            alias: Alias::new(String::from("hello")),
-            coordinate: Coordinate::Path(String::from("../hello")),
-        }])),
-        "the dependencies run before any lock stands"
+        sibling.dependencies(&grammar),
+        Ok(BTreeSet::from([coordinate.clone()])),
+        "the coordinate both sources import is collected once, before any lock stands"
     );
     let mut store = stored(Path::new("lock"));
     let unlocked = sibling.identity(&grammar, &Held::default(), &Lock::default(), &store);
@@ -1397,12 +1363,14 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
         .expect("hello addresses");
     let pointer = store.commit(&own).expect("hello's identity commits");
     assert_eq!(
-        lock.locked(&Alias::new(String::from("hello"))),
-        Some(&Locked {
-            coordinate: Coordinate::Path(String::from("../hello")),
-            pointer,
-        }),
-        "the lock records hello's coordinate and the pointer its identity commits to"
+        lock.coordinates().collect::<Vec<_>>(),
+        [&coordinate],
+        "the lock records hello's coordinate once"
+    );
+    assert_eq!(
+        lock.locked(&coordinate),
+        Some(pointer),
+        "at the pointer its identity commits to"
     );
     assert_eq!(
         store.deref::<Identity>(pointer),
@@ -1480,8 +1448,8 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
 
 /// #3072: an inert edit to a dependency leaves its dependent's lock; a
 /// content edit moves the dependency's address, and the standing lock is
-/// refused as `LockDrift.hello`, left byte for byte, until `relock` writes
-/// it again; a hand edit to the lock is refused as drift.
+/// refused as `LockDrift.path:../hello`, left byte for byte, until `relock`
+/// writes it again; a hand edit to the lock is refused as drift.
 #[test]
 fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
 {
@@ -1523,13 +1491,13 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
         welcome: "howdy",
     });
     let moved = sibling.resolve(&grammar, &mut store).expect("it resolves");
+    let coordinate = Coordinate::Path(String::from("../hello"));
     let address = |lock: &Lock| {
-        lock.locked(&Alias::new(String::from("hello")))
-            .map(|locked| {
-                store
-                    .deref::<Identity>(locked.pointer)
-                    .map(|identity| identity.address)
-            })
+        lock.locked(&coordinate).map(|pointer| {
+            store
+                .deref::<Identity>(pointer)
+                .map(|identity| identity.address)
+        })
     };
     assert_ne!(
         address(&moved),
@@ -1538,16 +1506,16 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
     );
     let drifted = reconcile(&sibling.root().join(LOCK), &moved);
     assert!(
-        matches!(drifted, Err(LockFault::Drifted(ref aliases)) if *aliases == [Alias::new(String::from("hello"))]),
-        "the standing lock is drift at `hello`: {drifted:?}"
+        matches!(drifted, Err(LockFault::Drifted(ref coordinates)) if *coordinates == [coordinate.clone()]),
+        "the standing lock is drift at `path:../hello`: {drifted:?}"
     );
     assert_eq!(
         drifted.map_err(|fault| fault.to_string()).err().as_deref(),
         Some(
-            "LockDrift.hello: the lock records another dependency than it resolves to, so it is \
-             left as it stands; relock with `gandr lock`"
+            "LockDrift.path:../hello: the lock records another dependency than it resolves to, so \
+             it is left as it stands; relock with `gandr lock`"
         ),
-        "the drift names its alias"
+        "the drift names its coordinate"
     );
     assert_eq!(
         std::fs::read_to_string(&path).ok(),
@@ -1581,8 +1549,8 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
 
 /// #3157: the lock records a pointer into the store its run committed to;
 /// read against a store that never held it, the dependent's address is
-/// refused by the dependency's alias, naming the pointer the store cannot
-/// answer, and a run that commits again answers it.
+/// refused by the dependency's coordinate, naming the pointer the store
+/// cannot answer, and a run that commits again answers it.
 #[test]
 fn a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157()
 {
@@ -1603,28 +1571,26 @@ fn a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157()
         ),
         "the lock is written, so the use through the alias reads it"
     );
-    let pointer = lock
-        .locked(&Alias::new(String::from("hello")))
-        .expect("hello is locked")
-        .pointer;
+    let coordinate = Coordinate::Path(String::from("../hello"));
+    let pointer = lock.locked(&coordinate).expect("hello is locked");
     let mut empty = stored(Path::new("unstored-empty"));
     let unaddressed = sibling.identity(&grammar, &Held::default(), &lock, &empty);
     assert_eq!(
         unaddressed,
         Err(Unaddressed::Unstored {
-            alias: Alias::new(String::from("hello")),
+            coordinate,
             fault: Box::new(StoreError::Value(ValueError::UnknownChunk {
                 digest: pointer.digest()
             })),
         }),
-        "a store that never held the pointer leaves the dependent unaddressed by the alias"
+        "a store that never held the pointer leaves the dependent unaddressed by the coordinate"
     );
     assert!(
         unaddressed
             .map_err(|fault| fault.to_string())
             .err()
             .is_some_and(|said| said.starts_with(
-                "the dependency `hello` is locked to a pointer the store cannot read back"
+                "the dependency `path:../hello` is locked to a pointer the store cannot read back"
             )),
         "the refusal names the dependency"
     );
@@ -1648,7 +1614,7 @@ fn a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157()
     }
 }
 
-/// #3072: two packages depending on each other by path are refused as a
+/// #3072: two packages importing each other by coordinate are refused as a
 /// `DependencyCycle`, naming the chain of roots from the one resolved back to
 /// it.
 #[test]
@@ -1662,10 +1628,7 @@ fn a_dependency_cycle_is_refused_by_its_paths_3072()
     for (from, to) in [("a", "b"), ("b", "a")] {
         std::fs::write(
             directory.join(from).join("src/package.gandr"),
-            format!(
-                "{STD_PACKAGE}pub def dependencies : List(Dependency) = [#{{ alias = \"{to}\", \
-                 coordinate = Path(\"../{to}\") }}];\n"
-            ),
+            format!("import \"path:../{to}\" as {to};\n{STD_PACKAGE}"),
         )
         .expect("the library is written");
     }

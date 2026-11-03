@@ -2112,10 +2112,11 @@ fn a_package_s_toolchain_is_met_or_refused_by_its_clause_3135()
     }
 }
 
-/// #3072: `check` of a package depending on a sibling by path writes its
-/// `gandr.lock` once, through which its source reads the sibling, and leaves
-/// it unchanged on a second run; a content edit to the sibling is refused as
-/// `LockDrift.hello`, the lock left byte for byte, until `gandr lock`
+/// #3072, #4527: `check` of a package importing a sibling by its coordinate
+/// writes its `gandr.lock` once, through which its source reads the sibling,
+/// and its manifest with no dependency table, and leaves the lock unchanged on
+/// a second run; a content edit to the sibling is refused as
+/// `LockDrift.path:../hello`, the lock left byte for byte, until `gandr lock`
 /// rewrites it and `check` settles again.
 #[test]
 fn check_writes_a_lock_and_refuses_its_drift_3072()
@@ -2129,8 +2130,7 @@ fn check_writes_a_lock_and_refuses_its_drift_3072()
         Path::new("sibling/src/package.gandr"),
         Text::from(
             format!(
-                "import hello;\n{STD_PACKAGE}{}pub def dependencies : List(Dependency) = [#{{ \
-                 alias = \"hello\", coordinate = Path(\"../hello\") }}];\npub def greeting = \
+                "import \"path:../hello\" as hello;\n{STD_PACKAGE}{}pub def greeting = \
                  hello.welcome;\n",
                 LIBRARY.replace("\"hello\"", "\"sibling\"")
             )
@@ -2162,8 +2162,8 @@ fn check_writes_a_lock_and_refuses_its_drift_3072()
     let manifest =
         std::fs::read_to_string(scratch.0.join("sibling/gandr.toml")).expect("the manifest reads");
     assert!(
-        manifest.ends_with("\n[dependencies]\nhello = { path = \"../hello\" }\n"),
-        "the manifest renders the dependencies table: {manifest}"
+        !manifest.contains("[dependencies]"),
+        "the manifest renders no dependency table: {manifest}"
     );
     let again = verb("check");
     assert_eq!(code(&again), Code(0_i32), "{}", stderr(&again));
@@ -2184,7 +2184,7 @@ fn check_writes_a_lock_and_refuses_its_drift_3072()
     let drifted = verb("check");
     assert_eq!(code(&drifted), Code(1_i32), "drift unsettles the run");
     assert!(
-        stderr(&drifted).contains("gandr.lock: LockDrift.hello: "),
+        stderr(&drifted).contains("gandr.lock: LockDrift.path:../hello: "),
         "{}",
         stderr(&drifted)
     );
@@ -2224,8 +2224,7 @@ fn a_package_s_lock_points_into_the_store_the_run_opens_3157()
         Path::new("sibling/src/package.gandr"),
         Text::from(
             format!(
-                "import hello;\n{STD_PACKAGE}{}pub def dependencies : List(Dependency) = [#{{ \
-                 alias = \"hello\", coordinate = Path(\"../hello\") }}];\npub def greeting = \
+                "import \"path:../hello\" as hello;\n{STD_PACKAGE}{}pub def greeting = \
                  hello.welcome;\n",
                 LIBRARY.replace("\"hello\"", "\"sibling\"")
             )
@@ -2245,7 +2244,7 @@ fn a_package_s_lock_points_into_the_store_the_run_opens_3157()
         std::fs::read_to_string(scratch.0.join("sibling/gandr.lock")).expect("the lock reads");
     let pointer = lock
         .lines()
-        .find_map(|line| line.strip_prefix("hello = { path = \"../hello\", pointer = \""))
+        .find_map(|line| line.strip_prefix("\"path:../hello\" = { pointer = \""))
         .and_then(|rest| rest.strip_suffix("\" }"))
         .expect("the lock locks hello by a pointer");
     let (digest, offset) = pointer
@@ -2380,8 +2379,7 @@ fn a_dependent_re_admits_its_dependency_s_export_3285()
         Path::new("sibling/src/package.gandr"),
         Text::from(
             format!(
-                "import hello;\n{STD_PACKAGE}{}pub def dependencies : List(Dependency) = [#{{ \
-                 alias = \"hello\", coordinate = Path(\"../hello\") }}];\npub def greeting = \
+                "import \"path:../hello\" as hello;\n{STD_PACKAGE}{}pub def greeting = \
                  hello.welcome;\n",
                 LIBRARY.replace("\"hello\"", "\"sibling\"")
             )
@@ -2430,7 +2428,7 @@ fn a_dependent_re_admits_its_dependency_s_export_3285()
     assert_eq!(
         readmitted,
         [format!(
-            "export: {}: hello: {declarations} declarations re-admitted from {root}",
+            "export: {}: path:../hello: {declarations} declarations re-admitted from {root}",
             sibling.display()
         )],
         "the dependent re-admits each declaration of its dependency's export"
@@ -2448,7 +2446,7 @@ fn a_dependent_re_admits_its_dependency_s_export_3285()
     assert_eq!(
         stderr(&fresh),
         format!(
-            "gandr: {}: hello: no export at {root}; check {} first\n",
+            "gandr: {}: path:../hello: no export at {root}; check {} first\n",
             sibling.display(),
             hello.display()
         ),
@@ -2463,9 +2461,8 @@ fn a_dependent_re_admits_its_dependency_s_export_3285()
         panic!("sibling's check wrote its lock");
     };
     let Some(identity) = lock
-        .aliases()
-        .find_map(|alias| lock.locked(alias))
-        .map(|locked| locked.pointer)
+        .coordinates()
+        .find_map(|coordinate| lock.locked(coordinate))
     else {
         panic!("sibling's lock locks hello");
     };
@@ -2476,7 +2473,10 @@ fn a_dependent_re_admits_its_dependency_s_export_3285()
     let faulted = check("user", &data, &["sibling"]);
     assert_eq!(code(&faulted), Code(2_i32), "{}", stderr(&faulted));
     assert!(
-        stderr(&faulted).starts_with(&format!("gandr: {}: hello: {root}: ", sibling.display())),
+        stderr(&faulted).starts_with(&format!(
+            "gandr: {}: path:../hello: {root}: ",
+            sibling.display()
+        )),
         "a root naming what is no export faults the run: {}",
         stderr(&faulted)
     );

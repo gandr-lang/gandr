@@ -147,7 +147,7 @@ use quenchant_shape::shape::Maybe;
 use crate::memo::Memo;
 use crate::package::Package;
 use crate::package::lock;
-use crate::package::lock::Alias;
+use crate::package::lock::Coordinate;
 use crate::root::SourceRoot;
 use crate::root::classify;
 
@@ -318,6 +318,30 @@ pub enum ImportBase
     /// The package's root module's: a module path, `import text.greet ;`,
     /// whose file is `text/greet.gandr` beside the package's `package.gandr`.
     Root,
+    /// The package's root: a coordinate, `import "path:../hello" as hello ;`,
+    /// whose file is the package source of the package `../hello` roots.
+    Coordinate,
+}
+
+impl ImportBase
+{
+    /// What an import at `address` names its file relative to: a quoted path
+    /// the importer's directory, a coordinate the package's root, a module
+    /// path the root module's; nothing for another scheme.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn of(address: Address) -> Option<Self>
+    {
+        match address {
+            Address::Path => Some(Self::Importer),
+            Address::Coordinate => Some(Self::Coordinate),
+            Address::Module => Some(Self::Root),
+            Address::Scheme => None,
+        }
+    }
 }
 
 /// The file one path or module import names, as its source writes it, and
@@ -371,19 +395,23 @@ impl ImportPath
         self.base
     }
 
-    /// The file a source in `directory` names: joined to `directory`, or to
-    /// the directory of the root module of the package `directory` sits in,
-    /// or under the dependency its module path's head is an alias of, or
+    /// The file a source in `directory` names: joined to `directory`, or the
+    /// package source of the dependency its coordinate locks, or under the
+    /// directory of the root module of the package `directory` sits in, or
     /// under the standard library for the head `std`.
     ///
     /// # Specification
     /// - requires: `directory` is the importing source's directory.
     /// - ensures: an [`ImportBase::Importer`] file joined to `directory`, a
-    ///   [`Named::File`]; an [`ImportBase::Root`] file as
+    ///   [`Named::File`]; an [`ImportBase::Coordinate`] file as
+    ///   [`lock::through`] names it for the package [`Package::discover`] finds
+    ///   from `directory`, or as [`lock::unpackaged`] names it from `directory`
+    ///   when it finds none, and [`Named::Unlocked`] of the coordinate's
+    ///   directory where neither names one; an [`ImportBase::Root`] file as
     ///   [`ImportPath::in_package`] names it under the sources of the package
-    ///   [`Package::discover`] finds from `directory`, or under `directory`,
-    ///   with no lock, when it finds none: a source in no package is the root
-    ///   module of its own.
+    ///   [`Package::discover`] finds from `directory`, or under `directory`
+    ///   when it finds none: a source in no package is the root module of its
+    ///   own.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause reads the file system again.
@@ -391,10 +419,10 @@ impl ImportPath
     /// # Adequacy
     /// - hypothesis: L3 — a module path imported from a source under `src/text`
     ///   names its file under `src`, and a quoted path its file beside the
-    ///   importer; a module path whose head is a locked alias names the
-    ///   dependency's package source, and one whose head is neither is
-    ///   unlocked; a module path under `std` names the standard library's file
-    ///   from a source in no package.
+    ///   importer; a locked coordinate names the dependency's package source,
+    ///   and a module path whose head names no source is unlocked; a module
+    ///   path under `std` names the standard library's file from a source in no
+    ///   package.
     /// - witness: `component::tests::a_module_path_is_named_from_its_package_s_root_2687`
     /// - witness: `component::tests::a_std_module_path_names_the_standard_library_from_any_root_4517`
     /// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
@@ -407,30 +435,40 @@ impl ImportPath
     {
         match self.base {
             ImportBase::Importer => Named::File(directory.join(&self.file)),
+            ImportBase::Coordinate => {
+                let Some(coordinate) = Coordinate::of(self)
+                else {
+                    return Named::Unlocked(directory.join(&self.file));
+                };
+                match Package::discover(directory) {
+                    Maybe::Present(package) => lock::through(&package, &coordinate).map_or_else(
+                        || Named::Unlocked(coordinate.from(package.root())),
+                        Named::File,
+                    ),
+                    Maybe::Absent(_) => lock::unpackaged(directory, &coordinate)
+                        .map_or_else(|| Named::Unlocked(coordinate.from(directory)), Named::File),
+                }
+            },
             ImportBase::Root => match Package::discover(directory) {
-                Maybe::Present(package) => self.in_package(package.sources(), Some(&package)),
-                Maybe::Absent(_) => self.in_package(directory, None),
+                Maybe::Present(package) => self.in_package(package.sources()),
+                Maybe::Absent(_) => self.in_package(directory),
             },
         }
     }
 
-    /// The file the module path names under `sources`, the sources of
-    /// `package` when it is given: under them when its head names a source or
-    /// a directory there, else under the dependency the package's lock
-    /// records for the head, else under the standard library for `std`.
+    /// The file the module path names under `sources`: under them when its
+    /// head names a source or a directory there, else under the standard
+    /// library for `std`.
     ///
     /// # Specification
     /// - requires: the path's file is a module path's file, `hello.gandr` or
-    ///   `hello/text/greet.gandr`; `sources` is `package`'s sources when it is
-    ///   given.
+    ///   `hello/text/greet.gandr`.
     /// - ensures: [`Named::File`] of the file under `sources` when its head —
     ///   the first segment, the stem of a file alone — names a `.gandr` file or
-    ///   a directory there; else [`Named::File`] of the dependency's package
-    ///   source for a head alone, or of the rest of the path under its sources,
-    ///   when the lock at `package`'s root records the head as an alias; else
-    ///   [`Named::File`] of [`lock::standard`]'s file for the head `std`;
-    ///   [`Named::Unlocked`] of the file under `sources` otherwise.
-    /// - provides: the one rule an import through an alias reads.
+    ///   a directory there; else [`Named::File`] of [`lock::standard`]'s file
+    ///   for the head `std`; [`Named::Unlocked`] of the file under `sources`
+    ///   otherwise.
+    /// - provides: the one rule a module path's head reads.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause reads the file system again.
@@ -441,7 +479,6 @@ impl ImportPath
     fn in_package(
         &self,
         sources: &Path,
-        package: Option<&Package>,
     ) -> Named
     {
         let local = sources.join(&self.file);
@@ -460,13 +497,9 @@ impl ImportPath
         if sources.join(head).with_extension("gandr").exists() || sources.join(head).is_dir() {
             return Named::File(local);
         }
-        package
-            .and_then(|package| lock::through(package, &Alias::new(String::from(head)), rest))
-            .or_else(|| {
-                (head == lock::STANDARD)
-                    .then(|| lock::standard(rest))
-                    .flatten()
-            })
+        (head == lock::STANDARD)
+            .then(|| lock::standard(rest))
+            .flatten()
             .map_or(Named::Unlocked(local), Named::File)
     }
 }
@@ -478,9 +511,10 @@ pub enum Named
     /// The file: of the package, beside the importer, or of a dependency the
     /// package's lock records.
     File(PathBuf),
-    /// A module path whose head names no source of the package and no
-    /// dependency its lock records; the file the package would hold for it,
-    /// which an editor may hold unsaved.
+    /// A module path whose head names no source of the package, or a
+    /// coordinate the package's lock does not record; the file the package
+    /// would hold for it, which an editor may hold unsaved, or the
+    /// coordinate's directory.
     Unlocked(PathBuf),
 }
 
@@ -1980,19 +2014,14 @@ pub fn path_imports(
     )
 }
 
-/// The file `import` names and what it is relative to: a quoted path the
-/// importer's directory, a module path the root module's; nothing for a
-/// scheme.
+/// The file `import` names and what it is relative to, as [`ImportBase::of`]
+/// reads its address.
 ///
 /// # Specification
 /// trivial.
 fn import_path(import: &WrittenImport) -> Option<ImportPath>
 {
-    let base = match import.address {
-        Address::Path => ImportBase::Importer,
-        Address::Module => ImportBase::Root,
-        Address::Scheme => return None,
-    };
+    let base = ImportBase::of(import.address)?;
     Some(ImportPath::new(String::from(import.uri.as_ref()), base))
 }
 
