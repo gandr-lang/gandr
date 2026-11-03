@@ -1,0 +1,26 @@
+/// A recipe names the schedule policy, and the policy is off by default.
+///
+/// With the policy off, only the sequential program runs. A runtime component
+/// runs only where a policy or a type demands it.
+///
+/// `std.build`'s `schedule` field names a strategy value. A recipe that
+/// leaves it out runs `sequential`, and `latent` is the parallel default.
+///
+/// - see: #4718 — the schedules sketch, its rulings in the issue body
+
+// The build recipe's types and the strategies.
+import std.build (Recipe, Program);
+import std.par (sequential, latent);
+
+/// A tool built with its cuts free to run apart under `latent`.
+def tool : Recipe = #{
+  .programs = #[Program.of(main)],
+  .schedule = latent
+}
+
+/// The same tool built for a deterministic timing profile. Its cuts run in
+/// order, and nothing spawns.
+def toolSequential : Recipe = #{
+  .programs = #[Program.of(main)],
+  .schedule = sequential
+}

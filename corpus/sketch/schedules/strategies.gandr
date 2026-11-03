@@ -1,0 +1,37 @@
+/// A strategy is a value of `std.par.Strategy`, and an algorithm and its
+/// strategy compose apart.
+///
+/// The algorithm states the answer, and the strategy states how its cuts run.
+/// A strategy chooses among schedules the types already allow, so no strategy
+/// changes an answer.
+///
+/// Ordinary functions compose the strategies `sequential`, `eager`,
+/// `latent`, `chunked(n, s)` and `each(s)`. `@[schedule(s)]` applies one to
+/// a definition, and `e.using(s)` applies one to an expression.
+///
+/// - see: #4718 — the schedules sketch, its rulings in the issue body
+
+// The strategies and their type.
+import std.par (Strategy, eager, latent, chunked, each);
+
+/// Each element in its own task, in chunks of a thousand.
+def perChunk : Strategy = chunked(1000, each(eager))
+
+/// A strategy chosen from an input's size: inline below a threshold, chunked
+/// above it.
+def bySize(n : Nat) -> Strategy {
+  if n < 10000 { latent } else { perChunk }
+}
+
+/// The squares of a large list, the map's cuts run in chunks. The expression
+/// names its strategy, and the answer is the sequential map's.
+def squares(xs : List(Integer)) -> List(Integer) {
+  xs.map(fun (x) { x * x }).using(bySize(xs.length))
+}
+
+/// A whole definition under one strategy. Every cut in its body runs eagerly
+/// in chunks.
+@[schedule(perChunk)]
+def histogram(words : List(String)) -> Map(String, Nat) {
+  words.foldMap(fun (w) { Map.single(w, 1) })
+}

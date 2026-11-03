@@ -1,0 +1,31 @@
+/// A type demands a parallel run, and a definition forbids one, each without
+/// a keyword.
+///
+/// Some code needs two computations to run at once whatever the policy says.
+/// Other code must never run apart, such as a constant-time routine.
+///
+/// `std.par.both(a, b)` returns a pair under the row `[Par]`, which demands
+/// the runtime component. `@[schedule(sequential)]` on a definition forbids
+/// every other schedule inside it.
+///
+/// - see: #4718 — the schedules sketch, its rulings in the issue body
+
+// The parallel pair and the sequential strategy.
+import std.par (both, sequential);
+
+/// Two searches race over one index. The `[Par]` row demands both at once,
+/// so they run apart under every policy.
+def bothEnds(index : Index, word : String) -> [Par] (Maybe(Nat), Maybe(Nat)) {
+  both(index.first(word), index.last(word))
+}
+
+/// A comparison of two secrets whose timing must not depend on where they
+/// differ. The attribute keeps every cut inside it in order.
+@[schedule(sequential)]
+def equalSecrets(a : Bytes, b : Bytes) -> Bool {
+  var diff = 0;
+  for i in 0 .. a.length {
+    diff = diff | (a.#[i] ^ b.#[i])
+  }
+  diff == 0
+}
