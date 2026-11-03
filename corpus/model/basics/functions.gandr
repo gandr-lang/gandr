@@ -1,5 +1,7 @@
 // A function is a computation over its parameters, and one function calls
 // another by running it and becoming the next call.
+//
+// - see: #1856 — `chained`
 
 /// One more than its argument.
 def inc(x : Integer) -> Integer {
@@ -13,7 +15,7 @@ def twice(x : Integer) -> Integer {
 
 /// A call nested in an argument, then sixteen calls each on what the last
 /// returned: what follows the nested call lowers once, so the run fits its
-/// region (#1856).
+/// region.
 @[ runs("18") ]
 def chained() -> Integer {
   let a = inc(inc(0));

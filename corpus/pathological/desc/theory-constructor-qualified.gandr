@@ -1,5 +1,7 @@
 // A qualified constructor names one of its family's own constructors, and
-// nothing else (#2428).
+// nothing else.
+//
+// - see: #2428
 
 /// Trees of two constructors.
 data Tree : Type where {

@@ -10,7 +10,7 @@
 // form, so the stated answers are the reference. A copy taken before the
 // update keeps its value, the independence the conjecture rests on.
 //
-// - see: #3205 — not implemented: the rebuild in the held value's own block
+// - owes: #3205 — the rebuild in the held value's own block
 // - see: `crates/runtime-emitter/src/run.rs` — where the rebuild lands today
 // - see: Racordon, _A Formal Definition of Swift's Value Semantics_, 2020
 

@@ -19,8 +19,8 @@
 // The composite at `n + 1` is `fill` at the composite at `n`, as the
 // paper's induction states. At `n = 2` the step is Example 1.2: `fill` at
 // the 2-chain's whole context, its generator the chain's composite. At
-// constant verticals `Path.step`'s unit laws hold by conversion, so that square
-// is a generator over the level-two shape `[2](1, 1)`, the step at `n = 3`.
+// constant verticals `Path.step`'s unit laws hold by conversion, so that
+// square is the generator over the shape `[2](1, 1)` of the step at `n = 3`.
 // Along dimension 2 the step suspends instead: the composite at `n = 2` at a
 // path type, between two interchangers. The cone's step suspends
 // `coneOpposite2`, the opposite of the cone composite.
@@ -187,7 +187,7 @@ pub def cylinderFillAt2(
   cylinderFill2(A, x, y, f0, x, y, f1, Path.here(x), Path.here(y), a, z, g0, z, g1, Path.here(z), b)
 }
 
-/// The composite at `n = 2` curried over `[2](1, 1)`: the generator of the step at `n = 3`.
+/// The generator of the step at `n = 3`: the composite at `n = 2`, a function over `[2](1, 1)`.
 pub def cylinderFillOver2(A : Type, x : A, y : A, z : A) -> (f0 : Path(A, x, y)) => (f1 : Path(
   A,
   x,
@@ -240,7 +240,7 @@ pub def liftHorizontal(
   Path.step(whiskerRight(A, x, y, z, fm, fp, fa, gm), whiskerLeft(A, x, y, z, fp, gm, gp, ga))
 }
 
-/// Two 3-cylinders side by side compose to a 3-cylinder by the level-two `fill`: Example 1.4 at the composite at `n = 2`, its points fixed.
+/// Two 3-cylinders side by side compose to a 3-cylinder by the level-two `fill`. It is Example 1.4 at the composite at `n = 2`, its points fixed.
 pub def cylinderFill3(
   A : Type,
   x : A,
@@ -364,7 +364,7 @@ pub def coneCompositeCells2(
   Path.step(a, compose[4, 9](chain(2, (0, 1)), (f, b)))
 }
 
-/// `j⁻`: the column `[2](2, 0)` composed is its two whiskers composed, by based path induction on the second 2-cell.
+/// `j⁻`: the composite of the column `[2](2, 0)` is the composite of its two whiskers, by based path induction on the second 2-cell.
 pub def interchangeRight(
   A : Type,
   x : A,

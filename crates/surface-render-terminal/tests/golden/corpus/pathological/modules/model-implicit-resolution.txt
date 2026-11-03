@@ -1,41 +1,41 @@
 error[ModelUnanswered]: no module in scope answers the model implicit `s` this call to `stepped` omits at `Integer`; supply one as `stepped[s = …](…)`
-   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:19:31
+   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:22:31
    │
-19 │ def nothingYet() -> Integer { stepped(4) }
+22 │ def nothingYet() -> Integer { stepped(4) }
    │                               ━━━━━━━━━━ a model implicit no module answers: found `Integer`
    │
    ├ note: `nothingYet` is refused with ModelUnanswered, as its expectation states
    ╰ help: declare a module that is a model of the theory at these types, or supply one by name in brackets
 
 error[ModelUnanswered]: no module in scope answers the model implicit `s` this call to `stepped` omits at `String`: `Up` and `Tens` do not; supply one as `stepped[s = …](…)`
-   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:45:28
+   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:48:28
    │
-45 │ def textual() -> Integer { stepped("four") }
+48 │ def textual() -> Integer { stepped("four") }
    │                            ━━━━━━━━━━━━━━━ a model implicit no module answers: found `String`
    │
    ├ note: `textual` is refused with ModelUnanswered, as its expectation states
    ╰ help: declare a module that is a model of the theory at these types, or supply one by name in brackets
 
 error[ModelAmbiguous]: more than one module in scope answers the model implicit `s` this call to `stepped` omits: `Up` and `Tens`; supply the one meant as `stepped[.s = …](…)`
-   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:49:25
+   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:52:25
    │
-49 │ def twin() -> Integer { stepped(4) }
+52 │ def twin() -> Integer { stepped(4) }
    │                         ━━━━━━━━━━ a model implicit more than one module answers
    │
    ╰ note: `twin` is refused with ModelAmbiguous, as its expectation states
 
 error[ModelAmbiguous]: more than one module in scope answers the model implicit `s` this call to `fromZero` omits: `Up` and `Tens`; supply the one meant as `fromZero[.s = …](…)`
-   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:62:29
+   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:65:29
    │
-62 │ def manifest() -> Integer { fromZero() }
+65 │ def manifest() -> Integer { fromZero() }
    │                             ━━━━━━━━━━ a model implicit more than one module answers
    │
    ╰ note: `manifest` is refused with ModelAmbiguous, as its expectation states
 
 error[ModelUnanswered]: no module in scope answers the model implicit `s` this call to `fromText` omits at the types its arguments force: `Up` and `Tens` do not; supply one as `fromText[s = …](…)`
-   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:71:30
+   ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:74:30
    │
-71 │ def textTally() -> Integer { fromText() }
+74 │ def textTally() -> Integer { fromText() }
    │                              ━━━━━━━━━━ a model implicit no module answers
    │
    ├ note: `textTally` is refused with ModelUnanswered, as its expectation states

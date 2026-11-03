@@ -13,12 +13,12 @@
 # `kind:epic` of its steps (#2902), the issue stating what the witness still
 # needs (#2526). A partial row whose exemplar is a source has its own,
 # `corpus/ledger/features/<id>.gandr` (#2635), opening with a head of `///`
-# lines: the row's `id`, a `/// Implemented:` line, and a
-# `/// Not implemented:` line naming an open issue that owes the rest, or the
-# comment shape's references line `/// - see: #n — not implemented: <what>`
-# (crates/surface-corpus/README.md § Comments, #2918). The shared sources it
-# was drawn from stay in `corpus`. Every finding is printed before the gate
-# fails.
+# lines: the row's `id`, a `/// Implemented:` line, a `/// Not implemented:`
+# line stating the rest, and a `/// - owes: #n` references line naming an
+# open issue that owes it (crates/surface-corpus/tests/comments/prose.rs,
+# #4900).
+# The shared sources it was drawn from stay in `corpus`. Every finding is
+# printed before the gate fails.
 #
 # The issues the rows rest on are read through `gh` in one GraphQL query of
 # aliases, a hundred issues a request (#4263): a check that read each issue
@@ -125,7 +125,7 @@ numbers=$({
     own=corpus/ledger/features/$id.gandr
     [[ $exemplar == "$own" && -f $own ]] || continue
     awk '/^\/\/\// { print; next } { exit }' "$own" \
-      | grep -m1 -E '^/// (Not implemented: |- see: #[0-9]+ — not implemented: )' \
+      | grep -E '^/// - owes: #[0-9]+' \
       | grep -oE '#[0-9]+' || true
   done < <(sqlite3 -separator '|' "$db" "
     SELECT id, exemplar FROM feature
@@ -158,18 +158,19 @@ while IFS='|' read -r id exemplar; do
   fi
   [[ -f $own ]] || continue
   head=$(awk '/^\/\/\// { print; next } { exit }' "$own")
-  owed=$(grep -m1 -E '^/// (Not implemented: |- see: #[0-9]+ — not implemented: )' <<< "$head" || true)
+  owed=$(grep -E '^/// - owes: #[0-9]+' <<< "$head" || true)
   missing=()
   grep -qF "\`$id\`" <<< "$head" || missing+=("the row's id, \`$id\`")
   grep -q '^/// Implemented: ' <<< "$head" || missing+=('a `/// Implemented:` line')
-  [[ -n $owed ]] || missing+=('a `/// Not implemented:` line or a `/// - see: #n — not implemented:` line')
+  grep -q '^/// Not implemented: ' <<< "$head" || missing+=('a `/// Not implemented:` line')
+  [[ -n $owed ]] || missing+=('a `/// - owes: #n` line')
   if [[ -n $owed ]]; then
     owing=
     for number in $(grep -oE '#[0-9]+' <<< "$owed" | tr -d '#'); do
       read_issue "$number"
       if [[ ${issue[$number]} == OPEN$'\t'* ]]; then owing=$number; break; fi
     done
-    [[ -n $owing ]] || missing+=('an open issue on its not-implemented line that owes the rest')
+    [[ -n $owing ]] || missing+=('an open issue on a `/// - owes:` line that owes the rest')
   fi
   for lack in "${missing[@]}"; do
     printf '%s: the head of `%s` lacks %s (#2635)\n' "$id" "$own" "$lack" >&2

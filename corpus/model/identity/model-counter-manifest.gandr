@@ -1,5 +1,5 @@
 // A model whose sorts are manifest where a model of its theory is asked
-// (#2120): a model type fixing sorts of a theory takes one forgetting map
+// : a model type fixing sorts of a theory takes one forgetting map
 // from `Model(T) with sort C = x` to `Model(T)`, at every carrier `x`, which
 // puts each fixed sort back as the field it is in the theory's record. The
 // checker applies it where the one model stands at the other, solving `x`
@@ -7,13 +7,20 @@
 // family in the carrier, so a manifest model carried along an equivalence of
 // carriers is read alike once forgotten. A model fixing some of its theory's
 // sorts takes the map putting back those alone, every other sort staying the
-// field it is (#2132). A model type may fix a sort to another model's carrier,
-// `with sort C = a.C`, the two then sharing it (#2131), and so may one fixing
-// another of its sorts, reading a sort the other leaves a field (#2158). An
+// field it is. A model type may fix a sort to another model's carrier,
+// `with sort C = a.C`, the two then sharing it, and so may one fixing
+// another of its sorts, reading a sort the other leaves a field. An
 // operation is read off a model's binder as a sort is, `a.incr` the step
 // `a`'s record holds at `a`'s carrier, whether the carrier is a field or
-// manifest (#2246). An ascription `(m : Model(Counter))` states the crossing,
-// and the explicit twin writes the map out (#2130).
+// manifest. An ascription `(m : Model(Counter))` states the crossing,
+// and the explicit twin writes the map out.
+//
+// - see: #2120
+// - see: #2132
+// - see: #2131
+// - see: #2158
+// - see: #2246 — `stepOwn`, `stepZero`, `stepManifest`
+// - see: #2130
 
 // The counter, counting up and down modulo three, the negation between the
 // counts, and `observe`, which reads any counter.
@@ -134,7 +141,7 @@ pub def observeShared(a : Model(Counter), b : Model(Counter) with sort C = a.C) 
 def observedSharedUp() -> Integer { observeShared(upModel, upManifest) }
 
 /// A count of a counter stepped and read by the counter's own operations,
-/// read off its binder: `a.incr` steps a count of `a` (#2246).
+/// read off its binder: `a.incr` steps a count of `a`.
 def stepOwn(a : Model(Counter), c : a.C) -> Integer {
   let i = a.incr;
   let r = a.read;
@@ -146,7 +153,7 @@ def stepOwn(a : Model(Counter), c : a.C) -> Integer {
 def ownUp() -> Integer { stepOwn(upModel, Up.zero) }
 
 /// A counter stepped once from its zero and read, by the operations read off
-/// its binder (#2246).
+/// its binder.
 def stepZero(a : Model(Counter)) -> Integer {
   let z = a.zero;
   let i = a.incr;
@@ -163,7 +170,7 @@ def selectedAlike() -> Path(Integer, stepZero(upModel), stepZero(downModel)) {
 
 /// A manifest counter's zero, stepped and read by its own operations: its
 /// carrier is no field, so the record is keyed by the operations, and
-/// `a.zero` is the zero it holds (#2246).
+/// `a.zero` is the zero it holds.
 def stepManifest(a : Model(Counter) with sort C = Unit + (Unit + Unit)) -> Integer {
   let z = a.zero;
   let i = a.incr;

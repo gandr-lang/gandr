@@ -1,6 +1,9 @@
 /// `rule-conditions`: Conditions on a rule.
 /// Implemented: a rule's condition read over its variables, a freshness condition `where a # t`, overlaps decided under the condition they compose, and rules under a row of theories deciding overlaps in the meet of their rows.
-/// Not implemented: a model owing a law under a row only where the row holds: today it owes it in every row; #2466 owes it.
+/// Not implemented: a model owing a law under a row only where the row holds: today it owes it in every row.
+///
+/// - owes: #2466
+/// - see: #1934
 // An atom named inside the abstraction that binds it (Fernández and Gabbay,
 // _Nominal rewriting_, I&C 2007, § 2; Pitts, _Nominal Sets_, CUP 2013, § 4).
 // Inside `bind a . t` the name `a` is the atom `a`, and outside it a variable.
@@ -14,7 +17,7 @@
 // to their abstractions' new places. Such a rule's variable is a hole over the
 // atoms it may name, so two rules' overlap is decided under the condition it
 // composes. A rule matching a variable both under an abstraction and beside it
-// is not decided yet (#1934): `pathological/desc/atom-occurrence.gandr`.
+// is not decided yet: `pathological/desc/atom-occurrence.gandr`.
 
 /// A send on a restricted channel, which no process outside the restriction
 /// can receive: the process never moves, so it is the inert one. The checker

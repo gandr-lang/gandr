@@ -1,10 +1,10 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/modules/functor-mistyped.gandr:24:1
+   ╭▸ corpus/pathological/modules/functor-mistyped.gandr:23:1
    │
-11 │ module Integral :> #{ type T, zero : Integer, next : T => T, read : T => Integer } where {
+10 │ module Integral :> #{ type T, zero : Integer, next : T => T, read : T => Integer } where {
    │                                      ─────── the type it synthesises
    ┆
-24 │ module Mistyped = MkCounter(Integral);
+23 │ module Mistyped = MkCounter(Integral);
    │ ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    │ │
    │ its type does not convert: expected `Integral.T`, found `Integer`
@@ -14,12 +14,12 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/modules/functor-mistyped.gandr:11:38
+   ╭▸ corpus/pathological/modules/functor-mistyped.gandr:10:38
    │
-11 │ module Integral :> #{ type T, zero : Integer, next : T => T, read : T => Integer } where {
+10 │ module Integral :> #{ type T, zero : Integer, next : T => T, read : T => Integer } where {
    │                                      ─────── the type it synthesises
    ┆
-24 │ module Mistyped = MkCounter(Integral);
+23 │ module Mistyped = MkCounter(Integral);
    │ ────────────────────────────────────── the type it is checked against
    │
    ├ note: `seed` is refused with TypeMismatch, as its expectation states

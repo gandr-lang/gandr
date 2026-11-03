@@ -1,8 +1,10 @@
 // A dependent arrow whose codomain ignores its binder is the plain arrow
-// (#577). A family applied at its binder is a dependent codomain until the
+// . A family applied at its binder is a dependent codomain until the
 // family is read; a family that reads to one type at every argument makes
 // the function type over it the arrow to that type, in both directions
 // (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984).
+//
+// - see: #577 — `viaArrow`
 
 // The naturals.
 import "../data/data-base.gandr";
@@ -17,7 +19,7 @@ def always(n : Nat) -> -F Type { return Nat }
 def idAlways(x : Nat) -> -F always(x) { return x }
 
 /// The same function at the plain arrow: `always(x)` reads to `Nat`, which
-/// ignores `x`, so the dependent arrow is the arrow to `Nat` (#577).
+/// ignores `x`, so the dependent arrow is the arrow to `Nat`.
 @[ checks ]
 def viaArrow : +U (Nat -> -F Nat);
 def viaArrow = idAlways;

@@ -1,7 +1,10 @@
 /// `theory-include`: Theory inclusion.
 /// Implemented: a theory including another with the morphism kept, imported includes, manifest sorts, and the reduct `T.S` applied by the checker where a model of `S` is asked.
-/// Not implemented: the printer writing the sugared reduct and hover naming it; the union's critical pairs are refused by name; #2714 owes it.
-// Theory inclusion (#738): `include` extends a presentation by another's
+/// Not implemented: the printer writing the sugared reduct and hover naming it; the union's critical pairs are refused by name.
+///
+/// - owes: #2714
+/// - see: #738
+// Theory inclusion: `include` extends a presentation by another's
 // members, the included ones first, and keeps the inclusion beside the
 // value. A monoid is a semigroup with a unit; two extensions of the
 // semigroup included together meet along it, so the result has one carrier

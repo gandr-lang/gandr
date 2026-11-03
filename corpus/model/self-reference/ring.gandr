@@ -2,6 +2,9 @@
 // never by address, so it moves and copies as any value and every link
 // reads. A heap whose locations are never observed hides its symmetries
 // (Sterling, Gratzer and Birkedal, CSL 2024, doi:10.4230/LIPIcs.CSL.2024.19).
+//
+// - see: #1183 — `ring`
+// - see: #1481 — `ring`
 
 // The lists.
 import "../data/data-base.gandr";
@@ -18,8 +21,8 @@ def rec node(nodes : List(Integer), i : Integer) -> Integer {
 }
 
 /// A ring of three nodes, each naming the next by its index: four links from
-/// the first land on the second (#1183). The walk is a loop, so the row
-/// states `Partial` (#1481).
+/// the first land on the second. The walk is a loop, so the row
+/// states `Partial`.
 @[ runs("1") ]
 def ring() -> [Partial] Integer {
   var i = 0;

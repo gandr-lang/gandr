@@ -8,6 +8,8 @@
 // not state yet: `../../pathological/effects/state-model.gandr`. A model is
 // a record, so one carried along an equivalence of states is a model again,
 // its `get` conjugated by the equivalence.
+//
+// - see: #2421 — `carried`
 
 // The theories `State.Eff` and `StatePutPut`.
 import "./state.gandr";
@@ -108,5 +110,5 @@ def putGet(m : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C =
 def direct() -> Integer { putGet(passing) }
 
 /// Through the carried model, where put-get holds as in any model. It runs to
-/// `11` once the machine transports along `put`'s curried function (#2421).
+/// `11` once the machine transports along `put`'s curried function.
 def carried() -> Integer { putGet(negated) }

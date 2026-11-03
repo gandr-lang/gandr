@@ -1,11 +1,14 @@
-// The refusals of implicit parameters (#315): a call omitting an implicit
+// The refusals of implicit parameters: a call omitting an implicit
 // nothing determines, one whose only solution names a binder of an
 // argument's own lambda, a call whose argument and expected type disagree on
-// one (#1216), an implicit written among the parentheses, a resident naming
+// one, an implicit written among the parentheses, a resident naming
 // no implicit, a use standing as a value with an implicit unsupplied, a
 // supply standing as a value whose implicit, once the supply abstracts the
 // explicit parameter before it, holds no value of that parameter, and a
 // telescope whose types mention each other.
+//
+// - see: #315
+// - see: #1216
 
 // `same`, the identity at a type supplied by name, `twice`, whose combination
 // is implicit, `chosen`, whose implicit's type names its explicit parameter,

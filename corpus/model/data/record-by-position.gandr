@@ -1,7 +1,9 @@
 // A record whose fields depend on nothing, taken apart by position: each
 // binder is the field the record type writes in its place, as at a dependent
-// record (`sigma-pair.gandr`). Before #1874 the pattern was read as the split
-// of an eager product and refused.
+// record (`sigma-pair.gandr`). Before the fix the pattern was read as the
+// split of an eager product and refused.
+//
+// - see: #1874 — a plain record taken apart by position
 
 /// The width of a band, its bounds bound by position.
 def width(band : #{low : Integer, high : Integer}) -> Integer {

@@ -9,9 +9,9 @@
 // states. Each turns to `checks` as its rung lands, and the source then moves
 // to the model root.
 //
-// - see: #3484 — not implemented: the empty match at an indexed family, for
+// - owes: #3484 — the empty match at an indexed family, for
 //   `absurdFin`
-// - see: #3515 — not implemented: injectivity, for `lookup`
+// - owes: #3515 — injectivity, for `lookup`
 // - see: #3481 — the spike that wrote these programs
 
 // The naturals the bounds count in.

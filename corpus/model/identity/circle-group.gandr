@@ -9,6 +9,14 @@
 // Out of reach by design: `ΩS¹≡ℤ`, the loops equal to the integers as types,
 // needs univalence; `isSetΩS¹` and `toPropElim` need the h-level ladder;
 // `basedΩS¹ x ≡ ℤ` at every point needs equivalences as structure.
+//
+// - see: #422 — `spinHom`
+// - see: #473 — `spinHom`
+// - see: #440 — `spinHom`
+// - see: #423 — `windHom`, `comm`
+// - see: #424 — `windHom`
+// - see: #4618 — `spunComm`
+// - see: #426 — `comm`
 
 // The circle, the integers, winding, spinning and the round trip `sect`.
 import "./circle-base.gandr";
@@ -31,9 +39,9 @@ def spinDown(n : Int) -> Path(Path(Circle, Base, Base), spin(P(n)), back(loop) �
 /// induction on the second summand. `spin` puts its new loop first where
 /// cubical's `intLoop` puts it last, so the law composes the spins the other
 /// way round, as the words compute: `Path.step(loop ∷ p, q)` is
-/// `loop ∷ Path.step(p, q)` (#422). At zero `spin(Z)` is a call that returns the
-/// empty word, and the composite over it runs that call first (#473); the
-/// composites the arms carry convert through their definitions (#440).
+/// `loop ∷ Path.step(p, q)`. At zero `spin(Z)` is a call that returns the
+/// empty word, and the composite over it runs that call first; the
+/// composites the arms carry convert through their definitions.
 def rec spinHom(
   a : Int,
   b : Int
@@ -51,8 +59,8 @@ def rec spinHom(
 /// `wind(q)` first because the sum descends its second summand:
 /// `Path.here(wind(q))` on the empty word, and the recursive call carried along
 /// `up` or `down`. The composite in its type is read off the parameters'
-/// written types (#423), and the kernel reads its endpoint
-/// `plus(wind(q), wind(p))` as the call it returns (#424).
+/// written types, and the kernel reads its endpoint
+/// `plus(wind(q), wind(p))` as the call it returns.
 def rec windHom(
   q : Path(Circle, Base, Base),
   p : Path(Circle, Base, Base)
@@ -66,7 +74,7 @@ def rec windHom(
 
 /// The spin of `plusComm`, written as the transport `Path.ap(spin, …)`
 /// derives: a static motive whose endpoints call the group's operations, each
-/// call the value it returns, as the kernel replays it (#4618).
+/// call the value it returns, as the kernel replays it.
 def spunComm(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
@@ -80,8 +88,8 @@ def spunComm(
 
 /// The loops commute (cubical's `comm-ΩS¹`): each composite is the spin of
 /// its winding by `sect`, the windings sum by `windHom`, and the sums commute
-/// by `plusComm`. Each lemma is read at its written result (#423), and the
-/// calls in the types stand as what they return (#426).
+/// by `plusComm`. Each lemma is read at its written result, and the
+/// calls in the types stand as what they return.
 def comm(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)

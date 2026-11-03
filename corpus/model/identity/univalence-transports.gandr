@@ -5,7 +5,9 @@
 // owed: two paths between types that transport alike are not one path, and a
 // record's inverses are not determined by its map without function
 // extensionality from a homotopy
-// (`pathological/identity/univalence-owed.gandr`, #520).
+// (`pathological/identity/univalence-owed.gandr`).
+//
+// - owes: #520 — `univalence`'s two laws
 
 // Univalence over the user universe: `fwdAlong`, `bwdAlong`, `idtoequiv`.
 import "./univalence.gandr";

@@ -1,32 +1,32 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/data/unfolded-arm.gandr:15:3
+   ╭▸ corpus/pathological/data/unfolded-arm.gandr:17:3
    │
-14 │   def callDropped(n : Nat) -> Path(Nat, double(Succ(n)), plusTwo(n)) {
+16 │   def callDropped(n : Nat) -> Path(Nat, double(Succ(n)), plusTwo(n)) {
    │   │               ┬                     ┬──────────────  ────────── an endpoint the point does not convert to
    │   │               │                     │
    │   │               │                     an endpoint the point does not convert to
    │ ┌─┘               checked against `(n : Nat) -> -F Path(Nat, double(Succ(n)), plusTwo(n))`; while checking the body of this function; binds n : Nat
    │ │
-15 │ │   Path.here(plusTwo(n))
+17 │ │   Path.here(plusTwo(n))
    │ │   ━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
-16 │ │ }
+18 │ │ }
    │ └─┘ checked against `(n : Nat) => Path(Nat, double(Succ(n)), plusTwo(n))`; while checking the body of this thunk
    │
    ├ note: `callDropped` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/data/unfolded-arm.gandr:21:3
+   ╭▸ corpus/pathological/data/unfolded-arm.gandr:23:3
    │
-20 │   def overshot(n : Nat) -> Path(Nat, double(Succ(n)), Succ(plusTwo(double(n)))) {
+22 │   def overshot(n : Nat) -> Path(Nat, double(Succ(n)), Succ(plusTwo(double(n)))) {
    │   │            ┬                     ┬──────────────  ──────────────────────── an endpoint the point does not convert to
    │   │            │                     │
    │   │            │                     an endpoint the point does not convert to
    │ ┌─┘            checked against `(n : Nat) -> -F Path(Nat, double(Succ(n)), Succ(plusTwo(double(n))))`; while checking the body of this function; binds n : Nat
    │ │
-21 │ │   Path.here(Succ(plusTwo(double(n))))
+23 │ │   Path.here(Succ(plusTwo(double(n))))
    │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
-22 │ │ }
+24 │ │ }
    │ └─┘ checked against `(n : Nat) => Path(Nat, double(Succ(n)), Succ(plusTwo(double(n))))`; while checking the body of this thunk
    │
    ├ note: `overshot` is refused with EndpointMismatch, as its expectation states

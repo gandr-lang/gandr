@@ -1,8 +1,10 @@
-// Including an imported theory (#1224): a theory is a named presentation a
+// Including an imported theory: a theory is a named presentation a
 // client imports, so `include` names a block of a source its source imports
 // unqualified as it names one of its own. The imported monoid is extended by
 // a chosen element; a model of the extension gives the monoid's members and
 // the element, and runs.
+//
+// - see: #1224
 
 // The semigroup and the monoid.
 import "./monoid.gandr";

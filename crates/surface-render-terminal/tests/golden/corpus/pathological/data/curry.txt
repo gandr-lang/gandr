@@ -1,40 +1,40 @@
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
-   ╭▸ corpus/pathological/data/curry.gandr:27:19
+   ╭▸ corpus/pathological/data/curry.gandr:28:19
    │
-25 │    def bad(b : Bad) -> Empty {
+26 │    def bad(b : Bad) -> Empty {
    │    │       ─ checked against `Bad -> -F Empty`; while checking the body of this function; binds b : Bad
    │ ┌──┘
    │ │
-26 │ │┌   match b {
-27 │ ││     MkBad(f) => f(b)
+27 │ │┌   match b {
+28 │ ││     MkBad(f) => f(b)
    │ ││                 ┬─┯─
    │ ││                 │ │
    │ ││                 │ not below the stage its recursion wants
    │ ││                 checked against `-F Empty`; while checking the argument of this application
-28 │ ││   }
+29 │ ││   }
    │ │└───┘ checked against `-F Empty`; while checking the body of this function; binds f : Bad => Empty
-29 │ │  }
+30 │ │  }
    │ └──┘ checked against `Bad => Empty`; while checking the body of this thunk
    │
    ├ note: `bad` is refused with StageNotBelow, as its expectation states
    ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
-   ╭▸ corpus/pathological/data/curry.gandr:36:23
+   ╭▸ corpus/pathological/data/curry.gandr:37:23
    │
-34 │    def smuggled(b : Bad) -> Empty {
+35 │    def smuggled(b : Bad) -> Empty {
    │    │            ─ checked against `Bad -> -F Empty`; while checking the body of this function; binds b : Bad
    │ ┌──┘
    │ │
-35 │ │┌   match b {
-36 │ ││     MkBad(f) => apply(f, b)
+36 │ │┌   match b {
+37 │ ││     MkBad(f) => apply(f, b)
    │ ││                 ┬─────┯────
    │ ││                 │     │
    │ ││                 │     not below the stage its recursion wants
    │ ││                 checked against `-F Empty`; while checking the argument of this application
-37 │ ││   }
+38 │ ││   }
    │ │└───┘ checked against `-F Empty`; while checking the body of this function; binds f : Bad => Empty
-38 │ │  }
+39 │ │  }
    │ └──┘ checked against `Bad => Empty`; while checking the body of this thunk
    │
    ├ note: `smuggled` is refused with StageNotBelow, as its expectation states

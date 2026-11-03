@@ -1,16 +1,20 @@
 /// `text-primitives`: Text, pattern and path primitives.
 /// Implemented: `string.append`, interpolation `"…${ e }…"`, `string.eq` behind `EqString`, and `string.lt` behind `OrdString`, run on both executors.
-/// Not implemented: string escaping and scanning, regular-expression extraction and path primitives; #318 owes it.
+/// Not implemented: string escaping and scanning, regular-expression extraction and path primitives.
+///
+/// - owes: #318
+/// - see: #1170 — `quotientOf`
+/// - see: #1106
 // One builtin of each namespace over its simplest values: negation, division
 // and remainder, a list's length and element, and string append, equality and
 // length. Each is reached by projection from its namespace, which the lowering
-// admits for the native primitives alone (#1170) and for no other builtin yet
-// (#1106), but where the definition's value is first a computation with no
+// admits for the native primitives alone and for no other builtin yet
+// , but where the definition's value is first a computation with no
 // stated type. Division, append and equality with their types stated check
 // and run.
 
 /// Integer division with its type stated, which checks; the namespace `int`
-/// qualifies the path, and the path answers for it (#1170).
+/// qualifies the path, and the path answers for it.
 @[ checks ]
 def quotientOf(c : Integer) -> Integer {
   let lead = int.div(c, 64);

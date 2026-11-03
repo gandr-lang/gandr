@@ -1,7 +1,10 @@
 // The twin of `../../model/sessions/dialogue-web.gandr`: a dialogue is
 // admitted when each endpoint's moves replay against its side of the
 // protocol, every send meets an agreeing receipt and the log records each
-// send before its receipt; each failure is refused at its move (#1214).
+// send before its receipt; each failure is refused at its move.
+//
+// - see: #1214 — `apart`, `misheard`, `foretold`, `answered`
+// - see: #2078 — `apartWebs`
 
 // The native session formers.
 import std.session (Dialogue);
@@ -16,13 +19,12 @@ module Ask where {
   type Asking = !String. end;
 }
 
-/// Reporting and handing off are different plays: no path joins them
-/// (#1214).
+/// Reporting and handing off are different plays: no path joins them.
 @[ refuses("EndpointMismatch") ]
 def apart : Path(Dialogue(Seat.SeatEnd), retiring, handedOff) = Path.here(retiring);
 
 /// Their webs differ as well: one is series-parallel and the other leaves a
-/// prime node (#2078).
+/// prime node.
 @[ refuses("EndpointMismatch") ]
 def apartWebs : Path(
   Web,
@@ -30,8 +32,7 @@ def apartWebs : Path(
   decompose(handedOff)
 ) = Path.here(decompose(retiring));
 
-/// A receipt that hears other than was sent has no send to match it
-/// (#1214).
+/// A receipt that hears other than was sent has no send to match it.
 @[ refuses("DialogueUnmatched") ]
 def misheard : Dialogue(Ask.Asking) = dialogue(
   left(sent("yes")),
@@ -40,7 +41,7 @@ def misheard : Dialogue(Ask.Asking) = dialogue(
   right(closed)
 );
 
-/// A receipt logged before its send is no order a recorder saw (#1214).
+/// A receipt logged before its send is no order a recorder saw.
 @[ refuses("DialogueInverted") ]
 def foretold : Dialogue(Ask.Asking) = dialogue(
   right(received("yes")),
@@ -49,8 +50,7 @@ def foretold : Dialogue(Ask.Asking) = dialogue(
   right(closed)
 );
 
-/// The left endpoint receiving where its protocol sends is off the protocol
-/// (#1214).
+/// The left endpoint receiving where its protocol sends is off the protocol.
 @[ refuses("RunNotAdmitted") ]
 def answered : Dialogue(Ask.Asking) = dialogue(
   left(received("yes")),

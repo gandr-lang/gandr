@@ -2347,8 +2347,11 @@ run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --t
 
 # The sentence rules that need a parse (#2919): a passive outside the stated
 # list, a past tense, a stack of four nouns, an `-ing` main verb and a
-# glossary word in another part of speech, over the corpus comments and the
-# crate READMEs; and the procedural form over the rendered diagnostics
+# glossary word in another part of speech, over the comments of every tracked
+# `.gandr` source and the crate READMEs. A comment also keeps a body's length,
+# semicolon and dash rules, a paragraph of at most five sentences, and no
+# path, issue or URL outside its `- see:` and `- owes:` lines (#4900). The
+# procedural form binds the rendered diagnostics
 # (crates/workflow-prose/README.md). spaCy parses under the venv these
 # tools pin; the crate decides. The debt is `corpus/prose.ledger`: a new
 # finding refuses, a fixed one leaves a stale line, and `--write` rewrites

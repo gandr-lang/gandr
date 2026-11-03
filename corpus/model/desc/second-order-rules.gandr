@@ -9,6 +9,8 @@
 // part in is found by pattern unification and joined in the second-order
 // reading (Mayr and Nipkow, _Higher-order rewrite systems and their
 // confluence_, TCS 192, 1998).
+//
+// - see: #2328 — `LetOverlap`
 
 /// ζ: `let` binds a term over its body, and its rule substitutes the bound
 /// term into the body.
@@ -41,7 +43,7 @@ theory LetBeside where {
 
 /// ζ beside a rule rewriting `let` at `zero()`: their left sides overlap at
 /// the root, the pair is found by pattern unification, and both reducts are
-/// `t(zero())` (#2328).
+/// `t(zero())`.
 theory LetOverlap where {
   sort Tm : Type+;
   oper zero : () --> Tm;

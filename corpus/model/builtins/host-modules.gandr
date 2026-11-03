@@ -1,9 +1,11 @@
 // The host modules `fs`, `path` and `env` reach the file system, paths and
 // the environment from a block. The lowering admits no member selection on a
-// module yet (#1106).
+// module yet.
+//
+// - see: #1106 — `tour`
 
 /// A file written, read back, globbed and stated in a fresh directory, beside
-/// the working directory, the tracked files and the search path (#1106).
+/// the working directory, the tracked files and the search path.
 @[ refuses("OutOfFragment.projection_expression") ]
 def tour() -> -F #{content : String, name : String, ext : String, kind : String} {
   let dir = fs.tempdir();

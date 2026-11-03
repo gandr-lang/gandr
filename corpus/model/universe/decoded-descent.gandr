@@ -8,8 +8,7 @@
 // code itself, so its descent is the list's and no descent of the code, and
 // the recursion on it is handed to a function staged on the lists. Written
 // directly, the tail call at the same code, and the stage a decode would need
-// to carry, are refused in `../../pathological/universe/decoded-descent.gandr`
-// (#2862).
+// to carry, are refused in `../../pathological/universe/decoded-descent.gandr`.
 
 // The naturals, their addition and the lists.
 import "../data/data-base.gandr";

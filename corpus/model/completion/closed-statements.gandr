@@ -1,6 +1,8 @@
 // The target's completion reaped before the cancellation's, every close
 // written as a statement: a block ending in `close(e);` closes `e` and returns
-// the unit, as one ending in `close(e)` does (#1205).
+// the unit, as one ending in `close(e)` does.
+//
+// - see: #1205
 
 // The ring's protocol and its entries.
 import "./ring-base.gandr";

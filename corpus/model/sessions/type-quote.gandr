@@ -1,7 +1,10 @@
 // A type written where an expression stands, quoted as `type(T)`: an
 // expression reads a receive's `?` as a hole and a labelled sum's `+{` as an
 // injection, so the quote is the one spelling of such a type as an argument,
-// as it is spelled bare in a signature (#839).
+// as it is spelled bare in a signature.
+//
+// - see: #839
+// - see: #1728 — `run_over_binder`
 
 // The native session formers.
 import std.session (Run);
@@ -31,7 +34,7 @@ def protocol : Flow(Type, Seat.SeatEnd, ?(Seat.Dispatch). mu turn. +{
 
 /// A run's protocol may read the binder of the motive it stands in, where a
 /// quote may not: a run stays on the checker's side, so its payloads are no
-/// codes the kernel forms, and the run moves along a path (#1728).
+/// codes the kernel forms, and the run moves along a path.
 def run_over_binder(served : Run(?(Seat.Dispatch). end)) -> Run(?(Seat.Dispatch). end) {
   Path.walk(fun (X) { Run(type(?X. end)) }, Path.here(Seat.Dispatch), served)
 }

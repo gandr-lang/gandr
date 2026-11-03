@@ -2,6 +2,8 @@
 // run inside a thunk that may run it other than once, write back to a string
 // no hold holds, lend a string already lent, or read a string after a match
 // one of whose arms took it. A mode word is a receiver's alone.
+//
+// - see: #1488 — `readAfterTakenInOneArm`
 
 // The lists; the byte lists; the string's methods.
 import "../../model/data/data-base.gandr";
@@ -47,8 +49,7 @@ def pushedWhileRead() -> Integer {
 }
 
 /// A string read after a match one of whose arms took it: the match ends the
-/// hold on the path through that arm, so nothing after it reads the string
-/// (#1488).
+/// hold on the path through that arm, so nothing after it reads the string.
 @[ refuses("HeldConsumed") ]
 def readAfterTakenInOneArm(t : Repr) -> Integer {
   var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));

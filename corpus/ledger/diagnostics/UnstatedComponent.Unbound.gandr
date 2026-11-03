@@ -1,7 +1,9 @@
 /// `UnstatedComponent.Unbound`: a model component the derivation cannot state: a stated law naming a variable its statement does not bind once.
 ///
-/// The theory refuses the law at its member (#4115), and the model derived
+/// The theory refuses the law at its member, and the model derived
 /// from it refuses at its signature.
+///
+/// - see: #4115
 @[ refuses("UnstatedComponent.Unbound") ]
 theory Loose where {
   sort Carrier : Type;

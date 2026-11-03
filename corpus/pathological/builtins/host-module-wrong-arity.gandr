@@ -1,7 +1,9 @@
 // A host module's operation takes the arguments it declares: `fs.write` takes
 // a path and the text to write. The lowering admits no member selection on a
-// module yet (#1106), so that refusal stands in front of this one.
+// module yet, so that refusal stands in front of this one.
+//
+// - see: #1106 — `written`
 
-/// `fs.write` handed a path alone (#1106).
+/// `fs.write` handed a path alone.
 @[ refuses("OutOfFragment.projection_expression") ]
 def written = fs.write("/tmp/only-a-path");

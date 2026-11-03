@@ -1,8 +1,10 @@
 // A receive's payload written in parentheses reads as the payload whatever
-// type it holds, as a send's does, a sum among them (#1229). The receive and
+// type it holds, as a send's does, a sum among them. The receive and
 // the unknown type share the tile `?`, and the parenthesis after it settles
 // the receive: the unknown type is a whole type, and no type form goes on
 // with `(` after one.
+//
+// - see: #1229
 
 /// A seat that receives an order, a sum written in place, and closes. The
 /// desk sends the order before the seat receives it, and the seat closes

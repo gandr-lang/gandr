@@ -1,8 +1,7 @@
 // A constructor written as a call's argument takes its classifier from the
 // parameter it is passed to: the type the called declaration writes for that
 // parameter, each parameter before it the type names replaced by the argument
-// written for it. A list passed to a function then needs no annotation
-// (#1833, #1876).
+// written for it. A list passed to a function then needs no annotation.
 
 // The lists.
 import "./data-base.gandr";
@@ -19,7 +18,7 @@ def rec listLength(xs : List(Integer)) -> Integer {
 }
 
 /// Two integers passed bare: the list is a `List(Integer)` by the parameter
-/// it is passed to, the inner one by its field (#1833).
+/// it is passed to, the inner one by its field.
 @[ runs("2") ]
 def pairLength() -> Integer { listLength(Cons(1, Cons(2, Nil))) }
 
@@ -43,7 +42,7 @@ def rec tally(c : Color, cs : List(Color)) -> Integer {
   }
 }
 
-/// The second argument classified by the second parameter (#1833).
+/// The second argument classified by the second parameter.
 @[ runs("3") ]
 def colours() -> Integer { tally(Red, Cons(Red, Cons(Green, Cons(Blue, Nil)))) }
 
@@ -59,7 +58,7 @@ def rec anyLength(a : Type, xs : List(a)) -> Integer {
 }
 
 /// A list passed where `xs : List(a)` takes it at `a = Integer`: its type
-/// reads the argument before it (#1876).
+/// reads the argument before it.
 @[ runs("1") ]
 def one() -> Integer { anyLength(Integer, Cons(1, Nil)) }
 

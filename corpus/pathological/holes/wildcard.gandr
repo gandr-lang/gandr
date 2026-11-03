@@ -1,6 +1,8 @@
-// The refusals of the wildcard (#528): a wildcard nothing forces, one forced
+// The refusals of the wildcard: a wildcard nothing forces, one forced
 // apart from the type its caller expects, and one where a computation is
 // read.
+//
+// - see: #528
 
 // `idAt`, the identity at a type passed explicitly.
 import "../../model/holes/wildcard.gandr";

@@ -1,6 +1,8 @@
 /// `multi-output-data`: Multi-output data constructors.
 /// Implemented: at grade ω a constructor that writes an output group reads as one port per output, an ordinary constructor over the shared inputs. `C(x).l` constructs a port and matches it, coverage counts each port, and a block's rules name ports. `C(x)` is the record of the ports, and a parameterised family's record takes the type its position states.
-/// Not implemented: #4288 tracks the grade-1 reading, whose values are circuits.
+/// Not implemented: the grade-1 reading, whose values are circuits.
+///
+/// - owes: #4288 — the grade-1 reading
 // A shared subterm written once: `Share(e)` has two outputs, and each is a
 // value of `Expr` in its own right. The ports share the input `e`, so the
 // size below counts the shared subterm from either side.

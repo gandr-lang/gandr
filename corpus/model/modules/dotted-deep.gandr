@@ -1,6 +1,8 @@
-// #2687: a dotted name more than one step deep declares in the modules each
+// A dotted name more than one step deep declares in the modules each
 // segment of its prefix names, a lowercase segment among them below the top,
 // and a path as deep reads it.
+//
+// - see: #2687
 
 /// A shape three modules deep.
 theory Deep.Mid.Low.Shape where {

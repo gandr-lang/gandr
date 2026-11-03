@@ -4,7 +4,9 @@
 // left. The loop is a fold whose accumulator is the slot (Hutton, "A tutorial
 // on the universality and expressiveness of fold", _Journal of Functional
 // Programming_ 9(4), 1999). A loop may run forever, so each function states
-// `Partial` in its row (#1481).
+// `Partial` in its row.
+//
+// - see: #1481
 
 /// A count held at three and taken down by one on each pass: the condition
 /// reads the value the pass before wrote back, so the loop stops at zero.

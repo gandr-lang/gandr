@@ -11,8 +11,8 @@
 // that no data formed.
 //
 // - see: `model/desc/theory-terms.gandr` — the unital magma's terms
-// - see: #4150 — not implemented: terms over several sorts
-// - see: #4105 — not implemented: a stated law as a cell of the terms
+// - owes: #4150 — terms over several sorts
+// - owes: #4105 — a stated law as a cell of the terms
 
 /// A monoid's signature: its associativity orients to no decreasing rule.
 theory Mon where {

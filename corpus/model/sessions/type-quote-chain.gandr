@@ -1,7 +1,9 @@
 // A product or a sum written as a chain where an expression stands, quoted as
 // `type(T)`: an expression reads `*` and `+` as operators over the
 // components, so the quote is the chain's one spelling as an argument, as it
-// is spelled bare in a signature (#1127).
+// is spelled bare in a signature.
+//
+// - see: #1127
 
 /// The stationary flow at a product of two components.
 def quoted_product : Flow(Type, Unit * Integer, Unit * Integer) = Flow.stay(type(Unit * Integer));

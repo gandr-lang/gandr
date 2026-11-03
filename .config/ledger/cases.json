@@ -21,6 +21,6 @@
     "name": "issues read closed are verdicts on their rows",
     "answers": { "1": "CLOSED\ttrue", "2": "CLOSED\tfalse" },
     "exit": 1,
-    "stderr": "gap: an implemented or partial row naming no corpus witness and no exemplar names no open kind:gap or kind:epic issue (issue: #1); name a witness, or file the gap stating what it needs\nowing: the head of `corpus/ledger/features/owing.gandr` lacks an open issue on its not-implemented line that owes the rest (#2635)\nledger check FAILED"
+    "stderr": "gap: an implemented or partial row naming no corpus witness and no exemplar names no open kind:gap or kind:epic issue (issue: #1); name a witness, or file the gap stating what it needs\nowing: the head of `corpus/ledger/features/owing.gandr` lacks an open issue on a `/// - owes:` line that owes the rest (#2635)\nledger check FAILED"
   }
 ]

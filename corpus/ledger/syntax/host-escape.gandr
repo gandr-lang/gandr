@@ -1,4 +1,6 @@
 /// `host_escape`: a host expression escaped into a shell block.
-/// The checker does not reach this form yet; #1057 tracks it.
+/// The checker does not reach this form yet.
+///
+/// - owes: #1057
 @[ refuses("OutOfFragment.shell_block") ]
 def printed = #!{ printf '%s' $(answer); } ;

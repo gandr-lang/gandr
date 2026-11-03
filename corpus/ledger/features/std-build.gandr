@@ -1,11 +1,16 @@
 /// `std-build`: The standard library's manifest theories.
-/// Implemented: `std.build`, `library/std/src/build.gandr`, states `Versioned` and `Toolchain`, which `Project` joins once, `Presentation`, `Gandr.Package`, including `Project` and `Presentation`, and `Gandr.Workspace`, including `Project`, which a package source's and a workspace's models implement, `Gandr.Module`, which no source models yet, and no type of a dependency, which an import's coordinate names (#4527); every field of a package but what it asks of the toolchain, its `name`, `version`, `authors`, `licence`, `documentation`, `endpoint` and `spelling`, is inert, read only by the manifest step and another inert field (#3029), while `gandr`, `features` and `systems` are content (#3135); a source under any root imports it by name, `import std.build (Gandr);`.
-/// Not implemented: `authors`, `features` and `systems` are no lists, which #2993 owes.
+/// Implemented: `std.build`, `library/std/src/build.gandr`, states `Versioned` and `Toolchain`, which `Project` joins once, `Presentation`, `Gandr.Package`, including `Project` and `Presentation`, and `Gandr.Workspace`, including `Project`, which a package source's and a workspace's models implement, `Gandr.Module`, which no source models yet, and no type of a dependency, which an import's coordinate names; every field of a package but what it asks of the toolchain, its `name`, `version`, `authors`, `licence`, `documentation`, `endpoint` and `spelling`, is inert, read only by the manifest step and another inert field, while `gandr`, `features` and `systems` are content; a source under any root imports it by name, `import std.build (Gandr);`.
+/// Not implemented: `authors`, `features` and `systems` are no lists.
+///
+/// - owes: #2993
+/// - see: #3135
+/// - see: #3029 — `Package`
+/// - see: #4527
 
 import std.build (Gandr);
 
 /// A package's model, every field but what it asks of the toolchain inert:
-/// only the manifest step reads them (#3029).
+/// only the manifest step reads them.
 pub module Package : Model(Gandr.Package) where {
   /// The package's name, which the manifest records it by.
   def name = "probe";

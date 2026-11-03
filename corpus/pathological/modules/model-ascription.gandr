@@ -1,7 +1,9 @@
-// What sealing a module by a theory hides (#746): outside, the sealed
+// What sealing a module by a theory hides: outside, the sealed
 // counter's carrier is abstract, so its operations take and give no
 // integer. `../../model/modules/model-ascription.gandr` runs the same
 // counter transparently.
+//
+// - see: #746
 
 /// A counter: a carrier, a start and a step.
 pub theory Counter where {

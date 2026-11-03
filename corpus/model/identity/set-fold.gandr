@@ -1,5 +1,5 @@
 // A fold into the paths of a set respects its type's rules however its arms
-// compose those paths (#427). The integers, presented by successor and
+// compose those paths. The integers, presented by successor and
 // predecessor with the two cancellations as rules, have no cells: two paths
 // between the same two integers are one path. So addition's commutativity,
 // whose arms run the recursive call through a lemma that nothing reduces,
@@ -10,6 +10,8 @@
 // circle's loops, which are no set's paths, is still held to its arms as
 // written. A set is the HoTT book's Definition 3.1.1: any two paths between
 // two of its points are one.
+//
+// - see: #427 — `plusCommAlong`
 
 // The circle and the presented integers with their steps.
 import "./circle-base.gandr";
@@ -68,7 +70,7 @@ def downAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
 /// Addition commutes, through `upAlong` and `downAlong` rather than
 /// `int-sum.gandr`'s `plusComm` written out. At `S(P(x))` the arms compute a
 /// chain through `flipP` and `flipS` against the call at `x`; both are paths
-/// in the integers between the same two sums, so they are one path (#427).
+/// in the integers between the same two sums, so they are one path.
 def rec plusCommAlong(a : Int, b : Int) -> Path(Int, plus(a, b), plus(b, a)) {
   match b {
     Z => Path.back(plusZ(a)),

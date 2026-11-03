@@ -1,7 +1,9 @@
 /// A wheel whose fed-back port `state` reaches `zip` bare: no observation of
 /// `Nat` reads it, so the loop `spin` closes is not guarded and the rule is
-/// refused at that occurrence (#1031). The guarded twin is
+/// refused at that occurrence. The guarded twin is
 /// `model/circuit/circuit-feed-wheel.gandr`.
+///
+/// - see: #1031
 @[ refuses("BareFeedback") ]
 theory Wheel where {
   sort Nat : Type;

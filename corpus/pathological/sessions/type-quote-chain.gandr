@@ -1,6 +1,8 @@
 // A product written as a chain where an expression stands, unquoted: an
 // expression reads `*` as multiplication of the two components, which are
-// codes, not numbers (#1127).
+// codes, not numbers.
+//
+// - see: #1127
 
 /// The stationary flow at a product, its argument written bare.
 @[ refuses("TypeMismatch") ]

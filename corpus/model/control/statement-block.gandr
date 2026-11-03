@@ -3,13 +3,15 @@
 // synthesises that type, as a bind does: an elimination whose principal
 // premise synthesises synthesises (Dunfield and Krishnaswami, "Bidirectional
 // Typing", ACM Computing Surveys 54(5), 2021, doi:10.1145/3450952).
+//
+// - see: #1374 — `statement`
 
 // Early exit's host interface.
 import std.process;
 
 /// An exit performed as a statement in a block a binder reads, the binder
 /// stating no type: the block synthesises its last computation's type, and
-/// the clause resumes the rest once (#1374).
+/// the clause resumes the rest once.
 @[ runs("0") ]
 def statement() -> Integer {
   handle c : std.process.Exit.Eff {

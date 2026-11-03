@@ -1,6 +1,8 @@
 /// `sized-atoms`: Width atoms and their literals.
 /// Implemented: `u32`, `u64`, `i32` and `i64` as base atoms apart from `Integer` and from one another, literals stating their width with a range-checked suffix, and each width's conversions to and from `Integer`.
-/// Not implemented: the `f32` atom and its literal; #2563 owes it.
+/// Not implemented: the `f32` atom and its literal.
+///
+/// - owes: #2563
 // Integers at a stated width: `u32`, `u64`, `i32` and `i64`, each an atom of
 // its own. A literal states its width with a suffix and its digits must fit
 // it, so no width is the integers and no width is another. A width converts

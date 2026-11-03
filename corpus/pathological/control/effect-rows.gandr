@@ -1,6 +1,8 @@
 // What `../../model/control/effect-rows.gandr` proves, refused: a row names
 // each interface once, and a row without an interface its computation
-// performs is not that computation's row (#2269).
+// performs is not that computation's row.
+//
+// - see: #2269
 
 // `peek` reads through `std.fs.Eff`; `once` states `Partial`.
 import "../../model/control/capability-attenuate.gandr";

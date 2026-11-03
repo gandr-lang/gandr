@@ -1,5 +1,8 @@
 // A function's parameter may be named as a type is, `A`, and is bound as any
-// other parameter: the types after it read `A` as that parameter (#1996).
+// other parameter: the types after it read `A` as that parameter.
+//
+// - see: #1996
+// - see: #2179 — `idTelescope`
 
 /// The identity at a type passed explicitly, the type named as a type.
 def idAt(A : Type, x : A) -> A { x }
@@ -17,5 +20,5 @@ def firstAt(A : Type, b : Type, x : A, y : b) -> A { x }
 def firstAtFive() -> Integer { firstAt(Integer, Unit, 5, unit) }
 
 /// `idAt`'s type as a telescope, its binder named as a type: the spelling a
-/// hover gives `idAt`, which reads back as its type (#2179).
+/// hover gives `idAt`, which reads back as its type.
 def idTelescope : (A : Type, A) => A = idAt;

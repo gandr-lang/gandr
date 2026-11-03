@@ -1,8 +1,7 @@
 // The refusal beside `../../model/modules/functor-pair.gandr`: an argument
 // component at another type than its parameter states is refused at the
 // witness that checks it. The attribute before the application states the
-// expectation of that witness; the witnesses that check keep the default
-// (#1274).
+// expectation of that witness; the witnesses that check keep the default.
 
 // The counter functor and its seed.
 import "../../model/modules/functor-pair.gandr";

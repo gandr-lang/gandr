@@ -1,6 +1,9 @@
 /// `indexed-sorts`: Dependent sorts in signatures.
 /// Implemented: sorts that other sorts or the host's types index, in a `theory` block and in `Model(S)`, each sort a function from its indices into the universe its classifier names: the value types at `Type`, the computation types at `Type[-]`; a client applies a model's family through the model's name.
-/// Not implemented: rules over indexed sorts; #522 owes it.
+/// Not implemented: rules over indexed sorts.
+///
+/// - owes: #522
+/// - see: #3051 — `kept`
 
 // The native finite lists.
 import std.list (List);
@@ -76,7 +79,7 @@ module Lists : Model(Carrier) where {
 }
 
 /// A client reaches the model's family through the model's name: `Lists.T`
-/// at `Integer` is the list of integers (#3051).
+/// at `Integer` is the list of integers.
 @[ checks ]
 def kept(xs : Lists.T(Integer)) -> List(Integer) { xs }
 

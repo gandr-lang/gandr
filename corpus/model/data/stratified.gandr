@@ -2,10 +2,12 @@
 // family standing to the left of an arrow, because the constructor gives that
 // occurrence a stage strictly below the node's — Guermond and Nadathur's
 // stratification read through the accessibility of Guo, Hagens, Kop and Vale
-// (#517). A case on a link reads its fields one stage below the link's, or at
+// . A case on a link reads its fields one stage below the link's, or at
 // a fresh stage for a link at none, so the test a link holds takes the chain
 // before it and never the link itself. What refuses is in
 // `../../pathological/data/curry.gandr`.
+//
+// - see: #517
 
 // The naturals the length counts in, and the two answers a test gives.
 import "./data-base.gandr";

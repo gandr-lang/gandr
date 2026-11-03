@@ -1,12 +1,14 @@
 // Tactics over goals: a splice `~t` stands where a value is read and runs
 // the tactic `t` at the goal the position holds, the binders in scope with
-// their types and the type the value is checked against (#2762). The checker
+// their types and the type the value is checked against. The checker
 // runs the tactic, judges the term it answers against the goal again and
 // fills the splice with it, so the kernel replays the filled declaration and
 // no tactic is trusted. Two tactics stand: `assumption`, the innermost binder
 // whose type is the goal's, and `intro(t)`, a function whose body is `t`'s
 // answer under the binder it introduces. What refuses is in
 // `../../pathological/metaprograms/tactics-over-goals.gandr`.
+//
+// - see: #2762
 
 /// The innermost integer in scope: `b`, which stands after `a`.
 def pick(a : Integer, u : Unit, b : Integer) -> Integer { ~assumption }

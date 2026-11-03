@@ -7,6 +7,9 @@
 // § 2); here the pair is a dependent record: the increment below its
 // specification at one postcondition and at every postcondition, and the
 // stopped program below the return specification at every postcondition.
+//
+// - see: #2773 — `incrSpecifiedEverywhere`, `incrSpecBare`
+// - see: #2751 — `doneSpecified`
 
 // `Either`, `StateOp` and `Prog`.
 import "../effects/tree.gandr";
@@ -56,14 +59,14 @@ def incrSpecified : #{
 /// The increment paired with evidence at every postcondition, the order of
 /// the transformers itself: the specification computes the successor before
 /// it calls `post`, the fold hands `post` the successor its store held, and
-/// the two read as one call (#2773).
+/// the two read as one call.
 def incrSpecifiedEverywhere : #{
   m : Prog(Either(StateOp, Void), Unit),
   meets : (post : (Unit, Integer) => Type, s : Integer, incrSpec(post, s)) => wp(m, post, s)
 } = (incrTree, fun (post) { fun (s) { fun (h) { h } } });
 
 /// The same evidence unpaired: the specification's run and the fold's both
-/// read as `post`'s call over the successor held (#2773).
+/// read as `post`'s call over the successor held.
 def incrSpecBare(
   post : (Unit, Integer) => Type,
   s : Integer,
@@ -76,7 +79,7 @@ def retSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s)
 
 /// The stopped program paired with evidence at every postcondition: both
 /// sides unfold to the postcondition's call `post(unit, s)`, and a definition
-/// unfolding to a variable's call converts with it (#2751).
+/// unfolding to a variable's call converts with it.
 def doneSpecified : #{
   m : Prog(Either(StateOp, Void), Unit),
   meets : (post : (Unit, Integer) => Type, s : Integer, retSpec(post, s)) => wp(m, post, s)

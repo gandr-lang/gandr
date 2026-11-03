@@ -1,7 +1,9 @@
 // The refusals beside `../../model/modules/phase.gandr`: a type member that
 // reads a module's or a parameter's value is refused by name at the value
 // (`PhaseDependence`). The attribute before the member states that refusal,
-// and it is reported once, at the member (#1087).
+// and it is reported once, at the member.
+//
+// - see: #1087
 
 // The sign and the point the model fixture defines.
 import "../../model/modules/phase.gandr";

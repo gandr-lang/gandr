@@ -1,7 +1,9 @@
 // A name spelled as a lexical class, `number` or `constructor`, is a name
 // wherever a name is read: a field, a parameter, a pattern's binder and the
-// variable that reads it back. Before #1863 a pattern read such a binder as a
-// token of the class, a malformed literal.
+// variable that reads it back. Before the fix a pattern read such a binder as
+// a token of the class, a malformed literal.
+//
+// - see: #1863 — a binder spelled as a lexical class, read as a name
 
 /// An integer wrapped under a field named `number`.
 data Wrap : Type where {

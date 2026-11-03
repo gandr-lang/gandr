@@ -1,20 +1,21 @@
 // A clause owes the rest of its scope exactly one end once that rest holds a
 // task's end. A function handed the rest could resume it twice or never, so
 // a continuation that owes an end is never handed on.
+//
+// - see: #1387 — `resume_stack`, `handed`
 
 // The task's protocol.
 import "../../model/cancellation/cancel-base.gandr";
 // Early exit's host interface.
 import std.process;
 
-/// Resumes the stack it is handed: a stack a parameter holds owes nothing
-/// (#1387).
+/// Resumes the stack it is handed: a stack a parameter holds owes nothing.
 def resume_stack(j : Stack(-F Unit, -F Unit)) -> Unit {
   j(unit)
 }
 
 /// A scope whose exit clause hands the rest to `resume_stack` while its task's
-/// end is open (#1387).
+/// end is open.
 @[ refuses("ContinuationAsValue") ]
 def handed() -> Unit {
   handle c : std.process.Exit.Eff {

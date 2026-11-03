@@ -3,6 +3,8 @@
 // there, so the boundary check refuses the binding instead of a crash
 // finding it. The binding the niche meets is beside, in
 // `../../model/specification/niche-realizability.gandr`.
+//
+// - see: #2555 — `derefMeets`
 
 // `Nat`.
 import "../../model/data/data-base.gandr";
@@ -24,7 +26,7 @@ def derefWp(w : Nat, q : (Nat, Nat, Heap) => Type, h : Heap) -> Type {
 }
 
 /// `Option<&int>` passed to `deref`: at null and the empty heap the niche
-/// holds, and `deref` asks what no heap gives (#2555).
+/// holds, and `deref` asks what no heap gives.
 @[ refuses("TypeMismatch") ]
 def derefMeets(w : Nat, h : Heap) -> (vOpt(vInt, w, h)) => derefWp(w, keptOpt, h) {
   match w {

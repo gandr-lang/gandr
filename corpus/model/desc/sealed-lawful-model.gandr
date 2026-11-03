@@ -1,6 +1,8 @@
 // A module sealed by a theory with a law, `:> Model(S)`: the law's member
 // is checked at the representation and crosses the kernel at the abstract
-// sort (#1073).
+// sort.
+//
+// - see: #1073
 
 /// A unital magma: a carrier, a unit, a product, and the left unit law.
 theory Unital where {

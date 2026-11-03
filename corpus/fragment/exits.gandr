@@ -1,3 +1,15 @@
+// Exits: `return` and `become` end a computation, each beside an elided twin
+// that leaves the keyword out.
+//
+// An elided exit is the same exit as the written one, so each pair checks,
+// runs or is refused alike. A dropped value, and an exit bound as a value, are
+// refused.
+//
+// The checker reads a body's last expression as its exit. It refuses a dropped
+// natural `ShapeMismatch`, and an exit bound by `let` `Unreachable`.
+//
+// - see: #1205 — `discarded`
+
 @[ checks, form(explicit) ]
 data Nat : Type where {
   | Zero : Nat
@@ -121,7 +133,7 @@ def sequenced_run(n : Nat) -> -F Nat {
 }
 
 /// A last statement's value is the block's unit, so a body answering a
-/// natural cannot end in one (#1205).
+/// natural cannot end in one.
 @[ refuses("ShapeMismatch") ]
 def discarded(n : Nat) -> -F Nat {
   let m = down(n);

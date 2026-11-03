@@ -1,30 +1,40 @@
-// `std.manifold`: the theories a site's file and a manifold's file are read
-// from. A site is one place a world runs at, its file declaring `module Site
-// : Model(Site)` and exporting it packed as `pub def site : Model(Site)`. A
-// manifold binds a program's worlds onto sites, its file declaring `module
-// Manifold : Model(Manifold)` beside the `placements` it lists. `gandr host
-// --site` and `gandr run --manifold` read them as the `--net-bind`,
-// `--net-secret` and `--world` flags they desugar to (#3374), the secret read
-// by its name (#3375). Neither enters the program's identity: a deployment
+// `std.manifold`: the theories a site's file and a manifold's file declare
+// models of. A site is one place a world runs at. Its file declares
+// `module Site : Model(Site)` and exports it packed as
+// `pub def site : Model(Site)`. A manifold binds a program's worlds onto
+// sites. Its file declares `module Manifold : Model(Manifold)` beside the
+// `placements` it lists.
+//
+// `gandr host --site` and `gandr run --manifold` read them as the
+// `--net-bind`, `--net-secret` and `--world` flags they desugar to. Each reads
+// the secret by its name. Neither enters the program's identity: a deployment
 // binds a program to places and never addresses it.
 //
-// A site's file may write beside its site one `offers [ … ] ;`, what the
-// site answers a world placed there with: a host interface by its name, and a
-// label bound to a model module the file declares. A program's world written
-// `world w requires [ … ] ;` is placed only at a site whose offer answers
-// each entry of the row, which `gandr check` of the manifold judges before
-// any process starts; a site writing no `offers` answers nothing (#3523).
+// A site's file may write beside its site one `offers [ … ] ;`. It names what
+// the site answers a world placed there with. That is a host interface by its
+// name, or a label bound to a model module the file declares. A site writing
+// no `offers` answers nothing.
+//
+// A manifold may place a world that writes `world w requires [ … ] ;` only at
+// a site whose offer answers each entry of the row. `gandr check` of the
+// manifold judges that before any process starts.
+//
+// - see: #3374
+// - see: #3375
+// - see: #3523
+// - see: #2993 — `Manifold`
 
-/// One place a world runs at: the key it proves, where it is reached, and the
-/// name of the key's secret. The hosting process reads the secret by that
-/// name through a model of `std.secret`'s `Secrets`; the file never holds it.
+/// One place a world runs at: the key it proves, the sockets a dialer reaches
+/// it at, and the name of the key's secret. The hosting process reads the
+/// secret by that name through a model of `std.secret`'s `Secrets`. The file
+/// never holds it.
 pub theory Site where {
   /// The public key the site proves, 64 hexadecimal digits.
   oper key : String;
-  /// The sockets the site binds and is dialled at, each `ip:port`, as one
-  /// line of `,`-separated entries until an operation's port can be a list
-  /// (#2993); empty when the site is found by its key alone, over multicast
-  /// DNS.
+  /// The sockets the site binds and a dialer reaches, each `ip:port`. They
+  /// form one line of `,`-separated entries until an operation's port can be
+  /// a list. Empty when a dialer finds the site by its key alone, over
+  /// multicast DNS.
   oper sockets : String;
   /// The name of the key's secret, which the hosting process reads as 64
   /// hexadecimal digits.
@@ -32,21 +42,21 @@ pub theory Site where {
 }
 
 /// The binding of a program's worlds onto sites: the program it deploys,
-/// beside the `placements` its file lists as `pub def placements :
-/// List(Placement)`, a definition of its own until an operation's port can be
-/// a list (#2993).
+/// beside the `placements` its file lists. The file lists them as
+/// `pub def placements : List(Placement)`, a definition of its own until an
+/// operation's port can be a list.
 pub theory Manifold where {
-  /// The program deployed: the path of its source, read from the manifold's
-  /// file.
+  /// The program the manifold deploys: the path of its source, as the
+  /// manifold's file writes it.
   oper artifact : String;
 }
 
 /// One world of the program bound to a site, the site's model as its file
 /// exports it: `At("far", far.site)`. The manifold imports each site's file,
-/// and a site is matched to its file by its key.
+/// and a site's key matches it to its file.
 pub data Placement : Type where {
-  /// The world `name` run as one process at the site.
+  /// The world `name` as one process at the site.
   | At : (name : String, site : Model(Site)) --> Placement
-  /// The world `name` run as `count` processes at the site.
+  /// The world `name` as `count` processes at the site.
   | Instances : (name : String, site : Model(Site), count : Integer) --> Placement
 }

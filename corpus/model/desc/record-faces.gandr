@@ -12,7 +12,7 @@
 //   a face named twice, refused
 // - see: `model/desc/shaped-signature.gandr` — a theory's `boundary` and its
 //   faces
-// - see: #4454 — not implemented: the extension type over a face
+// - owes: #4454 — the extension type over a face
 
 /// A server's configuration: the faces `secure` and `addr` meet at the port.
 type Config = #{host : String, port : Integer, tls : Bool} where {

@@ -1,6 +1,8 @@
 // An endpoint at `end` is dropped as it is closed: `drop(c)` is the end
 // action `close(c)` writes, admitted exactly where the endpoint's protocol
-// has ended (#1054).
+// has ended.
+//
+// - see: #1054
 
 /// The seat selects `done` and drops its end; the desk offers `done` and
 /// drops its own. The selection comes first, and the seat's drop sits beside

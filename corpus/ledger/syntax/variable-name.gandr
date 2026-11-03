@@ -1,4 +1,6 @@
 /// `variable_name`: a shell variable's name; today it is molded only inside a string's interpolation in a shell block.
-/// The checker does not reach this form yet; #1057 tracks it.
+/// The checker does not reach this form yet.
+///
+/// - owes: #1057
 @[ refuses("OutOfFragment.shell_block") ]
 def home = #!{ echo "${HOME}"; } ;

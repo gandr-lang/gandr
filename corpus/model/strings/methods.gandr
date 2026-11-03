@@ -5,6 +5,8 @@
 // written back, and a consumed one is taken, ending its hold (the `let`,
 // `inout` and `sink` conventions of Racordon and Abrahams, "Borrow checking
 // Hylo", IWACO 2023).
+//
+// - see: #1488 — `takenInOneArm`
 
 // The lists; the byte lists; the owned bytes; the writes.
 import "../data/data-base.gandr";
@@ -59,7 +61,7 @@ def taken() -> List(Integer) {
 
 /// A string taken in one arm of a match and kept in the other: each arm
 /// starts from the hold as the match found it, and the hold ends after the
-/// match (#1488).
+/// match.
 def takenInOneArm(t : Repr) -> List(Integer) {
   var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   match t {

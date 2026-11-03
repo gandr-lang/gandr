@@ -1,21 +1,29 @@
 // `std.layout`: Rust's default layout as a program over codes. A type's code
-// lists its fields' scalars (structs) or its variants' fields (enums), and the
-// program places them as rustc places a `repr(Rust)` type: `univariant` sorts
-// a struct's fields by alignment, largest first, its niche toward the start
-// and, when that leaves the niche nearer the middle, toward the end;
-// `enumLayout` builds the niche-filled and the tagged layouts and keeps the
-// smaller, then the one with the larger niche, then the tagged one, a tag
-// widened to the smallest first-field alignment (rustc's
-// `compiler/rustc_abi/src/layout.rs`: `univariant`, `univariant_biased`,
-// `layout_of_enum`). rustc is the authority on a Rust type's layout, and
-// `corpus/model/layouts/rust-default.gandr` checks the program against what
-// rustc printed for ten types.
+// lists its fields' scalars for a struct, or its variants' fields for an
+// enum. The program places them as rustc places a `repr(Rust)` type.
 //
-// Not yet: a field that is itself an aggregate, an array or a zero-sized type,
-// whose alignment group rustc derives from its size, waits for the program to
-// run over levitated codes (#2343); a niche beyond `bool`'s and a reference's
-// (`char`, `NonZero`, an enum's own) needs a theory of the target; `repr`
-// attributes and targets other than x86-64 are not modelled.
+// `univariant` sorts a struct's fields by alignment, largest first. It moves
+// the niche toward the start, or toward the end when the start leaves it
+// nearer the middle. `enumLayout` builds two layouts, one filling a niche and
+// one with a tag. It keeps the smaller, then the one with the larger niche,
+// then the one with a tag. It widens a tag to the smallest first-field
+// alignment.
+//
+// rustc is the authority on a Rust type's layout. A corpus source checks the
+// program against what rustc prints for ten types.
+//
+// Three cases wait. A field that is itself an aggregate, an array or a
+// zero-sized type waits for the program to run over levitated codes. Its
+// alignment group follows from its size. A niche beyond `bool`'s and a
+// reference's needs a theory of the target: `char`'s, `NonZero`'s or an
+// enum's own. The program models no `repr` attribute and no target but
+// x86-64.
+//
+// - see: `compiler/rustc_abi/src/layout.rs` — rustc's `univariant`,
+//   `univariant_biased` and `layout_of_enum`
+// - see: `corpus/model/layouts/rust-default.gandr` — the program checked
+//   against rustc's ten layouts
+// - see: #2343
 
 /// A field's scalar type, its size its alignment on x86-64.
 pub data Scalar : Type where {
@@ -63,7 +71,7 @@ pub data Placed : Type where {
 
 /// A struct's layout as rustc prints it.
 pub data Layout : Type where {
-  /// Size, alignment and the fields placed.
+  /// Size, alignment and the placement of the fields.
   | Layout : (size : Integer, align : Integer, fields : Placed) --> Layout
 }
 
@@ -75,11 +83,11 @@ pub data Discriminant : Type where {
   | Tag : (size : Integer) --> Discriminant
 }
 
-/// Each variant's fields placed, in declaration order.
+/// Each variant's placement, in declaration order.
 pub data Arms : Type where {
   /// No more variants.
   | NoArm : Arms
-  /// A variant's fields placed, then the rest.
+  /// A variant's placement, then the rest.
   | Arm : (name : String, fields : Placed, rest : Arms) --> Arms
 }
 
@@ -108,7 +116,7 @@ data Laid : Type where {
   | Laid : (size : Integer, align : Integer, fields : Placed, niche : Niche) --> Laid
 }
 
-/// Which end of its alignment group a struct's niche is sorted to.
+/// Which end of its alignment group a struct's niche sorts to.
 data Bias : Type where {
   /// Larger niches first.
   | NicheFirst : Bias
@@ -116,7 +124,7 @@ data Bias : Type where {
   | NicheLast : Bias
 }
 
-/// How fields are ordered.
+/// An order of fields.
 data Order : Type where {
   /// A struct's: larger alignment first, then the niche toward the bias.
   | InStruct : (bias : Bias) --> Order
@@ -124,7 +132,7 @@ data Order : Type where {
   | AfterTag : Order
 }
 
-/// Each variant laid out.
+/// The layout of each variant.
 data Laids : Type where {
   /// No more variants.
   | NoLaid : Laids
@@ -140,11 +148,11 @@ data Filled : Type where {
   | Filled : (layout : EnumLayout, remaining : Integer) --> Filled
 }
 
-/// Variants placed around a niche, or a variant that does not fit.
+/// A placement of variants around a niche, or a variant that does not fit.
 data Fitted : Type where {
   /// A variant fits neither before nor after the niche.
   | Misfit : Fitted
-  /// Every variant placed.
+  /// The placement of every variant.
   | Fitted : (arms : Arms) --> Fitted
 }
 
@@ -208,13 +216,13 @@ def pick(c : Bool, yes : Integer, no : Integer) -> Integer {
   }
 }
 
-/// An offset rounded up to an alignment.
+/// The first multiple of an alignment at or past an offset.
 def up(o : Integer, a : Integer) -> Integer {
   let q = int.div(o + a - 1, a);
   q * a
 }
 
-/// Whether `a` is placed no later than `b` under an order.
+/// Whether an order places `a` no later than `b`.
 def before(o : Order, a : Scalar, b : Scalar) -> Bool {
   let x = bytes(a);
   let y = bytes(b);
@@ -274,7 +282,7 @@ def rec count(fs : Fields) -> Integer {
   }
 }
 
-/// Fields placed from an offset, each rounded up to its alignment.
+/// The placement of fields from an offset, each at the next multiple of its alignment.
 def rec placeFrom(fs : Fields, o : Integer) -> Placed {
   match fs {
     Done => End,
@@ -331,7 +339,7 @@ def rec nicheFrom(fs : Fields, o : Integer, best : Niche) -> Niche {
   }
 }
 
-/// Fields in memory order laid out after a prefix of a size and an alignment.
+/// The layout of fields in memory order after a prefix of a size and an alignment.
 def laidOut(sorted : Fields, prefix : Integer, prefixAlign : Integer) -> Laid {
   let w = widest(sorted);
   let a = bigger(w, prefixAlign);
@@ -339,12 +347,12 @@ def laidOut(sorted : Fields, prefix : Integer, prefixAlign : Integer) -> Laid {
   Laid(up(e, a), a, placeFrom(sorted, prefix), nicheFrom(sorted, prefix, NoNiche))
 }
 
-/// A struct's fields laid out under a bias, as `univariant_biased` lays them out.
+/// The layout of a struct's fields under a bias, as `univariant_biased` lays them out.
 def biased(fs : Fields, bias : Bias) -> Laid {
   laidOut(order(fs, InStruct(bias)), 0, 1)
 }
 
-/// The niche's offset in a layout, zero for no niche.
+/// The offset of a layout's niche, or zero when it has none.
 def nicheOffset(l : Laid) -> Integer {
   match l {
     Laid(size, a, placed, n) => match n {
@@ -393,7 +401,7 @@ pub def structLayout(fs : Fields) -> Layout {
   }
 }
 
-/// Each variant laid out as a struct.
+/// The layout of each variant as a struct.
 def rec asStructs(vs : Variants) -> Laids {
   match vs {
     NoVariant => NoLaid,
@@ -401,7 +409,7 @@ def rec asStructs(vs : Variants) -> Laids {
   }
 }
 
-/// Each variant laid out after a one-byte tag.
+/// The layout of each variant after a one-byte tag.
 def rec afterTag(vs : Variants) -> Laids {
   match vs {
     NoVariant => NoLaid,
@@ -462,7 +470,7 @@ def rec largestFrom(ls : Laids, i : Integer, bestIndex : Integer, bestSize : Int
   }
 }
 
-/// The variant at an index, counting from `i`; an empty layout past the end.
+/// The variant at an index, where the count starts at `i`, or an empty layout past the end.
 def rec laidAt(ls : Laids, i : Integer, want : Integer) -> Laid {
   match ls {
     NoLaid => Laid(0, 1, End, NoNiche),
@@ -476,7 +484,7 @@ def rec laidAt(ls : Laids, i : Integer, want : Integer) -> Laid {
   }
 }
 
-/// Fields moved by an offset.
+/// Each field's place plus an offset.
 def rec shifted(p : Placed, by : Integer) -> Placed {
   match p {
     End => End,
@@ -573,7 +581,7 @@ def rec firstAlign(ls : Laids) -> Integer {
   }
 }
 
-/// The variants' fields placed.
+/// The placement of the variants' fields.
 def rec armsOf(ls : Laids) -> Arms {
   match ls {
     NoLaid => NoArm,
@@ -600,7 +608,7 @@ def tagRange(t : Integer) -> Integer {
   }
 }
 
-/// The tagged layout, its tag widened to the smallest first-field alignment.
+/// The tagged layout, whose tag widens to the smallest first-field alignment.
 def taggedFill(vs : Variants) -> Filled {
   let ls = afterTag(vs);
   let n = variantCount(ls);

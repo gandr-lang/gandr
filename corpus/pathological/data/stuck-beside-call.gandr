@@ -1,6 +1,8 @@
 // The twin of `model/data/stuck-beside-call.gandr`: two applications of one
 // recursion at one stuck call compare part by part, so an argument beside
-// the stuck call that differs is still told apart (#879).
+// the stuck call that differs is still told apart.
+//
+// - see: #879
 
 // The naturals.
 import "../../model/data/data-base.gandr";

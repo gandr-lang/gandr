@@ -1,6 +1,8 @@
-/// A family named `Unit` (#535): the grammar reads `Unit` in a type as the
+/// A family named `Unit`: the grammar reads `Unit` in a type as the
 /// builtin unit type, so no type the source writes could name the family,
 /// and the declaration is refused at its name.
+///
+/// - see: #535
 @[ refuses("ShadowedBuiltin") ]
 data Unit : Type where {
   | Pt : Unit

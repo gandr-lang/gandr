@@ -5,6 +5,10 @@
 // type's rules converge, and their normal forms first differ at two distinct
 // constructors, so no path joins them and a match on one has no arm either
 // (Coquand, _Pattern matching with dependent types_, 1992).
+//
+// - see: #534 — `viaLambda`, `viaStated`
+// - see: #1944 — `viaBare`, `viaBareStated`
+// - see: #1948 — `viaArgument`, `viaArgumentStated`
 
 // The presented integers.
 import "./data-base.gandr";
@@ -22,29 +26,29 @@ def stated(v : Empty) -> Integer {
   match v -> -F Integer {}
 }
 
-/// A lambda's binder matched with no arm (#534): the function form lowers to
+/// A lambda's binder matched with no arm: the function form lowers to
 /// the lambda its arrow types, the binder `Empty`, as a parameter's written
 /// type does.
 def viaLambda(x : Empty) -> Integer { match x {} }
 
-/// The answer written on a lambda binder's match (#534).
+/// The answer written on a lambda binder's match.
 def viaStated(x : Empty) -> Integer { match x -> -F Integer {} }
 
 /// The same lambda written bare, the checker inserting its thunk: the
-/// signature's arrow types its binder as it types the thunk's (#1944).
+/// signature's arrow types its binder as it types the thunk's.
 def viaBare(x : Empty) -> Integer { match x {} }
 
-/// The answer written on a bare lambda binder's match (#1944).
+/// The answer written on a bare lambda binder's match.
 def viaBareStated(x : Empty) -> Integer { match x -> -F Integer {} }
 
 /// A function of a function on the empty type, applied to its element.
 def applied(f : Empty => Integer, v : Empty) -> Integer { f(v) }
 
 /// A lambda passed as an argument: the callee's parameter types its binder
-/// as a signature types a definition's (#1948).
+/// as a signature types a definition's.
 def viaArgument(v : Empty) -> Integer { applied(fun (x) { match x {} }, v) }
 
-/// The answer written on a passed lambda binder's match (#1948).
+/// The answer written on a passed lambda binder's match.
 def viaArgumentStated(v : Empty) -> Integer {
   applied(fun (x) { match x -> -F Integer {} }, v)
 }

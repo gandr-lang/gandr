@@ -10,7 +10,7 @@
 // eleven types. A field that is itself an aggregate has no code yet, and its twin
 // is refused.
 //
-// - see: #2343 — not implemented: a field that is itself an aggregate, an
+// - owes: #2343 — a field that is itself an aggregate, an
 //   array or a zero-sized type, over levitated codes
 // - see: `library/std/src/layout.gandr` — the program
 // - see: `pathological/layouts/rust-default.gandr` — a struct field, refused

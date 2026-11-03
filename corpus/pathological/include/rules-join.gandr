@@ -1,8 +1,10 @@
-// The obligation `include` creates (#738): the included theory's rules join
+// The obligation `include` creates: the included theory's rules join
 // the including block's, and the union is completed as one block. Each block
 // below completes alone; the union leaves a critical pair whose two normal
 // forms are one call with its arguments swapped, which the path order
 // orients neither way, so the including block is refused by name.
+//
+// - see: #738
 
 /// Choosing is combining, left to right.
 theory Choice where {

@@ -17,7 +17,10 @@
 // by value rather than objects behind a reference count, so there is no
 // `size` and no count; there is no later modality; and a triple is stated at
 // the heap it owns, with no frame rule over it. Where a realiser runs to
-// `emp(h)` the proofs case on the heap (#2832).
+// `emp(h)` the proofs case on the heap.
+//
+// - see: #2832
+// - see: #327 — `derefOrWp`
 
 // `Nat`.
 import "../data/data-base.gandr";
@@ -503,7 +506,7 @@ pub def keptOpt(p : Nat, _r : Nat, h : Heap) -> Type {
 /// answer and the heap after: at null it answers `d` and touches nothing;
 /// otherwise `p` points to an int and it answers that int. That the C body
 /// meets this is assumed, not checked: `extern` declarations are not lowered
-/// (#327), so nothing here names the body.
+/// , so nothing here names the body.
 pub def derefOrWp(w : Nat, d : Nat, q : (Nat, Nat, Heap) => Type, h : Heap) -> Type {
   match w {
     Zero => q(w, d, h),

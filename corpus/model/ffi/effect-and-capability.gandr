@@ -1,15 +1,14 @@
 // A foreign function read as an effect: the call to the sensor library is a
 // computation at the host seam, which the capability to reach the library
-// authorises (#327). The lowering does not reach the extern block yet
-// (#327).
+// authorises. The lowering does not reach the extern block yet.
 
-/// The sensor library's reading of one channel (#327).
+/// The sensor library's reading of one channel.
 @[ refuses("OutOfFragment.extern_block") ]
 extern "c" from "sensor" {
   def read(channel : i32) -> i64;
 }
 
-/// Channel zero, read; the lowering reads no projection yet (#1106), and
-/// `sensor` is the extern block's (#327).
+/// Channel zero, read; the lowering reads no projection yet, and
+/// `sensor` is the extern block's.
 @[ refuses("OutOfFragment.projection_expression") ]
 def reading = sensor.read(0i32);

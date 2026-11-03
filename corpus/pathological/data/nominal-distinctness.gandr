@@ -3,6 +3,8 @@
 // type through an alias or ascribes it in a definition; its twin,
 // `model/data/one-shape-families.gandr`, carries the value along the path an
 // equivalence makes.
+//
+// - see: #2075 — `ascribed`, `aliased`
 
 /// A temperature in Celsius.
 data Celsius : Type where {
@@ -18,11 +20,11 @@ data Fahrenheit : Type where {
 type Temp = Fahrenheit;
 
 /// A Celsius value ascribed Fahrenheit: the constructor keeps its own family,
-/// never read as the Fahrenheit constructor of its place (#2075).
+/// never read as the Fahrenheit constructor of its place.
 @[ refuses("TypeMismatch") ]
 def ascribed = (Cel(20) : Fahrenheit);
 
-/// A Celsius value ascribed Fahrenheit through the alias (#2075).
+/// A Celsius value ascribed Fahrenheit through the alias.
 @[ refuses("TypeMismatch") ]
 def aliased = (Cel(20) : Temp);
 

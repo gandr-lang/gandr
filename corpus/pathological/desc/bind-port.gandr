@@ -1,6 +1,8 @@
 // The twin of `model/desc/bind-port.gandr`: an abstraction over a sort that is
 // not an atom sort, an abstraction written inside a `pi+` binder, and the
 // models of an abstracting operation.
+//
+// - see: #1561 — `restrictionModel`
 
 // The restriction signature.
 import "../../model/desc/bind-port.gandr";
@@ -25,6 +27,6 @@ theory InnerAbstraction where {
 
 /// The restriction signature's models: `nu` abstracts an atom over its port,
 /// whose model is a nominal set's abstraction `⟨a⟩Proc`, a type the value
-/// universe does not state (#1561).
+/// universe does not state.
 @[ refuses("UnstatedComponent.Abstraction") ]
 def restrictionModel : Model(Restriction);

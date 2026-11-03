@@ -1,6 +1,8 @@
 // The twin of `model/data/stuck-arm-call.gandr`: a call steps to the call its
 // arm reached only once an arm is selected, so one stuck on its own selecting
-// argument stays itself and is still told apart from that call (#2832).
+// argument stays itself and is still told apart from that call.
+//
+// - see: #2832
 
 // `Nat`.
 import "../../model/data/data-base.gandr";

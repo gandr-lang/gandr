@@ -4,6 +4,8 @@
 // them in either order. In the first two each is served by its own mock
 // kernel; in the last two the cancellation takes the target's pending
 // completion over its session and reaps it.
+//
+// - see: #1229 — `cancelWrittenOut`
 
 // The ring's protocol and its entries.
 import "./ring-base.gandr";
@@ -69,7 +71,7 @@ def cancelConsumes() -> Unit {
   close(cancel)
 }
 
-/// #1229: the cancellation's protocol written out where its endpoint is bound,
+/// The cancellation's protocol written out where its endpoint is bound,
 /// a receive whose payload is itself a receive. It takes the target's pending
 /// completion, reaps it and posts nothing of its own.
 def cancelWrittenOut() -> Unit {

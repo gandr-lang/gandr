@@ -1,8 +1,10 @@
-// Model includes that do not stand (#2333). A second `Eq` model at the
+// Model includes that do not stand. A second `Eq` model at the
 // integers that includes nothing and states its own equality is another
 // elaboration, so `==` there stays ambiguous; an include naming no module is
 // refused by that name; a member a module writes under a name an include
 // also lends is a second definition of it.
+//
+// - see: #2333
 
 /// An equality at the integers that holds of every pair, each law a
 /// reflexivity.

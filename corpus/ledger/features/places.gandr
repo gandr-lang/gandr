@@ -1,6 +1,8 @@
 /// `places`: Access at a place.
 /// Implemented: an access lending one element of a held list at an index, an exclusive view writing it back at its index.
-/// Not implemented: a linear token naming the place: the lend stays per held slot; #1184 owes it.
+/// Not implemented: a linear token naming the place: the lend stays per held slot.
+///
+/// - owes: #1184
 // Access at a place. `access xs[i] as w { … }` lends one element of a held
 // list to a view: the index is a value read where the access stands, and the
 // view is the element at it. An exclusive view writes its element back at its

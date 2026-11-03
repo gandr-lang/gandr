@@ -12,7 +12,7 @@
 // The delta arm asks for a function into the family. The rest of the code
 // reads that function through the decoder `t`.
 //
-// - see: #3575 — not implemented: the family a code defines, with its decoder
+// - owes: #3575 — the family a code defines, with its decoder
 // - see: `pathological/universe/ir-codes.gandr` — the family a code defines
 //   and its decoder, refused, over the decode of its arguments
 // - see: Dybjer and Setzer, _A finite axiomatization of inductive-recursive

@@ -20,7 +20,7 @@ git init --quiet "$repo"
   echo "INSERT INTO feature VALUES('owing','workflow','An owing row',NULL,'partial','ordinary',NULL,'A partial row.','x',NULL,'corpus/ledger/features/owing.gandr','#2',NULL);"
 } | sqlite3 -bail "$scratch/features.db"
 sqlite3 "$scratch/features.db" .dump > "$repo/ledger/features.sql"
-printf '%s\n' '/// `owing`' '/// Implemented: the row.' '/// Not implemented: the rest, #2.' 'package owing {}' \
+printf '%s\n' '/// `owing`' '/// Implemented: the row.' '/// Not implemented: the rest.' '///' '/// - owes: #2' 'package owing {}' \
   > "$repo/corpus/ledger/features/owing.gandr"
 git -C "$repo" add .
 cat > "$scratch/gh/gh" <<'STUB'

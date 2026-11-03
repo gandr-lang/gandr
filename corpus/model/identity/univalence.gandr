@@ -10,6 +10,13 @@
 // an equivalence, `univalence`, on two owed laws: `ua` after `idtoequiv`,
 // which no rule converts, and `idtoequiv` after `ua`, which needs the record's
 // inverses to be determined by its map.
+//
+// - see: #650 — `oneBack`, `idtoequiv`
+// - see: #695 — `idtoequiv`
+// - see: #698 — `idtoequiv`
+// - see: #1979 — `loopsAreTheirWinding`
+// - see: #520 — `uaEta`
+// - see: #656 — `univalence`
 
 // The circle, the presented integers, the winding number and spinning.
 import "./circle-base.gandr";
@@ -28,7 +35,7 @@ pub def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> a {
 }
 
 /// The transport back written out in a record's field converts, under the
-/// field's binder, with the same transport in the law's type (#650).
+/// field's binder, with the same transport in the law's type.
 def oneBack(a : Type, b : Type, p : Path(Type, a, b)) -> #{
   g : b => a,
   law : (z : b) => Path(a, g(z), Path.walk(fun (X) { X }, Path.back(p), z))
@@ -91,8 +98,7 @@ def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> Path(
 /// Transport along a path between types as the bi-invertible map: the book's
 /// `idtoeqv`, cubical's `pathToEquiv`. Both inverses are the transport
 /// written out, which converts under its field's binder with the named map
-/// its law is stated over (#650), and `univalence`'s laws replay over them
-/// (#695, #698).
+/// its law is stated over, and `univalence`'s laws replay over them.
 pub def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> a ≃ b {
   (
     fun (x) { fwdAlong(a, b, p, x) },
@@ -129,7 +135,7 @@ pub def loopsAreIntegers : Path(Type, Path(Circle, Base, Base), Int) = ua(windin
 
 /// The same path ascribed a type whose right end is left as a wildcard:
 /// `ua(winding)` forces that end to the integers, so the elaborator reads the
-/// equivalence's codomain off the path it makes (#1979).
+/// equivalence's codomain off the path it makes.
 def loopsAreTheirWinding : Path(Type, Path(Circle, Base, Base), Int) = (ua(winding) : Path(
   Type,
   Path(Circle, Base, Base),
@@ -173,7 +179,7 @@ def windingRun() -> Int { Path.walk(fun (X) { X }, loopsAreIntegers, loop) }
 
 /// `ua` after `idtoequiv` is the path, owed: no rule converts `ua` of the
 /// packaged transport with the path, even at reflexivity, where both sides
-/// are values no computation moves (#520).
+/// are values no computation moves.
 @[ owes(1) ]
 def uaEta : (a : Type, b : Type, p : Path(Type, a, b)) => Path(
   Path(Type, a, b),
@@ -203,7 +209,7 @@ def univalenceIso(a : Type, b : Type) -> Path(Type, a, b) ≅ (a ≃ b) {
 /// Univalence: `idtoequiv` is an equivalence, the quasi-inverse made
 /// bi-invertible as `isoToEquiv` makes it, its map back both inverses. The
 /// record is written out: a split of `univalenceIso`'s result reads its type
-/// as unknown (#656).
+/// as unknown.
 pub def univalence(a : Type, b : Type) -> Path(Type, a, b) ≃ (a ≃ b) {
   (
     fun (p) { idtoequiv(a, b, p) },

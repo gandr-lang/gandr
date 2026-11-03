@@ -1,9 +1,13 @@
-// What codata refuses (#644). A family's kind is a computation universe; a
+// What codata refuses. A family's kind is a computation universe; a
 // copattern block answers each observation once; a call claiming `>` is the
 // whole arm of a copattern block, and one anywhere else — under another
 // call, under `become`, outside any block — is refused by name until `>`
-// carries the sized rung's evidence (#392). The twin of
+// carries the sized rung's evidence. The twin of
 // `../../model/codata/streams.gandr`.
+//
+// - see: #644
+// - see: #392 — `fibs`
+// - see: #2188 — `Swap`, `Twisted`
 
 /// A stream of integers, the family every definition here builds.
 codata Stream : Type[-] where {
@@ -20,7 +24,7 @@ codata Point : Type where {
 }
 
 /// A pair of streams interleaved by swapping its parameters at the tail: a
-/// family names itself only at its own parameters in order (#2188).
+/// family names itself only at its own parameters in order.
 @[ refuses("CodataOccurrence") ]
 codata Swap(a : Type, b : Type) : Type[-] where {
   head : a;
@@ -28,7 +32,7 @@ codata Swap(a : Type, b : Type) : Type[-] where {
 }
 
 /// A stream whose tail nests the family in its own argument: refused the same
-/// way (#2188).
+/// way.
 @[ refuses("CodataOccurrence") ]
 codata Twisted(a : Type) : Type[-] where {
   head : a;
@@ -74,7 +78,7 @@ def rec sums(s : +U Stream, t : +U Stream) -> Stream {
 
 /// The Fibonacci numbers as a stream summed with its own tail: the productive
 /// calls stand under `sums`, which the guard cannot see through; the sized
-/// rung's `>` admits it (#392).
+/// rung's `>` admits it.
 @[ refuses("UnguardedCorecursion") ]
 def rec fibs(n : Integer) -> Stream {
   &{

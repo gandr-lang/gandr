@@ -1,4 +1,6 @@
-// The second member of the cycle `import-cycle-a.gandr` opens (#434).
+// The second member of the cycle `import-cycle-a.gandr` opens.
+//
+// - see: #434
 
 // The first member, which imports this one.
 import "./import-cycle-a.gandr";

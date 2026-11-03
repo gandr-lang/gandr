@@ -1,11 +1,13 @@
 // A returner's row is a row of interfaces: each interface's name holds its
-// signature, no name twice, the names in no order of their own (#2269). Two
+// signature, no name twice, the names in no order of their own. Two
 // rows that list the same interfaces in different orders are one row,
 // sequencing joins the rows of the computations it runs, and a computation is
 // read where a row holding more is asked: the set operations of a row
 // (Hillerström and Lindley, "Liberating Effects with Rows and Handlers",
 // Type-Driven Development 2016, § 2). What refuses is in
 // `../../pathological/control/effect-rows.gandr`.
+//
+// - see: #2269
 
 // `peek` reads through `std.fs.Eff`; `once` states `Partial`.
 import "./capability-attenuate.gandr";

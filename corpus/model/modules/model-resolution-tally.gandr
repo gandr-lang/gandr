@@ -1,5 +1,7 @@
-// The tallies an omitted model implicit is resolved among (#739): the theory,
+// The tallies an omitted model implicit is resolved among: the theory,
 // one that includes it, and a step over any model of it.
+//
+// - see: #739
 
 /// A tally: a carrier, a zero, a step and a reading.
 pub theory Count where {

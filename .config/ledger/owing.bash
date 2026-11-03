@@ -6,7 +6,7 @@
 # - an implemented or partial row naming no corpus witness and no exemplar:
 #   the issues its `issue` column names;
 # - a partial row whose exemplar is its own source: the issues the
-#   `/// Not implemented:` line of that source's head names.
+#   `/// - owes: #n` lines of that source's head name (#4900).
 #
 # `report:deps` reads them so a closed or closing issue a row still owes on
 # is seen (#2973).
@@ -21,7 +21,7 @@ ledger_owing() {
   while IFS='|' read -r id exemplar; do
     [[ $exemplar == "corpus/ledger/features/$id.gandr" && -f $exemplar ]] || continue
     printf '%s\t%s\n' "$id" "$(awk '/^\/\/\// { print; next } { exit }' "$exemplar" \
-      | awk '/^\/\/\/ Not implemented: / { print; exit }' | grep -oE '#[0-9]+' | tr -d '#' | paste -sd ' ')"
+      | awk '/^\/\/\/ - owes: #[0-9]+/' | grep -oE '#[0-9]+' | tr -d '#' | paste -sd ' ')"
   done < <(sqlite3 -separator '|' "$db" "
     SELECT id, exemplar FROM feature
     WHERE status = 'partial' AND exemplar LIKE '%.gandr'

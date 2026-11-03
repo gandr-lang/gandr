@@ -4,6 +4,9 @@
 // computes into the unit fibre, it reverses a path when the family is the
 // paths back, and it refuses a family not over the path's own endpoints or
 // one that reads no path.
+//
+// - see: #1854 — `carriedUnit`
+// - see: #1886 — `backUnit`
 
 // The free naturals.
 import "./circle-base.gandr";
@@ -26,7 +29,7 @@ def reduced : Path(
 def unitPath : Path(Unit, unit, unit) = unit;
 
 /// Transport along that evidence, in a family that reads neither the point
-/// nor the path, returns the element given (#1854).
+/// nor the path, returns the element given.
 def carriedUnit : Path(
   Nat,
   Path.walk(
@@ -40,7 +43,7 @@ def carriedUnit : Path(
 ) = Path.here(Succ(Zero));
 
 /// Transport along that evidence in the family of paths back to the point
-/// returns the unit, the one inhabitant of the unit fibre (#1886).
+/// returns the unit, the one inhabitant of the unit fibre.
 def backUnit : Path(
   Path(Unit, unit, unit),
   Path.walk(

@@ -1,9 +1,12 @@
 // A list of optional values standing where a body ends: each element takes
 // the element type the body answers, as a constructor at the same tail takes
 // the answer itself. `Maybe` is the one `data-maybe.gandr` declares. Before
-// #1602 each constructor among the elements was refused for want of a stated
+// the fix each constructor among the elements was refused for want of a stated
 // type. The result is written without its returner, `-> List(T)`, which
-// answers its element type as `-> -F List(T)` does (#2255).
+// answers its element type as `-> -F List(T)` does.
+//
+// - see: #2255
+// - see: #1602 — a constructor among a list's elements, typed by the answer
 
 /// Optional values, `None` and `Some(x)`.
 import "./data-maybe.gandr";

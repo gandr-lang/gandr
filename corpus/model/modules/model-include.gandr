@@ -1,9 +1,11 @@
-// A model built on another (#2333): `include EqInteger` in a model of a theory
+// A model built on another: `include EqInteger` in a model of a theory
 // that includes `Eq` takes `EqInteger`'s members as the model's own, so the
 // model's reduct at `Eq` is `EqInteger` itself. `==` at the integers then has
 // two modules answering its `Eq` slot, and they are one elaboration: their
-// components convert, so the slot resolves (#739's uniqueness, up to
-// conversion).
+// components convert, so the slot resolves (uniqueness, up to conversion).
+//
+// - see: #2333
+// - see: #739 — a slot's answer unique up to conversion
 
 /// A grade orders verdicts: equality of grades, and one grade below another.
 theory Graded where {

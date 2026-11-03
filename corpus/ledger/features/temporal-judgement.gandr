@@ -1,6 +1,8 @@
 /// `temporal-judgement`: The temporal judgement (logical time as a web).
 /// Implemented: a binary session's logical time as a two-colour causal web, a recorded dialogue admitted exactly when its order linearizes the web, and `dialogue(left(…), right(…), …) : Dialogue(S)`.
-/// Not implemented: the deep-inference wing beyond the binary web: the subatomic rule scheme, the graphical layer and sharing policy; #316 owes it.
+/// Not implemented: the deep-inference wing beyond the binary web: the subatomic rule scheme, the graphical layer and sharing policy.
+///
+/// - owes: #316
 // A seat's dialogue with its operator: both endpoints' moves in the one
 // order a recorder saw them, the seat on the left following its protocol and
 // the operator on the right following the dual. A dialogue's logical time is

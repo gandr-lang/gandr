@@ -1,6 +1,8 @@
 // Two rules of a nominal theory that overlap below an abstraction. A rule's
 // abstraction is one head at any depth, so the checker finds the pair there
-// as the kernel does (#1709).
+// as the kernel does.
+//
+// - see: #1709
 
 /// `inner` rewrites the restriction inside `nu(bind a . nu(bind b . z()))` to
 /// `nu(bind a . w())`, a normal form, while `outer` rewrites the whole term to

@@ -10,7 +10,9 @@
 // the equivalence. The layouts are data, not bytes: each constructor's
 // comment names the memory type Ribbit gives it, and code emitted from a
 // layout stands outside the trust boundary. `equiv` decides no round trip
-// over a type that holds itself (#1316), so each equivalence is written out.
+// over a type that holds itself, so each equivalence is written out.
+//
+// - see: #1316
 
 /// The list of Ribbit's Example 3.1: empty, or an `i32` before the rest.
 pub data Ints : Type where {

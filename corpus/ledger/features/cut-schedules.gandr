@@ -2,6 +2,7 @@
 ///
 /// Implemented: two cuts of the tree sum run by hand on two threads, each with its own heap, and answer as the sequential schedule does; a thunk a run returns runs from the store on another thread, with its captures on that run's heap and a shared capture counted twice, and answers as forcing it in place does.
 /// A cut's writer runs on the driver's pool as the left half of one join, and its reader reads the writer's sum through a host's reply and answers as the sequential schedule does.
+/// Not implemented: the rule that spawns a writer at each independent cut.
 ///
 /// The sequential schedule runs each cut's writer and then its reader, so `sum` answers as under call by value.
 /// At depth 18 a half, the cut on the driver's pool finishes 2.02 times faster on the executor and 1.91 times natively.
@@ -11,7 +12,7 @@
 /// - see: crates/surface-dispatcher/src/evaluate.rs
 /// - see: crates/runtime-emitter/src/run.rs
 /// - see: crates/runtime-emitter/tests/cut.rs
-/// - see: #2954 — not implemented: the rule that spawns a writer at each independent cut
+/// - owes: #2954 — the rule that spawns a writer at each independent cut
 
 /// The depth of a complete tree.
 data Depth : Type where {

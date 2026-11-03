@@ -1,5 +1,7 @@
 // The twin of `model/specification/tree-state-wp.gandr`: where a program's
 // evidence against its specification is refused.
+//
+// - see: #2773 — `incrMissesTwo`
 
 // `Either`, `StateOp` and `Prog`.
 import "../../model/effects/tree.gandr";
@@ -19,7 +21,7 @@ def incrMissesOne : #{
 def incrByTwoSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s + 2) }
 
 /// The increment against two more: both sides read as `post`'s call over a
-/// held sum, and the sums differ (#2773).
+/// held sum, and the sums differ.
 @[ refuses("TypeMismatch") ]
 def incrMissesTwo(
   post : (Unit, Integer) => Type,

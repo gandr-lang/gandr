@@ -1,20 +1,20 @@
 error[ContinuationCaptured]: the continuation is used inside a thunk, which may end it other than once
-   ╭▸ corpus/pathological/cancellation/leaked.gandr:24:33
+   ╭▸ corpus/pathological/cancellation/leaked.gandr:26:33
    │
-13 │ ┌  def leaked() -> Unit {
-14 │ │┌   handle c : std.process.Exit.Eff {
-15 │ ││     let found = fork (task : Cancel.Join) {
-16 │ ││       send(task, Cancel.notes);
-17 │ ││       close(task)
+15 │ ┌  def leaked() -> Unit {
+16 │ │┌   handle c : std.process.Exit.Eff {
+17 │ ││     let found = fork (task : Cancel.Join) {
+18 │ ││       send(task, Cancel.notes);
+19 │ ││       close(task)
    ┆ ┆┆
-24 │ ││     oper exit(code, k) => force thunk { k(unit) }
+26 │ ││     oper exit(code, k) => force thunk { k(unit) }
    │ ││                           ┬─────┯━━━━━━━━━━━━━━━━
    │ ││                           │     │
    │ ││                           │     a continuation that may be ended other than once
    │ ││                           checked against `-F Unit`; while forcing this
-25 │ ││   }
+27 │ ││   }
    │ │└───┘ checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack(-F Unit, -F Unit)
-26 │ │  }
+28 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
    ╰ note: `leaked` is refused with ContinuationCaptured, as its expectation states

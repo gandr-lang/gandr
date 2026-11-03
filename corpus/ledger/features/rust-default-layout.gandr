@@ -1,12 +1,13 @@
 /// `rust-default-layout` computes rustc's layout of a `repr(Rust)` struct or enum as a gandr program over the type's code.
 ///
 /// Implemented: a struct's fields sorted by alignment, its niche toward the start or the end as rustc chooses; an enum's niche-filled and tagged layouts, the tag widened, the smaller kept, then the larger niche, then the tagged; agreement with `rustc -Zprint-type-sizes` on every type compared.
-/// Not implemented: a field that is itself an aggregate, an array or a zero-sized type, which waits for the program to run over levitated codes (#2343); a niche beyond `bool`'s and a reference's, which needs a theory of the target.
+/// Not implemented: a field that is itself an aggregate, an array or a zero-sized type, which waits for the program to run over levitated codes; a niche beyond `bool`'s and a reference's, which needs a theory of the target.
 ///
 /// rustc stays the authority on a Rust type's layout; the program is checked against what it printed.
 ///
 /// - see: corpus/model/layouts/rust-default.gandr
 /// - see: library/std/src/layout.gandr
+/// - owes: #2343
 
 import std.layout (
   U16, U32, Flag, Done, Field, NoVariant, Variant, Layout, EnumLayout, structLayout, enumLayout

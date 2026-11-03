@@ -1,7 +1,9 @@
 // The twin of `model/data/unfolded-arm.gandr`: the endpoint an arm hands to
 // another definition reads as that definition's call over the stuck call,
 // never as the stuck call alone, so a step that drops the call, or one that
-// takes a successor too many, is still told apart (#761).
+// takes a successor too many, is still told apart.
+//
+// - see: #761
 
 // The naturals.
 import "../../model/data/data-base.gandr";

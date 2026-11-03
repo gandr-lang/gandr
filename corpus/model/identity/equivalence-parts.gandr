@@ -2,9 +2,8 @@
 // names every field and uses one, or by a label pattern that names one. The
 // fields the arm leaves alone are named all the same: the round trips mention
 // the maps before them, so a type read inside the arm names the forward map
-// the arm never uses — by the variable written for it (#665), or by its label
-// where the pattern writes none, primed apart from a variable of that name
-// (#670).
+// the arm never uses — by the variable written for it, or by its label
+// where the pattern writes none, primed apart from a variable of that name.
 
 // The quasi-inverse and the equivalence.
 import "./equivalence.gandr";
@@ -23,8 +22,7 @@ def leftOf(a : Type, b : Type, e : a ≃ b) -> b => a {
   }
 }
 
-/// A quasi-inverse's map back, which the pattern reads by its label `from`
-/// (#670).
+/// A quasi-inverse's map back, which the pattern reads by its label `from`.
 def fromByLabel(a : Type, b : Type, i : a ≅ b) -> b => a {
   match i {
     #{.from = k} => k
@@ -32,7 +30,7 @@ def fromByLabel(a : Type, b : Type, i : a ≅ b) -> b => a {
 }
 
 /// The map back, which the pattern binds to `into`, the forward map's own
-/// label (#670).
+/// label.
 def fromAsInto(a : Type, b : Type, i : a ≅ b) -> b => a {
   match i {
     #{.from = into} => into

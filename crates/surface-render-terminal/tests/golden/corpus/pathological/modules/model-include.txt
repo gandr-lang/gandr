@@ -1,27 +1,27 @@
 error[ModelAmbiguous]: more than one module in scope answers the model implicit `e` this call to `eq` omits: `EqInteger` and `EqLoose`; supply the one meant as `eq[.e = …](…)`
-   ╭▸ corpus/pathological/modules/model-include.gandr:18:30
+   ╭▸ corpus/pathological/modules/model-include.gandr:20:30
    │
-18 │ def looselyEqual() -> Bool { 3 == 3 }
+20 │ def looselyEqual() -> Bool { 3 == 3 }
    │                              ━━━━━━ a model implicit more than one module answers
    │
    ╰ note: `looselyEqual` is refused with ModelAmbiguous, as its expectation states
 
 error[UnresolvedName]: `Nowhere` is not defined
-   ╭▸ corpus/pathological/modules/model-include.gandr:23:11
+   ╭▸ corpus/pathological/modules/model-include.gandr:25:11
    │
-23 │   include Nowhere;
+25 │   include Nowhere;
    │           ━━━━━━━ not found in this scope
    │
    ├ note: `Stray` is refused with UnresolvedName, as its expectation states
    ╰ help: define `Nowhere`, or import the module that exports it
 
 error[DuplicateDefinition]: `least` is defined twice
-   ╭▸ corpus/pathological/modules/model-include.gandr:37:11
+   ╭▸ corpus/pathological/modules/model-include.gandr:39:11
    │
-37 │   include Zero;
+39 │   include Zero;
    │           ━━━━ written again here
-38 │   /// A second `least`.
-39 │   def least() -> Integer { 1 }
+40 │   /// A second `least`.
+41 │   def least() -> Integer { 1 }
    │       ───── first written here
    │
    ├ note: `Shadowing` is refused with DuplicateDefinition, as its expectation states

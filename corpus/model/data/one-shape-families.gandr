@@ -5,6 +5,8 @@
 // by a run: the HoTT book's § 2.10, Lemma 2.10.5, transport along `ua(e)` is
 // `e`. The twin, `pathological/data/nominal-distinctness.gandr`, refuses the
 // same value read as `Fahrenheit` with no path written.
+//
+// - see: #2140 — `carriedInTuple`, `carriedInField`, `carriedScrutinised`
 
 /// A temperature in Celsius.
 data Celsius : Type where {
@@ -48,7 +50,7 @@ def relabel : Celsius ≃ Fahrenheit = (
 @[ runs("Fah(20)") ]
 def relabelled() -> Fahrenheit { Path.walk(fun (X) { X }, ua(relabel), Cel(20)) }
 
-/// #2140: the transport written as a tuple's component runs first, and the
+/// The transport written as a tuple's component runs first, and the
 /// other component keeps its place.
 @[ runs("(Fah(20), 1)") ]
 def carriedInTuple() -> Fahrenheit * Integer { (Path.walk(fun (X) { X }, ua(relabel), Cel(20)), 1) }
@@ -58,12 +60,12 @@ data Thermometer : Type where {
   | Reads : (f : Fahrenheit) --> Thermometer
 }
 
-/// #2140: the transport written as a constructor's field runs before the
+/// The transport written as a constructor's field runs before the
 /// constructor is built.
 @[ runs("Reads(Fah(20))") ]
 def carriedInField() -> Thermometer { Reads(Path.walk(fun (X) { X }, ua(relabel), Cel(20))) }
 
-/// #2140: a case on the transport runs it, then the arm its answer selects.
+/// A case on the transport runs it, then the arm its answer selects.
 @[ runs("20") ]
 def carriedScrutinised() -> Integer {
   match Path.walk(fun (X) { X }, ua(relabel), Cel(20)) { Fah(x) => x }

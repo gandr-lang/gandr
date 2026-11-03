@@ -5,7 +5,9 @@
 // and the boundary, β and η laws among the block's rules (Tesla Zhang, _Three
 // non-cubical applications of extension types_, arXiv:2311.05658). Each
 // generated member is named for its point by the point's name. Over two
-// points it is the signature `zero-fiber.gandr` writes by hand (#641).
+// points it is the signature `zero-fiber.gandr` writes by hand.
+//
+// - see: #641
 
 /// The cells of `Val` over `Two` fixed to `zero` on `left`, with `c` a cell
 /// nothing introduces. The boundary reads `zero` at `left` of every cell, `c`

@@ -1,7 +1,9 @@
 // A record pattern over a plain record binds a field the arm never reads:
 // the binder still answers at the field of its label, as a component of an
-// eager product does. Before #1883 the unread binder answered nothing, so the
-// editor showed no type at it.
+// eager product does. Before the fix the unread binder answered nothing, so
+// the editor showed no type at it.
+//
+// - see: #1883 — an unread binder answering at its field
 
 /// The lower bound of a span, its upper bound bound by label and unread.
 def lower_bound(span : #{lower : Integer, upper : Integer}) -> Integer {

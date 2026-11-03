@@ -1,6 +1,8 @@
-// #2687: a dotted name's prefix opens a module only where the source declares
+// A dotted name's prefix opens a module only where the source declares
 // none of that name; one naming a module a form of its own writes is refused
 // at the segment, as the module defined twice.
+//
+// - see: #2687
 
 /// A written module.
 module Kit where {

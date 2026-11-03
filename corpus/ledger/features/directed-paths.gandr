@@ -1,6 +1,8 @@
 /// `directed-paths`: Directed paths (Flow).
 /// Implemented: `Flow(A, a, b)` with `Flow.stay`, `Flow.then` and covariant `Flow.ride`, certified on readmission, and `Flow.into(f)` decided for a closed translator at its finitely many patterns.
-/// Not implemented: a forward the rule does not decide, which is refused; #1835 owes it.
+/// Not implemented: a forward the rule does not decide, which is refused.
+///
+/// - owes: #1835
 // Flows compose, after directed univalence (Gratzer, Weinberger and
 // Buchholtz, _Directed univalence in simplicial homotopy type theory_,
 // arXiv:2407.09146): the stationary flow is a unit, and two translations in

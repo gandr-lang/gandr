@@ -1,10 +1,12 @@
-// Divergence as a row entry (#1481). A loop the checker cannot see out of may
+// Divergence as a row entry. A loop the checker cannot see out of may
 // run forever, so the function holding it states `Partial` in its row: the host
 // interface with no operation, which no handler eliminates. A caller of such a
 // function holds `Partial` in its own row, as it holds any interface its callee
 // performs, so a function at the empty row returns. A call that returns and
 // whose result nothing reads is the computation that follows it. What refuses
 // is in `../../pathological/control/divergence.gandr`.
+//
+// - see: #1481
 
 /// A loop that breaks only when one is below zero: it never returns, and its
 /// row says it may not.

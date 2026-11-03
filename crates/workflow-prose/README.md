@@ -1,6 +1,6 @@
 # gandr-workflow-prose
 
-The sentence rules that need a parse, held over the corpus comments, the rendered diagnostics and the crate READMEs, against a committed ledger of debt.
+The sentence rules that need a parse, held over the comments of every tracked gandr source, the rendered diagnostics and the crate READMEs, against a committed ledger of debt.
 
 - [Synopsis](#synopsis)
 - [Provided features](#provided-features)
@@ -11,7 +11,7 @@ The sentence rules that need a parse, held over the corpus comments, the rendere
 
 ## Synopsis
 
-**What.** `gandr-workflow-prose` installs the `prose` binary, which `mise run check:prose` runs. It reads every `///` paragraph of the corpus's `.gandr` sources, every prose paragraph of `crates/*/README.md`, and every rendered diagnostic under `crates/surface-render-terminal/tests/golden/`, each file's diagnostics one by one. spaCy parses the text, and the binary judges each sentence against the rules below and each diagnostic against the procedural form. It compares the findings with `corpus/prose.ledger` and refuses a finding the ledger lacks or a ledger line no finding matches. The body mode reads a pull request's or an issue's body under the body rules, with no ledger: `mise run body:prose` runs it, and so do `pr:open`, `issue:file` and the nightly `report:prose`.
+**What.** `gandr-workflow-prose` installs the `prose` binary, which `mise run check:prose` runs. It reads every `//!`, `///` and `//` paragraph of each `.gandr` source `git ls-files` tracks, every prose paragraph of `crates/*/README.md`, and every rendered diagnostic under `crates/surface-render-terminal/tests/golden/`, each file's diagnostics one by one. A comment's list items, its `- see:` and `- owes:` lines among them, and the indented lines continuing them stay unread. spaCy parses the text, and the binary judges each sentence against the rules below and each diagnostic against the procedural form. It compares the findings with `corpus/prose.ledger` and refuses a finding the ledger lacks or a ledger line no finding matches. The body mode reads a pull request's or an issue's body under the body rules, with no ledger: `mise run body:prose` runs it, and so do `pr:open`, `issue:file` and the nightly `report:prose`.
 
 **Why.** The style the corpus follows is ASD-STE100's: short sentences, the active voice, the present tense, no noun stacks. A reviewer misses a passive or a past tense in a dense paragraph; a parser does not. The rules need a part-of-speech tag and a dependency parse, which a pattern over the text cannot give. The ledger names the existing debt, so the check refuses new debt at once while a sweep pays the old debt down.
 
@@ -35,12 +35,14 @@ Each finding prints its file, the line its passage starts on, the rule, the sent
 | `NounStack` | four or more consecutive tokens are `NOUN` or `PROPN` | break the stack of nouns with a preposition or a verb |
 | `IngMain` | the root is tagged `VBG` | make the main verb a finite verb, not an `-ing` form |
 | `Glossary` | a token's lemma is in the glossary and its coarse tag is not the glossary's part of speech | use the glossary word only as its part of speech, or choose another word |
-| `Length` | a body's sentence holds more than 25 words, each code span one word | split it into sentences of at most 25 words, one clause each |
-| `Semicolon` | a semicolon in a body's sentence has a word after it | end the first sentence with a full stop and start the next |
-| `Dash` | an em or en dash in a body's sentence has a verb after it | end the first clause with a full stop, or make the text after the dash a phrase with no verb |
+| `Length` | a body's or a comment's sentence holds more than 25 words, each code span one word | split it into sentences of at most 25 words, one clause each |
+| `Semicolon` | a semicolon in a body's or a comment's sentence has a word after it | end the first sentence with a full stop and start the next |
+| `Dash` | an em or en dash in a body's or a comment's sentence has a verb after it | end the first clause with a full stop, or make the text after the dash a phrase with no verb |
+| `InlineReference` | a comment's sentence holds a word that names a URL (`://`), an issue (`#` and digits) or a path (a `/` and a tree directory or a file extension), its brackets, quotes and closing punctuation left out | move the path, the issue or the URL to a `- see:` line after the paragraph |
+| `Wall` | a comment paragraph holds more than five sentences, a sentence ending on a full stop, a question mark or an exclamation mark outside a code span | split the paragraph into paragraphs of at most five sentences, one idea each |
 | `Procedure` | a rendered diagnostic labels no span, or ends with no `help:` line and no note naming an issue, or its `help:` line does not start with an imperative | state what is wrong in the headline, label the span, and end with an imperative `help:` or the issue that tracks it |
 
-A body keeps `Passive`, `Tense`, `Length`, `Semicolon` and `Dash`. The corpus, the READMEs and the diagnostics keep the other rules.
+A body keeps `Passive`, `Tense`, `Length`, `Semicolon` and `Dash`. A README and a diagnostic keep `Passive`, `Tense`, `NounStack`, `IngMain` and `Glossary`, and `Procedure` binds a diagnostic. A comment keeps every rule but `Procedure`.
 
 The small English model misreads some technical sentences. A misreading is debt like any other finding: reword the sentence so the parse reads it, or leave the line in the ledger.
 

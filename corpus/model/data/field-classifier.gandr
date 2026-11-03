@@ -1,7 +1,9 @@
 // A constructor written in a field of another takes its classifier from the
 // field: the field's declared type, with the family's parameters and the
 // fields before it replaced by what the constructor around it is written
-// with. A nested list then needs no annotation (#1171).
+// with. A nested list then needs no annotation.
+//
+// - see: #1171 — `mistyped`
 
 // The lists.
 import "./data-base.gandr";
@@ -45,7 +47,7 @@ def packed() -> Packed {
 }
 
 /// A string where the field takes integers is refused by the checker, not
-/// as unannotated (#1171).
+/// as unannotated.
 @[ refuses("TypeMismatch") ]
 def mistyped() -> Box(Integer) {
   Wrap(Cons("no", Nil))

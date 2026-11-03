@@ -1,7 +1,10 @@
-// `std`: the standard library, a package like any other. Its modules and the
-// host seams they stand on are mapped in `README.md`. Until a package
-// imports another by name (#533 p3), a project imports a module of `std` by
-// the relative path to its source.
+// `std`: the standard library, a package like any other. Its README maps its
+// modules and the host seams they stand on. Until a package imports another
+// by name, a project imports a module of `std` by the relative path to its
+// source.
+//
+// - see: `README.md` — the map of modules and host seams
+// - owes: #533 — a package importing another by name
 import build (Gandr);
 
 /// The package: `std`, at the version `gandr.toml` records.
@@ -18,11 +21,11 @@ pub module Package : Model(Gandr.Package) where {
   def documentation = "https://github.com/gandr-lang/gandr/tree/main/library/std";
   /// The address a resolver may fetch `std` from.
   def endpoint = "https://github.com/gandr-lang/gandr";
-  /// The least language version `std` is written for.
+  /// The least language version `std` targets.
   def gandr = ">= 0.0";
   /// The features `std` asks the toolchain for: none it names yet.
   def features = "";
-  /// The systems `std` is built on: any.
+  /// The systems `std` builds on: any.
   def systems = "";
   /// The spelling `std` asks for: the reader's own.
   def spelling = "";

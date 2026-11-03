@@ -1,7 +1,9 @@
 // A shell block's run is a value: what the host printed is a string the
-// block after it computes on. The lowering admits no shell block yet (#1057).
+// block after it computes on. The lowering admits no shell block yet.
+//
+// - see: #1057 — `searched`
 
-/// A banner printed on the host, then searched for a word (#1057).
+/// A banner printed on the host, then searched for a word.
 @[ refuses("OutOfFragment.shell_block") ]
 def searched() -> -F Bool {
   let banner = #!{ printf 'hello from gandr\n'; };

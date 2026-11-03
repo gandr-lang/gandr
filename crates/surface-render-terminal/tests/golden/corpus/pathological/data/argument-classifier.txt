@@ -1,10 +1,10 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/argument-classifier.gandr:23:40
+   ╭▸ corpus/pathological/data/argument-classifier.gandr:26:40
    │
-13 │ def first(xs : List(Integer)) -> Integer {
+16 │ def first(xs : List(Integer)) -> Integer {
    │                     ─────── the type it is checked against
    ┆
-23 │ def mistyped() -> Integer { first(Cons("no", Nil)) }
+26 │ def mistyped() -> Integer { first(Cons("no", Nil)) }
    │ ┬───────────────────────────┬─────┬────┯━━━─────────
    │ │                           │     │    │
    │ │                           │     │    its type does not convert: expected `Integer`, found `String`
@@ -16,9 +16,9 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/argument-classifier.gandr:40:50
+   ╭▸ corpus/pathological/data/argument-classifier.gandr:43:50
    │
-40 │ def mistypedAt() -> Integer { size(Integer, Cons("no", Nil)) }
+43 │ def mistypedAt() -> Integer { size(Integer, Cons("no", Nil)) }
    │ ┬─────────────────────────────┬────┬────────┬────┯━━━─────────
    │ │                             │    │        │    │
    │ │                             │    │        │    its type does not convert: expected `Integer`, found `String`

@@ -1,6 +1,8 @@
 /// `extension-types`: Extension types as face-theory signatures.
 /// Implemented: an extension type stated as a face-theory signature over its base type, face and partial element, the zero-fibre case checked.
-/// Not implemented: every other case, refused by name; #641 owes it.
+/// Not implemented: every other case, refused by name.
+///
+/// - owes: #641
 // An extension type stated as the signature the face theory generates for it.
 // `ext Val on left is zero` over the two points of `Two` is the type of cells
 // fixed to `zero` on the face `left`: a cell holds its value off the face,

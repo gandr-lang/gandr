@@ -7,7 +7,9 @@
 // that follows from the written ones, certified by the pair's two paths, until
 // every pair joins (Knuth and Bendix, _Simple Word Problems in Universal
 // Algebras_, 1970, § 7). The row reads a law no written rule states, the
-// inverse of a product (#338).
+// inverse of a product.
+//
+// - see: #338
 
 /// A group's unit, associativity and inverse laws, each a rule: `e()` is the
 /// unit and `a()`, `b()` two elements the row reads; the row's normal form is

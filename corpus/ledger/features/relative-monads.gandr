@@ -1,6 +1,10 @@
 /// `relative-monads`: Monads relative to the shift.
 /// Implemented: a monad relative to `-F` as a theory, its unit and extension over a family of computation types; the carrier as a theory's sort into the computation types, which the option monad's carrier models; the option monad's operations and code polymorphic in the carrier; and the left unit, the right unit and associativity, which join as one theory.
-/// Not implemented: a handler's return clause from a value to the carrier, the unit of the handler reading; #4383 owes it.
+/// Not implemented: a handler's return clause from a value to the carrier, the unit of the handler reading.
+///
+/// - owes: #4383
+/// - see: #2115 — `MonadRightUnit`
+/// - see: #2116 — `RelativeMonad`
 // A monad relative to the shift `-F`: a unit returning a value and an
 // extension running a computation into a continuation, over a family of
 // computation types (Altenkirch, Chapman and Uustalu, _Monads need not be
@@ -28,7 +32,7 @@ theory MonadLeftUnit where {
 
 /// The right unit: extending a computation by the unit is the computation.
 /// `bind x . ret(x)` abstracts the variable `k`'s port binds, and `ret` names
-/// it at its port of the sort `V` (#2115).
+/// it at its port of the sort `V`.
 @[ checks ]
 theory MonadRightUnit where {
   sort V : Type+;
@@ -41,7 +45,7 @@ theory MonadRightUnit where {
 /// The three laws together. Associativity's inner `ext(m, k)` is an instance
 /// of its own left side and of both unit laws', and its right side
 /// substitutes `k` under `bind x .`: each pair is found by pattern
-/// unification, and its two reducts normalize to one term (#2116).
+/// unification, and its two reducts normalize to one term.
 @[ checks ]
 theory RelativeMonad where {
   sort V : Type+;

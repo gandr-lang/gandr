@@ -1,7 +1,9 @@
 // An omitted model implicit resolved among models whose model type states the
-// sort (#739): `Model(Same) with sort Carrier = Integer` is a candidate as a
+// sort: `Model(Same) with sort Carrier = Integer` is a candidate as a
 // module defining `type Carrier = Integer` is, and the sort the operands force
 // leaves the one candidate stating it.
+//
+// - see: #739
 
 /// Equality over a carrier.
 theory Same where {

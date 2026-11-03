@@ -1,5 +1,7 @@
 // A pattern hole before an arm may shadow it: whether `Blue` reaches its own
-// arm or the hole is undecided, and the checker refuses the match (#391).
+// arm or the hole is undecided, and the checker refuses the match.
+//
+// - see: #391 — `classify`
 
 /// Three colours, one arm each.
 data Color : Type where {
@@ -8,7 +10,7 @@ data Color : Type where {
   | Blue : Color
 }
 
-/// The hole stands before `Blue`'s arm (#391).
+/// The hole stands before `Blue`'s arm.
 @[ refuses("UndecidedCoverage") ]
 def classify(c : Color) -> Integer {
   match c {

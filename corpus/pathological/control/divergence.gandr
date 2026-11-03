@@ -1,11 +1,13 @@
-// What divergence as a row entry refuses (#1481): a loop at a row without
+// What divergence as a row entry refuses: a loop at a row without
 // `Partial`, a call of a diverging function from one, a handler of `Partial`, and an
 // unread call of a diverging function dropped. Each would let a computation
 // that never returns stand where one that returns is expected. What checks is
 // in `../../model/control/divergence.gandr`.
+//
+// - see: #1481 — `spinPure`, `spinFirst`, `tamed`, `unreadDiv`
 
 /// A diverging loop's function, typed as if it returned: the loop's fixpoint
-/// is refused, its type named with `Partial` in the row (#1481).
+/// is refused, its type named with `Partial` in the row.
 @[ refuses("TypeMismatch") ]
 def spinPure(x : Bool) -> Bool {
   let y = loop {
@@ -31,7 +33,7 @@ def spin(x : Bool) -> [Partial] Bool {
 }
 
 /// A caller at the empty row of a function whose row holds `Partial`: the call
-/// synthesises the row, which the caller's does not include (#1481).
+/// synthesises the row, which the caller's does not include.
 @[ refuses("TypeMismatch") ]
 def spinFirst(x : Bool) -> Bool {
   spin(x)
@@ -39,7 +41,7 @@ def spinFirst(x : Bool) -> Bool {
 
 /// A handler of `Partial` has no operation to answer and runs its subject, which
 /// may still run forever: it leaves `Partial` in its row, which the empty row
-/// does not include (#1481).
+/// does not include.
 @[ refuses("TypeMismatch") ]
 def tamed(x : Bool) -> Bool {
   handle c : Partial {
@@ -50,7 +52,7 @@ def tamed(x : Bool) -> Bool {
 }
 
 /// An unread call whose row holds `Partial` may run forever, so it is not the
-/// computation that follows it: the endpoints stay apart (#1481).
+/// computation that follows it: the endpoints stay apart.
 @[ refuses("EndpointMismatch") ]
 def unreadDiv(a : Type, b : Type, f : a => b, g : +U (a -> -F [Partial] b)) -> Path(
   +U (a -> -F [Partial] b),

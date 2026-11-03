@@ -1,5 +1,7 @@
 // `std.fs`: the home of the filesystem's host interface, `std.fs.Eff`, whose
 // operations read and change files under a directory capability. A source
 // names the interface where it imports this module, `import std.fs;`, and
-// nowhere else (#4523). The interface is native, so no declaration here
+// nowhere else. The interface is native, so no declaration here
 // states it. The functions over a directory capability wait for demand.
+//
+// - see: #4523

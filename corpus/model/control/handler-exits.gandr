@@ -4,6 +4,10 @@
 // a body's `pure` value passes through the handler's `pure` clause, and a
 // `return` leaves the handler with its value as it stands. A tail call is an
 // exit too, so every `become` here is written: the exits are the subject.
+//
+// - see: #1481 — `looped`
+// - see: #1387 — `resume_stack`
+// - see: #1651 — `Conts`
 
 // Early exit's host interface.
 import std.process;
@@ -90,7 +94,7 @@ def branch_zero() -> Integer { become branch(0) }
 def branch_one() -> Integer { become branch(1) }
 
 /// A loop's `break` gives the loop's value to the body, which continues. The
-/// loop may run forever, so the row states `Partial` (#1481), and the handler of
+/// loop may run forever, so the row states `Partial`, and the handler of
 /// `std.process.Exit.Eff` leaves it there.
 @[ runs("105") ]
 def looped() -> [Partial] Integer {
@@ -150,7 +154,7 @@ def handed_on() -> Integer {
 }
 
 /// A function stating a continuation's type resumes the continuation it is
-/// handed, as the clause that bound it would (#1387).
+/// handed, as the clause that bound it would.
 def resume_stack(j : Stack(-F Unit, -F Integer)) -> Integer {
   j(unit)
 }
@@ -169,8 +173,7 @@ def resumed_on() -> Integer {
 }
 
 /// A type member may abbreviate a continuation's type: a function stating the
-/// member resumes the continuation it is handed as one stating the stack does
-/// (#1651).
+/// member resumes the continuation it is handed as one stating the stack does.
 module Conts where {
   type K = Stack(-F Unit, -F Integer);
 

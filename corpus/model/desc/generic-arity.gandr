@@ -3,6 +3,8 @@
 // return type quotes names a type where a type is read (`El` as unquote),
 // after Chapman, Dagand, McBride and Morris (_The Gentle Art of Levitation_,
 // doi:10.1145/1863543.1863547).
+//
+// - see: #729 — `sign`
 
 /// A monoid presented as data: the block binds `Monoid : Theory`, its sort and
 /// its two operations held in one value.
@@ -34,7 +36,7 @@ pub def arity(presented : Theory) -> Integer {
 @[ runs("2") ]
 def counted() -> Integer { arity(Monoid) }
 
-/// `sign` is an ordinary name now that the block's keyword is `theory` (#729):
+/// `sign` is an ordinary name now that the block's keyword is `theory`:
 /// a definition so named runs the generic program as `counted` does.
 @[ runs("2") ]
 def sign() -> Integer { arity(Monoid) }

@@ -1,12 +1,14 @@
 // A cancellation point not taken: the scope's clause resumes the rest of the
 // scope once, so the task's end it holds is read and closed exactly once.
+//
+// - see: #1334 — `resumed`
 
 // The task's protocol.
 import "./cancel-base.gandr";
 // Early exit's host interface.
 import std.process;
 
-/// A scope resumed at its exit while its task's end is open (#1334).
+/// A scope resumed at its exit while its task's end is open.
 @[ runs("unit") ]
 def resumed() -> Unit {
   handle c : std.process.Exit.Eff {

@@ -5,6 +5,9 @@
 // `idtoequiv` is not the path by conversion, the law the model source owes. A
 // wildcard at a path's end is the end `ua` forces, so a declared type naming
 // another end is apart from it.
+//
+// - see: #520 — `uaEtaByConversion`
+// - see: #1979 — `loopsAreUnit`
 
 // Two points, one point, the collapse of the first onto the second and the
 // map back with its one round trip.
@@ -52,7 +55,7 @@ def alongLiteral(
 
 /// `ua` after `idtoequiv` converted with the path, refused even at
 /// reflexivity: no rule relates `ua` of the packaged transport to the path it
-/// packages, so the model source owes it as `uaEta` (#520).
+/// packages, so the model source owes it as `uaEta`.
 @[ refuses("EndpointMismatch") ]
 def uaEtaByConversion(a : Type) -> Path(
   Path(Type, a, a),
@@ -64,7 +67,7 @@ def uaEtaByConversion(a : Type) -> Path(
 
 /// The loops' path to the integers ascribed a type whose right end is a
 /// wildcard, declared to end at the unit type: `ua(winding)` forces the
-/// wildcard to the integers, which the unit type is not (#1979).
+/// wildcard to the integers, which the unit type is not.
 @[ refuses("TypeMismatch") ]
 def loopsAreUnit : Path(Type, Path(Circle, Base, Base), Unit) = (ua(winding) : Path(
   Type,

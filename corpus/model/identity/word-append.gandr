@@ -1,8 +1,11 @@
 // `Path.step(p, q)` moves `p` along `q` in `y. Path(A, a, y)`, and that transport
 // appends on its first word whatever `q` is: the empty word is the unit, and
-// a letter stays first (#422). Two definitions whose composites are one
-// transport, stuck on its two parameters, name one path (#440). The
+// a letter stays first. Two definitions whose composites are one
+// transport, stuck on its two parameters, name one path. The
 // composite and its unit laws are the HoTT book's Lemmas 2.1.2 and 2.1.4.
+//
+// - see: #422 — `leftUnit`, `letterFirst`
+// - see: #440 — `sameComposite`, `sameAfterLetter`
 
 // The circle.
 import "./circle-base.gandr";
@@ -15,7 +18,7 @@ def comp(
   Path.step(p, q)
 }
 
-/// Reflexivity is the composite's left unit (#422).
+/// Reflexivity is the composite's left unit.
 def leftUnit(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   Path.step(Path.here(Base), p),
@@ -33,8 +36,7 @@ def leftUnitComp(p : Path(Circle, Base, Base)) -> Path(
   Path.here(p)
 }
 
-/// A letter before the empty word stays before a path composed after it
-/// (#422).
+/// A letter before the empty word stays before a path composed after it.
 def letterFirst(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   comp(loop ∷ Path.here(Base), p),
@@ -70,7 +72,7 @@ def compSwapped(
 }
 
 /// Both names unfold to one transport stuck on `q`, whose motives close over
-/// two definitions' environments and read the binder alone (#440).
+/// two definitions' environments and read the binder alone.
 def sameComposite(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
@@ -78,7 +80,7 @@ def sameComposite(
   Path.here(comp(p, q))
 }
 
-/// So the two composites agree after a letter (#440).
+/// So the two composites agree after a letter.
 def sameAfterLetter(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)

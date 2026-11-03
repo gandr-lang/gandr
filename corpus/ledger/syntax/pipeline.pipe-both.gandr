@@ -1,4 +1,6 @@
 /// `pipeline.pipe_both`: a shell pipeline carrying standard error too.
-/// The checker does not reach this form yet; #1057 tracks it.
+/// The checker does not reach this form yet.
+///
+/// - owes: #1057
 @[ refuses("OutOfFragment.shell_block") ]
 def logged = #!{ make |& tee log; } ;

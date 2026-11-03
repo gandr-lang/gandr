@@ -1,7 +1,9 @@
 // A sum by recursion on its second summand whose first grows from call to
 // call: the fixpoint stages its second parameter and carries the first, which
 // every recursive call changes, through the stuck form, readback, conversion
-// and the kernel's replay (#626).
+// and the kernel's replay.
+//
+// - see: #626
 
 // The integers, one successor more and one predecessor more.
 import "./circle-base.gandr";

@@ -4,7 +4,9 @@
 // packaging `idtoequiv` of that path. Transport along `ua` of a packaged path
 // is the path's transport at every path
 // (`../identity/univalence-transports.gandr`); the path between the two paths
-// is owed (`pathological/identity/univalence-owed.gandr`, #520).
+// is owed (`pathological/identity/univalence-owed.gandr`).
+//
+// - owes: #520 — the path between the two paths
 
 // The magma, the swap and the unit's identity.
 import "./magma-base.gandr";

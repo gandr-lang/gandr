@@ -1,10 +1,12 @@
-// The forgetting map the checker applies, written out (#2130). In the
+// The forgetting map the checker applies, written out. In the
 // explicit form, a model whose sorts are manifest standing where its theory's
 // model is asked is written as the map's call, `forget[sort C = A](m) at
 // Model(Counter)`, naming each sort the map puts back with its carrier as the
 // manifest type names it; the sugared form leaves the call to the checker, or
 // states the crossing by an ascription, `(m : Model(Counter))`. The run reads
 // the same application in every form.
+//
+// - see: #2130
 
 // The counter, counting up and down modulo three, and `observe`, which reads
 // any counter.

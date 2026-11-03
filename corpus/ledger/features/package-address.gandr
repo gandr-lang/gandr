@@ -1,5 +1,7 @@
 /// `package-address`: A package's address.
 /// Implemented: a package's address digests each item its sources declare, as its path and its content key, every inert component of its models left out and what a model asks of the toolchain kept; `gandr check` prints it on the manifest's line, and `gandr.toml` does not carry it.
+///
+/// - see: #3135 — `gandr`
 
 import std.build (Gandr);
 
@@ -19,7 +21,7 @@ pub module Package : Model(Gandr.Package) where {
   /// The address a resolver may fetch the package from.
   def endpoint = "https://github.com/gandr-lang/gandr";
   /// The least language version the sources ask for: content, so an edit to
-  /// it moves the address (#3135).
+  /// it moves the address.
   def gandr = ">= 0.0";
   /// The features the sources use, content as `gandr` is.
   def features = "project-manifest";

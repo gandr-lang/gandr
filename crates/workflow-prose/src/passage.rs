@@ -1,5 +1,5 @@
-//! The passages the check reads: a corpus source's `///` paragraphs, a crate
-//! README's prose paragraphs, a rendered diagnostic's message, label and
+//! The passages the check reads: a gandr source's comment paragraphs, a
+//! crate README's prose paragraphs, a rendered diagnostic's message, label and
 //! advice, and a pull request's or an issue's body.
 //!
 //! A passage is a paragraph joined onto one line, so a sentence wrapped over
@@ -21,7 +21,7 @@ use crate::error::ProseError;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Source
 {
-    /// A corpus source's `///` comment.
+    /// A gandr source's comment: a `//!`, `///` or `//` paragraph.
     Comment,
     /// A crate README's paragraph.
     Readme,
@@ -166,23 +166,28 @@ impl<'path> Paragraph<'path>
     }
 }
 
-/// The `///` paragraphs of a corpus source.
+/// The comment markers a source line may open with, the longest first.
+const MARKERS: [&str; 3] = ["//!", "///", "//"];
+
+/// The comment paragraphs of a gandr source.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: one passage per paragraph of consecutive `///` lines, a paragraph
-///   ending at a blank `///` line, a list item, a `- see:` line or a line that
-///   is not a `///` comment; a list item and a `- see:` line are not part of
-///   any passage; each passage starts on its first line.
+/// - ensures: one passage per paragraph of consecutive comment lines of one
+///   kind, `//!`, `///` or `//`, a paragraph ending at a blank comment line, a
+///   list item, a `- see:` line, a line of another kind or a line that is not a
+///   comment; a list item, a `- see:` line and the indented lines continuing
+///   either are not part of any passage; each passage starts on its first line.
 /// - provides: the comments the sentence rules read.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the scan is the clause.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a run of two paragraphs, a list and a reference beside
-///   code; a list item kept, a paragraph run across a blank line, or a code
-///   line read as comment changes the passages.
+/// - hypothesis: L3 — a run of two paragraphs, a list with a continued item and
+///   a reference beside code, then a `//!` and a `//` run touching; a list item
+///   or its continuation kept, a paragraph run across a blank line or a change
+///   of kind, or a code line read as comment changes the passages.
 /// - witness: `passage::tests::a_comment_run_splits_at_its_blank_lines_and_lists`
 #[inline]
 #[must_use]
@@ -192,17 +197,36 @@ pub fn comments(
 ) -> Vec<Passage>
 {
     let mut paragraph = Paragraph::new(path, Source::Comment);
+    let mut kind = None;
+    let mut listed = false;
     for (index, raw) in text.0.lines().enumerate() {
-        let Some(comment) = raw.trim_start().strip_prefix("///")
+        let line = raw.trim_start();
+        let Some((marker, comment)) = MARKERS
+            .into_iter()
+            .find_map(|marker| line.strip_prefix(marker).map(|rest| (marker, rest)))
         else {
             paragraph.close();
+            kind = None;
+            listed = false;
             continue;
         };
+        if kind != Some(marker) {
+            paragraph.close();
+            kind = Some(marker);
+            listed = false;
+        }
+        let comment = comment.strip_prefix(' ').unwrap_or(comment);
+        let indented = comment.starts_with([' ', '\t']);
         let comment = comment.trim();
         if comment.is_empty() || comment.starts_with("- ") || comment == "-" {
             paragraph.close();
+            listed = !comment.is_empty();
             continue;
         }
+        if listed && indented {
+            continue;
+        }
+        listed = false;
         paragraph.push(Line(index.saturating_add(1)), Text(comment));
     }
     paragraph.close();
@@ -678,17 +702,17 @@ pub struct Gathered
 /// The directory of the rendered diagnostic goldens.
 const GOLDENS: &str = "crates/surface-render-terminal/tests/golden";
 
-/// Reads every corpus source under `root/corpus`, every crate README under
+/// Reads every tracked gandr source under `root`, every crate README under
 /// `root/crates`, and every rendered diagnostic golden.
 ///
 /// # Specification
 /// - requires: `root` is a repository checkout.
-/// - ensures: the passages of every `.gandr` file under `corpus/`, walked in
+/// - ensures: the passages of every `.gandr` file git tracks under `root`, in
 ///   path order, then of every `crates/*/README.md` in path order; the goldens
 ///   of every `.txt` file under the render goldens, walked in path order.
 /// - provides: the check's whole input.
 /// - fails: [`ProseError::Io`] naming the directory or file that could not be
-///   read.
+///   read, or the root whose tracked files git could not list.
 /// - panics: none.
 /// - executable: none — the outcome is the file system's.
 ///
@@ -696,25 +720,19 @@ const GOLDENS: &str = "crates/surface-render-terminal/tests/golden";
 /// As `fails` lists.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a scratch root with a nested corpus source, a README, a
-///   golden and a nested golden; a file skipped, read twice or out of order
-///   changes the gathered input.
+/// - hypothesis: L3 — a scratch repository with a tracked source outside
+///   `corpus/`, a nested one, an untracked one, a README, a golden and a nested
+///   golden; a file skipped, an untracked one read, or one read twice or out of
+///   order changes the gathered input.
 /// - witness: `passage::tests::a_root_gathers_its_sources_readmes_and_goldens`
 #[inline]
 pub fn gather(root: &Path) -> Result<Gathered, ProseError>
 {
     let mut gathered = Gathered::default();
-    let mut sources = Vec::new();
-    walk(&root.join("corpus"), &mut sources)?;
-    sources.retain(|path| {
-        path.extension()
-            .is_some_and(|extension| extension == "gandr")
-    });
-    for path in &sources {
-        let key = relative(root, path);
+    for key in tracked(root)? {
         gathered
             .passages
-            .extend(comments(Text(&key), Text(&read(path)?)));
+            .extend(comments(Text(&key), Text(&read(&root.join(&key))?)));
     }
     let mut readmes: Vec<_> = listed(&root.join("crates"))?
         .into_iter()
@@ -738,6 +756,42 @@ pub fn gather(root: &Path) -> Result<Gathered, ProseError>
             .extend(golden(Text(&key), Text(&read(path)?)));
     }
     Ok(gathered)
+}
+
+/// The `.gandr` files git tracks under `root`, `/`-separated and relative to
+/// it, in path order.
+///
+/// # Specification
+/// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`gather`].
+/// - witness: `passage::tests::a_root_gathers_its_sources_readmes_and_goldens`
+fn tracked(root: &Path) -> Result<Vec<String>, ProseError>
+{
+    let refused = |message: String| ProseError::Io {
+        path: root.to_owned(),
+        message,
+    };
+    let listed = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "-z", "--", "*.gandr"])
+        .output()
+        .map_err(|error| refused(format!("git ls-files: {error}")))?;
+    if !listed.status.success() {
+        return Err(refused(format!(
+            "git ls-files: {}",
+            String::from_utf8_lossy(&listed.stderr).trim()
+        )));
+    }
+    let mut keys: Vec<String> = String::from_utf8_lossy(&listed.stdout)
+        .split('\0')
+        .filter(|key| !key.is_empty())
+        .map(str::to_owned)
+        .collect();
+    keys.sort();
+    Ok(keys)
 }
 
 /// `path` relative to `root`, `/`-separated.
@@ -845,7 +899,8 @@ mod tests
     fn a_comment_run_splits_at_its_blank_lines_and_lists()
     {
         let text = "/// The first paragraph\n/// wraps here.\n///\n/// The second.\n/// - a \
-                    list item\n/// - see: #12\ndef x = 1 ;\n/// Last.\n";
+                    list item\n/// - see: #12 — a reference\n///   wrapped onto a second \
+                    line\ndef x = 1 ;\n/// Last.\n//! Inner.\n// Line.\n";
         let passages = comments(Text("corpus/a.gandr"), Text(text));
         let read: Vec<(String, String)> = passages
             .iter()
@@ -854,7 +909,9 @@ mod tests
         assert_eq!(read, [
             ("1".to_owned(), "The first paragraph wraps here.".to_owned()),
             ("4".to_owned(), "The second.".to_owned()),
-            ("8".to_owned(), "Last.".to_owned()),
+            ("9".to_owned(), "Last.".to_owned()),
+            ("10".to_owned(), "Inner.".to_owned()),
+            ("11".to_owned(), "Line.".to_owned()),
         ]);
         assert!(
             passages.iter().all(
@@ -996,6 +1053,7 @@ mod tests
         };
         write("corpus/model/b.gandr", "/// Bee.\n");
         write("corpus/a.gandr", "/// Ay.\n");
+        write("library/std/src/c.gandr", "// Sea.\n");
         write("corpus/notes.txt", "/// Not a source.\n");
         write("crates/x/README.md", "Ex.\n");
         write("crates/x/src/lib.rs", "/// Not read.\n");
@@ -1007,17 +1065,34 @@ mod tests
             "crates/surface-render-terminal/tests/golden/corpus/p/h.txt",
             "error[H]: nested\n",
         );
+        let git = |arguments: &[&str]| {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(arguments)
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {arguments:?}");
+        };
+        git(&["init", "--quiet"]);
+        git(&["add", "."]);
+        write("corpus/untracked.gandr", "/// Not tracked.\n");
         let gathered = gather(&root).unwrap();
         let read: Vec<String> = gathered
             .passages
             .iter()
             .map(|passage| format!("{}:{}", passage.path, passage.text))
             .collect();
-        assert_eq!(read, [
-            "corpus/a.gandr:Ay.",
-            "corpus/model/b.gandr:Bee.",
-            "crates/x/README.md:Ex."
-        ]);
+        assert_eq!(
+            read,
+            [
+                "corpus/a.gandr:Ay.",
+                "corpus/model/b.gandr:Bee.",
+                "library/std/src/c.gandr:Sea.",
+                "crates/x/README.md:Ex."
+            ],
+            "every tracked source is read, and an untracked one is not"
+        );
         let goldens: Vec<&str> = gathered
             .goldens
             .iter()

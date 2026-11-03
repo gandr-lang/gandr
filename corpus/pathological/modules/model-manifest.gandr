@@ -1,7 +1,9 @@
 // The refusals beside `../../model/modules/model-manifest.gandr`: a model
 // sealed at `Model(T)` alone keeps its sort abstract, and a manifest naming a
 // sort its theory does not present is refused at the module's header, the
-// attribute before the module stating its expectation (#1274).
+// attribute before the module stating its expectation.
+//
+// - see: #1274
 
 /// A ratio sort and its scale, as the model fixture's `Metering` has them.
 theory Scaled where {

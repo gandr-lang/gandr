@@ -1,13 +1,16 @@
 /// `abstract-closures` converts each closure of a program to an abstract closure over the context variables its code names.
 ///
 /// Implemented: conversion adds one captured variable at a time, and every converted program runs to what it runs to as written.
-/// Not implemented: #3077 owes the closure's type summaries, linear captures, lambda sets and a run path that converts, and #2770 owes environment sharing.
-/// Not implemented: #3636 owes a checked form that applies a block where the block stands, and entering reaches its closure at a distance.
+/// Not implemented: the closure's type summaries, linear captures, lambda sets, a run path that converts and environment sharing.
+/// Not implemented: a checked form that applies a block where the block stands, and entering reaches its closure at a distance.
 ///
 /// The function `constantly` returns names its argument, so conversion moves that argument into the closure's environment.
 /// The thunk `either` returns names both arguments, and conversion moves them one at a time, the later one first.
 ///
 /// - see: crates/core-sequent/src/closure.rs
+/// - owes: #3077 — the closure's type summaries, linear captures, lambda sets and a run path that converts
+/// - owes: #2770 — environment sharing
+/// - owes: #3636 — a checked form that applies a block where the block stands
 
 /// The naturals the closures return.
 data Nat : Type where {

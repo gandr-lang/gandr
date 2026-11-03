@@ -1,9 +1,10 @@
 // An `if` whose written answer disagrees with its arms. The case is ascribed
 // the answer it writes, so each arm is checked against that answer and the
-// first that disagrees is refused where it stands (#2089).
+// first that disagrees is refused where it stands.
+//
+// - see: #2089 — `answered`
 
-/// `-> -F String` written over integer arms: `1` is refused as no `String`
-/// (#2089).
+/// `-> -F String` written over integer arms: `1` is refused as no `String`.
 @[ refuses("TypeMismatch") ]
 def answered() -> String {
   let s = if true -> -F String { pure 1 } else { pure 2 };

@@ -1,11 +1,14 @@
 // A model of an extension where a model of the theory it includes is asked
-// (#1092): each theory a block includes, directly or through another, takes a
+// : each theory a block includes, directly or through another, takes a
 // reduct, `Monoid.Semigroup` from `Model(Monoid)` to `Model(Semigroup)`, which
 // keeps the members the inclusion places and forgets the rest; a sort is kept,
 // never sealed. The checker applies it where the one model stands at the
 // other, and the run and the kernel read the application. A model of the
 // extension with its carrier manifest stands there too, by the map that puts
-// the carrier back and then restricts (#2136).
+// the carrier back and then restricts.
+//
+// - see: #1092
+// - see: #2136
 
 // The semigroup, the monoid, both extensions at once, and the endomorphism
 // monoid.

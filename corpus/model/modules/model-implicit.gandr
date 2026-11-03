@@ -1,10 +1,12 @@
-// A model passed to an implicit (#739): a function quantifies over a model in
+// A model passed to an implicit: a function quantifies over a model in
 // its prefix block, `[s : Model(Tally)]`, which binds one parameter per
 // component of `Tally`, and reads each as `s.x`. A call supplies a module for
 // it by name, `stepped[.s = Up](4)`, passing the module's members; a module of
 // a theory that includes `Tally` passes its reduct, and a function passes its
 // own model implicit on, `stepped[.s = t]`. A manifest model type fixes a sort,
 // which binds no parameter.
+//
+// - see: #739
 
 /// A tally: a carrier, a zero, a step and a reading.
 theory Tally where {

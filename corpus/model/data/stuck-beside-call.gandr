@@ -5,6 +5,8 @@
 // the recursion at the one stuck call and differ only in that argument, so
 // they compare part by part, the definition unfolding to meet what the arm
 // ran.
+//
+// - see: #879 — `walkTwice`
 
 // The naturals the recursion takes apart.
 import "./data-base.gandr";
@@ -34,7 +36,7 @@ def walkOnce(b : Nat, c : Nat) -> Path(Nat, walk(Succ(b), c), Succ(walk(b, succ(
 }
 
 /// One step at another walk's stuck call: the step's recursive call
-/// receives that call beside `succ(c2)` (#879).
+/// receives that call beside `succ(c2)`.
 def walkTwice(b : Nat, c1 : Nat, c2 : Nat) -> Path(
   Nat,
   walk(Succ(walk(b, c1)), c2),

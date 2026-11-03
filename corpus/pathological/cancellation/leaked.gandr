@@ -1,6 +1,8 @@
 // A clause owes the rest of its scope exactly one end once that rest holds a
 // task's end. A thunk may be forced twice or never, so a resumption inside one
 // is refused, however the thunk is forced.
+//
+// - see: #1334 — `leaked`
 
 // The task's protocol.
 import "../../model/cancellation/cancel-base.gandr";
@@ -8,7 +10,7 @@ import "../../model/cancellation/cancel-base.gandr";
 import std.process;
 
 /// A scope whose exit clause resumes the rest inside a thunk while its task's
-/// end is open (#1334).
+/// end is open.
 @[ refuses("ContinuationCaptured") ]
 def leaked() -> Unit {
   handle c : std.process.Exit.Eff {

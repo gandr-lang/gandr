@@ -1,11 +1,13 @@
 // A constructor ending a body whose result decodes what the lowering cannot
 // read through states no type it can carry: it is refused as unannotated
-// where it is written, never dropped (#2112).
+// where it is written, never dropped.
+//
+// - see: #2112 — `bound`
 
 // Optional values, `None` and `Some(x)`.
 import "../../model/data/data-maybe.gandr";
 
 /// A present value against a type family passed as a parameter, whose body
-/// no definition writes (#2112).
+/// no definition writes.
 @[ refuses("OutOfFragment.Unannotated") ]
 def bound(T : Type -> Type[-]) -> T(Integer) { return Some(1) }

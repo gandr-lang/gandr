@@ -1,10 +1,14 @@
 // An annotation `(e : T)` states the type a value is read at: the whole
 // value of a definition no signature types is declared at `T`, and a value a
 // body returns is returned at `-F T`, whether the `return` is written or the
-// tail takes it (#1107). Anywhere else a value is read — a pair's component,
+// tail takes it. Anywhere else a value is read — a pair's component,
 // a scrutinee, an argument, an application's head, the value beside a
 // written signature — the value is ascribed `T` where it stands, and a tuple
-// a bind runs is ascribed the product its pattern is annotated with (#1543).
+// a bind runs is ascribed the product its pattern is annotated with.
+//
+// - see: #1107
+// - see: #1543
+// - see: #2168 — `injected`, `falsity`
 
 /// Three, declared an integer by its annotation alone.
 def three = (3 : Integer);
@@ -49,7 +53,7 @@ def bound() -> Integer {
 
 /// An injection annotated where the kernel synthesises the pair's type, its
 /// summand named by a label of the sum the annotation states: the injection
-/// keeps no type, so the annotation ascribes it (#2168).
+/// keeps no type, so the annotation ascribes it.
 @[ runs("2") ]
 def injected() -> Integer {
   let (b, n) = ((+{.yes = unit} : +{yes : Unit, no : Unit}), 2);
@@ -57,7 +61,7 @@ def injected() -> Integer {
 }
 
 /// The second summand of `Bool` written as an injection and annotated: it is
-/// ascribed as `(false : Bool)` is, and reads as that word (#2168).
+/// ascribed as `(false : Bool)` is, and reads as that word.
 @[ runs("2") ]
 def falsity() -> Integer {
   let (b, n) = ((+{.1 = unit} : Bool), 2);

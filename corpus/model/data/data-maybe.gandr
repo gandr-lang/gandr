@@ -2,6 +2,9 @@
 // match on a constructor written with its type takes the arm that
 // constructor names (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis,
 // 1984).
+//
+// - see: #616 — `kept`
+// - see: #1855 — `keptTally`, `keptDuo`
 
 /// An optional `a`: none, or some value.
 pub data Maybe(a : Type) : Type where {
@@ -18,7 +21,7 @@ def unwrap_or_zero() -> Integer {
 }
 
 /// A match over a family of parameters whose answer names its scrutinee:
-/// each arm answers the type as written, `m` read as itself (#616).
+/// each arm answers the type as written, `m` read as itself.
 def kept(m : Maybe(Integer)) -> Path(Maybe(Integer), m, m) {
   match m {
     None => Path.here(m),
@@ -37,13 +40,13 @@ data Duo(a : Type, b : Type) : Type where {
 }
 
 /// A tally kept as present: `Tally` at `Maybe`'s type parameter names the
-/// type, not the constructor that shares its name (#1855).
+/// type, not the constructor that shares its name.
 def keptTally(t : Tally) -> Maybe(Tally) {
   (Some(t) : Maybe(Tally))
 }
 
 /// A duo of tallies kept as present: `Duo(Tally, Tally)` at the same place
-/// is the type applied, and each `Tally` in it the type again (#1855).
+/// is the type applied, and each `Tally` in it the type again.
 def keptDuo(d : Duo(Tally, Tally)) -> Maybe(Duo(Tally, Tally)) {
   (Some(d) : Maybe(Duo(Tally, Tally)))
 }

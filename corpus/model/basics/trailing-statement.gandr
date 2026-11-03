@@ -1,5 +1,7 @@
 // A block whose last statement ends in `;` runs it, discards its result and
-// returns the unit, as `{ e; }` is `()` in Rust (#1205).
+// returns the unit, as `{ e; }` is `()` in Rust.
+//
+// - see: #1205
 
 /// A body of one statement: `pure unit` runs and the unit is returned.
 def plain() -> Unit {

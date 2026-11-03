@@ -1,7 +1,7 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-  ╭▸ corpus/pathological/sessions/type-quote-chain.gandr:7:75
+  ╭▸ corpus/pathological/sessions/type-quote-chain.gandr:9:75
   │
-7 │ def bare_product : Flow(Type, Unit * Integer, Unit * Integer) = Flow.stay(Unit * Integer);
+9 │ def bare_product : Flow(Type, Unit * Integer, Unit * Integer) = Flow.stay(Unit * Integer);
   │                                                                 ┬─────────┯━━━───────────
   │                                                                 │         │
   │                                                                 │         its type does not convert: expected `Integer`, found `Type`

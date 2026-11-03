@@ -1,5 +1,8 @@
 // The twin of `../../model/sessions/type-quote.gandr`: a type quote is the
-// code of the type it quotes and of no other (#839).
+// code of the type it quotes and of no other.
+//
+// - see: #839
+// - see: #1728 — `open_payload`
 
 /// The stationary flow at a protocol that opens with a receive is no flow to
 /// one that opens with a send.
@@ -8,7 +11,7 @@ def quoted_receive : Flow(Type, ?String. end, !String. end) = Flow.stay(type(?St
 
 /// A quote beneath a motive's binder whose payload reads that binder: a
 /// session's payload codes form in the empty term context, so the quote is
-/// the code of no session at any point of the motive (#1728).
+/// the code of no session at any point of the motive.
 @[ refuses("OpenSessionPayload") ]
 def open_payload : Path(Type, ?String. end, ?String. end) = Path.walk(
   fun (X) { Path(Type, type(?String. end), type(?X. end)) },

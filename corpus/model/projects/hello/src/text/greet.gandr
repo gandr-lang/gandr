@@ -1,7 +1,9 @@
-// #2687: a source anywhere under the package source's directory is the
+// A source anywhere under the package source's directory is the
 // package's module `text.greet`, named by its path; `gandr check` given this
 // path, or run with none from here, checks the whole package and reconciles its
 // manifest.
+//
+// - see: #2687
 
 /// The greeting the package offers.
 pub def greeting = "hello, world";

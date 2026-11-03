@@ -1,7 +1,9 @@
 // The twin of `model/data/eta.gandr`: η reads a neutral as the tuple of its
 // own projections at their own positions, so a tuple of them in another
 // order, a record with its fields crossed, or the projections of another
-// neutral stay apart from it (#715).
+// neutral stay apart from it.
+//
+// - see: #715
 
 /// The pair's components swapped.
 @[ refuses("EndpointMismatch") ]

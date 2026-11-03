@@ -1,6 +1,8 @@
-// The obligation an imported `include` creates (#1224): the imported
+// The obligation an imported `include` creates: the imported
 // monoid's rules join the including block's, and the union is completed as
 // one block, exactly as for a block of the same source.
+//
+// - see: #1224
 
 // The semigroup and the monoid.
 import "../../model/include/monoid.gandr";

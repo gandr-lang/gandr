@@ -1,7 +1,9 @@
 // A host module has only the operations it declares: `fs` has no `copy`. The
-// lowering admits no member selection on a module yet (#1106), so that
+// lowering admits no member selection on a module yet, so that
 // refusal stands in front of this one.
+//
+// - see: #1106 — `copied`
 
-/// `fs.copy`, an operation `fs` does not have (#1106).
+/// `fs.copy`, an operation `fs` does not have.
 @[ refuses("OutOfFragment.projection_expression") ]
 def copied = fs.copy("/a", "/b");

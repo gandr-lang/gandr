@@ -1,6 +1,9 @@
 /// `effects-as-data`: Effects as data, replayed by the kernel.
 /// Implemented: a program over a row of operations written as a tree, the free model of its operations, each handler a fold, so the kernel replays the declaration whole; a native deep handler crosses by this translation, its effect's free model one constructor per operation, whether a capability scope writes its clauses, names a model or leaves them to the one model in scope (`corpus/model/effects/exit.gandr`, `corpus/model/effects/state-handler.gandr`).
-/// Not implemented: native handlers past that form crossing by this translation: a request off the bind spine, a reset, a shallow handler and control are not replayed; #2742 owes them.
+/// Not implemented: native handlers past that form crossing by this translation: a request off the bind spine, a reset, a shallow handler and control are not replayed.
+///
+/// - owes: #2742
+/// - see: #2512 — `runExnAt`
 // Rows as data: two effects in one row, each handler a fold that answers the
 // operation at the front of the row and forwards the rest, so handling
 // peels the row one effect at a time down to `Void`, where a program is its
@@ -89,7 +92,7 @@ def failing : Prog(Either(ExnOp, Void), Integer) = Op(
 ) ;
 
 /// `runExn` at the front of the two-effect row. An applied type cannot yet
-/// stand as a type argument (#2512), so the runs below use the handlers at
+/// stand as a type argument, so the runs below use the handlers at
 /// their instances, written out.
 def rec runExnAt(p : Prog(Either(ExnOp, Either(StateOp, Void)), Integer)) -> Prog(
   Either(StateOp, Void),

@@ -1,6 +1,9 @@
 /// `derive-over-codes`: Derivations over levitated codes.
 /// Implemented: `Eq.generic(T)` reads a closed family's levitated code — the constructor table, the product spine, a `var` as the recursion and each leaf at the type it names — into closed core the checker judges and the kernel replays.
-/// Not implemented: a code with a parameter, a `rec` pair read as one code of two sorts, and the derivation written in gandr over a code value; #2345 and #2343 owe them.
+/// Not implemented: a code with a parameter, a `rec` pair read as one code of two sorts, and the derivation written in gandr over a code value.
+///
+/// - owes: #2345
+/// - owes: #2343
 // `Nat`'s code is `1` for `Zero` and `var Nat` for `Succ` (Chapman, Dagand,
 // McBride and Morris, _The Gentle Art of Levitation_, ICFP 2010,
 // doi:10.1145/1863543.1863547); its equality is read off that code.

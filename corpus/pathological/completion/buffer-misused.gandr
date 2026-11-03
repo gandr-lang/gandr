@@ -4,6 +4,8 @@
 // the registered area, one handed back twice is reclaimed while the kernel
 // may still own it, and one read while held would observe bytes the kernel
 // may still be writing.
+//
+// - see: #1792 — `freedInOneArm`
 
 // The native buffer a receive places live.
 import std.buffer (Buf);
@@ -113,7 +115,7 @@ def receivedReturnedTwice() -> Unit {
 }
 
 /// A buffer freed in one arm of a case and kept in the other, refused at the
-/// arm that keeps it (#1792).
+/// arm that keeps it.
 @[ refuses("BufferUnreturned") ]
 def freedInOneArm(flag : Bool) -> Unit {
   handle r : std.io.Ring.Eff {

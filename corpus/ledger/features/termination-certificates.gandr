@@ -1,6 +1,8 @@
 /// `termination-certificates`: Replayable termination certificates.
 /// Implemented: one termination evidence form, a path order's derivation over the precedence as data, replayed by the kernel for an operation's and a theory's rules and read by the front end and the cell layer.
-/// Not implemented: a size measure for a fixpoint; #392 owes it.
+/// Not implemented: a size measure for a fixpoint.
+///
+/// - owes: #392
 // A rule written as an equation, `<=>`: one term spelled two ways, with the
 // left side the one a reader would rewrite to. The order of terms chooses the
 // direction, so `x <=> S(P(x))` still runs `S(P(x))` to `x` (Huet, _Confluent

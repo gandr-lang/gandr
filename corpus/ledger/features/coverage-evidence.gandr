@@ -1,6 +1,8 @@
 /// `coverage-evidence`: Coverage as replayable evidence.
 /// Implemented: a semantic coverage verdict the kernel replays, fed by unification: a pattern hole's arms covered by the canonical cover.
-/// Not implemented: index refinement and local matching equations; a hole whose cover cannot be derived is refused as undecided by name; #391 owes it.
+/// Not implemented: index refinement and local matching equations; a hole whose cover cannot be derived is refused as undecided by name.
+///
+/// - owes: #391
 // A match whose every arm is written covers its scrutinee, and a hole in an
 // arm's body leaves it covering: the term is owed, the arm is decided. The
 // twin in `pathological/holes/` leaves an arm to a pattern hole.

@@ -1,6 +1,8 @@
 // A host interface lives at its home, `std.io.Console.Eff`, and a bare name
-// reaches none (#4495): a row, a scope and a call written with the bare name
+// reaches none: a row, a scope and a call written with the bare name
 // are each refused where they name it.
+//
+// - see: #4495
 
 /// A row naming the console bare.
 @[ refuses("UnresolvedTypeHead") ]

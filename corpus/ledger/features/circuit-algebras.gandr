@@ -1,6 +1,8 @@
 /// `circuit-algebras`: Circuit algebras.
 /// Implemented: a circuit rule's body read as a monogamous acyclic wiring, matched by embedding with a convexity check and compared by its diagram normal form; a wheel's feed kept beside its cut-open wiring.
-/// Not implemented: a model of a theory holding a circuit rule, which is refused, so no wheel runs; #1323 owes it.
+/// Not implemented: a model of a theory holding a circuit rule, which is refused, so no wheel runs.
+///
+/// - owes: #1323
 // A circuit rule in a `theory` block: a rule whose inputs are a rewrite and two
 // data wires, and whose body wires two nodes. `Theory` codes no circuit rule yet,
 // so the rule is kept beside the block's value rather than in it. The wiring

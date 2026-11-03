@@ -112,7 +112,7 @@ def nights_cell: "\(.nights)\(if .nights >= 3 then " — a refusal candidate" el
           + ($labels | map("| #\(.issue) | \(.found) | \(nights_cell) |") | join("\n")) + "\n"
         else "" end)
       + (if ($ledger | length) > 0 then
-          "\n## Ledger\n\nThe table lists each features row that owes on a closed or closing issue. A row without a witness owes on an open issue (`check:ledger`, #2526, #2635). To repair a row, name the issue that owes the rest in the row's `issue` field. Or name it in the exemplar's `/// Not implemented:` line. Repair the row before the issue closes (#2973).\n\n| Row | Found | Nights |\n| --- | --- | --- |\n"
+          "\n## Ledger\n\nThe table lists each features row that owes on a closed or closing issue. A row without a witness owes on an open issue (`check:ledger`, #2526, #2635). To repair a row, name the issue that owes the rest in the row's `issue` field. Or name it on a `/// - owes:` line in the exemplar's head. Repair the row before the issue closes (#2973).\n\n| Row | Found | Nights |\n| --- | --- | --- |\n"
           + ($ledger | map("| `\(.row)` | \(.found) | \(nights_cell) |") | join("\n")) + "\n"
         else "" end)
       + "\n<!-- deps-report: \($all | map({(.key): .nights}) | add | tojson) -->\n"

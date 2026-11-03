@@ -9,10 +9,10 @@
 // states. Each turns to `checks` as its rung lands, and the source then moves
 // to the model root.
 //
-// - see: #3515 — not implemented: injectivity, for `tail` and `zip`
-// - see: #3516 — not implemented: an implicit under a constructor, for
+// - owes: #3515 — injectivity, for `tail` and `zip`
+// - owes: #3516 — an implicit under a constructor, for
 //   `firstOfPair`
-// - see: #3517 — not implemented: an implicit block on `def rec`, for `zip`
+// - owes: #3517 — an implicit block on `def rec`, for `zip`
 // - see: #3481 — the spike that wrote these programs
 
 // The naturals the lengths count in.

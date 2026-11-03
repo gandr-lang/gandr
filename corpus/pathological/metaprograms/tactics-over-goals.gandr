@@ -1,7 +1,9 @@
-// The refusals of tactics over goals (#2762): a tactic whose goal no binder
+// The refusals of tactics over goals: a tactic whose goal no binder
 // answers, an introduction where no function is asked, a splice with no type
 // to check it against, an operand that writes no tactic, and a splice where a
 // computation is read.
+//
+// - see: #2762
 
 /// No binder in scope is an integer: `assumption` has no answer.
 @[ refuses("TacticRefused") ]

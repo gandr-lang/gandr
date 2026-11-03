@@ -1,8 +1,11 @@
 // Loops and their exits. A `loop` or a `while` may run forever, so the
 // function holding one states `Partial` in its row, `-F [Partial] T`: the host
-// interface with no operation, which nothing handles (#1481). A caller holds
+// interface with no operation, which nothing handles. A caller holds
 // it in its own row, and an entry runs at `+U (-F [Partial] T)`. A `for` over a
 // list descends on the list and needs no entry; each `become` is an exit.
+//
+// - see: #1481
+// - see: #283 — `find_succ`, `find_one`, `find_none`, `for_each`, `for_value`
 
 // The native finite lists.
 import std.list (List);
@@ -135,7 +138,7 @@ def held(n : Nat) -> -F Nat {
 
 /// A `for` steps through a native list: `continue` runs the loop again on the
 /// list's tail, `return` leaves the function from inside it, and what follows
-/// the loop reads the binders around it (#283).
+/// the loop reads the binders around it.
 def find_succ(xs : List(Nat), otherwise : Nat) -> Nat {
   for x in xs {
     match x {
@@ -146,22 +149,22 @@ def find_succ(xs : List(Nat), otherwise : Nat) -> Nat {
   otherwise
 }
 
-/// The search returns from the second cell (#283).
+/// The search returns from the second cell.
 @[ runs("Succ(Zero)") ]
 def find_one() -> Nat { become find_succ(cons(Zero, cons(Succ(Succ(Zero)), nil)), Zero) }
 
 /// The search reaches the empty list, which leaves the loop with unit, and
-/// returns what it was given (#283).
+/// returns what it was given.
 @[ runs("Succ(Zero)") ]
 def find_none() -> Nat { become find_succ(cons(Zero, nil), Succ(Zero)) }
 
-/// A `for` ending a body runs it on every cell and returns unit (#283).
+/// A `for` ending a body runs it on every cell and returns unit.
 def for_each(xs : List(Nat)) -> Unit {
   for x in xs { tick(x); }
 }
 
 /// A `for` leaves with unit on the empty list, so a `break` with a value of
-/// another type does not check (#283).
+/// another type does not check.
 @[ refuses("TypeMismatch") ]
 def for_value(xs : List(Nat)) -> Nat {
   let m = for x in xs { break(x) };

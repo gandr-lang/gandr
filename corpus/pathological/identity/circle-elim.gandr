@@ -3,6 +3,9 @@
 // the loop, its answer at the point must be that answer, by conversion or by
 // a loop arm at the path between the two. Last, two operations on paths,
 // written with no path type stated, that their operands refuse.
+//
+// - see: #464 — `rotTwin`
+// - see: #485 — `elsewhereComputed`
 
 /// The circle: one point and a loop at it.
 data Circle : Type where {
@@ -23,7 +26,7 @@ def contractible(x : Circle) -> Path(Circle, Base, x) {
 /// The same nesting as `circle-rotation.gandr`'s `rotInv1`, at a fibre that
 /// is no set: a point with a loop at it, a 1-type. Holding `b` at its point
 /// drops the square between the two loops, which only a fibre presented as a
-/// set leaves unowed, so the case is refused naming the fibre (#464).
+/// set leaves unowed, so the case is refused naming the fibre.
 @[ refuses("LoopNotRespected") ]
 def rotTwin(a : Circle, b : Circle) -> #{centre : Circle, around : Path(Circle, a, a)} {
   match a {
@@ -79,7 +82,7 @@ def kept(x : Marked) -> Marked {
 /// Reflexivity at the looped point, wanted at a path whose endpoints compute
 /// the other point: `kept(Elsewhere)` computes `Elsewhere`, which the turn
 /// never reaches, so the path is no words and `Path.here(Mark)` does not inhabit
-/// it (#485).
+/// it.
 @[ refuses("TypeMismatch") ]
 def elsewhereComputed : Path(Marked, kept(Elsewhere), kept(Elsewhere)) = Path.here(Mark);
 

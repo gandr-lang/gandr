@@ -1,15 +1,16 @@
 // A record literal, a field inserted by the `record` namespace, and a field
 // read back by name.
+//
+// - see: #1106 — `extended`, `kind`
 
 /// A record of two fields.
 def base = #{name = "gandr", stars = 1};
 
 /// The record with a third field inserted, reached by projection from the
-/// `record` namespace, which the lowering admits for no builtin yet (#1106).
+/// `record` namespace, which the lowering admits for no builtin yet.
 @[ refuses("OutOfFragment.projection_expression") ]
 def extended = record.insert(base, "kind", "language");
 
-/// The inserted field read back, through the `record` namespace's projection
-/// (#1106).
+/// The inserted field read back, through the `record` namespace's projection.
 @[ refuses("OutOfFragment.projection_expression") ]
 def kind = record.get(extended, "kind");

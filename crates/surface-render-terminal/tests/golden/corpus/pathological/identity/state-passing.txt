@@ -1,35 +1,35 @@
 error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
-   ╭▸ corpus/pathological/identity/state-passing.gandr:12:3
+   ╭▸ corpus/pathological/identity/state-passing.gandr:14:3
    │
-11 │    def rec storesCounted(p : Stores, n : Integer) -> Integer {
+13 │    def rec storesCounted(p : Stores, n : Integer) -> Integer {
    │    │                     ┬           ─ checked against `Integer -> -F Integer`; while checking the body of this function; binds n : Integer
    │    │                     │
    │ ┌──┘                     checked against `Stores -> Integer -> -F Integer`; while checking the body of this function; binds p : Stores
    │ │
-12 │ │┏   match p {
-13 │ │┃     End(_x) => n,
-14 │ │┃     Store(_t, k) => storesCounted[<](k, n + 1)
-15 │ │┃   }
+14 │ │┏   match p {
+15 │ │┃     End(_x) => n,
+16 │ │┃     Store(_t, k) => storesCounted[<](k, n + 1)
+17 │ │┃   }
    │ │┗━━━┛ a case its datatype's rules do not admit
-16 │ │  }
+18 │ │  }
    │ └──┘ checked against `(Stores, Integer) => Integer`; while checking the body of this function; binds storesCounted : (Stores, Integer) => Integer
    │
    ├ note: `storesCounted` is refused with RuleNotRespected, as its expectation states
    ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies
 
 error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
-   ╭▸ corpus/pathological/identity/state-passing.gandr:22:3
+   ╭▸ corpus/pathological/identity/state-passing.gandr:24:3
    │
-21 │    def rec storeCount(p : Stores) -> Integer {
+23 │    def rec storeCount(p : Stores) -> Integer {
    │    │                  ─ checked against `Stores -> -F Integer`; while checking the body of this function; binds p : Stores
    │ ┌──┘
    │ │
-22 │ │┏   match p {
-23 │ │┃     End(_x) => 0,
-24 │ │┃     Store(_t, k) => storeCount[<](k) + 1
-25 │ │┃   }
+24 │ │┏   match p {
+25 │ │┃     End(_x) => 0,
+26 │ │┃     Store(_t, k) => storeCount[<](k) + 1
+27 │ │┃   }
    │ │┗━━━┛ a case its datatype's rules do not admit
-26 │ │  }
+28 │ │  }
    │ └──┘ checked against `Stores => Integer`; while checking the body of this function; binds storeCount : Stores => Integer
    │
    ├ note: `storeCount` is refused with RuleNotRespected, as its expectation states

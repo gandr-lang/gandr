@@ -3,7 +3,9 @@
 // substitutions at an abstraction unfold the outer one at the inner one's
 // stuck call, beside the lifting call that unfolds to `Lift`; the two
 // recursive calls compare part by part, so the step converts as it does with
-// lifting a constructor (#879).
+// lifting a constructor.
+//
+// - see: #879
 
 // The naturals; the terms and the lookup.
 import "../model-in-source.gandr";

@@ -1,19 +1,19 @@
 error[DuplicateDefinition]: `Kit` is defined twice
-   ╭▸ corpus/pathological/modules/dotted-prefix-clash.gandr:13:8
+   ╭▸ corpus/pathological/modules/dotted-prefix-clash.gandr:15:8
    │
- 6 │ module Kit where {
+ 8 │ module Kit where {
    │        ─── first written here
    ┆
-13 │ theory Kit.Labelled where {
+15 │ theory Kit.Labelled where {
    │        ━━━ written again here
    │
    ├ note: `Labelled` is refused with DuplicateDefinition, as its expectation states
    ╰ help: give each definition of `Kit` its own name, or delete one of them
 
 error[UnknownMember]: the module `Kit` has no member `Missing`
-   ╭▸ corpus/pathological/modules/dotted-prefix-clash.gandr:20:24
+   ╭▸ corpus/pathological/modules/dotted-prefix-clash.gandr:22:24
    │
-20 │ module Tag : Model(Kit.Missing) where {
+22 │ module Tag : Model(Kit.Missing) where {
    │                        ━━━━━━━ no member of this name
    │
    ├ note: `Tag` is refused with UnknownMember, as its expectation states

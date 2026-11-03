@@ -1,6 +1,8 @@
 /// `derived-rules`: Derived rules at a model (rule T.r : l <=> r).
 /// Implemented: `rule T.r : l <=> r;`, an equation the theory's completed rules prove, proved for every model as a path over the model's fields and read as the member `T.r`.
-/// Not implemented: a theory with an indexed sort or a nested model; #1301 owes it.
+/// Not implemented: a theory with an indexed sort or a nested model.
+///
+/// - owes: #1301
 // A rule a theory's completion derives, stated as a declaration of its own
 // and proved for every model: `rule T.r : l <=> r;` holds when the
 // theory's completed rules rewrite both sides to one normal form, and the

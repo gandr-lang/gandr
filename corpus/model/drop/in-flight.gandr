@@ -3,6 +3,8 @@
 // is the one that observes the cancellation (Fowler, Lindley, Morris and
 // Decova, _Exceptional Asynchronous Session Types_, POPL 2019,
 // doi:10.1145/3290341).
+//
+// - see: #1334 — `inFlight`
 
 // The ring's protocol and its entries.
 import "../completion/ring-base.gandr";
@@ -10,7 +12,7 @@ import "../completion/ring-base.gandr";
 import std.process;
 
 /// A read submitted and its completion abandoned in flight: the clause
-/// abandons the rest that would reap it (#1334).
+/// abandons the rest that would reap it.
 @[ runs("unit") ]
 def inFlight() -> Unit {
   handle c : std.process.Exit.Eff {

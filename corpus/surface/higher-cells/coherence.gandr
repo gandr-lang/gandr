@@ -4,12 +4,14 @@
 //
 // A category's own triangle and pentagon, over the composition of
 // `cat-shape.gandr`, return here once the cell layer reads an operation
-// nested in a law (#1510):
+// nested in a law:
 //
 //   rule triangle : (Path.step(assoc(f, id(b), g), comp(f, unitL(g))))
 //     ==> comp(unitR(f), g);
 //   rule pentagon : (Path.step(assoc(comp(f, g), h, k), assoc(f, g, comp(h, k))))
 //     ==> (Path.step(Path.step(comp(assoc(f, g, h), k), assoc(f, comp(g, h), k)), comp(f, assoc(g, h, k))));
+//
+// - see: #1510
 
 /// Two steps and the shortcut between their ends: the cell relates the
 /// composite of the steps to the shortcut.

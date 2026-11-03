@@ -5,6 +5,8 @@
 // doi:10.1016/j.tcs.2017.02.009). `Prefix(S)` holds every record the
 // protocol accepts so far, complete or not; `Run(S)` holds only the complete
 // ones (`./seat-evolution.gandr`).
+//
+// - see: #1861 — `reporting`
 
 // The native session formers.
 import std.session (Prefix);
@@ -16,7 +18,7 @@ import "./seat-base.gandr";
 def unstarted : Prefix(Seat.SeatEnd) = recorded();
 
 /// A seat that took its task and reported, its next move the offer to go on
-/// or retire: open, so a prefix (#1861).
+/// or retire: open, so a prefix.
 pub def reporting : Prefix(Seat.SeatEnd) = recorded(
   received(Seat.task),
   selected(report),

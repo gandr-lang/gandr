@@ -11,7 +11,7 @@
 // fails on size. The third declares only `add`, so `less` performs an
 // operation it does not declare.
 //
-// - see: #327 — not implemented: a member's type beyond the fixed-width atoms
+// - owes: #327 — a member's type beyond the fixed-width atoms
 // - see: `model/interop/boundary/round-trip.gandr` — the form, called from
 //   Rust, and admitted against its row
 

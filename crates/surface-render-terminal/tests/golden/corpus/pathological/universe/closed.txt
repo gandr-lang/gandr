@@ -1,7 +1,7 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/universe/closed.gandr:30:35
+   ╭▸ corpus/pathological/universe/closed.gandr:32:35
    │
-30 │ def one : el(Arrow(NatC, NatC)) = Succ(Zero);
+32 │ def one : el(Arrow(NatC, NatC)) = Succ(Zero);
    │           ┬────────────────────   ┯━━━━━━━━━
    │           │                       │
    │           │                       its type does not convert: expected `el(Arrow(NatC, NatC))`, found `Nat`
@@ -12,9 +12,9 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/universe/closed.gandr:35:49
+   ╭▸ corpus/pathological/universe/closed.gandr:37:49
    │
-35 │ def idAt(c : U, v : el(c)) -> el(Arrow(c, c)) { v }
+37 │ def idAt(c : U, v : el(c)) -> el(Arrow(c, c)) { v }
    │ ┬────────┬──────┬───────────────────────────────┯──
    │ │        │      │                               │
    │ │        │      │                               its type does not convert: expected `el(Arrow(c, c))`, found `el(c)`
@@ -26,9 +26,9 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/universe/closed.gandr:46:35
+   ╭▸ corpus/pathological/universe/closed.gandr:48:35
    │
-46 │ def miscoded : Coded = Pack(NatC, NatC);
+48 │ def miscoded : Coded = Pack(NatC, NatC);
    │                        ┬──────────┯━━━─
    │                        │          │
    │                        │          its type does not convert: expected `el(NatC)`, found `U`
@@ -39,9 +39,9 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[OutOfFragment.Arity]: the type variable cannot take 0 operands
-   ╭▸ corpus/pathological/universe/closed.gandr:52:28
+   ╭▸ corpus/pathological/universe/closed.gandr:54:28
    │
-52 │ def unapplied(c : U) -> -F el { return c }
+54 │ def unapplied(c : U) -> -F el { return c }
    │                            ━━ the wrong number of operands
    │
    ╰ note: `unapplied` is refused with OutOfFragment.Arity, as its expectation states

@@ -1,6 +1,8 @@
 // A lambda's parameter written with its type, `fun (x : A) { … }`, is read at
 // `A`: the argument the lambda binds is returned at `A` and bound as the
-// parameter, so the arrow the lambda answers must take an `A` (#1310).
+// parameter, so the arrow the lambda answers must take an `A`.
+//
+// - see: #1310
 
 /// Doubles its argument, the parameter typed where the lambda binds it.
 def double : Integer => Integer = fun (x : Integer) { x + x };

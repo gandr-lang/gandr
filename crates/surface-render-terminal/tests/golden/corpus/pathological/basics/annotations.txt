@@ -1,16 +1,16 @@
 error[OutOfFragment.WrongSort]: a parenthesized expression cannot stand where a computation is expected
-   ╭▸ corpus/pathological/basics/annotations.gandr:37:30
+   ╭▸ corpus/pathological/basics/annotations.gandr:39:30
    │
-37 │ def stated() -> -F Integer { (3 : Integer); return 1 }
+39 │ def stated() -> -F Integer { (3 : Integer); return 1 }
    │                              ━━━━━━━━━━━━━ a form of another sort than this position takes
    │
    ├ note: `stated` is refused with OutOfFragment.WrongSort, as its expectation states
    ╰ help: write a computation in this position
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-  ╭▸ corpus/pathological/basics/annotations.gandr:7:18
+  ╭▸ corpus/pathological/basics/annotations.gandr:9:18
   │
-7 │ def misstated = ("three" : Integer);
+9 │ def misstated = ("three" : Integer);
   │                  ┯━━━━━━   ─────── the type it is checked against
   │                  │
   │                  its type does not convert: expected `Integer`, found `String`
@@ -19,25 +19,25 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
   ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/basics/annotations.gandr:12:4
+   ╭▸ corpus/pathological/basics/annotations.gandr:14:4
    │
-11 │ ┌ def misreturned() -> Integer {
-12 │ │   ("three" : Integer)
+13 │ ┌ def misreturned() -> Integer {
+14 │ │   ("three" : Integer)
    │ │   ┬┯━━━━━━───┬───────
    │ │   ││         │
    │ │   ││         the type it is checked against
    │ │   │its type does not convert: expected `Integer`, found `String`
    │ │   checked against `-F Integer`; while judging the value this returns
-13 │ │ }
+15 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
    ├ note: `misreturned` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/basics/annotations.gandr:17:45
+   ╭▸ corpus/pathological/basics/annotations.gandr:19:45
    │
-17 │ def mistyped : Integer => Integer = thunk { fun (x : String) { 1 } };
+19 │ def mistyped : Integer => Integer = thunk { fun (x : String) { 1 } };
    │                ┬──────              ┬───────┯━━━━━━━━┬─────━━━━━━━──
    │                │                    │       │        │
    │                │                    │       │        the type it is checked against
@@ -49,9 +49,9 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/basics/annotations.gandr:21:15
+   ╭▸ corpus/pathological/basics/annotations.gandr:23:15
    │
-21 │ def inner = (("three" : Integer), 1);
+23 │ def inner = (("three" : Integer), 1);
    │             ┬┬┯━━━━━━───┬───────────
    │             │││         │
    │             │││         the type it is checked against
@@ -63,9 +63,9 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/basics/annotations.gandr:25:28
+   ╭▸ corpus/pathological/basics/annotations.gandr:27:28
    │
-25 │ def disagreeing : String = (3 : Integer);
+27 │ def disagreeing : String = (3 : Integer);
    │                   ┬─────   ┯━━━━┬──────━
    │                   │        │    │
    │                   │        │    the type it synthesises
@@ -76,18 +76,18 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/basics/annotations.gandr:31:39
+   ╭▸ corpus/pathological/basics/annotations.gandr:33:39
    │
-30 │ ┌ def splitWrong() -> Integer {
-31 │ │   let (y, z) : Integer * String = (1, 2);
+32 │ ┌ def splitWrong() -> Integer {
+33 │ │   let (y, z) : Integer * String = (1, 2);
    │ │   ┬──                    ┬─────   ┬───┯─
    │ │   │                      │        │   │
    │ │   │                      │        │   its type does not convert: expected `String`, found `Integer`
    │ │   │                      │        checked against `-F (Integer * String)`; while judging the value this returns
    │ │   │                      the type it is checked against
    │ │   checked against `-F Integer`; while finishing the type of this
-32 │ │   y
-33 │ │ }
+34 │ │   y
+35 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
    ├ note: `splitWrong` is refused with TypeMismatch, as its expectation states
