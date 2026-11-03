@@ -2937,6 +2937,79 @@ pub mod tests
         }
     }
 
+    /// Two fixtures importing a standard library module the walk is given
+    /// are judged apart, each after its own copy of the module, which is
+    /// also judged once on its own.
+    #[test]
+    fn importers_of_a_given_std_module_are_judged_apart_4856()
+    {
+        let scratch = Scratch::new(Path::new("std-importers"));
+        for side in ["left", "right"] {
+            scratch.file(
+                Path::new(&format!("fixture/{side}.gandr")),
+                SourceText::from(
+                    format!(
+                        "import std.string (concat) ;\n\n@[ checks ]\ndef {side} : Integer ;\ndef \
+                         {side} = 1 ;\n"
+                    )
+                    .as_str(),
+                ),
+            );
+        }
+        let module = std::fs::canonicalize(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std/src/string.gandr"),
+        )
+        .expect("the standard library is checked out");
+        let written = std::fs::read_to_string(&module).expect("the module reads");
+        for width in widths() {
+            let mut judged = Vec::new();
+            let ControlFlow::Continue(report) =
+                Walk::new(vec![scratch.0.join("fixture"), module.clone()]).visit(
+                    &Pool::new(width),
+                    |step| -> ControlFlow<Infallible> {
+                        let Step::Source {
+                            path,
+                            text,
+                            base: own,
+                            standing,
+                            ..
+                        } = step
+                        else {
+                            panic!("each source is read: {step:?}");
+                        };
+                        let name = path
+                            .file_stem()
+                            .map(|stem| stem.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        assert_eq!(standing, Standing::Settled, "{name} settles");
+                        judged.push((name, <&str>::from(text).to_owned(), own));
+                        ControlFlow::Continue(())
+                    },
+                );
+            assert_eq!(
+                usize::from(report.lowerings()),
+                usize::from(report.sources().read()).saturating_add(2_usize),
+                "at {width:?}, each source is lowered once, and the module once more in each \
+                 importer's component"
+            );
+            for (side, other) in [("left", "right"), ("right", "left")] {
+                let &(_, ref text, own) = judged
+                    .iter()
+                    .find(|&&(ref name, ..)| name == side)
+                    .unwrap_or_else(|| panic!("{side} is walked"));
+                let before = text.get(.. usize::from(own)).unwrap_or_default();
+                assert!(
+                    before.contains(written.as_str()),
+                    "at {width:?}, {side} is judged after the module it imports"
+                );
+                assert!(
+                    !text.contains(&format!("def {other}")),
+                    "at {width:?}, {side} is judged apart from {other}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn each_source_of_a_component_settles_under_its_own_root_3100()
     {
