@@ -23,16 +23,23 @@ git diff --name-only --diff-filter=AM "$base" HEAD -- 'crates/*/tests/debug-trac
 git diff --name-only "$base" HEAD | jq -R . | jq -s . > "$scratch/paths.json"
 # A change touching no Rust is witnessed by a `.config` case it adds (#3784):
 # every name a JSON file under `.config` holds at HEAD and did not hold at the
-# base.
-git diff --name-only --diff-filter=AM "$base" HEAD -- ':(glob).config/**/*.json' \
-  | while IFS= read -r path; do
-      git show "$base:$path" 2> /dev/null | jq -c '[.. | objects | .name? | strings]' > "$scratch/before.json" 2> /dev/null \
-        || echo '[]' > "$scratch/before.json"
-      [[ -s $scratch/before.json ]] || echo '[]' > "$scratch/before.json"
-      jq -c --arg path "$path" --slurpfile before "$scratch/before.json" \
-        '[.. | objects | .name? | strings] - $before[0] | map({path: $path, name: .})' "$path"
-    done \
-  | jq -s 'add // []' > "$scratch/cases.json"
+# base, and every `fail "#<n>: …"` line a `cases.bash` under `.config` adds,
+# its quoted text the name (#4863).
+{
+  git diff --name-only --diff-filter=AM "$base" HEAD -- ':(glob).config/**/*.json' \
+    | while IFS= read -r path; do
+        git show "$base:$path" 2> /dev/null | jq -c '[.. | objects | .name? | strings]' > "$scratch/before.json" 2> /dev/null \
+          || echo '[]' > "$scratch/before.json"
+        [[ -s $scratch/before.json ]] || echo '[]' > "$scratch/before.json"
+        jq -c --arg path "$path" --slurpfile before "$scratch/before.json" \
+          '[.. | objects | .name? | strings] - $before[0] | map({path: $path, name: .})' "$path"
+      done
+  git diff -U0 --no-renames --no-color "$base" HEAD -- ':(glob).config/**/*cases.bash' \
+    | jq -Rs '[foreach (split("\n")[]) as $line ({path: null};
+        if ($line | startswith("+++ ")) then {path: ($line | sub("^\\+\\+\\+ (b/)?"; ""))}
+        else {path, text: (if ($line | startswith("+")) then $line[1:] else null end)} end;
+        select(.text != null) | {path, name: (.text | capture("\\bfail\\s+\"(?<name>#[0-9]+:[^\"]*)\"").name)})]'
+} | jq -s 'add // []' > "$scratch/cases.json"
 jq -n --argjson defect "$defect" --rawfile body "$body" \
   --slurpfile transcripts "$scratch/transcripts.json" \
   --slurpfile paths "$scratch/paths.json" \
