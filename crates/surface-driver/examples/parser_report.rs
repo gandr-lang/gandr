@@ -11,6 +11,7 @@
 //! | recovery | each mutant's fate over the syntax exemplars | `gandr ledger recovery`'s sweep |
 //! | ambiguity | each decision's settling stage, the candidates it read, and the windows and window tokens it molded | the molder's [`DecisionCensus`] over every corpus source |
 //! | incremental | per edit, the tokens re-labelled and the forms re-molded against what the edit touches | a form store per [`SAMPLE`] source, through the latency workload's keystrokes and the edit sweep's form edits |
+//! | parallel | the units the form split molds apart, the seams that break, the bytes in units that join as molded, and the split's scan against the cold parse | [`FormSplit`] over each corpus source, its runs molded and joined as [`parse_by_form`](gandr_surface_parser::parse_by_form) does, the scan's fastest of [`RUNS`] |
 //!
 //! The corpus is the sweeps' corpus, its strict and fixture roots, listed by
 //! `gandr-workflow-sweep`. The latency workload's client is the benchmark
@@ -36,10 +37,13 @@ use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
 use gandr_surface_parser::DecisionCensus;
 use gandr_surface_parser::DecisionCount;
+use gandr_surface_parser::FormSplit;
+use gandr_surface_parser::FormUnit;
 use gandr_surface_parser::Lexeme;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::MeldState;
 use gandr_surface_parser::Molder;
+use gandr_surface_parser::UnitSeam;
 use gandr_surface_parser::label;
 use gandr_surface_parser::parse;
 use gandr_surface_session::FormStore;
@@ -357,6 +361,86 @@ struct Throughput
     tokens: Tally,
     /// The fastest run of each source, summed.
     wall: Duration,
+}
+
+/// What the form split holds of the corpus.
+#[derive(Clone, Copy, Debug, Default)]
+struct Parallel
+{
+    /// The split's runs, each a unit molded apart.
+    units: Tally,
+    /// The units whose seam broke, molded again onto the state before them.
+    broken: Tally,
+    /// The bytes of the units that joined as molded.
+    held: Tally,
+    /// The fastest split of each source, summed.
+    scan: Duration,
+}
+
+/// The fastest of [`RUNS`] form splits of `text`.
+///
+/// # Specification
+/// trivial.
+fn fastest_split(
+    molder: &Molder<'_>,
+    text: SourceText<'_>,
+) -> Duration
+{
+    let mut best = Duration::MAX;
+    for _ in 0 .. RUNS {
+        let start = Instant::now();
+        let split = FormSplit::new(molder, text);
+        let wall = start.elapsed();
+        drop(core::hint::black_box(split));
+        best = best.min(wall);
+    }
+    best
+}
+
+/// Split `text` into its form runs, mold each apart and join them, adding to
+/// `parallel` the units, the broken seams, the bytes of the units that joined
+/// as molded, and the split's fastest scan.
+///
+/// # Specification
+/// trivial.
+fn parallel_of(
+    pbg: &Pbg,
+    text: SourceText<'_>,
+    parallel: &mut Parallel,
+) -> Result<(), Failure>
+{
+    let mut molder = Molder::new(pbg);
+    parallel.scan = parallel.scan.saturating_add(fastest_split(&molder, text));
+    let split = FormSplit::new(&molder, text);
+    let runs = split.runs().to_vec();
+    let units: Vec<FormUnit<'_>> = runs
+        .iter()
+        .map(|&run| split.mold(&mut molder, run))
+        .collect();
+    let joined = split.join(&mut molder, units)?;
+    let labeling = split.into_labeling();
+    let tokens = labeling.tokens();
+    for (run, seam) in runs.iter().zip(joined.seams()) {
+        parallel.units = parallel.units.and(Tally(1));
+        let (UnitSeam::Joined, Some(first), Some(last)) = (
+            *seam,
+            tokens.get(usize::from(run.start())),
+            usize::from(run.end())
+                .checked_sub(1)
+                .and_then(|end| tokens.get(end)),
+        )
+        else {
+            parallel.broken = parallel
+                .broken
+                .and(Tally(usize::from(matches!(seam, UnitSeam::Broken(_)))));
+            continue;
+        };
+        let bytes = last.end.saturating_sub(first.start);
+        parallel.held = parallel
+            .held
+            .and(Tally(usize::try_from(bytes).unwrap_or(usize::MAX)));
+    }
+    Ok(())
 }
 
 /// Mold `text` once, adding the molder's census to `census`, and count its
@@ -807,6 +891,7 @@ fn main() -> Result<(), Failure>
     let pbg = built_in()?;
     let mut throughput = Throughput::default();
     let mut census = DecisionCensus::default();
+    let mut parallel = Parallel::default();
     for source in gandr_workflow_sweep::corpus::sources()? {
         let text = std::fs::read_to_string(&source.path)?;
         let text = SourceText::from(text.as_str());
@@ -815,6 +900,7 @@ fn main() -> Result<(), Failure>
         throughput.sources = throughput.sources.and(Tally(1));
         throughput.bytes = throughput.bytes.and(Tally(<&str>::from(text).len()));
         throughput.tokens = throughput.tokens.and(tokens);
+        parallel_of(&pbg, text, &mut parallel)?;
     }
     let tally = recovery()?;
     let latency = latency()?;
@@ -948,6 +1034,26 @@ fn main() -> Result<(), Failure>
                 whole: read.forms,
             }
         )?;
+    }
+    let micros = |wall: Duration| Tally(usize::try_from(wall.as_micros()).unwrap_or(usize::MAX));
+    let parallel_rows: [(&str, &dyn fmt::Display); 5] = [
+        ("units, the form split's runs", &parallel.units),
+        ("seams broken, each unit molded again", &parallel.broken),
+        ("bytes in units that join as molded", &Share {
+            part: parallel.held,
+            whole: throughput.bytes,
+        }),
+        (
+            "split scan, ms, the fastest of each source's runs summed",
+            &parallel.scan.as_millis(),
+        ),
+        ("split scan against the cold parse", &Share {
+            part: micros(parallel.scan),
+            whole: micros(throughput.wall),
+        }),
+    ];
+    for (measure, reading) in parallel_rows {
+        writeln!(table, "| parallel | {measure} | {reading} |")?;
     }
     io::stdout().write_all(table.as_bytes())?;
     Ok(())
