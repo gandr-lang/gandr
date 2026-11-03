@@ -1,0 +1,25 @@
+[
+  {
+    "name": "#4846: the dispatcher's corpus walks, each up to 5.5 GB, run at most two at a time under ci-enforcing",
+    "profile": "ci-enforcing",
+    "package": "gandr-surface-dispatcher",
+    "group": "corpus-walks",
+    "max_threads": 2,
+    "tests": [
+      "census::sweeps::every_printed_type_reads_back_to_its_certificate",
+      "census::sweeps::every_printed_type_reads_back_to_its_certificate_changed",
+      "corpus::a_run_lowers_each_source_once",
+      "corpus::every_corpus_source_is_registered",
+      "corpus::focusing_is_total_on_the_model_corpus",
+      "corpus::focusing_is_total_on_the_pathological_corpus",
+      "corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus",
+      "corpus::l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus",
+      "corpus::no_subject_declares_a_name_twice",
+      "corpus::the_fixture_root_settles_every_fixture",
+      "corpus::the_two_roots_exercise_every_row",
+      "differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation",
+      "evaluate::tests::the_corpus_runs_items_run_converted_as_written",
+      "evaluate::tests::the_corpus_runs_items_run_entered_as_written_3635"
+    ]
+  }
+]

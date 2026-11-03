@@ -35,6 +35,10 @@ slow-timeout = { period = "30s", terminate-after = 10 }
 [profile.ci.junit]
 path = "junit.xml"
 
+[[profile.ci.overrides]]
+filter = "package(gandr-surface-dispatcher) and (test(/corpus/) or test(/(^|::)sweeps::/))"
+test-group = "corpus-walks"
+
 # Nextest stores reports by profile, independently of Cargo's target directory.
 # Separate names prevent the enforcing pass from overwriting the plain report.
 [profile.ci-enforcing]
@@ -103,3 +107,15 @@ slow-timeout = { period = "60s", terminate-after = 10, on-timeout = "pass" }
 # mutant and reads an overrun as a timeout. The sweeps run their samples.
 [profile.mutants]
 slow-timeout = { period = "60s" }
+
+# The dispatcher's corpus walks run two at a time on CI (#4846). A walk lays
+# the sources an import joins as one component, 417 sources since #4810 put
+# the `std` modules of host interfaces in 87 of them (#4854), and each test
+# walking the corpus holds up to 5.5 GB. Four at once, as the arm64 runner's
+# four threads run them, peak at 18.7 GB on a local run, past the runner's
+# 16.7 GB, and the runner is killed. Two at once, the shard's job peaks at
+# 13.3 GB on dispatched run 41687523704, page cache included, and leaves
+# 3.4 GB. Its tests take 167 s there. The `ci` profile's overrides above
+# assign the group, and `ci-enforcing` inherits them.
+[test-groups.corpus-walks]
+max-threads = 2

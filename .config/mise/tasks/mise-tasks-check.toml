@@ -344,6 +344,20 @@ env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
 run = ".config/mise/scope cargo nextest run {{ env.CI_SHARD_ARGS | default(value='--workspace') }} --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
+# The tests a CI profile must not run four at once stay in the group that
+# bounds them (#4846): `.config/test-groups/walks.bash` resolves each case's
+# profile over its package's enforcing build, the build `check:tests-enforcing`
+# makes, and refuses a group wider than the case allows or missing one of the
+# tests the case names. The dispatcher's corpus walks hold up to 5.5 GB each,
+# and four at once pass the arm64 runner's 16.7 GB.
+["check:test-groups"]
+description = "The tests measured too heavy to run four at once on a CI runner stay in the test group that bounds them"
+env.RUSTFLAGS = "--cfg anodized_panic"
+env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
+env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
+tools.jq = "1.8.1"
+run = ".config/mise/scope .config/test-groups/walks.bash"
+
 # The enforcing configuration admits the cfg-gated runtime sentinels, so their
 # witnesses enter the inventory. With `CI_WITNESS_LISTINGS` naming a directory
 # of listings (`ci:witness-listing`), the gate reads those and lists nothing
