@@ -42,8 +42,8 @@ pub def place(s : Repr) -> Place {
 
 /// `n` copies of the code point `c` before `onto`, built by a loop that
 /// carries the list and the count left. The loop may run forever, so the row
-/// states `Div` (#1481).
-pub def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> [Div] List(Integer) {
+/// states `Partial` (#1481).
+pub def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> [Partial] List(Integer) {
   var acc = onto;
   var left = n;
   while left > 0 {
@@ -59,14 +59,14 @@ def hiPlace() -> Place { place(own((Cons(104, Cons(105, Nil)) : List(Integer))))
 
 /// Twenty-three bytes and the zero fill the inline capacity exactly: inline.
 @[ runs("Inside") ]
-def fullPlace() -> [Div] Place {
+def fullPlace() -> [Partial] Place {
   let cs = repeatOnto(97, 23, (Nil : List(Integer)));
   place(own(cs))
 }
 
 /// One byte more and the string's bytes go to the heap.
 @[ runs("OnHeap") ]
-def spilledPlace() -> [Div] Place {
+def spilledPlace() -> [Partial] Place {
   let cs = repeatOnto(97, 24, (Nil : List(Integer)));
   place(own(cs))
 }
@@ -77,7 +77,7 @@ def hiBytes() -> List(Integer) { bytes(own((Cons(104, Cons(105, Nil)) : List(Int
 
 /// The spilled string's twenty-four bytes and the zero.
 @[ runs("25") ]
-def spilledCount() -> [Div] Integer {
+def spilledCount() -> [Partial] Integer {
   let cs = repeatOnto(97, 24, (Nil : List(Integer)));
   let s = own(cs);
   count(bytes(s))

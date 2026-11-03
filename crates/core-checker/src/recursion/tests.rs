@@ -850,7 +850,7 @@ fn a_thunked_field_shows_no_value_below_the_stage_598()
         verdicts[2]
     );
     // The control: claiming nothing, the same fixpoint is partial, and at a
-    // row that does not state `Div` it is refused by the divergence rule, not
+    // row that does not state `Partial` it is refused by the divergence rule, not
     // the stage rule.
     let mut arena = CoreArena::new();
     let declarations = thunked_call(&mut arena, FixpointEvidence::Partial);

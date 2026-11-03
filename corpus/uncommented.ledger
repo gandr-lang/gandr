@@ -363,8 +363,8 @@ model/control/conditional.gandr:<file> unshaped:SentenceLength
 model/control/divergence.gandr:<file> unshaped:HeadParagraphs
 model/control/divergence.gandr:<file> unshaped:ReferenceOutsideReferences
 model/control/divergence.gandr:<file> unshaped:SentenceLength
-model/control/divergence.gandr:comment:1c5a89731d95acec unshaped:ItemShape
 model/control/divergence.gandr:comment:c676253e201e582a unshaped:ItemShape
+model/control/divergence.gandr:comment:cefd3a7b084b9c71 unshaped:ItemShape
 model/control/divergence.gandr:comment:fdfc2b971ccf0e07 unshaped:ItemShape
 model/control/effect-rows.gandr:<file> unshaped:HeadParagraphs
 model/control/effect-rows.gandr:<file> unshaped:ReferenceOutsideReferences
@@ -378,9 +378,9 @@ model/control/handler-exits.gandr:<file> unshaped:HeadParagraphs
 model/control/handler-exits.gandr:<file> unshaped:SentenceLength
 model/control/handler-exits.gandr:<file> unshaped:WhatLength
 model/control/handler-exits.gandr:Conts.K:fb435c9a522a37c3 uncommented
-model/control/handler-exits.gandr:comment:13ae791270f47cb8 unshaped:ItemShape
 model/control/handler-exits.gandr:comment:1f46612c697f4d50 unshaped:ItemShape
 model/control/handler-exits.gandr:comment:5126caf7413516d6 unshaped:ItemShape
+model/control/handler-exits.gandr:comment:61d8412fa3f27b9f unshaped:ItemShape
 model/control/held-read.gandr:<file> unshaped:HeadParagraphs
 model/control/held-read.gandr:<file> unshaped:SentenceLength
 model/control/held-read.gandr:comment:b0b56d012cb9b2d7 unshaped:ItemShape
@@ -414,7 +414,7 @@ model/control/row-variable.gandr:<file> unshaped:HeadParagraphs
 model/control/row-variable.gandr:<file> unshaped:ReferenceOutsideReferences
 model/control/row-variable.gandr:<file> unshaped:SentenceLength
 model/control/row-variable.gandr:<file> unshaped:WhatLength
-model/control/row-variable.gandr:comment:3c58ea759d2485aa unshaped:ItemShape
+model/control/row-variable.gandr:comment:38037e6c99092d08 unshaped:ItemShape
 model/control/statement-block.gandr:<file> unshaped:HeadParagraphs
 model/control/statement-block.gandr:<file> unshaped:SentenceLength
 model/control/statement-block.gandr:comment:3242e45b76826088 unshaped:ItemShape
@@ -2304,7 +2304,7 @@ model/self-reference/relocated.gandr:comment:44360d85ccc36e6b unshaped:ItemShape
 model/self-reference/ring.gandr:<file> unshaped:HeadParagraphs
 model/self-reference/ring.gandr:<file> unshaped:SentenceLength
 model/self-reference/ring.gandr:<file> unshaped:WhatLength
-model/self-reference/ring.gandr:comment:32eb580269555a73 unshaped:ItemShape
+model/self-reference/ring.gandr:comment:04f8e3f0a1ddbc3c unshaped:ItemShape
 model/self-reference/suspended.gandr:<file> unshaped:HeadParagraphs
 model/self-reference/suspended.gandr:<file> unshaped:Semicolon
 model/self-reference/suspended.gandr:<file> unshaped:SentenceLength
@@ -2447,7 +2447,7 @@ model/strings/copy-on-write.gandr:<file> unshaped:WhatLength
 model/strings/copy-on-write.gandr:Written.Written:5c89a94d18003834 uncommented
 model/strings/copy-on-write.gandr:comment:40cd693ff42471f5 unshaped:ItemShape
 model/strings/copy-on-write.gandr:comment:6f88273330ba5c3a unshaped:ItemShape
-model/strings/copy-on-write.gandr:comment:bbbcc78f2703b786 unshaped:ItemShape
+model/strings/copy-on-write.gandr:comment:8aa16456d218d96e unshaped:ItemShape
 model/strings/methods.gandr:<file> unshaped:HeadParagraphs
 model/strings/methods.gandr:<file> unshaped:SentenceLength
 model/strings/methods.gandr:<file> unshaped:WhatLength
@@ -2464,7 +2464,7 @@ model/strings/small-string.gandr:<file> unshaped:SentenceLength
 model/strings/small-string.gandr:<file> unshaped:WhatLength
 model/strings/small-string.gandr:Place.Inside:b5ad344e02e01f8c uncommented
 model/strings/small-string.gandr:Place.OnHeap:283869e649eeffbc uncommented
-model/strings/small-string.gandr:comment:a66f133a5f45bd07 unshaped:ItemShape
+model/strings/small-string.gandr:comment:c1574712344d6f54 unshaped:ItemShape
 model/strings/string-base.gandr:<file> unshaped:HeadParagraphs
 model/strings/string-base.gandr:<file> unshaped:ReferenceOutsideReferences
 model/strings/string-base.gandr:<file> unshaped:SentenceLength
@@ -2747,10 +2747,10 @@ pathological/control/divergence.gandr:<file> unshaped:HeadParagraphs
 pathological/control/divergence.gandr:<file> unshaped:ReferenceOutsideReferences
 pathological/control/divergence.gandr:<file> unshaped:SentenceLength
 pathological/control/divergence.gandr:<file> unshaped:WhatLength
-pathological/control/divergence.gandr:comment:3062c36ea6263345 unshaped:ItemShape
-pathological/control/divergence.gandr:comment:713289bb1e93d0ca unshaped:ItemShape
-pathological/control/divergence.gandr:comment:729aaf07b7c4059c unshaped:ItemShape
-pathological/control/divergence.gandr:comment:74d1902c50667c84 unshaped:ItemShape
+pathological/control/divergence.gandr:comment:4ce46ff7b684153c unshaped:ItemShape
+pathological/control/divergence.gandr:comment:6dad861ba92fe47b unshaped:ItemShape
+pathological/control/divergence.gandr:comment:9a0113fcf7fce7b5 unshaped:ItemShape
+pathological/control/divergence.gandr:comment:d9061c7bce9fc151 unshaped:ItemShape
 pathological/control/effect-rows.gandr:<file> unshaped:HeadParagraphs
 pathological/control/effect-rows.gandr:<file> unshaped:ReferenceOutsideReferences
 pathological/control/effect-rows.gandr:<file> unshaped:WhatLength

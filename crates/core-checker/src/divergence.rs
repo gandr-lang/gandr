@@ -2,15 +2,15 @@
 //! forever.
 //!
 //! A fixpoint with partial evidence is a loop the checker cannot see out of.
-//! It checks only at a type each returner of which holds [`DIV`], the host
+//! It checks only at a type each returner of which holds [`PARTIAL`], the host
 //! interface with no operation: the returners its arrows and dependent arrows
 //! end in, and those of each component of a lazy product. A returner whose
 //! row lacks it refuses the fixpoint as a [`CheckRefusal::TypeMismatch`]
-//! whose synthesised type is the expected one with `Div` added to every such
-//! row, which is the row the declaration has to write. Nothing eliminates the
-//! entry: a caller of a diverging function holds it in its own row, as it
+//! whose synthesised type is the expected one with `Partial` added to every
+//! such row, which is the row the declaration has to write. Nothing eliminates
+//! the entry: a caller of a diverging function holds it in its own row, as it
 //! holds any interface its callee performs, and a handler or a capability
-//! scope of `Div` has no operation to answer and leaves it in the row it
+//! scope of `Partial` has no operation to answer and leaves it in the row it
 //! answers at. The empty row is the row of a computation that returns, and a
 //! conversion drops an unread call of a variable whose type ends in empty rows
 //! alone ([`returning`]): it runs to its end and nothing observes it.
@@ -45,8 +45,8 @@ use gandr_core_term::Zone;
 use gandr_core_term::effect::EffectPresence;
 use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::Purity;
-use gandr_core_term::effect::host::DIV;
-use gandr_core_term::effect::host::divergence;
+use gandr_core_term::effect::host::PARTIAL;
+use gandr_core_term::effect::host::partiality;
 use gandr_core_term::row::Label;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
@@ -67,9 +67,10 @@ use crate::view::value_type_view;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Divergence
 {
-    /// Every returner the type ends in holds [`DIV`], or none is seen.
+    /// Every returner the type ends in holds [`PARTIAL`], or none is seen.
     Stated,
-    /// Some returner lacks it: the type with [`DIV`] added to each that does.
+    /// Some returner lacks it: the type with [`PARTIAL`] added to each that
+    /// does.
     Unstated(CompTypeId),
 }
 
@@ -93,7 +94,7 @@ pub enum Divergence
 /// - hypothesis: L3 — a loop at a returner with and without the entry, a
 ///   fixpoint that never names itself at the empty row, and a ruled operation's
 ///   fixpoint at the empty row, each asserted as the exact verdict.
-/// - witness: `divergence::tests::a_partial_fixpoint_states_div_in_every_row_it_ends_in`
+/// - witness: `divergence::tests::a_partial_fixpoint_states_partial_in_every_row_it_ends_in`
 /// - witness: `divergence::tests::a_fixpoint_that_never_recurses_needs_no_entry`
 /// - witness: `divergence::tests::a_ruled_operation_terminates_by_its_rules`
 #[spec(ensures: |ret| match ret {
@@ -131,18 +132,18 @@ pub fn require(
     }
 }
 
-/// Whether every returner `expected` ends in holds [`DIV`], and the type with
-/// it added where one does not.
+/// Whether every returner `expected` ends in holds [`PARTIAL`], and the type
+/// with it added where one does not.
 ///
 /// # Specification
 /// - requires: `expected` is formed.
 /// - ensures: [`Divergence::Stated`] when each returner reached through arrows,
 ///   dependent arrows, lazy-product components and decodes that unfold holds
-///   [`DIV`]; otherwise [`Divergence::Unstated`] with the type whose every such
-///   returner holds it, the rest unchanged.
+///   [`PARTIAL`]; otherwise [`Divergence::Unstated`] with the type whose every
+///   such returner holds it, the rest unchanged.
 /// - fails: [`CheckRefusal::ShapeMismatch`] at `at` wanting a returner for a
 ///   decode no definition unfolds; [`CheckRefusal::EffectSignatureConflict`] at
-///   `at` for a row whose own `Div` performs an operation; the weak-head
+///   `at` for a row whose own `Partial` performs an operation; the weak-head
 ///   reading's refusal.
 /// - panics: none.
 ///
@@ -153,8 +154,8 @@ pub fn require(
 /// - hypothesis: L3 — a returner, an arrow to one, a lazy product with one
 ///   component stating the entry and one not, and a returner already holding
 ///   it, each asserted as the exact answer.
-/// - witness: `divergence::tests::a_partial_fixpoint_states_div_in_every_row_it_ends_in`
-/// - witness: `divergence::tests::a_dependent_arrow_states_div_in_its_codomain_and_a_stuck_decode_is_refused`
+/// - witness: `divergence::tests::a_partial_fixpoint_states_partial_in_every_row_it_ends_in`
+/// - witness: `divergence::tests::a_dependent_arrow_states_partial_in_its_codomain_and_a_stuck_decode_is_refused`
 #[spec(ensures: |ret| match ret {
     | Ok(Divergence::Unstated(rebuilt)) => rebuilt != expected,
     | Ok(Divergence::Stated) | Err(_) => true,
@@ -188,8 +189,8 @@ pub fn stated(
             },
         }
     }
-    let entry = EffectRow::singleton(divergence());
-    let name = gandr_core_term::effect::EffectLabel::Interface(Label::from(DIV));
+    let entry = EffectRow::singleton(partiality());
+    let name = gandr_core_term::effect::EffectLabel::Interface(Label::from(PARTIAL));
     let mut rebuilt: BTreeMap<CompTypeId, CompTypeId> = BTreeMap::new();
     for &(shape, head) in order.iter().rev() {
         let arena = context.arena();
@@ -267,7 +268,7 @@ pub fn stated(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a function to a returner at the empty row, the same at a
-///   row holding `Div`, a lazy product with one such component, and a value
+///   row holding `Partial`, a lazy product with one such component, and a value
 ///   type that is no thunk, each asserted as the exact answer.
 /// - witness: `divergence::tests::a_call_returns_only_where_every_row_is_empty`
 pub fn calls(

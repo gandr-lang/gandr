@@ -27,7 +27,7 @@ def completion(ring : Ring, file : File, buffer : Bytes) -> [Await] Nat {
 }
 
 /// A single-threaded executor: it polls each future until it is ready.
-def runToCompletion[A : Type](task : Poll(A)) -> [Div] A {
+def runToCompletion[A : Type](task : Poll(A)) -> [Partial] A {
   loop {
     match task.poll {
       | Ready(x) => break x

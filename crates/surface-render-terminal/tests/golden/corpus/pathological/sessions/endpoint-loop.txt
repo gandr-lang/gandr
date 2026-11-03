@@ -1,50 +1,54 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/sessions/endpoint-loop.gandr:17:19
+   ╭▸ corpus/pathological/sessions/endpoint-loop.gandr:20:19
    │
-14 │     def hasty(operator : mu open. &{report : ?Integer. open, retire : ?Integer. end}) -> [Div] Unit {
-   │     │         ┬───────   ─────────────────────────────────────────────────────────── the type it is checked against
-   │     │         │
-   │ ┌───┘         checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Div] Unit`; while checking the rest of this receive's block; binds operator : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
-   │ │
-15 │ │┌    loop {
-16 │ ││┌     offer(operator) {
-17 │ │││       report => { continue },
-   │ │││                   ━━━━━━━━ its type does not convert: expected `rec t => &{report : ?Integer >> t, retire : ?Integer >> end}`, found `?Integer >> rec t => &{report : ?Integer >> t, retire : ?Integer >> end}`
-18 │ │││       retire => { let last = recv(operator); close(operator); break }
-19 │ │││     }
-   │ ││└─────┘ checked against `-F [Div] Unit`; while checking an arm of this offer
-20 │ ││    }
-   │ │└────┘ checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Div] Unit`; while checking the rest of this receive's block; binds _ : +U ((rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Div] Unit), _ : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
-21 │ │   }
-   │ └───┘ checked against `+U ((rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Div] Unit)`; while checking the body of this thunk
+14 │      def hasty(operator : mu open. &{
+   │    ┌─│─────────┬──────────┘
+   │    │ │         │
+   │ ┌──│─┘         checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit`; while checking the rest of this receive's block; binds operator : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
+   │ │  │
+15 │ │  │   report : ?Integer. open,
+16 │ │  │   retire : ?Integer. end
+17 │ │  │ }) -> [Partial] Unit {
+   │ │  └─┘ the type it is checked against
+18 │ │  ┌   loop {
+19 │ │  ┌     offer(operator) {
+20 │ │          report => { continue },
+   │ │                      ━━━━━━━━ its type does not convert: expected `rec t => &{report : ?Integer >> t, retire : ?Integer >> end}`, found `?Integer >> rec t => &{report : ?Integer >> t, retire : ?Integer >> end}`
+21 │ │          retire => { let last = recv(operator); close(operator); break }
+22 │ │  │     }
+   │ │  └─────┘ checked against `-F [Partial] Unit`; while checking an arm of this offer
+23 │ │  │   }
+   │ │  └───┘ checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit`; while checking the rest of this receive's block; binds _ : +U ((rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit), _ : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
+24 │ │    }
+   │ └────┘ checked against `+U ((rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit)`; while checking the body of this thunk
    │
    ├ note: `hasty` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[ArmsDisagree]: the arms of this `offer` leave the endpoints in different states
-   ╭▸ corpus/pathological/sessions/endpoint-loop.gandr:32:19
+   ╭▸ corpus/pathological/sessions/endpoint-loop.gandr:35:19
    │
-25 │      def abandoned(operator : mu open. &{
-   │      │             ──────── checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Div] Unit`; while checking the rest of this receive's block; binds operator : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
+28 │      def abandoned(operator : mu open. &{
+   │      │             ──────── checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit`; while checking the rest of this receive's block; binds operator : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
    │ ┌────┘
    │ │
-26 │ │      report : ?Integer. open,
-27 │ │      retire : ?Integer. end
-28 │ │    }) -> [Div] Unit {
-29 │ │ ┌    loop {
-30 │ │ │┌     offer(operator) {
-31 │ │ ││       report => { let next = recv(operator); continue },
+29 │ │      report : ?Integer. open,
+30 │ │      retire : ?Integer. end
+31 │ │    }) -> [Partial] Unit {
+32 │ │ ┌    loop {
+33 │ │ │┌     offer(operator) {
+34 │ │ ││       report => { let next = recv(operator); continue },
    │ │ ││                   ─── the arm it disagrees with
-32 │ │ ││       retire => { let last = recv(operator); break }
+35 │ │ ││       retire => { let last = recv(operator); break }
    │ │ ││                   ━━━ an arm that leaves the endpoints otherwise
-33 │ │ ││     }
-   │ │ │└─────┘ checked against `-F [Div] Unit`; while checking an arm of this offer
-34 │ │ │    }
+36 │ │ ││     }
+   │ │ │└─────┘ checked against `-F [Partial] Unit`; while checking an arm of this offer
+37 │ │ │    }
    │ │ │    │
    │ │ │    │
    │ │ └────the endpoint was taken as this parameter
-   │ │      checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Div] Unit`; while checking the rest of this receive's block; binds _ : +U ((rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Div] Unit), _ : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
-35 │ │    }
-   │ └────┘ checked against `+U ((rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Div] Unit)`; while checking the body of this thunk
+   │ │      checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit`; while checking the rest of this receive's block; binds _ : +U ((rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit), _ : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
+38 │ │    }
+   │ └────┘ checked against `+U ((rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit)`; while checking the body of this thunk
    │
    ╰ note: `abandoned` is refused with ArmsDisagree, as its expectation states

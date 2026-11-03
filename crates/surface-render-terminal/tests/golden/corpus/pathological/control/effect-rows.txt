@@ -12,16 +12,16 @@ error[DuplicateDefinition]: `std.fs.Eff` is defined twice
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/control/effect-rows.gandr:19:3
    │
-18 │   def narrowedRow(c : Cap { read }) -> [Div] Integer {
-   │   │               ┬                    ───────────── the type it is checked against
+18 │   def narrowedRow(c : Cap { read }) -> [Partial] Integer {
+   │   │               ┬                    ───────────────── the type it is checked against
    │   │               │
-   │ ┌─┘               checked against `Cap {read} -> -F [Div] Integer`; while checking the body of this function; binds c : Cap {read}
+   │ ┌─┘               checked against `Cap {read} -> -F [Partial] Integer`; while checking the body of this function; binds c : Cap {read}
    │ │
 19 │ │   let _ = peek(c);
-   │ │   ━━━ its type does not convert: expected `-F [Div] Integer`, found `-F [Div, std.fs.Eff] Integer`
+   │ │   ━━━ its type does not convert: expected `-F [Partial] Integer`, found `-F [Partial, std.fs.Eff] Integer`
 20 │ │   once(2)
 21 │ │ }
-   │ └─┘ checked against `+U (Cap {read} -> -F [Div] Integer)`; while checking the body of this thunk
+   │ └─┘ checked against `+U (Cap {read} -> -F [Partial] Integer)`; while checking the body of this thunk
    │
    ├ note: `narrowedRow` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

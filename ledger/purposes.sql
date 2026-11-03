@@ -736,7 +736,6 @@ INSERT INTO purpose VALUES('core-term','effect::capability::RegionOrder','enum',
 INSERT INTO purpose VALUES('core-term','effect::capability::RestrictionError','enum','Why a restriction of an interface could not be formed: an unknown operation or one named twice.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::AuthorityError','enum','Why an authority over host operations could not be formed: an undeclared operation, a refused restriction or a conflict.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::CONSOLE','constant','The console interface''s name: a line written to the process''s output.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','effect::host::DIV','constant','The divergence interface''s name, with no operation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::ENV','constant','The read-only process environment interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::EXEC','constant','The process execution interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::FS','constant','The filesystem interface''s name.',NULL,'fits','sound',NULL);
@@ -744,12 +743,13 @@ INSERT INTO purpose VALUES('core-term','effect::host::HostAccess','enum','How a 
 INSERT INTO purpose VALUES('core-term','effect::host::HostSignatures','struct','The ten host interfaces, sharing their arena-owned payload and reply types.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::INTERFACES','constant','The ten host interfaces'' names, in the order the host declares them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::NET','constant','The network interface''s name: a stream to a peer named by its key.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::PARTIAL','constant','The divergence interface''s name, with no operation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::PROC','constant','The early process-exit interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::RING','constant','The completion ring''s buffer interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::STDERR','constant','The error stream interface''s name: a line written to the process''s standard error.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::STDIN','constant','The input interface''s name: a line read from the process''s standard input.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::access','function','How an interface''s operation meets the host, so two forked halves may share an interface whose shared operations only read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','effect::host::divergence','function','The divergence interface''s signature: named Div with no operation, so it names no type and needs no arena.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::partiality','function','The divergence interface''s signature: named Partial with no operation, so it names no type and needs no arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','failure::FailureClass','enum','Whose fact a refusal records: a user absence, an unimplemented feature, a malformed source, or an engine fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','failure::TrackingIssue','struct','The issue on gandr''s tracker whose landing builds what a refusal or an editor answer is missing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','generic::Derived','struct','A derived declaration: an equality, or a law law proves of one, with its declared type, its body and its data cases.',NULL,'fits','sound',NULL);

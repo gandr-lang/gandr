@@ -11,7 +11,10 @@
 
 /// A desk that runs its next pass before it receives the report.
 @[ refuses("TypeMismatch") ]
-def hasty(operator : mu open. &{report : ?Integer. open, retire : ?Integer. end}) -> [Div] Unit {
+def hasty(operator : mu open. &{
+  report : ?Integer. open,
+  retire : ?Integer. end
+}) -> [Partial] Unit {
   loop {
     offer(operator) {
       report => { continue },
@@ -25,7 +28,7 @@ def hasty(operator : mu open. &{report : ?Integer. open, retire : ?Integer. end}
 def abandoned(operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
-}) -> [Div] Unit {
+}) -> [Partial] Unit {
   loop {
     offer(operator) {
       report => { let next = recv(operator); continue },

@@ -14,13 +14,13 @@ pub def log[r : Row](s : String) -> [std.io.Console.Eff | r] Unit { std.io.Conso
 /// `log` where the row is `std.io.Console.Eff` alone: the call's `r` is the empty row.
 def logAlone() -> [std.io.Console.Eff] Unit { log("alone") }
 
-/// `log` beside `Div`: the call's `r` is `[Div]`.
-def logBeside() -> [std.io.Console.Eff, Div] Unit { log("beside") }
+/// `log` beside `Partial`: the call's `r` is `[Partial]`.
+def logBeside() -> [std.io.Console.Eff, Partial] Unit { log("beside") }
 
 /// `logBeside`'s row listed the other way round is the same row, so the
-/// call's `r` is solved as the same `[Div]`: one solution, not two that
+/// call's `r` is solved as the same `[Partial]`: one solution, not two that
 /// convert.
-def logSwapped() -> [Div, std.io.Console.Eff] Unit { log("swapped") }
+def logSwapped() -> [Partial, std.io.Console.Eff] Unit { log("swapped") }
 
 /// A handler of `std.io.Console.Eff` around `log`: the handled body's row is
 /// `[std.io.Console.Eff | r]`, and what the handler leaves is `r`.
@@ -37,5 +37,5 @@ def quiet[r : Row](s : String) -> [r] Unit {
 @[ runs("unit") ]
 def quietRun() -> Unit { quiet("handled") }
 
-/// `quiet` beside `Div`: the variable carries `Div` through the handler.
-def quietBeside() -> [Div] Unit { quiet("forwarded") }
+/// `quiet` beside `Partial`: the variable carries `Partial` through the handler.
+def quietBeside() -> [Partial] Unit { quiet("forwarded") }

@@ -1,14 +1,14 @@
 // Divergence as a row entry (#1481). A loop the checker cannot see out of may
-// run forever, so the function holding it states `Div` in its row: the host
+// run forever, so the function holding it states `Partial` in its row: the host
 // interface with no operation, which no handler eliminates. A caller of such a
-// function holds `Div` in its own row, as it holds any interface its callee
+// function holds `Partial` in its own row, as it holds any interface its callee
 // performs, so a function at the empty row returns. A call that returns and
 // whose result nothing reads is the computation that follows it. What refuses
 // is in `../../pathological/control/divergence.gandr`.
 
 /// A loop that breaks only when one is below zero: it never returns, and its
 /// row says it may not.
-def spin(x : Bool) -> [Div] Bool {
+def spin(x : Bool) -> [Partial] Bool {
   let y = loop {
     let below = 1 < 0;
     match below {
@@ -19,21 +19,21 @@ def spin(x : Bool) -> [Div] Bool {
   y
 }
 
-/// A caller of `spin` holds `Div` in its own row.
-def spinOn(x : Bool) -> [Div] Bool {
+/// A caller of `spin` holds `Partial` in its own row.
+def spinOn(x : Bool) -> [Partial] Bool {
   spin(x)
 }
 
-/// A loop that breaks at once states `Div` all the same: the row records what
+/// A loop that breaks at once states `Partial` all the same: the row records what
 /// the loop may do, not what one run of it does.
-pub def once(x : Integer) -> [Div] Integer {
+pub def once(x : Integer) -> [Partial] Integer {
   let y = loop { break(x) };
   y
 }
 
-/// It runs, at a row holding `Div`.
+/// It runs, at a row holding `Partial`.
 @[ runs("3") ]
-def onceThree() -> [Div] Integer {
+def onceThree() -> [Partial] Integer {
   once(3)
 }
 

@@ -800,9 +800,9 @@ pub struct Definitions<'run>
 /// Whether the calls of a rigid variable are known to return.
 ///
 /// A call returns when it ends in a returner at the empty row: no operation
-/// is performed and, a partial fixpoint stating `Div` in its row, no loop runs
-/// forever. Such a call computes nothing anyone can observe but its value, so
-/// a bind that never reads the value may drop it.
+/// is performed and, a partial fixpoint stating `Partial` in its row, no loop
+/// runs forever. Such a call computes nothing anyone can observe but its value,
+/// so a bind that never reads the value may drop it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Calls
 {

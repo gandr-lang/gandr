@@ -4612,12 +4612,12 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
 
     /// Four loops a pass of runs through: a statement, a bound statement, a
     /// bound inner loop that breaks, and a `while` whose test always holds.
-    /// The bound statement's loop states its `Div`, so it checks and its call
-    /// runs as the bind the elaboration rebuilds it as.
+    /// The bound statement's loop states its `Partial`, so it checks and its
+    /// call runs as the bind the elaboration rebuilds it as.
     const LOOPS: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\
          def tick(n : Nat) -> -F Unit { return unit }\n\
          def spin : +U (-F Nat) ;\ndef spin = thunk { loop { tick(Zero); } } ;\n\
-         def bound : +U (-F [Div] Nat) ;\ndef bound = thunk { loop { let u = tick(Zero) ; continue } } ;\n\
+         def bound : +U (-F [Partial] Nat) ;\ndef bound = thunk { loop { let u = tick(Zero) ; continue } } ;\n\
          def broken : +U (-F Nat) ;\ndef broken = thunk { loop { let u = loop { break } ; continue } } ;\n\
          def tested : +U (-F Nat) ;\ndef tested = thunk { while 1 > 0 { tick(Zero) } ; return Zero } ;\n";
 

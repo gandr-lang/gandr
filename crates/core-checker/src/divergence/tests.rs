@@ -8,7 +8,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::effect::EffectRow;
-use gandr_core_term::effect::host::divergence;
+use gandr_core_term::effect::host::partiality;
 use gandr_core_term::equal_comp_type_syntax;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_term::ConstantIndex;
@@ -35,7 +35,7 @@ use crate::module::check_module;
 use crate::refusal::CheckRefusal;
 use crate::refusal::Mismatch;
 
-/// `F^⟨Div⟩ A`.
+/// `F^⟨Partial⟩ A`.
 ///
 /// # Specification
 /// trivial.
@@ -44,7 +44,7 @@ fn diverging(
     result: ValueTypeId,
 ) -> CompTypeId
 {
-    arena.comp_type_returner_with_effects(result, EffectRow::singleton(divergence()))
+    arena.comp_type_returner_with_effects(result, EffectRow::singleton(partiality()))
 }
 
 /// `thunk(fix f. λx. body)` with partial evidence, declared at `U (Unit →
@@ -104,7 +104,7 @@ fn verdicts(
 }
 
 #[test]
-fn a_partial_fixpoint_states_div_in_every_row_it_ends_in()
+fn a_partial_fixpoint_states_partial_in_every_row_it_ends_in()
 {
     let mut arena = CoreArena::new();
     let unit = arena.value_type_unit();
@@ -123,7 +123,7 @@ fn a_partial_fixpoint_states_div_in_every_row_it_ends_in()
         Verdict::Checked { .. },
     ] = verdicts.as_slice()
     else {
-        panic!("a loop at the empty row is refused and one stating `Div` checks: {verdicts:?}");
+        panic!("a loop at the empty row is refused and one stating `Partial` checks: {verdicts:?}");
     };
     assert_eq!(
         (at, wanted),
@@ -134,7 +134,7 @@ fn a_partial_fixpoint_states_div_in_every_row_it_ends_in()
     assert_eq!(
         equal_comp_type_syntax(&arena, synthesised, rebuilt),
         CertificateEquality::Equal,
-        "the refusal names the type with `Div` in its row"
+        "the refusal names the type with `Partial` in its row"
     );
 
     // Through a lazy product, only the component that lacks the entry gains it.
@@ -144,26 +144,26 @@ fn a_partial_fixpoint_states_div_in_every_row_it_ends_in()
     let both = arena.comp_type_with(&[stated_row, stated_row]);
     let Ok(Divergence::Unstated(rebuilt)) = answer
     else {
-        panic!("a lazy product with a pure component does not state `Div`: {answer:?}");
+        panic!("a lazy product with a pure component does not state `Partial`: {answer:?}");
     };
     assert_eq!(
         equal_comp_type_syntax(&arena, rebuilt, both),
         CertificateEquality::Equal,
-        "each component ends in a row holding `Div`"
+        "each component ends in a row holding `Partial`"
     );
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     assert_eq!(
         stated(&mut context, fixpoint, both),
         Ok(Divergence::Stated),
-        "a lazy product whose every component holds `Div` states it"
+        "a lazy product whose every component holds `Partial` states it"
     );
 }
 
-/// A dependent arrow states `Div` where its codomain does, and gains it
+/// A dependent arrow states `Partial` where its codomain does, and gains it
 /// there otherwise; a decode no definition unfolds has no returner to
 /// state it in and is refused for wanting one.
 #[test]
-fn a_dependent_arrow_states_div_in_its_codomain_and_a_stuck_decode_is_refused()
+fn a_dependent_arrow_states_partial_in_its_codomain_and_a_stuck_decode_is_refused()
 {
     use gandr_kernel_strata::Level;
 
@@ -183,17 +183,17 @@ fn a_dependent_arrow_states_div_in_its_codomain_and_a_stuck_decode_is_refused()
     let answer = stated(&mut context, at, pi);
     let Ok(Divergence::Unstated(rebuilt)) = answer
     else {
-        panic!("a dependent arrow to a pure returner does not state `Div`: {answer:?}");
+        panic!("a dependent arrow to a pure returner does not state `Partial`: {answer:?}");
     };
     assert_eq!(
         equal_comp_type_syntax(context.arena(), rebuilt, stated_pi),
         CertificateEquality::Equal,
-        "the codomain gains `Div`"
+        "the codomain gains `Partial`"
     );
     assert_eq!(
         stated(&mut context, at, stated_pi),
         Ok(Divergence::Stated),
-        "a dependent arrow whose codomain holds `Div` states it"
+        "a dependent arrow whose codomain holds `Partial` states it"
     );
     assert!(
         matches!(
@@ -225,22 +225,23 @@ fn a_fixpoint_that_never_recurses_needs_no_entry()
 }
 
 #[test]
-fn no_handler_discharges_div()
+fn no_handler_discharges_partial()
 {
     let mut arena = CoreArena::new();
     let unit = arena.value_type_unit();
     let pure = arena.comp_type_returner(unit);
     let stated_row = diverging(&mut arena, unit);
-    // `handle Div { (fix f. force f : F^⟨Div⟩ 1) } with { return x ↦ return x }`.
+    // `handle Partial { (fix f. force f : F^⟨Partial⟩ 1) } with { return x ↦ return
+    // x }`.
     let own = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let forced = arena.computation_force(own);
     let fixpoint = arena.computation_fixpoint(forced, FixpointEvidence::Partial);
     let subject = arena.computation_ascribe(fixpoint, stated_row);
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let returned = arena.computation_return(bound);
-    let handled = arena.computation_handle(divergence(), subject, returned, [].into());
-    // The same subject under a capability scope of `Div`, its binder unused.
-    let scoped = arena.computation_scope(divergence(), subject, returned, [].into());
+    let handled = arena.computation_handle(partiality(), subject, returned, [].into());
+    // The same subject under a capability scope of `Partial`, its binder unused.
+    let scoped = arena.computation_scope(partiality(), subject, returned, [].into());
     let declare = |arena: &mut CoreArena, at: ConstantIndex, returner: CompTypeId, term| {
         let declared = arena.value_type_thunk(returner);
         let body = arena.value_thunk(term);
@@ -271,7 +272,7 @@ fn no_handler_discharges_div()
                 Verdict::Checked { .. },
             ] if handler == handled && run == subject
         ),
-        "a handler or a scope of `Div` leaves it in the row it answers at: {verdicts:?}"
+        "a handler or a scope of `Partial` leaves it in the row it answers at: {verdicts:?}"
     );
 }
 
@@ -374,7 +375,7 @@ fn an_unread_call_converts_only_where_its_row_is_empty()
         };
         assert_eq!(
             found, discarded,
-            "the call converts away with the empty row and stands with `Div`: {returning:?} \
+            "the call converts away with the empty row and stands with `Partial`: {returning:?} \
              {related:?}"
         );
     }

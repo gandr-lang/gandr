@@ -3439,16 +3439,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Specification
     /// - ensures: only this handler's interface is discharged, and never
-    ///   [`gandr_core_term::effect::host::DIV`], which no handler eliminates: a
-    ///   handler of it leaves it in the residual row; success binds the
-    ///   subject's returned payload, not the handler's answer payload.
+    ///   [`gandr_core_term::effect::host::PARTIAL`], which no handler
+    ///   eliminates: a handler of it leaves it in the residual row; success
+    ///   binds the subject's returned payload, not the handler's answer
+    ///   payload.
     /// - fails: conflicting signatures, a non-returner or leaked effects.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an unrelated effect and distinct payload types expose
-    ///   loss; a handler of `Div` over a diverging call leaks it.
+    ///   loss; a handler of `Partial` over a diverging call leaks it.
     /// - witness: `judgement::tests::handlers_discharge_only_their_own_interface`
-    /// - witness: `divergence::tests::no_handler_discharges_div`
+    /// - witness: `divergence::tests::no_handler_discharges_partial`
     #[spec(captures: depth = usize::from(self.context.depth(Zone::Intuitionistic)), ensures: |ret| ret.is_err() || usize::from(self.context.depth(Zone::Intuitionistic)) == depth.saturating_add(1))]
     fn handle_subject(
         &mut self,
@@ -3490,7 +3491,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }
         // Divergence has no operation to answer: a handler of it runs its
         // subject, which may still run forever.
-        let residual = if signature.name().as_ref() == gandr_core_term::effect::host::DIV {
+        let residual = if signature.name().as_ref() == gandr_core_term::effect::host::PARTIAL {
             effects.clone()
         }
         else {
@@ -3821,8 +3822,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   `I` is the handled interface, `ρ` the region the scope's capability
     ///   lives in and `F^ε A` the answer, with the scope waiting on it: the
     ///   subject may perform the interface by name and through the capability;
-    ///   a scope of [`gandr_core_term::effect::host::DIV`], which no handler
-    ///   eliminates, checks its subject at `F^ε A` itself.
+    ///   a scope of [`gandr_core_term::effect::host::PARTIAL`], which no
+    ///   handler eliminates, checks its subject at `F^ε A` itself.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for an answer that is no
     ///   returner; [`CheckRefusal::HandlerCoverage`] for clauses that do not
     ///   cover the interface exactly once; [`CheckRefusal::CapabilityEscaped`]
@@ -3836,10 +3837,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Adequacy
     /// - hypothesis: L3 — a scope whose subject exercises its own capability
     ///   checks; an answer mentioning the scope's region, a missing clause and
-    ///   a conflicting answer row are each refused by name; a scope of `Div`
-    ///   over a diverging call leaves the call's row to the answer.
+    ///   a conflicting answer row are each refused by name; a scope of
+    ///   `Partial` over a diverging call leaves the call's row to the answer.
     /// - witness: `capability::tests::a_scope_handles_the_capability_it_introduces`
-    /// - witness: `divergence::tests::no_handler_discharges_div`
+    /// - witness: `divergence::tests::no_handler_discharges_partial`
     /// - witness: `capability::tests::a_scoped_capability_never_leaves_its_scope`
     /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
     #[spec(captures: depth = self.frames.len(), ensures: |ret| ret.is_err() || (self.frames.len() == depth.saturating_add(1) && matches!(self.frames.last(), Some(Waiting { frame: Frame::ScopeForm { at: site, .. }, .. }) if *site == at)))]
@@ -3903,7 +3904,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         };
         // Divergence has no operation to answer: its scope runs the subject
         // in the answer's own row.
-        let divergence = signature.name().as_ref() == gandr_core_term::effect::host::DIV;
+        let divergence = signature.name().as_ref() == gandr_core_term::effect::host::PARTIAL;
         let own = self.next_region()?;
         let handled = gandr_core_term::effect::EffectRow::from_placed([
             (signature.clone(), Region::Held),
