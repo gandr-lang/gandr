@@ -1,0 +1,70 @@
+/// Model types refined by a `with` block, one item per fixed sort.
+///
+/// A chain of `with sort x = A` nests to the right and needs a precedence
+/// rule to end each type. A block has delimiters, so each item ends at the
+/// next bar or the closing brace.
+///
+/// `with { … }` holds bar items, which conjoin as rule conditions do. The
+/// leading bar is optional, and the formatter writes one item on one line
+/// without it. An item may fix a sort to a parameter's sort, as sharing does.
+///
+/// - see: #4721 — the refined model type sketch, its rulings in the issue body
+/// - see: corpus/model/identity/model-counter-manifest.gandr — the same programs as a `with sort` chain
+
+/// A theory of two carriers and one value of each.
+pub theory Pairing where {
+  /// The first carrier.
+  sort A : Type;
+  /// The second carrier.
+  sort B : Type;
+  /// A value of the first.
+  oper left : A;
+  /// A value of the second.
+  oper right : B;
+}
+
+/// A counter: a zero, a step and a reading.
+pub theory Counter where {
+  /// The counts.
+  sort C : Type;
+  /// The first count.
+  oper zero : C;
+  /// One step on.
+  oper incr : (c : C) --> C;
+  /// What a count reads as.
+  oper read : (c : C) --> Integer;
+}
+
+/// One and the unit as a pair, whose type fixes both carriers.
+def bothManifest : Model(Pairing) with {
+  | sort A = Integer
+  | sort B = Unit
+} = #{
+  .left = 1,
+  .right = unit
+};
+
+/// One fixed sort fits on one line, so its bar stays out.
+def firstManifest : Model(Pairing) with { sort A = Integer } = #{
+  .left = 1,
+  .right = unit
+};
+
+/// A count of a counter whose counts are integers is an integer.
+def countOfIntegers(a : Model(Counter) with { sort C = Integer }, c : a.C) -> Integer { c }
+
+/// `b` counts in `a`'s counts, so a count of `a` steps in `b`.
+def stepShared(a : Model(Counter), b : Model(Counter) with { sort C = a.C }, c : a.C) -> Integer {
+  b.read(b.incr(c))
+}
+
+/// A pair whose first carrier is an integer and whose second is `m`'s.
+def rightBeside(
+  m : Model(Pairing) with { sort A = Integer },
+  n : Model(Pairing) with {
+    | sort A = Integer
+    | sort B = m.B
+  }
+) -> Integer {
+  n.left
+}

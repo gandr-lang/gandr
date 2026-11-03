@@ -1,0 +1,44 @@
+/// Model types that fix an operation as well as a sort.
+///
+/// A program sometimes needs to know a model's operation, not only its
+/// carrier. A buffer of a known capacity is the common case, as ML's manifest
+/// values and Lean's structure-instance fields allow.
+///
+/// `| def size = 3` fixes an operation inside the same block as the sorts. The
+/// checker reads the fixed operation as its value, so a use of it unfolds.
+///
+/// - see: #4721 — the refined model type sketch, its rulings in the issue body
+/// - see: corpus/sketch/model-refinement/counters.gandr — the block fixing sorts alone
+
+/// A bounded buffer: its elements, its capacity and a way to fill it.
+pub theory Buffer where {
+  /// What the buffer holds.
+  sort E : Type;
+  /// How many it holds.
+  oper size : Integer;
+  /// The element an empty slot holds.
+  oper empty : E;
+}
+
+/// A buffer of three integers, its capacity fixed by its type.
+def triple : Model(Buffer) with {
+  | sort E = Integer
+  | def size = 3
+} = #{
+  .size = 3,
+  .empty = 0
+};
+
+/// Two buffers of one capacity pair up without a check, since their types fix
+/// the capacity.
+def zipSame[n : Integer](
+  a : Model(Buffer) with { def size = n },
+  b : Model(Buffer) with { def size = n }
+) -> #{left : a.E, right : b.E} {
+  #{left = a.empty, right = b.empty}
+}
+
+/// The capacity of a fixed buffer reads off its type.
+def capacityOfTriple() -> Integer {
+  triple.size
+}
