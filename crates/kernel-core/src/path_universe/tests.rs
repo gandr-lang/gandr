@@ -603,11 +603,9 @@ fn translate(
                         computations[&body],
                     ),
                     Computation::ReturnAll(ref returned) => {
-                        let returned = returned
-                            .iter()
-                            .map(|value| values[value])
-                            .collect::<Vec<_>>();
-                        core.computation_return_all(&returned)
+                        operands.clear();
+                        operands.extend(returned.iter().map(|value| values[value]));
+                        core.computation_return_all(&operands)
                     },
                     Computation::With(ref components) => {
                         branch_ids.clear();
@@ -693,12 +691,10 @@ fn translate(
                 let ty = match *arena.comp_type(id).expect("fixture computation type") {
                     CompType::Returner(result) => core.comp_type_returner(types[&result]),
                     CompType::Returns(ref results) => {
-                        let results = results
-                            .iter()
-                            .map(|result| types[result])
-                            .collect::<Vec<_>>();
+                        part_ids.clear();
+                        part_ids.extend(results.iter().map(|result| types[result]));
                         core.comp_type_returns_with_effects(
-                            &results,
+                            &part_ids,
                             gandr_core_term::effect::EffectRow::EMPTY,
                         )
                     },

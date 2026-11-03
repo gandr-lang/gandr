@@ -358,7 +358,16 @@ impl Slot
     }
 }
 
-/// The slot `position` past `first`.
+/// The place of a value among the values of one delivery. The first value is
+/// at zero.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Rank(usize);
+
+/// The slot `rank` past `first`.
 ///
 /// # Specification
 /// trivial.
@@ -367,10 +376,10 @@ impl Slot
 /// [`Form::Oversized`] past the slot space.
 fn offset(
     first: Slot,
-    position: usize,
+    rank: Rank,
 ) -> Result<Slot, Form>
 {
-    u32::try_from(position)
+    u32::try_from(rank.0)
         .ok()
         .and_then(|position| first.0.checked_add(position))
         .map(Slot)
@@ -4018,7 +4027,7 @@ impl Lowering<'_>
         }
         self.tasks.push(Task::Send(id, scope, held));
         for (position, &value) in producers.iter().enumerate().rev() {
-            let slot = offset(first, position)?;
+            let slot = offset(first, Rank(position))?;
             self.tasks
                 .push(Task::Emit(StencilId::Bind, slot.operand(), Operand::Unused));
             self.tasks.push(Task::Producer(value, evaluated));
@@ -4090,7 +4099,7 @@ impl Lowering<'_>
         for position in 1 .. producers.len() {
             self.emit(
                 StencilId::Var,
-                offset(first, position)?.operand(),
+                offset(first, Rank(position))?.operand(),
                 Operand::Unused,
             );
             self.emit(StencilId::Push, Operand::Unused, Operand::Unused);
@@ -4388,7 +4397,7 @@ impl Lowering<'_>
                         self.emit(
                             StencilId::Returned,
                             slot.operand(),
-                            offset(Slot(0), left)?.operand(),
+                            offset(Slot(0), Rank(left))?.operand(),
                         );
                     },
                 }

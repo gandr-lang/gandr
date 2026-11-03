@@ -1,4 +1,4 @@
-/// `several-outputs`: a function returns several values at its outputs, and a caller binds, selects or plugs them; no product is built.
+/// `several-outputs`: a function returns several values at its outputs. A caller binds, selects or plugs them, and the program builds no product.
 @[ checks ]
 def sumDiff(m : Integer, n : Integer) -> (s : Integer, d : Integer) {
   (m + n, m - n)
@@ -10,38 +10,39 @@ def diffSum(m : Integer, n : Integer) -> (s : Integer, d : Integer) {
   (.d = m - n, .s = m + n)
 }
 
-/// Each output bound to its own name.
+/// A caller binds each output to its own name.
 @[ runs("14") ]
 def bound() -> -F Integer {
   let (s, d) = sumDiff(7, 2);
   return s + d
 }
 
-/// The outputs bound by label.
+/// A caller binds the outputs by label.
 @[ checks ]
 def labelled() -> -F Integer {
   let (.s, .d) = diffSum(7, 2);
   return s - d
 }
 
-/// One output selected.
+/// A caller selects one output.
 @[ checks ]
 def total(m : Integer) -> Integer {
   sumDiff(m, 2).s
 }
 
-/// Every output plugged into the next function's inputs, in order.
+/// A function of two inputs.
 @[ checks ]
 def recombine(s : Integer, d : Integer) -> Integer {
   s + d
 }
 
+/// A caller plugs every output into the inputs of the next function, in order.
 @[ checks ]
 def roundTrip(n : Integer) -> Integer {
   sumDiff(n, 2) |> recombine
 }
 
-/// A group of outputs under a row.
+/// A function returns a group of outputs under a row.
 @[ checks ]
 def guarded(m : Integer, n : Integer) -> -F [Partial] (s : Integer, d : Integer) {
   (m + n, m - n)

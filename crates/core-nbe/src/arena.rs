@@ -2131,6 +2131,7 @@ impl DomainArena
     /// - hypothesis: L1 — a return of two values reads back as the same two
     ///   values in order; a swapped or dropped value changes the observed term.
     /// - witness: `readback::tests::a_return_of_several_values_reads_back_in_order`
+    #[spec(ensures: |ret| matches!(self.computation(ret), Some(&DomainComp::ReturnAll { face: minted, .. }) if minted == face))]
     #[inline]
     pub fn comp_return_all(
         &mut self,

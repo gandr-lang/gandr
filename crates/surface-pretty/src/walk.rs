@@ -3212,14 +3212,23 @@ enum Reading
     Unread,
 }
 
-/// Whether some result of a group, `results` in order, reads a result before
-/// it: a group the returner `-F (A, B)` cannot write, since its results name
-/// no binder.
+/// Whether some result of a group reads a result before it. The returner
+/// `-F (A, B)` cannot write such a group, since its results name no binder.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReadsEarlier(pub bool);
+
+/// Whether some result of a group, `results` in order and each read as the
+/// node `node` gives it, reads a result before it.
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: whether the result at some position `i` reads one of the `i`
-///   binders the results before it open, as [`reads_binders`] reads it.
+///   binders the results before it open, as [`reads_binders`] reads it. A group
+///   of fewer than two results reads nothing earlier.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -3227,17 +3236,20 @@ enum Reading
 /// - hypothesis: L3 — a group of two closed results and one whose second result
 ///   reads the first.
 /// - witness: `core_source::tests::a_group_of_outputs_reads_as_its_returner_unless_one_reads_another`
-pub fn reads_earlier<S, Results>(
+#[spec(ensures: |ret| !ret.0 || results.len() > 1_usize)]
+pub fn reads_earlier<S, T, F>(
     source: &S,
-    results: Results,
-) -> bool
+    results: &[T],
+    node: F,
+) -> ReadsEarlier
 where
     S: Source + ?Sized,
-    Results: IntoIterator<Item = S::Node>,
+    T: Copy,
+    F: Fn(T) -> S::Node,
 {
-    results.into_iter().enumerate().any(|(index, result)| {
-        reads_binders(source, result, Admits::ValueType, Arity(index)) == Reading::Reads
-    })
+    ReadsEarlier(results.iter().enumerate().any(|(index, &result)| {
+        reads_binders(source, node(result), Admits::ValueType, Arity(index)) == Reading::Reads
+    }))
 }
 
 /// Whether `root`, in a position admitting `admits`, reads one of the

@@ -6670,7 +6670,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             Computation::ReturnAll(ref values) => {
                 let count = values.len();
-                let results = self.returns_expected(term, expected, count)?;
+                let results = self.returns_expected(term, expected, ComponentCount::from(count))?;
                 let Some(&Computation::ReturnAll(ref values)) =
                     self.context.arena().computation(term)
                 else {
@@ -6681,18 +6681,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 // innermost first, in place of the binders the result stands
                 // under.
                 let mut goals = Vec::with_capacity(count);
-                let mut before: Vec<ValueId> = Vec::with_capacity(count);
+                let mut before: alloc::collections::VecDeque<ValueId> =
+                    alloc::collections::VecDeque::with_capacity(count);
                 for (&value, &result) in values.iter().zip(&results) {
                     let result = substitute_environment_value_type(
                         self.context.arena_mut(),
                         result,
-                        &before,
+                        before.make_contiguous(),
                     );
                     goals.push(Goal::Value {
                         term: value,
                         direction: Direction::Check(result),
                     });
-                    before.insert(0, value);
+                    before.push_front(value);
                 }
                 let Some((&first, rest)) = goals.split_first()
                 else {
@@ -7919,7 +7920,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   failure.
     /// - witness: `judgement::tests::a_return_of_several_values_checks_each_at_its_instantiated_result`
     #[spec(ensures: |ret| match ret {
-        | Ok(ref results) => results.len() == arity,
+        | Ok(ref results) => results.len() == usize::from(arity),
         | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Computation(at)
             && wanted == ExpectedShape::Returns && found == TypeNode::Computation(expected),
         | Err(_) => true,
@@ -7928,11 +7929,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
         &mut self,
         at: ComputationId,
         expected: CompTypeId,
-        arity: usize,
+        arity: ComponentCount,
     ) -> Result<Vec<ValueTypeId>, CheckRefusal>
     {
         let head = crate::codata::read(self.context, expected)?;
-        match matched_returns(self.context.arena_mut(), head, ComponentCount::from(arity)) {
+        match matched_returns(self.context.arena_mut(), head, arity) {
             Maybe::Present(results) => Ok(results),
             Maybe::Absent(absent) => Err(unmatched(
                 absent,

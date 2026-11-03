@@ -6106,6 +6106,13 @@ fn step_bind_closure(
 ///   reads back as itself unreduced; a swapped pair or a face kept over a
 ///   substituted value changes the observation.
 /// - witness: `eval::tests::a_bind_of_several_values_passes_them_on_in_order`
+#[spec(
+    captures: [entry_values = machine.values.len(), entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err()
+        || (machine.comps.len() == entry_comps.saturating_add(1_usize)
+            && machine.tasks.len() == entry_tasks
+            && machine.values.len() <= entry_values),
+)]
 fn step_return_all(
     core: &CoreArena,
     domain: &mut DomainArena,
@@ -6155,6 +6162,13 @@ fn step_return_all(
 ///   fixpoint.
 /// - witness: `eval::tests::a_bind_of_several_values_passes_them_on_in_order`
 /// - witness: `eval::tests::a_bind_of_several_values_on_a_neutral_grows_its_spine`
+#[spec(
+    captures: [entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err()
+        || (machine.comps.len() == entry_comps.saturating_sub(1_usize) && machine.tasks.len() == entry_tasks.saturating_add(1_usize))
+        || (machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks)
+        || (machine.comps.len() == entry_comps.saturating_sub(1_usize) && machine.tasks.len() == entry_tasks.saturating_add(2_usize)),
+)]
 fn step_bind_all(
     core: &CoreArena,
     domain: &mut DomainArena,
@@ -6230,6 +6244,13 @@ fn step_bind_all(
 /// - hypothesis: L3 — a stuck bind of several values re-applied once its head
 ///   unfolds binds what the head returns, in order.
 /// - witness: `eval::tests::a_bind_of_several_values_on_a_neutral_grows_its_spine`
+#[spec(
+    captures: [entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err()
+        || (machine.comps.len() == entry_comps.saturating_sub(1_usize) && machine.tasks.len() == entry_tasks.saturating_add(1_usize))
+        || (machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks)
+        || (machine.comps.len() == entry_comps.saturating_sub(1_usize) && machine.tasks.len() == entry_tasks.saturating_add(2_usize)),
+)]
 fn step_bind_all_closure(
     core: &CoreArena,
     domain: &mut DomainArena,

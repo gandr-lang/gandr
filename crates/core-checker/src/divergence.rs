@@ -673,6 +673,9 @@ pub fn stated(
     let entry = EffectRow::singleton(partiality());
     let name = gandr_core_term::effect::EffectLabel::Interface(Label::from(PARTIAL));
     let mut rebuilt: BTreeMap<CompTypeId, CompTypeId> = BTreeMap::new();
+    // The results of a returner of several values, copied out of the arena
+    // before the arena mints the rebuilt returner.
+    let mut held: Vec<ValueTypeId> = Vec::new();
     for &(shape, head) in order.iter().rev() {
         let arena = context.arena();
         let replaced = match comp_type_view(arena, head)? {
@@ -703,11 +706,12 @@ pub fn stated(
                             second: expected,
                         }
                     })?;
-                    let results = results.to_vec();
+                    held.clear();
+                    held.extend_from_slice(results);
                     Some(
                         context
                             .arena_mut()
-                            .comp_type_returns_with_effects(&results, row),
+                            .comp_type_returns_with_effects(&held, row),
                     )
                 },
             },

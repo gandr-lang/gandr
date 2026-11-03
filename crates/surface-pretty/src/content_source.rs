@@ -677,14 +677,14 @@ impl Source for ContentSource<'_>
                 ref results,
                 ref effects,
             } if effects.purity() == gandr_core_term::effect::Purity::Pure
-                && !crate::walk::reads_earlier(self, results.iter().copied()) =>
+                && !crate::walk::reads_earlier(self, results, core::convert::identity).0 =>
             {
                 Former::Returns(Arity::from(results.len()))
             },
             ContentNode::Returns {
                 ref results,
                 ref effects,
-            } if !crate::walk::reads_earlier(self, results.iter().copied()) => {
+            } if !crate::walk::reads_earlier(self, results, core::convert::identity).0 => {
                 Former::EffectfulReturner {
                     result: Returned::Group(Arity::from(results.len())),
                     effects,

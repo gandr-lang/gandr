@@ -1931,12 +1931,10 @@ impl<'arena> CoreSource<'arena>
     #[spec(ensures: |ret| match (self.arena.comp_type(id), ret) {
         | (Some(&CompType::With(ref components)), Former::With(arity)) => usize::from(arity) == components.len(),
         | (Some(&CompType::Returns { ref results, ref effects }), Former::Returns(arity)) => usize::from(arity) == results.len()
-            && effects.purity() == gandr_core_term::effect::Purity::Pure
-            && !crate::walk::reads_earlier(self, results.iter().map(|&result| CoreNode::ValueType(result))),
+            && effects.purity() == gandr_core_term::effect::Purity::Pure,
         | (Some(&CompType::Returns { ref results, ref effects }), Former::EffectfulReturner { result: Returned::Group(arity), tail, .. }) => usize::from(arity) == results.len()
             && effects.purity() == gandr_core_term::effect::Purity::Effectful
-            && tail == effects.tail().map(CoreNode::ValueType)
-            && !crate::walk::reads_earlier(self, results.iter().map(|&result| CoreNode::ValueType(result))),
+            && tail == effects.tail().map(CoreNode::ValueType),
         | (Some(&CompType::Returns { .. }), Former::Unreadable(Unreadable::SeveralResults))
         | (Some(&CompType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (None, Former::Unreadable(Unreadable::Dangling)) => true,
         | (Some(&CompType::Codata { declaration, ref arguments }), Former::Codata { name, arity }) =>
@@ -1989,21 +1987,14 @@ impl<'arena> CoreSource<'arena>
                 ref results,
                 ref effects,
             } if effects.purity() == gandr_core_term::effect::Purity::Pure
-                && !crate::walk::reads_earlier(
-                    self,
-                    results.iter().map(|&result| CoreNode::ValueType(result)),
-                ) =>
+                && !crate::walk::reads_earlier(self, results, CoreNode::ValueType).0 =>
             {
                 Former::Returns(Arity::from(results.len()))
             },
             CompType::Returns {
                 ref results,
                 ref effects,
-            } if !crate::walk::reads_earlier(
-                self,
-                results.iter().map(|&result| CoreNode::ValueType(result)),
-            ) =>
-            {
+            } if !crate::walk::reads_earlier(self, results, CoreNode::ValueType).0 => {
                 Former::EffectfulReturner {
                     result: Returned::Group(Arity::from(results.len())),
                     effects,

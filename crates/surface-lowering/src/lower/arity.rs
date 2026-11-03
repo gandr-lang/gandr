@@ -489,6 +489,15 @@ pub(super) struct Dependent(pub bool);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Planned(pub bool);
 
+/// Whether the entries of a parenthesised type are a group of outputs. One
+/// unlabelled entry is no group: it groups one type.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct Grouped(pub bool);
+
 /// The place of an entry among the entries a type states, counting from
 /// zero.
 ///
@@ -668,10 +677,10 @@ fn path(observed: Observed) -> Vec<Side>
 /// # Adequacy
 /// - hypothesis: L3 — as [`Lowerer::output_group`].
 /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
-#[spec(ensures: |ret| ret != matches!(*entries, [ref entry] if !matches!(entry.key, Key::Label(..))))]
-fn groups(entries: &[Entry<'_>]) -> bool
+#[spec(ensures: |ret| ret.0 != matches!(*entries, [ref entry] if !matches!(entry.key, Key::Label(..))))]
+fn groups(entries: &[Entry<'_>]) -> Grouped
 {
-    !matches!(*entries, [ref entry] if !matches!(entry.key, Key::Label(..)))
+    Grouped(!matches!(*entries, [ref entry] if !matches!(entry.key, Key::Label(..))))
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -3660,14 +3669,15 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::output_group`].
     /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Grouped(true))) || matches!(self.form_at(at), Ok(Some((_, Former::ParenthesizedType)))))]
     pub(super) fn written_group(
         &mut self,
         at: Placed,
         frame: Frame,
-    ) -> Result<bool, LoweringRefusal<'source>>
+    ) -> Result<Grouped, LoweringRefusal<'source>>
     {
         if !matches!(self.form_at(at)?, Some((_, Former::ParenthesizedType))) {
-            return Ok(false);
+            return Ok(Grouped(false));
         }
         let entries = self.domain_entries(at, frame)?;
 
@@ -3704,7 +3714,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
         let entries = self.domain_entries(site.at, frame)?;
-        if !groups(&entries) {
+        if !groups(&entries).0 {
             return Ok(Planned(false));
         }
         let _frame = self.require(site, Produced::CompType)?;
@@ -3780,6 +3790,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a call of a function returning two outputs, and one
     ///   returning a pair.
     /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_a_call`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || matches!(self.form_at(bound), Ok(Some((_, Former::Call)))))]
     pub(super) fn called_outputs(
         &mut self,
         frame: Frame,
@@ -3838,7 +3849,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let result = self.returned(Placed::of(at, tree))?;
         if !matches!(self.plans.get(result.node), Some(&Plan::Returns(_)))
-            && !self.written_group(result, frame)?
+            && !self.written_group(result, frame)?.0
         {
             return Ok(None);
         }
@@ -3865,6 +3876,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::pair`].
     /// - witness: `lower::arity::tests::a_tuple_ending_a_body_of_outputs_returns_each_member`
     /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || (matches!(site.reading, Reading::Computation(_)) && self.exits.contains(&site.at.node)))]
     pub(super) fn answered_outputs(
         &mut self,
         site: Site,
@@ -3894,7 +3906,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let result = self.returned(Placed::of(at, tree))?;
         if !matches!(self.plans.get(result.node), Some(&Plan::Returns(_)))
-            && !self.written_group(result, frame)?
+            && !self.written_group(result, frame)?.0
         {
             return Ok(None);
         }
@@ -3975,7 +3987,9 @@ impl<'source> Lowerer<'_, 'source>
         };
         let frame = self.require(site, Produced::Computation)?;
         closed(site, &mut cursor, TileName::PAREN_OPEN)?;
-        let mut written: Vec<(SurfaceName<'source>, Placed, Placed)> = Vec::new();
+        // Each label in written order, and each label's key and value.
+        let mut order: Vec<(SurfaceName<'source>, Placed)> = Vec::new();
+        let mut written: BTreeMap<SurfaceName<'source>, (Placed, Placed)> = BTreeMap::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
             let Key::Label(label, key) = self.dotted(site, &mut cursor)?
             else {
@@ -3983,14 +3997,15 @@ impl<'source> Lowerer<'_, 'source>
             };
             closed(site, &mut cursor, TileName::EQUALS)?;
             let value = site.one(cursor.operands())?;
-            if let Some(&(_, earlier, _)) = written.iter().find(|&&(seen, ..)| seen == label) {
+            if let Some(&(earlier, _)) = written.get(&label) {
                 return Err(LoweringRefusal::DuplicateDefinition {
                     span: key.span,
                     name: label,
                     first: earlier.span,
                 });
             }
-            written.push((label, key, value));
+            written.insert(label, (key, value));
+            order.push((label, key));
             separated(site, &mut cursor, TileName::PAREN_CLOSE)?;
         }
         if written.len() != outputs.len() {
@@ -4004,14 +4019,15 @@ impl<'source> Lowerer<'_, 'source>
             };
             names.push(name);
         }
-        if let Some(&(_, key, _)) = written.iter().find(|&&(label, ..)| !names.contains(&label)) {
+        let named: BTreeSet<SurfaceName<'source>> = names.iter().copied().collect();
+        if let Some(&(_, key)) = order.iter().find(|&&(label, _)| !named.contains(&label)) {
             return Err(site.fault(key.span, FormFault::MisplacedTile));
         }
         // Each label names a distinct output and there are as many: every
         // output has its value.
         let start = self.operands.len();
         for name in names {
-            if let Some(&(_, _, value)) = written.iter().find(|&&(label, ..)| label == name) {
+            if let Some(&(_, value)) = written.get(&name) {
                 self.operands.push(value.node);
                 self.read(value.node, Reading::Value(frame));
             }
@@ -4213,7 +4229,7 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
     pub(super) fn mint_selected_output(
         &self,
-        (call, arity, index): (NodeIndex, gandr_core_term::ComponentCount, usize),
+        (call, arity, index): (NodeIndex, gandr_core_term::ComponentCount, Place),
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -4223,7 +4239,7 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let Some(depth) = usize::from(arity)
-            .checked_sub(index)
+            .checked_sub(index.0)
             .and_then(|after| after.checked_sub(1_usize))
             .and_then(|depth| u32::try_from(depth).ok())
         else {

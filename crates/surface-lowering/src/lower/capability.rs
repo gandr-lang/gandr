@@ -1551,7 +1551,7 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Present(tail) = row.tail {
             self.read(tail, Reading::Value(frame));
         }
-        let reading = if self.written_group(argument, frame)? {
+        let reading = if self.written_group(argument, frame)?.0 {
             Reading::Result(frame)
         }
         else {

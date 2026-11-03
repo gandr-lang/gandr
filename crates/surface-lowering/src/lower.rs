@@ -11397,33 +11397,32 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     if called.len() != outputs.len() {
                         return Err(pattern.out(FragmentBoundary::WrongSort));
                     }
+                    let callable: BTreeSet<SurfaceName<'source>> = called.iter().copied().collect();
                     let mut ordered = Vec::with_capacity(names.len());
-                    let mut seen: Vec<(SurfaceName<'source>, Placed)> =
-                        Vec::with_capacity(names.len());
-                    for &(label, ..) in &names {
+                    // Each label's key, and the name and span it binds.
+                    let mut seen: BTreeMap<
+                        SurfaceName<'source>,
+                        (Placed, SurfaceName<'source>, ByteSpan),
+                    > = BTreeMap::new();
+                    for &(label, name, span) in &names {
                         let Some((written, key)) = label
                         else {
                             continue;
                         };
-                        if !called.contains(&written) {
+                        if !callable.contains(&written) {
                             return Err(statement.fault(key.span, FormFault::MisplacedTile));
                         }
-                        if let Some(&(_, first)) =
-                            seen.iter().find(|&&(earlier, _)| earlier == written)
-                        {
+                        if let Some(&(first, ..)) = seen.get(&written) {
                             return Err(LoweringRefusal::DuplicateDefinition {
                                 span: key.span,
                                 name: written,
                                 first: first.span,
                             });
                         }
-                        seen.push((written, key));
+                        seen.insert(written, (key, name, span));
                     }
                     for written in called {
-                        if let Some(&(_, name, span)) = names
-                            .iter()
-                            .find(|&&(label, ..)| label.is_some_and(|(label, _)| label == written))
-                        {
+                        if let Some(&(_, name, span)) = seen.get(&written) {
                             ordered.push((name, span));
                         }
                     }
@@ -15736,7 +15735,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   its effect row, a row before a result's type reads as the inserted
     ///   returner's, `-F [E] A`, the form stands at the sort its former
     ///   produces, reads its one operand at the sort the former takes, and is
-    ///   planned over it.
+    ///   planned over it. A returner of a group of outputs, `-F (A, B)`, stands
+    ///   as the group.
     /// - provides: the keyword spelling of the two type formers.
     /// - fails: yields the unresolved-head refusal for a keyword no former
     ///   answers, [`LoweringRefusal::GradedBridge`] for a thunk type graded
@@ -15762,7 +15762,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Former(_, _) | Plan::Effectful(..)))
+                    Some(&(Plan::Former(_, _) | Plan::Effectful(..) | Plan::Transparent(_)))
                 )
         },
     )]
@@ -15950,7 +15950,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // `-F (A, B)` as `-> (A, B)`.
         if former == TypeFormer::Returner
             && let Some(tree) = self.tree.node(argument)
-            && self.written_group(Placed::of(argument, tree), frame)?
+            && self.written_group(Placed::of(argument, tree), frame)?.0
         {
             self.read(argument, Reading::Result(frame));
             self.plan(site, Plan::Transparent(argument));
@@ -18100,7 +18100,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Tuple(members) => self.mint_tuple(members, sink, origin),
             Plan::ReturnAll(members) => self.mint_return_all(members, sink, origin),
             Plan::SelectedOutput { call, arity, index } => {
-                self.mint_selected_output((call, arity, index), sink, origin)
+                self.mint_selected_output((call, arity, arity::Place(index)), sink, origin)
             },
             Plan::Plugged { left, right, arity } => {
                 self.mint_plugged((left, right, arity), sink, origin)

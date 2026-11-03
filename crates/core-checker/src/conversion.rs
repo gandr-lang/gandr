@@ -2331,7 +2331,7 @@ fn convert(
                         },
                     ) => {
                         let (first, second) = (first.clone(), second.clone());
-                        match compared_rows(context, (&first, &second), subtyping, &mut pending)? {
+                        match compared_rows(context, (&first, &second), variance, &mut pending)? {
                             Rows::Unified => {
                                 pending.push(values(left, right));
                                 continue;
@@ -2366,7 +2366,7 @@ fn convert(
                             .map(|(&found, &wanted)| values(found, wanted))
                             .collect();
                         let (first, second) = (first.clone(), second.clone());
-                        match compared_rows(context, (&first, &second), subtyping, &mut pending)? {
+                        match compared_rows(context, (&first, &second), variance, &mut pending)? {
                             Rows::Unified => {
                                 pending.extend(results);
                                 continue;
@@ -2801,7 +2801,7 @@ enum Rows
 /// - requires: `first` is the found row and `second` the wanted one.
 /// - ensures: [`Rows::Unified`] or [`Rows::Refuted`] when the row equation
 ///   decides, queueing nothing; otherwise [`Rows::Compared`] holding whether
-///   the rows match instance by instance under `subtyping`, every operation's
+///   the rows match instance by instance under `variance`, every operation's
 ///   payload and reply pair and the tails' pair queued on `pending` as met.
 /// - provides: the one row comparison every returner shares.
 /// - fails: the row equation's refusal.
@@ -2823,10 +2823,11 @@ fn compared_rows(
         &gandr_core_term::effect::EffectRow,
         &gandr_core_term::effect::EffectRow,
     ),
-    subtyping: bool,
+    variance: Variance,
     pending: &mut Vec<Pairing>,
 ) -> Result<Rows, CheckRefusal>
 {
+    let subtyping = variance == Variance::Subtyping;
     match context.unify_rows((first, second))? {
         crate::elaboration::Unified::Agreed => return Ok(Rows::Unified),
         crate::elaboration::Unified::Refuted => return Ok(Rows::Refuted),
