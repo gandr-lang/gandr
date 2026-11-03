@@ -4132,18 +4132,27 @@ required=$(required_contexts)
 # it has a red check; the landing trigger queues it again once its checks are
 # green. A member in the merge queue never moves (`heal.jq`, #3615): the
 # heal waits for it to merge, printing `pr-waits` once, and the watch polls
-# on.
+# on. A member below this one that a required check failed on, or that the
+# queue removed for `failed_checks`, is cut out when no member above it
+# changes a path it changes (#4642): the members above restack past it
+# (`restack_past`), and it waits alone for its seat.
 waited=
 heal() {
-  local stack member red queued members=() decision
+  local stack member red queued members=() decision at=0 cut
   stack=$(server_stack "$number")
   queued=$(queued_of "$stack")
+  # The branches each member's paths are read from.
+  # shellcheck disable=SC2046
+  git fetch --quiet origin "$trunk" $(jq -r '.[].head' <<< "$stack")
   for member in $(jq -r '.[].number' <<< "$stack"); do
     red=$(red_check "$member") || return 1
+    [[ -n $red || $(queue_removal "$member") != failed_checks ]] || red=failed_checks
     members+=("$(jq -cn --argjson number "$member" --argjson red "$([[ -n $red ]] && echo true || echo false)" \
-      --argjson queued "$queued" '{number: $number, red: $red, queued: ($number | IN($queued[]))}')")
+      --argjson queued "$queued" --argjson paths "$(member_paths "$stack" "$at")" \
+      '{number: $number, red: $red, queued: ($number | IN($queued[])), paths: $paths}')")
+    at=$((at + 1))
   done
-  decision=$(jq -cn --argjson heals "$heals" '{heals: $heals, members: ($ARGS.positional | map(fromjson))}' --args "${members[@]}" \
+  decision=$(jq -cn --argjson heals "$heals" --argjson own "$number" '{heals: $heals, own: $own, members: ($ARGS.positional | map(fromjson))}' --args "${members[@]}" \
     | jq -c -f "$pr_stack_dir/heal.jq")
   case $(jq -r .act <<< "$decision") in
     stop) return 1 ;;
@@ -4153,13 +4162,21 @@ heal() {
       waited=$queued
       return 0
       ;;
+    past)
+      cut=$(jq -r .red <<< "$decision")
+      restack_past "$stack" "$cut" >&2 || return 1
+      ;;
+    restack) restack "$stack" >&2 || return 1 ;;
   esac
-  restack "$stack" >&2 || return 1
   heals=$((heals + 1))
   seen_queued=false
   gone=0
   waited=
-  echo "pr-restacked #$number: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")" >&2
+  if [[ -n $cut ]]; then
+    echo "pr-restacked #$number past #$cut: $(jq -r --argjson cut "$cut" 'map(select(.number != $cut) | "#\(.number)") | join(" ← ")' <<< "$stack")" >&2
+  else
+    echo "pr-restacked #$number: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")" >&2
+  fi
 }
 # The open pull requests stacked above this one, bottom first: each one's base
 # is the branch of the one below it.

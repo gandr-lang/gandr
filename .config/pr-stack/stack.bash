@@ -471,6 +471,88 @@ restack() {
   git fetch --quiet origin "${heads[@]}"
 }
 
+# Cut the red member `$2` out of the stack `$1` (bottom to top), and restack
+# the members above it past it (#4642): their own commits are replayed onto
+# the member below it, or onto `origin/$trunk` when it is the bottom, and the
+# red member's commits are left out. The replay runs in a scratch worktree
+# and signs every commit it writes (`--gpg-sign`, #3745), so a conflict stops
+# the cut with nothing moved. The server refuses a base edit on a stacked pull
+# request, so the stack is unstacked first, the member above the red one
+# retargeted onto the red one's base, every moved branch pushed in one atomic
+# push leased on each remote tip, and the chain without the red member linked
+# again (`stack_link`). The red member stays open on its base for its seat.
+# Prints one line per branch that moved.
+restack_past() {
+  local stack=$1 red=$2 at heads above head onto base scratch server status=0 pushes=() leases=() moved=() old new number
+  at=$(jq --argjson red "$red" 'map(.number) | index($red)' <<< "$stack")
+  mapfile -t heads < <(jq -r '.[].head' <<< "$stack")
+  above=("${heads[@]:at+1}")
+  (( ${#above[@]} > 0 )) || return 0
+  git fetch --quiet origin "$trunk" "${heads[@]}"
+  if (( at == 0 )); then base=$trunk; else base=${heads[at-1]}; fi
+  onto=origin/$base
+  scratch=$(mktemp -d "${TMPDIR:-/tmp}/gandr-scratch-$$.XXXXXX")
+  pr_stack_scratch=$scratch
+  git worktree add --quiet --detach "$scratch" "origin/${heads[-1]}"
+  for head in "${above[@]::${#above[@]}-1}"; do
+    git -C "$scratch" branch --quiet --force "pr-stack/$head" "origin/$head"
+  done
+  if ! git merge-base --is-ancestor "origin/${heads[at]}" "origin/${above[0]}"; then
+    echo "${above[0]} does not contain ${heads[at]}, the red branch below it; rebase it onto ${heads[at]} first" >&2
+    status=1
+  elif ! git -C "$scratch" rebase --quiet --gpg-sign --update-refs --onto "$onto" "origin/${heads[at]}" > /dev/null; then
+    echo "the restack of ${above[*]} past #$red onto $onto conflicts ($(git -C "$scratch" diff --name-only --diff-filter=U | paste -sd ' ' -)); land again once #$red is fixed" >&2
+    git -C "$scratch" rebase --abort || true
+    status=1
+  fi
+  if (( status == 0 )); then
+    for head in "${above[@]}"; do
+      old=$(git rev-parse "origin/$head")
+      if [[ "$head" == "${heads[-1]}" ]]; then new=$(git -C "$scratch" rev-parse HEAD); else new=$(git -C "$scratch" rev-parse "pr-stack/$head"); fi
+      pushes+=("$new:refs/heads/$head")
+      leases+=("--force-with-lease=refs/heads/$head:$old")
+      moved+=("$head ${old::12}..${new::12}")
+    done
+    number=$(jq -r ".[$at + 1].number" <<< "$stack")
+    server=$(stack_of "$red")
+    # It exits nonzero (5) whenever it leaves a queued member stacked.
+    [[ $server == null ]] || gh stack unstack "$server" < /dev/null > /dev/null 2>&1 || :
+    gh pr edit "$number" -R "$repo" --base "$base" > /dev/null || status=$?
+  fi
+  if (( status == 0 )); then
+    git -C "$scratch" push --quiet --atomic "${leases[@]}" origin "${pushes[@]}" || status=$?
+  fi
+  if (( status == 0 )); then
+    stack_link "$(jq -c --argjson red "$red" 'map(select(.number != $red))' <<< "$stack")" || status=$?
+  fi
+  for head in "${above[@]::${#above[@]}-1}"; do
+    git branch --quiet --delete --force "pr-stack/$head" > /dev/null 2>&1 || true
+  done
+  drop_scratch
+  (( status == 0 )) || return "$status"
+  printf 'moved %s\n' "${moved[@]}"
+  git fetch --quiet origin "${above[@]}"
+}
+
+# The reason of pull request `$1`'s last removal from the merge queue, in
+# lower case, when nothing was queued or pushed since; empty otherwise. A
+# removal for `failed_checks` is its own merge-group run failing (#3745).
+queue_removal() {
+  gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
+    -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, PULL_REQUEST_COMMIT]) { nodes { __typename ... on RemovedFromMergeQueueEvent { reason } } } } } }' \
+    --jq '.data.repository.pullRequest.timelineItems.nodes[0] | select(.__typename == "RemovedFromMergeQueueEvent") | .reason // "" | ascii_downcase'
+}
+
+# The paths the own commits of the member at index `$2` of the stack `$1`
+# change, from its fork off the member below it, or off the trunk for the
+# bottom, as a JSON array. The branches are fetched.
+member_paths() {
+  local below head
+  head=$(jq -r ".[$2].head" <<< "$1")
+  if (( $2 == 0 )); then below=$trunk; else below=$(jq -r ".[$2 - 1].head" <<< "$1"); fi
+  git diff --no-renames --name-only "origin/$below...origin/$head" | jq -R . | jq -sc .
+}
+
 # The commit a restack replays the branch `$1` from (#3078): of the heads a
 # pull request merged below it ever had (`landed_heads`), the newest the
 # branch still contains, else `$2`, its merge base with the trunk. A lower
