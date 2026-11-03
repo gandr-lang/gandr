@@ -9,7 +9,7 @@ import std.list (List);
 /// where it is run as a value, and each element takes the element type,
 /// `Maybe(Integer)`, from that annotation (#1544).
 def sum_first() -> Integer {
-  let items = ([Some(1), None, Some(3)] : List(Maybe(Integer)));
+  let items = (#[Some(1), None, Some(3)] : List(Maybe(Integer)));
   7
 }
 

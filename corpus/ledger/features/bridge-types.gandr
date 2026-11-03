@@ -13,4 +13,4 @@ def unitString : Bridge(Type, Unit, String) = thunk {
 
 /// Two equal lists of integers, related cell by cell.
 @[ checks ]
-def sameDigits : Bridge(List(Integer), [1, 2], [1, 2]) = (unit, (unit, unit));
+def sameDigits : Bridge(List(Integer), #[1, 2], #[1, 2]) = (unit, (unit, unit));

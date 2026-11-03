@@ -10,8 +10,8 @@ import std.list (List);
 /// The number of strings in a list.
 pub def rec count(xs : List(String)) -> Integer {
   match xs {
-    [] => 0,
-    [x, ..rest] => { let n = count[<](rest); n + 1 }
+    #[] => 0,
+    #[x, ..rest] => { let n = count[<](rest); n + 1 }
   }
 }
 

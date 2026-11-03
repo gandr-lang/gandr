@@ -21,4 +21,4 @@ pub module Workspace : Model(Gandr.Workspace) where {
 }
 
 /// The workspace's packages, each a directory below it.
-pub def members : List(String) = ["hello", "tools"];
+pub def members : List(String) = #["hello", "tools"];

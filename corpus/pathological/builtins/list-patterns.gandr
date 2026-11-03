@@ -8,7 +8,7 @@ import std.list (List);
 @[ refuses("NonExhaustiveMatch") ]
 def unmatched(xs : List(Integer)) -> -F Integer {
   match xs {
-    [a, ..rest] => return a
+    #[a, ..rest] => return a
   }
 }
 
@@ -16,7 +16,7 @@ def unmatched(xs : List(Integer)) -> -F Integer {
 @[ refuses("MismatchedPattern") ]
 def mixed(xs : List(Integer)) -> -F Integer {
   match xs {
-    [] => return 0,
+    #[] => return 0,
     3 => return 1,
     _ => return 2
   }

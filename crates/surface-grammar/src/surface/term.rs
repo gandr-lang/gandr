@@ -1750,11 +1750,7 @@ fn patterns(
         Provenance("list_pattern"),
         s,
         atom,
-        seq([
-            alt([t(TileLabel("#[")), t(TileLabel("["))]),
-            opt(list_pat_elems()),
-            t(TileLabel("]")),
-        ]),
+        seq([t(TileLabel("#[")), opt(list_pat_elems()), t(TileLabel("]"))]),
     ));
     out.push(r(
         RuleName("rest_pattern"),
@@ -4346,11 +4342,7 @@ fn primary_expressions(
         Provenance("list_expression"),
         s,
         p,
-        seq([
-            alt([t(TileLabel("#[")), t(TileLabel("["))]),
-            opt(comma1(h(s))),
-            t(TileLabel("]")),
-        ]),
+        seq([t(TileLabel("#[")), opt(comma1(h(s))), t(TileLabel("]"))]),
     ));
     let mut block_rule = r(
         RuleName("block"),

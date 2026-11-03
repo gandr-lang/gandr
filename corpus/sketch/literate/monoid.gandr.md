@@ -28,12 +28,12 @@ Concatenation is the operation, and the empty list is the unit. The columns of t
 /// Lists under concatenation.
 module Lists[a : Type] : Model(Monoid) with { sort M = List(a) } where {
   /// The empty list.
-  def unit = [];
+  def unit = #[];
   /// The first list, then the second.
   def op(xs : List(a), ys : List(a)) -> List(a) {
     match xs {
-      []       => ys,
-      [x, ..r] => [x, ..op(r, ys)]
+      #[]       => ys,
+      #[x, ..r] => #[x, ..op(r, ys)]
     }
   }
 }
@@ -47,8 +47,8 @@ A fold sends the free monoid to any other. Its doc comment carries a formula in 
 /// Folds `xs` into `m`: #md{ $x_1 \oplus \cdots \oplus x_n$ }.
 pub def fold[m : Model(Monoid)](xs : List(m.M)) -> m.M {
   match xs {
-    []       => m.unit,
-    [x, ..r] => m.op(x, fold(r))
+    #[]       => m.unit,
+    #[x, ..r] => m.op(x, fold(r))
   }
 }
 ```

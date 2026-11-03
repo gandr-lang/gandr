@@ -3937,7 +3937,7 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
              module Seat :> #{ mobile type Report, progress : Report } where {\n  type Report = \
              String;\n  def progress = \"progress\";\n}\ndef returned() -> Secret.T { \
              Secret.seal(\"x\") }\ndef listed() -> List(Secret.T) {\n  let s = \
-             Secret.seal(\"z\");\n  pure [s]\n}\ndef reported() -> Seat.Report { pure \
+             Secret.seal(\"z\");\n  pure #[s]\n}\ndef reported() -> Seat.Report { pure \
              Seat.progress }\n",
         ));
         let mut sealed = listed_program(&listed);

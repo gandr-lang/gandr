@@ -67,8 +67,8 @@ def helloAttribute : Attribute = #{
     longDescription = "GNU Hello is a program that prints \"Hello, world!\" when you run it.\nIt is fully customizable.\n",
     mainProgram = "hello",
     name = "hello-2.12.3",
-    outputsToInstall = ["out"],
-    platforms = [
+    outputsToInstall = #["out"],
+    platforms = #[
       "x86_64-linux",
       "aarch64-darwin",
       "aarch64-linux",
@@ -85,5 +85,5 @@ def helloAttribute : Attribute = #{
     unfree = false,
     unsupported = false
   },
-  outputs = ["out"]
+  outputs = #["out"]
 };

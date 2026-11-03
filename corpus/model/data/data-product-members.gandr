@@ -21,7 +21,7 @@ def answered_pair(n : Integer) -> Maybe(Integer) * Maybe(Integer) {
 /// Pairs in a list: each takes the element type, and gives its members the
 /// components.
 def pair_list() -> List(Maybe(Integer) * Maybe(Integer)) {
-  [(Some(1), None), (None, Some(2))]
+  #[(Some(1), None), (None, Some(2))]
 }
 
 /// A pair in a pair: the inner one takes the product at its place.

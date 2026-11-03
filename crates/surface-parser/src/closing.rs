@@ -1205,7 +1205,7 @@ mod tests
                 hole(Sort::Expression),
                 tile(";"),
             ]),
-            ("def f = [1, 2", LeadingSlot::Occupied, vec![tile("]")]),
+            ("def f = #[1, 2", LeadingSlot::Occupied, vec![tile("]")]),
             (
                 "def f(x: Nat) -> -F Nat { let y =",
                 LeadingSlot::Empty,

@@ -173,7 +173,7 @@ fn a_comment_before_a_closing_bracket_dangles_on_its_block()
         "a comment with nothing of its form after it but the closer dangles: {found:#?}"
     );
     assert_eq!(
-        attached(&grammar, "def e = [\n  /* none */\n] ;\n").first(),
+        attached(&grammar, "def e = #[\n  /* none */\n] ;\n").first(),
         Some(&expected(
             "/* none */",
             CommentKind::Block,

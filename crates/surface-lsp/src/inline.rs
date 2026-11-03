@@ -2441,7 +2441,7 @@ mod tests
             "     comment */ return \"hello ${name}, \\\"quoted\\\" ${ { 1 } }\";\n",
             "}\n",
             "def g : Integer ⇝ Integer; // a trailing comment\n",
-            "def x = (1 + [2, 3]) /* open",
+            "def x = (1 + #[2, 3]) /* open",
         );
         let whole = Labeled::new(SourceText::from(text));
         for at in 0 ..= text.len() {
@@ -2524,12 +2524,12 @@ mod tests
             ("def x = (", "1 + 2)"),
             ("def x = (", "(1))"),
             ("def x = (", "(1), 2)"),
-            ("def x = [", "1, 2]"),
+            ("def x = #[", "1, 2]"),
             ("def x = thunk {", " return 1 }"),
             ("def x = thunk { return", " 1; }"),
             ("def x = ", "(1) 2;"),
             ("def x = ", "def"),
-            ("def x = (", "[1])"),
+            ("def x = (", "#[1])"),
             ("def x = 1 +", ";"),
             ("def x = 1 +", ""),
             ("def x = (1 +", ""),
@@ -2541,7 +2541,7 @@ mod tests
                 let _written = writeln!(rendered, "  {ghost:?}");
             }
         }
-        expect![[r#"
+        expect![[r##"
             "def f(x: Integer) -> -F Integer {" ‸ "\n}"
               " ${1:computation}"
               " pure ${1:value}"
@@ -2627,7 +2627,7 @@ mod tests
               "pure "
               "return "
               "become "
-            "def x = [" ‸ "1, 2]"
+            "def x = #[" ‸ "1, 2]"
               "- "
               "run "
               "hold "
@@ -2672,7 +2672,7 @@ mod tests
               "_; "
               "(); "
               "type(${1:type}); "
-            "def x = (" ‸ "[1])"
+            "def x = (" ‸ "#[1])"
               "- "
               "run "
               "hold "
@@ -2726,7 +2726,7 @@ mod tests
               "import ${1:identifier};"
               "world ${1:identifier};"
               "rec { ${1:item} \\}"
-        "#]]
+        "##]]
         .assert_eq(&rendered);
     }
 

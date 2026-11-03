@@ -5,4 +5,4 @@ import std.list (List);
 
 /// A list of integers holding a string.
 @[ refuses("TypeMismatch") ]
-def mixed = ([1, "two"] : List(Integer));
+def mixed = (#[1, "two"] : List(Integer));

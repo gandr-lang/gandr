@@ -350,7 +350,7 @@ fn a_workspace_walks_every_member_it_names_2687()
     };
     std::fs::write(
         &source,
-        stated("pub def members : List(String) = [\"hello\", \"tools\"];"),
+        stated("pub def members : List(String) = #[\"hello\", \"tools\"];"),
     )
     .expect("the workspace is written");
     for from in ["", "docs", "hello/src", "tools/package.gandr"] {
@@ -420,7 +420,7 @@ fn a_workspace_walks_every_member_it_names_2687()
     );
     for (members, refused) in [
         (
-            "pub def members : List(String) = [\"hello\", \"docs\"];",
+            "pub def members : List(String) = #[\"hello\", \"docs\"];",
             Unmembered::Unpackaged {
                 member: String::from("docs"),
             },

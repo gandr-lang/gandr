@@ -40,12 +40,12 @@ def helloDerivation : Derivation = #{
   name = "hello-2.12.2",
   system = "x86_64-linux",
   builder = "/nix/store/rlq03x4cwf8zn73hxaxnx0zn5q9kifls-bash-5.3p3/bin/bash",
-  args = [
+  args = #[
     "-e",
     "/nix/store/l622p70vy8k5sh7y5wizi5f2mic6ynpg-source-stdenv.sh",
     "/nix/store/shkw4qm9qcw5sc5n1k5jznc83ny02r39-default-builder.sh"
   ],
-  env = [
+  env = #[
     ("NIX_CFLAGS_COMPILE", " -ggdb -Og"),
     ("NIX_MAIN_PROGRAM", "hello"),
     ("NIX_RUSTFLAGS", " -g -C opt-level=0 -C strip=none"),
@@ -64,16 +64,16 @@ def helloDerivation : Derivation = #{
     ("system", "x86_64-linux"),
     ("version", "2.12.2")
   ],
-  inputDrvs = [
-    ("dkd7x68qnzz99f3dvmf50ig8xwpvaax8-version-check-hook.drv", ["out"]),
-    ("iadiya7abzbls67alm9nj7prs68dig6k-hello-2.12.2.tar.gz.drv", ["out"]),
-    ("pnjvpwgka59d6fwpp9fnz42ll2ai4ffm-stdenv-linux.drv", ["out"]),
-    ("vwmk63kc9sysjif65h7fdwnqr5h8jfm6-bash-5.3p3.drv", ["out"])
+  inputDrvs = #[
+    ("dkd7x68qnzz99f3dvmf50ig8xwpvaax8-version-check-hook.drv", #["out"]),
+    ("iadiya7abzbls67alm9nj7prs68dig6k-hello-2.12.2.tar.gz.drv", #["out"]),
+    ("pnjvpwgka59d6fwpp9fnz42ll2ai4ffm-stdenv-linux.drv", #["out"]),
+    ("vwmk63kc9sysjif65h7fdwnqr5h8jfm6-bash-5.3p3.drv", #["out"])
   ],
-  inputSrcs = [
+  inputSrcs = #[
     "l622p70vy8k5sh7y5wizi5f2mic6ynpg-source-stdenv.sh",
     "shkw4qm9qcw5sc5n1k5jznc83ny02r39-default-builder.sh"
   ],
-  outputs = [("out", "lpl117l7c02847bxhznbgg2hy5hpbwsb-hello-2.12.2")],
+  outputs = #[("out", "lpl117l7c02847bxhznbgg2hy5hpbwsb-hello-2.12.2")],
   version = 4
 };

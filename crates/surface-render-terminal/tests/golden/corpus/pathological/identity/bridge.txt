@@ -9,13 +9,13 @@ error[ShapeMismatch]: expected an element path type `Path(A, a, b)`
    ╰ note: `fourHere` is refused with ShapeMismatch, as its expectation states
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/identity/bridge.gandr:23:54
+   ╭▸ corpus/pathological/identity/bridge.gandr:23:56
    │
-23 │ def otherDigits : Bridge(List(Integer), [1], [2]) = (unit, unit);
-   │                                                     ┬┯━━━───────
-   │                                                     ││
-   │                                                     │its type does not convert: expected `Void`, found `Unit`
-   │                                                     checked against `Bridge(List(Integer), cons(1, nil), cons(2, nil))`; while checking the next premise of this
+23 │ def otherDigits : Bridge(List(Integer), #[1], #[2]) = (unit, unit);
+   │                                                       ┬┯━━━───────
+   │                                                       ││
+   │                                                       │its type does not convert: expected `Void`, found `Unit`
+   │                                                       checked against `Bridge(List(Integer), cons(1, nil), cons(2, nil))`; while checking the next premise of this
    │
    ├ note: `otherDigits` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

@@ -5,8 +5,8 @@ import std.list (List);
 
 /// Three integers, annotated as a list of them: the cons cells over `1`, `2`
 /// and `3`, ending in the empty list (#1544).
-def xs = ([1, 2, 3] : List(Integer));
+def xs = (#[1, 2, 3] : List(Integer));
 
 /// A zero prepended; the lowering admits no `++` yet (#1997).
 @[ refuses("OutOfFragment.binary_expression") ]
-def prefixed = [0] ++ xs;
+def prefixed = #[0] ++ xs;

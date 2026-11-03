@@ -8272,8 +8272,8 @@ impl Walk<'_, '_>
                 return writes(Production("type_identifier"), self.atom(Glyphs("Row")));
             },
             // A row as a term has no syntax of its own: it is written as the
-            // bracket of names the surface reads as a list, its tail after a
-            // bar when it is open.
+            // list reader of names, `#[ … ]`, its tail after a bar when it is
+            // open.
             Former::Row { effects, tail } => {
                 #[cfg_attr(
                     dylint_lib = "quenchant_dylints",
@@ -8284,7 +8284,7 @@ impl Walk<'_, '_>
                     )
                 )]
                 self.note(Unspelled::Notation(Notation::Row));
-                let mut written = String::from("[");
+                let mut written = String::from("#[");
                 let listed = self.list_interfaces(source, effects, &mut written);
                 if tail.is_none() {
                     written.push(']');

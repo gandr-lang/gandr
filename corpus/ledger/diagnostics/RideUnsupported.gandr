@@ -18,4 +18,4 @@ module Evolution where {
 @[ refuses("RideUnsupported") ]
 def listed : () => List(Evolution.Kept) ;
 
-def listed = thunk { Flow.ride(fun (X) { List(X) }, Evolution.keep, []) } ;
+def listed = thunk { Flow.ride(fun (X) { List(X) }, Evolution.keep, #[]) } ;

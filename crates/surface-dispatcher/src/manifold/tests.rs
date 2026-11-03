@@ -183,7 +183,7 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
         &format!(
             "pub module Site : Model(Site) where {{\n  def key = \"{SITE_KEY}\";\n  def sockets = \
              \"\";\n  def secret = \"far\";\n}}\npub def placements : List(Placement) = \
-             [Instances(\"far\", pack Site at Model(Site), 2)];\n"
+             #[Instances(\"far\", pack Site at Model(Site), 2)];\n"
         ),
     );
     assert!(
@@ -206,7 +206,7 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
     );
     let listed = manifold(
         "listed.gandr",
-        "pub def placements : List(String) = [\"far\"];\n",
+        "pub def placements : List(String) = #[\"far\"];\n",
     );
     assert!(
         matches!(
@@ -361,7 +361,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
              \"./bare.gandr\" as bare;\npub module Manifold : Model(Manifold) where {{\n  def artifact \
              = \"p.gandr\";\n}}\npub module Local : Model(Site) where {{\n  def key = \"{local}\";\n  \
              def sockets = \"\";\n  def secret = \"local\";\n}}\npub def placements : \
-             List(Placement) = [\n  At(\"far\", answered.site),\n  At(\"far\", typed.site),\n  \
+             List(Placement) = #[\n  At(\"far\", answered.site),\n  At(\"far\", typed.site),\n  \
              At(\"far\", bare.site),\n  At(\"netted\", answered.site),\n  At(\"far\", pack Local \
              at Model(Site)),\n  At(\"lost\", typed.site),\n];\n"
         )),

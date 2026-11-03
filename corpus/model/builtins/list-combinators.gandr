@@ -4,7 +4,7 @@
 
 /// Each element doubled.
 @[ refuses("OutOfFragment.projection_expression") ]
-def doubled = list.each(thunk { fun (x) { return x * 2 } }, [1, 2, 3]);
+def doubled = list.each(thunk { fun (x) { return x * 2 } }, #[1, 2, 3]);
 
 /// The doubled elements over two.
 @[ refuses("OutOfFragment.projection_expression") ]
@@ -24,7 +24,7 @@ def all_even = list.all(thunk { fun (x) { return x > 1 } }, doubled);
 
 /// Two lists, one after the other.
 @[ refuses("OutOfFragment.projection_expression") ]
-def flattened = list.flatten([[3, 1], [2, 2]]);
+def flattened = list.flatten(#[#[3, 1], #[2, 2]]);
 
 /// The distinct elements, sorted; the lowering reads no `list` primitive yet
 /// (#1106).

@@ -9593,11 +9593,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a list literal, `#[v1, …, vn]`, the empty `#[]` included, or
-    /// its bare spelling `[v1, …, vn]`, read until the corpus moves.
+    /// Classify a list literal, `#[v1, …, vn]`, the empty `#[]` included.
     ///
     /// # Specification
-    /// - requires: `cursor` stands at the `#[` or `[` of a list literal.
+    /// - requires: `cursor` stands at the `#[` of a list literal.
     /// - ensures: the list stands as a value, reads every element as a value
     ///   under its own frame, and is planned over them as one native list, as
     ///   `v1 :: … :: vn :: nil` is. Under a written classifier `List(T)` — its
@@ -9642,15 +9641,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let frame = self.require(site, Produced::Value)?;
         let start = self.operands.len();
-        let open = match cursor.at(TileName::SEQUENCE_OPEN) {
-            Maybe::Present(_) => TileName::SEQUENCE_OPEN,
-            Maybe::Absent(_) => TileName::BRACKET_OPEN,
-        };
         if let Err(refusal) = delimited(
             site,
             &mut cursor,
             &mut self.operands,
-            open,
+            TileName::SEQUENCE_OPEN,
             TileName::BRACKET_CLOSE,
         ) {
             self.operands.truncate(start);
@@ -25346,7 +25341,7 @@ mod tests
     #[test]
     fn a_list_type_resolves_only_through_its_listing_4520()
     {
-        let body = "def xs : List(Integer) = [1, 2] ;";
+        let body = "def xs : List(Integer) = #[1, 2] ;";
         let mut arena = CoreArena::new();
         let source = crate::fixture::listing(body);
         let module = crate::fixture::listed(&source, &mut arena);
@@ -25379,8 +25374,8 @@ mod tests
     fn a_homed_former_reads_through_its_import_s_qualifier_4862()
     {
         for text in [
-            "\nimport std.list ;\ndef xs : std.list.List(Integer) = [1, 2] ;",
-            "\nimport std.list as l ;\ndef xs : l.List(Integer) = [1, 2] ;",
+            "\nimport std.list ;\ndef xs : std.list.List(Integer) = #[1, 2] ;",
+            "\nimport std.list as l ;\ndef xs : l.List(Integer) = #[1, 2] ;",
         ] {
             let mut arena = CoreArena::new();
             let module = crate::fixture::listed(text, &mut arena);
@@ -25399,7 +25394,7 @@ mod tests
         }
         let mut arena = CoreArena::new();
         let module = crate::fixture::listed(
-            "\nimport std.list as l ;\ndef xs : l.Lists(Integer) = [1, 2] ;",
+            "\nimport std.list as l ;\ndef xs : l.Lists(Integer) = #[1, 2] ;",
             &mut arena,
         );
         assert_eq!(
@@ -27211,7 +27206,7 @@ def ended() -> -F [Partial] Unit {
             "def a : Zz => Integer ;",
             "def a : Path(Zz, 1, 1) ;",
             "def a = (1, zz) ;",
-            "def a = [1, zz] ;",
+            "def a = #[1, zz] ;",
             "def a = thunk { return zz } ;",
             "def a = thunk { let x = zz ; return x } ;",
             "def a = thunk { fun (x) { return zz } } ;",
@@ -29285,8 +29280,8 @@ def ended() -> -F [Partial] Unit {
                 at(30_usize, 36_usize),
             ),
             (
-                "def p : Integer ;\n@[ respects([p]) ] def r = 1 ;\n",
-                at(30_usize, 33_usize),
+                "def p : Integer ;\n@[ respects(#[p]) ] def r = 1 ;\n",
+                at(30_usize, 34_usize),
             ),
         ] {
             let mut arena = CoreArena::new();

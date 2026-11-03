@@ -7050,11 +7050,11 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
-    /// The shape of the list pattern `#[p, …, q]` or `#[p, …, q, ..r]`, or its
-    /// bare spelling `[p, …]` read until the corpus moves, at `here`, the
-    /// pattern `queued` holds, read from `pieces`: the cell of `p` over the
-    /// rest of the list, each later cell and the closing empty list allocated
-    /// in turn, every element and the rest queued in source order.
+    /// The shape of the list pattern `#[p, …, q]` or `#[p, …, q, ..r]` at
+    /// `here`, the pattern `queued` holds, read from `pieces`: the cell of `p`
+    /// over the rest of the list, each later cell and the closing empty
+    /// list allocated in turn, every element and the rest queued in source
+    /// order.
     ///
     /// # Specification
     /// - requires: `here` is a list pattern of a match, `pieces` its reading.
@@ -7090,9 +7090,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Matcher, LoweringRefusal<'source>>
     {
         let mut cursor = Cursor::new(&pieces.pieces, here.at.span);
-        if let Maybe::Absent(_) = cursor.tile(TileName::SEQUENCE_OPEN) {
-            closed(here, &mut cursor, TileName::BRACKET_OPEN)?;
-        }
+        closed(here, &mut cursor, TileName::SEQUENCE_OPEN)?;
         let mut elements = Vec::new();
         let mut rest = None;
         loop {

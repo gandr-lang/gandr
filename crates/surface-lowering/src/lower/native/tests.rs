@@ -1685,16 +1685,16 @@ fn a_descent_claim_names_its_own_function_873()
 fn a_reserved_claim_under_a_head_that_is_no_name_marks_the_whole_instantiation_3811()
 {
     let mut arena = CoreArena::new();
-    let source = alloc::format!("{NAT}def joined = [1]  [2] ;\n");
+    let source = alloc::format!("{NAT}def joined = #[1]  [2] ;\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
-    let start = source.find("[1]  [2]").unwrap_or_default();
+    let start = source.find("#[1]  [2]").unwrap_or_default();
 
     assert_eq!(
         refusal_of(&module, SurfaceName::from("joined")),
         LoweringRefusal::OutOfFragment {
             span: crate::fixture::span(
                 gandr_surface_syntax::ByteOffset::from(start),
-                gandr_surface_syntax::ByteOffset::from(start.saturating_add("[1]  [2]".len())),
+                gandr_surface_syntax::ByteOffset::from(start.saturating_add("#[1]  [2]".len())),
             ),
             form: FormName::INSTANTIATION,
             sort: FragmentSort::Value,
@@ -3155,9 +3155,9 @@ fn a_listed_constructor_takes_the_element_type_1544()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}def annotated = ([Some(3), None] : List(Maybe(Integer))) ;\n\
-         def signed : List(Maybe(Integer)) ;\ndef signed = [Some(3), None] ;\n\
-         def nested = ([[Some(3)], [], [None]] : List(List(Maybe(Integer)))) ;\n"
+        "{MAYBE}def annotated = (#[Some(3), None] : List(Maybe(Integer))) ;\n\
+         def signed : List(Maybe(Integer)) ;\ndef signed = #[Some(3), None] ;\n\
+         def nested = (#[#[Some(3)], #[], #[None]] : List(List(Maybe(Integer)))) ;\n"
     );
     let source = listing(&source);
     let module = listed(&source, &mut arena);
@@ -3203,10 +3203,10 @@ fn a_listed_constructor_takes_the_answered_element_type_1602()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}def returned(n : Integer) -> -F List(Maybe(Integer)) {{ [Some(n), None] }}\n\
-         def alias : () => List(Maybe(Integer)) ;\ndef alias = thunk {{ [None, Some(2)] }} ;\n\
-         def nested() -> -F List(List(Maybe(Integer))) {{ [[Some(3)], [None]] }}\n\
-         def polymorphic(a : Type, x : a) -> -F List(Maybe(a)) {{ [Some(x), None] }}\n"
+        "{MAYBE}def returned(n : Integer) -> -F List(Maybe(Integer)) {{ #[Some(n), None] }}\n\
+         def alias : () => List(Maybe(Integer)) ;\ndef alias = thunk {{ #[None, Some(2)] }} ;\n\
+         def nested() -> -F List(List(Maybe(Integer))) {{ #[#[Some(3)], #[None]] }}\n\
+         def polymorphic(a : Type, x : a) -> -F List(Maybe(a)) {{ #[Some(x), None] }}\n"
     );
     let source = listing(&source);
     let module = listed(&source, &mut arena);
@@ -3234,7 +3234,7 @@ fn a_tuple_gives_its_members_the_product_s_components_1877()
     let source = alloc::format!(
         "{MAYBE}def annotated = ((Some(1), None) : Maybe(Integer) * Maybe(Integer)) ;\n\
          def returned(n : Integer) -> -F (Maybe(Integer) * Maybe(Integer)) {{ (None, Some(n)) }}\n\
-         def listed() -> -F List(Maybe(Integer) * Maybe(Integer)) {{ [(Some(1), None)] }}\n\
+         def listed() -> -F List(Maybe(Integer) * Maybe(Integer)) {{ #[(Some(1), None)] }}\n\
          def nested = ((Some(1), (None, Some(2))) : Maybe(Integer) * (Maybe(Integer) * Maybe(Integer))) ;\n"
     );
     let source = listing(&source);
@@ -3715,11 +3715,11 @@ fn an_as_pattern_names_its_match_with_a_name()
 {
     let mut arena = CoreArena::new();
     let source = listing(
-        "def whole(xs : List(Integer)) -> -F List(Integer) { match xs { [a, .._] @ all => \
-         return all, [] => return [] } }\n",
+        "def whole(xs : List(Integer)) -> -F List(Integer) { match xs { #[a, .._] @ all => \
+         return all, #[] => return #[] } }\n",
     );
     let module = listed(&source, &mut arena);
-    let start = source.find("[a, .._]").unwrap_or(0_usize);
+    let start = source.find("#[a, .._]").unwrap_or(0_usize);
     assert!(
         matches!(
             refusal_of(&module, SurfaceName::from("whole")),
