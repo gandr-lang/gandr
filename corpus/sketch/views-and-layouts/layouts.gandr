@@ -1,0 +1,67 @@
+/// Ribbit's two layouts of a list of `i32`, written as Ribbit writes them.
+///
+/// A layout fixes the bytes a value occupies. Written by hand, each layout
+/// costs a second data type, its encoder, its decoder and two round trips.
+///
+/// The `#ribbit{ … }` reader takes one memory type per constructor or nested
+/// pattern. It yields the representation type, its encoder and decoder, and
+/// the equivalence with the list. Every check it makes is finite.
+/// `@[layout(packed)]` makes the packed layout the one the list compiles to.
+///
+/// - see: #4561 — the views and layouts sketch, its rulings in the issue body
+/// - see: Baudon-2024-ribbit — Example 3.4, the two layouts and their memory types
+/// - see: corpus/model/layouts/ribbit-list.gandr — the same two layouts, written by hand
+/// - see: corpus/sketch/views-and-layouts/layouts-ascii.gandr — the same layouts in ASCII
+
+// The layout type and its `#ribbit` reader.
+import std.mem (Layout);
+
+/// The list of Ribbit's Example 3.1 in the packed layout.
+@[layout(packed)]
+pub data Ints : Type where {
+  /// The empty list.
+  | Nil : Ints
+  /// `head` before `tail`.
+  | Cons : (head : i32, tail : Ints) --> Ints
+}
+
+/// The pointer-tagged layout: the low bit of a word tells the empty list from
+/// a pointer to a cell.
+pub def tagged : Layout(Ints) = #ribbit{
+  Nil  => _64 ⋉ [0 : 1] : (1)1
+  Cons => &64 {{head, tail}} ⋉ [0 : 1] : (0)1
+}
+
+/// The packed layout: two elements per pointer, a lone last element inline in
+/// the word.
+pub def packed : Layout(Ints) = #ribbit{
+  Nil                    => _64 ⋉ [0 : 2] : (0)2
+  Cons(x, Nil)           => _64 ⋉ [0 : 2] : (1)2 ⋉ [2 : 32] : x
+  Cons(x, Cons(y, rest)) => &64 {{x, y, rest}} ⋉ [0 : 2] : (2)2
+}
+
+/// The first element, read through the packed layout's own arms.
+def head(xs : Ints) -> Maybe(i32) {
+  match xs with packed {
+    Empty => none,
+    One(x) => some(x),
+    Many(x, _, _) => some(x)
+  }
+}
+
+/// The length, written once over the list, whichever layout the list has.
+def rec length(xs : Ints) -> Integer {
+  match xs {
+    Nil => 0,
+    Cons(_, rest) => length[<](rest) + 1
+  }
+}
+
+/// The sum of a packed list, two elements per step.
+def rec sum(xs : Ints) -> i64 {
+  match xs with packed {
+    Empty => 0i64,
+    One(x) => widen(x),
+    Many(x, y, rest) => widen(x) + widen(y) + sum[<](rest)
+  }
+}
