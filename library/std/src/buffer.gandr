@@ -1,0 +1,6 @@
+// `std.buffer`: the home of the native buffer atoms. `Buf` is the opaque
+// buffer a receive places live and a send returns, and `Web` is the
+// decomposition a dialogue's log answers. A source names each by listing it,
+// `import std.buffer (Buf, Web);` (#4522). Both atoms are native, so no
+// declaration here states them: the lowering answers each in a source that
+// lists it from this module, and nowhere else.

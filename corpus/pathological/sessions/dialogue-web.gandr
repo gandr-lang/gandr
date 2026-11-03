@@ -5,6 +5,8 @@
 
 // The seat's dialogues that report and that hand off.
 import "../../model/sessions/dialogue-web.gandr";
+// The modular decomposition of a dialogue's web.
+import std.buffer (Web);
 
 /// A protocol that sends one string and ends.
 module Ask where {

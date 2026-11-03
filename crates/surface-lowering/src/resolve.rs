@@ -432,7 +432,10 @@ pub enum TypeFormer
     Dialogue,
 }
 
-/// The nullary type heads, with the spellings the surface writes them as.
+/// The nullary type heads the ambient scope answers, with the spellings the
+/// surface writes them as. `Buf` and `Web` are no rows: their home is
+/// `std.buffer`, and [`HOMED_ATOMS`] answers them where a source imports them
+/// from there (#4522).
 ///
 /// # Specification
 /// - requires: nothing.
@@ -447,7 +450,7 @@ pub enum TypeFormer
 ///   near spellings separating the absent branch.
 /// - witness: `lower::tests::native_boolean_results_have_the_written_classifier`
 /// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
-const TYPE_ATOMS: [(&str, TypeAtom); 14_usize] = [
+const TYPE_ATOMS: [(&str, TypeAtom); 12_usize] = [
     ("Unit", TypeAtom::Unit),
     ("Void", TypeAtom::Void),
     ("Bool", TypeAtom::Boolean),
@@ -459,8 +462,6 @@ const TYPE_ATOMS: [(&str, TypeAtom); 14_usize] = [
     ("u64", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::U64)),
     ("i32", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::I32)),
     ("i64", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::I64)),
-    ("Buf", TypeAtom::Buffer),
-    ("Web", TypeAtom::Web),
     ("Row", TypeAtom::Row),
 ];
 
@@ -505,6 +506,27 @@ const TYPE_FORMERS: [(&str, TypeFormer); 5_usize] = [
 ///   name is absent from the ambient table.
 /// - witness: `resolve::tests::a_homed_former_answers_only_at_its_home_4520`
 const HOMED_FORMERS: [(&str, &str, TypeFormer); 1_usize] = [("std.list", "List", TypeFormer::List)];
+
+/// The nullary type heads a `std` module homes, each by the module's path and
+/// the name a listed import of it binds: `import std.buffer (Buf, Web);`
+/// (#4522).
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: exactly the module path and the name select an atom; neither
+///   alone does.
+/// - provides: the homed half of the nullary type-head inventory.
+/// - executable: none — the specification attribute does not support constant
+///   items; the lookup predicate checks the corresponding table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each row answers at its home and nowhere else, and its
+///   name is absent from the ambient table.
+/// - witness: `resolve::tests::a_homed_atom_answers_only_at_its_home_4522`
+const HOMED_ATOMS: [(&str, &str, TypeAtom); 2_usize] = [
+    ("std.buffer", "Buf", TypeAtom::Buffer),
+    ("std.buffer", "Web", TypeAtom::Web),
+];
 
 /// The value-type atom `name` spells, when the nullary table answers it.
 ///
@@ -635,38 +657,93 @@ pub fn homed_former(
     )
 }
 
-/// The module that homes the type former spelled `name`, which a listed
-/// import of that module binds: `std.list` for `List` (#4520).
+/// The type atom `name` spells when the module spelled `module` homes it.
+///
+/// # Specification
+/// - requires: nothing — every module path and identifier is admissible input.
+/// - ensures: exactly the atom whose home is `module` and whose spelling is
+///   `name`, and the absence for every other pair, a homed name read at another
+///   module included.
+/// - provides: the homed half of the nullary type-head resolution table.
+/// - fails: never; a pair the table does not hold is an absence.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the table is a finite class, each row asserted at its
+///   home and refused at another module and at a near spelling.
+/// - witness: `resolve::tests::a_homed_atom_answers_only_at_its_home_4522`
+#[spec(
+    ensures: |ret| match ret {
+        | Maybe::Present(answer) => HOMED_ATOMS
+            .iter()
+            .any(|&(home, spelling, value)| home == module.as_ref() && spelling == name.as_ref() && value == answer),
+        | Maybe::Absent(type_head::Absent::Unregistered) => HOMED_ATOMS
+            .iter()
+            .all(|&(home, spelling, _)| home != module.as_ref() || spelling != name.as_ref()),
+    },
+)]
+#[inline]
+pub fn homed_atom(
+    module: SurfaceName<'_>,
+    name: SurfaceName<'_>,
+) -> Maybe<TypeAtom, type_head::Absent>
+{
+    let (home, spelled): (&str, &str) = (module.as_ref(), name.as_ref());
+    let found = HOMED_ATOMS
+        .into_iter()
+        .find_map(|(entry, spelling, atom)| (entry == home && spelling == spelled).then_some(atom));
+
+    found.map_or(
+        Maybe::Absent(type_head::Absent::Unregistered),
+        Maybe::Present,
+    )
+}
+
+/// The `std` module that homes the type head spelled `name`, former or atom,
+/// which a listed import of that module binds: `std.list` for `List` (#4520),
+/// `std.buffer` for `Buf` and `Web` (#4522).
 ///
 /// # Specification
 /// - requires: nothing — every identifier is admissible input.
-/// - ensures: exactly the home of the row whose spelling is `name`, and the
-///   absence for every other identifier, an ambient former's spelling included.
+/// - ensures: exactly the home of the former or atom row whose spelling is
+///   `name`, and the absence for every other identifier, an ambient head's
+///   spelling included.
 /// - provides: the home a refusal of an unlisted head names.
 /// - fails: never; an identifier no row homes is an absence.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the table is a finite class, its row's home asserted and
-///   an ambient former and a near spelling asserted absent.
+/// - hypothesis: L3 — both tables are finite classes, each row's home asserted
+///   and an ambient head and a near spelling asserted absent.
 /// - witness: `resolve::tests::a_homed_former_answers_only_at_its_home_4520`
+/// - witness: `resolve::tests::a_homed_atom_answers_only_at_its_home_4522`
 #[spec(
     ensures: |ret| match ret {
         | Maybe::Present(answer) => HOMED_FORMERS
             .iter()
-            .any(|&(home, spelling, _)| home == answer.as_ref() && spelling == name.as_ref()),
+            .any(|&(home, spelling, _)| home == answer.as_ref() && spelling == name.as_ref())
+            || HOMED_ATOMS
+                .iter()
+                .any(|&(home, spelling, _)| home == answer.as_ref() && spelling == name.as_ref()),
         | Maybe::Absent(type_head::Absent::Unregistered) => HOMED_FORMERS
             .iter()
-            .all(|&(_, spelling, _)| spelling != name.as_ref()),
+            .all(|&(_, spelling, _)| spelling != name.as_ref())
+            && HOMED_ATOMS.iter().all(|&(_, spelling, _)| spelling != name.as_ref()),
     },
 )]
 #[inline]
-pub fn former_home(name: SurfaceName<'_>) -> Maybe<SurfaceName<'static>, type_head::Absent>
+pub fn head_home(name: SurfaceName<'_>) -> Maybe<SurfaceName<'static>, type_head::Absent>
 {
     let spelled: &str = name.as_ref();
     let found = HOMED_FORMERS
         .into_iter()
-        .find_map(|(home, spelling, _)| (spelling == spelled).then_some(home));
+        .map(|(home, spelling, _)| (home, spelling))
+        .chain(
+            HOMED_ATOMS
+                .into_iter()
+                .map(|(home, spelling, _)| (home, spelling)),
+        )
+        .find_map(|(home, spelling)| (spelling == spelled).then_some(home));
 
     found.map_or(Maybe::Absent(type_head::Absent::Unregistered), |home| {
         Maybe::Present(SurfaceName::from(home))
@@ -2174,11 +2251,13 @@ mod tests
     use super::ScopeId;
     use super::SurfaceName;
     use super::Telescope;
+    use super::TypeAtom;
     use super::TypeFormer;
     use super::binder;
     use super::binder_site;
     use super::binder_type;
-    use super::former_home;
+    use super::head_home;
+    use super::homed_atom;
     use super::homed_former;
     use super::type_atom;
     use super::type_former;
@@ -2433,15 +2512,56 @@ mod tests
             );
         }
         assert_eq!(
-            former_home(SurfaceName::from("List")),
+            head_home(SurfaceName::from("List")),
             Maybe::Present(SurfaceName::from("std.list")),
             "the list former's home is `std.list`"
         );
         for name in ["-F", "Run", "Lists"] {
             assert_eq!(
-                former_home(SurfaceName::from(name)),
+                head_home(SurfaceName::from(name)),
                 Maybe::Absent(type_head::Absent::Unregistered),
                 "an ambient former and a near spelling have no home"
+            );
+        }
+    }
+
+    #[test]
+    fn a_homed_atom_answers_only_at_its_home_4522()
+    {
+        for (name, atom) in [("Buf", TypeAtom::Buffer), ("Web", TypeAtom::Web)] {
+            assert_eq!(
+                type_atom(SurfaceName::from(name)),
+                Maybe::Absent(type_head::Absent::Unregistered),
+                "the ambient scope no longer answers `{name}`"
+            );
+            assert_eq!(
+                homed_atom(SurfaceName::from("std.buffer"), SurfaceName::from(name)),
+                Maybe::Present(atom),
+                "a listing of `std.buffer` answers `{name}`"
+            );
+            assert_eq!(
+                head_home(SurfaceName::from(name)),
+                Maybe::Present(SurfaceName::from("std.buffer")),
+                "`{name}`'s home is `std.buffer`"
+            );
+        }
+        for (module, name) in [
+            ("std.list", "Buf"),
+            ("buffer", "Web"),
+            ("std.buffer", "Bufs"),
+            ("std.buffer", "List"),
+        ] {
+            assert_eq!(
+                homed_atom(SurfaceName::from(module), SurfaceName::from(name)),
+                Maybe::Absent(type_head::Absent::Unregistered),
+                "an atom answers at its home, by its own spelling, only"
+            );
+        }
+        for name in ["Unit", "Row", "Bufs"] {
+            assert_eq!(
+                head_home(SurfaceName::from(name)),
+                Maybe::Absent(type_head::Absent::Unregistered),
+                "an ambient atom and a near spelling have no home"
             );
         }
     }

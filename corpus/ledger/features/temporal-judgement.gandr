@@ -13,6 +13,8 @@
 
 // The seat's protocol and its messages.
 import "../../model/sessions/seat-base.gandr" ;
+// The modular decomposition of a dialogue's web.
+import std.buffer (Web);
 
 /// A dialogue that reports once and retires, the seat's send of its report
 /// logged before the operator takes the choice. Its web is series-parallel:

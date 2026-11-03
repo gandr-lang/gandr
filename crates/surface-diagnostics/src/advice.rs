@@ -52,7 +52,7 @@ use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::Offer;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::WfKind;
-use gandr_surface_lowering::former_home;
+use gandr_surface_lowering::head_home;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GroutShape;
 use quenchant_shape::shape::Maybe;
@@ -167,7 +167,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             "delete `{member}`: the model reads it as `{theory}.{member}`, which the derivation fills"
         ),
         // A head a `std` module homes names its listing; any other is unworded.
-        LoweringRefusal::UnresolvedTypeHead { name, .. } => match former_home(name) {
+        LoweringRefusal::UnresolvedTypeHead { name, .. } => match head_home(name) {
             Maybe::Present(home) => {
                 format!("write `import {home} ({name});`, the listing of `{name}` from its home")
             },

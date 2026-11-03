@@ -705,6 +705,7 @@ use crate::resolve::TypeAtom;
 use crate::resolve::TypeFormer;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
+use crate::resolve::homed_atom;
 use crate::resolve::homed_former;
 use crate::resolve::type_atom;
 use crate::resolve::type_former;
@@ -5773,9 +5774,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     if let Some((Visibility::Public, _)) = found {
                         continue;
                     }
-                    // A former the module homes is listed though no source
-                    // declares it: `import std.list (List);` (#4520).
-                    if found.is_none() && matches!(homed_former(module, name), Maybe::Present(_)) {
+                    // A head the module homes is listed though no source
+                    // declares it: `import std.list (List);` (#4520),
+                    // `import std.buffer (Buf);` (#4522).
+                    if found.is_none()
+                        && (matches!(homed_former(module, name), Maybe::Present(_))
+                            || matches!(homed_atom(module, name), Maybe::Present(_)))
+                    {
                         continue;
                     }
                     for (index, slot) in collected.slots.iter().enumerate() {
@@ -8505,7 +8510,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     self.plan(site, Plan::ListNil);
                     return Ok(());
                 }
-                if let Maybe::Present(atom) = type_atom(name) {
+                if let Maybe::Present(atom) = self.atom(name) {
                     let _frame = self.require(site, Produced::ValueType)?;
                     self.plan(site, Plan::Atom(atom));
                     return Ok(());
@@ -8668,7 +8673,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Maybe::Present(stated) = self.stated_named(site, name)? {
             return self.stated_type(site, stated);
         }
-        let quoted = match type_atom(name) {
+        let quoted = match self.atom(name) {
             Maybe::Present(atom) => Plan::Atom(atom),
             Maybe::Absent(_) if name.as_ref() == TileName::UNIVERSE.as_ref() => {
                 Plan::Universe(Universe::FUSS_FREE)
@@ -12884,7 +12889,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // The expression grammar molds `Type` as a name, so a type position
         // there reads it as the universe the type grammar's tile spells
         // (#4508).
-        let plan = match type_atom(name) {
+        let plan = match self.atom(name) {
             Maybe::Present(atom) => Plan::Atom(atom),
             Maybe::Absent(_) if name.as_ref() == TileName::UNIVERSE.as_ref() => {
                 Plan::Universe(Universe::FUSS_FREE)
@@ -14259,6 +14264,69 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Maybe::Present(_) = ambient {
             return ambient;
         }
+        self.listed_head(name, homed_former)
+            .map_or(ambient, Maybe::Present)
+    }
+
+    /// The nullary type atom `name` spells in the source being lowered: an
+    /// ambient atom, or one a listed import of its home binds,
+    /// `import std.buffer (Buf);` (#4522).
+    ///
+    /// # Specification
+    /// - requires: nothing — every identifier is admissible input.
+    /// - ensures: the ambient table's answer when it has one; else the atom
+    ///   that the home of a resolved listed import of the current source
+    ///   answers under `name`; else the absence.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a buffer type in a source that lists `Buf` from
+    ///   `std.buffer` lowers to the native buffer, and one in a source that
+    ///   does not is an unresolved head.
+    /// - witness: `lower::tests::a_buffer_type_resolves_only_through_its_listing_4522`
+    #[spec(
+        ensures: |ret| match type_atom(name) {
+            | Maybe::Present(ambient) => ret == Maybe::Present(ambient),
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    pub(crate) fn atom(
+        &self,
+        name: SurfaceName<'source>,
+    ) -> Maybe<TypeAtom, type_head::Absent>
+    {
+        let ambient = type_atom(name);
+        if let Maybe::Present(_) = ambient {
+            return ambient;
+        }
+        self.listed_head(name, homed_atom)
+            .map_or(ambient, Maybe::Present)
+    }
+
+    /// What `homed` answers for `name` at the module of the first resolved
+    /// listed import of the current source that lists `name`.
+    ///
+    /// # Specification
+    /// - requires: `homed` reads a home table by module and name.
+    /// - ensures: the first answer `homed` gives over the current source's
+    ///   resolved listings of `name`, in import order; none when no listing
+    ///   names it or no home answers.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk over the current
+    ///   source's imports.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::former`] and [`Self::atom`].
+    /// - witness: `lower::tests::a_list_type_resolves_only_through_its_listing_4520`
+    /// - witness: `lower::tests::a_buffer_type_resolves_only_through_its_listing_4522`
+    fn listed_head<Head>(
+        &self,
+        name: SurfaceName<'source>,
+        homed: fn(SurfaceName<'_>, SurfaceName<'_>) -> Maybe<Head, type_head::Absent>,
+    ) -> Option<Head>
+    {
         self.collected
             .imports
             .declarations()
@@ -14276,14 +14344,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         .iter()
                         .any(|&(held, _)| held.as_ref() == name.as_ref()) =>
                 {
-                    match homed_former(module, name) {
-                        Maybe::Present(former) => Some(former),
+                    match homed(module, name) {
+                        Maybe::Present(head) => Some(head),
                         Maybe::Absent(_) => None,
                     }
                 },
                 Opening::Listed { .. } | Opening::Every | Opening::Nothing => None,
             })
-            .map_or(ambient, Maybe::Present)
     }
 
     /// The type former `head`, the head of a call written at `site`, spells.
@@ -24751,6 +24818,42 @@ mod tests
                 arity: HeadArity::Unary,
             },
             "an unlisted `List` is no type head"
+        );
+    }
+
+    /// A buffer and a web written where `std.buffer` lists them are the native
+    /// atoms, and a buffer written where nothing lists it is an unresolved
+    /// head at its name.
+    #[test]
+    fn a_buffer_type_resolves_only_through_its_listing_4522()
+    {
+        let mut arena = CoreArena::new();
+        let source = "\nimport std.buffer (Buf, Web) ;\ndef b = Buf ; def w = Web ;";
+        let module = crate::fixture::listed(source, &mut arena);
+        let quoted = |declaration: usize| match arena.value(body_of(outcomes(&module)[declaration]))
+        {
+            Some(&Value::Quote(inner)) => arena.value_type(inner).cloned(),
+            _ => None,
+        };
+        assert_eq!(
+            quoted(0_usize),
+            Some(ValueType::Buffer),
+            "the listed `Buf` is the native buffer"
+        );
+        assert_eq!(
+            quoted(1_usize),
+            Some(ValueType::Web),
+            "the listed `Web` is the native web"
+        );
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        assert_eq!(
+            refusal(SourceText::from("def keep(b : Buf) -> Buf { b }")),
+            LoweringRefusal::UnresolvedTypeHead {
+                span: at(13_usize, 16_usize),
+                name: SurfaceName::from("Buf"),
+                arity: HeadArity::Nullary,
+            },
+            "an unlisted `Buf` is no type head"
         );
     }
 
