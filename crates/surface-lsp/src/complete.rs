@@ -27,8 +27,8 @@
 //! it, so a client filtering as the author types never asks again.
 //!
 //! After them, for a word that is not empty, come the names the closure does
-//! not reach: those of every source under a folder an editor opened that the
-//! document does not import, as the workspace-symbol index reads them
+//! not reach: those of every source of the projects the opened folders root
+//! that the document does not import, as the workspace-symbol index reads them
 //! ([`Unimported`]). A slot offers such a name as it would a declared one,
 //! only when importing the source brings it into scope — a top-level value, a
 //! top-level family, a constructor of a top-level family — and never a name
@@ -318,8 +318,8 @@ pub struct Unimported<'held>
     pub names: &'held [Declared],
 }
 
-/// The sources under the opened folders a document does not import, and how
-/// an import of one is written into it.
+/// The sources of the opened folders' projects a document does not import, and
+/// how an import of one is written into it.
 #[derive(Clone, Copy)]
 pub struct Elsewhere<'held>
 {

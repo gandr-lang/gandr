@@ -1,6 +1,6 @@
-//! The workspace's diagnostics: each source under the opened folders that no
-//! editor holds, judged as an editor's copy is and reported to a client that
-//! pulls `workspace/diagnostic`.
+//! The workspace's diagnostics: each source of the projects the opened folders
+//! root that no editor holds, judged as an editor's copy is and reported to a
+//! client that pulls `workspace/diagnostic`.
 //!
 //! # A sweep, one source at a time, behind the open documents
 //!

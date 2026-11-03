@@ -61,7 +61,7 @@ code --install-extension gandr-vscode-0.1.0.vsix
 
 ## Check the connection
 
-Open a folder that contains a `.gandr` file, then open the file. The extension activates for the `gandr` language and for any workspace containing a `.gandr` file. A source with an unresolved name shows the refusal in the editor and in the Problems panel:
+Open a folder that contains a `.gandr` file, then open the file. The extension activates for the `gandr` language and for a folder that holds a `package.gandr` or a `workspace.gandr`. A source with an unresolved name shows the refusal in the editor and in the Problems panel:
 
 ```gandr
 def answer = 42 ;

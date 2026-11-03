@@ -2,11 +2,12 @@
 //! the document writes and nothing in scope declares.
 //!
 //! The lowering refuses a name that names nothing, and the refusal is
-//! published as an [`UNRESOLVED_NAME`] diagnostic over the name itself. For
-//! each such diagnostic a code-action request meets, every source under the
-//! opened folders the document does not import whose declarations bring the
-//! name into scope is offered as a quick fix writing its import. The sources
-//! and their names are the ones a completion offers from ([`Elsewhere`]), and
+//! published as an [`UNRESOLVED_NAME`] diagnostic over the name itself. A
+//! code-action request can meet such a diagnostic. Then the server offers one
+//! quick fix for each source that can bring the name into scope. Each such
+//! source is in a project that an opened folder roots, and the document does
+//! not import it. The quick fix writes its import. The sources and their names
+//! are the ones a completion offers from ([`Elsewhere`]), and
 //! a source is admitted as the completion admits it: by the slot the name is
 //! written in ([`unimported_as`]), so a name written as a type finds a family
 //! and a name written as a value finds a value or a constructor.

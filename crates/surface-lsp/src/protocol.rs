@@ -2584,8 +2584,8 @@ pub struct ServerCapabilities
     /// lens may name.
     pub execute_command_provider: CommandOptions,
     /// Workspace symbols are answered: the names the open documents' import
-    /// closures and the sources under the opened folders declare, each with
-    /// its location, and resolved as it came.
+    /// closures and the sources of the opened folders' projects declare, each
+    /// with its location, and resolved as it came.
     pub workspace_symbol_provider: ResolveOptions,
     /// Document highlights are answered: the declaring name and the uses of
     /// the name at a position, within the document.
@@ -3168,7 +3168,7 @@ pub enum Answer
     /// last published, or that the client already holds it.
     Diagnosed(DiagnosticReport),
     /// What a pull of the workspace's diagnostics answers: a report for each
-    /// source under the opened folders that no editor holds.
+    /// source of the opened folders' projects that no editor holds.
     Swept(WorkspaceReport),
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.

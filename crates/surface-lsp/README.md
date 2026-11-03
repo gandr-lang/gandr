@@ -49,7 +49,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - Hover: the type of the innermost node under the cursor, and a declaration's documentation or refusal; inlay hints: binders' unwritten types.
 - `page`, `index`, `Page`, `Entry` and `Unpaged`: `gandr doc`'s pages, each public declaration as its hover shows it.
 - Definitions and declarations: what the name under the cursor refers to, at its definition or its signature, and the families its type names, here or in an imported sibling; links: path imports to their files.
-- Highlights, and linked editing of a local binder: where the name under the cursor is declared and used in the document; references and rename: in every open document and importer under the opened folders; a file renamed: its importers' addresses.
+- Highlights, and linked editing of a local binder: where the name under the cursor is declared and used in the document; references and rename: in every open document and importer in the opened projects; a file renamed: its importers' addresses.
 - Workspace symbols: the names the open documents' import closures declare, each holding the query's characters in order.
 - Formatting: the whole document, also before a save, as one edit trimmed to the span its layout changes; ranges, and the form a typed `;` closes, one edit per top-level form.
 - Positions in UTF-16 code units, clamped past a line's end or the last line.

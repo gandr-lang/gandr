@@ -286,6 +286,41 @@ impl Package
     {
         self.root.join(MANIFEST)
     }
+
+    /// The paths where a walk of the package starts. The package source comes
+    /// first when it is outside the sources. The sources come next when that
+    /// directory exists.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Package::source`] first when it is not under
+    ///   [`Package::sources`]. Then [`Package::sources`] when that directory
+    ///   exists. A walk of these paths reaches each source of the package once.
+    /// - provides: the paths that `packaged` lists for a package. The language
+    ///   server walks the same paths for the package that a folder roots.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a package with the sources `src` walks its package
+    ///   source and `src`. A package with its root as its sources walks the
+    ///   root alone. A package with sources that do not exist walks its package
+    ///   source alone.
+    /// - witness: `tests::package::a_path_in_a_package_walks_the_whole_package_2687`
+    #[spec(ensures: |ret| ret.len() <= 2 && ret.iter().all(|path| path.starts_with(&self.root)))]
+    #[inline]
+    #[must_use]
+    pub fn walked(&self) -> Vec<&Path>
+    {
+        let mut walked = Vec::with_capacity(2);
+        if !self.source.starts_with(&self.sources) {
+            walked.push(self.source.as_path());
+        }
+        if self.sources.is_dir() {
+            walked.push(self.sources.as_path());
+        }
+        walked
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -470,12 +505,7 @@ pub fn packaged(
     let mut seen: BTreeSet<PathBuf> = BTreeSet::new();
     let mut reach = |package: Package, walked: &mut Vec<PathBuf>| {
         if seen.insert(package.source.clone()) {
-            if !package.source.starts_with(&package.sources) {
-                walked.push(shown(&package.source));
-            }
-            if package.sources.is_dir() {
-                walked.push(shown(package.sources()));
-            }
+            walked.extend(package.walked().into_iter().map(&shown));
             packages.push(package);
         }
     };

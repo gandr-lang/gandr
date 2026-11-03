@@ -390,7 +390,8 @@
     ]
   },
   "activationEvents": [
-    "workspaceContains:**/*.gandr"
+    "workspaceContains:package.gandr",
+    "workspaceContains:workspace.gandr"
   ],
   "extensionKind": [
     "workspace"
