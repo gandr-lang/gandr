@@ -8,7 +8,7 @@
 //! document copy's [`Found`] holds the names of each source of the closure its
 //! hovers' type table laid out, read at the first workspace-symbol request
 //! after its text changed; the file table holds the names of each source
-//! under the opened folders (`crate::files`). A name is found when the
+//! of the opened folders' projects (`crate::files`). A name is found when the
 //! query's characters, compared without case, occur in it in order.
 
 use alloc::collections::BTreeSet;

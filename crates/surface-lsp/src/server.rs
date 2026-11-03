@@ -1465,10 +1465,10 @@ pub struct Workspace
     /// `gandr.presentation.spelling` says otherwise, and what a query writes
     /// them in.
     spelling: Spelling,
-    /// Every source under the folders the connections opened, with the files
-    /// each imports: where a reference or rename request finds the importers
-    /// no editor holds. A cache the answers refresh, so it changes under a
-    /// shared borrow.
+    /// Every source of the projects the connections' folders root, with the
+    /// files each imports: where a reference or rename request finds the
+    /// importers no editor holds. A cache the answers refresh, so it changes
+    /// under a shared borrow.
     files: RefCell<Files>,
     /// Each connection whose client watches the gandr sources under the
     /// folders it opened, and reports their changes.
@@ -3430,9 +3430,9 @@ impl Server
     /// - ensures: when a pull waits, no source is being swept and no copy is
     ///   being judged, the next source [`Sweep::next`] answers at this
     ///   connection's verbosity and spelling, each import read as the editors
-    ///   hold it, the sources those under the opened folders that no editor
-    ///   holds, is read from its file, laid out with each import read as the
-    ///   editors hold it, and judged on the pool in a session of its own at
+    ///   hold it, the sources those of the opened folders' projects that no
+    ///   editor holds, is read from its file, laid out with each import read as
+    ///   the editors hold it, and judged on the pool in a session of its own at
     ///   that verbosity and spelling, holding back nothing; each file it reads
     ///   is seen now, as [`Seen::now`] sees it. A file that cannot be read is
     ///   judged as the empty text. Nothing is started otherwise.
@@ -6869,7 +6869,8 @@ impl Workspace
         Answer::Resolved(Box::new(resolved(item, hovering)))
     }
 
-    /// Every source under the opened folders that no editor holds, ascending.
+    /// Every source of the projects the opened folders root that no editor
+    /// holds, ascending.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -7907,8 +7908,8 @@ impl Workspace
     /// What a `workspace/willRenameFiles` request moving files and folders
     /// as `moves` states answers, `peer` asking: the edits rewriting each path
     /// import's address the moves change, in every document an editor holds
-    /// and every source under the folders the connections opened that moves
-    /// or imports a file that moves.
+    /// and every source of the projects the connections' folders root that
+    /// moves or imports a file that moves.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -9495,6 +9496,20 @@ mod tests
         )
     }
 
+    /// Write a package source in `directory`, with its sources in the same
+    /// directory. The server then walks a folder that a client opens there.
+    ///
+    /// # Specification
+    /// trivial.
+    fn packaged(directory: &Path)
+    {
+        std::fs::write(
+            directory.join("package.gandr"),
+            "// The scratch package. Its sources are in its directory.\n",
+        )
+        .expect("the package source is written");
+    }
+
     /// A server that has answered `initialize`.
     ///
     /// # Specification
@@ -10292,6 +10307,7 @@ mod tests
         std::fs::create_dir_all(directory.join("lonely")).expect("the scratch tree is created");
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        packaged(&directory);
         let opener = "import \"./base.gandr\" ;\ndef near : Nat ;\ndef near = Zero ;\n";
         for (file, text) in [
             ("base.gandr", include_str!("server/fixtures/nat-base.gandr")),
@@ -10409,6 +10425,7 @@ mod tests
         std::fs::create_dir_all(&directory).expect("the scratch tree is created");
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        packaged(&directory);
         for (file, text) in [
             ("base.gandr", "pub def one : Integer ;\ndef one = 1 ;\n"),
             (
@@ -10469,6 +10486,7 @@ mod tests
                 (uri("broken.gandr"), full.clone(), vec![json!(
                     "UnresolvedName"
                 )]),
+                (uri("package.gandr"), full.clone(), Vec::new()),
                 (uri("user.gandr"), full.clone(), Vec::new()),
             ],
             "each source no editor holds is judged, the importer over its import, and the \
@@ -10494,6 +10512,7 @@ mod tests
             vec![
                 (uri("base.gandr"), unchanged.clone(), Vec::new()),
                 (uri("broken.gandr"), unchanged.clone(), Vec::new()),
+                (uri("package.gandr"), unchanged.clone(), Vec::new()),
                 (uri("user.gandr"), unchanged.clone(), Vec::new()),
             ],
             "a report the client holds is answered unchanged"
@@ -10507,7 +10526,8 @@ mod tests
             items(&pull(&mut server, &held)),
             vec![
                 (uri("base.gandr"), unchanged.clone(), Vec::new()),
-                (uri("broken.gandr"), unchanged, Vec::new()),
+                (uri("broken.gandr"), unchanged.clone(), Vec::new()),
+                (uri("package.gandr"), unchanged, Vec::new()),
                 (uri("user.gandr"), full, vec![json!("UnresolvedName")]),
             ],
             "an import rewritten judges its importer again; a report that reads the same is \
@@ -10555,6 +10575,7 @@ mod tests
             vec![
                 (uri("base.gandr"), String::from("unchanged"), Vec::new()),
                 (uri("broken.gandr"), String::from("unchanged"), Vec::new()),
+                (uri("package.gandr"), String::from("unchanged"), Vec::new()),
                 (uri("user.gandr"), String::from("unchanged"), Vec::new()),
             ],
             "then the sweep judges the importer again, and the pull is answered"
@@ -10570,6 +10591,114 @@ mod tests
     }
 
     #[test]
+    fn a_folder_reports_the_project_it_roots_and_nothing_beside_it_4922()
+    {
+        use serde_json::json;
+        let directory =
+            std::env::temp_dir().join(format!("gandr-project-pull-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        for folder in ["package/src", "package/corpus", "loose"] {
+            std::fs::create_dir_all(directory.join(folder)).expect("the scratch tree is created");
+        }
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        for (file, text) in [
+            (
+                "package/package.gandr",
+                "pub module Package where {\n  def sources = \"src\";\n}\n",
+            ),
+            (
+                "package/src/broken.gandr",
+                "def bad : Integer ;\ndef bad = nope ;\n",
+            ),
+            (
+                "package/corpus/beside.gandr",
+                "def worse : Integer ;\ndef worse = gone ;\n",
+            ),
+            ("loose/far.gandr", "def far : Integer ;\ndef far = away ;\n"),
+        ] {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let connected = |folder: &str| {
+            let mut server = Connected::default();
+            let initialize = json!({"jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+                "params": {"capabilities": {"textDocument": {"diagnostic": {}}},
+                    "workspaceFolders": [{"uri": uri(folder), "name": folder}]}});
+            let _initialized = send(&mut server, Json(&initialize.to_string()));
+            server
+        };
+        let reported = |server: &mut Connected| -> Vec<(String, Vec<Value>)> {
+            let request = json!({"jsonrpc": "2.0", "id": 7_i32, "method": "workspace/diagnostic",
+                "params": {"previousResultIds": []}});
+            send(server, Json(&request.to_string()))[0_usize]["result"]["items"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|item| {
+                    (
+                        item["uri"].as_str().map(String::from).unwrap_or_default(),
+                        item["items"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .map(|diagnostic| diagnostic["code"].clone())
+                            .collect(),
+                    )
+                })
+                .collect()
+        };
+        let mut packaged = connected("package");
+        let swept = reported(&mut packaged);
+        assert_eq!(
+            swept
+                .iter()
+                .map(|entry| entry.0.as_str())
+                .collect::<Vec<_>>(),
+            [
+                uri("package/package.gandr"),
+                uri("package/src/broken.gandr")
+            ],
+            "a package folder reports its package source and its sources. It reports nothing in \
+             the directory beside them."
+        );
+        assert_eq!(
+            swept.get(1_usize).map(|entry| entry.1.as_slice()),
+            Some([json!("UnresolvedName")].as_slice()),
+            "the server judges a source of the package"
+        );
+        let mut loose = connected("loose");
+        assert_eq!(
+            reported(&mut loose),
+            Vec::new(),
+            "a folder with no root file reports nothing"
+        );
+        let open = json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": uri("loose/far.gandr"), "languageId": "gandr",
+                "version": 1_i32, "text": "def far : Integer ;\ndef far = away ;\n"}}});
+        let _opened = send(&mut loose, Json(&open.to_string()));
+        let pull = json!({"jsonrpc": "2.0", "id": 8_i32, "method": "textDocument/diagnostic",
+            "params": {"textDocument": {"uri": uri("loose/far.gandr")}}});
+        let pulled = send(&mut loose, Json(&pull.to_string()));
+        assert_eq!(
+            pulled[0_usize]["result"]["items"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|diagnostic| diagnostic["code"].clone())
+                .collect::<Vec<_>>(),
+            [json!("UnresolvedName")],
+            "the server judges a file that opens there: {pulled}"
+        );
+        assert_eq!(
+            reported(&mut loose),
+            Vec::new(),
+            "the workspace pull still reports nothing. The pull of the file reports the file."
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
     fn completion_offers_a_folder_name_with_its_import()
     {
         let directory =
@@ -10578,6 +10707,7 @@ mod tests
         std::fs::create_dir_all(directory.join("lonely")).expect("the scratch tree is created");
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        packaged(&directory);
         for (file, text) in [
             (
                 "base.gandr",
@@ -10661,6 +10791,7 @@ mod tests
         std::fs::create_dir_all(directory.join("lonely")).expect("the scratch tree is created");
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        packaged(&directory);
         std::fs::write(
             directory.join("lonely/far.gandr"),
             "pub def faraway : Integer ;\ndef faraway = 7 ;\n",
@@ -11243,6 +11374,7 @@ mod tests
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        packaged(&directory);
         let disk = [
             (
                 "base.gandr",
@@ -11484,6 +11616,7 @@ mod tests
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        packaged(&directory);
         let opened = "import \"./base.gandr\" ;\ndef nought : Nat ;\ndef nought = Zero ;\n";
         for (file, text) in [
             (
@@ -12769,6 +12902,7 @@ mod tests
         std::fs::create_dir_all(directory.join("deeper")).expect("the scratch tree is created");
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        packaged(&directory);
         let top = "import \"./deeper/mid.gandr\";\ndef three : Integer;\ndef three = two;\n";
         for (file, text) in [
             ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),

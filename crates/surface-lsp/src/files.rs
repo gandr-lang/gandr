@@ -1,23 +1,37 @@
-//! The path table: every source under the workspace's roots, each named once
-//! by a stable id, with the files it imports and the names it declares, so the
-//! sources that import a file, and the names no open document's closure
-//! reaches, are lookups.
+//! The path table holds every source of the projects that the workspace's
+//! folders root. The table gives each path one stable id. For each source, the
+//! table keeps the files that the source imports and the names that it
+//! declares. Thus the sources that import a file are one lookup. The names that
+//! no closure of an open document reaches are one lookup too.
 //!
-//! A root is a folder a client opened, resolved once, when it is added, and
-//! held while any connection holds it open; a folder inside another root is
-//! walked from the outer. The sources under the roots are reached when an
-//! answer needs them ([`Files::importers`], [`Files::declared`]), not at the
-//! connection's start, so a session that never asks pays nothing; a source is
-//! reached as `gandr check` reaches one, by the dispatcher's [`Traversal`]: a
-//! directory depth-first in byte order, its `.gandr` entries, no link in a
-//! listing followed. Each source keeps the files its imports name
-//! ([`imports_named`]), read from its import forms without judging it, and,
-//! once an answer has asked for names, the names its outline declares
-//! ([`declared`]), read from one parse and no lowering; with them the length
-//! and modification time its file had when they were read: an answer reads
-//! again only a source whose file differs from its stamp, so the table is
-//! current whether or not anything watches the roots. A source the last walk
-//! did not reach keeps its id and imports and declares nothing.
+//! A root is a folder that a client opens. The table resolves a root once, when
+//! the client adds it. The table keeps the root while a connection holds it
+//! open. Each root contributes the project that it roots:
+//!
+//! - A folder that holds `package.gandr` contributes that package.
+//! - Else, a folder that holds `workspace.gandr` contributes that workspace and
+//!   each member that it names.
+//! - Any other folder contributes nothing. The server judges a file in it only
+//!   while an editor holds the file.
+//!
+//! The table reaches the sources only when an answer needs them. Thus a session
+//! that asks nothing pays nothing. [`Files::importers`] and [`Files::declared`]
+//! are the answers that need the sources. The table reaches a source as
+//! `gandr check` does, with the dispatcher's [`Traversal`]. The traversal goes
+//! depth-first through a directory in byte order, takes its `.gandr` entries
+//! and follows no link.
+//!
+//! For each source, the table keeps the files that its imports name. The table
+//! reads them from the import forms with [`imports_named`]. It does not judge
+//! the source. After an answer asks for names, the table also keeps the names
+//! that the outline of each source declares. It reads them with [`declared`],
+//! from one parse and no lowering. With them, it keeps a stamp: the length and
+//! the modification time of the file at that read.
+//!
+//! An answer reads a source again only when its file differs from its stamp.
+//! Thus the table is current, whether or not a watcher reports changes. A
+//! source that the last walk did not reach keeps its id. It imports nothing and
+//! declares nothing.
 //!
 //! The table reads the disk. An importer an editor holds imports what its
 //! editor's copy writes, which the server passes where it asks, so an unsaved
@@ -32,10 +46,16 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use anodized::spec;
+use gandr_surface_dispatcher::PACKAGE;
+use gandr_surface_dispatcher::Package;
 use gandr_surface_dispatcher::Reached;
 use gandr_surface_dispatcher::Traversal;
+use gandr_surface_dispatcher::WORKSPACE;
+use gandr_surface_dispatcher::Workspace;
 use gandr_surface_dispatcher::imports_named;
 use gandr_surface_dispatcher::named_path;
+use gandr_surface_dispatcher::package_root;
+use gandr_surface_dispatcher::workspace_root;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -61,7 +81,21 @@ struct Stamp
     modified: Option<SystemTime>,
 }
 
-/// A path the table names: a source under a root, or a file one imports.
+/// The [`Stamp`] of the file at `path` now. None when the metadata of the file
+/// is not readable.
+///
+/// # Specification
+/// trivial.
+fn stamped(path: &Path) -> Option<Stamp>
+{
+    std::fs::metadata(path).ok().map(|metadata| Stamp {
+        length: metadata.len(),
+        modified: metadata.modified().ok(),
+    })
+}
+
+/// A path in the table: a source of the project of a root, or a file that a
+/// source imports.
 #[derive(Debug)]
 struct Named
 {
@@ -78,13 +112,14 @@ struct Named
     declared: Option<Vec<Declared>>,
 }
 
-/// Every source under the workspace's roots, with the files each imports.
+/// The table of every source of the projects that the workspace's folders
+/// root, with the files that each source imports.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: each path the table names has one id, and the id names that path
-///   for the table's life; each source reached under a root holds the files its
-///   file imported when its stamp was taken.
+/// - ensures: each path in the table has one id for the life of the table. Each
+///   source that the project of a root reaches holds the files that its file
+///   imported at its stamp.
 /// - panics: none.
 /// - executable: none — this state carrier has no call boundary; its methods
 ///   carry the executable clauses.
@@ -99,6 +134,11 @@ pub struct Files
 {
     /// The roots, each resolved once, with the connections holding it open.
     roots: BTreeMap<PathBuf, BTreeSet<Peer>>,
+    /// For each root that holds a workspace source, the members that the
+    /// source names and the stamp of the source at that read. A read of the
+    /// members runs the source. Thus the table reads them again only when the
+    /// source changes.
+    workspaces: BTreeMap<PathBuf, (Option<Stamp>, Vec<Package>)>,
     /// Each path the table names, by its id.
     named: Vec<Named>,
     /// The id of each path the table names.
@@ -158,32 +198,116 @@ impl Files
         });
     }
 
-    /// The roots a walk starts from: each root no other root holds, ascending.
+    /// The paths where a walk starts. These are the paths of the project of
+    /// each root, in ascending order of the roots. Each path occurs once.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: every root is under exactly one root answered, and no root
-    ///   answered is under another.
+    /// - ensures: for each root in ascending order, the paths that its project
+    ///   walks. A path that an earlier root gave does not occur again.
     /// - fails: never.
     /// - panics: none.
-    /// - intension: one pass over the roots in path order, which places every
-    ///   root directly after the root holding it.
+    /// - intension: one discovery for each root. The table reads the members of
+    ///   a workspace again only when the stamp of its source changes.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a folder opened inside another is walked once, from
-    ///   the outer, and from itself once the outer is withdrawn.
+    /// - hypothesis: L3 — a package folder walks its package source and its
+    ///   sources and no sibling directory. A workspace folder walks its source
+    ///   and its members. A folder that holds neither walks nothing. A
+    ///   withdrawn root walks nothing more.
+    /// - witness: `files::tests::a_folder_walks_the_project_it_roots_and_nothing_beside_it`
     /// - witness: `files::tests::a_root_is_walked_while_a_connection_holds_it_open`
-    #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(pair, [first, second] if !second.starts_with(first))))]
-    fn outermost(&self) -> Vec<PathBuf>
+    #[spec(ensures: |ret| ret.iter().enumerate().all(|(at, path)| !ret.iter().take(at).any(|before| before == path)))]
+    fn walked(&mut self) -> Vec<PathBuf>
     {
-        let mut outermost: Vec<PathBuf> = Vec::new();
-        for root in self.roots.keys() {
-            if outermost.last().is_some_and(|held| root.starts_with(held)) {
-                continue;
+        let roots: Vec<PathBuf> = self.roots.keys().cloned().collect();
+        let mut seen: BTreeSet<PathBuf> = BTreeSet::new();
+        let mut walked: Vec<PathBuf> = Vec::new();
+        for root in roots {
+            for path in self.project(&root) {
+                if seen.insert(path.clone()) {
+                    walked.push(path);
+                }
             }
-            outermost.push(root.clone());
         }
-        outermost
+        walked
+    }
+
+    /// The paths that the project at `root` walks. A folder that holds
+    /// `package.gandr` gives the paths of that package. Else, a folder that
+    /// holds `workspace.gandr` gives that source, then each member package in
+    /// the order of its `members`. Any other folder gives nothing.
+    ///
+    /// # Specification
+    /// - requires: `root` is canonical.
+    /// - ensures: when `root` holds [`PACKAGE`], [`Package::walked`] of the
+    ///   package at `root`. Else, when `root` holds [`WORKSPACE`], that source,
+    ///   then [`Package::walked`] of each package that [`Workspace::members`]
+    ///   names and that still roots at its directory. The table reads the
+    ///   members again only when the stamp of the source changes. When the
+    ///   members are not readable, the source alone. Else nothing, and the
+    ///   table keeps no members for `root`.
+    /// - fails: never. A workspace with members that are not readable walks its
+    ///   source alone.
+    /// - panics: none.
+    /// - intension: one metadata read for each root file. The members run once
+    ///   for each change of the workspace source.
+    /// - executable: none — the clauses read the disk, and a predicate would
+    ///   read it again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as for [`Files::walked`].
+    /// - witness: `files::tests::a_folder_walks_the_project_it_roots_and_nothing_beside_it`
+    fn project(
+        &mut self,
+        root: &Path,
+    ) -> Vec<PathBuf>
+    {
+        let walked = |package: &Package| {
+            package
+                .walked()
+                .into_iter()
+                .map(Path::to_path_buf)
+                .collect::<Vec<_>>()
+        };
+        if root.join(PACKAGE).is_file() {
+            let _gone = self.workspaces.remove(root);
+            return match Package::discover(root) {
+                Maybe::Present(package) => walked(&package),
+                Maybe::Absent(package_root::Absent::Unpackaged) => Vec::new(),
+            };
+        }
+        let source = root.join(WORKSPACE);
+        let stamp = stamped(&source);
+        if stamp.is_none() {
+            let _gone = self.workspaces.remove(root);
+            return Vec::new();
+        }
+        if self.workspaces.get(root).is_none_or(|held| held.0 != stamp) {
+            let members = match Workspace::discover(root) {
+                Maybe::Present(workspace) if workspace.root() == root => {
+                    workspace.members().unwrap_or_default()
+                },
+                Maybe::Present(_) | Maybe::Absent(workspace_root::Absent::Unworkspaced) => {
+                    Vec::new()
+                },
+            };
+            let _read = self.workspaces.insert(root.to_path_buf(), (stamp, members));
+        }
+        let mut paths = Vec::from([source]);
+        for member in self
+            .workspaces
+            .get(root)
+            .into_iter()
+            .flat_map(|held| &held.1)
+        {
+            if let Maybe::Present(package) = Package::discover(member.root())
+                && package.root() == member.root()
+            {
+                paths.extend(walked(&package));
+            }
+        }
+        paths
     }
 
     /// The root holding `path`, if one does.
@@ -250,20 +374,22 @@ impl Files
         id
     }
 
-    /// Reach every source under the roots, reading again the imports, and
-    /// once an answer has asked for them the names, of each whose file differs
-    /// from its stamp.
+    /// Reach every source of the projects of the roots. For each source with a
+    /// file that differs from its stamp, read the imports again. After an
+    /// answer asks for names, read the names again too.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each `.gandr` source the dispatcher's traversal reaches under
-    ///   a root holds what its file imports and that file's stamp, read again
-    ///   only when the stamp differs; once the table is naming, what its file
-    ///   declares too, read when the stamp differs or its names were not yet
-    ///   read; one that cannot be read imports and declares nothing; a source
-    ///   reached before and not now has no stamp and imports and declares
-    ///   nothing.
-    /// - fails: never; a source that cannot be read imports nothing.
+    /// - ensures: the dispatcher's traversal starts from the paths that
+    ///   [`Files::walked`] gives. Each `.gandr` source that it reaches holds
+    ///   what its file imports and the stamp of that file. The table reads them
+    ///   again only when the stamp differs. When the table is naming, the
+    ///   source also holds what its file declares. The table reads the names
+    ///   when the stamp differs or when it has no names yet. A source that is
+    ///   not readable imports nothing and declares nothing. A source that the
+    ///   last walk reached and this walk does not reach has no stamp. It
+    ///   imports nothing and declares nothing.
+    /// - fails: never. A source that is not readable imports nothing.
     /// - panics: none.
     /// - intension: one listing per directory and one metadata read per source;
     ///   a source's text is read only when its stamp moved or its names are
@@ -282,7 +408,7 @@ impl Files
     {
         let naming = self.naming;
         let mut reached = BTreeSet::new();
-        let mut traversal = Traversal::new(self.outermost());
+        let mut traversal = Traversal::new(self.walked());
         let mut text = String::new();
         while let Maybe::Present(found) = traversal.reach() {
             if !matches!(found, Reached::Source) {
@@ -291,10 +417,7 @@ impl Files
             let path = traversal.take_path();
             let id = self.id(&path);
             let _reached = reached.insert(id);
-            let stamp = std::fs::metadata(&path).ok().map(|metadata| Stamp {
-                length: metadata.len(),
-                modified: metadata.modified().ok(),
-            });
+            let stamp = stamped(&path);
             if self
                 .named
                 .get(id.0)
@@ -345,10 +468,11 @@ impl Files
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each source the walk reaches under a root, once, with the
-    ///   names [`declared`] reads off its file as it now reads; a source that
-    ///   cannot be read declares nothing. The table names from now on: every
-    ///   later walk reads a changed source's names with its imports.
+    /// - ensures: each source that the walk reaches in the projects of the
+    ///   roots, once, with the names that [`declared`] reads from its file now.
+    ///   A source that is not readable declares nothing. After this call, the
+    ///   table is naming. Each later walk reads the names of a changed source
+    ///   with its imports.
     /// - provides: the names a workspace-symbol request finds beyond the open
     ///   documents' closures.
     /// - fails: never.
@@ -496,8 +620,9 @@ impl Files
     /// - intension: one walk of the roots, then one pass over the table.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a source under a root and one added in a new folder
-    ///   are listed, a removed one is not.
+    /// - hypothesis: L3 — the list holds a source of the project of a root and
+    ///   a source in a new folder of that project. It does not hold a removed
+    ///   source.
     /// - witness: `server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
     #[spec(ensures: |ret| ret.windows(2).all(|pair| pair.first() < pair.get(1)))]
     pub fn sources(
@@ -522,6 +647,7 @@ mod tests
 {
     use alloc::string::String;
     use alloc::vec::Vec;
+    use std::path::Path;
     use std::path::PathBuf;
 
     use gandr_surface_grammar::built_in;
@@ -531,6 +657,9 @@ mod tests
     use crate::protocol::FileRename;
     use crate::relocate::Moves;
     use crate::server::Peer;
+
+    /// A package source. Its sources are in its own directory.
+    const ROOTED: &str = "// The scratch package. Its sources are in its directory.\n";
 
     #[test]
     fn a_file_s_importers_are_every_source_reaching_it()
@@ -551,6 +680,7 @@ mod tests
             ("deeper/mid.gandr", mid),
             ("top.gandr", top),
             ("lone.gandr", lone),
+            ("package.gandr", ROOTED),
         ] {
             std::fs::write(at(file), text).expect("the source is written");
         }
@@ -622,6 +752,7 @@ mod tests
                 "import \"../base.gandr\" ;\ndef two : Nat ;\ndef two = Succ(Succ(Zero)) ;\n",
             ),
             ("lone.gandr", "def four : Integer ;\ndef four = 4 ;\n"),
+            ("package.gandr", ROOTED),
         ] {
             std::fs::write(at(file), text).expect("the source is written");
         }
@@ -656,7 +787,8 @@ mod tests
             [
                 named("base.gandr", &["Nat", "Zero", "Succ"]),
                 named("deeper/mid.gandr", &["two"]),
-                named("lone.gandr", &["four"])
+                named("lone.gandr", &["four"]),
+                named("package.gandr", &[])
             ],
             "each source's names, a family's constructors among them, read though its imports \
              were read before any names were asked for"
@@ -671,7 +803,8 @@ mod tests
             names(&mut files),
             [
                 named("base.gandr", &["Nat", "Zero", "Succ"]),
-                named("lone.gandr", &["five", "six"])
+                named("lone.gandr", &["five", "six"]),
+                named("package.gandr", &[])
             ],
             "a rewritten source declares what its file now does, a removed one nothing"
         );
@@ -699,6 +832,7 @@ mod tests
                 "import \"./deeper/mid.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n",
             ),
             ("lone.gandr", "def four : Integer ;\ndef four = 4 ;\n"),
+            ("package.gandr", ROOTED),
         ] {
             std::fs::write(at(file), text).expect("the source is written");
         }
@@ -749,6 +883,8 @@ mod tests
                 "top.gandr",
                 "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = one ;\n",
             ),
+            ("package.gandr", ROOTED),
+            ("deeper/package.gandr", ROOTED),
         ] {
             std::fs::write(at(file), text).expect("the source is written");
         }
@@ -760,7 +896,7 @@ mod tests
         assert_eq!(
             files.importers(&grammar, &at("base.gandr"), &[]),
             [at("deeper/mid.gandr"), at("top.gandr")],
-            "a folder inside an open one is walked once, from the outer"
+            "a package folder in an open folder adds no source that the outer walk holds"
         );
         files.unroot(first, &directory);
         assert_eq!(
@@ -772,13 +908,86 @@ mod tests
         assert_eq!(
             files.importers(&grammar, &at("base.gandr"), &[]),
             [at("deeper/mid.gandr")],
-            "once no connection holds the outer folder open, only the inner is walked"
+            "when no connection holds the outer folder open, the walk covers the inner package only"
         );
         files.depart(first);
         assert_eq!(
             files.importers(&grammar, &at("base.gandr"), &[]),
             Vec::<PathBuf>::new(),
             "with no root left, nothing is walked"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_folder_walks_the_project_it_roots_and_nothing_beside_it()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let directory = std::env::temp_dir().join(format!("gandr-projects-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        for folder in ["package/src", "package/corpus", "loose"] {
+            std::fs::create_dir_all(directory.join(folder)).expect("the scratch tree is created");
+        }
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let at = |file: &str| directory.join(file);
+        for (file, text) in [
+            (
+                "package/package.gandr",
+                "pub module Package where {\n  def sources = \"src\";\n}\n",
+            ),
+            (
+                "package/src/one.gandr",
+                "def one : Integer ;\ndef one = 1 ;\n",
+            ),
+            (
+                "package/corpus/beside.gandr",
+                "def two : Integer ;\ndef two = 2 ;\n",
+            ),
+            (
+                "loose/three.gandr",
+                "def three : Integer ;\ndef three = 3 ;\n",
+            ),
+        ] {
+            std::fs::write(at(file), text).expect("the source is written");
+        }
+        let peer = Peer::from(1_u64);
+        let mut files = Files::default();
+        files.root(peer, &at("package"));
+        files.root(peer, &at("loose"));
+        assert_eq!(
+            files.walked(),
+            [at("package/package.gandr"), at("package/src")],
+            "a package folder walks its package source and its sources. A folder with no root \
+             file walks nothing."
+        );
+        assert_eq!(
+            files.sources(&grammar),
+            [at("package/package.gandr"), at("package/src/one.gandr")],
+            "the walk reaches no source outside the package's sources and no source in a folder \
+             with no root file"
+        );
+        files.depart(peer);
+        let projects = std::fs::canonicalize(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/projects"),
+        )
+        .expect("the corpus's workspace canonicalises");
+        files.root(peer, &projects);
+        assert_eq!(
+            files.walked(),
+            [
+                projects.join("workspace.gandr"),
+                projects.join("hello/package.gandr"),
+                projects.join("hello/src"),
+                projects.join("tools"),
+            ],
+            "a workspace folder walks its source, then each member that it names, in order"
+        );
+        files.depart(peer);
+        assert_eq!(
+            files.walked(),
+            Vec::<PathBuf>::new(),
+            "a withdrawn root walks nothing"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }

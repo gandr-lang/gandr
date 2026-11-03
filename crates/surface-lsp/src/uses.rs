@@ -16,8 +16,8 @@
 //! editing, which answers only a binder local to one of its declarations: a
 //! name the unit declares may be written by importers, which an edit mirrored
 //! in one document would leave behind. A reference or rename request reads
-//! every open document's own uses, and those of every source
-//! under the workspace's roots that imports the name's source and no editor
+//! every open document's own uses, and those of every source of the projects
+//! the opened folders root that imports the name's source and no editor
 //! holds, read from disk: a name is the same across documents when its
 //! source's canonical path and its span agree, so an importer finds a
 //! sibling's name at the index its own closure gave that sibling. A references
