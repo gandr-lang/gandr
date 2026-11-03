@@ -88,13 +88,18 @@ use gandr_surface_corpus::SettleReport;
 use gandr_surface_lowering::ConstructorSpelling;
 use gandr_surface_lowering::Container;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::ImportBinding;
+use gandr_surface_lowering::ImportResolution;
+use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::Opening;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::ReadAs;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::SurfaceName;
+use gandr_surface_lowering::homed_formers;
 use gandr_surface_pretty::Arity;
 use gandr_surface_pretty::Constructors;
 use gandr_surface_pretty::CoreNode;
@@ -629,6 +634,24 @@ fn spell<'failure>(
         .iter()
         .map(|paths| paths.iter().map(|path| Name::from(path.as_str())).collect())
         .collect();
+    let homed: Vec<Vec<HomedName>> = readers
+        .iter()
+        .map(|&reader| homed_names(module, reader))
+        .collect();
+    let homes: Vec<Vec<(Name<'_>, Name<'_>)>> = homed
+        .iter()
+        .map(|homed| {
+            homed
+                .iter()
+                .map(|homed| {
+                    (
+                        Name::from(homed.head.as_str()),
+                        Name::from(homed.written.as_str()),
+                    )
+                })
+                .collect()
+        })
+        .collect();
     let families = Families::of(module);
     let constructors = families.naming();
     let contexts = printed_names(&scopes);
@@ -696,8 +719,10 @@ fn spell<'failure>(
     let slots = model_slots(module);
     let sources: Vec<CoreSource<'_>> = names
         .iter()
-        .map(|names| {
+        .zip(&homes)
+        .map(|(names, homes)| {
             CoreSource::new(arena, names)
+                .homing(homes)
                 .naming(&constructors)
                 .naming_arrows(&arrows)
                 .naming_pairs(&pairs, &seconds)
@@ -957,6 +982,95 @@ pub fn constant_names(
     let mut paths = constant_paths(module);
     read_by(module, reader, &mut paths);
     paths
+}
+
+/// The name a source writes for a type head a `std` module homes, where it
+/// does not write the head bare.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HomedName
+{
+    /// The head's bare spelling, `List`.
+    pub head: String,
+    /// The name the source writes for it, `l.List` or `std.list.List`.
+    pub written: String,
+    /// The module path of its home, `std.list`.
+    pub home: String,
+    /// Whether the source imports its home: a source that does not writes
+    /// the home's path, which reads back with the import of that home.
+    pub imported: bool,
+}
+
+/// The name the source `reader` writes for each type head a `std` module
+/// homes, where it does not write the head bare.
+///
+/// A source that lists the head from its home writes it bare, `List(A)`
+/// under `import std.list (List);`, and holds no entry. A source that
+/// imports the home otherwise writes it after the qualifier its import binds:
+/// `l.List(A)` under `import std.list as l;`, `std.list.List(A)` under
+/// `import std.list;`. Any other source writes it after its home's path,
+/// `std.list.List(A)`, which reads back with the import of that home.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one entry per homed former that `reader`'s resolved imports do
+///   not list: the qualifier of `reader`'s first resolved import of its home,
+///   else the home's path, then `.` and the head; imported exactly when such an
+///   import stands.
+/// - provides: the homed heads a printer writes in the source `reader`.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the names are the imports' record, which a clause would
+///   restate whole.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list type spelled in a source that lists `List`, one
+///   that imports `std.list` under an alias, and one that imports nothing of
+///   it.
+/// - witness: `tests::diagnostics::a_list_type_is_spelled_as_its_reader_reads_it_4835`
+#[inline]
+#[must_use]
+pub fn homed_names(
+    module: &LoweredModule<'_>,
+    reader: SourceIndex,
+) -> Vec<HomedName>
+{
+    homed_formers()
+        .filter_map(|(home, head)| {
+            let imports = || {
+                module.imports().iter().filter(move |import| {
+                    import.source() == reader
+                        && matches!(
+                            import.resolution(),
+                            ImportResolution::Path(ImportTarget::Source(_))
+                        )
+                        && matches!(import.module(), Maybe::Present(module) if module.as_ref() == home.as_ref())
+                })
+            };
+            let listed = imports().any(|import| {
+                matches!(*import.opening(), Opening::Listed(ref listed)
+                    if listed.iter().any(|&(held, _)| held.as_ref() == head.as_ref()))
+            });
+            if listed {
+                return None;
+            }
+            let qualifier = imports().find_map(|import| match import.binding() {
+                ImportBinding::Aliased(qualifier) | ImportBinding::Qualified(qualifier) => {
+                    Some(qualifier)
+                },
+                ImportBinding::Unqualified => None,
+            });
+            Some(HomedName {
+                head: String::from(head.as_ref()),
+                written: alloc::format!(
+                    "{}.{}",
+                    qualifier.unwrap_or(home).as_ref(),
+                    head.as_ref()
+                ),
+                home: String::from(home.as_ref()),
+                imported: qualifier.is_some(),
+            })
+        })
+        .collect()
 }
 
 /// The telescope of each function of `module` that writes an implicit.

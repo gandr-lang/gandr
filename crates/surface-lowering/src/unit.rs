@@ -559,6 +559,24 @@ impl Unit
         })
     }
 
+    /// This unit, its last source importing `target` after every import it
+    /// writes: the target of an import appended to the last source's text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn importing(
+        mut self,
+        target: ImportTarget,
+    ) -> Self
+    {
+        if let Some(last) = self.sources.last_mut() {
+            last.imports.push(target);
+        }
+        self
+    }
+
     /// The sources, in admission order.
     ///
     /// # Specification

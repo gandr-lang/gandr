@@ -157,6 +157,7 @@ use gandr_kernel_term::Side;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_diagnostics::Checked;
 use gandr_surface_diagnostics::Families;
+use gandr_surface_diagnostics::HomedName;
 use gandr_surface_diagnostics::Naming;
 use gandr_surface_diagnostics::PATHLESS;
 use gandr_surface_diagnostics::Subject as DiagnosedSubject;
@@ -164,6 +165,7 @@ use gandr_surface_diagnostics::WrittenLabels;
 use gandr_surface_diagnostics::carry_labels;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::diagnose;
+use gandr_surface_diagnostics::homed_names;
 use gandr_surface_diagnostics::written_entry_names;
 use gandr_surface_diagnostics::written_names;
 use gandr_surface_grammar::Pbg;
@@ -173,6 +175,7 @@ use gandr_surface_lowering::ComponentName;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::Exit;
+use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::InScope;
 use gandr_surface_lowering::Insertion;
 use gandr_surface_lowering::Labelled;
@@ -980,6 +983,9 @@ pub struct TypeTable
     arena: CoreArena,
     /// The name the printer writes for each constant, by admission position.
     names: Vec<String>,
+    /// The name the printer writes for each homed type head the source does
+    /// not write bare.
+    homes: Vec<HomedName>,
     /// What the table keeps to name the binders an entry stands under.
     naming: Naming,
     /// The constructors of the source's data declarations, by family.
@@ -1791,6 +1797,7 @@ impl TypeTable
         endpoints.sort_by_key(|&(term, ..)| term);
         endpoints.dedup_by_key(|&mut (term, ..)| term);
         let names = constant_names(&module, module.unit().last());
+        let homes = homed_names(&module, module.unit().last());
         // Each term the value bridge carried by a reduct, or by a forgetting
         // map at carriers the explicit form spells, with the map, which a face
         // names beside the term's type.
@@ -2876,6 +2883,7 @@ impl TypeTable
             declared,
             arena,
             names,
+            homes,
             naming,
             unit: unit.clone(),
             base,
@@ -3945,6 +3953,16 @@ impl TypeTable
             .iter()
             .map(|name| Name::from(name.as_str()))
             .collect();
+        let homes: Vec<(Name<'_>, Name<'_>)> = self
+            .homes
+            .iter()
+            .map(|homed| {
+                (
+                    Name::from(homed.head.as_str()),
+                    Name::from(homed.written.as_str()),
+                )
+            })
+            .collect();
         let binders: Vec<Option<Name<'_>>> = context
             .binders
             .iter()
@@ -4063,6 +4081,7 @@ impl TypeTable
             })
             .collect();
         let printer = CoreSource::new(arena, &names)
+            .homing(&homes)
             .naming(&constructors)
             .naming_arrows(&arrows)
             .naming_pairs(&pairs, &seconds)
@@ -4415,11 +4434,13 @@ impl TypeTable
     ///   ;` with no repair is [`RoundTrip::Unparsed`]. Every other is appended
     ///   to the source as a signature of a fresh name — a computation type `C`
     ///   as `+U (C)` — the whole lowered once in the unit the table was built
-    ///   in, and is [`RoundTrip::Equal`] when the type read is the table's
-    ///   node, `U C` for a computation type, compared by [`equal_type_reading`]
-    ///   under the source's data signatures — the same syntax with path
-    ///   evidence erased, a type of words as the path at its point, a session
-    ///   type by its protocol's behaviour from its state;
+    ///   in, an import of each `std` module whose head the source writes after
+    ///   the module's path appended after them and bound to the unit's source
+    ///   of that module, and is [`RoundTrip::Equal`] when the type read is the
+    ///   table's node, `U C` for a computation type, compared by
+    ///   [`equal_type_reading`] under the source's data signatures — the same
+    ///   syntax with path evidence erased, a type of words as the path at its
+    ///   point, a session type by its protocol's behaviour from its state;
     ///   [`RoundTrip::Different`] otherwise; and [`RoundTrip::Refused`] with
     ///   the refusal when the lowering refused a closed signature or the whole
     ///   source. Each type read is printed again under the same binders, with
@@ -4448,6 +4469,7 @@ impl TypeTable
     /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
     /// - witness: `typed::tests::a_mismatched_term_reads_back_at_both_its_types`
     /// - witness: `typed::tests::a_recursive_definitions_own_binder_reads_apart_from_its_declaration_3584`
+    /// - witness: `typed::tests::a_list_type_reads_back_through_its_home_4835`
     /// - witness: `tests::census::sweeps::every_printed_type_reads_back_to_its_certificate`
     #[spec(ensures: |ret| ret.len() >= self.entries.len())]
     #[inline]
@@ -4598,6 +4620,26 @@ impl TypeTable
                 let _fresh = appended.insert(written, name);
             }
         }
+        // A homed head the source does not import prints after its home's
+        // path, `std.list.List(A)`, which reads back with the import of that
+        // home appended, bound to the unit's source of that module.
+        let mut unit = self.unit.clone();
+        let mut homes: BTreeSet<&str> = BTreeSet::new();
+        for homed in self.homes.iter().filter(|homed| !homed.imported) {
+            if !homes.insert(homed.home.as_str()) {
+                continue;
+            }
+            let Some(at) = unit.sources().iter().position(|source| {
+                matches!(source.home(), Maybe::Present(module) if module.as_ref() == homed.home)
+            })
+            else {
+                continue;
+            };
+            for part in ["\nimport ", homed.home.as_str(), " ;"] {
+                augmented.push_str(part);
+            }
+            unit = unit.importing(ImportTarget::Source(SourceIndex::from(at)));
+        }
         // The appended types, imported into a copy of the table's arena beside
         // the nodes they are compared with.
         let mut arena = self.arena.clone();
@@ -4616,7 +4658,7 @@ impl TypeTable
         match lower_unit_source(
             grammar,
             SourceText::from(augmented.as_str()),
-            &self.unit,
+            &unit,
             &mut LoweringCount::default(),
         )
         .map(Lowering::into_lowered)
@@ -7035,6 +7077,69 @@ mod tests
             !trips.is_empty() && trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
             "every printed type of the importer reads back beside its sibling: {trips:?}"
         );
+    }
+
+    /// #4835: a list type prints as its reader reads it — bare where the
+    /// reader lists `List`, after the alias where it imports `std.list` as
+    /// one, after `std.list` where it imports nothing of it — and each reads
+    /// back to its certificate, the last through the import of `std.list`
+    /// the read-back appends. Each reader meets the type through a sibling's
+    /// function, as its argument's.
+    #[test]
+    fn a_list_type_reads_back_through_its_home_4835()
+    {
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::SurfaceName;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+
+        let grammar = built_in().expect("the built-in grammar builds");
+        let sibling =
+            "import std.list (List) ;\npub def count(xs : List(Integer)) -> Integer { 0 }\n";
+        let call = "import \"./count.gandr\" ;\ndef counted() -> Integer { count(#[1]) }";
+        let home = ImportTarget::Source(SourceIndex::from(0_usize));
+        let counted = ImportTarget::Source(SourceIndex::from(1_usize));
+        for (import, imports, spelled) in [
+            (
+                "import std.list (List) ;\n",
+                vec![home, counted],
+                "List(Integer)",
+            ),
+            (
+                "import std.list as l ;\n",
+                vec![home, counted],
+                "l.List(Integer)",
+            ),
+            ("", vec![counted], "std.list.List(Integer)"),
+        ] {
+            // The stand-in for `std.list`, which declares nothing, the
+            // sibling, then the reader.
+            let laid = format!("\n{sibling}{import}{call}");
+            let base = ByteOffset::from(1_usize.saturating_add(sibling.len()));
+            let unit = Unit::new(vec![
+                UnitSource::new(ByteOffset::from(0_usize), Vec::new())
+                    .homed(SurfaceName::from("std.list")),
+                UnitSource::new(ByteOffset::from(1_usize), vec![home]),
+                UnitSource::new(base, imports),
+            ])
+            .expect("the unit's sources start in order");
+            let table = TypeTable::of_unit(&grammar, SourceText::from(laid.as_str()), &unit, base)
+                .expect("the unit parses");
+            let trips: Vec<(String, RoundTrip)> = table
+                .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
+                .into_iter()
+                .map(|back| (back.spelled, back.trip))
+                .collect();
+            assert!(
+                trips.iter().any(|&(ref written, _)| written == spelled),
+                "{import:?}: the list type prints as `{spelled}`: {trips:?}"
+            );
+            assert!(
+                trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
+                "{import:?}: every printed type reads back: {trips:?}"
+            );
+        }
     }
 
     /// #669: a `theory`'s stated normal form is a term of the block, which a

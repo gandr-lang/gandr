@@ -757,6 +757,20 @@ pub fn head_home(name: SurfaceName<'_>) -> Maybe<SurfaceName<'static>, type_head
     })
 }
 
+/// Each unary type head a `std` module homes, as its home and its spelling:
+/// `(std.list, List)` and the session formers' rows, the heads a printer
+/// spells after its reader's imports.
+///
+/// # Specification
+/// trivial.
+#[inline]
+pub fn homed_formers() -> impl Iterator<Item = (SurfaceName<'static>, SurfaceName<'static>)>
+{
+    HOMED_FORMERS
+        .into_iter()
+        .map(|(home, spelling, _)| (SurfaceName::from(home), SurfaceName::from(spelling)))
+}
+
 /// The identity of one binder frame inside a [`Scope`].
 ///
 /// # Specification

@@ -542,6 +542,7 @@ pub use crate::resolve::TypeAtom;
 pub use crate::resolve::TypeFormer;
 pub use crate::resolve::binder_site;
 pub use crate::resolve::head_home;
+pub use crate::resolve::homed_formers;
 pub use crate::resolve::type_atom;
 pub use crate::resolve::type_former;
 pub use crate::unbuilt::Unbuilt;

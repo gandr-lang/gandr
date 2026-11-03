@@ -3290,6 +3290,72 @@ fn a_declaration_read_through_an_import_is_spelled_as_its_reader_writes_it_3498(
     );
 }
 
+/// The list type spells bare for a source that lists `List`, after the
+/// alias for one that imports `std.list` under one, and after `std.list`,
+/// unimported, for one that imports nothing of it (#4835).
+#[test]
+fn a_list_type_is_spelled_as_its_reader_reads_it_4835()
+{
+    use gandr_surface_diagnostics::HomedName;
+    use gandr_surface_diagnostics::homed_names;
+    use gandr_surface_dispatcher::lower_parsed_unit;
+    use gandr_surface_lowering::ImportTarget;
+    use gandr_surface_lowering::SourceIndex;
+    use gandr_surface_lowering::SurfaceName;
+    use gandr_surface_lowering::Unit;
+    use gandr_surface_lowering::UnitSource;
+
+    let pbg = built_in().expect("the built-in grammar builds");
+    let listed = "import std.list (List) ;\n";
+    let aliased = "import std.list as l ;\n";
+    let neither = "def n : Integer = 1 ;\n";
+    // The stand-in for `std.list`, which declares nothing, then the readers.
+    let text = format!("\n{listed}{aliased}{neither}");
+    let at = |offset: usize| ByteOffset::from(offset);
+    let stand_in = ImportTarget::Source(SourceIndex::from(0_usize));
+    let unit = Unit::new(vec![
+        UnitSource::new(at(0_usize), Vec::new()).homed(SurfaceName::from("std.list")),
+        UnitSource::new(at(1_usize), vec![stand_in]),
+        UnitSource::new(at(1_usize + listed.len()), vec![stand_in]),
+        UnitSource::new(at(1_usize + listed.len() + aliased.len()), Vec::new()),
+    ])
+    .expect("four sources make a unit");
+    let parsed = gandr_surface_parser::parse(&pbg, SourceText::from(text.as_str()))
+        .expect("the unit parses");
+    let Lowered::Module { module, .. } = lower_parsed_unit(
+        &pbg,
+        parsed,
+        &unit,
+        &mut LoweringCount::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
+    .expect("the unit lowers")
+    .into_lowered()
+    else {
+        panic!("the unit is one module");
+    };
+    let list = |reader: usize| {
+        homed_names(&module, SourceIndex::from(reader))
+            .into_iter()
+            .find(|homed| homed.head == "List")
+    };
+    let homed = |written: &str, imported: bool| HomedName {
+        head: String::from("List"),
+        written: String::from(written),
+        home: String::from("std.list"),
+        imported,
+    };
+    assert_eq!(
+        (list(1), list(2), list(3)),
+        (
+            None,
+            Some(homed("l.List", true)),
+            Some(homed("std.list.List", false))
+        ),
+        "a listing writes `List` bare, an alias qualifies it, and no import names its home"
+    );
+}
+
 /// A refusal spells each type as the source holding the refused declaration
 /// reads it, whatever source the unit lays last: an importer refused at a
 /// declaration it reads through an alias spells it after the alias, beside a
