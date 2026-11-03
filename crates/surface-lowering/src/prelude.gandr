@@ -117,3 +117,10 @@ pub data Nat : Type where {
   /// A positive number.
   | Positive : (p : Pos) --> Nat
 }
+
+/// A carrier a natural literal reads into: a literal checked where `Carrier`
+/// is expected is `fromNat` of its primitive integer.
+pub theory FromNat where {
+  sort Carrier : Type;
+  oper fromNat : (n : Integer) --> Carrier;
+}

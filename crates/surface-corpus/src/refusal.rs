@@ -814,6 +814,9 @@ pub enum RefusalName
     /// A term standing at a capability type that is no capability
     /// hypothesis.
     CapabilityForged,
+    /// A natural literal standing at a type two models of `FromNat` read it
+    /// into.
+    LiteralAmbiguous,
     /// A capability standing where one granting more is expected.
     CapabilityAmplified,
     /// An operation exercised through a capability that does not grant it.
@@ -1286,7 +1289,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 235_usize] = [
+    pub const VOCABULARY: [Self; 236_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1346,6 +1349,7 @@ impl RefusalName
         Self::GeneratorFamilyUnsupported,
         Self::UnenclosedRun,
         Self::CapabilityForged,
+        Self::LiteralAmbiguous,
         Self::CapabilityAmplified,
         Self::CapabilityOutsideAuthority,
         Self::CapabilityEscaped,
@@ -1791,6 +1795,7 @@ impl RefusalName
         | (Self::EntryUngranted, b"EntryUngranted")
         | (Self::NotAHandle, b"NotAHandle")
         | (Self::CapabilityForged, b"CapabilityForged")
+        | (Self::LiteralAmbiguous, b"LiteralAmbiguous")
         | (Self::CapabilityAmplified, b"CapabilityAmplified")
         | (Self::CapabilityOutsideAuthority, b"CapabilityOutsideAuthority")
         | (Self::CapabilityEscaped, b"CapabilityEscaped")
@@ -1948,6 +1953,7 @@ impl RefusalName
             Self::EntryUngranted => "EntryUngranted",
             Self::NotAHandle => "NotAHandle",
             Self::CapabilityForged => "CapabilityForged",
+            Self::LiteralAmbiguous => "LiteralAmbiguous",
             Self::CapabilityAmplified => "CapabilityAmplified",
             Self::CapabilityOutsideAuthority => "CapabilityOutsideAuthority",
             Self::CapabilityEscaped => "CapabilityEscaped",
@@ -3062,6 +3068,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Located { defect: LocatedDefect::EntryUngranted { .. }, .. }, RefusalName::EntryUngranted)
         | (CheckRefusal::Located { defect: LocatedDefect::NotAHandle { .. }, .. }, RefusalName::NotAHandle)
         | (CheckRefusal::CapabilityForged { .. }, RefusalName::CapabilityForged)
+        | (CheckRefusal::LiteralAmbiguous { .. }, RefusalName::LiteralAmbiguous)
         | (CheckRefusal::CapabilityAmplified(_), RefusalName::CapabilityAmplified)
         | (CheckRefusal::CapabilityOutsideAuthority { .. }, RefusalName::CapabilityOutsideAuthority)
         | (CheckRefusal::CapabilityEscaped { .. }, RefusalName::CapabilityEscaped)
@@ -3162,6 +3169,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
             ProtocolDefect::Arms => RefusalName::OfferArms,
         },
         CheckRefusal::CapabilityForged { .. } => RefusalName::CapabilityForged,
+        CheckRefusal::LiteralAmbiguous { .. } => RefusalName::LiteralAmbiguous,
         CheckRefusal::CapabilityAmplified(_) => RefusalName::CapabilityAmplified,
         CheckRefusal::CapabilityOutsideAuthority { .. } => RefusalName::CapabilityOutsideAuthority,
         CheckRefusal::Linearity { defect, .. } => match defect {

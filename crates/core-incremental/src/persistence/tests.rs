@@ -494,6 +494,7 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::SessionMismatch { .. }) => "session-mismatch",
         Typing::Refused(Refusal::Linearity { .. }) => "linearity",
         Typing::Refused(Refusal::CapabilityForged { .. }) => "capability-forged",
+        Typing::Refused(Refusal::LiteralAmbiguous { .. }) => "literal-ambiguous",
         Typing::Refused(Refusal::CapabilityAmplified { .. }) => "capability-amplified",
         Typing::Refused(Refusal::CapabilityOutsideAuthority { .. }) => {
             "capability-outside-authority"

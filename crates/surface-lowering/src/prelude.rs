@@ -10,8 +10,9 @@
 //! a declaration or a written import binding the name shadows it. It holds the
 //! `Eq` theory, its models at `Integer` and `String` — each operation the
 //! primitive at that type — and `eq`, the function over any model of `Eq` the
-//! operands' type resolves, which `a == b` calls; and the binary naturals
-//! `Pos` and `Nat`, which a numeral annotated `(n : Nat)` names.
+//! operands' type resolves, which `a == b` calls; the binary naturals
+//! `Pos` and `Nat`, which a numeral annotated `(n : Nat)` names; and the
+//! `FromNat` theory a model of which reads a natural literal at its carrier.
 //!
 //! - Choice: one embedded source, the implicit first import of every unit, as
 //!   every language's prelude is (Haskell's `Prelude`, OCaml's `Stdlib`, Lean's
@@ -47,6 +48,16 @@
 //! native opaque, so a natural ordered by conversion is a constructor term,
 //! never an `Integer`. A source's own `Nat` shadows the prelude's there, and
 //! its numerals stay integers.
+//!
+//! # A literal is read by a model of `FromNat`
+//!
+//! A natural literal checked at a type apart from `Integer` is the `fromNat`
+//! of the one model of the prelude's `FromNat` whose carrier is that type
+//! applied to it (the lowering's `lower::reader` lends the readers, and the
+//! checker's value bridge crosses by one). A literal at `Integer` stays
+//! primitive, so a program that reads no literal elsewhere runs as it did. A
+//! source's own `FromNat` shadows the prelude's, and its models lend no
+//! reader.
 
 use alloc::string::String;
 use alloc::vec::Vec;

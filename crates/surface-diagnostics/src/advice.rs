@@ -608,6 +608,7 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::ModelAmbiguous { .. }
         | CheckRefusal::TacticRefused { .. }
         | CheckRefusal::CapabilityForged { .. }
+        | CheckRefusal::LiteralAmbiguous { .. }
         | CheckRefusal::CapabilityAmplified(_)
         | CheckRefusal::CapabilityOutsideAuthority { .. }
         | CheckRefusal::CapabilityEscaped { .. }

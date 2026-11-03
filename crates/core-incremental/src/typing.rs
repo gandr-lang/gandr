@@ -982,6 +982,15 @@ pub enum Refusal
         /// The capability type it was checked at.
         expected: TypeContent,
     },
+    /// A natural literal stood at a type two models of `FromNat` read it
+    /// into.
+    LiteralAmbiguous
+    {
+        /// The literal.
+        at: Site,
+        /// The type it was checked at.
+        expected: TypeContent,
+    },
     /// A capability stood where one granting more was expected.
     CapabilityAmplified
     {
@@ -1690,6 +1699,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::SessionMismatch { at, endpoint, state, defect } = matched_left_value && let Refusal::SessionMismatch { at: projected, endpoint: returned, state: ref stored, defect: kept } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && returned == self.endpoint(endpoint) && *stored == self.value_type(state) && kept == defect }
  else if let CheckRefusal::Linearity { at, defect } = matched_left_value && let Refusal::Linearity { at: projected, defect: ref stored } = *matched_right_value { projected == self.core_site(at) && *stored == self.linearity(defect) }
  else if let CheckRefusal::CapabilityForged { at, expected } = matched_left_value && let Refusal::CapabilityForged { at: projected, expected: ref stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *stored == self.value_type(expected) }
+ else if let CheckRefusal::LiteralAmbiguous { at, expected } = matched_left_value && let Refusal::LiteralAmbiguous { at: projected, expected: ref stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *stored == self.value_type(expected) }
  else if let CheckRefusal::CapabilityAmplified(Mismatch::Value { at, .. }) = matched_left_value && let Refusal::CapabilityAmplified { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::CapabilityAmplified(Mismatch::Computation { at, .. }) = matched_left_value && let Refusal::CapabilityAmplified { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::CapabilityOutsideAuthority { at, capability } = matched_left_value && let Refusal::CapabilityOutsideAuthority { at: projected, capability: ref stored } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && *stored == self.value_type(capability) }
@@ -2090,6 +2100,10 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 defect: self.linearity(defect),
             },
             CheckRefusal::CapabilityForged { at, expected } => Refusal::CapabilityForged {
+                at: self.site(ArenaNode::Value(at)),
+                expected: self.value_type(expected),
+            },
+            CheckRefusal::LiteralAmbiguous { at, expected } => Refusal::LiteralAmbiguous {
                 at: self.site(ArenaNode::Value(at)),
                 expected: self.value_type(expected),
             },

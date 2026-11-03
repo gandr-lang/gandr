@@ -1,0 +1,30 @@
+/// `literal-reading`: a natural literal at a type a model of the prelude's `FromNat` carries is read through that model's `fromNat`, and a literal at `Integer` stays the literal.
+/// Implemented: the checker reads a natural literal at a type a top-level model of `FromNat` carries, and refuses it `LiteralAmbiguous` where two such models answer.
+/// Not implemented: #4732 owes a negative or a decimal literal, and #4733 owes a reader carrying a constraint, so `Fin(3)` refuses `5`.
+
+/// Expressions over the integers.
+data Expr : Type where {
+  | Lit : (n : Integer) --> Expr
+  | Add : (a : Expr, b : Expr) --> Expr
+}
+
+/// An expression reads a literal as the leaf holding it.
+module ExprFromNat : Model(FromNat) with sort Carrier = Expr where {
+  /// The leaf.
+  def fromNat(n : Integer) -> Expr { Lit(n) }
+}
+
+/// Each literal is read as a leaf where an expression is asked.
+@[ runs("Add(Lit(1), Lit(2))") ]
+def sum() -> Expr { Add(1, 2) }
+
+/// An expression doubled.
+def twice(e : Expr) -> Expr { Add(e, e) }
+
+/// An argument is read at its parameter's type.
+@[ runs("Add(Lit(3), Lit(3))") ]
+def doubled() -> Expr { twice(3) }
+
+/// A literal at `Integer` is the literal itself, with no reader applied.
+@[ runs("4") ]
+def plain() -> Integer { 4 }

@@ -1516,6 +1516,184 @@ fn an_owed_decode_crosses_by_no_reduct()
     );
 }
 
+/// The fixture of the literal readers: `word : U(Integer → F String)` reads
+/// every natural as the same string, `flag` and `bit : U(Integer → F
+/// Character)` are owed, `taker : U(String → F Integer)` and `chooser :
+/// U(Character → F Integer)` are owed, and the declaration at 5 is
+/// `thunk(callee(4))` at `U(F Integer)`. The checker keeps `kept` as its
+/// readers.
+///
+/// # Specification
+/// trivial.
+fn read_literal(
+    kept: &[ConstantIndex],
+    callee: ConstantIndex,
+) -> (CoreArena, super::ModuleReport, ValueId)
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let text = arena.value_type_base(BaseType::String);
+    let boolean = arena.value_type_base(BaseType::Character);
+    let thunk_of = |arena: &mut CoreArena, domain, result| {
+        let returns = arena.comp_type_returner(result);
+        let arrow = arena.comp_type_arrow(domain, returns);
+        arena.value_type_thunk(arrow)
+    };
+    let word_type = thunk_of(&mut arena, integer, text);
+    let word = {
+        let read = arena.value_literal(text_literal());
+        let returned = arena.computation_return(read);
+        let lambda = arena.computation_lambda(returned);
+        arena.value_thunk(lambda)
+    };
+    let flag_type = thunk_of(&mut arena, integer, boolean);
+    let taker_type = thunk_of(&mut arena, text, integer);
+    let chooser_type = thunk_of(&mut arena, boolean, integer);
+    let user_type = {
+        let returns = arena.comp_type_returner(integer);
+        arena.value_type_thunk(returns)
+    };
+    let literal = arena.value_literal(integer_literal());
+    let user = {
+        let called = call(&mut arena, callee, literal);
+        arena.value_thunk(called)
+    };
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.keep_readers(kept);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(word_type), Maybe::Present(word)),
+            declaration(At(1), Maybe::Present(flag_type), HOLE),
+            declaration(At(2), Maybe::Present(flag_type), HOLE),
+            declaration(At(3), Maybe::Present(taker_type), HOLE),
+            declaration(At(4), Maybe::Present(chooser_type), HOLE),
+            declaration(At(5), Maybe::Present(user_type), Maybe::Present(user)),
+        ])
+    };
+    (arena, report, literal)
+}
+
+/// #4528: a natural literal checked at a type apart from `Integer` crosses by
+/// the one kept reader whose result is that type, recorded at the literal, and
+/// the kernel re-derives the application; with no reader kept it is refused.
+#[test]
+fn a_natural_literal_crosses_by_the_reader_of_its_type_4528()
+{
+    let readers = [ConstantIndex::from(0_usize), ConstantIndex::from(1_usize)];
+    let (mut arena, report, literal) = read_literal(&readers, ConstantIndex::from(3_usize));
+    assert!(
+        matches!(report.judged()[5].verdict(), Verdict::Checked { .. }),
+        "the literal checks where text is asked: {:?}",
+        report.judged()[5].verdict()
+    );
+    assert_eq!(
+        report.nested_elaborations()[&ConstantIndex::from(5_usize)]
+            .crossings()
+            .iter()
+            .map(|(&at, crossing)| (at, crossing.by, crossing.carriers.len()))
+            .collect::<Vec<_>>(),
+        [(literal, ConstantIndex::from(0_usize), 0)],
+        "the crossing is recorded at the literal, by the text reader alone"
+    );
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    assert!(
+        readmission.readmitted().iter().all(|readmitted| matches!(
+            readmitted.outcome(),
+            crate::bridge::Outcome::Defined { .. } | crate::bridge::Outcome::Assumed { .. }
+        )),
+        "the kernel re-derives the application of the reader: {readmission:?}"
+    );
+    let (_, unkept, _) = read_literal(&[], ConstantIndex::from(3_usize));
+    assert!(
+        matches!(
+            unkept.judged()[5].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "with no reader kept, the literal is refused where text is asked: {:?}",
+        unkept.judged()[5].verdict()
+    );
+}
+
+/// #4528: a literal at a type two kept readers answer is refused naming the
+/// literal and the type, and one reader of it crosses.
+#[test]
+fn a_literal_two_readers_answer_is_ambiguous_4528()
+{
+    let both = [
+        ConstantIndex::from(0_usize),
+        ConstantIndex::from(1_usize),
+        ConstantIndex::from(2_usize),
+    ];
+    let (arena, report, literal) = read_literal(&both, ConstantIndex::from(4_usize));
+    let Verdict::Refused(CheckRefusal::LiteralAmbiguous { at, expected }) =
+        report.judged()[5].verdict()
+    else {
+        panic!(
+            "two character readers leave the literal ambiguous: {:?}",
+            report.judged()[5].verdict()
+        );
+    };
+    assert_eq!(at, literal, "the refusal names the literal");
+    assert!(
+        matches!(
+            arena.value_type(expected),
+            Some(gandr_core_term::ValueType::Base(BaseType::Character))
+        ),
+        "the refusal names the character type the literal stands at"
+    );
+    let one = [ConstantIndex::from(0_usize), ConstantIndex::from(2_usize)];
+    let (_, read, _) = read_literal(&one, ConstantIndex::from(4_usize));
+    assert!(
+        matches!(read.judged()[5].verdict(), Verdict::Checked { .. }),
+        "one boolean reader carries the literal: {:?}",
+        read.judged()[5].verdict()
+    );
+}
+
+/// #4528: only a literal is read: an integer variable where text is asked is
+/// refused whatever readers are kept.
+#[test]
+fn an_integer_variable_crosses_by_no_reader_4528()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let text = arena.value_type_base(BaseType::String);
+    let thunk_of = |arena: &mut CoreArena, domain, result| {
+        let returns = arena.comp_type_returner(result);
+        let arrow = arena.comp_type_arrow(domain, returns);
+        arena.value_type_thunk(arrow)
+    };
+    let word_type = thunk_of(&mut arena, integer, text);
+    let taker_type = thunk_of(&mut arena, text, integer);
+    let user_type = thunk_of(&mut arena, integer, integer);
+    let user = {
+        let bound = arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(0_u32),
+        );
+        let called = call(&mut arena, ConstantIndex::from(1_usize), bound);
+        let lambda = arena.computation_lambda(called);
+        arena.value_thunk(lambda)
+    };
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.keep_readers(&[ConstantIndex::from(0_usize)]);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(word_type), HOLE),
+            declaration(At(1), Maybe::Present(taker_type), HOLE),
+            declaration(At(2), Maybe::Present(user_type), Maybe::Present(user)),
+        ])
+    };
+    assert!(
+        matches!(
+            report.judged()[2].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "a variable is no literal, so no reader carries it: {:?}",
+        report.judged()[2].verdict()
+    );
+}
+
 #[test]
 fn a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier()
 {

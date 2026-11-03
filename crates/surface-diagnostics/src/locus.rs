@@ -817,7 +817,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
     };
     let second_unnamed = ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed);
     labelled && if matches!(refusal, CheckRefusal::DataFieldLevel {..} | CheckRefusal::RepresentationAboveKind {..} | CheckRefusal::MissingRecordField {..}
-            | CheckRefusal::CapabilityForged {..}) {
+            | CheckRefusal::CapabilityForged {..} | CheckRefusal::LiteralAmbiguous {..}) {
         role(&ret.context[0_usize], Label::Expected) && second_unnamed
     } else if matches!(refusal, CheckRefusal::TypeMismatch(_) | CheckRefusal::CapabilityAmplified(_) | CheckRefusal::SortMismatch { .. }
             | CheckRefusal::LevelMismatch { .. } | CheckRefusal::FamilyArgumentClassifier { .. }
@@ -884,7 +884,8 @@ fn checked(
             (spanned(origins.value(at)), UNNAMED)
         },
         CheckRefusal::MissingRecordField { at, expected }
-        | CheckRefusal::CapabilityForged { at, expected } => (spanned(origins.value(at)), [
+        | CheckRefusal::CapabilityForged { at, expected }
+        | CheckRefusal::LiteralAmbiguous { at, expected } => (spanned(origins.value(at)), [
             annotated(spanned(origins.value_type(expected)), Label::Expected),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
@@ -1843,6 +1844,10 @@ impl fmt::Display for Checked
             | CheckRefusal::CapabilityForged { .. } => f.write_str(
                 "a capability type is inhabited only by a capability hypothesis, and this term \
                  is none",
+            ),
+            | CheckRefusal::LiteralAmbiguous { .. } => f.write_str(
+                "two models of `FromNat` read a literal into this type, and the literal names \
+                 neither",
             ),
             | CheckRefusal::CapabilityAmplified(_) => f.write_str(
                 "this capability grants less than the capability it is checked against",
@@ -2947,6 +2952,10 @@ mod tests
                 at: value,
                 expected: value_type,
             },
+            CheckRefusal::LiteralAmbiguous {
+                at: value,
+                expected: value_type,
+            },
             CheckRefusal::DependentStack {
                 at: value,
                 synthesised: comp_type,
@@ -3686,6 +3695,7 @@ mod tests
                         | CheckRefusal::AtomTransport { .. }
                         | CheckRefusal::MissingRecordField { .. }
                         | CheckRefusal::CapabilityForged { .. }
+                        | CheckRefusal::LiteralAmbiguous { .. }
                         | CheckRefusal::DependentStack { .. }
                         | CheckRefusal::CompoundEndpoint { .. }
                         | CheckRefusal::EndpointMismatch { .. }
@@ -3850,6 +3860,10 @@ mod tests
                 expected: value_type,
             },
             CheckRefusal::CapabilityForged {
+                at: value,
+                expected: value_type,
+            },
+            CheckRefusal::LiteralAmbiguous {
                 at: value,
                 expected: value_type,
             },

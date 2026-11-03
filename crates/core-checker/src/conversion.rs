@@ -423,7 +423,9 @@ pub enum Agreement
 ///   too; otherwise success exactly when [`convert`] answers convertible, or
 ///   when it answers apart and a kept reduct carries the synthesised type to
 ///   the expected one, which records the crossing at `at` by the first such
-///   reduct. `tally` advances once on every outcome, saturating at its ceiling.
+///   reduct, or `at` is a natural literal one kept reader carries there, which
+///   records the crossing at `at` by that reader. `tally` advances once on
+///   every outcome, saturating at its ceiling.
 /// - provides: the only comparison of value types the judgement makes, and the
 ///   only place a code moves up a universe.
 /// - fails: [`CheckRefusal::SortMismatch`] for two universes of different
@@ -435,8 +437,9 @@ pub enum Agreement
 ///   former; [`CheckRefusal::StageNotBelow`] naming `at` when a stage the order
 ///   refuses is wanted; [`CheckRefusal::CapabilityAmplified`] and
 ///   [`CheckRefusal::CapabilityEscaped`] when [`convert`] finds a capability
-///   granting less or living shorter than the one expected; the unfolding's
-///   refusal when a decode does not unfold.
+///   granting less or living shorter than the one expected;
+///   [`CheckRefusal::LiteralAmbiguous`] when two kept readers carry a natural
+///   literal there; the unfolding's refusal when a decode does not unfold.
 /// - panics: none.
 /// - intension: one crossing per call, counted in `tally`.
 ///
@@ -454,7 +457,8 @@ pub enum Agreement
 ///   code of the other sort, each answer and count asserted; a relocated
 ///   synthesised type answers as its settled reading does; a pair nesting more
 ///   components than the one asked crosses by the reduct kept, and is refused
-///   with none kept.
+///   with none kept; a natural literal crosses by the one reader of the type
+///   asked.
 /// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
 /// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
 /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
@@ -462,6 +466,7 @@ pub enum Agreement
 /// - witness: `judgement::tests::a_value_type_in_a_computation_universe_is_a_sort_mismatch`
 /// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
 /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+/// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
 #[spec(
     captures: before = tally.0,
     ensures: |ret| tally.0 == before.saturating_add(1)
@@ -541,6 +546,15 @@ where
     // fixed to; the elaboration applies the map where the bridge crossed.
     if agreement == Agreement::Apart
         && let Maybe::Present(crossing) = crossing(context, found, wanted)?
+    {
+        context.record_crossing(at, crossing);
+        return Ok(());
+    }
+    // A natural literal stands at a type apart from `Integer` by the one
+    // literal reader whose carrier is that type: the elaboration applies the
+    // reader there, as it applies a reduct.
+    if agreement == Agreement::Apart
+        && let Maybe::Present(crossing) = literal_reader(context, at, found, (wanted, expected))?
     {
         context.record_crossing(at, crossing);
         return Ok(());
@@ -695,6 +709,156 @@ fn kept_crossing(
     }
 
     Ok(Maybe::Absent(()))
+}
+
+/// The one kept literal reader that carries the natural literal `at`, of the
+/// type `found`, to the type `wanted`, decided rigidly as [`crossing`] decides
+/// a reduct.
+///
+/// # Specification
+/// - requires: both types are formed, in the context's arena; `wanted` is the
+///   head `expected` reduces to.
+/// - ensures: nothing when `at` is no natural integer literal or no kept
+///   reader's signature is a thunk of `A → F B` or `Π(n : A). F B` at which
+///   `found` converts to `A` and `B`, `n` read as `at`, to `wanted`; the one
+///   reader that is, with no carriers, otherwise; the collector is in the state
+///   it was before, whatever the answer.
+/// - fails: [`CheckRefusal::LiteralAmbiguous`] naming `at` and `expected` when
+///   two readers are; the refusals [`convert`] yields, and a view's of a
+///   signature.
+/// - panics: none.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a literal at a parity crosses by the parity's reader and
+///   not the flag's, a literal at a type two readers answer is refused naming
+///   it, and a variable at the parity crosses by none.
+/// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
+/// - witness: `module::tests::a_literal_two_readers_answer_is_ambiguous_4528`
+/// - witness: `module::tests::an_integer_variable_crosses_by_no_reader_4528`
+#[spec(
+    captures: before = context.deferrals().collecting,
+    ensures: context.deferrals().collecting == before,
+)]
+fn literal_reader(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+    found: Relocated<ValueTypeId>,
+    (wanted, expected): (ValueTypeId, ValueTypeId),
+) -> Result<Maybe<gandr_core_term::Crossing, ()>, CheckRefusal>
+{
+    let natural = matches!(
+        context.arena().value(at),
+        Some(&Value::Literal(gandr_kernel_term::Literal::Integer(ref integer)))
+            if integer.sign() != gandr_kernel_term::Sign::Negative
+    );
+    if !natural || context.readers().is_empty() {
+        return Ok(Maybe::Absent(()));
+    }
+    // A reader applies a map the elaboration runs, so the owed decode is
+    // compared rigidly, as a reduct's is.
+    let collecting = core::mem::replace(
+        &mut context.deferrals_mut().collecting,
+        crate::elaboration::Collecting::Off,
+    );
+    let read = kept_reader(context, at, found, wanted);
+    context.deferrals_mut().collecting = collecting;
+    match read? {
+        Readers::None => Ok(Maybe::Absent(())),
+        Readers::One(by) => Ok(Maybe::Present(gandr_core_term::Crossing {
+            by,
+            carriers: Vec::new(),
+        })),
+        Readers::Several => Err(CheckRefusal::LiteralAmbiguous { at, expected }),
+    }
+}
+
+/// How many kept literal readers carry a literal to a type.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Readers
+{
+    /// None does.
+    None,
+    /// This one alone does.
+    One(gandr_kernel_term::ConstantIndex),
+    /// Two or more do.
+    Several,
+}
+
+/// The kept literal readers that carry the literal `at`, of the type `found`,
+/// to the type `wanted`, counted to two.
+///
+/// # Specification
+/// - requires: as [`literal_reader`].
+/// - ensures: [`Readers::One`] for the only reader whose signature carries
+///   `found` to `wanted` as [`literal_reader`] states it, [`Readers::None`] for
+///   none and [`Readers::Several`] for two or more.
+/// - fails: the refusals [`convert`] yields, and a view's of a signature.
+/// - panics: none.
+/// - executable: none — as [`literal_reader`].
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`literal_reader`].
+/// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
+/// - witness: `module::tests::a_literal_two_readers_answer_is_ambiguous_4528`
+fn kept_reader(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+    found: Relocated<ValueTypeId>,
+    wanted: ValueTypeId,
+) -> Result<Readers, CheckRefusal>
+{
+    let mut read = Readers::None;
+    let mut next = 0_usize;
+    while let Some(&reader) = context.readers().get(next) {
+        next = next.saturating_add(1);
+        let Maybe::Present(signature) = context.signature(reader)
+        else {
+            continue;
+        };
+        let ValueTypeView::Thunk(chain) = value_type_view(context.arena(), signature.id())?
+        else {
+            continue;
+        };
+        let (domain, codomain) = match comp_type_view(context.arena(), chain)? {
+            CompTypeView::Arrow { domain, codomain } => (domain, codomain),
+            CompTypeView::Pi { domain, codomain } => (
+                domain,
+                gandr_core_term::instantiate_comp_type(context.arena_mut(), codomain, at),
+            ),
+            CompTypeView::Returner { .. }
+            | CompTypeView::Element { .. }
+            | CompTypeView::With(..)
+            | CompTypeView::Codata { .. }
+            | CompTypeView::Unknown => continue,
+        };
+        let CompTypeView::Returner { result, .. } = comp_type_view(context.arena(), codomain)?
+        else {
+            continue;
+        };
+        if convert(context, Pairing::Assignable(found, Relocated::from(domain)))?
+            == Agreement::Convertible
+            && convert(
+                context,
+                Pairing::Assignable(Relocated::from(result), Relocated::from(wanted)),
+            )? == Agreement::Convertible
+        {
+            read = match read {
+                Readers::None => Readers::One(reader),
+                Readers::One(_) | Readers::Several => return Ok(Readers::Several),
+            };
+        }
+    }
+
+    Ok(read)
 }
 
 /// The carriers a map's signature `chain` takes before the value it crosses

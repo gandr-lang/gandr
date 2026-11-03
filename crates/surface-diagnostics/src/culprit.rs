@@ -554,6 +554,7 @@ fn checked(refusal: CheckRefusal) -> Culprit
             LocatedDefect::NotAHandle { .. } => "not a handle at a world",
         },
         CheckRefusal::CapabilityForged { .. } => "no capability hypothesis",
+        CheckRefusal::LiteralAmbiguous { .. } => "a literal two readers answer",
         CheckRefusal::CapabilityAmplified(_) => "a capability granting less",
         CheckRefusal::CapabilityOutsideAuthority { .. } => "an operation its capability withholds",
         CheckRefusal::CapabilityEscaped { .. } => "a capability outliving its scope",

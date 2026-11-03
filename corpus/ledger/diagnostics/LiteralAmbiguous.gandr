@@ -1,0 +1,25 @@
+/// `LiteralAmbiguous`: a natural literal at a type two models of the prelude's `FromNat` read it into.
+///
+/// Expressions over integers.
+@[ checks ]
+data Expr : Type where {
+  | Lit : (n : Integer) --> Expr
+  | Zero : Expr
+}
+
+/// A literal read as its leaf.
+module Leaf : Model(FromNat) with sort Carrier = Expr where {
+  /// The leaf.
+  @[ checks ]
+  def fromNat(n : Integer) -> Expr { Lit(n) }
+}
+
+/// Every literal read as zero.
+module Nought : Model(FromNat) with sort Carrier = Expr where {
+  /// Zero.
+  @[ checks ]
+  def fromNat(n : Integer) -> Expr { Zero }
+}
+
+@[ refuses("LiteralAmbiguous") ]
+def ambiguous() -> Expr { 4 }

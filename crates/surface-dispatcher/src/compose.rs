@@ -2206,9 +2206,10 @@ pub enum Recording<'held>
 ///
 /// A revision that moves no lowered node — a comment, a blank line, any edit
 /// the lowering reads past — reads what the one before read: the lowered arena,
-/// span-free, and the declarations, entry, pattern holes, reducts and forgets
-/// the arena's nodes make, under the same grant, root and closure. The checker
-/// is a function of those inputs, so the verdicts are the ones it would give.
+/// span-free, and the declarations, entry, pattern holes, reducts, forgets and
+/// literal readers the arena's nodes make, under the same grant, root and
+/// closure. The checker is a function of those inputs, so the verdicts are the
+/// ones it would give.
 /// What reads a span — the settle, the origins, the spellings and the program
 /// — is made again over the revision's own module.
 ///
@@ -2259,6 +2260,8 @@ struct Read
     reducts: Vec<ConstantIndex>,
     /// The forgets the module declares.
     forgets: Vec<ConstantIndex>,
+    /// The literal readers the module lends.
+    readers: Vec<ConstantIndex>,
     /// The grant the judgement holds.
     grant: HostGrant,
     /// The declarations of the closure it continues, when it continues one.
@@ -2959,6 +2962,7 @@ where
         holes: holes.clone(),
         reducts: module.reducts().to_vec(),
         forgets: module.forgets().to_vec(),
+        readers: module.readers().to_vec(),
         grant: grant.clone(),
         resumed: after.map(|closure| closure.declarations.len()),
     });
@@ -4242,6 +4246,7 @@ pub fn checking_context<'arena>(
     context.keep_pattern_holes(holes);
     context.keep_reducts(module.reducts());
     context.keep_reducts(module.forgets());
+    context.keep_readers(module.readers());
     context
 }
 
