@@ -3005,6 +3005,7 @@ INSERT INTO purpose VALUES('surface-parser','closing::tile_spelling','function',
 INSERT INTO purpose VALUES('surface-parser','label::Labeling','struct','A source''s tokens, with the tokens before which the labeler stood within a mode, so an edit of the source relabels only around itself (relabel(Self::relabel)).',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','label::Lexeme','enum','The lexical class of one maximal lexeme.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','label::Token','struct','One labeled lexeme: its class and exact byte span.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','label::TokenCount','struct','Names how many tokens a relabel labeled afresh, so its scan around an edit is counted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','label::WORD_PATTERN','constant','The words scan_word reads, as a regular expression.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','label::label','function','Label a UTF-8 source buffer into a total stream of lexemes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::BoundarySlot','struct','Half-open stack range `[low, high_exclusive)`.',NULL,'fits','sound',NULL);
@@ -3204,6 +3205,7 @@ INSERT INTO purpose VALUES('surface-session','edit::apply','function','Applies a
 INSERT INTO purpose VALUES('surface-session','edit::diff','function','Aligns two revisions'' items and descends each kept pair''s bodies together, so the diff''s actions are emitted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','forms::FormCensus','struct','Holds a form''s census, so the form''s count is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','forms::FormCount','struct','Names the count of a revision''s forms, so the count is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-session','forms::FormStore','struct','Holds the latest revision''s labeling and its forms parked by identity, so the next revision relabels around its edit and takes up every unchanged form.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','item_source::Revision','struct','Holds a revision''s items, so the items'' declarations are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','item_source::RevisionFault','enum','Names why a revision''s item source faults, so the fault''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','item_source::SurfaceItems','struct','Holds the same lowering behind the incremental checker''s item source, so the items'' declarations are read.',NULL,'fits','sound',NULL);

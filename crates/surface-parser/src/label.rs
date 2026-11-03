@@ -1493,7 +1493,9 @@ impl Labeling
     ///
     /// # Specification
     /// - requires: this is the labeling of `before`.
-    /// - ensures: the labeling of `after`, as [`new`](Self::new) labels it.
+    /// - ensures: the labeling of `after`, as [`new`](Self::new) labels it, and
+    ///   how many of its tokens the scan labeled afresh: the tokens from the
+    ///   restart to the resynchronizing boundary.
     /// - panics: none.
     /// - economy: scans from the restart to the resynchronizing boundary; the
     ///   tokens past it are shifted in place, and the arm bars are marked over
@@ -1517,12 +1519,12 @@ impl Labeling
             reason = "bounded: labels `before` and `after` whole, linear in the source like the split, join and commit every relabeled revision feeds"
         )
     )]
-    #[spec(requires: self == Self::new(before), ensures: |ret| ret.eq(&Self::new(after)))]
+    #[spec(requires: self == Self::new(before), ensures: |ret| ret.0.eq(&Self::new(after)) && ret.1.0 <= ret.0.tokens().len())]
     pub fn relabel(
         self,
         before: SourceFragment<'_>,
         after: SourceFragment<'_>,
-    ) -> Self
+    ) -> (Self, TokenCount)
     {
         let old = AsRef::<str>::as_ref(&before).as_bytes();
         let new = AsRef::<str>::as_ref(&after).as_bytes();
@@ -1635,9 +1637,15 @@ impl Labeling
         within.extend(fresh_within);
         within.extend(tail);
         mark_arm_bars(source_bytes, &mut tokens);
-        Self { tokens, within }
+        (Self { tokens, within }, TokenCount(fresh_count))
     }
 }
+
+/// A count of tokens: those a relabel labeled afresh.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TokenCount(pub usize);
+
 /// Scan one lexeme of string interior: a closing quote, an escape, an
 /// interpolation opener `${`, or a fragment run up to the next `"` / `\` /
 /// `${`.
@@ -4757,7 +4765,7 @@ mod tests
         after: SourceFragment<'_>,
     ) -> Labeling
     {
-        Labeling::new(before).relabel(before, after)
+        Labeling::new(before).relabel(before, after).0
     }
 
     #[test]

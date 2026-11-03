@@ -10,6 +10,7 @@
 //! | throughput | bytes and significant tokens per second of the corpus's cold parse | each corpus source parsed [`RUNS`] times, the fastest run kept |
 //! | recovery | each mutant's fate over the syntax exemplars | `gandr ledger recovery`'s sweep |
 //! | ambiguity | each decision's settling stage, the candidates it read, and the windows and window tokens it molded | the molder's [`DecisionCensus`] over every corpus source |
+//! | incremental | per edit, the tokens re-labelled and the forms re-molded against what the edit touches | a form store per [`SAMPLE`] source, through the latency workload's keystrokes and the edit sweep's form edits |
 //!
 //! The corpus is the sweeps' corpus, its strict and fixture roots, listed by
 //! `gandr-workflow-sweep`. The latency workload's client is the benchmark
@@ -26,6 +27,7 @@ use std::io::Write as _;
 use std::path::Path;
 use std::time::Instant;
 
+use gandr_core_fork::Serial;
 use gandr_surface_dispatcher::LedgerRun;
 use gandr_surface_dispatcher::LedgerTask;
 use gandr_surface_dispatcher::RecoveryTally;
@@ -40,6 +42,7 @@ use gandr_surface_parser::MeldState;
 use gandr_surface_parser::Molder;
 use gandr_surface_parser::label;
 use gandr_surface_parser::parse;
+use gandr_surface_session::FormStore;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use gandr_workflow_sweep::SweepError;
@@ -589,6 +592,212 @@ fn latency() -> Result<Latency, Failure>
     })
 }
 
+/// What one part of the incremental script read, summed over its edits.
+#[derive(Clone, Copy, Debug, Default)]
+struct Incremental
+{
+    /// The edits.
+    edits: Tally,
+    /// The tokens the form store's relabel labeled afresh.
+    relabeled: Tally,
+    /// The tokens each edit touches.
+    tokens: Tally,
+    /// The forms the form store molded rather than took up.
+    molded: Tally,
+    /// The forms each edit touches.
+    forms: Tally,
+}
+
+impl Incremental
+{
+    /// This reading and `more`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn and(
+        self,
+        more: Self,
+    ) -> Self
+    {
+        Self {
+            edits: self.edits.and(more.edits),
+            relabeled: self.relabeled.and(more.relabeled),
+            tokens: self.tokens.and(more.tokens),
+            molded: self.molded.and(more.molded),
+            forms: self.forms.and(more.forms),
+        }
+    }
+}
+
+/// What an edit touches in the revision after it: the tokens and the
+/// predicted form runs that meet the bytes the edit rewrote, at least one of
+/// each. The rewritten bytes run from the end of the two revisions' longest
+/// common prefix to the start of their longest common suffix. A run of bytes
+/// meets them when it overlaps them, or holds their point when the edit only
+/// deleted.
+///
+/// # Specification
+/// trivial.
+fn touched(
+    molder: &Molder<'_>,
+    before: SourceText<'_>,
+    after: SourceText<'_>,
+) -> (Tally, Tally)
+{
+    let old = <&str>::from(before).as_bytes();
+    let new = <&str>::from(after).as_bytes();
+    let prefix = old
+        .iter()
+        .zip(new)
+        .take_while(|&(left, right)| left == right)
+        .count();
+    let room = old.len().min(new.len()).saturating_sub(prefix);
+    let suffix = old
+        .iter()
+        .rev()
+        .zip(new.iter().rev())
+        .take(room)
+        .take_while(|&(left, right)| left == right)
+        .count();
+    let (start, end) = (prefix, new.len().saturating_sub(suffix));
+    let meets = |from: usize, to: usize| {
+        if start == end {
+            from <= start && start <= to
+        }
+        else {
+            from < end && to > start
+        }
+    };
+    let offset = |at: u32| usize::try_from(at).unwrap_or(usize::MAX);
+    let tokens = label(SourceFragment::from(<&str>::from(after)));
+    let own = tokens
+        .iter()
+        .filter(|token| meets(offset(token.start), offset(token.end)))
+        .count();
+    let forms = molder
+        .form_runs(&tokens, after)
+        .iter()
+        .filter(|run| {
+            let first = tokens.get(usize::from(run.start()));
+            let last = usize::from(run.end())
+                .checked_sub(1)
+                .and_then(|at| tokens.get(at));
+            first
+                .zip(last)
+                .is_some_and(|(first, last)| meets(offset(first.start), offset(last.end)))
+        })
+        .count();
+    (Tally(own.max(1)), Tally(forms.max(1)))
+}
+
+/// The revisions of `revisions` parsed in order through one form store, each
+/// after the first read as an edit of the one before it.
+///
+/// # Specification
+/// trivial.
+fn script(
+    pbg: &Pbg,
+    molder: &Molder<'_>,
+    revisions: &[String],
+) -> Result<Incremental, Failure>
+{
+    let mut store = FormStore::default();
+    let mut read = Incremental::default();
+    let mut prior: Maybe<&String, Unparsed> = Maybe::Absent(Unparsed::First);
+    for revision in revisions {
+        let text = SourceText::from(revision.as_str());
+        let (parsed, census) = store.parse(pbg, text, &Serial)?;
+        drop(core::hint::black_box(parsed));
+        if let Maybe::Present(before) = prior {
+            let (tokens, forms) = touched(molder, SourceText::from(before.as_str()), text);
+            read = read.and(Incremental {
+                edits: Tally(1),
+                relabeled: Tally(census.relabeled().0),
+                tokens,
+                molded: Tally(usize::from(census.molded())),
+                forms,
+            });
+        }
+        prior = Maybe::Present(revision);
+    }
+    Ok(read)
+}
+
+/// Why a revision of a script has no revision before it.
+#[derive(Clone, Copy, Debug)]
+enum Unparsed
+{
+    /// It is the script's first revision, which the store parses whole.
+    First,
+}
+
+/// The edit sweep's revisions of `text`: the source, a declaration inserted
+/// at its middle form, its first form deleted, its last form moved first,
+/// and the source again.
+///
+/// # Specification
+/// trivial.
+fn form_edits(
+    molder: &Molder<'_>,
+    text: SourceText<'_>,
+) -> Vec<String>
+{
+    let original = <&str>::from(text);
+    let tokens = label(SourceFragment::from(original));
+    let mut starts: Vec<usize> = molder
+        .form_runs(&tokens, text)
+        .iter()
+        .filter_map(|run| tokens.get(usize::from(run.start())))
+        .filter_map(|token| usize::try_from(token.start).ok())
+        .collect();
+    starts.push(original.len());
+    let cut = |at: usize| original.split_at_checked(at).unwrap_or((original, ""));
+    let middle = starts.get(starts.len().div_euclid(2)).copied().unwrap_or(0);
+    let first_end = starts.get(1).copied().unwrap_or(original.len());
+    let last_start = starts.iter().rev().nth(1).copied().unwrap_or(0);
+    let (head, tail) = cut(middle);
+    let (front, last) = cut(last_start);
+    vec![
+        String::from(original),
+        format!("{head}def inserted = 1;\n{tail}"),
+        String::from(cut(first_end).1),
+        format!("{last}\n{front}"),
+        String::from(original),
+    ]
+}
+
+/// The incremental workload: over each [`SAMPLE`] source, the keystroke
+/// part types the latency workload's line back one character per revision,
+/// and the form part runs the edit sweep's revisions, each through a form
+/// store of its own. Answers the keystroke part's reading, then the form
+/// part's.
+///
+/// # Specification
+/// trivial.
+fn incremental(pbg: &Pbg) -> Result<(Incremental, Incremental), Failure>
+{
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let molder = Molder::new(pbg);
+    let mut keystroke = Incremental::default();
+    let mut form = Incremental::default();
+    for relative in SAMPLE {
+        let text = std::fs::read_to_string(root.join(relative))?;
+        let source = SourceText::from(text.as_str());
+        let Maybe::Present(Keystrokes { opened, typed }) = keystrokes(source)
+        else {
+            return Err(Failure::Untyped(relative));
+        };
+        let mut revisions = Vec::with_capacity(typed.len().saturating_add(1));
+        revisions.push(opened);
+        revisions.extend(typed);
+        let typed = script(pbg, &molder, &revisions)?;
+        keystroke = keystroke.and(typed);
+        let edited = script(pbg, &molder, &form_edits(&molder, source))?;
+        form = form.and(edited);
+    }
+    Ok((keystroke, form))
+}
+
 /// Read every axis this report holds and print its table.
 ///
 /// # Specification
@@ -609,6 +818,7 @@ fn main() -> Result<(), Failure>
     }
     let tally = recovery()?;
     let latency = latency()?;
+    let (keystroke, form) = incremental(&pbg)?;
     let swept = Tally(tally.swept);
     let of_swept = |part: usize| Share {
         part: Tally(part),
@@ -712,6 +922,33 @@ fn main() -> Result<(), Failure>
             whole: decisions,
         }
     )?;
+    for (part, read) in [("keystroke", keystroke), ("form", form)] {
+        writeln!(table, "| incremental | {part} edits | {} |", read.edits)?;
+        writeln!(
+            table,
+            "| incremental | {part}: tokens re-labelled per edit | {} |",
+            Ratio {
+                part: read.relabeled,
+                whole: read.edits,
+            }
+        )?;
+        writeln!(
+            table,
+            "| incremental | {part}: tokens re-labelled per token the edit touches | {} |",
+            Ratio {
+                part: read.relabeled,
+                whole: read.tokens,
+            }
+        )?;
+        writeln!(
+            table,
+            "| incremental | {part}: forms re-molded per form the edit touches | {} |",
+            Ratio {
+                part: read.molded,
+                whole: read.forms,
+            }
+        )?;
+    }
     io::stdout().write_all(table.as_bytes())?;
     Ok(())
 }

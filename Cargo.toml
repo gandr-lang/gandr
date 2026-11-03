@@ -319,6 +319,7 @@ path = "crates/core-checker"
 # consumers:
 # - core-checker
 # - surface-dispatcher
+# - surface-driver (dev)
 # - surface-session
 [workspace.dependencies.gandr-core-fork]
 path = "crates/core-fork"
@@ -741,6 +742,7 @@ path = "crates/surface-repl"
 # The interactive session: each revision lowered, judged, resumed through the
 # incremental checker and checkpointed.
 # consumers:
+# - surface-driver (dev)
 # - surface-lsp
 # - surface-repl
 [workspace.dependencies.gandr-surface-session]

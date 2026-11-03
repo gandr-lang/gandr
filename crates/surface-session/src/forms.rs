@@ -116,6 +116,7 @@ use gandr_surface_parser::MeldError;
 use gandr_surface_parser::Molder;
 use gandr_surface_parser::ParkedUnit;
 use gandr_surface_parser::ParseResult;
+use gandr_surface_parser::TokenCount;
 use gandr_surface_parser::TokenRun;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
@@ -151,8 +152,9 @@ impl From<FormCount> for usize
     }
 }
 
-/// How a revision's parse was assembled: its forms, and how many of them
-/// were molded rather than taken up from the form store.
+/// How a revision's parse was assembled: its forms, how many of them were
+/// molded rather than taken up from the form store, and how many tokens its
+/// labeling scanned afresh.
 ///
 /// # Specification
 /// - requires: constructed by the form store's parse.
@@ -173,6 +175,9 @@ pub struct FormCensus
     forms: FormCount,
     /// The forms molded rather than taken up.
     molded: FormCount,
+    /// The tokens labeled afresh: every token of a revision labeled whole, and
+    /// the relabel's scan around the edit otherwise.
+    relabeled: TokenCount,
 }
 
 impl FormCensus
@@ -197,6 +202,18 @@ impl FormCensus
     pub const fn molded(&self) -> FormCount
     {
         self.molded
+    }
+
+    /// The tokens labeled afresh rather than shifted from the latest
+    /// revision's labeling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn relabeled(&self) -> TokenCount
+    {
+        self.relabeled
     }
 }
 
@@ -301,6 +318,7 @@ impl FormStore
     /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
     /// - witness: `tests::forms::a_one_form_edit_molds_only_the_forms_that_read_it`
     /// - witness: `forms::tests::a_unit_of_another_grammar_is_molded_again`
+    #[inline]
     #[spec(ensures: |ret| self.units.len() <= ret.as_ref().map_or(usize::MAX, |&(_, census)| usize::from(census.forms))
         && (ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(ref parsed, census)| parsed.tree().source() == revision
             && census.molded <= census.forms)))]
@@ -315,7 +333,7 @@ impl FormStore
     {
         let mut molder = Molder::new(grammar);
         let text = <&str>::from(revision);
-        let labeling = match core::mem::take(&mut self.labeled) {
+        let (labeling, relabeled) = match core::mem::take(&mut self.labeled) {
             Labeled::Revision {
                 text: before,
                 labeling,
@@ -323,7 +341,7 @@ impl FormStore
                 SourceFragment::from(before.as_str()),
                 SourceFragment::from(text),
             ),
-            Labeled::Nothing => Labeling::new(SourceFragment::from(text)),
+            Labeled::Nothing => whole(revision),
         };
         let split = FormSplit::labeled(&molder, revision, labeling);
         let runs = split.runs();
@@ -354,6 +372,7 @@ impl FormStore
         let census = FormCensus {
             forms: FormCount(runs.len()),
             molded: FormCount(molded.len()),
+            relabeled,
         };
         let mut fresh = BTreeMap::new();
         for (RunPosition(position), unit) in molded {
@@ -423,6 +442,7 @@ impl FormStore
     ///   not hold, and leave the store as the next submission's census reads
     ///   it.
     /// - witness: `forms::tests::a_held_parse_keeps_the_store`
+    #[inline]
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(ref parsed, census)|
         parsed.tree().source() == revision && census.molded <= census.forms))]
     pub fn parse_held<'text, F>(
@@ -435,11 +455,8 @@ impl FormStore
         F: Fork,
     {
         let mut molder = Molder::new(grammar);
-        let split = FormSplit::labeled(
-            &molder,
-            revision,
-            Labeling::new(SourceFragment::from(<&str>::from(revision))),
-        );
+        let (labeling, relabeled) = whole(revision);
+        let split = FormSplit::labeled(&molder, revision, labeling);
         let runs = split.runs();
         let held: Vec<Option<&ParkedUnit>> = runs
             .iter()
@@ -464,6 +481,7 @@ impl FormStore
         let census = FormCensus {
             forms: FormCount(runs.len()),
             molded: FormCount(molded.len()),
+            relabeled,
         };
         let mut units = Vec::with_capacity(runs.len());
         for (position, (&run, parked)) in runs.iter().zip(&held).enumerate() {
@@ -477,6 +495,17 @@ impl FormStore
         }
         Ok((split.join(&mut molder, units)?.into_result(), census))
     }
+}
+
+/// `revision` labeled whole, and its every token counted as labeled afresh.
+///
+/// # Specification
+/// trivial.
+fn whole(revision: SourceText<'_>) -> (Labeling, TokenCount)
+{
+    let labeling = Labeling::new(SourceFragment::from(<&str>::from(revision)));
+    let tokens = TokenCount(labeling.tokens().len());
+    (labeling, tokens)
 }
 
 /// A run's position among its revision's runs.
