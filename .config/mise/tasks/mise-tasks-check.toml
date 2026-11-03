@@ -2073,15 +2073,68 @@ echo "stall check OK: $(jq length .config/stall/cases.json) cases read as record
 # `systemd --user` unit or the `launchd` agent that `stall:watch --install`
 # and `toolchain:follow --install` install. Each case in
 # `.config/service/cases.json` holds a host and the unit text it must give,
-# and a host neither Linux nor macOS is refused.
+# and a host neither Linux nor macOS is refused. Each case in
+# `.config/service/reinstall.json` then runs `service.bash`'s macOS install
+# twice over a stub `launchctl` (#4875). The stub holds a booted-out agent for
+# the case's count of `print` polls and refuses a bootstrap while it holds
+# one, as launchd does. It also refuses a bootstrap of the agent that runs
+# the case's refused task. The case holds the second install's exit and the
+# task the loaded agent runs.
 ["check:service"]
-description = "The host service's unit or agent reads as recorded for each host and task"
+description = "The host service's unit or agent reads as recorded for each host and task, and a macOS reinstall leaves an agent loaded"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 .config/cases/run.bash service .config/service/cases.json --programs .config/service --raw service.jq
-echo "service check OK: $(jq length .config/service/cases.json) cases read as recorded"
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+mkdir -p "$scratch/bin"
+printf '%s\n' '#!/usr/bin/env bash' 'echo Darwin' > "$scratch/bin/uname"
+cat > "$scratch/bin/launchctl" << 'STUB'
+#!/usr/bin/env bash
+state=$STUB_LAUNCHD
+case $1 in
+  print)
+    [[ -f $state/agent ]] || exit 113
+    [[ -f $state/teardown ]] || exit 0
+    left=$(< "$state/teardown")
+    if (( left > 0 )); then echo $(( left - 1 )) > "$state/teardown"; exit 0; fi
+    rm -f "$state/agent" "$state/teardown"
+    exit 113 ;;
+  bootout)
+    [[ -f $state/agent ]] || exit 3
+    echo "$STUB_TEARDOWN" > "$state/teardown" ;;
+  bootstrap)
+    if [[ -f $state/agent ]] || { [[ -n $STUB_REFUSE ]] && grep -q "<string>$STUB_REFUSE</string>" "$3"; }; then
+      echo 'Bootstrap failed: 5: Input/output error' >&2
+      exit 5
+    fi
+    cp "$3" "$state/agent" ;;
+  *) echo "stub launchctl: $*" >&2; exit 1 ;;
+esac
+STUB
+chmod +x "$scratch/bin/uname" "$scratch/bin/launchctl"
+failed=0
+while IFS= read -r case; do
+  name=$(jq -r .name <<< "$case")
+  rm -rf "$scratch/home" "$scratch/launchd"
+  mkdir -p "$scratch/home" "$scratch/launchd"
+  got=0
+  HOME="$scratch/home" PATH="$scratch/bin:$PATH" STUB_LAUNCHD="$scratch/launchd" \
+    STUB_TEARDOWN="$(jq .teardown <<< "$case")" STUB_REFUSE="$(jq -r '.refuse // ""' <<< "$case")" \
+    bash -c 'source .config/service/service.bash; service_pause=0
+      STUB_REFUSE= service_unit install case "$1" case && service_unit install case "$2" case' \
+    reinstall "$(jq -r .first <<< "$case")" "$(jq -r .second <<< "$case")" 2> "$scratch/err" || got=$?
+  runs=$(sed -n 's|.*<string>run</string><string>\([^<]*\)</string>.*|\1|p' "$scratch/launchd/agent" 2> /dev/null || true)
+  if [[ $got != $(jq .exit <<< "$case") || $runs != $(jq -r .runs <<< "$case") ]]; then
+    printf 'reinstall case FAILED: %s\n  exit %s, the loaded agent runs `%s`; wanted exit %s, running `%s`\n%s\n' "$name" "$got" "$runs" \
+      "$(jq .exit <<< "$case")" "$(jq -r .runs <<< "$case")" "$(cat "$scratch/err")" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/service/reinstall.json)
+(( failed == 0 )) || exit 1
+echo "service check OK: $(jq length .config/service/cases.json) cases read as recorded, $(jq length .config/service/reinstall.json) reinstalls leave an agent loaded"
 '''
 
 # The toolchain follower's pruning (#4499): `prune.jq` names the build
