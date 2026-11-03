@@ -37,6 +37,9 @@ use gandr_surface_lsp::Served;
 use gandr_surface_lsp::Spelling;
 use gandr_surface_lsp::TransportFault;
 use gandr_surface_lsp::Workspace;
+use gandr_surface_lsp::client::Client;
+use gandr_surface_lsp::client::Method;
+use gandr_surface_lsp::client::hosting;
 use gandr_surface_lsp::read_frame;
 use gandr_surface_lsp::serve;
 use gandr_surface_lsp::write_frame;
@@ -656,6 +659,45 @@ fn a_stream_closed_without_exit_ends_abruptly()
             Err(TransportFault::Truncated)
         ),
         "a stream breaking inside a frame is a transport fault"
+    );
+}
+
+#[test]
+fn a_hosted_workload_answers_what_it_read()
+{
+    let source = Source {
+        uri: "file:///tmp/hosted.gandr".to_owned(),
+        text: "def answer = 42 ;\ndef broken = missing ;\n".to_owned(),
+    };
+    let tokens = Method("textDocument/semanticTokens/full");
+    let params = json!({"textDocument": {"uri": source.uri}});
+    let mut messages = opening();
+    messages.push(open(&source));
+    let ((id, written), served) = hosting(Workspace::spelled(Spelling::Unicode), {
+        let (messages, params) = (messages.clone(), params.clone());
+        move |mut client: Client| {
+            client.send(&messages)?;
+            let answered = client.request(tokens, &params)?;
+            client.send(&closing())?;
+            let id = answered.answer.get("id").cloned().unwrap_or(Value::Null);
+            let mut written = answered.before;
+            written.push(answered.answer);
+            written.extend(client.finish()?);
+            Ok((id, written))
+        }
+    })
+    .expect("the hosted session runs");
+    messages.push(json!({"jsonrpc": "2.0", "id": id, "method": tokens.0, "params": params}));
+    messages.extend(closing());
+    let (streamed, expected) = session(&messages);
+    assert_eq!(
+        served, streamed,
+        "the hosted session ends as the streamed one"
+    );
+    assert_eq!(served, Served::Clean, "exit after shutdown ends it cleanly");
+    assert_eq!(
+        written, expected,
+        "the hosted client reads what the in-memory streams carry, in order"
     );
 }
 
