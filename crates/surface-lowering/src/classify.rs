@@ -259,7 +259,6 @@ impl LoweringRefusal<'_>
             | Self::NotATranslation { .. }
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
-            | Self::LowercaseModuleName { .. }
             | Self::UnlabelledRequirement { .. }
             | Self::TelescopeCycle { .. }
             | Self::ImplicitUnsupplied { .. }
@@ -335,7 +334,6 @@ impl LoweringRefusal<'_>
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
             | Self::UninterfacedMember { .. }
-            | Self::LowercaseModuleName { .. }
             | Self::UnlabelledRequirement { .. }
             | Self::TelescopeCycle { .. }
             | Self::ImplicitUnsupplied { .. }
@@ -799,7 +797,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 80_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 79_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -913,10 +911,6 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("T"),
                 form: AscriptionForm::Kinded,
-            },
-            LoweringRefusal::LowercaseModuleName {
-                span: empty,
-                name: SurfaceName::from("natAdd"),
             },
             LoweringRefusal::UnlabelledRequirement {
                 span: empty,
@@ -1160,7 +1154,6 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::ASCRIPTION),
-            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

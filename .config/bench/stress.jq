@@ -1,4 +1,4 @@
-# What `bench:stress` prints for its bounded check of `library/math` (#3855):
+# What `bench:stress` prints for its bounded check of `library/std` (#3855):
 # `rows` when the check passes, `past bound` when it meets the memory bound or
 # the wall-clock limit, never retried larger. Under `ulimit -v` the driver's
 # failed allocation aborts it, and its errors hold `memory allocation of`. Any

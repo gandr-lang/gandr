@@ -6,7 +6,7 @@
 ///
 /// Each composite at reflexivities computes, so each declaration but `cattCylinder3` states a composite of reflexivities and proves it by reflexivity. `cattCylinder3` holds its cells free.
 ///
-/// - see: library/math/src/cylinder.gandr
+/// - see: library/std/src/math/cylinder.gandr
 /// - see: #3712 — the composites at dimension 2, written from Catt's terms
 /// - see: #3931 — the composite at `n + 1` as `fill` at the composite at `n`
 /// - see: #3833 — `cylcomp(3,1,3)` at identity verticals beside Catt's type
@@ -14,10 +14,10 @@
 /// - see: #4198 — the composites along dimension 2 by suspension
 
 // `cylinderComposite2`, `cylinderStack2`, `coneComposite2`, `cylinderFill2`, `cylinderFillAt2`, `cylinderFill3`, `liftHorizontal`, `cylinderCompositeCells2`, `cylinderStackCells2`, `coneCompositeCells2`, `cylinderSuspended3`, `coneSuspended3`.
-import "../../../library/math/src/cylinder.gandr";
+import std.math.cylinder (cylinderComposite2, cylinderStack2, coneComposite2, cylinderFill2, cylinderFillAt2, cylinderFill3, liftHorizontal, cylinderCompositeCells2, cylinderStackCells2, coneCompositeCells2, cylinderSuspended3, coneSuspended3);
 
 // `whiskerLeft` and `whiskerRight`.
-import "../../../library/math/src/path.gandr";
+import std.math.path (whiskerLeft, whiskerRight);
 
 /// Two squares of reflexivities side by side compose to the reflexivity of the reflexivity.
 def cylinderCompositeAtHere(A : Type, x : A) -> Path(

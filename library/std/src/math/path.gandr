@@ -1,4 +1,4 @@
-// `math.path`: the algebra of paths, written as library definitions.
+// `std.math.path`: the algebra of paths, written as library definitions.
 //
 // The composites of naturality and coherence state their types in a
 // path's endpoints and its action under a function. The native forms
@@ -22,7 +22,7 @@
 //
 // - see: #3711 — the naturality meta-operation these definitions serve
 // - see: #3922 — `natural`, and `assoc_nat` as its instance
-// - see: #628 — `math` beside `std`, and the groupoid laws it holds
+// - see: #628 — the groupoid laws `std.math` holds
 
 /// The composite of two paths, whose type states its endpoints.
 pub def join(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(A, x, z) {

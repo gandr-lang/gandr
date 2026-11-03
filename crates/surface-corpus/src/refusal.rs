@@ -982,8 +982,6 @@ pub enum RefusalName
     /// A type family whose parameters disagree with the indices its kind
     /// states.
     FamilyTelescope,
-    /// A top-level module named with a lowercase initial.
-    LowercaseModuleName,
     /// An effect theory a world's requirement row names under no label.
     UnlabelledRequirement,
     /// A declaration binding parameters in an implicit telescope `@[…]`.
@@ -1288,7 +1286,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 236_usize] = [
+    pub const VOCABULARY: [Self; 235_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1400,7 +1398,6 @@ impl RefusalName
         Self::UnreadCells,
         Self::UninterfacedMember,
         Self::FamilyTelescope,
-        Self::LowercaseModuleName,
         Self::UnlabelledRequirement,
         Self::ImplicitTelescope,
         Self::TelescopeCycle,
@@ -1620,8 +1617,7 @@ impl RefusalName
         b"UnreadAscription") | (Self::UnreadCells, b"UnreadCells") | (Self::UnstatedComponent(_), b"UnstatedComponent") |
         (Self::UndescribedMember(_), b"UndescribedMember") |
         (Self::UninterfacedMember, b"UninterfacedMember") |
-        (Self::FamilyTelescope, b"FamilyTelescope") | (Self::LowercaseModuleName,
-        b"LowercaseModuleName") |
+        (Self::FamilyTelescope, b"FamilyTelescope") |
         (Self::UnlabelledRequirement, b"UnlabelledRequirement") |
         (Self::ImplicitTelescope, b"ImplicitTelescope") |
         (Self::TelescopeCycle, b"TelescopeCycle") |
@@ -1997,7 +1993,6 @@ impl RefusalName
             Self::UndescribedMember(_) => "UndescribedMember",
             Self::UninterfacedMember => "UninterfacedMember",
             Self::FamilyTelescope => "FamilyTelescope",
-            Self::LowercaseModuleName => "LowercaseModuleName",
             Self::UnlabelledRequirement => "UnlabelledRequirement",
             Self::ImplicitTelescope => "ImplicitTelescope",
             Self::TelescopeCycle => "TelescopeCycle",
@@ -2747,8 +2742,7 @@ impl Refusal<'_>
         RefusalName::SignatureMismatch(_)) | (LoweringRefusal::UndescribedMember { .. },
         RefusalName::UndescribedMember(_)) | (LoweringRefusal::FamilyTelescope { .. },
         RefusalName::FamilyTelescope) | (LoweringRefusal::UninterfacedMember { .. },
-        RefusalName::UninterfacedMember) | (LoweringRefusal::LowercaseModuleName { .. },
-        RefusalName::LowercaseModuleName) | (LoweringRefusal::UnlabelledRequirement { .. },
+        RefusalName::UninterfacedMember) | (LoweringRefusal::UnlabelledRequirement { .. },
         RefusalName::UnlabelledRequirement) | (LoweringRefusal::ImplicitTelescope { .. },
         RefusalName::ImplicitTelescope) | (LoweringRefusal::TelescopeCycle { .. },
         RefusalName::TelescopeCycle) | (LoweringRefusal::ImplicitUnsupplied { .. },
@@ -2860,7 +2854,6 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         },
         LoweringRefusal::FamilyTelescope { .. } => RefusalName::FamilyTelescope,
         LoweringRefusal::UninterfacedMember { .. } => RefusalName::UninterfacedMember,
-        LoweringRefusal::LowercaseModuleName { .. } => RefusalName::LowercaseModuleName,
         LoweringRefusal::UnlabelledRequirement { .. } => RefusalName::UnlabelledRequirement,
         LoweringRefusal::ImplicitTelescope { .. } => RefusalName::ImplicitTelescope,
         LoweringRefusal::TelescopeCycle { .. } => RefusalName::TelescopeCycle,

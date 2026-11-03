@@ -409,7 +409,7 @@ fn declarations(
     // a module binding and nothing else: no rule projects from it, so
     // `MkSet(IntOrd).T` has no reading but the one the lowering refuses by
     // name.
-    let mut module = r(
+    out.push(r(
         RuleName("module_declaration"),
         Provenance("module_declaration"),
         s,
@@ -433,13 +433,7 @@ fn declarations(
                 ]),
             ]),
         ]),
-    );
-    module.adaptations.push(Adaptation::new(
-        RuleName("module_declaration"),
-        SurfaceForm("lowercase_module_name"),
-        AdaptationReason("parse-and-decline: a top-level module named with a lowercase initial stays admissible, so the declaration reaches the lowering's named decline instead of a parse repair whose recovery depends on what the module's signature and body hold"),
     ));
-    out.push(module);
 
     // --- flow declaration --------------------------------------------------
     // `flow f : V1 ~~> V2 where { … }`: a flow from the signature `V1` to `V2`,

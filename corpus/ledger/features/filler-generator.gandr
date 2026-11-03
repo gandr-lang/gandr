@@ -10,7 +10,7 @@
 /// - see: corpus/ledger/features/naturality.gandr
 
 // `assoc`.
-import "../../../library/math/src/path.gandr";
+import std.math.path (assoc);
 
 /// One cell, its own reflexivity: the generator over the 1-chain.
 def selfLoop(A : Type, x : A, y : A) -> (f : Path(A, x, y)) => Path(Path(A, x, y), f, f) {

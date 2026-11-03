@@ -199,15 +199,15 @@ quenchant_shape::reason_enum! {
 /// [`DecodeError`] from [`decode_measured`].
 ///
 /// # Adequacy
-/// - hypothesis: L2 — over `library/math`, whose `math.cylinder` imports
-///   `math.path` and the prelude, each source's rows are the declarations it
-///   writes, in order, and none its closure holds. Each row reads the segment
-///   of the artifact's declaration of its name, which a row read at its module
-///   position does not. A shared size never passes its unshared size, which
-///   separates the two columns swapped. Each row's census charges at least one
-///   goal and its admission is timed, which a row read from an untimed or
-///   unchecked admission is not. A walk not asked to measure answers that it
-///   recorded no positions, rather than no rows.
+/// - hypothesis: L2 — over `library/std/src/math`, whose `std.math.cylinder`
+///   imports `std.math.path` and the prelude, each source's rows are the
+///   declarations it writes, in order, and none its closure holds. Each row
+///   reads the segment of the artifact's declaration of its name, which a row
+///   read at its module position does not. A shared size never passes its
+///   unshared size, which separates the two columns swapped. Each row's census
+///   charges at least one goal and its admission is timed, which a row read
+///   from an untimed or unchecked admission is not. A walk not asked to measure
+///   answers that it recorded no positions, rather than no rows.
 /// - witness: `tests::measure::a_source_measures_the_declarations_it_writes_and_none_it_imports`
 #[inline]
 #[spec(ensures: |ret| match (composed, ret.as_ref()) {

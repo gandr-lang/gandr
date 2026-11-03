@@ -52,7 +52,7 @@ fn sizes_by_name(
     sizes
 }
 
-/// Each source of `library/math` measures the declarations it writes, in the
+/// Each source of `std.math` measures the declarations it writes, in the
 /// order it writes them, and none of the closure it imports. Each row reads
 /// the sizes of the artifact's declaration of that name, the census the
 /// kernel's check of it charged and the time its admission took. Some row
@@ -61,7 +61,7 @@ fn sizes_by_name(
 #[test]
 fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
 {
-    let math = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../library/math");
+    let math = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../library/std/src/math");
     let mut written = BTreeMap::new();
     let mut kept = 0_u64;
     let ControlFlow::Continue(_) = Walk::new(vec![math.clone()]).measuring().visit(
@@ -71,7 +71,7 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
                 path, ref composed, ..
             } = step
             else {
-                panic!("each math source is read: {step:?}");
+                panic!("each std.math source is read: {step:?}");
             };
             let Composed::Settled {
                 kernel: Maybe::Present(ref kernel),
@@ -159,11 +159,11 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
             ]
             .as_slice()
         ),
-        "math.cylinder measures the composites it writes, none of math.path's"
+        "std.math.cylinder measures the composites it writes, none of std.math.path's"
     );
     assert!(
         kept > 0,
-        "a declaration of math stands on the outcomes an earlier admission kept"
+        "a declaration of std.math stands on the outcomes an earlier admission kept"
     );
     let mut unasked = 0_usize;
     let ControlFlow::Continue(_) = Walk::new(vec![math]).visit(
@@ -173,7 +173,7 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
                 path, ref composed, ..
             } = step
             else {
-                panic!("each math source is read: {step:?}");
+                panic!("each std.math source is read: {step:?}");
             };
             assert!(
                 matches!(

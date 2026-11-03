@@ -1,4 +1,4 @@
-// `std.console`: the standard streams, written and read through the console's
+// `std.io`: the standard streams, written and read through the console's
 // root capability, which `std.authority`'s `console` opens from the authority
 // `main` is handed. A program reaches the streams through a capability it was
 // given, never through the ambient interfaces, so what it may print or read

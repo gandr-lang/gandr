@@ -1318,17 +1318,6 @@ pub enum LoweringRefusal<'source>
         fault: TelescopeFault,
     },
 
-    /// A top-level module named with a lowercase initial, a spelling the
-    /// grammar admits so it is declined here by name, and reserves for nested
-    /// modules.
-    LowercaseModuleName
-    {
-        /// The bytes the declaration covers.
-        span: ByteSpan,
-        /// The name as it was written.
-        name: SurfaceName<'source>,
-    },
-
     /// An effect theory a world's requirement row names under no label: code
     /// at the world performs a theory through the capability its label binds,
     /// and the theory's own name performs nothing (#1106).
@@ -2174,11 +2163,6 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::FamilyTelescope { name, fault, .. } => {
                 write!(f, "the type member `{name}` {fault}")
             },
-            Self::LowercaseModuleName { name, .. } => write!(
-                f,
-                "the module `{name}` is named with a lowercase initial; a top-level module's \
-                 name starts with an uppercase letter"
-            ),
             Self::UnlabelledRequirement { name, .. } => write!(
                 f,
                 "the world requires the theory `{name}` under no label, so code at the world has \
@@ -2597,7 +2581,6 @@ impl LoweringRefusal<'_>
             | Self::UninterfacedMember { span, .. }
             | Self::UndescribedMember { span, .. }
             | Self::FamilyTelescope { span, .. }
-            | Self::LowercaseModuleName { span, .. }
             | Self::UnlabelledRequirement { span, .. }
             | Self::ImplicitTelescope { span }
             | Self::TelescopeCycle { span, .. }
@@ -2707,7 +2690,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 77_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 76_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2821,10 +2804,6 @@ mod tests
                 span: s(36_usize, 37_usize),
                 name: SurfaceName::from("T"),
                 form: AscriptionForm::Kinded,
-            },
-            LoweringRefusal::LowercaseModuleName {
-                span: s(38_usize, 39_usize),
-                name: SurfaceName::from("natAdd"),
             },
             LoweringRefusal::UnlabelledRequirement {
                 span: s(141_usize, 142_usize),
@@ -3090,7 +3069,6 @@ mod tests
             s(90_usize, 94_usize),
             s(34_usize, 35_usize),
             s(36_usize, 37_usize),
-            s(38_usize, 39_usize),
             s(141_usize, 142_usize),
             s(41_usize, 42_usize),
             s(77_usize, 78_usize),

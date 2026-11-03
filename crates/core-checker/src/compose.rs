@@ -78,7 +78,7 @@
 //!   a pasting whose cells meet other than column by column, a level past two.
 //! - **The whiskers are the generator's.** The horizontal fold uses the
 //!   transports the filler generator lifts by, so a level-two composite and a
-//!   filler over the same shape agree by syntax. `math.path` writes its
+//!   filler over the same shape agree by syntax. `std.math.path` writes its
 //!   whiskers as level-two composites, so they agree with the fold too.
 //!   Reversal: a whisker read as `ap`, if the two whiskers are related by a
 //!   stated conversion.

@@ -645,8 +645,9 @@ impl Walk
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — a measuring walk over `library/math` reads each
-    ///   source's rows, and a walk not asked answers that it recorded none.
+    /// - hypothesis: L2 — a measuring walk over `library/std/src/math` reads
+    ///   each source's rows, and a walk not asked answers that it recorded
+    ///   none.
     /// - witness: `tests::measure::a_source_measures_the_declarations_it_writes_and_none_it_imports`
     #[inline]
     #[must_use]

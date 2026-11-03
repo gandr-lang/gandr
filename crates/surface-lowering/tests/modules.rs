@@ -3922,84 +3922,37 @@ fn an_unread_member_keeps_its_own_report()
     );
 }
 
+/// #4529: a top-level module is named in either case, as a nested one is, so
+/// `std.io` and `Nat` declare alike.
 #[test]
-fn module_name_case_boundary_covers_single_and_multi_names()
+fn a_top_level_module_is_named_in_either_case_4529()
 {
-    for (spelled, readable) in [
-        ("M", true),
-        ("N", true),
-        ("Nat", true),
-        ("NatAdd", true),
-        ("m", false),
-        ("natAdd", false),
-        ("intadd", false),
-        ("monoid", false),
-    ] {
+    for spelled in ["M", "Nat", "NatAdd", "m", "natAdd", "intadd", "io"] {
         let source = format!(
             "module {spelled} : #{{ type T = Integer, zero : T, add : +U[ω] (T -> T -> -F \
                  T) }} where {{ def zero = 0; def add(x : Integer, y : Integer) -> -F Integer {{ return \
                  x }} }}"
         );
-        if readable {
-            let mut lowered = lower(source.as_str());
-            assert_eq!(
-                rows(&lowered),
-                [
-                    row(
-                        format!("{spelled}.zero"),
-                        Role::Declared,
-                        Amounts::Completed
-                    ),
-                    row(format!("{spelled}.add"), Role::Declared, Amounts::Completed),
-                    row(format!("{spelled}.add"), Role::Witness, Amounts::Completed),
-                ],
-                "the uppercase module `{spelled}` keeps both components"
-            );
-            assert!(
-                verdicts(&mut lowered)
-                    .iter()
-                    .all(|&(_, judgement)| judgement == Judgement::Checked),
-                "and every declaration of `{spelled}` checks"
-            );
-        }
-        else {
-            let lowered = lower(source.as_str());
-            let whole = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(source.len()))
-                .expect("the span is ordered");
-            assert_eq!(
-                rows(&lowered),
-                [row(
-                    spelled,
-                    Role::Held,
-                    Amounts::Refused(LoweringRefusal::LowercaseModuleName {
-                        span: whole,
-                        name: name(spelled),
-                    })
-                )],
-                "the lowercase module `{spelled}` is declined at its declaration, by name"
-            );
-            let plain = format!("module {spelled} where {{ def zero = 0; }}\ndef after = 1;");
-            let module = span_of(
-                &plain,
-                format!("module {spelled} where {{ def zero = 0; }}"),
-                0_usize,
-            );
-            assert_eq!(
-                rows(&lower(plain.as_str())),
-                [
-                    row(
-                        spelled,
-                        Role::Held,
-                        Amounts::Refused(LoweringRefusal::LowercaseModuleName {
-                            span: module,
-                            name: name(spelled),
-                        })
-                    ),
-                    row("after", Role::Declared, Amounts::Bodied),
-                ],
-                "whatever the module holds, and the declaration after it still lands"
-            );
-        }
+        let mut lowered = lower(source.as_str());
+        assert_eq!(
+            rows(&lowered),
+            [
+                row(
+                    format!("{spelled}.zero"),
+                    Role::Declared,
+                    Amounts::Completed
+                ),
+                row(format!("{spelled}.add"), Role::Declared, Amounts::Completed),
+                row(format!("{spelled}.add"), Role::Witness, Amounts::Completed),
+            ],
+            "the module `{spelled}` keeps both components"
+        );
+        assert!(
+            verdicts(&mut lowered)
+                .iter()
+                .all(|&(_, judgement)| judgement == Judgement::Checked),
+            "and every declaration of `{spelled}` checks"
+        );
     }
 }
 
