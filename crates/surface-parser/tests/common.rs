@@ -146,7 +146,8 @@ pub fn corpus_root() -> PathBuf
         .join("corpus")
 }
 
-/// Every corpus source, strict and fixture, as its path and its logical name:
+/// Every corpus source, strict and fixture, outside the ledgers and the sketch
+/// set, as its path and its logical name:
 /// `strict/…` for a strict source, `fixture/<family>/…` for a fixture one.
 ///
 /// # Specification
@@ -156,11 +157,13 @@ pub fn corpus_root() -> PathBuf
 ///
 /// # Adequacy
 /// - hypothesis: L2 — the corpus holds strict and nested fixture sources under
-///   two roots, plus a ledger family that is excluded. Two-root walks, ledger
-///   exclusion, logical-name assembly and ordering distinguish a single-root
-///   walk, an unsorted or ledger-leaking output.
+///   two roots, plus a ledger family and a sketch set that are excluded: the
+///   sketch set holds forms no grammar reads yet (`gandr-surface-corpus`'s
+///   `root` module, § The sketch set). Two-root walks, the exclusions,
+///   logical-name assembly and ordering distinguish a single-root walk, an
+///   unsorted, ledger-leaking or sketch-leaking output.
 /// - witness: `tests::acceptance::source_inventory_and_reads_preserve_context`
-#[spec(ensures: |ret| ret.iter().all(|entry| !entry.1.starts_with("fixture/ledger/")) && ret.windows(2).all(|pair| matches!(pair, [left, right] if left.1 <= right.1)))]
+#[spec(ensures: |ret| ret.iter().all(|entry| !entry.1.starts_with("fixture/ledger/") && !entry.1.starts_with("fixture/sketch/")) && ret.windows(2).all(|pair| matches!(pair, [left, right] if left.1 <= right.1)))]
 pub fn corpus_sources() -> Vec<(PathBuf, String)>
 {
     let strict = Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus/strict");
@@ -172,10 +175,9 @@ pub fn corpus_sources() -> Vec<(PathBuf, String)>
                 .strip_prefix(base)
                 .expect("a corpus source is under its root");
             if root == "fixture"
-                && below
-                    .components()
-                    .next()
-                    .is_some_and(|part| part.as_os_str() == "ledger")
+                && below.components().next().is_some_and(|part| {
+                    part.as_os_str() == "ledger" || part.as_os_str() == "sketch"
+                })
             {
                 continue;
             }

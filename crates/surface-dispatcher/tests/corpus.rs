@@ -26,6 +26,7 @@ use gandr_surface_corpus::Seal;
 use gandr_surface_corpus::Settlement;
 use gandr_surface_corpus::Stated;
 use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Descent;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Lowered;
@@ -40,6 +41,7 @@ use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::descent;
 use gandr_surface_dispatcher::judge_module;
 use gandr_surface_dispatcher::lower_source;
 use gandr_surface_grammar::Pbg;
@@ -333,7 +335,8 @@ fn the_identity_base_is_spelled_once_for_its_importers_595()
 ///   and list successfully.
 /// - ensures: selected entries retain their paths under one of `roots` and
 ///   exact `.gandr` extension; a directory with that extension is traversed
-///   rather than returned. Revisited directory identities do not create a
+///   rather than returned, and the sketch set, registered by its location as no
+///   gate's source, is not. Revisited directory identities do not create a
 ///   cycle.
 /// - fails: does not silently omit a directory that fails to resolve or list.
 /// - panics: on a directory-resolution, listing or entry-read failure.
@@ -360,7 +363,9 @@ fn sources_under(roots: &[PathBuf]) -> BTreeSet<PathBuf>
         for entry in std::fs::read_dir(&directory).expect("the directory lists") {
             let path = entry.expect("the entry reads").path();
             if path.is_dir() {
-                directories.push(path);
+                if descent(&path) == Descent::Walked {
+                    directories.push(path);
+                }
             }
             else if path
                 .extension()
@@ -447,6 +452,7 @@ fn a_planted_orphan_is_not_registered()
         ("strict/tree.gandr/inside.gandr", false),
         ("fixture/model/unit.gandr", false),
         ("fixture/pending/later.gandr", false),
+        ("fixture/sketch/cells/fused.gandr", false),
         ("examples/orphan.gandr", true),
         ("examples/tree.gandr/inner.gandr", true),
         ("orphan.gandr", true),

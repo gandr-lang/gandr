@@ -1,0 +1,38 @@
+/// Rewrite rules of a theory composed through the node that composes cells.
+///
+/// A rule of a theory is a 2-cell of its term category. Chaining two rules and
+/// placing a rule under a context are its composites.
+///
+/// `#fuse{ r s }` chains two rule instances when the first one's target
+/// converts with the second one's source. A rule instance written inside an
+/// operation is a whiskering.
+///
+/// - see: #4560 — the cells sketch, its rulings in the issue body
+
+// The reader `#fuse`, unqualified.
+import std.math.category.Pasting;
+
+/// A monoid, its laws oriented as rewrite rules.
+theory Monoid where {
+  /// The carrier.
+  sort M : Type;
+  /// The unit.
+  oper unit : () --> M;
+  /// The product.
+  oper mul : (x : M, y : M) --> M;
+  /// The unit cancels on the left.
+  rule leftUnit : mul(unit(), x) ==> x;
+  /// The unit cancels on the right.
+  rule rightUnit : mul(x, unit()) ==> x;
+  /// The product reassociates to the right.
+  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));
+}
+
+/// Two rule instances chain: reassociate, then drop the unit on the left.
+def reassociated[M : Monoid](y z : M.M) : M.mul(M.mul(M.unit(), y), z) ~> M.mul(y, z) =
+  #fuse{ M.assoc(M.unit(), y, z) M.leftUnit(M.mul(y, z)) }
+
+/// Drop the unit on the right, then the unit inside the right argument, the
+/// second rule whiskered by the product with `a`.
+def tidied[M : Monoid](a y : M.M) : M.mul(M.mul(a, M.mul(M.unit(), y)), M.unit()) ~> M.mul(a, y) =
+  #fuse{ M.rightUnit(M.mul(a, M.mul(M.unit(), y))) (M.mul(a, M.leftUnit(y))) }

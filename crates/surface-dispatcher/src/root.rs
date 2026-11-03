@@ -47,6 +47,16 @@
 //! The alternative was a `pending` attribute, which the lowering could not read
 //! for either kind of refusal. The choice reverses when every refusal can carry
 //! an expectation; the pending set then empties.
+//!
+//! # The sketch set
+//!
+//! A directory named `sketch` directly inside a `fixture` or `corpus`
+//! directory holds sketch sources: forms the grammar has not chosen yet,
+//! which no gate parses. A walk leaves the directory out when it meets it
+//! among a directory's children, so `gandr test corpus` reads none of it. A
+//! path that names it, or a source in it, is walked as any other path, and a
+//! probe reads the sketches that way. `gandr-surface-corpus`'s `root` module
+//! describes the set it holds.
 
 use std::ffi::OsStr;
 use std::path::Path;
@@ -69,6 +79,9 @@ const LEDGER: &str = "ledger";
 
 /// The directory name of the pending set, directly inside a fixture root.
 const PENDING: &str = "pending";
+
+/// The directory name of the sketch set, directly inside a fixture root.
+const SKETCH: &str = "sketch";
 
 /// The root a source sits under.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -197,6 +210,52 @@ pub fn classify(path: &Path) -> SourceRoot
     root
 }
 
+/// What a walk does with a directory it meets among a directory's children.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Descent
+{
+    /// The walk descends into it.
+    Walked,
+    /// The sketch set: the walk leaves it out.
+    Sketch,
+}
+
+/// Whether `directory` is the sketch set, which a walk leaves out unless it is
+/// named.
+///
+/// # Specification
+/// - requires: `directory` names a directory.
+/// - ensures: [`Descent::Sketch`] exactly when its own name is `sketch` and its
+///   parent's name is `fixture` or `corpus`, [`Descent::Walked`] otherwise.
+/// - provides: the directory a walk does not descend into.
+/// - fails: never.
+/// - panics: none.
+/// - intension: reads the last two components of the path, and touches no file.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sketch set inside each fixture root name, a sketch
+///   directory deeper in a root and one under the strict root have exact
+///   answers; native path spellings are outside the witness.
+/// - witness: `root::tests::the_sketch_set_is_only_directly_inside_a_fixture_root`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| (ret == Descent::Sketch) == (directory.file_name() == Some(OsStr::new(SKETCH))
+    && directory.parent().and_then(Path::file_name).is_some_and(|parent| parent == FIXTURE || parent == CORPUS)))]
+pub fn descent(directory: &Path) -> Descent
+{
+    let sketch = directory.file_name() == Some(OsStr::new(SKETCH))
+        && directory
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|parent| parent == FIXTURE || parent == CORPUS);
+    if sketch {
+        Descent::Sketch
+    }
+    else {
+        Descent::Walked
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -204,8 +263,28 @@ mod tests
 
     use gandr_surface_corpus::CorpusRoot;
 
+    use super::Descent;
     use super::SourceRoot;
     use super::classify;
+    use super::descent;
+
+    #[test]
+    fn the_sketch_set_is_only_directly_inside_a_fixture_root()
+    {
+        let rows = [
+            ("corpus/sketch", Descent::Sketch),
+            ("fixture/sketch", Descent::Sketch),
+            ("/work/corpus/sketch", Descent::Sketch),
+            ("corpus/model/sketch", Descent::Walked),
+            ("strict/sketch", Descent::Walked),
+            ("sketch", Descent::Walked),
+            ("corpus/sketches", Descent::Walked),
+            ("corpus/sketch/cells", Descent::Walked),
+        ];
+        for (path, walked) in rows {
+            assert_eq!(descent(Path::new(path)), walked, "{path}");
+        }
+    }
 
     #[test]
     fn each_root_settles_under_its_corpus_root()

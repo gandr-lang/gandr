@@ -39,19 +39,20 @@
 //! | `corpus/classifier/` | the universe families' refusals: a level too large, a sort mismatch, a graded bridge, and a bind whose body's type needs its binder; the relative-monad witness's sort errors beside the forms that repair them; a static abstraction at a static parameter, normalized away, and at a dynamic one, refused; implicit parameters supplied by name, in any order | `refuses` on each refused declaration, `checks` on each that forms, `runs` on each run |
 //! | `corpus/model/`, `corpus/pathological/`, `corpus/surface/` | the language's own surface programs whose declarations the lowering reads, each verdict stated | `refuses`, `checks` or `runs` on each declaration |
 //! | `corpus/pending/` | the language's own surface programs the fragment does not yet cover | none: membership by location (§ The pending set) |
+//! | `corpus/sketch/<sketch>/` | sketch sources: a planned form in its settled spelling, which the grammar need not read yet | none: read as text only (§ The sketch set) |
 //!
 //! The language's own surface programs — the model programs, the pathological
 //! cases and the surface families — are kept in their own subdirectories with
-//! their commentary removed. The parser reads every source here as its
-//! zero-obligation gate — a pathological source whose point is a parse error
-//! is pinned there to exactly the obligations it owes — and the highlighter's
-//! role golden in `gandr-surface-grammar` mirrors every source: a source added,
-//! moved between roots or removed is followed by `UPDATE_EXPECT=1 cargo
-//! nextest run -p gandr-surface-grammar`, which rewrites the golden to match.
-//! The parser's recovery record mirrors every `strict/` and `fixture/` source
-//! the same way: `UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<path here> mise run
-//! ci:recovery` re-records one source, and the diff is read for recovery
-//! regressions.
+//! their commentary removed. The parser reads every source here but the
+//! sketch set as its zero-obligation gate — a pathological source whose point
+//! is a parse error is pinned there to exactly the obligations it owes — and
+//! the highlighter's role golden in `gandr-surface-grammar` mirrors every such
+//! source: a source added, moved between roots or removed is followed by
+//! `UPDATE_EXPECT=1 cargo nextest run -p gandr-surface-grammar`, which
+//! rewrites the golden to match. The parser's recovery record mirrors every
+//! `strict/` and `fixture/` source outside the sketch set the same way:
+//! `UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<path here> mise run ci:recovery`
+//! re-records one source, and the diff is read for recovery regressions.
 //!
 //! No count is pinned. The runner's report says how many sources each root
 //! holds, how many declarations settled, the ledger size and the seal, and its
@@ -152,6 +153,27 @@
 //! only sources refused as a whole. Such a refusal stands at a root child; one
 //! that no item could carry would be stated by an inner block at the source's
 //! head, `@![ refuses("…") ]`, which is built when the first one appears.
+//!
+//! # The sketch set
+//!
+//! A sketch fixes a planned form's spelling before the grammar's architecture
+//! is chosen. Its sources sit under `corpus/sketch/<sketch>/`, one
+//! directory per sketch, as realistic programs in the settled spelling. The
+//! grammar need not read them, so nothing lowers, formats or settles them:
+//! `check:corpus` and `check:corpus-format` name the other roots, the
+//! dispatcher's walk leaves the directory out of `corpus`, and the sweeps, the
+//! highlighter's role golden and the parser's recovery record hold it out.
+//! The comment gate and the prose check read the sketches as text, so their
+//! comments meet the corpus's rules.
+//!
+//! The parser probes read the set as their fixtures. A form's implementing
+//! unit moves its sketches into a root above when the form lands, and writes
+//! their expectations there.
+//!
+//! The alternative was the probes' own fixture directory. The sketches are
+//! programs the corpus holds once their forms land, so the corpus keeps them
+//! from the start. The choice reverses if a sketch must be read by a gate
+//! before its form lands.
 
 use core::fmt;
 

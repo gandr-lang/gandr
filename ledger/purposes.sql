@@ -2239,8 +2239,10 @@ INSERT INTO purpose VALUES('surface-dispatcher','report::SourceCount','struct','
 INSERT INTO purpose VALUES('surface-dispatcher','report::SourceCounts','struct','How many sources a run read, by root, and how many it could not read as their root expects.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','report::Verb','enum','The verb a walk is run under, which decides what is printed and what fails.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','report::shown','function','How `verb` prints `declaration`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','root::Descent','enum','What a walk does with a directory it meets among a directory''s children.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','root::SourceRoot','enum','The root a source sits under.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','root::classify','function','Classify the source at `path` by the innermost root directory it sits under.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','root::descent','function','Whether `directory` is the sketch set, which a walk leaves out unless it is named.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','schedule::Scheduling','enum','Which schedule a composition''s runs give their independent cuts: the sequential one, or each writer started as a job of the driver''s pool.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','script::Ran','enum','What running a composed source came to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','script::Script','struct','One source file to run as a program.',NULL,'fits','sound',NULL);

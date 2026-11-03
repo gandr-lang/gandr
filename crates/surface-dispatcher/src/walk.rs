@@ -131,8 +131,10 @@ use crate::compose::lower_unit_source;
 use crate::pool::Pool;
 use crate::reader::Reader;
 use crate::report::RunReport;
+use crate::root::Descent;
 use crate::root::SourceRoot;
 use crate::root::classify;
+use crate::root::descent;
 
 quenchant_shape::reason_enum! {
     /// Why a traversal reaches nothing further.
@@ -1226,14 +1228,16 @@ impl Traversal
     }
 
     /// Push the directory's directories and non-symlink `.gandr` entries,
-    /// so they pop in byte order of their names.
+    /// so they pop in byte order of their names. The sketch set is left out
+    /// (`root` § The sketch set).
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: success appends the selected children in descending path
-    ///   order, leaving earlier pending entries in place, and marks the path
-    ///   given answered when it leaves out a child another path given names;
-    ///   failure leaves the pending entries unchanged.
+    ///   order, leaving earlier pending entries in place, none of them a sketch
+    ///   set, and marks the path given answered when it leaves out a child
+    ///   another path given names; failure leaves the pending entries
+    ///   unchanged.
     /// - fails: the I/O error listing the path or reading an entry's type.
     /// - panics: none.
     ///
@@ -1249,6 +1253,7 @@ impl Traversal
     /// - witness: `walk::tests::a_tree_is_walked_in_order`
     /// - witness: `walk::tests::a_tree_is_read_when_visited`
     /// - witness: `walk::tests::a_path_another_path_names_is_walked_once_3889`
+    /// - witness: `walk::tests::a_sketch_set_is_walked_only_when_named_4560`
     #[spec(
         captures: [before = self.entries.len()],
         ensures: |ref ret| if ret.is_err() {
@@ -1256,7 +1261,8 @@ impl Traversal
         } else {
             self.entries.get(before..).is_some_and(|added|
                 added.iter().all(|entry| match *entry {
-                    Entry::Directory(ref path) => path.parent() == Some(self.path.as_path()),
+                    Entry::Directory(ref path) => path.parent() == Some(self.path.as_path())
+                        && descent(path) == Descent::Walked,
                     Entry::Source(ref path) => path.parent() == Some(self.path.as_path())
                         && path.extension() == Some(OsStr::new(EXTENSION)),
                     Entry::Argument => false,
@@ -1284,6 +1290,9 @@ impl Traversal
             let kind = listed.file_type()?;
             let path = listed.path();
             let entry = if kind.is_dir() {
+                if descent(&path) == Descent::Sketch {
+                    continue;
+                }
                 Entry::Directory(path)
             }
             else if !kind.is_symlink() && path.extension() == Some(OsStr::new(EXTENSION)) {
@@ -2175,6 +2184,52 @@ pub mod tests
             .iter()
             .map(|&(path, seen)| (path.to_path_buf(), seen))
             .collect()
+    }
+
+    #[test]
+    fn a_sketch_set_is_walked_only_when_named_4560()
+    {
+        let scratch = Scratch::new(Path::new("corpus"));
+        scratch.file(
+            Path::new("corpus/model/a.gandr"),
+            SourceText::from("def a = 1 ;"),
+        );
+        scratch.file(
+            Path::new("corpus/sketch/cells/b.gandr"),
+            SourceText::from("def b = #fuse{ f g } ;"),
+        );
+        scratch.file(
+            Path::new("corpus/model/sketch/c.gandr"),
+            SourceText::from("def c = 3 ;"),
+        );
+        let (seen, _report) = visited(&scratch.0, vec![scratch.0.join("corpus")], Width::SERIAL);
+        assert_eq!(
+            seen,
+            rows(&[
+                (
+                    Path::new("corpus/model/a.gandr"),
+                    Seen::Source(Standing::Settled)
+                ),
+                (
+                    Path::new("corpus/model/sketch/c.gandr"),
+                    Seen::Source(Standing::Settled)
+                ),
+            ]),
+            "a walk of the corpus leaves the sketch set out, and only the one directly inside it"
+        );
+        let (seen, _report) = visited(
+            &scratch.0,
+            vec![scratch.0.join("corpus/sketch")],
+            Width::SERIAL,
+        );
+        assert_eq!(
+            seen,
+            rows(&[(
+                Path::new("corpus/sketch/cells/b.gandr"),
+                Seen::Source(Standing::Unsettled)
+            )]),
+            "the sketch set named as a path is walked"
+        );
     }
 
     #[test]

@@ -1,0 +1,44 @@
+/// Composites of named cells in a higher category, each written by naming its
+/// cells.
+///
+/// The writer states no shape, no dimension and no position. Today a composite
+/// of 2-cells is a library function taking every boundary as an argument.
+///
+/// `#fuse` takes the cells in any order, and the checker reads the pasting
+/// context off their types. A cell is any term that synthesises its type.
+///
+/// - see: #4560 — the cells sketch, its rulings in the issue body
+/// - see: #4234 — the named pasting context every form reads to
+/// - see: library/std/src/math/cylinder.gandr — the composites this sketch replaces
+
+// The readers `#fuse` and `#fill`, unqualified.
+import std.math.category.Pasting;
+
+/// Two 2-cells side by side: `α` between `f` and `g`, `β` between `h` and
+/// `k`. The context is the shape `x -f,g-> y -h,k-> z`, read off the types.
+def hcomp[A : Type, x y z : A, f g : Path(A, x, y), h k : Path(A, y, z)](
+  α : f => g,
+  β : h => k
+) : (f |> h) => (g |> k) = #fuse{ α β }
+
+/// `vcomp` stacks two 2-cells over one pair of points, `α` then `α'`. The
+/// cells fix the order, so `#fuse{ α' α }` names the same composite.
+def vcomp[A : Type, x y : A, f g h : Path(A, x, y)](
+  α : f => g,
+  α' : g => h
+) : f => h = #fuse{ α α' }
+
+/// A path through three named 1-cells: the one-dimensional reading, which
+/// is the composite `f |> g |> h`.
+def through[A : Type, w x y z : A](
+  f : Path(A, w, x),
+  g : Path(A, x, y),
+  h : Path(A, y, z)
+) : Path(A, w, z) = #fuse{ f g h }
+
+/// A cell may be any term that synthesises its type: here `α` whiskered by
+/// `h`, then `β` whiskered by `g`, the composite `hcomp` names.
+def whiskered[A : Type, x y z : A, f g : Path(A, x, y), h k : Path(A, y, z)](
+  α : f => g,
+  β : h => k
+) : (f |> h) => (g |> k) = #fuse{ (α |> h) (g |> β) }
