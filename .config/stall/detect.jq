@@ -34,12 +34,6 @@
 #                  stack's member in the trunk's queue under the base it
 #                  keeps until a restack (#4643). It is paged at once, its age
 #                  counted from the reading that first saw it so.
-#   foreign-commit
-#                  its commits hold one that names a unit its body does not
-#                  work (#4638, `facts.jq`'s `foreign`): a copy of another
-#                  pull request's commit, which rides into every merge group
-#                  stacked above it. It is paged at once, its age counted from
-#                  the reading that first saw it at that head.
 #   verdict-unfiled
 #                  a merged pull request whose `## Refactoring` verdict is
 #                  `yes` or `maybe` with rows, and no `kind:refactor` issue
@@ -99,8 +93,7 @@
 #               null reads as none;
 #   seen        when each `<number>:conflicting:<head>`,
 #               `<number>:base-blocked:<head>`,
-#               `<number>:queued-off-trunk:<queue>`,
-#               `<number>:foreign-commit:<head>` and `<lane>:seat-idle` was
+#               `<number>:queued-off-trunk:<queue>` and `<lane>:seat-idle` was
 #               first read so, from the last reading; absent reads as none;
 #   paged       each `<number>:<kind>` finding's `{first, last}`, or
 #               `<lane>:<kind>` for one with no pull request: when it was
@@ -171,7 +164,6 @@
 | ([$prs[] | select(.mergeable == "CONFLICTING") | "\(.number):conflicting:\(.oid)"]
     + [$prs[] | select([blocker] != []) | "\(.number):base-blocked:\(.oid)"]
     + [$prs[] | select(off_trunk) | "\(.number):queued-off-trunk:\(.queue)"]
-    + [$prs[] | select((.foreign // []) != []) | "\(.number):foreign-commit:\(.oid)"]
     + [$idle[] | "\(.):seat-idle"]
     | map({key: ., value: ($seen[.] // $in.now)}) | from_entries) as $seen_now
 | [
@@ -210,9 +202,6 @@
     ($prs[] | select(off_trunk)
       | finding("queued-off-trunk"; $seen_now["\(.number):queued-off-trunk:\(.queue)"];
           "in the merge queue of `\(.queue)`, which heads no open pull request and merges nothing into \($in.trunk)")),
-    ($prs[] | select((.foreign // []) != [])
-      | finding("foreign-commit"; $seen_now["\(.number):foreign-commit:\(.oid)"];
-          "carries another unit's commit: \(.foreign | map("`\(.oid[0:9])` names \(.units | map("#\(.)") | join(", "))\(if .pulls == [] then "" else " (\(.pulls | map("#\(.)") | join(", ")))" end)") | join("; ")); drop each from the branch")),
     (($in.merged // [])[]
       | select(IN(.verdict; "yes", "maybe") and .rows > 0 and .merged != null)
       | select(.number | IN(($in.filed // [])[]) | not)

@@ -34,22 +34,3 @@ def strays:
       | .value as $line
       | $line | match("(?i)\\b\(closing):?\\s+(#[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+)\\b"; "g")
       | {line: $line, keyword: .string}];
-
-# The units a commit `{subject, body}` names (#4638): each issue a working
-# keyword names in its message, as the commit rules give every unit's commit
-# its `Closes #n` line, and the number a ` (#n)` ends its subject with.
-def commit_units:
-  ([.subject | match(" \\(#([0-9]+)\\)$") | .captures[0].string | tonumber]
-   + ("\(.subject)\n\(.body // "")" | targets(working)))
-  | unique;
-
-# The commits of `$commits` that are another unit's (#4638): each names a
-# unit, and none of `$units`, the units its pull request works. A commit
-# naming no unit is read as the pull request's own. Each is `{oid, subject,
-# units, pulls}`, `units` the ones it names and `pulls` the numbers of the
-# pull requests of `$pulls`, each `{number, body, head}`, that name one.
-def foreign($units; $commits; $pulls):
-  [$commits[] | commit_units as $named
-    | select($named != [] and ($named - $units) == $named)
-    | {oid, subject, units: $named,
-       pulls: [$pulls[] | select(. as $pull | any($named[]; . as $n | $pull | names($n))) | .number] | unique}];

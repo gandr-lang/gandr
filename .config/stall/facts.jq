@@ -22,10 +22,6 @@
 #             conclusion, started, completed}`, the verdict `pass`, `fail` or
 #             `pending` read as `.config/pr-stack/required.jq` reads one, the
 #             conclusion GitHub's (a status's state);
-#   foreign   its commits that are another unit's (#4638,
-#             `.config/pr-stack/foreign.jq`): each names a unit and none its
-#             body works, `{oid, subject, units, pulls}`, `pulls` the open or
-#             merged pull requests read that work one of `units`;
 # `merged` one entry per merged pull request read, `{number, head, merged,
 # verdict, rows}`: when it merged, in epoch seconds, its `## Refactoring`
 # verdict (`yes`, `maybe`, `no` or null) and how many rows its table names;
@@ -36,7 +32,6 @@
 
 include "sections";
 include "markers";
-include "targets";
 
 def epoch: if . == null then null else fromdateiso8601 end;
 
@@ -48,8 +43,7 @@ def verdict:
   else "fail"
   end;
 
-[.pullRequests.nodes[], (.merged.nodes // [])[] | {number, body: (.body // ""), head: .headRefName}] as $pulls
-| {prs: [.pullRequests.nodes[] | {
+{prs: [.pullRequests.nodes[] | {
   number,
   draft: .isDraft,
   bot: (.author.__typename == "Bot"),
@@ -67,9 +61,7 @@ def verdict:
     conclusion: (.conclusion // .state),
     started: ((.startedAt // .createdAt) | epoch),
     completed: ((.completedAt // (if .__typename == "StatusContext" then .createdAt else null end)) | epoch)
-  }],
-  foreign: foreign(.body // "" | targets(working) | unique;
-    [(.own.nodes // [])[].commit | {oid, subject: .messageHeadline, body: .messageBody}]; $pulls)
+  }]
 }],
  merged: [(.merged.nodes // [])[] | (.body // "" | refactoring) as $r | {
    number,
