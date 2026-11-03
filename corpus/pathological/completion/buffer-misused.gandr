@@ -5,6 +5,9 @@
 // may still own it, and one read while held would observe bytes the kernel
 // may still be writing.
 
+// The native buffer a receive places live.
+import std.buffer (Buf);
+
 /// A buffer allocated and never freed.
 @[ refuses("BufferUnreturned") ]
 def neverFreed() -> Unit {

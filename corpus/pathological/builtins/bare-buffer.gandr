@@ -1,0 +1,18 @@
+// A buffer type or a web written with no import of its home names no type.
+//
+// `Buf` and `Web` live in `std.buffer`, and the ambient scope answers them
+// nowhere. A source that names one lists it, as it lists any other module's
+// name.
+//
+// The source writes each without `import std.buffer (Buf, Web);`, and each
+// type head is refused where it is written.
+//
+// - see: #4522
+
+/// The identity on buffers, which writes the buffer type unimported.
+@[ refuses("UnresolvedTypeHead") ]
+def keep(b : Buf) -> Buf { b }
+
+/// The identity on webs, which writes the web type unimported.
+@[ refuses("UnresolvedTypeHead") ]
+def same(w : Web) -> Web { w }

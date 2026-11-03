@@ -476,7 +476,6 @@ use crate::resolve::TypeAtom;
 use crate::resolve::TypeFormer;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
-use crate::resolve::type_atom;
 use crate::resolve::type_former;
 use crate::unbuilt::Unbuilt;
 
@@ -7716,7 +7715,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(None);
         };
         let name = self.name_at(placed);
-        let Maybe::Present(atom) = type_atom(name)
+        let Maybe::Present(atom) = self.atom(name)
         else {
             return Ok(None);
         };

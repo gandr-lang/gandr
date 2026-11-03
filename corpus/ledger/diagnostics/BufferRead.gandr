@@ -1,4 +1,9 @@
 /// `BufferRead`: a placed buffer read other than by the send, the operation or the resumption that returns it.
+
+// The native buffer a receive places live.
+import std.buffer (Buf);
+
+/// A buffer copied out while the ring still holds it.
 @[ refuses("BufferRead") ]
 def readWhileHeld() -> -F Unit {
   handle r : std.io.Ring.Eff {

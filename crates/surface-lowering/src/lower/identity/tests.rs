@@ -2540,13 +2540,14 @@ fn a_move_out_of_shape_is_refused()
 fn a_dialogue_lowers_its_moves_beside_their_endpoints()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(concat!(
+    let module = crate::fixture::listed(
+        concat!(
+            "\nimport std.buffer (Web) ;\n",
             "module Ask where {\n  type Asking = !String. end;\n}\n",
             "def played : Dialogue(Ask.Asking);\n",
             "def played = dialogue(left(sent(\"yes\")), right(received(\"yes\")), right(closed), left(closed));\n",
             "def web() -> -F Web {\n  become decompose(played)\n}\n",
-        )),
+        ),
         &mut arena,
     );
     let DeclarationOutcome::Completed {

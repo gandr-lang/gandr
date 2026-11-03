@@ -6,6 +6,9 @@
 // itself, minting each one its `alloc` clause resumes with and reclaiming
 // each one its `free` clause receives.
 
+// The native buffer a receive places live.
+import std.buffer (Buf);
+
 /// A buffer allocated and freed: the allocation places it live, and the free
 /// hands it back to the scope that minted it. The `alloc` clause lends its
 /// mint to a mock kernel, which fills it and hands it back with the
