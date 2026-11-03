@@ -4,7 +4,9 @@
 # taker with `--no-wait` refuses, naming both; another lock name is
 # unaffected; a holder killed outright frees its slot; a waiter takes the
 # slot a holder leaves; and a slot stays held while a child of a killed
-# holder still runs, as `act` does when `ci:act` is killed.
+# holder still runs, as `act` does when `ci:act` is killed. A gate releases
+# its slot as it exits, whether it ends or is stopped by `TERM`, while a daemon
+# one of its steps started keeps the descriptor open (#4421).
 set -euo pipefail
 helper=$(cd "${BASH_SOURCE[0]%/*}" && pwd)/host-lock.bash
 scratch=$(mktemp -d)
@@ -101,5 +103,34 @@ status=0
 take > /dev/null || status=$?
 [[ $status == 0 ]] || fail "the slot stayed held after the holder's child exited"
 
+# A gate of one slot starts a detached daemon that keeps descriptor 9, then
+# ends normally or is stopped by `TERM`; the next gate takes the slot at once.
+gate_helper=${helper%/*}/gate.bash
+for ending in ends TERM; do
+  GANDR_GATE_SLOTS=1 bash -c '
+    source "$1"
+    hold_gate_slot "gate that $2"
+    setsid sleep 300 < /dev/null > /dev/null 2>&1 &
+    echo $! > "$3/daemon.$2"
+    : > "$3/gate.$2.held"
+    if [[ $2 == TERM ]]; then sleep 300 & echo $! > "$3/step.$2"; wait; fi
+  ' _ "$gate_helper" "$ending" "$scratch" > /dev/null 2>&1 &
+  gate=$!
+  pids+=("$gate")
+  tries=0
+  until [[ -e $scratch/gate.$ending.held && -s $scratch/daemon.$ending ]]; do
+    (( ++tries < 100 )) || break
+    sleep 0.1
+  done
+  [[ -e $scratch/gate.$ending.held ]] || { fail "#4421: the gate that $ending never took its slot"; continue; }
+  pids+=("$(< "$scratch/daemon.$ending")")
+  [[ ! -s $scratch/step.$ending ]] || pids+=("$(< "$scratch/step.$ending")")
+  [[ $ending == ends ]] || kill -TERM "$gate"
+  wait "$gate" 2> /dev/null || true
+  status=0
+  refusal=$(GANDR_GATE_SLOTS=1 bash -c 'source "$1"; GATE_NO_WAIT=1 hold_gate_slot taker' _ "$gate_helper" 2>&1) || status=$?
+  [[ $status == 0 ]] || fail "#4421: a daemon kept the slot of the gate that $ending: $refusal"
+done
+
 (( failed == 0 )) || exit 1
-echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot"
+echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a gate's daemon kept no slot after the gate ended or was stopped"

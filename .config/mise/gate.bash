@@ -9,7 +9,9 @@
 #
 # A slot is the host lock `gate` (`host-lock.bash`, #3105): `gate.<n>.lock`
 # under `gandr/` in the user's runtime directory, held with `flock(2)` for the
-# gate and everything it started. With every slot held, the gate prints
+# gate and everything it started. The gate releases it as it exits, so a
+# daemon one of its steps started holds no slot after it (#4421). With every
+# slot held, the gate prints
 # `gate: waiting on <holders>` and tries again every 5 seconds; with
 # `GATE_NO_WAIT=1`, which `check --no-wait` sets, it refuses at once, naming
 # them.
@@ -19,7 +21,8 @@ source "${BASH_SOURCE[0]%/*}/host-lock.bash"
 gate_slots=${GANDR_GATE_SLOTS:-2}
 
 # Takes a free slot, waiting for one unless `GATE_NO_WAIT=1`, and records the
-# holder as `$*`; sets `gate_slot` to its number.
+# holder as `$*`; sets `gate_slot` to its number, and releases the slot from
+# the caller's `EXIT` trap.
 hold_gate_slot() {
   [[ $gate_slots =~ ^[1-9][0-9]*$ ]] || { echo "check: GANDR_GATE_SLOTS is \`$gate_slots\`, not a count of slots" >&2; exit 2; }
   if [[ ${GATE_NO_WAIT:-} == 1 ]]; then
@@ -28,6 +31,7 @@ hold_gate_slot() {
     host_lock gate "$gate_slots" "$@"
   fi
   gate_slot=$host_slot
+  trap host_unlock EXIT
 }
 
 # The test threads each of a gate's two suites takes: the host's cores

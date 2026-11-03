@@ -10,6 +10,13 @@
 # last process holding the descriptor exits. The file names its holder (the
 # holder words, the pid, the worktree and the start).
 #
+# A daemon a holder's child starts inherits descriptor 9 and outlives the
+# holder: `op daemon`, which a signing or `gh` call starts, kept every gate
+# slot on a host held for hours (#4421). `host_unlock` releases the lock for
+# every process that shares the descriptor, so a holder calls it as it exits,
+# from its `EXIT` trap. A holder killed outright runs no trap, and its running
+# children keep the slot until they exit.
+#
 # With every slot held, `host_lock` prints `<name>: waiting on <holders>` once
 # and tries again every 5 seconds; with `--no-wait` it refuses at once with
 # status 2, naming them. It sets `host_slot` to the slot's number. A process
@@ -68,6 +75,16 @@ host_lock_dir() {
     printf '%s\n' "/run/user/$UID"
   elif ! getconf DARWIN_USER_TEMP_DIR 2> /dev/null; then
     printf '/tmp\n'
+  fi
+}
+
+# Releases the lock on file descriptor 9 for every process sharing it, a
+# daemon that inherited it included.
+host_unlock() {
+  if command -v flock > /dev/null; then
+    flock --unlock 9
+  else
+    perl -MFcntl=:flock -e 'open(my $fh, ">&=", 9) or die "fd 9: $!"; flock($fh, LOCK_UN)'
   fi
 }
 

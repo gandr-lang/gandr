@@ -71,9 +71,11 @@
 # it (#2524): a body closing a `kind:defect` issue `#n` has a non-empty
 # `## Observation`, and the change adds a regression naming `#n`: a corpus
 # `///` line citing `#n`, a Rust test whose name ends `_n` (or carries `_n_`),
-# a `.config` JSON case whose `"name"` cites `#n`, or, in an editor
-# extension's TypeScript tests (`contrib/` files named `*.test.ts` or under a
-# `smoke/` directory), a `//` line or a `test(…)` name citing `#n` (#3538).
+# a `.config` JSON case whose `"name"` cites `#n`, a case of a `.config`
+# shell script named `*cases.bash` whose `fail "#n: …"` message names it
+# (#4421), or, in an editor extension's TypeScript tests (`contrib/` files
+# named `*.test.ts` or under a `smoke/` directory), a `//` line or a
+# `test(…)` name citing `#n` (#3538).
 #
 # A surface form states its parser cost and its demand (#2527): a change to
 # the parser, its grammar or its syntax tree (`surface`, the paths it changes
@@ -280,6 +282,7 @@ def regression($n):
   | if (.path | endswith(".gandr")) then .text | test("^\\s*///.*#\($n)\\b")
     elif (.path | endswith(".rs")) then .text | test("\\bfn\\s+\\w*_\($n)(_\\w*)?\\s*[(<]")
     elif (.path | startswith(".config/") and endswith(".json")) then .text | test("\"name\":\\s*\"[^\"]*#\($n)\\b")
+    elif (.path | startswith(".config/") and endswith("cases.bash")) then .text | test("\\bfail\\s+\"#\($n):")
     elif (.path | startswith("contrib/") and (endswith(".test.ts") or test("/smoke/[^/]+\\.ts$")))
     then .text | test("^\\s*//.*#\($n)\\b|\\btest\\(\\s*[\"'`][^\"'`]*#\($n)\\b")
     else false
