@@ -4192,6 +4192,12 @@ sketch/grades/polymorphic.gandr:universe_type:184466608a09f8b1 uncommented
 sketch/grades/tagged.gandr:if_expression:fba3230608c66904 uncommented
 sketch/grades/tagged.gandr:retries:7f24500cac8c12ee uncommented
 sketch/grades/tagged.gandr:retries:f95b7ca66858134e uncommented
+sketch/literate/formats.gandr:alpha:b4aa7b80f26412f9 uncommented
+sketch/literate/formats.gandr:captionMarkdown:47a5d43def68e21a uncommented
+sketch/literate/formats.gandr:captionTypst:3d6092bad13fa36f uncommented
+sketch/literate/formats.gandr:compose:8351466b0a073ddf uncommented
+sketch/literate/formats.gandr:string:be4393ddf5ea35b3 uncommented
+sketch/literate/formats.gandr:string:fa38f515dba98cf4 uncommented
 sketch/model-refinement/forgetting.gandr:T:3a1386139ad93b43 uncommented
 sketch/model-refinement/operations.gandr:size:44002864f0af3f96 uncommented
 sketch/model-refinement/operations.gandr:size:9e649c70f0119e6d uncommented

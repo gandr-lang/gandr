@@ -1,0 +1,31 @@
+/// A plain source rendered to a document, the other direction.
+///
+/// A library's sources already explain themselves in their doc comments. A
+/// render can typeset them as a paper or a page, with no second copy of the
+/// prose.
+///
+/// A literate render is a render whose format is a document. Its doc
+/// comments become prose, and its declarations become code blocks with the
+/// checker's highlighting. LaTeX, Typst and Markdown are three codecs of one
+/// document type.
+///
+/// - see: #4723 — the literate gandr sketch, its rulings in the issue body
+/// - see: #4719 — the render sketch, whose `@[render(…)]` this uses
+
+// The document type, its formats and the render over a module.
+import std.doc (Document, Typst, Markdown, literate);
+
+/// The notes on rotations, typeset as a Typst document beside this source.
+@[render(literate(Typst))]
+pub module Rotations where {
+  /// A quarter turn.
+  def quarter : Integer = 90;
+  /// Two rotations, one after the other.
+  def then(a : Integer, b : Integer) -> Integer { (a + b) % 360 }
+}
+
+/// The same notes as Markdown, a value a site generator reads.
+pub def rotationsPage : Markdown = literate(Markdown).render(Rotations);
+
+/// The document both renders print, before any format reads it.
+pub def rotationsDocument : Document = Document.of(Rotations);
