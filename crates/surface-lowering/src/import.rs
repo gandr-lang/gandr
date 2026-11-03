@@ -445,6 +445,18 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
+    /// Why an import names no module path.
+    pub mod unmoduled {
+        /// The reason none is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The import names an address, `import "./sibling.gandr" ;`.
+            Addressed,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
     /// Why an import is written at no signature.
     pub mod unsigned {
         /// The reason none is held.
@@ -490,6 +502,9 @@ pub struct ImportDeclaration<'source>
     resolution: ImportResolution,
     /// Which names it binds by their own names.
     opening: Opening<'source>,
+    /// The module path it names, as written: `std.list` of `import std.list
+    /// as l ;`.
+    module: Maybe<SurfaceName<'source>, unmoduled::Absent>,
     /// The signature the import is written at.
     signature: Maybe<ImportSignature<'source>, unsigned::Absent>,
 }
@@ -523,6 +538,7 @@ impl<'source> ImportDeclaration<'source>
             source,
             resolution,
             opening,
+            module: Maybe::Absent(unmoduled::Absent::Addressed),
             signature: Maybe::Absent(unsigned::Absent::Unwritten),
         }
     }
@@ -583,7 +599,7 @@ impl<'source> ImportDeclaration<'source>
     }
 
     /// The import, binding the names `listed` lists by their own names as well
-    /// as by its binding, the module spelled `module` where it is written.
+    /// as by its binding.
     ///
     /// # Specification
     /// trivial.
@@ -591,14 +607,41 @@ impl<'source> ImportDeclaration<'source>
     #[must_use]
     pub fn listing(
         self,
-        module: SurfaceName<'source>,
         listed: Vec<(SurfaceName<'source>, ByteSpan)>,
     ) -> Self
     {
         Self {
-            opening: Opening::Listed { module, listed },
+            opening: Opening::Listed(listed),
             ..self
         }
+    }
+
+    /// The import, naming the module path `module` as it is written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of_module(
+        self,
+        module: SurfaceName<'source>,
+    ) -> Self
+    {
+        Self {
+            module: Maybe::Present(module),
+            ..self
+        }
+    }
+
+    /// The module path the import names, as written; absent for an import of
+    /// an address.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn module(&self) -> Maybe<SurfaceName<'source>, unmoduled::Absent>
+    {
+        self.module
     }
 
     /// The import, written at the signature `signature`.
@@ -698,7 +741,7 @@ impl<'source> ImportDeclaration<'source>
             match self.opening {
                 Opening::Every => true,
                 Opening::Nothing => false,
-                Opening::Listed { ref listed, .. } => listed
+                Opening::Listed(ref listed) => listed
                     .iter()
                     .any(|&(held, _)| held.as_ref() == name.as_ref()),
             } && self.states(name).0,
@@ -723,15 +766,9 @@ pub enum Opening<'source>
     Every,
     /// None: `import "…" as m ;` and `import text.greet ;`.
     Nothing,
-    /// Those the list names, each with the bytes it is written at, the module
-    /// spelled as its import writes it: `import text.greet (greeting) ;`.
-    Listed
-    {
-        /// The module's address or path, as written.
-        module: SurfaceName<'source>,
-        /// The names listed and where.
-        listed: Vec<(SurfaceName<'source>, ByteSpan)>,
-    },
+    /// Those the list names, each with the bytes it is written at: `import
+    /// text.greet (greeting) ;`.
+    Listed(Vec<(SurfaceName<'source>, ByteSpan)>),
 }
 
 quenchant_shape::reason_enum! {

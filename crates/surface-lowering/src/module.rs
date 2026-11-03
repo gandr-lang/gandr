@@ -6293,12 +6293,17 @@ impl<'source> Collector<'_, 'source>
 
         let declaration =
             ImportDeclaration::new(written.uri, binding, import.span, source, resolution);
+        let declaration = if written.address == Address::Module {
+            declaration.of_module(spelled)
+        }
+        else {
+            declaration
+        };
         let declaration = if written.listed.is_empty() {
             declaration
         }
         else {
             declaration.listing(
-                spelled,
                 written
                     .listed
                     .iter()
