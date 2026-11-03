@@ -11168,11 +11168,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   as a value under `frame`, a computation there nested at
     ///   [`Insertion::Bound`], and `A` as a value type when written; the
     ///   statement is recorded as a `let` of `e`, and the frame binding the
-    ///   name over `frame` returned, a binder the mint binds once to what `e`
-    ///   returns. The checker runs a nested call that returns and suspends any
-    ///   other. Any other pattern, and a name over an exercise that places a
-    ///   buffer, binds what `e` returns, as [`Self::bound_statement`] binds it,
-    ///   a value `e` returned.
+    ///   name over `frame` returned, at `A` when written, so a member reads off
+    ///   it as off a parameter of that type; a binder the mint binds once to
+    ///   what `e` returns. The checker runs a nested call that returns and
+    ///   suspends any other. Any other pattern, and a name over an exercise
+    ///   that places a buffer, binds what `e` returns, as
+    ///   [`Self::bound_statement`] binds it, a value `e` returned.
     /// - fails: a fault naming the let statement for a hole or a tile out of
     ///   shape, or for a type stated over a receive or a fork; the binder's and
     ///   the bound computation's own refusals.
@@ -11184,8 +11185,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a value bound to a name is returned once and read
     ///   through the binder, and a call bound to a name is nested once, at the
-    ///   bound insertion.
+    ///   bound insertion; a member reads off a binder stated at a model type.
     /// - witness: `lower::tests::a_let_binds_a_value_once_and_a_computation_nested`
+    /// - witness: `tests::modules::models::a_member_reads_off_a_let_binder_at_a_model_type_4827`
     #[spec(
         captures: before = self.statements.len(),
         ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1_usize)
@@ -11289,7 +11291,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             binding,
             rest: exits::Rest::Bound,
         });
-        let bound_at = self.scope.extend(frame, name, Maybe::Present(binder.span));
+        let bound_at = match annotation {
+            Some(annotation) => {
+                self.scope
+                    .extend_typed(frame, name, annotation.node, Maybe::Present(binder.span))
+            },
+            None => self.scope.extend(frame, name, Maybe::Present(binder.span)),
+        };
         if annotation.is_none() {
             let _first = self.ran.insert(bound_at, (frame, bound));
         }

@@ -1584,6 +1584,35 @@ fn an_operation_is_selected_off_a_model_binder_2246()
     }
 }
 
+/// A member reads off a `let` binder stated at a model type as off a parameter
+/// of that type (#4827), its carrier a field or fixed: the binder records the
+/// type written beside it.
+#[test]
+fn a_member_reads_off_a_let_binder_at_a_model_type_4827()
+{
+    let seeded = "theory Seeded where {\n  sort T : Type;\n  oper seed : T;\n  oper read : (t : T) \
+                  --> Integer;\n}\n";
+    for (model, why) in [
+        ("Model(Seeded)", "its carrier a field"),
+        ("Model(Seeded) with sort T = Integer", "its carrier fixed"),
+    ] {
+        let source = format!(
+            "{seeded}def readOff(m : {model}) -> -F Integer {{\n  let s : {model} = m ; let r = \
+             s.read ; r(s.seed)\n}}\n"
+        );
+        let mut lowered = lower(source.as_str());
+        let read_off = super::declaration(&lowered, "readOff", Role::Declared).constant();
+        assert_eq!(
+            verdicts(&mut lowered)
+                .into_iter()
+                .find(|&(constant, _)| constant == read_off)
+                .map(|(_, judgement)| judgement),
+            Some(Judgement::Checked),
+            "a member reads off a `let` binder at `{model}`, {why}"
+        );
+    }
+}
+
 /// An operation selected off a model binder calls in place (#4818): `m.read(z)`
 /// reads as `let r = m.read ; r(z)` does, whether the type leaves the carrier
 /// a field or fixes it, and the operation reads only `m`'s carrier. A member
