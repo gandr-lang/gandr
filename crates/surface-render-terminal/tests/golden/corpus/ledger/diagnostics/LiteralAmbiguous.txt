@@ -1,0 +1,11 @@
+error[LiteralAmbiguous]: more than one model of `FromNat` reads a literal at this type; apply the meant model's `fromNat` to it by name
+   ╭▸ corpus/ledger/diagnostics/LiteralAmbiguous.gandr:25:27
+   │
+25 │ def ambiguous() -> Expr { 4 }
+   │ ┬──────────────────┬──────┯──
+   │ │                  │      │
+   │ │                  │      a literal two readers answer: expected `Expr`
+   │ │                  the type it is checked against
+   │ checked against `() => Expr`; while checking the body of this thunk
+   │
+   ╰ note: `ambiguous` is refused with LiteralAmbiguous, as its expectation states

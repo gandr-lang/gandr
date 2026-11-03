@@ -858,6 +858,10 @@ fn control_nodes_persist_names_frames_and_branch_order()
             at,
             expected: typed.clone(),
         },
+        super::Refusal::LiteralAmbiguous {
+            at,
+            expected: typed.clone(),
+        },
         super::Refusal::CapabilityAmplified {
             at,
             synthesised: typed.clone(),
@@ -2897,6 +2901,7 @@ fn every_refusal() -> Vec<Refusal>
             fault: gandr_core_checker::TacticFault::Unplaced,
         },
         Refusal::CapabilityForged { at, expected: ty() },
+        Refusal::LiteralAmbiguous { at, expected: ty() },
         Refusal::CapabilityAmplified {
             at,
             synthesised: ty(),

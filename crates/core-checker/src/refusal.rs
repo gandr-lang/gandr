@@ -1355,6 +1355,16 @@ pub enum CheckRefusal
         /// The capability type it stands at.
         expected: ValueTypeId,
     },
+    /// A natural literal stands at a type two models of the prelude's
+    /// `FromNat` read it into: the literal names neither, and no order between
+    /// models picks one.
+    LiteralAmbiguous
+    {
+        /// The literal.
+        at: ValueId,
+        /// The type it is checked at.
+        expected: ValueTypeId,
+    },
     /// A capability stands where one granting an operation its own authority
     /// does not grant is expected: authority only narrows.
     CapabilityAmplified(Mismatch),
@@ -1598,7 +1608,7 @@ impl CheckRefusal
         | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::StagesDisagree { .. } | Self::StageNotCarried { .. } | Self::UnenclosedRun { .. } | Self::ImplicitUnsolved { .. } | Self::ModelUnanswered { .. } | Self::ModelAmbiguous { .. }
         | Self::TacticRefused { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Codata { .. } | Self::Located { .. }
-        | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. } | Self::FootprintsOverlap { .. }
+        | Self::CapabilityForged { .. } | Self::LiteralAmbiguous { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. } | Self::FootprintsOverlap { .. }
         | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::UnassertedLaw { .. } | Self::UndischargedLaw { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::DialogueUnmatched { .. } | Self::DialogueInverted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
     #[inline]
@@ -1675,6 +1685,7 @@ impl CheckRefusal
             | Self::Codata { .. }
             | Self::Located { .. }
             | Self::CapabilityForged { .. }
+            | Self::LiteralAmbiguous { .. }
             | Self::CapabilityAmplified(_)
             | Self::CapabilityOutsideAuthority { .. }
             | Self::CapabilityEscaped { .. }
@@ -1763,7 +1774,7 @@ impl CheckRefusal
         | Self::CapabilityAmplified(Mismatch::Computation { synthesised, expected, .. }) =>
             ret == Compared { expected: Maybe::Present(TypeNode::Computation(expected)), found: Maybe::Present(TypeNode::Computation(synthesised)) },
         | Self::ShapeMismatch { found, .. } | Self::CapabilityEscaped { found, .. } => ret.found == Maybe::Present(found) && ret.expected == UNNAMED,
-        | Self::CapabilityForged { expected, .. } => ret.expected == Maybe::Present(TypeNode::Value(expected)) && ret.found == UNNAMED,
+        | Self::CapabilityForged { expected, .. } | Self::LiteralAmbiguous { expected, .. } => ret.expected == Maybe::Present(TypeNode::Value(expected)) && ret.found == UNNAMED,
         | Self::DependentBind { synthesised, .. } | Self::DependentStack { synthesised, .. } | Self::CompoundEndpoint { synthesised, .. } =>
             ret.found == Maybe::Present(TypeNode::Computation(synthesised)) && ret.expected == UNNAMED,
         | Self::StaticClassifierExpected { found, .. } | Self::FunextUnsupported { classifier: found, .. }
@@ -1830,7 +1841,7 @@ impl CheckRefusal
             Self::ShapeMismatch { found, .. } | Self::CapabilityEscaped { found, .. } => {
                 (UNNAMED, Maybe::Present(found))
             },
-            Self::CapabilityForged { expected, .. } => {
+            Self::CapabilityForged { expected, .. } | Self::LiteralAmbiguous { expected, .. } => {
                 (Maybe::Present(TypeNode::Value(expected)), UNNAMED)
             },
             Self::DependentBind { synthesised, .. }

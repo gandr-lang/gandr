@@ -7530,6 +7530,11 @@ where
             write_site(writer, at)?;
             write_type(writer, expected)?;
         },
+        Refusal::LiteralAmbiguous { at, ref expected } => {
+            writer.tag(Tag(106));
+            write_site(writer, at)?;
+            write_type(writer, expected)?;
+        },
         Refusal::CapabilityAmplified {
             at,
             ref synthesised,
@@ -8118,6 +8123,10 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             defect: read_linearity(reader)?,
         },
         58 => Refusal::CapabilityForged {
+            at: read_site(reader)?,
+            expected: read_type(reader)?,
+        },
+        106 => Refusal::LiteralAmbiguous {
             at: read_site(reader)?,
             expected: read_type(reader)?,
         },
@@ -8896,6 +8905,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::TacticRefused { .. }
             | Refusal::Linearity { .. }
             | Refusal::CapabilityForged { .. }
+            | Refusal::LiteralAmbiguous { .. }
             | Refusal::CapabilityAmplified { .. }
             | Refusal::CapabilityOutsideAuthority { .. }
             | Refusal::CapabilityEscaped { .. }

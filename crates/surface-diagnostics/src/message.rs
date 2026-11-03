@@ -1501,6 +1501,10 @@ fn checked(
         CheckRefusal::CapabilityForged { .. } => f.write_str(
             "a capability cannot be made from a term; only one held or granted can stand here",
         ),
+        CheckRefusal::LiteralAmbiguous { .. } => f.write_str(
+            "more than one model of `FromNat` reads a literal at this type; apply the meant \
+             model's `fromNat` to it by name",
+        ),
         CheckRefusal::CapabilityAmplified(_) => {
             f.write_str("this capability grants less than the one expected here")
         },
@@ -2447,6 +2451,10 @@ pub mod tests
                 fault: CodataFault::Arity,
             },
             CheckRefusal::CapabilityForged {
+                at: value,
+                expected: value_type,
+            },
+            CheckRefusal::LiteralAmbiguous {
                 at: value,
                 expected: value_type,
             },

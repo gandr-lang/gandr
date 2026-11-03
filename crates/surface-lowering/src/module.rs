@@ -11876,6 +11876,9 @@ pub struct LoweredModule<'source>
     reducts: Vec<ConstantIndex>,
     /// The forgetting maps the module mints, ascending by position.
     forgets: Vec<ConstantIndex>,
+    /// The `fromNat` members of the models of the prelude's `FromNat`, in
+    /// declaration order.
+    readers: Vec<ConstantIndex>,
     /// Each forgetting map the module mints as a source writes it, ascending
     /// by the map's position.
     forgettings: Vec<Forgetting>,
@@ -11942,6 +11945,7 @@ impl<'source> LoweredModule<'source>
             offer: Maybe::Absent(offer::Absent::Unoffered),
             reducts: Vec::new(),
             forgets: Vec::new(),
+            readers: Vec::new(),
             forgettings: Vec::new(),
             record_faces: Vec::new(),
         }
@@ -12079,6 +12083,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.forgets = forgets;
+        self
+    }
+
+    /// This module, carrying `readers`, the `fromNat` members of the models of
+    /// the prelude's `FromNat`, in declaration order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_readers(
+        mut self,
+        readers: Vec<ConstantIndex>,
+    ) -> Self
+    {
+        self.readers = readers;
         self
     }
 
@@ -13049,6 +13069,19 @@ impl<'source> LoweredModule<'source>
     pub fn forgets(&self) -> &[ConstantIndex]
     {
         &self.forgets
+    }
+
+    /// The literal readers this module lends, in declaration order: the
+    /// `fromNat` member of each model of the prelude's `FromNat`, which the
+    /// checker applies to a natural literal checked at the model's carrier.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn readers(&self) -> &[ConstantIndex]
+    {
+        &self.readers
     }
 
     /// Each forgetting map this module mints as a source writes it, ascending

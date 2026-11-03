@@ -492,6 +492,10 @@ pub struct CheckingContext<'arena>
     /// to the models of one it includes: the value bridge crosses by one where
     /// a model of the first stands at a model of the second.
     reducts: Vec<gandr_kernel_term::ConstantIndex>,
+    /// The literal readers the module lends, each a model's `fromNat`: the
+    /// value bridge crosses a natural literal by the one whose carrier is the
+    /// type the literal is checked at.
+    readers: Vec<gandr_kernel_term::ConstantIndex>,
     /// The tier an endpoint pair is offered before the machine, when the run
     /// handed one. A checkpoint does not keep it: a resumed context takes its
     /// own.
@@ -704,6 +708,8 @@ pub struct Checkpoint
     pattern_holes: BTreeSet<HoleId>,
     /// [`CheckingContext::reducts`].
     reducts: Vec<gandr_kernel_term::ConstantIndex>,
+    /// [`CheckingContext::readers`].
+    readers: Vec<gandr_kernel_term::ConstantIndex>,
 }
 
 impl<'arena> CheckingContext<'arena>
@@ -828,6 +834,7 @@ impl<'arena> CheckingContext<'arena>
             worlds: crate::worlds::Worlds::default(),
             pattern_holes: BTreeSet::new(),
             reducts: Vec::new(),
+            readers: Vec::new(),
             tier: None,
             admitting: gandr_kernel_core::AdmissionPolicy::Derive,
             strata: crate::ua::Strata::default(),
@@ -907,6 +914,7 @@ impl<'arena> CheckingContext<'arena>
             ref worlds,
             ref pattern_holes,
             ref reducts,
+            ref readers,
             tier: _,
             admitting: _,
             strata: _,
@@ -964,6 +972,7 @@ impl<'arena> CheckingContext<'arena>
             worlds: worlds.clone(),
             pattern_holes: pattern_holes.clone(),
             reducts: reducts.clone(),
+            readers: readers.clone(),
         }
     }
 
@@ -1042,6 +1051,7 @@ impl<'arena> CheckingContext<'arena>
             worlds,
             pattern_holes,
             reducts,
+            readers,
         } = checkpoint;
         Self {
             arena,
@@ -1101,6 +1111,7 @@ impl<'arena> CheckingContext<'arena>
             worlds,
             pattern_holes,
             reducts,
+            readers,
             tier: None,
             admitting: gandr_kernel_core::AdmissionPolicy::Derive,
             strata: crate::ua::Strata::default(),
@@ -1749,6 +1760,46 @@ impl<'arena> CheckingContext<'arena>
     pub(crate) fn reducts(&self) -> &[gandr_kernel_term::ConstantIndex]
     {
         &self.reducts
+    }
+
+    /// Read `readers` as the literal readers the module lends, so the value
+    /// bridge crosses a natural literal checked at a type apart from `Integer`
+    /// by the one whose carrier converts with that type.
+    ///
+    /// # Specification
+    /// - ensures: every later value bridge from `Integer` at a natural literal
+    ///   to a type apart from it crosses by the one kept reader whose result
+    ///   converts with that type, and records it at the literal; each reader is
+    ///   kept once, in position order, however often it is read.
+    /// - panics: none.
+    /// - executable: none — the kept readers are the receiver's own, which a
+    ///   predicate would search again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a literal checked at a parity crosses by the parity's
+    ///   reader once it is kept, and is refused while it is not.
+    /// - witness: `module::tests::a_natural_literal_crosses_by_the_reader_of_its_type_4528`
+    #[inline]
+    pub fn keep_readers(
+        &mut self,
+        readers: &[gandr_kernel_term::ConstantIndex],
+    )
+    {
+        self.readers.extend(readers.iter().copied());
+        self.readers.sort_unstable();
+        self.readers.dedup();
+    }
+
+    /// The literal readers the module lends, in position order, as
+    /// [`CheckingContext::keep_readers`] kept them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn readers(&self) -> &[gandr_kernel_term::ConstantIndex]
+    {
+        &self.readers
     }
 
     /// `hole` when it was written in place of a pattern.

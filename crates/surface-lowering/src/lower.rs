@@ -776,6 +776,8 @@ mod model;
 
 mod native;
 
+mod reader;
+
 mod natural;
 
 mod opening;
@@ -4905,6 +4907,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .filter(|entry| matches!(entry.refusal, Maybe::Absent(_)))
             .map(|entry| entry.constant)
             .collect();
+        // The readers the checker may cross a natural literal by where a type
+        // other than `Integer` is expected.
+        let readers = self.literal_readers();
         // Each minted one as a source writes it: its theory, the theory it
         // returns a model of, and its carriers' sorts.
         let mut forgotten = core::mem::take(&mut self.forgotten);
@@ -5172,6 +5177,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_offer(offer)
         .with_reducts(reducts)
         .with_forgets(forgets)
+        .with_readers(readers)
         .with_reading(collected.unit, reads)
         .with_forgettings(forgettings)
         .with_record_faces(record_faces);
