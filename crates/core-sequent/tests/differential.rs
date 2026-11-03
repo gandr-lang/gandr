@@ -12,6 +12,7 @@
 //! normaliser when it is applied to a canonical argument, and on a closed
 //! first-order answer the two agree.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -33,12 +34,16 @@ use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
 use gandr_core_sequent::focus_computation;
 use gandr_core_sequent::read_back_terminal;
+use gandr_core_term::Binders;
 use gandr_core_term::CompTypeId;
+use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DefinitionalEnvironment;
+use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::shift_value;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
@@ -519,6 +524,264 @@ pub fn settled(answer: &Answer) -> Answer
         Answer::Term { ref core, term } => normalised(core, term),
         Answer::Stopped(stop) => Answer::Stopped(stop),
     }
+}
+
+/// The rounds [`fired`] settles a reading for at most: each round fires every
+/// application of a bind the last one left and normalises the result.
+const FIRING_ROUNDS: u32 = 16_u32;
+
+/// A settled answer with every application of a bind fired at a distance
+/// through it, `(x ← M; N) V` read as `x ← M; N V`, and normalised again,
+/// until no application of a bind is left.
+///
+/// The closure's β enters a closure at the end of a bind chain at a distance
+/// (`closure.rs`, # The closure's β). Where the chain's head is stuck, as a
+/// case on a variable a function binds, the written run keeps the application
+/// outside the bind, and the normaliser fires no β at a distance, so the two
+/// readings differ by that equation alone.
+///
+/// # Specification
+/// - requires: as [`settled`].
+/// - ensures: a stopped answer remains the same stop; a term answer is settled,
+///   then read with each application of a bind moved into the bind's body and
+///   settled again, for at most [`FIRING_ROUNDS`] rounds, until a round moves
+///   none.
+/// - provides: the observation an entered program and its written cut share.
+/// - panics: as [`settled`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — a generated program and its entered image, each read
+///   back, normalised and fired at a distance, agree node for node; L3 — an
+///   application of a bind whose head is a case on a bound variable reads as
+///   the bind of that case over the application, which normalising alone leaves
+///   apart.
+/// - witness: `tests::closures::an_entered_closure_answers_as_the_cut_did`
+/// - witness: `tests::closures::an_application_of_a_stuck_bind_fires_at_a_distance_4264`
+#[spec(ensures: |ref ret| match *answer {
+    | Answer::Stopped(stop) => matches!(*ret, Answer::Stopped(found) if found == stop),
+    | Answer::Term { .. } => match *ret {
+        | Answer::Term { ref core, term } => core.computation(term).is_some(),
+        | Answer::Stopped(_) => true,
+    },
+})]
+pub fn fired(answer: &Answer) -> Answer
+{
+    let mut current = settled(answer);
+    for _round in 0_u32 .. FIRING_ROUNDS {
+        let Answer::Term { ref core, term } = current
+        else {
+            return current;
+        };
+        let mut moved = (**core).clone();
+        let (term, Moved(true)) = distant(&mut moved, term)
+        else {
+            return current;
+        };
+        current = settled(&Answer::Term {
+            core: Box::new(moved),
+            term,
+        });
+    }
+    current
+}
+
+/// Whether a rewrite moved an application.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Moved(bool);
+
+/// A node of a reading [`distant`] rebuilds.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Node
+{
+    /// A computation.
+    Computation(ComputationId),
+    /// A value.
+    Value(ValueId),
+}
+
+/// The children of `node` [`distant`] rebuilds it over, in order: none for a
+/// node the generated programs never read back.
+///
+/// # Specification
+/// trivial.
+fn rebuilt_children(
+    core: &CoreArena,
+    node: Node,
+) -> Vec<Node>
+{
+    match node {
+        Node::Computation(id) => match core.computation(id) {
+            Some(&Computation::Application(head, argument)) => {
+                alloc::vec![Node::Computation(head), Node::Value(argument)]
+            },
+            Some(&Computation::Bind(bound, body)) => {
+                alloc::vec![Node::Computation(bound), Node::Computation(body)]
+            },
+            Some(&Computation::Lambda(body)) => alloc::vec![Node::Computation(body)],
+            Some(&Computation::Case {
+                scrutinee,
+                ref branches,
+            }) => core::iter::once(Node::Value(scrutinee))
+                .chain(branches.iter().copied().map(Node::Computation))
+                .collect(),
+            Some(&(Computation::Return(value) | Computation::Force(value))) => {
+                alloc::vec![Node::Value(value)]
+            },
+            Some(_) | None => Vec::new(),
+        },
+        Node::Value(id) => match core.value(id) {
+            Some(&Value::Thunk(body)) => alloc::vec![Node::Computation(body)],
+            Some(&Value::Injection(_, body)) => alloc::vec![Node::Value(body)],
+            Some(&Value::Tuple(ref components)) => {
+                components.iter().copied().map(Node::Value).collect()
+            },
+            Some(_) | None => Vec::new(),
+        },
+    }
+}
+
+/// `term` with each application of a bind moved one bind inward, `(x ← M; N)
+/// V` rebuilt as `x ← M; N V` with `V` raised past the bind's binder, and
+/// whether one moved. A shared node is rebuilt once.
+///
+/// # Specification
+/// - requires: `term` is live in `core`.
+/// - ensures: the rebuilt term is live in `core`; it is `term` itself when no
+///   application of a bind lies below it.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`fired`].
+/// - witness: `tests::closures::an_entered_closure_answers_as_the_cut_did`
+#[spec(ensures: |ret| core.computation(ret.0).is_some() || ret.0 == term)]
+fn distant(
+    core: &mut CoreArena,
+    term: ComputationId,
+) -> (ComputationId, Moved)
+{
+    let root = Node::Computation(term);
+    let mut rebuilt: BTreeMap<Node, (Node, Moved)> = BTreeMap::new();
+    let mut pending = alloc::vec![(root, false)];
+    let mut parts = Vec::new();
+    while let Some((node, opened)) = pending.pop() {
+        if rebuilt.contains_key(&node) {
+            continue;
+        }
+        let children = rebuilt_children(core, node);
+        if !opened {
+            pending.push((node, true));
+            pending.extend(
+                children
+                    .into_iter()
+                    .filter(|child| !rebuilt.contains_key(child))
+                    .map(|child| (child, false)),
+            );
+            continue;
+        }
+        let mut moved = false;
+        parts.clear();
+        for child in children {
+            let &(part, Moved(below)) = rebuilt.get(&child).unwrap_or(&(child, Moved(false)));
+            moved |= below;
+            parts.push(part);
+        }
+        let entry = if moved || matches!(node, Node::Computation(_)) {
+            rebuild(core, node, &parts, Moved(moved))
+        }
+        else {
+            (node, Moved(false))
+        };
+        let _first = rebuilt.insert(node, entry);
+    }
+    match rebuilt.get(&root) {
+        Some(&(Node::Computation(id), moved)) => (id, moved),
+        Some(&(Node::Value(_), _)) | None => (term, Moved(false)),
+    }
+}
+
+/// `node` over its rebuilt `parts`, an application of a bind moved into the
+/// bind's body, and whether anything below or at it moved.
+///
+/// # Specification
+/// trivial.
+fn rebuild(
+    core: &mut CoreArena,
+    node: Node,
+    parts: &[Node],
+    below: Moved,
+) -> (Node, Moved)
+{
+    let computation = |at: usize| match parts.get(at) {
+        Some(&Node::Computation(id)) => Some(id),
+        Some(&Node::Value(_)) | None => None,
+    };
+    let value = |at: usize| match parts.get(at) {
+        Some(&Node::Value(id)) => Some(id),
+        Some(&Node::Computation(_)) | None => None,
+    };
+    let unchanged = (node, below);
+    if let Node::Computation(id) = node
+        && let Some(&Computation::Application(..)) = core.computation(id)
+    {
+        let (Some(head), Some(argument)) = (computation(0), value(1))
+        else {
+            return unchanged;
+        };
+        if let Some(&Computation::Bind(bound, body)) = core.computation(head) {
+            let raised = shift_value(core, argument, Binders::from(1_u32)).settle(core);
+            let applied = core.computation_application(body, raised);
+            return (
+                Node::Computation(core.computation_bind(bound, applied)),
+                Moved(true),
+            );
+        }
+        if !below.0 {
+            return unchanged;
+        }
+        return (
+            Node::Computation(core.computation_application(head, argument)),
+            below,
+        );
+    }
+    if !below.0 {
+        return unchanged;
+    }
+    let rebuilt = match node {
+        Node::Computation(id) => match core.computation(id).cloned() {
+            Some(Computation::Bind(..)) => computation(0)
+                .zip(computation(1))
+                .map(|(bound, body)| Node::Computation(core.computation_bind(bound, body))),
+            Some(Computation::Lambda(_)) => {
+                computation(0).map(|body| Node::Computation(core.computation_lambda(body)))
+            },
+            Some(Computation::Case { .. }) => {
+                let branches: Option<Vec<_>> = (1 .. parts.len()).map(computation).collect();
+                value(0).zip(branches).map(|(scrutinee, branches)| {
+                    Node::Computation(core.computation_case(scrutinee, &branches))
+                })
+            },
+            Some(Computation::Return(_)) => {
+                value(0).map(|returned| Node::Computation(core.computation_return(returned)))
+            },
+            Some(Computation::Force(_)) => {
+                value(0).map(|forced| Node::Computation(core.computation_force(forced)))
+            },
+            Some(_) | None => None,
+        },
+        Node::Value(id) => match core.value(id).cloned() {
+            Some(Value::Thunk(_)) => computation(0).map(|body| Node::Value(core.value_thunk(body))),
+            Some(Value::Injection(summand, _)) => {
+                value(0).map(|body| Node::Value(core.value_injection(summand, body)))
+            },
+            Some(Value::Tuple(_)) => {
+                let components: Option<Vec<_>> = (0 .. parts.len()).map(value).collect();
+                components.map(|components| Node::Value(core.value_tuple(&components)))
+            },
+            Some(_) | None => None,
+        },
+    };
+    rebuilt.map_or(unchanged, |rebuilt| (rebuilt, below))
 }
 
 /// Whether two answers agree: the same stop, or terms equal node for node.

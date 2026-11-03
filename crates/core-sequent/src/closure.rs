@@ -332,7 +332,8 @@ pub fn convert_all(
 /// # Adequacy
 /// - hypothesis: L2 — every generated program, converted or not, checks with
 ///   its redexes entered and runs to the answer it runs to as written, once
-///   both readings are normalised, on every tier the host has.
+///   both readings are normalised and each application of a bind is fired at a
+///   distance through it, on every tier the host has.
 /// - witness: `tests::closures::an_entered_closure_answers_as_the_cut_did`
 #[inline]
 pub fn enter_all(
