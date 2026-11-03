@@ -385,6 +385,7 @@ pub mod client;
 mod complete;
 #[cfg(unix)]
 mod disk;
+mod doc;
 mod files;
 mod fix;
 mod format;
@@ -431,6 +432,11 @@ pub use gandr_surface_pretty::Spelling;
 pub use crate::build::unidentified;
 #[cfg(unix)]
 pub use crate::bus::RENDER_BUS_PREFACE;
+pub use crate::doc::Entry;
+pub use crate::doc::Page;
+pub use crate::doc::Unpaged;
+pub use crate::doc::index;
+pub use crate::doc::page;
 pub use crate::handover::Carried;
 pub use crate::handover::Handover;
 pub use crate::handover::REPLAY;
