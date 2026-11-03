@@ -2363,25 +2363,59 @@ fn instantiated(
 ) -> Maybe<ValueTypeId, lowered::Absent>
 {
     let mark = sink.arena.watermark();
-    let code = sink.arena.value_quote(declared);
     let mut carried = Vec::new();
-    let substituted = gandr_core_term::substitute_environment_traced(
-        sink.arena,
-        TermId::Value(code),
-        environment,
-        &mut carried,
-    );
+    let substituted = substituted_type(declared, environment, sink.arena, Some(&mut carried));
     exits::record_copies(sink, mark, &carried, origin);
+    substituted
+}
+
+/// `declared` quoted, its binders replaced by `environment`, the innermost
+/// first, and read back as a type, each node the substitution carries pushed
+/// onto `carried` when one is given.
+///
+/// # Specification
+/// - requires: `environment` holds one value per binder `declared` reads, the
+///   innermost first.
+/// - ensures: the type the substituted quote holds; nothing when the
+///   substitution leaves no quoted type. With `carried`, each node the
+///   substitution carried, as
+///   [`gandr_core_term::substitute_environment_traced`] records it; the caller
+///   records their origins.
+/// - provides: the one reading of a declared type at the arguments it is
+///   applied to.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constructor's classifier, a projected field's type and
+///   a called parameter's type, each over its arguments.
+/// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
+/// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+/// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
+/// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
+#[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if arena.value_type(id).is_some()))]
+pub(super) fn substituted_type(
+    declared: ValueTypeId,
+    environment: &[ValueId],
+    arena: &mut gandr_core_term::CoreArena,
+    carried: Option<&mut Vec<Carried>>,
+) -> Maybe<ValueTypeId, lowered::Absent>
+{
+    let code = TermId::Value(arena.value_quote(declared));
+    let substituted = match carried {
+        Some(carried) => {
+            gandr_core_term::substitute_environment_traced(arena, code, environment, carried)
+        },
+        None => gandr_core_term::substitute_environment(arena, code, environment),
+    };
     let TermId::Value(substituted) = substituted
     else {
         return Maybe::Absent(lowered::Absent::Unminted);
     };
-    let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
-    else {
-        return Maybe::Absent(lowered::Absent::Unminted);
-    };
-
-    Maybe::Present(ty)
+    match arena.value(substituted) {
+        Some(&Value::Quote(ty)) => Maybe::Present(ty),
+        Some(_) | None => Maybe::Absent(lowered::Absent::Unminted),
+    }
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -10927,18 +10961,8 @@ impl<'source> Lowerer<'_, 'source>
                     return unminted;
                 };
                 let declared = lowered.settle(sink.arena);
-                let code = sink.arena.value_quote(declared);
-                let substituted = gandr_core_term::substitute_environment_traced(
-                    sink.arena,
-                    TermId::Value(code),
-                    &environment,
-                    &mut copies,
-                );
-                let TermId::Value(substituted) = substituted
-                else {
-                    return unminted;
-                };
-                let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
+                let Maybe::Present(ty) =
+                    substituted_type(declared, &environment, sink.arena, Some(&mut copies))
                 else {
                     return unminted;
                 };
@@ -14163,14 +14187,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         let mut scratch = core::mem::take(&mut self.scratch);
         let read = read_pieces(self.pbg, self.tree, ty, &mut scratch);
-        let head = scratch.pieces.iter().find_map(|piece| match *piece {
-            Piece::Tile { label, at }
-                if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE =>
-            {
-                Some(at)
-            },
-            Piece::Tile { .. } | Piece::Operand(_) => None,
-        });
+        let head = scratch.pieces.iter().find_map(|piece| piece.type_head());
         self.scratch = scratch;
         read?;
         let Some(head) = head
@@ -14645,10 +14662,9 @@ impl<'source> Lowerer<'_, 'source>
     ) -> TypeDescent
     {
         TypeDescent(
-            matches!(*pieces, [Piece::Tile { label, at }, Piece::Tile { label: open, .. }, ..]
-            if (label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE)
-                && open == TileName::BRACKET_OPEN
-                && self.name_at(at) == own),
+            matches!(*pieces, [head, Piece::Tile { label: open, .. }, ..]
+            if open == TileName::BRACKET_OPEN
+                && head.type_head().is_some_and(|at| self.name_at(at) == own)),
         )
     }
 
