@@ -1792,6 +1792,80 @@ fn a_pack_of_no_module_is_refused()
     );
 }
 
+/// #4485: a module's name read as a value is its model, the record `pack`
+/// builds at the model type its header ascribes, as a definition's body and
+/// as an argument, and both check.
+#[test]
+fn a_module_named_where_a_value_is_read_is_its_model_4485()
+{
+    // `Open` names a constructor the prelude declares, which answers before a
+    // module does, so the module takes a name nothing else answers.
+    let source = format!(
+        "{}def packed : Model(Counter) ;\ndef packed = pack Opened at Model(Counter) ;\ndef bare : \
+         Model(Counter) ;\ndef bare = Opened ;\ndef started(m : Model(Counter)) -> Integer {{ 0 \
+         }}\ndef passed() -> Integer {{ started(Opened) }}\n",
+        COUNTER.replace("module Open :", "module Opened :")
+    );
+    let mut lowered = lower(source.as_str());
+    let leaves = |root| {
+        let mut leaves = Vec::new();
+        let mut pending = vec![root];
+        while let Some(id) = pending.pop() {
+            match lowered.arena.value(id).cloned() {
+                Some(Value::Tuple(ref components)) => pending.extend(components.iter().rev()),
+                Some(Value::Quote(_)) => leaves.push(None),
+                other => leaves.push(other),
+            }
+        }
+        leaves
+    };
+    assert_eq!(
+        leaves(body_of(&lowered, "bare")),
+        leaves(body_of(&lowered, "packed")),
+        "the name packs as `pack Opened at Model(Counter)` does"
+    );
+    let checked = ["bare", "passed"]
+        .map(|path| super::declaration(&lowered, path, Role::Declared).constant());
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        checked
+            .iter()
+            .all(|&constant| judgements.contains(&(constant, Judgement::Checked))),
+        "the name checks as a body and as an argument: {judgements:?}"
+    );
+}
+
+/// #4485: only a module declared before the name and ascribed a model type
+/// is read as a value; any other name stays unresolved.
+#[test]
+fn a_module_no_model_type_ascribes_is_no_value_4485()
+{
+    let counter = COUNTER.replace("module Open :", "module Opened :");
+    let (theory, module) = counter
+        .split_once("module Opened")
+        .expect("the counter declares its theory before its module");
+    let source = format!(
+        "{theory}def early : Model(Counter) ;\ndef early = Opened ;\nmodule Opened{module}module \
+         Plain where {{\n  def start() -> -F Integer {{ 0 }}\n}}\ndef plain : Model(Counter) ;\ndef \
+         plain = Plain ;\n"
+    );
+    let found = rows(&lower(source.as_str()));
+    for (path, module, at) in [("early", "Opened", 0_usize), ("plain", "Plain", 1_usize)] {
+        let refused = Amounts::Refused(LoweringRefusal::UnresolvedName {
+            span: span_of(source.as_str(), module, at),
+            name: name(module),
+        });
+        assert!(
+            found
+                .iter()
+                .any(|&(ref written, role, amounts)| written == path
+                    && role == Role::Declared
+                    && amounts == refused),
+            "`{module}` is no value at `{path}`: {found:?}"
+        );
+    }
+}
+
 /// A theory one of whose components is a model of another packs the module
 /// giving it with the member module its component names, and the record
 /// checks at the outer theory's models.
