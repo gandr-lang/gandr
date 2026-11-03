@@ -987,15 +987,15 @@ impl Reader<'_, '_>
     }
 
     /// The row a rule's `under` item states it fires under: each theory it
-    /// names, found as an `include` member's is, and whether the row stays
-    /// open through a tail.
+    /// names by its name or its dotted path, `Store.Eff`, found as an `include`
+    /// member's is, and whether the row stays open through a tail.
     ///
     /// # Specification
     /// - requires: `run` stands past an item's bar in the rule's `where` block.
     /// - ensures: absent when no `under` follows; otherwise the theories in
-    ///   written order, each under the name its block presents, open exactly
-    ///   when a `| r` tail follows them, and `run` past the `]`.
-    /// - fails: a row out of shape is malformed; at the name, a name no block
+    ///   written order, each under the whole path its block presents, open
+    ///   exactly when a `| r` tail follows them, and `run` past the `]`.
+    /// - fails: a row out of shape is malformed; at the path, a path no block
     ///   of `visible` presents is [`SignatureFault::UnknownRowTheory`], one
     ///   blocks of two imported sources present and none of its own
     ///   [`SignatureFault::AmbiguousRowTheory`], and a theory named again
@@ -1007,8 +1007,10 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an open and a closed row of two theories, an unknown
-    ///   theory and one named twice are told apart.
+    ///   theory and one named twice are told apart; a theory at a dotted path
+    ///   is read by its whole path.
     /// - witness: `description::theory::tests::an_under_row_names_each_theory_in_scope_once_2448`
+    /// - witness: `description::theory::tests::an_under_row_names_a_theory_at_a_dotted_path_4514`
     #[spec(ensures: |ret| match ret {
         | Ok(Maybe::Present(ref under)) => !under.theories.is_empty(),
         | Ok(Maybe::Absent(_)) | Err(_) => true,
@@ -1026,32 +1028,47 @@ impl Reader<'_, '_>
             return Err(run.fault(DescriptionFault::Malformed));
         }
         let mut theories = Vec::new();
-        let mut named: BTreeMap<&str, ByteSpan> = BTreeMap::new();
+        let mut named: BTreeMap<String, ByteSpan> = BTreeMap::new();
         let tail = loop {
-            let theory = run.take()?;
-            let Written(name) = self.text(theory);
+            let first = run.take()?;
+            // A dotted path, `Store.Eff`, names the block its declaration
+            // presents under the whole path. Inside the row the grammar reads
+            // each `.Eff` past the first name as an operand of its own, which
+            // starts where the name before it ends.
+            let mut last = first;
+            let mut name = String::from(self.text(first).0);
+            while let Some(&Piece::Operand(next)) = run.remaining().first()
+                && next.span.start() == last.span.end()
+                && self.text(next).0.starts_with('.')
+            {
+                last = run.take()?;
+                name.push_str(self.text(last).0);
+            }
+            let span = ByteSpan::new(first.span.start(), last.span.end()).unwrap_or(first.span);
             let refused = |fault| DescriptionDiagnostic {
-                span: theory.span,
+                span,
                 fault: DescriptionFault::Signature(fault),
             };
-            let found = match presenting(visible, Written(name)) {
+            let found = match presenting(visible, Written(name.as_str())) {
                 Presenting::Found(declaration, _) => declaration.description.id.name.clone(),
                 Presenting::Unknown => {
-                    return Err(refused(SignatureFault::UnknownRowTheory(Name::from(name))));
+                    return Err(refused(SignatureFault::UnknownRowTheory(Name::from(
+                        name.as_str(),
+                    ))));
                 },
                 Presenting::Ambiguous => {
                     return Err(refused(SignatureFault::AmbiguousRowTheory(Name::from(
-                        name,
+                        name.as_str(),
                     ))));
                 },
             };
-            if let Some(&first) = named.get(name) {
+            if let Some(&first) = named.get(&name) {
                 return Err(refused(SignatureFault::RepeatedRowTheory {
-                    name: Name::from(name),
+                    name: Name::from(name.as_str()),
                     first,
                 }));
             }
-            let _first = named.insert(name, theory.span);
+            let _first = named.insert(name, span);
             theories.push(found);
             let more = run.eat(Spelling(",")).0;
             if run.eat(Spelling("|")).0 {

@@ -1659,6 +1659,45 @@ fn a_private_theory_in_a_dotted_module_is_refused_to_its_importer_2687()
     );
 }
 
+/// #4514: a theory another source declares at a dotted path, `Store.Eff`, is
+/// read by its path wherever a theory is named: a labelled row entry and a
+/// scope's head, each fixing the theory's value sort, a module ascribed it, a
+/// scope that module answers, and a rule's `under` row.
+#[test]
+fn an_imported_theory_at_a_dotted_path_is_named_wherever_a_theory_is_4514()
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[
+        (
+            SourceText::from(
+                "pub theory Store.Eff where {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k \
+                 : pi+ (s : S). C) --> C;\n}\n",
+            ),
+            &[],
+        ),
+        (
+            SourceText::from(
+                "import \"./store.gandr\" ;\ndef read() -> [st : Store.Eff with sort S = Integer] \
+                 Integer { st.get() }\ndef scoped() -> Integer { handle st : Store.Eff with sort S \
+                 = Integer { read() } with { pure(x) => pure x, oper get(k) => k(4) } }\nmodule \
+                 Fixed : Model(Store.Eff) with sort S = Integer where {\n  type C = Integer;\n  def \
+                 get(k : Integer => Integer) -> Integer { k(4) }\n}\ndef answered() -> Integer { \
+                 handle st : Store.Eff with sort S = Integer { read() } with Fixed }\ntheory Marks \
+                 where {\n  sort C : Type;\n  oper mark : (k : C) --> C;\n  rule kept : \
+                 mark(mark(k)) <=> mark(k) where { | under [Store.Eff | r] };\n}\n",
+            ),
+            &[ImportTarget::Source(SourceIndex::from(0_usize))],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    assert_eq!(
+        refused(&module),
+        Vec::<String>::new(),
+        "each form reads the imported theory by its path"
+    );
+}
+
 /// #2302: the prelude's `theory Eq` enters the presentation's constructors in
 /// the prelude, as any block does, but offers none of them: a source laid
 /// after it reads `Shape` as the type it declares, where the presentation's

@@ -116,6 +116,7 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Shape;
 use crate::form::TileName;
+use crate::form::WrittenPath;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::model::Binder;
@@ -1943,12 +1944,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   bundle [`Self::bundled`] reads off the theory the operand names, the
     ///   outermost theory without the sorts `manifests` fixes; each fixed
     ///   sort's type is read as a value type, and the operand as the theory's
-    ///   name alone.
+    ///   name or dotted path alone.
     /// - fails: yields the wrong-sort refusal where no value type is read; an
-    ///   operand that is no capitalised name is out of the fragment; the
-    ///   refusals [`Self::bundled`] yields; a sort fixed twice is a duplicate
-    ///   definition, an indexed one an unread ascription, and a name that is no
-    ///   sort of the theory an unknown member.
+    ///   operand that is neither a capitalised name nor a dotted path to one is
+    ///   out of the fragment; the refusals [`Self::bundled`] yields; a sort
+    ///   fixed twice is a duplicate definition, an indexed one an unread
+    ///   ascription, and a name that is no sort of the theory an unknown
+    ///   member.
     /// - panics: none.
     ///
     /// # Errors
@@ -1961,12 +1963,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — `Model(Toggle)` beside the record it abbreviates, a
     ///   law-bearing theory's beside its own, a name no theory answers, a
     ///   toggle whose carrier is fixed, and a sort fixed twice, an indexed one
-    ///   and a member that is no sort.
+    ///   and a member that is no sort; a theory named by its dotted path.
     /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
     /// - witness: `tests::modules::models::a_law_bearing_model_type_reads_its_operations`
     /// - witness: `tests::modules::models::a_model_type_of_an_undeclared_theory_is_refused`
     /// - witness: `tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
     /// - witness: `tests::modules::models::a_manifest_sort_the_theory_cannot_fix_is_refused`
+    /// - witness: `lower::capability::tests::a_theory_at_a_dotted_path_takes_a_manifest_wherever_a_theory_is_named_4514`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Bundle(_))))]
     pub(super) fn model_type(
         &mut self,
@@ -1982,15 +1985,25 @@ impl<'source> Lowerer<'_, 'source>
         };
         let named = Placed::of(theory, node);
         let written = Site { at: named, ..site };
-        let Shape::Form {
-            former: Former::TypeHead | Former::Constructor,
-            ..
-        } = shape_of(self.pbg, node)?
-        else {
-            return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
+        let path = match shape_of(self.pbg, node)? {
+            Shape::Form {
+                former: Former::TypeHead | Former::Constructor,
+                ..
+            } => WrittenPath {
+                prefix: Vec::new(),
+                last: named,
+            },
+            Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+                match crate::form::operand_entry(self.pbg, self.tree, named)? {
+                    Some((path, fixed)) if fixed.is_empty() => path,
+                    Some(_) | None => {
+                        return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
+                    },
+                }
+            },
         };
         let module = self.name_at(named);
-        let mut theories = self.bundled(written, (site.at.span.start(), module))?;
+        let mut theories = self.bundled(written, (site.at.span.start(), &path))?;
         let Some(outermost) = theories.first_mut()
         else {
             return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
@@ -2494,16 +2507,16 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(Lowered::ValueType(id))
     }
 
-    /// The theories of the bundle the theory `name` names where a form
-    /// starting at `at` stands, its refusals placed at `written`.
+    /// The theories of the bundle the theory the path `path` names where a
+    /// form starting at `at` stands, its refusals placed at `written`.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: `path`'s tiles are written in the tree.
     /// - ensures: the signature the theory derives first, then, depth first in
     ///   the order the components stand, the signature of each theory a nested
     ///   component names, read where the nesting theory's declaration starts,
     ///   each theory beside the places of the theories it nests.
-    /// - fails: the refusals [`crate::module::Collected::presented_theory`]
+    /// - fails: the refusals [`crate::module::Collected::presented_theory_in`]
     ///   yields; an unadmitted form for a theory whose value codes no
     ///   presentation or that nests itself; a component the signature cannot
     ///   state, refused by name with its fault.
@@ -2512,27 +2525,31 @@ impl<'source> Lowerer<'_, 'source>
     /// # Errors
     /// [`LoweringRefusal::UnstatedComponent`],
     /// [`LoweringRefusal::OutOfFragment`] and the refusals of
-    /// [`crate::module::Collected::presented_theory`].
+    /// [`crate::module::Collected::presented_theory_in`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a theory of sorts and operations, one with a law, one
-    ///   with a family sort, one nesting another, and a name no theory answers.
+    ///   with a family sort, one nesting another, a name no theory answers, and
+    ///   a theory another source declares at a dotted path.
     /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
     /// - witness: `tests::modules::models::a_law_bearing_model_type_reads_its_operations`
     /// - witness: `tests::modules::models::a_family_sort_is_a_function_into_the_universe`
     /// - witness: `tests::modules::models::a_nesting_model_type_bundles_the_inner_one`
     /// - witness: `tests::modules::models::a_model_type_of_an_undeclared_theory_is_refused`
+    /// - witness: `tests::namespace::an_imported_theory_at_a_dotted_path_is_named_wherever_a_theory_is_4514`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |theories| !theories.is_empty()))]
     fn bundled(
         &mut self,
         written: Site,
-        (at, name): (ByteOffset, SurfaceName<'source>),
+        (at, path): (ByteOffset, &WrittenPath),
     ) -> Result<Vec<BundledTheory>, LoweringRefusal<'source>>
     {
         let span = written.at.span;
+        let prefix = self.theory_prefix(path);
+        let name = self.name_at(path.last);
         // The outermost theory is the one the written type names: it reaches
         // the import of the source declaring it.
-        let crossed = match self.collected.presented_theory(at, span, name) {
+        let crossed = match self.collected.presented_theory_in(at, &prefix, span, name) {
             Ok((position, _)) => self.collected.slots.get(usize::from(position)).map(|slot| {
                 (
                     self.collected.unit.source_at(at),
@@ -2546,20 +2563,36 @@ impl<'source> Lowerer<'_, 'source>
         {
             self.collected.reach_source(using, declaring);
         }
-        let outermost = self.bundle_theory(written, (at, name))?;
+        let outermost = self.bundle_theory(written, (at, &prefix, name))?;
         self.bundled_from(written, outermost)
     }
 
-    /// The signature the theory `name` names where a form starting at `at`
-    /// stands derives, beside the theory's slot and where its declaration
-    /// starts.
+    /// Each segment of `path` before its last name, `Store` of `Store.Eff`,
+    /// beside the bytes it is written at.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(in crate::lower) fn theory_prefix(
+        &self,
+        path: &WrittenPath,
+    ) -> Vec<(ByteSpan, SurfaceName<'source>)>
+    {
+        path.prefix
+            .iter()
+            .map(|&segment| (segment.span, self.name_at(segment)))
+            .collect()
+    }
+
+    /// The signature the theory the path `prefix` then `name` names where a
+    /// form starting at `at` stands derives, beside the theory's slot and
+    /// where its declaration starts.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the theory's slot, the start of its declaration — `at` when
     ///   the unit holds no such slot — and the signature its presentation
     ///   derives.
-    /// - fails: the refusals [`crate::module::Collected::presented_theory`]
+    /// - fails: the refusals [`crate::module::Collected::presented_theory_in`]
     ///   yields at `written`'s span; an unadmitted form for a theory whose
     ///   value codes no presentation.
     /// - panics: none.
@@ -2576,11 +2609,16 @@ impl<'source> Lowerer<'_, 'source>
     fn bundle_theory(
         &self,
         written: Site,
-        (at, name): (ByteOffset, SurfaceName<'source>),
+        (at, prefix, name): (
+            ByteOffset,
+            &[(ByteSpan, SurfaceName<'source>)],
+            SurfaceName<'source>,
+        ),
     ) -> Result<(SlotIndex, ByteOffset, ModelSignature), LoweringRefusal<'source>>
     {
         let (position, presentation) =
-            self.collected.presented_theory(at, written.at.span, name)?;
+            self.collected
+                .presented_theory_in(at, prefix, written.at.span, name)?;
         let Ok(signature) = crate::model::derive(presentation)
         else {
             return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
@@ -2681,7 +2719,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
             };
-            let (slot, start, signature) = self.bundle_theory(written, (start, name))?;
+            let (slot, start, signature) = self.bundle_theory(written, (start, &[], name))?;
             if frames.iter().any(|frame| frame.slot == slot) {
                 return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
             }
@@ -2907,22 +2945,22 @@ impl<'source> Lowerer<'_, 'source>
             at_stated,
             at_stated.out(FragmentBoundary::Unadmitted(Unbuilt::PackModel)),
         )?;
-        let theories = self.packed_module(site, module, theory, &BTreeMap::new())?;
+        let theories = self.packed_module(site, module, &theory, &BTreeMap::new())?;
         self.plan(site, Plan::Packed(Arc::new(theories)));
 
         Ok(())
     }
 
-    /// The theories [`Self::bundled`] reads off the theory `theory` names,
-    /// each beside the module giving its members: the outermost beside the
-    /// top-level module `module` names, declared before `site`, and each
+    /// The theories [`Self::bundled`] reads off the theory the path `theory`
+    /// names, each beside the module giving its members: the outermost beside
+    /// the top-level module `module` names, declared before `site`, and each
     /// nested one beside the member module its component names in the module
     /// nesting it; the outermost theory holds no component `fixed` names.
     ///
     /// # Specification
-    /// - requires: `module` is a capitalised name and `theory` the name tile of
-    ///   a model type, both written in `site`; `fixed` names sorts the model
-    ///   type fixes.
+    /// - requires: `module` is a capitalised name and `theory` the path of a
+    ///   model type's theory, both written in `site`; `fixed` names sorts the
+    ///   model type fixes.
     /// - ensures: one module per theory, the outermost theory's components
     ///   those its signature states but `fixed`; every component the bundle
     ///   reads given by its module.
@@ -2953,7 +2991,7 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         site: Site,
         module: Placed,
-        theory: Placed,
+        theory: &WrittenPath,
         fixed: &BTreeMap<Name, Placed>,
     ) -> Result<Packed, LoweringRefusal<'source>>
     {
@@ -2978,15 +3016,15 @@ impl<'source> Lowerer<'_, 'source>
         )
     }
 
-    /// The theories [`Self::bundled`] reads off the theory `theory` names,
-    /// each beside the module giving its members, as [`Self::packed_module`]
-    /// reads them, the outermost beside the top-level module `outermost`,
-    /// named `name`; a refusal names the module at `span`.
+    /// The theories [`Self::bundled`] reads off the theory the path `theory`
+    /// names, each beside the module giving its members, as
+    /// [`Self::packed_module`] reads them, the outermost beside the top-level
+    /// module `outermost`, named `name`; a refusal names the module at `span`.
     ///
     /// # Specification
     /// - requires: `outermost` is a top-level module declared before `site`;
-    ///   `theory` the name tile of a model type; `fixed` names sorts the model
-    ///   type fixes.
+    ///   `theory` the path of a model type's theory; `fixed` names sorts the
+    ///   model type fixes.
     /// - ensures: as [`Self::packed_module`] once the module is found.
     /// - fails: as [`Self::packed_module`], but for the unresolved name.
     /// - panics: none.
@@ -3008,12 +3046,15 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         site: Site,
         (outermost, span, name): (StructureIndex, ByteSpan, SurfaceName<'source>),
-        theory: Placed,
+        theory: &WrittenPath,
         fixed: &BTreeMap<Name, Placed>,
     ) -> Result<Packed, LoweringRefusal<'source>>
     {
-        let written = Site { at: theory, ..site };
-        let mut theories = self.bundled(written, (site.at.span.start(), self.name_at(theory)))?;
+        let written = Site {
+            at: theory.last,
+            ..site
+        };
+        let mut theories = self.bundled(written, (site.at.span.start(), theory))?;
         if let Some(outermost) = theories.first_mut() {
             outermost
                 .signature
@@ -3087,13 +3128,14 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Packed { theories, modules })
     }
 
-    /// The theory's name `S` the type `Model(S)` written at `site` names, or
+    /// The theory's path `S` the type `Model(S)` written at `site` names, or
     /// the refusal `refused` the form gives any other type.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the operand's tile, when the type is the application of the
-    ///   head `Model` to one capitalised name.
+    /// - ensures: the operand's path, when the type is the application of the
+    ///   head `Model` to one capitalised name or to a dotted path to one,
+    ///   `State.Eff`.
     /// - fails: any other type, as `refused`; an unknown mold.
     /// - panics: none.
     ///
@@ -3101,15 +3143,17 @@ impl<'source> Lowerer<'_, 'source>
     /// The form's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::pack_model`] and [`Self::forget_model`].
+    /// - hypothesis: L3 — as [`Self::pack_model`] and [`Self::forget_model`],
+    ///   and a model type naming a theory by its dotted path.
     /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
     /// - witness: `tests::modules::models::a_written_forgetting_map_takes_the_slot_it_names_2130`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |theory| theory.span.start() >= site.at.span.start() && theory.span.end() <= site.at.span.end()))]
+    /// - witness: `lower::capability::tests::a_theory_at_a_dotted_path_takes_a_manifest_wherever_a_theory_is_named_4514`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |theory| theory.span().start() >= site.at.span.start() && theory.span().end() <= site.at.span.end()))]
     fn stated_theory(
         &self,
         site: Site,
         refused: LoweringRefusal<'source>,
-    ) -> Result<Placed, LoweringRefusal<'source>>
+    ) -> Result<WrittenPath, LoweringRefusal<'source>>
     {
         let Some((_, Former::TypeApplication)) = self.form_at(site.at)?
         else {
@@ -3133,12 +3177,16 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(refused);
         };
-        let Ok(Some((_, Former::Constructor | Former::TypeHead))) = self.form_at(theory)
-        else {
-            return Err(refused);
-        };
-
-        Ok(theory)
+        match self.form_at(theory) {
+            Ok(Some((_, Former::Constructor | Former::TypeHead))) => Ok(WrittenPath {
+                prefix: Vec::new(),
+                last: theory,
+            }),
+            _ => match crate::form::operand_entry(self.pbg, self.tree, theory)? {
+                Some((path, fixed)) if fixed.is_empty() => Ok(path),
+                Some(_) | None => Err(refused),
+            },
+        }
     }
 
     /// The member module of the module at `holder` that `name` names.

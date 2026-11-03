@@ -2224,7 +2224,7 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 return Err(whole.out(FragmentBoundary::WrongSort));
             }
-            let slot = self.theory_slot(named, site.at.span.start(), &stated)?;
+            let slot = self.theory_slot(named, &written, site.at.span.start(), &stated)?;
             let supplied = self.answering_model(site, written.name(self.tree), &slot)?;
             self.plan(
                 site,
@@ -2254,7 +2254,7 @@ impl<'source> Lowerer<'_, 'source>
                 at: written.last,
                 ..site
             };
-            let slot = self.theory_slot(named, site.at.span.start(), &stated)?;
+            let slot = self.theory_slot(named, &written, site.at.span.start(), &stated)?;
             let supplied = self.named_model(site, module, &slot)?;
             self.plan(
                 site,

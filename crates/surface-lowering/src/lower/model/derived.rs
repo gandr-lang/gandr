@@ -286,9 +286,12 @@ impl<'source> Lowerer<'_, 'source>
             name: FormName::DERIVE_DECLARATION,
             reading: Reading::ValueType(Frame::Outermost),
         };
-        let theory = self.name_at(derived.theory);
+        let theory = crate::form::WrittenPath {
+            prefix: Vec::new(),
+            last: derived.theory,
+        };
         let theories = self
-            .bundled(site, (derived.at, theory))
+            .bundled(site, (derived.at, &theory))
             .map_err(Missing::Refused)?;
         if theories.len() != 1 {
             return Err(Missing::Unlowered);
