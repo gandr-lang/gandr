@@ -1,0 +1,47 @@
+/// A signature states its effects' grades with a relation, and a body states
+/// none.
+///
+/// A grade written at a boundary is a contract its callers read. Inside a
+/// body the checker infers grades, as it infers rows.
+///
+/// A row entry `E <= g`, `E >= g` or `E = g` relates the effect's grade to an
+/// expression of its algebra. A bare `E` constrains nothing, and entries on
+/// one effect conjoin.
+///
+/// - see: #4722 — the graded-rows sketch, its rulings in the issue body
+
+// The effects and the cost theory.
+import std.cost (Cost, charge);
+
+/// A tokenizer's cost is at most its input's length. Each caller reads the
+/// limit from the signature alone.
+pub def tokens(input : String) -> [Cost <= input.length] List(Token) {
+  input.chars.map(classify).group()
+}
+
+/// A lookup in a total map gives exactly one result.
+pub def lookup(table : Map(Key, Value), k : Key) -> [Choice = 1] Value {
+  table.get(k)
+}
+
+/// A search over a nonempty list gives at least one result.
+pub def anyMatch(xs : NonEmpty(Item), wanted : Item -> Bool) -> [Choice >= 1] Item {
+  xs.choose(wanted)
+}
+
+/// Two bounds on one effect conjoin, so this signature means `[Choice = 1]`.
+pub def onlyMatch(xs : NonEmpty(Item), wanted : Item -> Bool) -> [Choice >= 1, Choice <= 1] Item {
+  xs.single(wanted)
+}
+
+/// A builder's allocations are at most two cells per element, an expression
+/// of the algebra.
+pub def pairs(n : Nat) -> [Alloc <= 2 * n] List(Cell * Cell) {
+  List.tabulate(n, fun (_) { (alloc(), alloc()) })
+}
+
+/// A function with an ungraded cost entry: it charges, and its signature
+/// states no bound.
+pub def explore(graph : Graph) -> [Cost] Nat {
+  graph.reachable(graph.root).length
+}
