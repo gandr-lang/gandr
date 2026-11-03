@@ -488,7 +488,9 @@ const TYPE_FORMERS: [(&str, TypeFormer); 2_usize] =
 
 /// The unary type heads a `std` module homes, each by the module's path and
 /// the name a listed import of it binds: `import std.list (List);` and
-/// `import std.session (Run, Prefix, Dialogue);`.
+/// `import std.session (Run, Prefix, Dialogue);`. The qualifier an import of
+/// the module binds reads each too: `std.list.List(A)` under `import
+/// std.list;`, `l.List(A)` under `import std.list as l;`.
 ///
 /// # Specification
 /// - requires: nothing.

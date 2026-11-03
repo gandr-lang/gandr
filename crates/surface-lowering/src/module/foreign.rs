@@ -467,10 +467,8 @@ impl Collected<'_>
         self.imports
             .of(source)
             .filter(|import| {
-                matches!(
-                    *import.opening(),
-                    Opening::Listed { module: listed, .. } if listed.as_ref() == module.as_ref()
-                )
+                matches!(*import.opening(), Opening::Listed(_))
+                    && matches!(import.module(), Maybe::Present(listed) if listed.as_ref() == module.as_ref())
             })
             .map(ImportDeclaration::span)
             .chain(

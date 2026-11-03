@@ -2640,6 +2640,7 @@ INSERT INTO purpose VALUES('surface-lowering','import::direct::Absent','enum','N
 INSERT INTO purpose VALUES('surface-lowering','import::lacked::Absent','enum','Names why a translation names no member its source lacks, so only a source off the flow''s domain is refused at collection.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::unflowed::Absent','enum','Names why a `via` resolves to no flow, so the import is refused at the name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::uninstantiated::Absent','enum','Names why a translation holds no instance over its source, so a read through it binds nothing.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','import::unmoduled::Absent','enum','Names why an import names no module path, so a homed head is not read through its qualifier.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::unread::Absent','enum','Names why a signature''s stated names are not held, so an import narrows nothing while its source is collected.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::unsigned::Absent','enum','Names why an import is written at no signature, so it binds its source''s whole interface.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::Fuel','struct','Names the fuel a lowering''s budget spends, so the budget''s fuel is read.',NULL,'fits','sound',NULL);

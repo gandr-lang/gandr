@@ -5771,7 +5771,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     })
                     .filter(|_| import.opens(name).0)
             };
-            if let Opening::Listed { module, ref listed } = *import.opening() {
+            if let (&Opening::Listed(ref listed), Maybe::Present(module)) =
+                (import.opening(), import.module())
+            {
                 for &(name, at) in listed {
                     let found = collected.listed_in(imported, name);
                     if let Some((Visibility::Public, _)) = found {
@@ -13508,10 +13510,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   family, as [`Self::module_family`] reads it. The chain is walked by an
     ///   explicit loop, and its links are left unread. A one-link path whose
     ///   head is the alias of a path import reads the type the imported source
-    ///   declares under the member, as a static application of it. A path that
-    ///   writes an argument list after its type name, `M.F(Integer)`, applies
-    ///   the member to it: a type family expands over the arguments and a data
-    ///   family stands at them (#3051).
+    ///   declares under the member, as a static application of it. A path whose
+    ///   qualifier an import of a `std` module binds reads the former that
+    ///   module homes under the member, as [`Self::applied_path`] reads it. A
+    ///   path that writes an argument list after its type name, `M.F(Integer)`,
+    ///   applies the member to it: a type family expands over the arguments and
+    ///   a data family stands at them (#3051).
     /// - provides: the governed reading of a type path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a type a governing module or a
@@ -13547,7 +13551,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::StaticApplication(..)))
+                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::StaticApplication(..) | Plan::Former(..)))
                 )
         },
     )]
@@ -13577,9 +13581,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   same; an applied path ending at a type family a module exports expands
     ///   it over the arguments, as [`Self::expansion`] reads it, and one ending
     ///   at a data family a module exports, or at the type an import's alias
-    ///   names, stands applied to them.
+    ///   names, stands applied to them. A path whose qualifier an import of a
+    ///   `std` module binds and whose member that module homes as a former,
+    ///   `l.List(A)`, stands as that former applied to its one argument, as
+    ///   [`Self::qualified_former`] reads it.
     /// - fails: as [`Self::type_path`]; the arity refusal for an applied path
-    ///   ending at anything but a family or an imported type.
+    ///   ending at anything but a family or an imported type, and for a homed
+    ///   former written at any count but one.
     /// - panics: none.
     /// - executable: none — [`Self::type_path`] states the plans.
     ///
@@ -13589,8 +13597,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::type_path`]; `M.F(Integer)` expands to the
     ///   family's type, `M.Box(Integer)` stands as the data family, and
-    ///   `M.T(Integer)` over an unparameterised member is refused by its arity.
+    ///   `M.T(Integer)` over an unparameterised member is refused by its arity;
+    ///   `std.list.List(Integer)` and `l.List(Integer)` stand as the native
+    ///   list.
     /// - witness: `tests::modules::a_module_s_family_is_applied_through_its_name_3051`
+    /// - witness: `lower::tests::a_homed_former_reads_through_its_import_s_qualifier_4862`
     fn applied_path(
         &mut self,
         site: Site,
@@ -13621,6 +13632,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Some(_) | None => Some(target),
         };
+        if headed
+            && let Some(qualifier) = qualifier
+            && let Some(former) = self.qualified_former(site, qualifier, member)
+        {
+            let count =
+                applied.map_or(0_usize, |written| written.end.saturating_sub(written.start));
+            let argument = applied.and_then(|written| self.operands.get(written.start).copied());
+            return match (argument, count) {
+                (Some(argument), 1_usize) => self.apply_former(site, former, argument),
+                (Some(_) | None, _) => {
+                    Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))))
+                },
+            };
+        }
         if headed
             && let Some(qualifier) = qualifier
             && let Maybe::Present(resolved) = self.aliased_member(site, qualifier, member)?
@@ -14651,6 +14676,58 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .map_or(ambient, Maybe::Present)
     }
 
+    /// The type former `member` spells after `qualifier` at `site`, `l.List`
+    /// or `std.list.List`, when `qualifier` is the alias or the module path of
+    /// a resolved import of the site's source whose module homes it.
+    ///
+    /// # Specification
+    /// - requires: `qualifier` is the qualifier of the type path at `site` and
+    ///   `member` its selected name.
+    /// - ensures: the former [`homed_former`] answers at the module path the
+    ///   import `qualifier` binds names, under `member`'s name, when that
+    ///   import resolved to a source, the import then reached; none when
+    ///   `qualifier` binds no import, its import names an address or did not
+    ///   resolve, or its module homes no such former.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the import's lookup.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list type read through a whole import's module path
+    ///   and through an alias lowers to the native list, a head the module does
+    ///   not home is an unknown member, and a module path no import binds is an
+    ///   unresolved head.
+    /// - witness: `lower::tests::a_homed_former_reads_through_its_import_s_qualifier_4862`
+    fn qualified_former(
+        &mut self,
+        site: Site,
+        qualifier: Placed,
+        member: Placed,
+    ) -> Option<TypeFormer>
+    {
+        let source = self.collected.unit.source_at(site.at.span.start());
+        let module = self
+            .tree
+            .spanned(qualifier.span)
+            .map_or_else(|| self.name_at(qualifier), SurfaceName::from);
+        let Maybe::Present(import) = self.collected.imports.aliased(source, module)
+        else {
+            return None;
+        };
+        let (ImportResolution::Path(ImportTarget::Source(_)), Maybe::Present(home)) =
+            (import.resolution(), import.module())
+        else {
+            return None;
+        };
+        let Maybe::Present(former) = homed_former(home, self.name_at(member))
+        else {
+            return None;
+        };
+        let span = import.span();
+        self.collected.reach(span);
+        Some(former)
+    }
+
     /// What `homed` answers for `name` at the module of the first resolved
     /// listed import of the current source that lists `name`.
     ///
@@ -14685,8 +14762,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         ImportResolution::Path(ImportTarget::Source(_))
                     )
             })
-            .find_map(|import| match *import.opening() {
-                Opening::Listed { module, ref listed }
+            .find_map(|import| match (import.opening(), import.module()) {
+                (&Opening::Listed(ref listed), Maybe::Present(module))
                     if listed
                         .iter()
                         .any(|&(held, _)| held.as_ref() == name.as_ref()) =>
@@ -14696,7 +14773,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         Maybe::Absent(_) => None,
                     }
                 },
-                Opening::Listed { .. } | Opening::Every | Opening::Nothing => None,
+                (&(Opening::Listed(_) | Opening::Every | Opening::Nothing), _) => None,
             })
     }
 
@@ -25303,6 +25380,50 @@ mod tests
                 arity: HeadArity::Unary,
             },
             "an unlisted `List` is no type head"
+        );
+    }
+
+    /// A list type written through the module path a whole import of
+    /// `std.list` binds, or through the alias an import of it binds, lowers to
+    /// the native list; a head the module does not home is an unknown member
+    /// of the alias.
+    #[test]
+    fn a_homed_former_reads_through_its_import_s_qualifier_4862()
+    {
+        for text in [
+            "\nimport std.list ;\ndef xs : std.list.List(Integer) = [1, 2] ;",
+            "\nimport std.list as l ;\ndef xs : l.List(Integer) = [1, 2] ;",
+        ] {
+            let mut arena = CoreArena::new();
+            let module = crate::fixture::listed(text, &mut arena);
+            let Some(DeclarationOutcome::Completed { declared_type, .. }) =
+                outcomes(&module).first().copied()
+            else {
+                panic!(
+                    "{text:?}: the qualified list type lowers: {:?}",
+                    outcomes(&module)
+                );
+            };
+            assert!(
+                matches!(arena.value_type(declared_type), Some(&ValueType::List(_))),
+                "{text:?}: the qualified head is the native list former"
+            );
+        }
+        let mut arena = CoreArena::new();
+        let module = crate::fixture::listed(
+            "\nimport std.list as l ;\ndef xs : l.Lists(Integer) = [1, 2] ;",
+            &mut arena,
+        );
+        assert_eq!(
+            outcomes(&module).first().copied(),
+            Some(DeclarationOutcome::Refused(
+                LoweringRefusal::UnknownMember {
+                    span: span(ByteOffset::from(35_usize), ByteOffset::from(40_usize)),
+                    module: SurfaceName::from("l"),
+                    member: SurfaceName::from("Lists"),
+                }
+            )),
+            "a head `std.list` does not home is no member of it"
         );
     }
 
