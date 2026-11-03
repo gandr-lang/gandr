@@ -340,8 +340,8 @@ impl FormName
     /// The flow `flow f : V1 ~~> V2 where { … }`, a translation from the models
     /// of one theory to the models of another, read as a module form.
     pub const FLOW: Self = Self("flow_declaration");
-    /// The derived rule `derive r : l <=> r in T`.
-    pub const DERIVE_DECLARATION: Self = Self("derive_declaration");
+    /// The derived rule `rule T.r : l <=> r;`.
+    pub const DERIVED_RULE_DECLARATION: Self = Self("derived_rule_declaration");
     /// A data block's constructor member `| C : (x : A) --> T(a)`, inlined into
     /// the declaration.
     pub const DATA_GENERATOR: Self = Self("data_generator");
@@ -1283,7 +1283,10 @@ pub const FORMERS: [(&str, Former); 139_usize] = [
         "constructor_pattern",
         Former::Unadmitted(Unbuilt::ConstructorPattern),
     ),
-    ("derive_declaration", Former::Unadmitted(Unbuilt::Derive)),
+    (
+        "derived_rule_declaration",
+        Former::Unadmitted(Unbuilt::DerivedRule),
+    ),
     (
         "double_quoted_string",
         Former::Unadmitted(Unbuilt::DoubleQuotedString),

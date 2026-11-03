@@ -1375,12 +1375,12 @@ impl Typer<'_>
     ///   operation, rule and stated law at what its `Model(S)` component
     ///   states, each port and each stated law's binder at its sort, each
     ///   hypothesis at the path it assumes, each node of a rule or a stated law
-    ///   at its sort, each node of a rule a `derive` declaration states over
-    ///   the theory at the sort the theory writes for it, each written sort,
-    ///   statement and path at its universe, each circuit's ports and wires at
-    ///   their sorts, a nested model's `Model(T)` at its universe and its `T`
-    ///   at `code`; and each written sort's head and each operation applied,
-    ///   beside the name tile of the member it names.
+    ///   at its sort, each node of a rule a derived rule declaration states
+    ///   over the theory at the sort the theory writes for it, each written
+    ///   sort, statement and path at its universe, each circuit's ports and
+    ///   wires at their sorts, a nested model's `Model(T)` at its universe and
+    ///   its `T` at `code`; and each written sort's head and each operation
+    ///   applied, beside the name tile of the member it names.
     /// - fails: never; a presentation whose members cannot be read records
     ///   nothing, and a component the derivation cannot state records none of
     ///   the nodes its type would read, save an abstracting operation's ports,
@@ -1676,7 +1676,7 @@ impl Typer<'_>
             );
             scope.binders.truncate(base);
         }
-        // A rule a `derive` declaration states is a law no component states:
+        // A rule a derived rule declaration states is a law no component states:
         // its nodes read at the sorts the theory writes.
         for derived in &written.derived {
             let unstated = Unstated::of(&presented, &derived.left.0);

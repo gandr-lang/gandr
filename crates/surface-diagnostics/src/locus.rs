@@ -154,7 +154,7 @@ pub enum Label
     Overlaps,
     /// A variable's second occurrence on a rule's left side.
     Copied,
-    /// The `derive` declaration whose derivation fills a component a model
+    /// The derived rule declaration whose derivation fills a component a model
     /// writes.
     Derivation,
     /// A use of a declaration a `deprecated` attribute marks: the primary
@@ -510,8 +510,8 @@ impl Annotations
     ///   or attribute marks its first occurrence as context, a member named
     ///   before its declaration marks that declaration, a pair of rules that
     ///   part, or whose joining went undecided, marks the earlier rule, a
-    ///   component a derivation fills marks the `derive` declaration, and an
-    ///   import's unmatched signature marks the theory it names.
+    ///   component a derivation fills marks the derived rule declaration, and
+    ///   an import's unmatched signature marks the theory it names.
     /// - provides: the loci of a lowering refusal, whether it refused a
     ///   declaration or the source as a whole.
     /// - fails: never.

@@ -1,5 +1,5 @@
 // A rule a theory's completion derives, stated as a declaration of its own
-// and proved for every model: `derive r : l <=> r in T` holds when the
+// and proved for every model: `rule T.r : l <=> r;` holds when the
 // theory's completed rules rewrite both sides to one normal form, and the
 // rewrites are the proof. The group's laws derive the inverse of a product:
 // each rule completion derived on the way is proved first, from the two paths
@@ -12,7 +12,7 @@
 import "./group-laws.gandr";
 
 /// The inverse of a product, in every group.
-derive invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Group
+rule Group.invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x));
 
 /// A bit.
 data Bit : Type where {

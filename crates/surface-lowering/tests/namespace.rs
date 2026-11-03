@@ -2086,7 +2086,7 @@ fn a_rule_derived_in_an_imported_theory_is_read_under_its_name()
         ),
         (
             SourceText::from(
-                "import \"./base.gandr\" ;\nderive four : inv(inv(inv(inv(x)))) <=> x in Inv\ndef \
+                "import \"./base.gandr\" ;\nrule Inv.four : inv(inv(inv(inv(x)))) <=> x;\ndef \
                  again = Inv.four ;",
             ),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],

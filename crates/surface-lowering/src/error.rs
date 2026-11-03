@@ -1695,7 +1695,7 @@ pub enum LoweringRefusal<'source>
         first: ByteSpan,
     },
 
-    /// A `derive` declaration whose statement its theory's completed rules
+    /// A derived rule declaration whose statement its theory's completed rules
     /// do not prove.
     UnderivedRule
     {
@@ -1720,7 +1720,7 @@ pub enum LoweringRefusal<'source>
         member: SurfaceName<'source>,
         /// The theory's name.
         theory: SurfaceName<'source>,
-        /// The bytes of the `derive` declaration.
+        /// The bytes of the derived rule declaration.
         derivation: ByteSpan,
     },
 

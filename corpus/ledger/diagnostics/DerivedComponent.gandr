@@ -7,7 +7,7 @@ theory Involution where {
 }
 
 @[ checks ]
-derive invFour : inv(inv(inv(inv(x)))) <=> x in Involution
+rule Involution.invFour : inv(inv(inv(inv(x)))) <=> x;
 
 module Same : Model(Involution) where {
   type G = Integer;

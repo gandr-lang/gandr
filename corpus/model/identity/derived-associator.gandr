@@ -4,9 +4,9 @@
 /// associativity and proves it for every model. So a model writes only its
 /// rules' witnesses.
 ///
-/// The `derive` declaration states the associator, and a model reads it as the
-/// theory's member `Monoid.assoc4`. Both sides rewrite to one normal form, and
-/// the rewrites are the proof.
+/// The derived rule declaration states the associator, and a model reads it
+/// as the theory's member `Monoid.assoc4`. Both sides rewrite to one normal
+/// form, and the rewrites are the proof.
 ///
 /// - see: #4106 — a component a model writes for a derived filler is refused
 /// - see: `pathological/identity/derived-associator.gandr` — the model that
@@ -33,7 +33,7 @@ pub theory Monoid where {
 }
 
 /// The associator of four, in every monoid.
-derive assoc4 : mul(mul(mul(a, b), c), d) <=> mul(a, mul(b, mul(c, d))) in Monoid
+rule Monoid.assoc4 : mul(mul(mul(a, b), c), d) <=> mul(a, mul(b, mul(c, d)));
 
 /// A sign.
 pub data Sign : Type where {

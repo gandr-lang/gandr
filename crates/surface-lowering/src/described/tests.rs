@@ -500,17 +500,17 @@ fn a_nullary_operation_in_a_law_answers_at_its_sort_668()
     );
 }
 
-/// A rule a `derive` declaration states over a theory answers as the theory's
-/// own rules do: each application and variable of either side at the sort
-/// the theory writes, and each operation applied at its type.
+/// A rule a derived rule declaration states over a theory answers as the
+/// theory's own rules do: each application and variable of either side at the
+/// sort the theory writes, and each operation applied at its type.
 #[test]
 fn a_derived_rule_answers_each_side_node_at_its_sort()
 {
     let source = SourceText::from(
         "theory Grp where {\n  sort G : Type;\n  oper e : G;\n  oper inv : (x : G) --> G;\n  oper mul \
          : (x : G, y : G) --> G;\n  rule unitL : mul(e(), x) <=> x;\n  rule assoc : mul(mul(x, \
-         y), z) <=> mul(x, mul(y, z));\n  rule invL : mul(inv(x), x) <=> e();\n}\nderive invMul \
-         : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Grp\n",
+         y), z) <=> mul(x, mul(y, z));\n  rule invL : mul(inv(x), x) <=> e();\n}\nrule \
+         Grp.invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x));\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -531,7 +531,7 @@ fn a_derived_rule_answers_each_side_node_at_its_sort()
         ("inv(mul(x, y))", "x"),
         ("<=> mul(inv(y)", "mul(inv(y), inv(x))"),
         ("<=> mul(inv(y)", "inv(y)"),
-        ("inv(x)) in", "x"),
+        ("inv(x));", "x"),
     ] {
         assert_eq!(
             code(entry(&types, span(around, inner), DescribedRole::Term)),

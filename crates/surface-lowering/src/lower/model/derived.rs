@@ -1,6 +1,6 @@
 //! Derived rules, as the lowering mints them.
 //!
-//! Each slot a `derive` declaration takes ([`DerivedSlot`]) states its law
+//! Each slot a derived rule declaration takes ([`DerivedSlot`]) states its law
 //! over every model of its theory and proves it from the plan the collection
 //! keeps:
 //!
@@ -166,11 +166,13 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the collection of the current source has run, so every
-    ///   `derive` declaration of it and of the sources it imports is collected.
+    ///   derived rule declaration of it and of the sources it imports is
+    ///   collected.
     /// - ensures: each definition member of a module of the current source
-    ///   ascribed `Model(T)`, named as a rule a `derive` declaration derives in
-    ///   `T`, holds [`LoweringRefusal::DerivedComponent`] at its name, naming
-    ///   the declaration, unless it already holds a refusal or a fault.
+    ///   ascribed `Model(T)`, named as a rule a derived rule declaration
+    ///   derives in `T`, holds [`LoweringRefusal::DerivedComponent`] at its
+    ///   name, naming the declaration, unless it already holds a refusal or a
+    ///   fault.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -283,7 +285,7 @@ impl<'source> Lowerer<'_, 'source>
             .ok_or(Missing::Unlowered)?;
         let site = Site {
             at: derived.theory,
-            name: FormName::DERIVE_DECLARATION,
+            name: FormName::DERIVED_RULE_DECLARATION,
             reading: Reading::ValueType(Frame::Outermost),
         };
         let theory = crate::form::WrittenPath {

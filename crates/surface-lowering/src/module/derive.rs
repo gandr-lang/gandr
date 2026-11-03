@@ -1,6 +1,6 @@
 //! Derived rules, as the collection pass reads them.
 //!
-//! `derive r : l <=> r in T` reads its statement
+//! `rule T.r : l <=> r;` reads its statement
 //! ([`crate::description::derive`]), finds the theory `T` names as the model
 //! type `Model(T)` finds it, and plans the proof the theory's completed rules
 //! give ([`crate::derive::plan`]). Each lemma of the plan takes a slot, in the
@@ -38,8 +38,8 @@ use crate::form::Placed;
 use crate::form::Shape;
 use crate::form::shape_of;
 
-/// A slot a `derive` declaration takes: the theory its rule holds in and the
-/// lemma the slot states and proves.
+/// A slot a derived rule declaration takes: the theory its rule holds in and
+/// the lemma the slot states and proves.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -67,7 +67,7 @@ pub struct DerivedSlot
     pub run: SlotIndex,
 }
 
-/// Whether a root child is a `derive` declaration.
+/// Whether a root child is a derived rule declaration.
 ///
 /// # Specification
 /// trivial.
@@ -77,12 +77,12 @@ pub(super) struct Derives(pub bool);
 
 impl<'source> Collector<'_, 'source>
 {
-    /// Whether the root child `child` is a `derive` declaration.
+    /// Whether the root child `child` is a derived rule declaration.
     ///
     /// # Specification
     /// - requires: `child` is a root child.
     /// - ensures: whether its node is the form the grammar names
-    ///   [`FormName::DERIVE_DECLARATION`].
+    ///   [`FormName::DERIVED_RULE_DECLARATION`].
     /// - fails: when the node's mold is unknown to the grammar.
     /// - panics: none.
     /// - executable: none — the result is the grammar's reading of the node.
@@ -105,16 +105,17 @@ impl<'source> Collector<'_, 'source>
 
         Ok(Derives(matches!(
             shape_of(self.pbg, node)?,
-            Shape::Form { name, .. } if name == FormName::DERIVE_DECLARATION
+            Shape::Form { name, .. } if name == FormName::DERIVED_RULE_DECLARATION
         )))
     }
 
-    /// Collect the `derive` declaration `declaration`, decorated by the
+    /// Collect the derived rule declaration `declaration`, decorated by the
     /// attribute blocks `decorations` standing before it.
     ///
     /// # Specification
-    /// - requires: `declaration` is a derive declaration form and every entry
-    ///   of `decorations` an attribute block standing on its own before it.
+    /// - requires: `declaration` is a derived rule declaration form and every
+    ///   entry of `decorations` an attribute block standing on its own before
+    ///   it.
     /// - ensures: a statement its theory's completed rules derive takes one
     ///   [`Role::Derived`] slot per lemma of its plan, in order, the last the
     ///   statement's; a statement the plan refuses, or whose theory no `theory`
@@ -153,7 +154,7 @@ impl<'source> Collector<'_, 'source>
             derived_statement(self.pbg, self.tree, declaration)?.map_err(|diagnostic| {
                 LoweringRefusal::MalformedForm {
                     span: diagnostic.span,
-                    form: FormName::DERIVE_DECLARATION,
+                    form: FormName::DERIVED_RULE_DECLARATION,
                     fault: FormFault::MisplacedTile,
                 }
             })?;

@@ -1,8 +1,8 @@
-/// `derived-rules`: Derived rules at a model (derive r : l <=> r in T).
-/// Implemented: `derive r : l <=> r in T`, an equation the theory's completed rules prove, proved for every model as a path over the model's fields and read as the member `T.r`.
+/// `derived-rules`: Derived rules at a model (rule T.r : l <=> r).
+/// Implemented: `rule T.r : l <=> r;`, an equation the theory's completed rules prove, proved for every model as a path over the model's fields and read as the member `T.r`.
 /// Not implemented: a theory with an indexed sort or a nested model; #1301 owes it.
 // A rule a theory's completion derives, stated as a declaration of its own
-// and proved for every model: `derive r : l <=> r in T` holds when the
+// and proved for every model: `rule T.r : l <=> r;` holds when the
 // theory's completed rules rewrite both sides to one normal form, and the
 // rewrites are the proof. The group's laws derive the inverse of a product:
 // each rule completion derived on the way is proved first, from the two paths
@@ -12,11 +12,11 @@
 // `Group.invMul`.
 
 // The group's unit, associativity and inverse laws.
-import "../../model/identity/group-laws.gandr" ;
+import "../../model/identity/group-laws.gandr";
 
 /// The inverse of a product, in every group.
 @[ checks ]
-derive invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Group
+rule Group.invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x));
 
 /// A bit.
 @[ checks ]
@@ -84,7 +84,7 @@ module Parity : Model(Group) where {
 
 /// The parity group, as a model.
 @[ checks ]
-def parityGroup : Model(Group) = pack Parity at Model(Group) ;
+def parityGroup : Model(Group) = pack Parity at Model(Group);
 
 /// The derived rule read at the parity group, at one and zero: both sides are
 /// one.

@@ -111,7 +111,7 @@ corpus/ledger/features/dependent-transport.gandr Tense 88c1f027c409e6d2
 corpus/ledger/features/derive-over-codes.gandr Tense 68d8367130b258d7
 corpus/ledger/features/derive-over-codes.gandr Tense f74aa22eec065df1
 corpus/ledger/features/derive-over-codes.gandr Glossary 7dd8f8918a709725
-corpus/ledger/features/derived-rules.gandr Tense 6750a1a4cb15d7e3
+corpus/ledger/features/derived-rules.gandr Tense f24c12c73bfd9862
 corpus/ledger/features/directed-paths.gandr Tense 842c1e89f8f21675
 corpus/ledger/features/directed-paths.gandr Tense da1ff50924998ae5
 corpus/ledger/features/effect-theories.gandr Passive 844550dd7a091bc8
@@ -238,7 +238,7 @@ corpus/ledger/features/universe-families.gandr Tense 9d84b64667567d32
 corpus/ledger/features/universe-lifts.gandr Tense bb5d5caecf8e176f
 corpus/ledger/syntax/abort-expression.gandr IngMain 12ea53bd5c11a5bc
 corpus/ledger/syntax/close-expression.gandr IngMain 407288216156ebbe
-corpus/ledger/syntax/derive-declaration.gandr Tense c958f717c53c73da
+corpus/ledger/syntax/derived-rule-declaration.gandr Tense 1d8bebf40c996fbe
 corpus/ledger/syntax/forget-model-expression.gandr Passive 798321420afaf116
 corpus/ledger/syntax/glob-expression.gandr Passive ccf1b855a9eb16f9
 corpus/ledger/syntax/hold-expression.gandr IngMain 0092b59e2a3dcf5c

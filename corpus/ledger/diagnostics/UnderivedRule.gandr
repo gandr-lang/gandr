@@ -1,4 +1,4 @@
-/// `UnderivedRule`: a `derive` declaration whose two sides the theory's rules rewrite to different normal forms.
+/// `UnderivedRule`: a derived rule whose two sides the theory's rules rewrite to different normal forms.
 @[ checks ]
 theory Involution where {
   sort G : Type;
@@ -7,4 +7,4 @@ theory Involution where {
 }
 
 @[ refuses("UnderivedRule") ]
-derive fixed : inv(x) <=> x in Involution
+rule Involution.fixed : inv(x) <=> x;
