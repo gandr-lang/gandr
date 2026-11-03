@@ -158,6 +158,7 @@ fn hand_built_control_cases_cover_every_former()
         body: identity,
     });
     let opened = core.computation_world(WorldForm::Leta {
+        world: World::Host,
         value: zero,
         body: migrated,
     });
@@ -444,7 +445,7 @@ fn walked(
                 } => {
                     match *form {
                         WorldForm::Hold { value } => stack.push(Visit::Producer(value, depth)),
-                        WorldForm::Leta { value, body } => {
+                        WorldForm::Leta { value, body, .. } => {
                             stack.push(Visit::Producer(value, depth));
                             stack.push(Visit::Command(
                                 body,

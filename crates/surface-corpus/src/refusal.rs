@@ -1251,6 +1251,8 @@ pub enum RefusalName
     Elsewhere,
     /// A hold checked against a handle at another world.
     HoldElsewhere,
+    /// A `leta` writing another world than the one its handle stands at.
+    OpenedElsewhere,
     /// A hold or a `leta` at the host's world.
     Unlocated,
     /// A world position no world declaration holds.
@@ -1286,7 +1288,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 235_usize] = [
+    pub const VOCABULARY: [Self; 236_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1515,6 +1517,7 @@ impl RefusalName
         Self::CapabilityCaptured,
         Self::Elsewhere,
         Self::HoldElsewhere,
+        Self::OpenedElsewhere,
         Self::Unlocated,
         Self::UndeclaredWorld,
         Self::HostWorldUndeclared,
@@ -1783,6 +1786,7 @@ impl RefusalName
         | (Self::CapabilityCaptured, b"CapabilityCaptured")
         | (Self::Elsewhere, b"Elsewhere")
         | (Self::HoldElsewhere, b"HoldElsewhere")
+        | (Self::OpenedElsewhere, b"OpenedElsewhere")
         | (Self::Unlocated, b"Unlocated")
         | (Self::UndeclaredWorld, b"UndeclaredWorld")
         | (Self::HostWorldUndeclared, b"HostWorldUndeclared")
@@ -1939,6 +1943,7 @@ impl RefusalName
             Self::CapabilityCaptured => "CapabilityCaptured",
             Self::Elsewhere => "Elsewhere",
             Self::HoldElsewhere => "HoldElsewhere",
+            Self::OpenedElsewhere => "OpenedElsewhere",
             Self::Unlocated => "Unlocated",
             Self::UndeclaredWorld => "UndeclaredWorld",
             Self::HostWorldUndeclared => "HostWorldUndeclared",
@@ -3055,6 +3060,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Located { defect: LocatedDefect::CapabilityCaptured { .. }, .. }, RefusalName::CapabilityCaptured)
         | (CheckRefusal::Located { defect: LocatedDefect::Elsewhere { .. }, .. }, RefusalName::Elsewhere)
         | (CheckRefusal::Located { defect: LocatedDefect::HoldElsewhere { .. }, .. }, RefusalName::HoldElsewhere)
+        | (CheckRefusal::Located { defect: LocatedDefect::OpenedElsewhere { .. }, .. }, RefusalName::OpenedElsewhere)
         | (CheckRefusal::Located { defect: LocatedDefect::Unlocated, .. }, RefusalName::Unlocated)
         | (CheckRefusal::Located { defect: LocatedDefect::UndeclaredWorld { .. }, .. }, RefusalName::UndeclaredWorld)
         | (CheckRefusal::Located { defect: LocatedDefect::HostWorldUndeclared, .. }, RefusalName::HostWorldUndeclared)
@@ -3223,6 +3229,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
             LocatedDefect::CapabilityCaptured { .. } => RefusalName::CapabilityCaptured,
             LocatedDefect::Elsewhere { .. } => RefusalName::Elsewhere,
             LocatedDefect::HoldElsewhere { .. } => RefusalName::HoldElsewhere,
+            LocatedDefect::OpenedElsewhere { .. } => RefusalName::OpenedElsewhere,
             LocatedDefect::Unlocated => RefusalName::Unlocated,
             LocatedDefect::UndeclaredWorld { .. } => RefusalName::UndeclaredWorld,
             LocatedDefect::HostWorldUndeclared => RefusalName::HostWorldUndeclared,

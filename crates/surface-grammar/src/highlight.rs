@@ -37,12 +37,11 @@
 //!   parenthesised list and a variable elsewhere.
 //! - An `identifier` takes the role of its place: a definition after `def`,
 //!   `rec`, `op`, `oper`, `obs`, `rule` or `data`; a binding after `as`, `for`,
-//!   `leta`, `unpack`, `module`, `node` or `feed`; a parameter inside a
-//!   parenthesised list or an implicit `@[…]` binder; a member after `.`,
-//!   inside a record `#{…}` or a block of fields; a label for a world or a
-//!   `select`'s label; a call for the operation a circuit node applies; a
-//!   number for a grade in `+U[…]` and `thunk[…]`; an attribute or decoration
-//!   name is `Other`.
+//!   `unpack`, `module`, `node` or `feed`; a parameter inside a parenthesised
+//!   list or an implicit `@[…]` binder; a member after `.`, inside a record
+//!   `#{…}` or a block of fields; a label for a world or a `select`'s label; a
+//!   call for the operation a circuit node applies; a number for a grade in
+//!   `+U[…]` and `thunk[…]`; an attribute or decoration name is `Other`.
 //! - Every other tile — a bracket, a separator, a delimiter — is `Other`.
 //!
 //! Layout has no mold: a layout node opening with `//` or `/*` is a `Comment`,
@@ -163,11 +162,11 @@ const KEYWORDS: &[&str] = &[
     "break", "close", "co", "codata", "continue", "data", "def", "derive", "drop", "dup", "else",
     "end", "ext", "extern", "face", "feed", "flow", "for", "force", "fork", "from", "fun", "glob",
     "handle", "hold", "if", "import", "in", "include", "infix", "infixl", "infixr", "is", "law",
-    "let", "leta", "loop", "match", "migrate", "mobile", "module", "mu", "node", "obs", "offer",
-    "offers", "on", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pub", "pure",
-    "rec", "recv", "release", "requires", "resume", "return", "rule", "run", "select", "send",
-    "shape", "sort", "tail", "theory", "thunk", "type", "type(", "under", "unit", "unpack",
-    "unwind", "var", "via", "where", "while", "with", "world",
+    "let", "loop", "match", "migrate", "mobile", "module", "mu", "node", "obs", "offer", "offers",
+    "on", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pub", "pure", "rec",
+    "recv", "release", "requires", "resume", "return", "rule", "run", "select", "send", "shape",
+    "sort", "tail", "theory", "thunk", "type", "type(", "under", "unit", "unpack", "unwind", "var",
+    "via", "where", "while", "with", "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
@@ -191,7 +190,7 @@ const DEFINERS: &[&str] = &[
 
 /// The keywords whose next identifier binds a name.
 const BINDERS: &[&str] = &[
-    "as", "feed", "for", "handle", "hold", "leta", "module", "node", "unpack", "var",
+    "as", "feed", "for", "handle", "hold", "module", "node", "unpack", "var",
 ];
 
 /// The bracket a tile occurrence stands inside within its own form.

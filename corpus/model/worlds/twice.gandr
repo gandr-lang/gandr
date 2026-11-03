@@ -4,8 +4,8 @@
 // the first held at the seat.
 //
 // The first migration holds a value at the seat and brings its handle back.
-// `leta` opens the handle at the operator's world, and the second migration
-// reads what it binds at the seat. In one process a handle is its content, and
+// `let n at seat` opens the handle, binding what it holds at the seat, and the
+// second migration reads it there. In one process a handle is its content, and
 // each crossing, in or back, is a commit then a deref.
 //
 // - see: Murphy, Crary and Harper, "Type-Safe Distributed Programming with
@@ -20,7 +20,7 @@ import "./seat-and-operator.gandr";
 @[ entry((operator, seat, seat)), runs("42") ]
 def twice() -> Integer {
   let held : Integer at seat = migrate [seat] { (hold 21) };
-  leta n = held;
+  let n at seat = held;
   migrate [seat] { pure (n * 2) }
 }
 
@@ -30,6 +30,6 @@ def reread() -> #{done : Integer, left : Integer} {
   let held : #{done : Integer, left : Integer} at seat = migrate [seat] {
     (hold #{done = 3, left = 4})
   };
-  leta counts = held;
+  let counts at seat = held;
   migrate [seat] { pure counts }
 }

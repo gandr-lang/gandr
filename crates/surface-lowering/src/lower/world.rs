@@ -1,33 +1,38 @@
 //! Located forms in the lowering: the handle type `A at w`, the hold `hold
-//! v`, the opening statement `leta x = v ;` and the migration `migrate [w] {
-//! t }`.
+//! v`, the opening statement `let x at w = v ;` and the migration
+//! `migrate [w] { t }`.
 //!
 //! # A world is named by its declaration
 //!
-//! Every position that reads a world — a handle type's, a migration's and an
-//! entry's — reads a name, resolved as any name is: the innermost binder
-//! carrying it, else an earlier declaration. A declaration is the world its
-//! admission position names, `World::Declared`; whether that declaration
-//! declares a world is the checker's to decide, so a name that resolves to a
-//! function is refused there, by the checker's own name for it, at the form
-//! that wrote it. A binder names no world, and a name nothing binds is
-//! [`LoweringRefusal::UnresolvedName`], as an unbound capability region's is.
+//! Every position that reads a world — a handle type's, an opening's, a
+//! migration's and an entry's — reads a name, resolved as any name is: the
+//! innermost binder carrying it, else an earlier declaration. A declaration
+//! is the world its admission position names, `World::Declared`; whether that
+//! declaration declares a world is the checker's to decide, so a name that
+//! resolves to a function is refused there, by the checker's own name for it,
+//! at the form that wrote it. A binder names no world, and a name nothing
+//! binds is [`LoweringRefusal::UnresolvedName`], as an unbound capability
+//! region's is.
 //! `T at c` reads its name first: a capability scope binding `c` keeps the
 //! capability region reading, so the two at types share their spelling.
 //!
 //! # Each form lowers to its world form
 //!
 //! `hold v` is a computation returning the handle, read as a value where a
-//! value stands by the nesting every computation there takes. `leta x = v ;`
-//! opens the handle over the rest of its block, binding `x` intuitionistically
-//! as `let x = c ;` does, so the rest's indices shift as a bind's do.
-//! `migrate [w] { t }` reads its block where the migration stands, its last
-//! computation the result returned to the world it left. The capability a
-//! migration spends is no term: the checker's entry introduces it.
+//! value stands by the nesting every computation there takes.
+//! `let x at w = v ;` opens the handle over the rest of its block, binding `x`
+//! intuitionistically as `let x = c ;` does, so the rest's indices shift as a
+//! bind's do. The opening writes the world it opens at, and the checker
+//! refuses one whose handle stands at another. Any other pattern under `at`
+//! stays refused. `migrate [w] { t }` reads its block where the migration
+//! stands, its last computation the result returned to the world it left.
+//! The capability a migration spends is no term: the checker's entry
+//! introduces it.
 //!
-//! - Alternatives: `leta` as a value form, `leta x = v in t`, which the grammar
-//!   does not write; a world named by a binder, which presupposes world
-//!   variables no consumer needs yet.
+//! - Alternatives: a keyword of its own, `leta x = v ;`, which spent a word on
+//!   a binder that `let` already reads; the opening's world left unwritten and
+//!   read off the handle, which hides where the binder lives; a world named by
+//!   a binder, which presupposes world variables no consumer needs yet.
 //! - Reversal: world variables — the name resolves to a binder as well.
 //!
 //! A handle made at a block's tail is written in parentheses, `(hold v)`. A
@@ -79,10 +84,12 @@ use super::closed;
 use super::exhausted;
 use super::exits;
 use super::lowered;
+use super::unopened;
 use crate::error::FormFault;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
 use crate::form::FormName;
+use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
@@ -278,68 +285,82 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Read one `leta x = v ;` statement, its `leta` tile already read.
+    /// Read the `let x at w = v ;` statement at `statement`, whose pattern is
+    /// the at pattern `pattern` and whose value is `value`, its tiles already
+    /// read.
     ///
     /// # Specification
-    /// - requires: `cursor` stands just past the statement's tile `leta`;
-    ///   `frame` is the frame the statement reads under.
-    /// - ensures: `v` is read as a value under `frame`; the statement is
-    ///   recorded as the opening of `v` over the rest of the block, and the
-    ///   frame binding `x` intuitionistically over `frame`, which the rest of
-    ///   the block reads under, is returned.
-    /// - fails: a fault naming the statement for a tile out of shape, the value
-    ///   hole's own fault and the binder's own refusal.
+    /// - requires: `pattern` is an at pattern standing as the statement's
+    ///   binder; `frame` is the frame the statement reads under.
+    /// - ensures: for a name `x`, `w` is resolved as a world and `v` read as a
+    ///   value under `frame`; the statement is recorded as the opening of `v`
+    ///   at `w` over the rest of the block, and the frame binding `x`
+    ///   intuitionistically over `frame` is returned. Any other pattern under
+    ///   `at` is absent, so the caller reads it as every other pattern.
+    /// - fails: a fault naming the pattern for a tile out of shape, the world
+    ///   name's refusal and the binder's own refusal.
     /// - panics: none.
     ///
     /// # Errors
     /// The statement's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a `leta` binds its name over the rest of its block,
-    ///   which reads it as the innermost variable.
+    /// - hypothesis: L3 — a `let x at w` binds its name over the rest of its
+    ///   block, which reads it as the innermost variable, and opens the handle
+    ///   at the world written.
     /// - witness: `lower::world::tests::the_located_forms_lower_to_their_world_forms`
     #[spec(
         captures: before = self.statements.len(),
-        ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1)
-            && self.statements.last().is_some_and(|last| last.origin == leta.node && matches!(last.binding, StatementBinding::Opened { .. }))),
+        ensures: |ret| match ret {
+            | Ok(Maybe::Present(_)) => self.statements.len() == before.saturating_add(1)
+                && self.statements.last().is_some_and(|last| last.origin == statement.at.node && matches!(last.binding, StatementBinding::Opened { .. })),
+            | Ok(Maybe::Absent(_)) | Err(_) => self.statements.len() == before,
+        },
     )]
-    pub(super) fn leta(
+    pub(super) fn opened(
         &mut self,
-        cursor: &mut Cursor<'_>,
-        leta: Placed,
+        statement: Site,
+        pattern: Placed,
+        value: Placed,
         frame: Frame,
-    ) -> Result<Frame, LoweringRefusal<'source>>
+    ) -> Result<Maybe<Frame, unopened::Absent>, LoweringRefusal<'source>>
     {
-        let statement = Site {
-            at: leta,
-            name: FormName::LETA_STATEMENT,
-            reading: Reading::Computation(frame),
-        };
-        let Maybe::Present(binder) = cursor.tile(TileName::IDENTIFIER)
+        let mut pieces = Pieces::new();
+        super::read_pieces(self.pbg, self.tree, pattern.node, &mut pieces)?;
+        if let Maybe::Present(repaired) = pieces.repair {
+            return Err(repaired.refusal(FormName::LET_STATEMENT));
+        }
+        let mut cursor = Cursor::new(&pieces.pieces, pattern.span);
+        let binder = statement.one(cursor.operands())?;
+        if !matches!(self.form_at(binder)?, Some((_, Former::Name))) {
+            return Ok(Maybe::Absent(unopened::Absent::OtherPattern));
+        }
+        closed(statement, &mut cursor, TileName::AT)?;
+        let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER)
         else {
             return Err(statement.fault(cursor.here(), FormFault::MisplacedTile));
         };
-        closed(statement, cursor, TileName::EQUALS)?;
-        let value = statement.one(cursor.operands())?;
-        closed(statement, cursor, TileName::SEMICOLON)?;
-        let name = self.name_at(binder);
+        exhausted(statement, &cursor)?;
+        let world = self.world_named(statement, frame, written)?;
+        let name = self.binder_name(statement, binder)?;
         self.note_binder(binder, name)?;
         self.read(value.node, Reading::Value(frame));
         self.statements.push(Statement {
-            origin: leta.node,
-            bound: leta.node,
+            origin: statement.at.node,
+            bound: statement.at.node,
             binding: StatementBinding::Opened {
                 value: value.node,
                 name: binder.node,
+                world,
             },
             rest: exits::Rest::Bound,
         });
 
-        Ok(Frame::Inner(self.scope.extend(
+        Ok(Maybe::Present(Frame::Inner(self.scope.extend(
             frame,
             name,
             Maybe::Present(binder.span),
-        )))
+        ))))
     }
 
     /// Mint the located form or type `worlded` plans.

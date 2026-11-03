@@ -28,6 +28,6 @@ pub world far;
 @[ entry((near, far, far)), runs("42") ]
 def main() -> Integer {
   let held : Integer at far = migrate [far] { (hold (6 * 7)) };
-  leta answer = held;
+  let answer at far = held;
   migrate [far] { pure answer }
 }

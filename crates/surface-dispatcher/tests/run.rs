@@ -724,8 +724,8 @@ fn a_second_migration_of_an_edited_list_fetches_what_changed_3365()
          List(Integer)) -> Integer {{\n  match xs {{\n    [] => 0,\n    [x, ..rest] => 1 + \
          size[<](rest)\n  }}\n}}\n\n@[ entry((operator, seat, seat, gate, seat, seat)) ]\ndef \
          main() -> Integer {{\n  let listed : List(Integer) at seat = migrate [seat] {{ (hold \
-         [{listed}]) }};\n  leta xs = listed;\n  let edited : List(Integer) at seat = migrate \
-         [seat] {{ (hold cons(0, xs)) }};\n  leta ys = edited;\n  let opened = migrate [gate] \
+         [{listed}]) }};\n  let xs at seat = listed;\n  let edited : List(Integer) at seat = migrate \
+         [seat] {{ (hold cons(0, xs)) }};\n  let ys at seat = edited;\n  let opened = migrate [gate] \
          {{ pure 0 }};\n  let before = migrate [seat] {{ size(xs) }};\n  let after = migrate \
          [seat] {{ size(ys) }};\n  pure (after - before + 41 + opened)\n}}\n"
     );

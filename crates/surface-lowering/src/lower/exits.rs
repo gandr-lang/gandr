@@ -2292,8 +2292,11 @@ fn rebuild(
             }
             held
         },
-        (Computation::World(WorldForm::Leta { value, body }), &[commuted]) if commuted != body => {
+        (Computation::World(WorldForm::Leta { world, value, body }), &[commuted])
+            if commuted != body =>
+        {
             sink.arena.computation_world(WorldForm::Leta {
+                world,
                 value,
                 body: commuted,
             })

@@ -1178,10 +1178,12 @@ pub enum Former<'source, Node>
     },
     /// A hold of a value at the world it is computed at, `hold v`.
     WorldHold(Node),
-    /// A handle opened, `leta x = v ; t`: the rest under the opened value's
-    /// binder.
+    /// A handle opened, `let x at w = v ; t`: the rest under the opened
+    /// value's binder.
     Leta
     {
+        /// The world written, when the source names it.
+        world: Option<Name<'source>>,
         /// The handle.
         value: Node,
         /// The rest.

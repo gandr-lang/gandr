@@ -342,7 +342,6 @@ pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
     "instantiation_expression",
     "lambda_expression",
     "lazy_product_type",
-    "leta_statement",
     "line_comment",
     "list_expression",
     "list_operator",

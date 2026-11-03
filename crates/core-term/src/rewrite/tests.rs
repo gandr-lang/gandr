@@ -4566,6 +4566,9 @@ pub fn formers() -> Vec<Witnessed>
         ("world form", |a, c| {
             let rest = done(a);
             let body = a.computation_world(crate::world::WorldForm::Leta {
+                world: crate::world::World::Declared(gandr_kernel_term::ConstantIndex::from(
+                    0_usize,
+                )),
                 value: c,
                 body: rest,
             });

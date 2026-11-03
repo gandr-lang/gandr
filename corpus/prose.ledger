@@ -823,7 +823,6 @@ corpus/model/universe/vacuous-pi.gandr Passive a07c9ff21771d073
 corpus/model/universe/vacuous-pi.gandr Tense 47bc1928b85a471f
 corpus/model/universe/vacuous-pi.gandr Tense 724826e3bcec315d
 corpus/model/worlds/seat-and-operator.gandr Passive 334f203f881c4335
-corpus/model/worlds/seat-and-operator.gandr Passive 96a8849d52b7a675
 corpus/model/worlds/seat-and-operator.gandr Passive a364ab9e5083ecd8
 corpus/pathological/basics/unannotated-list.gandr Tense 4c235b3b78fbad7a
 corpus/pathological/builtins/host-module-uncalled-selection.gandr Tense e891fde5389655c6
@@ -1181,7 +1180,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DirectedCe
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DuplicateAttribute.txt Procedure cce0c6573b7a79f8
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DuplicateImportAlias.txt Procedure 5f6807f6cf3e218f
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/DuplicateSignature.txt Procedure a8a194b92be7dd32
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/Elsewhere.txt Procedure 5d203717a6c072f2
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/Elsewhere.txt Procedure dcd76a809d72b808
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/EndpointAsValue.txt Procedure a74054817f24d047
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/EndpointUsedTwice.txt Procedure b23ad672f1cf33d9
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/EntryNamed.txt Procedure ef85c85b9b0f6951
@@ -1230,7 +1229,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NonValuePa
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotADataType.txt Procedure 21103d2680d556e7
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotADataType.txt Procedure 3e8ce436153ed57e
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAFunctor.txt Procedure 121f8d03d163ff0f
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAHandle.txt Procedure 06ba600e8a7f9408
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAHandle.txt Procedure 1c469c3d291c451e
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAView.txt Procedure 0b132a8e4770a4d9
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAnAbstractType.txt Procedure b924bafc122697e0
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAnAbstractType.txt Procedure f28dd220311c8b1b
@@ -1241,6 +1240,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotOver.tx
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotSynthesisable.txt Procedure e8330787eaafc7b5
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OfferArms.txt Procedure 07a936b2e4591bf1
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OpenSessionPayload.txt Procedure 6fbf774237261d9c
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OpenedElsewhere.txt Procedure 989fd2677e4ef6f1
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.Arity.txt Procedure 22f5df2d1e5738ba
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.EmptyList.txt Procedure ff6c05c76b180d41
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.ForeignClaim.txt Procedure 5043a42557bcc2f3
@@ -1537,12 +1537,13 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/universe/v-infin
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/capability-accounting.txt Procedure a755b43b32ffea91
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/capability-accounting.txt Procedure ce9e9d602eb9772e
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/closure-axes.txt Procedure 4b248657a88f1895
-crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/closure-axes.txt Procedure 5d203717a6c072f2
-crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 06ba600e8a7f9408
+crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/closure-axes.txt Procedure dcd76a809d72b808
+crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 1c469c3d291c451e
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 1f4f6176c64090b2
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 5d18e9b339165083
-crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 5d203717a6c072f2
+crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure 989fd2677e4ef6f1
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure c7bd7e2325683c3a
+crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure dcd76a809d72b808
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt Procedure ef85c85b9b0f6951
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/offered.txt Procedure 3bdc0addbf0ffa85
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/requires.txt Procedure 3bdc0addbf0ffa85

@@ -3285,11 +3285,11 @@ mod tests
             ),
             (
                 "a block's statement",
-                "$0leta x = 1 ;\ndef answer = 42 ;\n",
+                "$0release x ;\ndef answer = 42 ;\n",
                 format!(
-                    "{}\n\nrefused: `view_expression`, read as a declaration, is not a former of \
-                     this sort",
-                    fenced(SourceText::from("leta x = 1"))
+                    "{}\n\nrefused: `release_expression`, read as a declaration, is not a former \
+                     of this sort",
+                    fenced(SourceText::from("release x"))
                 ),
             ),
             (

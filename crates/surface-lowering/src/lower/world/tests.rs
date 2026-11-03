@@ -282,7 +282,7 @@ fn the_located_forms_lower_to_their_world_forms()
     let module = lowered(
         SourceText::from(
             r"world seat;
-def opened(h : Integer at seat) -> -F Integer { leta x = h; pure x }
+def opened(h : Integer at seat) -> -F Integer { let x at seat = h; pure x }
 def held() -> -F (Integer at seat) { (hold 1) }
 def moved() -> -F Integer { migrate [seat] { pure 1 } }
 ",
@@ -292,10 +292,18 @@ def moved() -> -F Integer { migrate [seat] { pure 1 } }
     let seat = World::Declared(constant_of(&module, SurfaceName::from("seat")));
 
     let opened = tail_of(&arena, body_named(&module, SurfaceName::from("opened")));
-    let Some(&Computation::World(WorldForm::Leta { value, body })) = arena.computation(opened)
+    let Some(&Computation::World(WorldForm::Leta {
+        world: written,
+        value,
+        body,
+    })) = arena.computation(opened)
     else {
-        panic!("a `leta` opens its handle: {:?}", arena.computation(opened));
+        panic!(
+            "a `let x at w` opens its handle: {:?}",
+            arena.computation(opened)
+        );
     };
+    assert_eq!(written, seat, "the opening writes the seat's world");
     let innermost = Value::Variable {
         zone: Zone::Intuitionistic,
         index: DeBruijnIndex::from(0_u32),

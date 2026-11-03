@@ -233,6 +233,7 @@ fn held_and_answered_twice(
     }
     let handle = innermost(core);
     let opened = core.computation_world(WorldForm::Leta {
+        world: World::Host,
         value: handle,
         body,
     });

@@ -3063,7 +3063,7 @@ impl Lowering<'_>
                 self.tasks.push(Task::Deliver(continuation, scope));
                 self.tasks.push(Task::Producer(value, scope));
             },
-            WorldForm::Leta { value, body } => {
+            WorldForm::Leta { value, body, .. } => {
                 let (bound, slot) = self.bind(scope, Binding::Producer);
                 // reason: as a hold's, a leta's body falls through to the loaded
                 // continuation, the body's return when that is where the

@@ -14426,7 +14426,7 @@ mod tests
     fn a_stray_root_child_refuses_itself_alone_1058()
     {
         let pbg = grammar();
-        let text = "def a = 1 ;\n\u{a7}\nleta x = 1 ;\ndef b = a ;\n1 + 2 ;\ndef c = b ;\n";
+        let text = "def a = 1 ;\n\u{a7}\nrelease x ;\ndef b = a ;\n1 + 2 ;\ndef c = b ;\n";
         let tree = repaired(&pbg, SourceText::from(text));
         let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let read: Vec<_> = collected
@@ -14455,7 +14455,7 @@ mod tests
                     Maybe::Present(FailureClass::MalformedSource)
                 ),
                 (
-                    SurfaceName::from("leta"),
+                    SurfaceName::from("release"),
                     Role::Held,
                     Maybe::Present(FailureClass::MalformedSource)
                 ),

@@ -543,6 +543,9 @@ fn checked(refusal: CheckRefusal) -> Culprit
             LocatedDefect::CapabilityCaptured { .. } => "a migration that may run other than once",
             LocatedDefect::Elsewhere { .. } => "a value bound at another world",
             LocatedDefect::HoldElsewhere { .. } => "a hold wanted at another world",
+            LocatedDefect::OpenedElsewhere { .. } => {
+                "a handle opened at another world than its own"
+            },
             LocatedDefect::Unlocated => "a handle made or opened at the host's own world",
             LocatedDefect::UndeclaredWorld { .. } => "no world declaration",
             LocatedDefect::HostWorldUndeclared => "a world the source does not declare",

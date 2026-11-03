@@ -213,8 +213,8 @@
 //! binds what `recv(c)` returns as any `let` of a computation does,
 //! `let d = fork (c : S) t;` runs `t` beside the rest of the block (the
 //! `lower::session` module), `var x = e;` holds `e` for the rest of the block
-//! (the `lower::access` module), and `leta x = v;` opens the handle `v` over it
-//! (the `lower::world` module). The statement `unpack` is refused as
+//! (the `lower::access` module), and `let x at w = v;` opens the handle `v`
+//! over it (the `lower::world` module). The statement `unpack` is refused as
 //! `Unadmitted`, and `acquire`, `release` and the shared `fork !` as
 //! `Reserved`, each named by its form at its keyword; and a `let` binder that
 //! is a pattern other than a name, a wildcard or a tuple is refused as
@@ -545,6 +545,7 @@ use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::Protocol;
 use gandr_core_term::session::SessionAction;
+use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
@@ -840,8 +841,8 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The tile is no statement's keyword.
             NotAKeyword,
-            /// The tile opens a statement the block reads: `let`, `var`,
-            /// `leta` or `import`.
+            /// The tile opens a statement the block reads: `let`, `var` or
+            /// `import`.
             Read,
         }
     }
@@ -1914,14 +1915,16 @@ enum StatementBinding
         /// The name's own node.
         name: NodeIndex,
     },
-    /// `leta x = v ;` opens the handle `v`, binding `x`, an intuitionistic
-    /// hypothesis located at the handle's world, over the rest of the block.
+    /// `let x at w = v ;` opens the handle `v`, binding `x`, an intuitionistic
+    /// hypothesis located at `w`, over the rest of the block.
     Opened
     {
         /// The handle opened.
         value: NodeIndex,
         /// The name's own node.
         name: NodeIndex,
+        /// The world the source writes.
+        world: World,
     },
 }
 
@@ -2261,6 +2264,18 @@ quenchant_shape::reason_enum! {
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
             /// The binder is not a tuple pattern.
+            OtherPattern,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a `let` statement's at pattern opens no handle.
+    pub mod unopened {
+        /// The pattern under `at` is no name.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A tuple, a wildcard or another pattern stands under `at`.
             OtherPattern,
         }
     }
@@ -10828,9 +10843,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             None => after,
                         }
                     }
-                    else if label == TileName::LETA {
-                        self.leta(cursor, at, frame)?
-                    }
                     else if label == TileName::VAR {
                         self.hold(cursor, at, frame)?
                     }
@@ -11116,12 +11128,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `cursor` stands just past the statement's `let` tile `lead`;
     ///   `frame` is the frame the statement reads under.
     /// - ensures: a receive or a fork `e` is read as [`Self::receive`] and
-    ///   [`Self::fork`] read it, binding the name the pattern spells. A block,
-    ///   a match, a conditional, a loop, an exit, a loop exit, a scope, an
-    ///   access, an offer, an action, a hold or a migration `e` binds what it
-    ///   returns, as [`Self::bound_statement`] binds it. Otherwise a name
-    ///   binder reads `e` as a value under `frame`, a computation there nested
-    ///   at [`Insertion::Bound`], and `A` as a value type when written; the
+    ///   [`Self::fork`] read it, binding the name the pattern spells. A name
+    ///   under `at` with no stated type, `let x at w = e ;`, opens the handle
+    ///   `e` at `w` as [`Self::opened`] reads it. A block, a match, a
+    ///   conditional, a loop, an exit, a loop exit, a scope, an access, an
+    ///   offer, an action, a hold or a migration `e` binds what it returns, as
+    ///   [`Self::bound_statement`] binds it. Otherwise a name binder reads `e`
+    ///   as a value under `frame`, a computation there nested at
+    ///   [`Insertion::Bound`], and `A` as a value type when written; the
     ///   statement is recorded as a `let` of `e`, and the frame binding the
     ///   name over `frame` returned, a binder the mint binds once to what `e`
     ///   returns. The checker runs a nested call that returns and suspends any
@@ -11183,6 +11197,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 self.fork(statement, (binder, name), bound, frame)
             };
+        }
+        // A name under `at` opens the handle `e` at the world written.
+        if annotation.is_none()
+            && let Some((_, Former::AtType)) = self.form_at(binder)?
+            && let Maybe::Present(after) = self.opened(statement, binder, bound, frame)?
+        {
+            return Ok(after);
         }
         // A name stands for the value `e` is read as: a call there nests,
         // which the checker runs or suspends where the statement stands. A
@@ -18442,14 +18463,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   ([`OriginTable::component`]); a fork `let d = fork (c : S) t;` mints
     ///   as the fork of `t` at `S` whose parent is the rest of the block, at
     ///   its `let` tile's origin; a hold `var x = e ;` mints as the hold of `e`
-    ///   whose scope is the rest of the block, at its keyword's origin; a `leta
-    ///   x = v ;` mints as the opening of `v` whose body is the rest of the
-    ///   block, at its `leta` tile's origin, binding the name; a `let x = v ;`
-    ///   mints as `bind(return v, …)` over the rest of the block at the `let`'s
-    ///   origin, or as the bind of the computation nested in `v` when no type
-    ///   is stated; a block of no statements is its last computation; nothing
-    ///   is minted when any computation, value or protocol of the block did not
-    ///   lower.
+    ///   whose scope is the rest of the block, at its keyword's origin; a `let
+    ///   x at w = v ;` mints as the opening of `v` at `w` whose body is the
+    ///   rest of the block, at the statement's origin, binding the name; a `let
+    ///   x = v ;` mints as `bind(return v, …)` over the rest of the block at
+    ///   the `let`'s origin, or as the bind of the computation nested in `v`
+    ///   when no type is stated; a block of no statements is its last
+    ///   computation; nothing is minted when any computation, value or protocol
+    ///   of the block did not lower.
     /// - provides: the block half of thunks, lambdas and function tails.
     /// - fails: never.
     /// - panics: none.
@@ -18578,14 +18599,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 chain = id;
                 continue;
             }
-            if let StatementBinding::Opened { value, name } = statement.binding {
+            if let StatementBinding::Opened { value, name, world } = statement.binding {
                 let Maybe::Present(value) = self.value_at(value)
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);
                 };
-                let id = sink
-                    .arena
-                    .computation_world(WorldForm::Leta { value, body: chain });
+                let id = sink.arena.computation_world(WorldForm::Leta {
+                    world,
+                    value,
+                    body: chain,
+                });
                 sink.origins.record_computation(id, origin);
                 if let Maybe::Present(name) = self.origin_at(name) {
                     sink.origins.record_binder(id, name);
@@ -22535,9 +22558,8 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 1_usize] = [(
 ///
 /// # Specification
 /// - requires: `label` is a tile in a block, at a place a statement may start.
-/// - ensures: a keyword of the table its form and boundary; `let`, `var`,
-///   `leta` and `import` open statements the block reads,
-///   [`statement::Absent::Read`].
+/// - ensures: a keyword of the table its form and boundary; `let`, `var` and
+///   `import` open statements the block reads, [`statement::Absent::Read`].
 /// - provides: the names a block's refused statements are written as;
 ///   [`statement::Absent::NotAKeyword`] for a tile no statement starts with.
 /// - fails: never.
@@ -22549,7 +22571,7 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 1_usize] = [(
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
 #[spec(
     ensures: |ret| {
-        ret == if label == TileName::LET || label == TileName::VAR || label == TileName::LETA || label == TileName::IMPORT {
+        ret == if label == TileName::LET || label == TileName::VAR || label == TileName::IMPORT {
             Maybe::Absent(statement::Absent::Read)
         }
         else {
@@ -22565,11 +22587,7 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 1_usize] = [(
 )]
 fn statement_form(label: TileName) -> Maybe<(FormName, FragmentBoundary), statement::Absent>
 {
-    if label == TileName::LET
-        || label == TileName::VAR
-        || label == TileName::LETA
-        || label == TileName::IMPORT
-    {
+    if label == TileName::LET || label == TileName::VAR || label == TileName::IMPORT {
         return Maybe::Absent(statement::Absent::Read);
     }
 

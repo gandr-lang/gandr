@@ -1446,6 +1446,7 @@ Err(_) => false,
                         WorldForm::Leta {
                             value: opened,
                             body,
+                            ..
                         } => two(value(opened), computation(body), Lowering::ONE),
                         WorldForm::Migrate { body, .. } => one(computation(body), Lowering::NONE),
                     },

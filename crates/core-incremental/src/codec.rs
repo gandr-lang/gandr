@@ -3559,6 +3559,14 @@ where
             writer.tag(Tag(11));
             write_type(writer, found)?;
         },
+        Located::OpenedElsewhere {
+            ref written,
+            ref handle,
+        } => {
+            writer.tag(Tag(12));
+            write_place(writer, written)?;
+            write_place(writer, handle)?;
+        },
     }
     Ok(())
 }
@@ -3614,6 +3622,10 @@ fn read_located(reader: &mut Reader<'_>) -> Result<Located, CodecError>
         },
         11 => Located::NotAHandle {
             found: read_type(reader)?,
+        },
+        12 => Located::OpenedElsewhere {
+            written: read_place(reader)?,
+            handle: read_place(reader)?,
         },
         _ => return Err(CodecError::Corrupt),
     })

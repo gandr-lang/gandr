@@ -1,4 +1,4 @@
-/// `Unlocated`: a hold or a `leta` at the host's world.
+/// `Unlocated`: a hold or an opening `let x at w` at the host's world.
 module Seat :> #{
   type Dispatch,
   mobile type Report,

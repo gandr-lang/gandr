@@ -11,7 +11,16 @@ import "../../model/worlds/seat-and-operator.gandr";
 @[ refuses("Elsewhere") ]
 @[ entry(operator) ]
 def readHere(report : Seat.Report at seat) -> Seat.Report {
-  leta written = report;
+  let written at seat = report;
+  pure written
+}
+
+/// A handle to the seat's report opened at the operator's world, refused at
+/// the opening: an opening writes its handle's world.
+@[ refuses("OpenedElsewhere") ]
+@[ entry(operator) ]
+def openedHere(report : Seat.Report at seat) -> Seat.Report {
+  let written at operator = report;
   pure written
 }
 
@@ -42,7 +51,7 @@ def toAValue() -> Seat.Report {
 @[ refuses("NotAHandle") ]
 @[ entry(seat) ]
 def unhandled() -> Seat.Report {
-  leta written = Seat.progress;
+  let written at seat = Seat.progress;
   pure written
 }
 

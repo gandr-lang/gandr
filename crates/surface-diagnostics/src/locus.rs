@@ -1802,8 +1802,14 @@ impl fmt::Display for Checked
                     "the hold makes a handle at the world it runs at, not at {}",
                     Place(wanted)
                 ),
+                | LocatedDefect::OpenedElsewhere { written, handle } => write!(
+                    f,
+                    "the opening writes {}, and the handle stands at {}",
+                    Place(gandr_core_term::world::World::Declared(written)),
+                    Place(gandr_core_term::world::World::Declared(handle))
+                ),
                 | LocatedDefect::Unlocated => f.write_str(
-                    "a hold or a `leta` stands at the host's own world, where no handle is made or opened",
+                    "a hold or an opening `let x at w` stands at the host's own world, where no handle is made or opened",
                 ),
                 | LocatedDefect::UndeclaredWorld { world } => write!(
                     f,
@@ -1832,7 +1838,7 @@ impl fmt::Display for Checked
                     usize::from(constant)
                 ),
                 | LocatedDefect::NotAHandle { .. } => {
-                    f.write_str("a `leta` opens a handle at a world, and this value is none")
+                    f.write_str("a `let x at w` opens a handle at a world, and this value is none")
                 },
             },
             | CheckRefusal::CapabilityForged { .. } => f.write_str(
@@ -3495,6 +3501,13 @@ mod tests
             },
             CheckRefusal::Located {
                 at: comp,
+                defect: LocatedDefect::OpenedElsewhere {
+                    written: 0_usize.into(),
+                    handle: 1_usize.into(),
+                },
+            },
+            CheckRefusal::Located {
+                at: comp,
                 defect: LocatedDefect::Unlocated,
             },
             CheckRefusal::Located {
@@ -4488,6 +4501,13 @@ mod tests
             }),
             title(CheckRefusal::Located {
                 at: comp,
+                defect: LocatedDefect::OpenedElsewhere {
+                    written: 12_usize.into(),
+                    handle: 13_usize.into(),
+                },
+            }),
+            title(CheckRefusal::Located {
+                at: comp,
                 defect: LocatedDefect::Unlocated,
             }),
             title(CheckRefusal::Located {
@@ -4538,14 +4558,19 @@ mod tests
                 assert_ne!(earlier, title, "each located defect names its own subject");
             }
         }
-        assert_eq!(ordinals(&located[6]), [8_usize], "the world's declaration");
         assert_eq!(
-            ordinals(&located[10]),
+            ordinals(&located[5]),
+            [12_usize, 13_usize],
+            "the written world's declaration, then the handle's"
+        );
+        assert_eq!(ordinals(&located[7]), [8_usize], "the world's declaration");
+        assert_eq!(
+            ordinals(&located[11]),
             [10_usize],
             "the entry's declaration"
         );
         assert_eq!(
-            ordinals(&located[11]),
+            ordinals(&located[12]),
             [11_usize],
             "the entry's declaration"
         );

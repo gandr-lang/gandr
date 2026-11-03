@@ -2371,7 +2371,7 @@ where
                 gandr_core_term::world::WorldForm::Hold { value } => {
                     each(NodeAddress::Producer(value), at)?;
                 },
-                gandr_core_term::world::WorldForm::Leta { value, body } => {
+                gandr_core_term::world::WorldForm::Leta { value, body, .. } => {
                     each(NodeAddress::Producer(value), at)?;
                     each(
                         NodeAddress::Command(body),

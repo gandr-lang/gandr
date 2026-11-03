@@ -508,8 +508,13 @@ fn command(
                 WorldForm::Hold { value } => {
                     alloc::vec![text!("hold_w("), Piece::Producer(value, depth),]
                 },
-                WorldForm::Leta { value, body } => alloc::vec![
-                    text!("leta("),
+                WorldForm::Leta { world, value, body } => alloc::vec![
+                    Piece::Owned(match world {
+                        World::Host => String::from("leta[host]("),
+                        World::Declared(constant) => {
+                            alloc::format!("leta[c{}](", usize::from(constant))
+                        },
+                    }),
                     Piece::Producer(value, depth),
                     text!("; (x; α) ⇒ "),
                     Piece::Command(body, depth),

@@ -189,7 +189,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 70_usize] = [
+    pub const ALL: [Self; 69_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -207,7 +207,6 @@ impl FormName
         Self::DECLARATION,
         Self::LET_STATEMENT,
         Self::UNPACK_STATEMENT,
-        Self::LETA_STATEMENT,
         Self::VAR_STATEMENT,
         Self::RECV_EXPRESSION,
         Self::FORK_EXPRESSION,
@@ -289,8 +288,6 @@ impl FormName
     /// The instantiation `e[i, …]`, a recursive call's claim among its
     /// residents.
     pub const INSTANTIATION: Self = Self("instantiation_expression");
-    /// The statement `leta x = e ;`, inlined into its block.
-    pub const LETA_STATEMENT: Self = Self("leta_statement");
     /// The module family `module M …`, its members included.
     pub const MODULE: Self = Self("module_declaration");
     /// The pack `pack [T, …] e`, a module packed into a value.
@@ -588,8 +585,6 @@ impl TileName
     pub const INTERPOLATION: Self = Self("${");
     /// The keyword `law`, opening a theory's or a module's law member.
     pub const LAW: Self = Self("law");
-    /// The keyword `leta`, opening a statement.
-    pub const LETA: Self = Self("leta");
     /// The less-than sign `<`: an instantiation's structural-descent claim.
     pub const LESS_THAN: Self = Self("<");
     /// The sort literal `-` of a universe: the computation types.
@@ -1030,8 +1025,8 @@ pub enum Former
     Access,
     /// A located form the world register reads: the hold `hold v`, returning
     /// `v` held at the current world, and the migration `migrate [w] { t }`,
-    /// running `t` at the world `w` names; the third, `leta x = v ;`, is a
-    /// statement its block reads.
+    /// running `t` at the world `w` names; the opening `let x at w = v ;` is a
+    /// `let` statement its block reads.
     World,
     /// A deployment's top-level item with no body and no type: the world
     /// declaration `world w ;`, naming a world, and a site's offer

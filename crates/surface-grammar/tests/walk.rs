@@ -55,17 +55,18 @@ use gandr_theory_graphs::WalkChainLength;
 /// then by the static abstraction folding into `fun` (#4508),
 /// then by the block's statements losing the `run` and `hold` heads (#4466),
 /// then by the infix `then` leaving the grammar: a composite is a call under
-/// its former, `Path.step(p, q)` or `Flow.then(f, g)`.
-const BUILT_IN_FINGERPRINT: u64 = 0xc048_b33b_171e_f45b;
+/// its former, `Path.step(p, q)` or `Flow.then(f, g)`, then by the `leta`
+/// statement leaving for `let x at w = v ;` (#4483).
+const BUILT_IN_FINGERPRINT: u64 = 0x1338_2841_9456_71f9;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2952);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2892);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 96;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 95;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
@@ -102,14 +103,14 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (".@", 1),
     (":", 263),
     (":>", 2),
-    (";", 138),
+    (";", 123),
     ("<", 18),
     ("<&", 1),
     ("<->", 24),
     ("<=", 1),
     ("<=>", 27),
     ("<>", 1),
-    ("=", 144),
+    ("=", 129),
     ("==", 1),
     ("==>", 27),
     ("=>", 45),
@@ -191,7 +192,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
-    ("identifier", 385),
+    ("identifier", 370),
     ("if", 15),
     ("import", 16),
     ("in", 2),
@@ -199,7 +200,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("is", 1),
     ("law", 3),
     ("let", 15),
-    ("leta", 15),
     ("loop", 1),
     ("match", 1),
     ("migrate", 1),

@@ -2537,7 +2537,6 @@ model/worlds/seat-and-operator.gandr:<file> unshaped:HeadParagraphs
 model/worlds/seat-and-operator.gandr:<file> unshaped:Semicolon
 model/worlds/seat-and-operator.gandr:<file> unshaped:SentenceLength
 model/worlds/seat-and-operator.gandr:<file> unshaped:WhatLength
-model/worlds/seat-and-operator.gandr:comment:96a8849d52b7a675 unshaped:ItemShape
 model/worlds/seat-and-operator.gandr:comment:c6376fbdcdc15f1f unshaped:ItemShape
 pathological/attributes/duplicate-attribute.gandr:<file> unshaped:HeadParagraphs
 pathological/attributes/effectful-payload.gandr:<file> uncommented

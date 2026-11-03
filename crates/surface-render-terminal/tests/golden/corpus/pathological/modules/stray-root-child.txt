@@ -1,10 +1,10 @@
-error[OutOfFragment.WrongSort.declaration]: a view expression cannot stand where a declaration is expected
+error[OutOfFragment.WrongSort.declaration]: a release expression cannot stand where a declaration is expected
    ╭▸ corpus/pathological/modules/stray-root-child.gandr:11:1
    │
-11 │ leta x = 1 ;
-   │ ━━━━━━━━━━━━ a form of another sort than this position takes
+11 │ release x ;
+   │ ━━━━━━━━━━━ a form of another sort than this position takes
    │
-   ├ note: `leta` is refused with OutOfFragment.WrongSort.declaration, as its expectation states
+   ├ note: `release` is refused with OutOfFragment.WrongSort.declaration, as its expectation states
    ╰ help: write a declaration in this position
 
 error[OutOfFragment.TopLevel]: a binary expression cannot stand at a source's top level, where only declarations stand; a program runs the `main` it declares, so write it in `def main() -> Unit { … }`, or name it with a definition
