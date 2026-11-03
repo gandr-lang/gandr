@@ -1462,6 +1462,8 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/metaprograms/tac
 crates/surface-render-terminal/tests/golden/corpus/pathological/metaprograms/tactics-over-goals.txt Procedure 93c38e17aac983f3
 crates/surface-render-terminal/tests/golden/corpus/pathological/metaprograms/tactics-over-goals.txt Procedure e282304ab956501c
 crates/surface-render-terminal/tests/golden/corpus/pathological/module-forward-member-reference.txt Procedure edf7840fae365a2b
+crates/surface-render-terminal/tests/golden/corpus/pathological/modules/family-applied.txt Procedure 16333f87cc3263ac
+crates/surface-render-terminal/tests/golden/corpus/pathological/modules/family-applied.txt Procedure e8282f8df091e974
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/generative-distinctness.txt Procedure 264148eb8bb73011
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/import-cycle-a.txt Procedure f639a857061553b4
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/import-cycle-b.txt Procedure f639a857061553b4

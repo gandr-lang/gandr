@@ -3566,6 +3566,60 @@ fn a_module_member_family_is_named_through_the_module_4298()
     );
 }
 
+/// A module's family applied through the module's name reads as it does
+/// applied inside the module: `M.F(Integer)` is the type family's type at
+/// `Integer`, and `M.Box(Integer)` the data family at `Integer`. An argument
+/// list of another count, or after a member that takes none, is refused by
+/// the count it writes (#3051).
+#[test]
+fn a_module_s_family_is_applied_through_its_name_3051()
+{
+    let source = "data Maybe(a : Type) : Type where { | Nothing : Maybe(a) | Just : (x : a) --> \
+                  Maybe(a) }\nmodule M where { type F(a : Type) = Maybe(a) ; data Box(a : Type) \
+                  : Type where { | Hold : (x : a) --> Box(a) } }\ndef keep(x : M.F(Integer)) -> \
+                  Maybe(Integer) { x }\ndef boxed(x : M.Box(Integer)) -> M.Box(Integer) { x \
+                  }\ndef other(x : M.F(Integer)) -> Maybe(String) { x }";
+    let mut lowered = lower(source);
+    let judged: Vec<Judgement> = verdicts(&mut lowered)
+        .into_iter()
+        .map(|(_, judgement)| judgement)
+        .filter(|&judgement| judgement != Judgement::Declared)
+        .collect();
+    assert_eq!(
+        judged,
+        [
+            Judgement::Checked,
+            Judgement::Checked,
+            Judgement::Mismatched
+        ],
+        "`M.F(Integer)` is `Maybe(Integer)` and `M.Box(Integer)` the box at `Integer`, so \
+         each body checks, and `Maybe(String)` is another type"
+    );
+    let counted = |path: &'static str, written: &'static str, count: usize| {
+        let source = format!(
+            "module M where {{ type F(a : Type) = a ; type T = Integer ; }}\ndef {path} : \
+             {written} ;"
+        );
+        let found = rows(&lower(source.as_str()));
+        assert_eq!(
+            found,
+            [row(
+                path,
+                Role::Declared,
+                Amounts::Refused(LoweringRefusal::OutOfFragment {
+                    span: span_of(&source, written, 0_usize),
+                    form: FormName::from(NamedKind("type_path")),
+                    sort: FragmentSort::ValueType,
+                    boundary: FragmentBoundary::Arity(OperandCount::from(count)),
+                })
+            ),],
+            "`{written}` is refused by the {count} arguments it writes"
+        );
+    };
+    counted("twice", "M.F(Integer, Integer)", 2_usize);
+    counted("flat", "M.T(Integer)", 1_usize);
+}
+
 #[test]
 fn an_unbound_type_path_is_refused_by_name()
 {

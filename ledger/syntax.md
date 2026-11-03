@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xe4727b885122f261`
+- Grammar fingerprint: `0xf2770cdf17df4b0f`
 - Rules: 171 — 170 committed, 1 internal
-- Molds: 2894
+- Molds: 2898
 - Attributes: 17
 
 ## Reading a form
@@ -183,7 +183,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`path_type`](../corpus/ledger/syntax/path-type.gandr) | `Path ( ⦅ Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆? , TYPE , TYPE ‖ TYPE , EXPRESSION , EXPRESSION ⦆ )` | `type.application` | `path_type` * | admitted | TypeBuiltin, Other, Operator, Number |
 | [`bridge_type`](../corpus/ledger/syntax/bridge-type.gandr) | `Bridge ( ⦅ Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆? , TYPE , TYPE ‖ TYPE , EXPRESSION , EXPRESSION ⦆ )` | `type.application` | `bridge_type` * | admitted | TypeBuiltin, Other, Operator, Number |
 | [`type_application`](../corpus/ledger/syntax/type-application.gandr) | `⦅ ‹type_identifier› ‖ ‹type_variable› ⦅ [ < ] ⦆? ⦆ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? )` | `type.application` | `type_application` | admitted | Type, TypeVariable, Other, Operator |
-| [`type_path`](../corpus/ledger/syntax/type-path.gandr) | `TYPE . ⦅ ‹type_variable› . ⦆* ‹type_identifier›` | `type.path` | `type_path` * | admitted | Other, TypeVariable, Type |
+| [`type_path`](../corpus/ledger/syntax/type-path.gandr) | `TYPE . ⦅ ‹type_variable› . ⦆* ‹type_identifier› ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `type_path` * | admitted | Other, TypeVariable, Type |
 | [`staged_type`](../corpus/ledger/syntax/staged-type.gandr) | `TYPE [ ⦅ < ⦆? ‹identifier› ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `staged_type` * | admitted | Other, Operator, VariableParam |
 | [`parenthesized_type`](../corpus/ledger/syntax/parenthesized-type.gandr) | `( TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? )` | `type.atom` | `parenthesized_type` | admitted | Other |
 | [`telescope_type`](../corpus/ledger/syntax/telescope-type.gandr) | `#{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `telescope_type` * | admitted | Other |
@@ -262,7 +262,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
 
-## Decisions — 110 of 171 rules decided at every token
+## Decisions — 109 of 171 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -402,7 +402,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `path_type` | type | 14 | `Path` | — | 0 |
 | `bridge_type` | type | 14 | `Bridge` | — | 0 |
 | `type_application` | type | 9 | `type_identifier` `type_variable` | `moded_type`, `type_identifier`, `type_variable` | 2 |
-| `type_path` | type | 4 | `.` | — | 0 |
+| `type_path` | type | 8 | `.` | — | 2 |
 | `staged_type` | type | 8 | `[` | — | 2 |
 | `parenthesized_type` | type | 6 | `(` | — | 4 |
 | `telescope_type` | type | 6 | `#{` | — | 4 |
@@ -447,13 +447,13 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
 | `identifier` | 379 | 58 | 3 |
-| `,` | 269 | 50 | 0 |
+| `,` | 271 | 51 | 0 |
 | `:` | 248 | 32 | 0 |
 | `type_identifier` | 181 | 33 | 2 |
 | `=` | 129 | 31 | 0 |
-| `)` | 127 | 43 | 0 |
+| `)` | 128 | 44 | 0 |
+| `(` | 124 | 43 | 4 |
 | `;` | 124 | 26 | 1 |
-| `(` | 123 | 42 | 4 |
 | `.` | 83 | 39 | 3 |
 | `}` | 78 | 40 | 0 |
 | `type_variable` | 70 | 15 | 3 |

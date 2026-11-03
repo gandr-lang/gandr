@@ -1,0 +1,35 @@
+// A module's family applied through its name with a count it does not bind.
+//
+// An application through a module's name states the arguments its family
+// binds. A list of another count reads no type.
+//
+// The lowering refuses a list of another count by the count it writes. It
+// refuses a list after a member that binds none the same way. A selection
+// after an applied name is refused as a projection out of an application.
+//
+// - see: #3051 — the qualified head's argument list
+// - see: `model/modules/family-applied.gandr` — the families applied
+
+/// A module of a family and a plain type.
+module Shapes where {
+  /// A family of one type.
+  type Same(a : Type) = a;
+  /// A type of no parameter.
+  type Count = Integer;
+}
+
+/// The family at two arguments.
+@[ refuses("OutOfFragment.Arity") ]
+def twice(x : Shapes.Same(Integer, Bool)) -> Integer { 0 }
+
+/// The plain type takes an argument it does not bind.
+@[ refuses("OutOfFragment.Arity") ]
+def flat(x : Shapes.Count(Integer)) -> Integer { 0 }
+
+/// A selection reads past the family's application.
+@[ refuses("OutOfFragment.projection_expression") ]
+def selected(x : Shapes.Same(Integer).Count) -> Integer { 0 }
+
+/// The family at a type another than its definition's.
+@[ refuses("TypeMismatch") ]
+def other(x : Shapes.Same(Integer)) -> Bool { x }
