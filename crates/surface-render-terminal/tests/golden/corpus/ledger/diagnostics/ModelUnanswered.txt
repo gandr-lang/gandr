@@ -4,4 +4,5 @@ error[ModelUnanswered]: no module in scope answers the model implicit `p` this c
 15 │ def unanswered() -> Integer { pointOf(3) }
    │                               ━━━━━━━━━━ a model implicit no module answers: found `Integer`
    │
-   ╰ note: `unanswered` is refused with ModelUnanswered, as its expectation states
+   ├ note: `unanswered` is refused with ModelUnanswered, as its expectation states
+   ╰ help: declare a module that is a model of the theory at these types, or supply one by name in brackets

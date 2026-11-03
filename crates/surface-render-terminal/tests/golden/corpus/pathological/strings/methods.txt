@@ -27,7 +27,8 @@ error[HeldCaptured]: the held value is used inside a thunk, which may run it oth
 26 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `readInThunk` is refused with HeldCaptured, as its expectation states
+   ├ note: `readInThunk` is refused with HeldCaptured, as its expectation states
+   ╰ help: use the held value outside a thunk, or declare its `var` inside it
 
 error[OutOfFragment.Held]: an `access` lends, and an assignment writes, a held value: a name a `var` statement holds
    ╭▸ corpus/pathological/strings/methods.gandr:31:3

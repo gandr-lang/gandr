@@ -12,4 +12,5 @@ error[UsedAfterClose]: the endpoint is used after `close`
 6 │ │ }
   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `seat_closed_twice` is refused with UsedAfterClose, as its expectation states
+  ├ note: `seat_closed_twice` is refused with UsedAfterClose, as its expectation states
+  ╰ help: move the action before the `close`, or delete it

@@ -4,7 +4,8 @@ error[ModelUnanswered]: no module in scope answers the model implicit `s` this c
 19 │ def nothingYet() -> Integer { stepped(4) }
    │                               ━━━━━━━━━━ a model implicit no module answers: found `Integer`
    │
-   ╰ note: `nothingYet` is refused with ModelUnanswered, as its expectation states
+   ├ note: `nothingYet` is refused with ModelUnanswered, as its expectation states
+   ╰ help: declare a module that is a model of the theory at these types, or supply one by name in brackets
 
 error[ModelUnanswered]: no module in scope answers the model implicit `s` this call to `stepped` omits at `String`: `Up` and `Tens` do not; supply one as `stepped[s = …](…)`
    ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:45:28
@@ -12,7 +13,8 @@ error[ModelUnanswered]: no module in scope answers the model implicit `s` this c
 45 │ def textual() -> Integer { stepped("four") }
    │                            ━━━━━━━━━━━━━━━ a model implicit no module answers: found `String`
    │
-   ╰ note: `textual` is refused with ModelUnanswered, as its expectation states
+   ├ note: `textual` is refused with ModelUnanswered, as its expectation states
+   ╰ help: declare a module that is a model of the theory at these types, or supply one by name in brackets
 
 error[ModelAmbiguous]: more than one module in scope answers the model implicit `s` this call to `stepped` omits: `Up` and `Tens`; supply the one meant as `stepped[.s = …](…)`
    ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:49:25
@@ -36,4 +38,5 @@ error[ModelUnanswered]: no module in scope answers the model implicit `s` this c
 71 │ def textTally() -> Integer { fromText() }
    │                              ━━━━━━━━━━ a model implicit no module answers
    │
-   ╰ note: `textTally` is refused with ModelUnanswered, as its expectation states
+   ├ note: `textTally` is refused with ModelUnanswered, as its expectation states
+   ╰ help: declare a module that is a model of the theory at these types, or supply one by name in brackets

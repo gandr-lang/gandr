@@ -4,7 +4,8 @@ error[UnresolvedTypeHead]: no type named `Missing` is written bare
 41 │ pub offers [Missing];
    │             ━━━━━━━ no type head of this name and arity
    │
-   ╰ note: `offers` is refused with UnresolvedTypeHead, as its expectation states
+   ├ note: `offers` is refused with UnresolvedTypeHead, as its expectation states
+   ╰ help: declare a type named `Missing`, or import the module that exports it
 
 error[DuplicateDefinition]: `std.io.Console.Eff` is defined twice
    ╭▸ corpus/pathological/worlds/offered.gandr:45:33

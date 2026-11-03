@@ -24,7 +24,8 @@ error[UnresolvedTypeHead]: no type named `Missing` is written bare
 41 │   rule dropped : mark(k) <=> k where { | under [Missing | r] };
    │                                                 ━━━━━━━ no type head of this name and arity
    │
-   ╰ note: `Unseen` is refused with UnresolvedTypeHead, as its expectation states
+   ├ note: `Unseen` is refused with UnresolvedTypeHead, as its expectation states
+   ╰ help: declare a type named `Missing`, or import the module that exports it
 
 error[DuplicateDefinition]: `Sink` is defined twice
    ╭▸ corpus/pathological/effects/rows.gandr:49:66

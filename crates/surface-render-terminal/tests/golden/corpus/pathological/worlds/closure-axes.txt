@@ -114,7 +114,8 @@ error[HeldCaptured]: the held value is used inside a thunk, which may run it oth
 97 │ │  }
    │ └──┘ checked against `() => () => Integer`; while checking the body of this thunk
    │
-   ╰ note: `graded` is refused with HeldCaptured, as its expectation states
+   ├ note: `graded` is refused with HeldCaptured, as its expectation states
+   ╰ help: use the held value outside a thunk, or declare its `var` inside it
 
 error[Elsewhere]: this value lives at another world; open it there with `let x at w`
     ╭▸ corpus/pathological/worlds/closure-axes.gandr:104:38

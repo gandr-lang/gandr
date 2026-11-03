@@ -19,4 +19,5 @@ error[UsedAfterClose]: the endpoint is used after `close`
 21 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `closedAfterMove` is refused with UsedAfterClose, as its expectation states
+   ├ note: `closedAfterMove` is refused with UsedAfterClose, as its expectation states
+   ╰ help: move the action before the `close`, or delete it

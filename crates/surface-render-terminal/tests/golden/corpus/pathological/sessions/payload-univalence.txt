@@ -13,4 +13,5 @@ error[ShapeMismatch]: expected a universe-path classifier `Path_U a b`
 14 │ │ }
    │ └─┘ checked against `(Bit ≃ Answer) => Path(Type, ?Bit >> end, ?Answer >> end)`; while checking the body of this thunk
    │
-   ╰ note: `anyProtocol` is refused with ShapeMismatch, as its expectation states
+   ├ note: `anyProtocol` is refused with ShapeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the type has the required shape

@@ -4,7 +4,8 @@ error[UnresolvedTypeHead]: no type named `Missing` is written bare
 40 │ pub world lost requires [Missing];
    │                          ━━━━━━━ no type head of this name and arity
    │
-   ╰ note: `lost` is refused with UnresolvedTypeHead, as its expectation states
+   ├ note: `lost` is refused with UnresolvedTypeHead, as its expectation states
+   ╰ help: declare a type named `Missing`, or import the module that exports it
 
 error[UnlabelledRequirement]: the world requires `Store` under no label, so its code cannot perform it
    ╭▸ corpus/pathological/worlds/requires.gandr:44:46

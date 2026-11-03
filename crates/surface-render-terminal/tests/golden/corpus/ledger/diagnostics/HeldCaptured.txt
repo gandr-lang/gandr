@@ -12,4 +12,5 @@ error[HeldCaptured]: the held value is used inside a thunk, which may run it oth
 6 │ │ }
   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
   │
-  ╰ note: `stash` is expected to be refused with HeldCaptured and run to 0, and it is refused with HeldCaptured and runs to 0
+  ├ note: `stash` is expected to be refused with HeldCaptured and run to 0, and it is refused with HeldCaptured and runs to 0
+  ╰ help: use the held value outside a thunk, or declare its `var` inside it

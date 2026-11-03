@@ -18,4 +18,5 @@ error[HeldCaptured]: the held value is used inside a fixpoint, which may run it 
 16 │ │   }
    │ └───┘ checked against `+U (-F [Partial] Integer)`; while checking the body of this thunk
    │
-   ╰ note: `nested` is refused with HeldCaptured, as its expectation states
+   ├ note: `nested` is refused with HeldCaptured, as its expectation states
+   ╰ help: use the held value outside a fixpoint, or declare its `var` inside it

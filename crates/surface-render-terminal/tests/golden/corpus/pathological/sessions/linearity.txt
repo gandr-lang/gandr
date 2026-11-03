@@ -28,7 +28,8 @@ error[UsedAfterClose]: the endpoint is used after `close`
 11 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `seat_closed_twice` is refused with UsedAfterClose, as its expectation states
+   ├ note: `seat_closed_twice` is refused with UsedAfterClose, as its expectation states
+   ╰ help: move the action before the `close`, or delete it
 
 error[EndpointUsedTwice]: one action names the endpoint twice
    ╭▸ corpus/pathological/sessions/linearity.gandr:15:54
@@ -85,7 +86,8 @@ error[UsedAfterClose]: the endpoint is used after `close`
 39 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `seat_closed_after_delegating` is refused with UsedAfterClose, as its expectation states
+   ├ note: `seat_closed_after_delegating` is refused with UsedAfterClose, as its expectation states
+   ╰ help: move the action before the `close`, or delete it
 
 error[LinearResidue]: the endpoint is not closed before the fork half or receive body that bound it ends
    ╭▸ corpus/pathological/sessions/linearity.gandr:50:3

@@ -75,7 +75,8 @@ error[ModelUnanswered]: no module in scope is a model of `State.Eff` answering t
 82 │ ┃   }
    │ ┗━━━┛ a model implicit no module answers
    │
-   ╰ note: `unansweredAtTwo` is refused with ModelUnanswered, as its expectation states
+   ├ note: `unansweredAtTwo` is refused with ModelUnanswered, as its expectation states
+   ╰ help: declare a module that is a model of the theory at these types, or supply one by name in brackets
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/effects/state-handler.gandr:91:3

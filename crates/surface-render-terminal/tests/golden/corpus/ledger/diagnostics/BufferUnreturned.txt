@@ -14,4 +14,5 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
 17 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `neverFreed` is refused with BufferUnreturned, as its expectation states
+   ├ note: `neverFreed` is refused with BufferUnreturned, as its expectation states
+   ╰ help: hand the buffer back with a `send`, an operation or a resumption before the body ends

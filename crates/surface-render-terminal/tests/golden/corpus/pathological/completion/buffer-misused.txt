@@ -14,7 +14,8 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
 25 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `neverFreed` is refused with BufferUnreturned, as its expectation states
+   ├ note: `neverFreed` is refused with BufferUnreturned, as its expectation states
+   ╰ help: hand the buffer back with a `send`, an operation or a resumption before the body ends
 
 error[BufferReturnedTwice]: the buffer is handed back a second time
    ╭▸ corpus/pathological/completion/buffer-misused.gandr:33:12
@@ -75,7 +76,8 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
 67 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `mintDropped` is refused with BufferUnreturned, as its expectation states
+   ├ note: `mintDropped` is refused with BufferUnreturned, as its expectation states
+   ╰ help: hand the buffer back with a `send`, an operation or a resumption before the body ends
 
 error[BufferUnreturned]: the buffer placed live here is not handed back before its body ends
    ╭▸ corpus/pathological/completion/buffer-misused.gandr:80:9
@@ -97,7 +99,8 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
 88 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `receivedKept` is refused with BufferUnreturned, as its expectation states
+   ├ note: `receivedKept` is refused with BufferUnreturned, as its expectation states
+   ╰ help: hand the buffer back with a `send`, an operation or a resumption before the body ends
 
 error[BufferReturnedTwice]: the buffer is handed back a second time
     ╭▸ corpus/pathological/completion/buffer-misused.gandr:102:22
@@ -151,4 +154,5 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
 130 │ │   }
     │ └───┘ checked against `Bool => Unit`; while checking the body of this thunk
     │
-    ╰ note: `freedInOneArm` is refused with BufferUnreturned, as its expectation states
+    ├ note: `freedInOneArm` is refused with BufferUnreturned, as its expectation states
+    ╰ help: hand the buffer back with a `send`, an operation or a resumption before the body ends
