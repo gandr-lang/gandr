@@ -5575,9 +5575,8 @@ fn documentation_before_a_pub_mark_documents_its_declaration_2687()
     );
 }
 
-/// #4947: a source's own `//!` documentation before its first declaration
-/// documents the source alone, so a `pub` mark on that declaration carries
-/// only the `///` run it follows.
+/// #4947: a `//!` run before the first declaration documents the source
+/// alone. A `pub` mark on that declaration carries only its `///` run.
 #[test]
 fn a_source_s_own_documentation_stays_off_its_marked_declaration_4947()
 {
