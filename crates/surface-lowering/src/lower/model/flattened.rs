@@ -198,8 +198,8 @@ pub(in crate::lower) struct ModelSlot
     /// The sorts the model type fixes, each sort's name beside the type it
     /// is.
     fixed: BTreeMap<Name, Placed>,
-    /// The theory's name tile.
-    theory: Placed,
+    /// The theory's path, its name tile last.
+    theory: crate::form::WrittenPath,
 }
 
 impl ModelSlot
@@ -349,19 +349,23 @@ impl<'source> Lowerer<'_, 'source>
             let mut scratch = Pieces::new();
             self.bindings(written, bound, &mut scratch, &mut sorts)?;
         }
-        let named = Site { at: theory, ..site };
+        let named = Site {
+            at: theory.last,
+            ..site
+        };
 
-        self.theory_slot(named, declared.span.start(), &sorts)
+        self.theory_slot(named, &theory, declared.span.start(), &sorts)
             .map(Some)
     }
 
-    /// The slot of the theory whose name `named` stands at, read where a form
-    /// starting at `at` reads it, each sort `sorts` names fixed to the type
-    /// written beside it.
+    /// The slot of the theory the path `theory` names, its refusals placed at
+    /// `named`, read where a form starting at `at` reads it, each sort `sorts`
+    /// names fixed to the type written beside it.
     ///
     /// # Specification
-    /// - requires: `named` is at a theory's name tile; each of `sorts` is a
-    ///   sort's name tile beside the type written for it.
+    /// - requires: `named` is at the last name of `theory`, a theory's name or
+    ///   dotted path; each of `sorts` is a sort's name tile beside the type
+    ///   written for it.
     /// - ensures: the slot of the theory, its outermost theory holding no sort
     ///   `sorts` names, each named sort beside its type.
     /// - fails: the refusals [`Self::bundled`] yields for a theory nothing
@@ -373,13 +377,16 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::model_slot`], and a scope over `State`
-    ///   fixing its state names a model of it.
+    ///   fixing its state names a model of it; one over a theory another source
+    ///   declares at a dotted path names a module of it.
     /// - witness: `lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
     /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    /// - witness: `tests::namespace::an_imported_theory_at_a_dotted_path_is_named_wherever_a_theory_is_4514`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| !slot.theories.is_empty() && slot.fixed.len() <= sorts.len()))]
     pub(in crate::lower) fn theory_slot(
         &mut self,
         named: Site,
+        theory: &crate::form::WrittenPath,
         at: ByteOffset,
         sorts: &[(Placed, Placed)],
     ) -> Result<ModelSlot, LoweringRefusal<'source>>
@@ -388,7 +395,7 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .map(|&(sort, stated)| (Name::from(self.name_at(sort).as_ref()), stated))
             .collect();
-        let mut theories = self.bundled(named, (at, self.name_at(named.at)))?;
+        let mut theories = self.bundled(named, (at, theory))?;
         if let Some(outermost) = theories.first_mut() {
             outermost
                 .signature
@@ -399,7 +406,7 @@ impl<'source> Lowerer<'_, 'source>
         Ok(ModelSlot {
             theories,
             fixed,
-            theory: named.at,
+            theory: theory.clone(),
         })
     }
 
@@ -428,7 +435,7 @@ impl<'source> Lowerer<'_, 'source>
         slot: &ModelSlot,
     ) -> Result<Supplied, LoweringRefusal<'source>>
     {
-        let packed = self.packed_module(site, module, slot.theory, &slot.fixed)?;
+        let packed = self.packed_module(site, module, &slot.theory, &slot.fixed)?;
 
         Ok(Supplied::Module(Arc::new(packed)))
     }
@@ -677,7 +684,7 @@ impl<'source> Lowerer<'_, 'source>
             name: entry.name,
             named: entry.binder.span,
             declared: declared.node,
-            theory: self.name_at(slot.theory),
+            theory: slot.theory.name(self.tree),
             components: slot
                 .components()
                 .iter()
@@ -982,7 +989,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         match self.form_at(resident)? {
             Some((_, Former::Constructor | Former::TypeHead)) => {
-                let packed = self.packed_module(site, resident, slot.theory, &slot.fixed)?;
+                let packed = self.packed_module(site, resident, &slot.theory, &slot.fixed)?;
                 Ok(Supplied::Module(Arc::new(packed)))
             },
             Some((_, Former::Name)) => {
@@ -1034,8 +1041,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: each top-level module declared before `site` whose ascription
     ///   names the slot's theory, or a theory including it, and that
     ///   [`Self::packed_structure`] packs at the slot, in declaration order.
-    /// - fails: the refusals [`crate::module::Collected::presented_theory`]
-    ///   yields for the slot's theory; the budget refusal a pack yields.
+    /// - fails: the refusals [`crate::module::Collected::presented_theory_in`]
+    ///   yields for the slot's theory path; the budget refusal a pack yields.
     /// - panics: none.
     ///
     /// # Errors
@@ -1053,10 +1060,11 @@ impl<'source> Lowerer<'_, 'source>
         slot: &ModelSlot,
     ) -> Result<Vec<(SurfaceName<'source>, Supplied)>, LoweringRefusal<'source>>
     {
-        let (wanted, _) = self.collected.presented_theory(
-            slot.theory.span.start(),
-            slot.theory.span,
-            self.name_at(slot.theory),
+        let (wanted, _) = self.collected.presented_theory_in(
+            slot.theory.last.span.start(),
+            &self.theory_prefix(&slot.theory),
+            slot.theory.last.span,
+            self.name_at(slot.theory.last),
         )?;
         let mut answering = BTreeSet::from([wanted]);
         for (&theory, included) in &self.collected.included {
@@ -1094,7 +1102,7 @@ impl<'source> Lowerer<'_, 'source>
             .collect();
         let mut candidates = Vec::with_capacity(modules.len());
         for module in modules {
-            match self.packed_structure(site, module, slot.theory, &slot.fixed) {
+            match self.packed_structure(site, module, &slot.theory, &slot.fixed) {
                 Ok(packed) => candidates.push((module.2, Supplied::Module(Arc::new(packed)))),
                 Err(refusal @ LoweringRefusal::BudgetExceeded { .. }) => return Err(refusal),
                 Err(_) => {},

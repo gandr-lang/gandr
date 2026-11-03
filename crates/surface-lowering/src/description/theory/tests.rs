@@ -3111,6 +3111,45 @@ fn an_under_row_names_each_theory_in_scope_once_2448()
     );
 }
 
+/// #4514: an `under` row names a theory at a dotted path, `Store.Eff`, as a
+/// row entry does: the row keeps the whole path, and the printed rule spells
+/// it.
+#[test]
+fn an_under_row_names_a_theory_at_a_dotted_path_4514()
+{
+    let signature = "sort T : Type; oper f : (x : T) --> T; oper g : (x : T) --> T;";
+    let report = described(
+        format!(
+            "theory Store.Eff where {{ sort S : Type; }}\ntheory Logged where {{ {signature} rule r : f(g(x)) <=> g(x) where {{ | under [Store.Eff | r] }}; }}"
+        )
+        .as_str(),
+    );
+    assert_eq!(report.diagnostics, [], "the row reads");
+    let theory = &report.declarations[1];
+    assert_eq!(
+        theory
+            .description
+            .rules
+            .iter()
+            .map(|face| face.under.clone())
+            .collect::<Vec<_>>(),
+        [Maybe::Present(Under {
+            theories: [Name::from("Store.Eff")].into(),
+            tail: RowTail::Open,
+        })],
+        "the row keeps the theory's whole path"
+    );
+    let printed: Vec<String> = theory
+        .rules()
+        .map(|rule| rule.print_theory(&Name::from("r")))
+        .collect();
+    assert_eq!(
+        printed,
+        ["rule r : f(g(x)) <=> g(x) where { | under [Store.Eff | r] }"],
+        "the printed rule spells the path"
+    );
+}
+
 /// Each member the parser reads whole but writes wrongly is refused at that
 /// member by the fault its reader names: a classifier no universe answers,
 /// a shape's face listing points without a separator, a feed of no wires,

@@ -19,24 +19,24 @@ error[OutOfFragment.WrongSort]: a handle expression cannot stand where a computa
 error[UninterfacedMember]: the theory cannot stand as the interface its handler reads at `S`, which is a sort the operations do not return, which the manifest leaves unfixed
    ╭▸ corpus/pathological/effects/state-handler.gandr:14:15
    │
-14 │   handle st : State {
-   │               ━━━━━ a member the handler cannot read as an operation
+14 │   handle st : State.Eff {
+   │               ━━━━━━━━━ a member the handler cannot read as an operation
    │
    ╰ note: `unfixed` is refused with UninterfacedMember, as its expectation states
 
 error[UninterfacedMember]: the theory cannot stand as the interface its handler reads at `C`, which is the sort the operations return, which the handler's answer fixes
    ╭▸ corpus/pathological/effects/state-handler.gandr:27:15
    │
-27 │   handle st : State with sort S = Integer with sort C = Integer {
-   │               ━━━━━ a member the handler cannot read as an operation
+27 │   handle st : State.Eff with sort S = Integer with sort C = Integer {
+   │               ━━━━━━━━━ a member the handler cannot read as an operation
    │
    ╰ note: `carrierFixed` is refused with UninterfacedMember, as its expectation states
 
 error[UnresolvedName]: `T` is not defined
-   ╭▸ corpus/pathological/effects/state-handler.gandr:39:31
+   ╭▸ corpus/pathological/effects/state-handler.gandr:39:35
    │
-39 │   handle st : State with sort T = Integer {
-   │                               ━ not found in this scope
+39 │   handle st : State.Eff with sort T = Integer {
+   │                                   ━ not found in this scope
    │
    ├ note: `undeclared` is refused with UnresolvedName, as its expectation states
    ╰ help: define `T`, or import the module that exports it
@@ -57,7 +57,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │    │                          ─────── the type it synthesises
    │ ┌──┘
    │ │
-60 │ │┏   handle st : State with sort S = Integer {
+60 │ │┏   handle st : State.Eff with sort S = Integer {
 61 │ │┃     pure 1
 62 │ │┃   } with Passing
    │ │┗━━━━━━━━━━━━━━━━┛ its type does not convert: expected `Integer => Integer`, found `Integer`
@@ -67,10 +67,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ├ note: `answeredAtInteger` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[ModelUnanswered]: no module in scope is a model of `State` answering this scope at the types its manifest and subject force: `Passing` is not; name one after its subject, `} with M`, or write its clauses, `} with { … }`
+error[ModelUnanswered]: no module in scope is a model of `State.Eff` answering this scope at the types its manifest and subject force: `Passing` is not; name one after its subject, `} with M`, or write its clauses, `} with { … }`
    ╭▸ corpus/pathological/effects/state-handler.gandr:78:3
    │
-78 │ ┏   handle st : State with sort S = Unit + Unit {
+78 │ ┏   handle st : State.Eff with sort S = Unit + Unit {
 79 │ ┃     pure fun (s) { pure 1 }
 80 │ ┃   }
    │ ┗━━━┛ a model implicit no module answers
@@ -82,7 +82,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │
 88 │   def inScopeAtInteger() -> Integer {
    │                             ─────── the type it synthesises
-89 │ ┏   handle st : State with sort S = Integer {
+89 │ ┏   handle st : State.Eff with sort S = Integer {
 90 │ ┃     pure 1
 91 │ ┃   }
    │ ┗━━━┛ its type does not convert: expected `Integer => Integer`, found `Integer`
@@ -94,10 +94,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ├ note: `inScopeAtInteger` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[ModelAmbiguous]: more than one module in scope is a model of `State` answering this scope: `Passing` and `Forgetting`; name the one meant after its subject, `} with M`
+error[ModelAmbiguous]: more than one module in scope is a model of `State.Eff` answering this scope: `Passing` and `Forgetting`; name the one meant after its subject, `} with M`
     ╭▸ corpus/pathological/effects/state-handler.gandr:113:3
     │
-113 │ ┏   handle st : State with sort S = Integer {
+113 │ ┏   handle st : State.Eff with sort S = Integer {
 114 │ ┃     pure fun (s) { pure s }
 115 │ ┃   }
     │ ┗━━━┛ a model implicit more than one module answers
@@ -108,7 +108,7 @@ error[CapabilityAmplified]: this capability grants less than the one expected he
     ╭▸ corpus/pathological/effects/state-handler.gandr:138:5
     │
 136 │ ┌  def amplifiedAtImplicit() -> Integer {
-137 │ │┌   handle s : State with sort S = Bool {
+137 │ │┌   handle s : State.Eff with sort S = Bool {
 138 │ ││     readGivenAt(0)
     │ ││     ━━━━━━━━━━━━━━ a capability granting less: expected `Cap {get, put} at s`, found `Cap {get, put}`
 139 │ ││   } with {

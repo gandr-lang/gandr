@@ -147,12 +147,19 @@ impl<'source> Lowerer<'_, 'source>
             Site { at: stated, ..site },
             site.fault(at.span, FormFault::MisplacedTile),
         )?;
-        let named = self.name_at(theory);
-        let read = Site { at: theory, ..site };
-        let theories = self.bundled(read, (site.at.span.start(), named))?;
-        let (slot, _) =
-            self.collected
-                .presented_theory(site.at.span.start(), theory.span, named)?;
+        let named = theory.name(self.tree);
+        let read = Site {
+            at: theory.last,
+            ..site
+        };
+        let theories = self.bundled(read, (site.at.span.start(), &theory))?;
+        let prefix = self.theory_prefix(&theory);
+        let (slot, _) = self.collected.presented_theory_in(
+            site.at.span.start(),
+            &prefix,
+            theory.last.span,
+            self.name_at(theory.last),
+        )?;
         // Each carrier by the sort it is written for, then in the order the
         // signature states the sorts.
         let mut by_sort: BTreeMap<&str, (Placed, Placed)> = BTreeMap::new();

@@ -1541,6 +1541,44 @@ fn a_labelled_row_entry_names_a_theory_by_its_dotted_path_4495()
     }
 }
 
+/// A theory at a dotted path stands where a one-name theory does, its value
+/// sort fixed: a scope's head, `handle st : Store.Eff with sort S = Integer`,
+/// a labelled row entry the scope discharges, and the model type
+/// `Model(Store.Eff)` at the same sort (#4514).
+#[test]
+fn a_theory_at_a_dotted_path_takes_a_manifest_wherever_a_theory_is_named_4514()
+{
+    let mut arena = CoreArena::new();
+    let source = concat!(
+        "theory Store.Eff where {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ (s : S). C) --> C;\n}\n",
+        "def read() -> -F [st : Store.Eff with sort S = Integer] Integer { st.get() }\n",
+        "def scoped() -> -F Integer { handle st : Store.Eff with sort S = Integer { read() } with { pure(x) => pure x, oper get(k) => k(4) } }\n",
+        "def given(m : Model(Store.Eff) with sort S = Integer) -> -F Integer { pure 0 }\n",
+    );
+    let module = lowered(SourceText::from(source), &mut arena);
+    for name in ["read", "scoped", "given"] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "{name}: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    let report = judged(&module, &mut arena);
+    for name in ["read", "scoped", "given"] {
+        assert!(
+            matches!(
+                verdict_of(&module, &report, name.into()),
+                Verdict::Checked { .. }
+            ),
+            "{name}: {:?}",
+            verdict_of(&module, &report, name.into())
+        );
+    }
+}
+
 /// A row's theory entry as recorded: its returner, whether its region is
 /// held, its theory, and each sort it fixes beside the fixed type.
 type Recorded<'arena> = (

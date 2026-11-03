@@ -1,7 +1,7 @@
 // `std.cost`: decalf's cost effect (Grodin, Niu, Sterling and Harper,
 // _decalf: A Directed, Effectful Cost-Aware Logical Framework_, POPL 2024,
 // doi:10.1145/3632852). A program charges what a step costs with `charge`, an
-// operation of the theory `Cost`, and the theory's two laws are decalf's:
+// operation of the theory `Cost.Eff`, and the theory's two laws are decalf's:
 // charging nothing is the identity, and two charges are one charge of their
 // sum. A cost is a value of the sort a scope fixes, and the cost monoid's
 // unit and sum are value operations, which only a model the scope names
@@ -14,8 +14,9 @@
 // `Count`, whose sum counts and whose order bounds.
 import "./grade.gandr";
 
-/// decalf's cost effect: a charge, and the cost monoid's unit and sum.
-pub theory Cost where {
+/// decalf's cost effect: a charge, and the cost monoid's unit and sum. The
+/// theory lives in the module `Cost`, as a host effect does.
+pub theory Cost.Eff where {
   /// The costs, a value type the scope fixes.
   sort N : Type+;
   /// The carrier, the answer of the model that handles a scope.
@@ -38,7 +39,7 @@ pub def costs(n : Nat) -> Nat => Nat {
 }
 
 /// The counting model: a run's count awaits the cost charged before it.
-pub module Counting : Model(Cost) with sort N = Nat => Nat where {
+pub module Counting : Model(Cost.Eff) with sort N = Nat => Nat where {
   /// A run's count, from the cost charged before it.
   type C = (Nat => Nat) => Nat;
   /// Charge `c` after what was charged before, then continue.

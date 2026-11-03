@@ -1,5 +1,5 @@
 /// `cost-effect`: decalf's cost effect.
-/// Implemented: the standard library declares `Cost`, decalf's cost effect with its two laws, and its model `Counting`, which counts in binary naturals and proves both laws by conversion. A scope that names a model takes the theory's value operations from it. A closed bound is a path. Conversion decides it, and the kernel replays it. A bound below a run's count is refused `EndpointMismatch`, and `corpus/pathological/effects/cost-bound-too-small.gandr` states it (#3715).
+/// Implemented: the standard library declares `Cost.Eff`, decalf's cost effect with its two laws, homed in the module `Cost`, and its model `Counting`, which counts in binary naturals and proves both laws by conversion. A scope that names a model takes the theory's value operations from it. A closed bound is a path. Conversion decides it, and the kernel replays it. A bound below a run's count is refused `EndpointMismatch`, and `corpus/pathological/effects/cost-bound-too-small.gandr` states it (#3715).
 /// Not implemented: a recursive definition that charges, one handler over every thunk that charges, a fixture that states the refusal of a model that breaks a law, and the certificate's cost delta; #3699, #1106, #3853 and #3702 owe them.
 // Three steps charged one and two, counted under `Counting` and bounded at
 // three, and the same steps under a model that erases every charge, which
@@ -9,7 +9,7 @@ import std.cost (Cost, Counting, costs, counted, countOf);
 import std.grade (Count);
 
 /// Three steps: a charge of one, a charge of two, then seven.
-def threeSteps() -> [cost : Cost with sort N = Nat => Nat] Integer {
+def threeSteps() -> [cost : Cost.Eff with sort N = Nat => Nat] Integer {
   let _a = cost.charge(costs((1 : Nat)));
   let _b = cost.charge(costs((2 : Nat)));
   pure 7
@@ -17,7 +17,7 @@ def threeSteps() -> [cost : Cost with sort N = Nat => Nat] Integer {
 
 /// The steps under the counting model.
 def countedSteps() -> (Nat => Nat) => Nat {
-  handle cost : Cost with sort N = Nat => Nat {
+  handle cost : Cost.Eff with sort N = Nat => Nat {
     let _answer = threeSteps();
     pure counted
   } with Counting
@@ -35,7 +35,7 @@ def within(n : Nat) -> Bool {
 def boundThree : Path(Bool, within((3 : Nat)), true) = Path.here(true);
 
 /// The extensional reading at integer answers: every charge is the identity.
-module Erased : Model(Cost) with sort N = Nat => Nat where {
+module Erased : Model(Cost.Eff) with sort N = Nat => Nat where {
   /// The answer itself.
   type C = Integer;
   /// A charge leaves what runs after it as it is.
@@ -60,7 +60,7 @@ module Erased : Model(Cost) with sort N = Nat => Nat where {
 
 /// The steps under the erasing model.
 def erasedSteps() -> Integer {
-  handle cost : Cost with sort N = Nat => Nat {
+  handle cost : Cost.Eff with sort N = Nat => Nat {
     threeSteps()
   } with Erased
 }

@@ -2,16 +2,16 @@
 // a theory as its interface, where a model cannot answer it, and where the
 // models in scope do not answer it as one.
 
-// The theory `State`.
+// The theory `State.Eff`.
 import "../../model/effects/state.gandr";
-// `Passing`, the state-passing model of `State`.
+// `Passing`, the state-passing model of `State.Eff`.
 import "../../model/effects/state-model.gandr";
 
 /// The stored sort left unfixed: `get` would reply a value of no type the
 /// scope knows, so `S` is the member the scope cannot read.
 @[ refuses("UninterfacedMember") ]
 def unfixed() -> Integer {
-  handle st : State {
+  handle st : State.Eff {
     st.get()
   } with {
     pure(x) => pure x,
@@ -24,7 +24,7 @@ def unfixed() -> Integer {
 /// clauses, so a manifest fixing it is refused at `C`.
 @[ refuses("UninterfacedMember") ]
 def carrierFixed() -> Integer {
-  handle st : State with sort S = Integer with sort C = Integer {
+  handle st : State.Eff with sort S = Integer with sort C = Integer {
     st.get()
   } with {
     pure(x) => pure x,
@@ -33,10 +33,10 @@ def carrierFixed() -> Integer {
   }
 }
 
-/// A sort `State` does not declare, refused by its name.
+/// A sort `State.Eff` does not declare, refused by its name.
 @[ refuses("UnresolvedName") ]
 def undeclared() -> Integer {
-  handle st : State with sort T = Integer {
+  handle st : State.Eff with sort T = Integer {
     pure 1
   } with {
     pure(x) => pure x,
@@ -48,7 +48,7 @@ def undeclared() -> Integer {
 /// A model named that no module declares, refused by its name.
 @[ refuses("UnresolvedName") ]
 def answeredByNothing() -> Integer => Integer {
-  handle st : State with sort S = Integer {
+  handle st : State.Eff with sort S = Integer {
     pure fun (s) { pure s }
   } with Stateless
 }
@@ -57,7 +57,7 @@ def answeredByNothing() -> Integer => Integer {
 /// carrier, a function of the state.
 @[ refuses("TypeMismatch") ]
 def answeredAtInteger() -> Integer {
-  handle st : State with sort S = Integer {
+  handle st : State.Eff with sort S = Integer {
     pure 1
   } with Passing
 }
@@ -71,29 +71,29 @@ def answeredForConsole() -> Integer {
   } with Passing
 }
 
-/// The stored sort two-valued: `Passing`, the one model of `State` in scope,
+/// The stored sort two-valued: `Passing`, the one model of `State.Eff` in scope,
 /// stores an integer, so no model answers the scope.
 @[ refuses("ModelUnanswered") ]
 def unansweredAtTwo() -> Integer => Integer {
-  handle st : State with sort S = Unit + Unit {
+  handle st : State.Eff with sort S = Unit + Unit {
     pure fun (s) { pure 1 }
   }
 }
 
 /// No model named, and the subject computing an integer where the scope
-/// answers the carrier of `Passing`, the one model of `State` at an integer
+/// answers the carrier of `Passing`, the one model of `State.Eff` at an integer
 /// state in scope, a function of the state: the scope answers that model's
 /// carrier as naming it does (#2755).
 @[ refuses("TypeMismatch") ]
 def inScopeAtInteger() -> Integer {
-  handle st : State with sort S = Integer {
+  handle st : State.Eff with sort S = Integer {
     pure 1
   }
 }
 
 /// A second state-passing model at an integer state: reading answers zero,
 /// and storing is forgotten.
-module Forgetting : Model(State) with sort S = Integer where {
+module Forgetting : Model(State.Eff) with sort S = Integer where {
   /// A computation awaiting the current state.
   type C = Integer => Integer;
   /// Reading hands zero to what runs after.
@@ -110,7 +110,7 @@ module Forgetting : Model(State) with sort S = Integer where {
 /// neither.
 @[ refuses("ModelAmbiguous") ]
 def ambiguousInScope() -> Integer => Integer {
-  handle st : State with sort S = Integer {
+  handle st : State.Eff with sort S = Integer {
     pure fun (s) { pure s }
   }
 }
@@ -126,15 +126,15 @@ def unansweredForConsole() -> Integer {
 
 /// A returner whose row fixes `S` to the implicit `a`, which a call's
 /// argument solves.
-def readGivenAt[a : Type](x : a) -> [st : State with sort S = a] a {
+def readGivenAt[a : Type](x : a) -> [st : State.Eff with sort S = a] a {
   st.get()
 }
 
-/// The argument solves `a` as `Integer`, so the row asks `State` at
+/// The argument solves `a` as `Integer`, so the row asks `State.Eff` at
 /// `Integer`, more than the scope at `Bool` grants.
 @[ refuses("CapabilityAmplified") ]
 def amplifiedAtImplicit() -> Integer {
-  handle s : State with sort S = Bool {
+  handle s : State.Eff with sort S = Bool {
     readGivenAt(0)
   } with {
     pure(y) => pure y,

@@ -115,7 +115,6 @@ corpus/ledger/features/derived-rules.gandr Tense 6750a1a4cb15d7e3
 corpus/ledger/features/directed-paths.gandr Tense 842c1e89f8f21675
 corpus/ledger/features/directed-paths.gandr Tense da1ff50924998ae5
 corpus/ledger/features/effect-theories.gandr Passive 844550dd7a091bc8
-corpus/ledger/features/effect-theories.gandr IngMain 5b9860325c3e159f
 corpus/ledger/features/effect-theories.gandr IngMain 9c37c584ba17281c
 corpus/ledger/features/effects-as-data.gandr Passive 76ed4da09250edb1
 corpus/ledger/features/effects-as-data.gandr Passive f0a322ebbe3872cb
@@ -483,7 +482,6 @@ corpus/model/effects/domhringr.gandr IngMain 7bef0251384d54d2
 corpus/model/effects/exit.gandr Passive 4c9cc8eacc3460cc
 corpus/model/effects/exit.gandr Passive c7952274f7c81346
 corpus/model/effects/rows.gandr Passive 3b9afe27ede6ba3a
-corpus/model/effects/rows.gandr Passive 785127baf979d3be
 corpus/model/effects/rows.gandr Passive eda98a44920b46ff
 corpus/model/effects/rows.gandr Tense 1ede6e11065e7ec1
 corpus/model/effects/state-handler.gandr Passive c473eeb71eb9bcd4
@@ -1434,10 +1432,10 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/desc/theory-term
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/hello-unprovided.txt Procedure 5cd48ab1a45a09c1
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/rows.txt Procedure 3bdc0addbf0ffa85
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/rows.txt Procedure b8715358ac806eba
-crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure 0577a0a2e6cb5e78
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure 1603bccc87d5d19d
+crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure 3c88964d9a699294
+crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure 3e29c692a3ee78fb
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure 738a7b48dc9b18fd
-crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure 9619f730573c14e2
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-handler.txt Procedure ec151e0249661fd9
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state-laws.txt Procedure 93708959f7b9a967
 crates/surface-render-terminal/tests/golden/corpus/pathological/effects/state.txt Procedure 3301bdb784dd322b

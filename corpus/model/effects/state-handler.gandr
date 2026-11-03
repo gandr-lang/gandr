@@ -1,23 +1,23 @@
-// A handler over a theory: the scope takes `State` as its interface, fixes
+// A handler over a theory: the scope takes `State.Eff` as its interface, fixes
 // the stored sort `S` at `Integer` where it names the theory, and answers
 // each operation by a clause, or names a model of the theory whose
 // operations answer them, or leaves that to the one model of the theory in
 // scope. The carrier `C` is what the scope answers; `get` replies an integer
 // to its continuation, and `put` sends one and is replied the unit. The
-// kernel replays each scope as the fold of `State`'s free model, one
+// kernel replays each scope as the fold of `State.Eff`'s free model, one
 // constructor per operation, and a scope the model in scope answers as the
 // one naming that model.
 
-// The theory `State`.
+// The theory `State.Eff`.
 import "./state.gandr";
-// `Passing`, the state-passing model of `State`.
+// `Passing`, the state-passing model of `State.Eff`.
 import "./state-model.gandr";
 
 /// Reading always answers four, and storing is forgotten: the two reads
 /// answer four each, and the subject adds them and one.
 @[ runs("9") ]
 def constant() -> Integer {
-  handle st : State with sort S = Integer {
+  handle st : State.Eff with sort S = Integer {
     let a = st.get();
     st.put(a);
     let b = st.get();
@@ -35,7 +35,7 @@ def constant() -> Integer {
 /// twice, both reads see four, as `putThenGet` calls the model's operations
 /// by hand.
 def answeredByPassing() -> Integer => Integer {
-  handle st : State with sort S = Integer {
+  handle st : State.Eff with sort S = Integer {
     st.put(4);
     let a = st.get();
     let b = st.get();
@@ -50,10 +50,10 @@ def answeredFromZero() -> Integer {
   f(0)
 }
 
-/// No model named: `Passing` is the one model of `State` at an integer state
+/// No model named: `Passing` is the one model of `State.Eff` at an integer state
 /// in scope, so it answers the scope as naming it does.
 def answeredInScope() -> Integer => Integer {
-  handle st : State with sort S = Integer {
+  handle st : State.Eff with sort S = Integer {
     st.put(4);
     let a = st.get();
     let b = st.get();

@@ -4,6 +4,7 @@
 /// Put-get descends by branch selection, and put-put by its subterm.
 /// Overlapping laws join in the second-order reading.
 ///
+/// A theory lives in its module, `State.Eff`, and a row, a scope, a model type and a rule's `under` row each name it by that path.
 /// A capability scope takes a theory as its interface and is checked as a model of it, its subject normalised by the laws.
 /// A returner's row names the theory at the sorts it fixes, and a scope at those sorts discharges the call.
 /// A fixed type may name a parameter, and each scope and exercise reads it where it stands.
@@ -15,10 +16,11 @@
 /// - see: #2844 — the row names a theory at the sorts it fixes
 /// - see: #2881 — a fixed type names a parameter
 /// - see: #2944 — a fixed type names an omitted implicit
+/// - see: #4514 — a theory homed in its module
 
 /// The operations alone, reading and storing a state of sort `S`, with no law.
 @[ checks ]
-theory State where {
+theory State.Eff where {
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
@@ -103,16 +105,16 @@ def readTwice() -> Integer {
   }
 }
 
-/// A returner whose row names `State` at `Integer`, its instance `st` a capability over `get` and `put`.
+/// A returner whose row names `State.Eff` at `Integer`, its instance `st` a capability over `get` and `put`.
 @[ checks ]
-def readState() -> [st : State with sort S = Integer] Integer {
+def readState() -> [st : State.Eff with sort S = Integer] Integer {
   st.get()
 }
 
-/// A scope over `State` at `Integer` discharges the row and answers the read with seven.
+/// A scope over `State.Eff` at `Integer` discharges the row and answers the read with seven.
 @[ runs("7") ]
 def readUnderScope() -> Integer {
-  handle s : State with sort S = Integer {
+  handle s : State.Eff with sort S = Integer {
     readState()
   } with {
     pure(x) => pure x,
@@ -121,10 +123,10 @@ def readUnderScope() -> Integer {
   }
 }
 
-/// A scope over `State` whose manifest fixes `S` to the parameter `a`, answering a read with `x`.
+/// A scope over `State.Eff` fixes `S` to the parameter `a` and answers a read with `x`.
 @[ checks ]
 def readGiven[a : Type](x : a) -> a {
-  handle s : State with sort S = a {
+  handle s : State.Eff with sort S = a {
     s.get()
   } with {
     pure(y) => pure y,
@@ -141,14 +143,14 @@ def readGivenSeven() -> Integer {
 
 /// A returner whose row fixes `S` to the parameter `a`, its instance `st` a capability at that type.
 @[ checks ]
-def readAt(a : Type) -> [st : State with sort S = a] a {
+def readAt(a : Type) -> [st : State.Eff with sort S = a] a {
   st.get()
 }
 
-/// A scope over `State` at `Integer` discharges the row at `Integer` and answers the read with seven.
+/// A scope over `State.Eff` at `Integer` discharges the row at `Integer` and answers the read with seven.
 @[ runs("7") ]
 def readAtUnderScope() -> Integer {
-  handle s : State with sort S = Integer {
+  handle s : State.Eff with sort S = Integer {
     readAt(Integer)
   } with {
     pure(x) => pure x,
@@ -159,14 +161,14 @@ def readAtUnderScope() -> Integer {
 
 /// A returner whose row fixes `S` to the implicit `a`, which a call's argument solves.
 @[ checks ]
-def readGivenAt[a : Type](x : a) -> [st : State with sort S = a] a {
+def readGivenAt[a : Type](x : a) -> [st : State.Eff with sort S = a] a {
   st.get()
 }
 
 /// The argument solves `a` as `Integer`, so the scope at `Integer` discharges the row and answers the read with seven.
 @[ runs("7") ]
 def readGivenAtUnderScope() -> Integer {
-  handle s : State with sort S = Integer {
+  handle s : State.Eff with sort S = Integer {
     readGivenAt(0)
   } with {
     pure(x) => pure x,
@@ -177,14 +179,14 @@ def readGivenAtUnderScope() -> Integer {
 
 /// A returner whose row fixes `S` to the implicit `a`, which no argument solves.
 @[ checks ]
-def readSolved[a : Type]() -> [st : State with sort S = a] a {
+def readSolved[a : Type]() -> [st : State.Eff with sort S = a] a {
   st.get()
 }
 
 /// The scope at `Integer` solves `a` as `Integer` and answers the read with seven.
 @[ runs("7") ]
 def readSolvedUnderScope() -> Integer {
-  handle s : State with sort S = Integer {
+  handle s : State.Eff with sort S = Integer {
     readSolved()
   } with {
     pure(x) => pure x,
