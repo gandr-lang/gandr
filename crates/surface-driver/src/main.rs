@@ -206,7 +206,7 @@
 //!   never enters the artifact's identity, so `--manifold` and `--site` desugar
 //!   to `--world` and `--net-bind`.
 //! - `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: a dependent
-//!   fetches each path dependency's export from the store by its address, the
+//!   fetches each dependency's export from the store by its address, the
 //!   coordinate only naming where to check it first (`depended`; §
 //!   package-design-typed-hydration).
 //! - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Example 1.4 and
@@ -374,6 +374,7 @@ use gandr_surface_dispatcher::Printed;
 use gandr_surface_dispatcher::ProgramSpec;
 use gandr_surface_dispatcher::Ran;
 use gandr_surface_dispatcher::Reconciled;
+use gandr_surface_dispatcher::Revisions;
 use gandr_surface_dispatcher::Rewrite;
 use gandr_surface_dispatcher::RunStatus;
 use gandr_surface_dispatcher::RunVerdict;
@@ -1413,12 +1414,12 @@ fn opened() -> Result<Store, ExitCode>
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`Package::resolve`] under the built-in grammar into `store`,
-///   then [`reconcile`] of its [`LOCK`]: [`Locking::Held`] with what it did,
-///   the lock and the package's address over it, read through `store`, as
-///   [`Package::identity`] gives it; [`Locking::Refused`] with its fault, and
-///   [`Locking::Unresolved`] for dependencies that do not resolve or a grammar
-///   that does not build.
+/// - ensures: [`Package::resolve`] under the built-in grammar into `store`, at
+///   the revisions the locks record ([`Revisions::Locked`]), then [`reconcile`]
+///   of its [`LOCK`]: [`Locking::Held`] with what it did, the lock and the
+///   package's address over it, read through `store`, as [`Package::identity`]
+///   gives it; [`Locking::Refused`] with its fault, and [`Locking::Unresolved`]
+///   for dependencies that do not resolve or a grammar that does not build.
 /// - provides: the lock step of `gandr check`.
 /// - fails: never; each outcome is a variant.
 /// - panics: none.
@@ -1444,7 +1445,7 @@ fn locking(
             });
         },
     };
-    match package.resolve(&grammar, store) {
+    match package.resolve(&grammar, store, Revisions::Locked) {
         Ok(lock) => match reconcile(&package.root().join(LOCK), &lock) {
             Ok(reconciled) => {
                 let address = package
@@ -1465,8 +1466,9 @@ fn locking(
 /// - requires: nothing.
 /// - ensures: the packages [`packaged`] reaches from `paths`, each in order
 ///   resolved by [`Package::resolve`] under the built-in grammar into the store
-///   [`opened`] opens, and written by [`relock`]: `lock: <path>: <what>` on
-///   standard output for each lock written, rewritten or unchanged, `gandr:
+///   [`opened`] opens, asking the remote for a `gh:` revision its lock lacks
+///   ([`Revisions::Asked`]), and written by [`relock`]: `lock: <path>: <what>`
+///   on standard output for each lock written, rewritten or unchanged, `gandr:
 ///   <root>: <why>` on standard error for dependencies that do not resolve,
 ///   which exits `1`, and `gandr: <path>: <why>` for a lock that cannot be
 ///   written, which exits `2`; paths reaching no package exit as [`unpathed`]
@@ -1503,7 +1505,7 @@ fn lock(paths: Vec<PathBuf>) -> ExitCode
     let mut verdict = RunVerdict::Settled;
     for package in &packages {
         let path = package.root().join(LOCK);
-        let (written, reached) = match package.resolve(&grammar, &mut store) {
+        let (written, reached) = match package.resolve(&grammar, &mut store, Revisions::Asked) {
             Ok(lock) => match relock(package, &lock) {
                 Ok(reconciled) => (
                     writeln!(stdout, "lock: {}: {reconciled}", path.display()),
@@ -1621,10 +1623,10 @@ enum Screen
 ///   `packaged`). `check` and `test` walk their paths, print what [`render`]
 ///   prints, and exit `0`, `1` or `2` as the run settled, was unsettled or
 ///   faulted, `check` reconciling each package's lock and manifest, committing
-///   its export into the store and re-admitting each path dependency's export
-///   from it as [`run`] states; `check` reaching a package, and `lock`, first
-///   open the store as [`opened`] states, exiting `2` when no directory names
-///   it; `check` without `--recheck` keeps the kernel's verdicts as
+///   its export into the store and re-admitting each dependency's export from
+///   it as [`run`] states; `check` reaching a package, and `lock`, first open
+///   the store as [`opened`] states, exiting `2` when no directory names it;
+///   `check` without `--recheck` keeps the kernel's verdicts as
 ///   [`verdicts::install`] states, and runs without them after one `gandr:`
 ///   line on standard error when the cache cannot be installed; `check --admit
 ///   native-conversion` installs the admission policy before its walk, and its
@@ -1688,6 +1690,17 @@ fn main() -> ExitCode
         Ok(cli) => cli,
         Err(error) => return usage(&error),
     };
+    // Every verb that resolves a `gh:` coordinate, and the language server,
+    // reads its checkout from the one directory the user's cache names; with
+    // none, such a coordinate stands unfetched. Nothing installed it before,
+    // so the installation stands.
+    if let Some(checkouts) = config::checkouts() {
+        let _installed =
+            gandr_surface_dispatcher::install_hydration(gandr_surface_dispatcher::Hydration::new(
+                checkouts,
+                String::from(gandr_surface_dispatcher::GITHUB),
+            ));
+    }
     // The one reading of the user's file, which the spelling and a check's
     // kernel policy both ask, on the first question asked of it.
     let configuration = config::Configuration::default();
@@ -3091,19 +3104,18 @@ fn doubled(doubled: Doubled) -> ExitCode
 ///   prints its `measure:` lines, as [`run`] states. Each path the walk cannot
 ///   carry through the pipeline is a line on standard error. A walk under
 ///   `check` then reconciles the lock and the manifest of each of `packages`,
-///   commits its export into `store`, and re-admits each path dependency's
-///   export from it, as [`run`] does. The run's report and its verdict close
-///   standard output, and the exit code is the verdict's, or a lock's, a
-///   manifest's, an export's or a dependency's export's when that is worse. A
-///   script follows [`script`], its entry's `Net` operations served on a
-///   network bound as `hosting` says, its migrations sent where `hosting`'s
-///   bindings bind them, or its worlds served when `hosting` serves, the
-///   network bound first and its peer spelling, `<key>@<ip:port>`, the first
-///   line on standard error: what it prints goes to standard output, what it
-///   writes to standard error goes there beside its diagnostics, the lines it
-///   reads come from standard input, and its run status chooses the exit. A
-///   staging follows [`stage`], a formatting [`fmt`], a ledger task [`ledger`],
-///   and a census [`cells`].
+///   commits its export into `store`, and re-admits each dependency's export
+///   from it, as [`run`] does. The run's report and its verdict close standard
+///   output, and the exit code is the verdict's, or a lock's, a manifest's, an
+///   export's or a dependency's export's when that is worse. A script follows
+///   [`script`], its entry's `Net` operations served on a network bound as
+///   `hosting` says, its migrations sent where `hosting`'s bindings bind them,
+///   or its worlds served when `hosting` serves, the network bound first and
+///   its peer spelling, `<key>@<ip:port>`, the first line on standard error:
+///   what it prints goes to standard output, what it writes to standard error
+///   goes there beside its diagnostics, the lines it reads come from standard
+///   input, and its run status chooses the exit. A staging follows [`stage`], a
+///   formatting [`fmt`], a ledger task [`ledger`], and a census [`cells`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -3529,7 +3541,7 @@ fn stage(
 ///   <why>` on standard error and faults the run, and so is an artifact that
 ///   does not cut, while a source path that does not spell unsettles it. Once
 ///   every export of the run is committed, each package whose lock is held
-///   reads each path dependency's export by its address's root and re-admits it
+///   reads each dependency's export by its address's root and re-admits it
 ///   through the kernel, as [`depended`] states, and under `check` each
 ///   manifold the walk settled is judged as a deployment, as [`deployed`]
 ///   states. Then the final report, at the detailed and debug levels the line
@@ -4353,7 +4365,7 @@ fn exported(
     }
 }
 
-/// Re-admit the export of each path dependency `lock` names, read from `store`
+/// Re-admit the export of each dependency `lock` names, read from `store`
 /// by its address's root, and the verdict that leaves the run at.
 ///
 /// # Specification
@@ -4413,7 +4425,14 @@ fn depended(
         let name = Export::root(&address);
         let Maybe::Present(pointer) = store.roots().root(&name)
         else {
-            let dependency = coordinate.from(package.root());
+            let dependency = gandr_surface_dispatcher::locked_source(package, coordinate)
+                .and_then(|source| match Package::discover(&source) {
+                    Maybe::Present(found) => Some(found.root().to_path_buf()),
+                    Maybe::Absent(gandr_surface_dispatcher::package_root::Absent::Unpackaged) => {
+                        None
+                    },
+                })
+                .unwrap_or_else(|| coordinate.named(package.root()));
             let dependency = dependency.canonicalize().unwrap_or(dependency);
             writeln!(
                 stderr,

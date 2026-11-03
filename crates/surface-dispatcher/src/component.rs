@@ -405,14 +405,14 @@ impl ImportPath
     /// - requires: `directory` is the importing source's directory.
     /// - ensures: an [`ImportBase::Importer`] file joined to `directory`, a
     ///   [`Named::File`]; an [`ImportBase::Coordinate`] file as
-    ///   [`lock::through`] names it for the package [`Package::discover`] finds
-    ///   from `directory`, or as [`lock::unpackaged`] names it from `directory`
-    ///   when it finds none, and [`Named::Unlocked`] of the coordinate's
-    ///   directory where neither names one; an [`ImportBase::Root`] file as
-    ///   [`ImportPath::in_package`] names it under the sources of the package
-    ///   [`Package::discover`] finds from `directory`, or under `directory`
-    ///   when it finds none: a source in no package is the root module of its
-    ///   own.
+    ///   [`lock::locked_source`] names it for the package [`Package::discover`]
+    ///   finds from `directory`, or as [`lock::unpackaged`] names it from
+    ///   `directory` when it finds none, and [`Named::Unlocked`] of the
+    ///   coordinate's directory where neither names one; an
+    ///   [`ImportBase::Root`] file as [`ImportPath::in_package`] names it under
+    ///   the sources of the package [`Package::discover`] finds from
+    ///   `directory`, or under `directory` when it finds none: a source in no
+    ///   package is the root module of its own.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause reads the file system again.
@@ -442,12 +442,13 @@ impl ImportPath
                     return Named::Unlocked(directory.join(&self.file));
                 };
                 match Package::discover(directory) {
-                    Maybe::Present(package) => lock::through(&package, &coordinate).map_or_else(
-                        || Named::Unlocked(coordinate.from(package.root())),
-                        Named::File,
-                    ),
+                    Maybe::Present(package) => lock::locked_source(&package, &coordinate)
+                        .map_or_else(
+                            || Named::Unlocked(coordinate.named(package.root())),
+                            Named::File,
+                        ),
                     Maybe::Absent(_) => lock::unpackaged(directory, &coordinate)
-                        .map_or_else(|| Named::Unlocked(coordinate.from(directory)), Named::File),
+                        .map_or_else(|| Named::Unlocked(coordinate.named(directory)), Named::File),
                 }
             },
             ImportBase::Root => match Package::discover(directory) {

@@ -44,6 +44,7 @@ use gandr_surface_dispatcher::Package;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Program;
 use gandr_surface_dispatcher::Reconciled;
+use gandr_surface_dispatcher::Revisions;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Unaddressed;
@@ -1356,7 +1357,7 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
         "with no lock, the use through the alias is refused, and only it: {unlocked:?}"
     );
     let lock = sibling
-        .resolve(&grammar, &mut store)
+        .resolve(&grammar, &mut store, Revisions::Locked)
         .expect("the dependencies resolve");
     let own = hello
         .identity(&grammar, &Held::default(), &Lock::default(), &store)
@@ -1391,7 +1392,9 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
         "the lock reads back as it was written"
     );
     assert_eq!(
-        sibling.resolve(&grammar, &mut store).as_ref(),
+        sibling
+            .resolve(&grammar, &mut store, Revisions::Locked)
+            .as_ref(),
         Ok(&lock),
         "a second resolution is the same lock"
     );
@@ -1417,7 +1420,7 @@ fn a_lock_is_written_once_and_reads_alike_from_anywhere_3072()
     let other = rooted(&elsewhere.join("sibling"));
     let mut fresh = stored(Path::new("lock-elsewhere"));
     let relocked = other
-        .resolve(&grammar, &mut fresh)
+        .resolve(&grammar, &mut fresh, Revisions::Locked)
         .expect("the copy resolves");
     assert_eq!(
         relocked.render(),
@@ -1462,7 +1465,7 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
     let path = directory.join("sibling").join(LOCK);
     let mut store = stored(Path::new("drift"));
     let lock = sibling
-        .resolve(&grammar, &mut store)
+        .resolve(&grammar, &mut store, Revisions::Locked)
         .expect("the dependencies resolve");
     assert!(
         matches!(
@@ -1480,7 +1483,9 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
         matches!(
             reconcile(
                 &sibling.root().join(LOCK),
-                &sibling.resolve(&grammar, &mut store).expect("it resolves")
+                &sibling
+                    .resolve(&grammar, &mut store, Revisions::Locked)
+                    .expect("it resolves")
             ),
             Ok(Reconciled::Unchanged)
         ),
@@ -1490,7 +1495,9 @@ fn a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072()
         version: "0.2.0",
         welcome: "howdy",
     });
-    let moved = sibling.resolve(&grammar, &mut store).expect("it resolves");
+    let moved = sibling
+        .resolve(&grammar, &mut store, Revisions::Locked)
+        .expect("it resolves");
     let coordinate = Coordinate::Path(String::from("../hello"));
     let address = |lock: &Lock| {
         lock.locked(&coordinate).map(|pointer| {
@@ -1562,7 +1569,7 @@ fn a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157()
     let sibling = rooted(&directory.join("sibling"));
     let mut committed = stored(Path::new("unstored"));
     let lock = sibling
-        .resolve(&grammar, &mut committed)
+        .resolve(&grammar, &mut committed, Revisions::Locked)
         .expect("the dependencies resolve");
     assert!(
         matches!(
@@ -1595,7 +1602,9 @@ fn a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157()
         "the refusal names the dependency"
     );
     assert_eq!(
-        sibling.resolve(&grammar, &mut empty).as_ref(),
+        sibling
+            .resolve(&grammar, &mut empty, Revisions::Locked)
+            .as_ref(),
         Ok(&lock),
         "resolving into the empty store commits the same pointer"
     );
@@ -1632,7 +1641,11 @@ fn a_dependency_cycle_is_refused_by_its_paths_3072()
         )
         .expect("the library is written");
     }
-    let resolved = rooted(&directory.join("a")).resolve(&grammar, &mut stored(Path::new("cycle")));
+    let resolved = rooted(&directory.join("a")).resolve(
+        &grammar,
+        &mut stored(Path::new("cycle")),
+        Revisions::Locked,
+    );
     assert_eq!(
         resolved,
         Err(Unresolved::Cycle {
@@ -1942,6 +1955,231 @@ fn a_dependency_s_export_is_re_admitted_through_the_kernel_3285()
         usize::from(refusal.position()),
         rewritten,
         "the replay stops at the rewritten declaration"
+    );
+    std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+}
+
+/// What `git` writes to standard output run with `arguments` in `directory`,
+/// as a test's own commits are made: unsigned, by a fixed author.
+///
+/// # Specification
+/// trivial.
+fn git<Argument>(
+    directory: &Path,
+    arguments: &[Argument],
+) -> String
+where
+    Argument: AsRef<std::ffi::OsStr> + core::fmt::Debug,
+{
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(directory)
+        .args([
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "user.name=gandr",
+            "-c",
+            "user.email=gandr@invalid",
+        ])
+        .args(arguments)
+        .output()
+        .expect("git runs");
+    assert!(
+        output.status.success(),
+        "git {arguments:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}
+
+/// Commit `hello` as `written` in its working repository under `directory`,
+/// push it to the remote's `acme-org/hello` and answer the revision.
+///
+/// # Specification
+/// trivial.
+fn published(
+    directory: &Path,
+    written: Hello,
+) -> String
+{
+    write_hello(directory, written);
+    let hello = directory.join("hello");
+    let _added = git(&hello, &["add", "--all"]);
+    let _committed = git(&hello, &["commit", "--quiet", "--message", written.welcome]);
+    let _pushed = git(&hello, &["push", "--quiet", "remote", "HEAD:main"]);
+    git(&hello, &["rev-parse", "HEAD"])
+}
+
+/// #4714: a `gh:` coordinate reads back as it is written, and a name that
+/// would climb out of its checkout, a third segment or a short revision reads
+/// as none.
+#[test]
+fn a_gh_coordinate_reads_back_and_refuses_a_climbing_name_4714()
+{
+    use gandr_surface_dispatcher::Repository;
+    use gandr_surface_dispatcher::Revision;
+    use gandr_surface_dispatcher::Written;
+
+    let read = |written: &str| Repository::written(Written(written)).map(|read| read.to_string());
+    assert_eq!(
+        read("acme-org/rope.gandr"),
+        Some(String::from("acme-org/rope.gandr")),
+        "an owner and a name read back"
+    );
+    for climbing in [
+        "acme-org/..",
+        "acme-org/.",
+        "../rope",
+        "acme-org/rope/src",
+        "acme/",
+        "",
+    ] {
+        assert_eq!(read(climbing), None, "`{climbing}` names no repository");
+    }
+    let spelled = "0123456789abcdef0123456789abcdef01234567";
+    assert_eq!(
+        Revision::opening(Written(spelled)).map(|(revision, rest)| (revision.to_string(), rest.0)),
+        Some((String::from(spelled), "")),
+        "a revision reads back as its 40 digits"
+    );
+    assert!(
+        Revision::opening(Written(&spelled.to_uppercase())).is_none(),
+        "an uppercase revision reads as none"
+    );
+    assert!(
+        Revision::opening(Written("0123456789abcdef0123456789abcdef0123456")).is_none(),
+        "a short revision reads as none"
+    );
+}
+
+/// #4714: a `gh:` coordinate no lock records is refused unrevisioned by a
+/// check, and locked at the remote's `HEAD` by `gandr lock`'s resolution,
+/// which fetches its checkout; the lock records the revision beside the
+/// pointer and reads back. A later resolution keeps the revision as the
+/// remote moves, reads the checkout standing, fetches it again once it is
+/// removed, and the import reads the dependency.
+#[test]
+fn a_gh_coordinate_is_fetched_at_the_revision_its_lock_records_4714()
+{
+    use gandr_surface_dispatcher::Hydration;
+    use gandr_surface_dispatcher::install_hydration;
+
+    let grammar = built_in().expect("the built-in grammar builds");
+    let directory = scratch(Path::new("gh"), &[
+        Path::new("hello/src/package.gandr"),
+        Path::new("sibling/src/package.gandr"),
+        Path::new("remote/acme-org/hello/HEAD"),
+    ]);
+    let remote = directory.join("remote");
+    std::fs::remove_file(remote.join("acme-org/hello/HEAD")).expect("the placeholder goes");
+    let _bare = git(&remote.join("acme-org/hello"), &[
+        "init",
+        "--quiet",
+        "--bare",
+        "--initial-branch",
+        "main",
+    ]);
+    let _working = git(&directory.join("hello"), &["init", "--quiet"]);
+    let _remoted = git(&directory.join("hello"), &[
+        "remote",
+        "add",
+        "remote",
+        &remote.join("acme-org/hello").display().to_string(),
+    ]);
+    let first = published(&directory, Hello {
+        version: "0.1.0",
+        welcome: "hello",
+    });
+    std::fs::write(
+        directory.join("sibling/src/package.gandr"),
+        Library {
+            imports: "import \"gh:acme-org/hello\" as hello;\n",
+            version: "0.1.0",
+            rest: "pub def greeting = hello.welcome;\n",
+        }
+        .source(),
+    )
+    .expect("the sibling is written");
+    let checkouts = directory.join("checkouts");
+    install_hydration(Hydration::new(
+        checkouts.clone(),
+        format!("file://{}", remote.display()),
+    ))
+    .expect("no other hydration is installed");
+    let sibling = rooted(&directory.join("sibling"));
+    let coordinate = Coordinate::GitHub(
+        gandr_surface_dispatcher::Repository::written(gandr_surface_dispatcher::Written(
+            "acme-org/hello",
+        ))
+        .expect("the repository reads"),
+    );
+    let mut store = stored(Path::new("gh"));
+    assert_eq!(
+        sibling.resolve(&grammar, &mut store, Revisions::Locked),
+        Err(Unresolved::Unrevisioned {
+            coordinate: coordinate.clone(),
+            root: sibling.root().to_path_buf(),
+        }),
+        "a check with no lock fetches nothing"
+    );
+    let lock = sibling
+        .resolve(&grammar, &mut store, Revisions::Asked)
+        .expect("locking asks the remote's `HEAD` and fetches it");
+    assert_eq!(
+        lock.revision(&coordinate)
+            .map(|revision| revision.to_string()),
+        Some(first.clone()),
+        "the lock records the revision `HEAD` named"
+    );
+    let checkout = checkouts.join("acme-org/hello").join(&first);
+    assert!(
+        checkout.join("src/package.gandr").is_file() && !checkout.join(".git").exists(),
+        "the checkout is the tree at the revision, with no repository"
+    );
+    assert!(
+        lock.render().contains(&format!(
+            "\"gh:acme-org/hello\" = {{ revision = \"{first}\", pointer = "
+        )),
+        "the lock writes the revision before the pointer: {}",
+        lock.render()
+    );
+    assert!(
+        matches!(relock(&sibling, &lock), Ok(Reconciled::Written)),
+        "the lock is written"
+    );
+    assert!(
+        matches!(Lock::read(&sibling), Maybe::Present(ref read) if *read == lock),
+        "the lock reads back with its revision"
+    );
+    let _second = published(&directory, Hello {
+        version: "0.1.0",
+        welcome: "hello again",
+    });
+    assert_eq!(
+        sibling
+            .resolve(&grammar, &mut store, Revisions::Asked)
+            .as_ref(),
+        Ok(&lock),
+        "locking keeps the revision the lock records as the remote moves"
+    );
+    std::fs::remove_dir_all(&checkout).expect("the checkout is removed");
+    assert_eq!(
+        sibling
+            .resolve(&grammar, &mut store, Revisions::Locked)
+            .as_ref(),
+        Ok(&lock),
+        "a check fetches the recorded revision again"
+    );
+    assert!(
+        checkout.join("src/package.gandr").is_file(),
+        "the checkout stands again"
+    );
+    assert!(
+        sibling
+            .identity(&grammar, &Held::default(), &lock, &store)
+            .is_ok(),
+        "with the lock, the use reads `hello.welcome` from the checkout"
     );
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
 }

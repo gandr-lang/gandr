@@ -6,10 +6,12 @@
 //! A source imports a package by its coordinate, `import "path:../hello" as
 //! hello ;`, and binds its root module under the alias it writes. A path
 //! coordinate is a directory, read from the dependent's root, that roots a
-//! package. [`Package::dependencies`] collects the coordinates every source of
-//! the package imports, each once, and [`Package::resolve`] reads each one and
+//! package. A `gh:` coordinate is a repository on GitHub whose checkout, at
+//! the revision the dependent's lock records, roots one ([`super::fetch`]).
+//! [`Package::dependencies`] collects the coordinates every source of the
+//! package imports, each once, and [`Package::resolve`] reads each one and
 //! checks it as the package it roots, recursively, so a dependency's own
-//! dependencies are resolved before it is. A path met twice on one chain is a
+//! dependencies are resolved before it is. A root met twice on one chain is a
 //! cycle, refused with the chain.
 //!
 //! # The lock records pointers, and the address never records a coordinate
@@ -79,6 +81,11 @@ use super::PackageAddress;
 use super::Reconciled;
 use super::Split;
 use super::Unaddressed;
+use super::fetch;
+use super::fetch::Repository;
+use super::fetch::Revision;
+use super::fetch::Unfetched;
+use super::fetch::Written;
 use super::package_root;
 use crate::component::ImportBase;
 use crate::component::ImportPath;
@@ -110,6 +117,9 @@ pub enum Coordinate
     /// `path:<directory>`: a directory rooting the dependency, read from the
     /// dependent's root, as the import writes it.
     Path(String),
+    /// `gh:<owner>/<name>`: a repository on GitHub whose top directory, at the
+    /// revision the dependent's lock records, roots the dependency.
+    GitHub(Repository),
 }
 
 impl Coordinate
@@ -129,39 +139,49 @@ impl Coordinate
         written(Text(import.as_ref()))
     }
 
-    /// The directory the coordinate names, read from `root`.
+    /// The path an import of the coordinate names from `root` while the
+    /// coordinate stands unlocked: a `path:` coordinate's directory, and a
+    /// `gh:` coordinate as it is written, under `root`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn from(
+    pub fn named(
         &self,
         root: &Path,
     ) -> PathBuf
     {
-        let Self::Path(ref directory) = *self;
-        root.join(directory)
+        match *self {
+            Self::Path(ref directory) => root.join(directory),
+            Self::GitHub(_) => root.join(alloc::format!("{self}")),
+        }
     }
 }
 
-/// The coordinate `address` writes, `path:../hello`; none for an address of
-/// another scheme or none.
+/// The coordinate `address` writes, `path:../hello` or `gh:acme-org/rope`;
+/// none for an address of another scheme or none.
 ///
 /// # Specification
 /// trivial.
 fn written(address: Text<'_>) -> Option<Coordinate>
 {
-    let directory = address
-        .0
-        .strip_prefix(gandr_surface_lowering::COORDINATE)?
-        .strip_prefix(':')?;
-    Some(Coordinate::Path(String::from(directory)))
+    let (scheme, rest) = address.0.split_once(':')?;
+    if scheme == gandr_surface_lowering::PATH_SCHEME {
+        Some(Coordinate::Path(String::from(rest)))
+    }
+    else if scheme == gandr_surface_lowering::GITHUB_SCHEME {
+        Repository::written(Written(rest)).map(Coordinate::GitHub)
+    }
+    else {
+        None
+    }
 }
 
 impl core::fmt::Display for Coordinate
 {
-    /// The coordinate as an import writes it, `path:../hello`.
+    /// The coordinate as an import writes it, `path:../hello` or
+    /// `gh:acme-org/rope`.
     ///
     /// # Specification
     /// trivial.
@@ -171,8 +191,14 @@ impl core::fmt::Display for Coordinate
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result
     {
-        let Self::Path(ref directory) = *self;
-        write!(f, "{}:{directory}", gandr_surface_lowering::COORDINATE)
+        match *self {
+            Self::Path(ref directory) => {
+                write!(f, "{}:{directory}", gandr_surface_lowering::PATH_SCHEME)
+            },
+            Self::GitHub(ref repository) => {
+                write!(f, "{}:{repository}", gandr_surface_lowering::GITHUB_SCHEME)
+            },
+        }
     }
 }
 
@@ -295,10 +321,33 @@ impl Stored for Identity
 }
 
 /// A package's lock: each dependency by its coordinate, at the pointer its
-/// identity stands at in the store.
+/// identity stands at in the store, and a `gh:` dependency at the revision
+/// it was fetched at.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Lock(BTreeMap<Coordinate, ContentPtr>);
+pub struct Lock(BTreeMap<Coordinate, Locked>);
+
+/// What a lock records of one dependency.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Locked
+{
+    /// Where its identity stands in the store.
+    pointer: ContentPtr,
+    /// The revision a `gh:` dependency was fetched at; none for a `path:` one.
+    revision: Option<Revision>,
+}
+
+/// Which revisions a resolution may fetch a `gh:` dependency at.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Revisions
+{
+    /// Only the ones the standing locks record, as `gandr check` resolves.
+    Locked,
+    /// The ones the standing locks record, and the remote's `HEAD` for a
+    /// coordinate the resolved package's own lock does not record, as `gandr
+    /// lock` resolves.
+    Asked,
+}
 
 impl Lock
 {
@@ -313,7 +362,22 @@ impl Lock
         coordinate: &Coordinate,
     ) -> Option<ContentPtr>
     {
-        self.0.get(coordinate).copied()
+        self.0.get(coordinate).map(|locked| locked.pointer)
+    }
+
+    /// The revision the lock records for `coordinate`: a `gh:` dependency's;
+    /// none for a `path:` one or a coordinate the lock does not record.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn revision(
+        &self,
+        coordinate: &Coordinate,
+    ) -> Option<Revision>
+    {
+        self.0.get(coordinate)?.revision
     }
 
     /// Each coordinate the lock records, in order.
@@ -353,7 +417,7 @@ impl Lock
         store: &'lock Store,
     ) -> impl Iterator<Item = (&'lock Coordinate, Result<PackageAddress, Unaddressed>)> + 'lock
     {
-        self.0.iter().map(|(coordinate, &pointer)| {
+        self.0.iter().map(|(coordinate, &Locked { pointer, .. })| {
             let address = store
                 .deref::<Identity>(pointer)
                 .map(|identity| identity.address)
@@ -403,10 +467,13 @@ impl Lock
     /// - ensures: the [`WRITTEN`] line, the digest line carrying the BLAKE3
     ///   digest of the body in lowercase hexadecimal, then the body: a
     ///   `[dependencies]` table holding one line per coordinate in order,
-    ///   `"path:…" = { pointer = "<digest>:<offset>" }`, the coordinate a basic
-    ///   string as an import writes it, the digest lowercase hexadecimal and
-    ///   the offset decimal. The same lock renders the same bytes wherever it
-    ///   is rendered, and [`Lock::read`] reads the render back as the lock.
+    ///   `"path:…" = { pointer = "<digest>:<offset>" }`, and `"gh:…" = {
+    ///   revision = "<revision>", pointer = "<digest>:<offset>" }` for a
+    ///   coordinate the lock records a revision of: the coordinate a basic
+    ///   string as an import writes it, the revision and the digest lowercase
+    ///   hexadecimal and the offset decimal. The same lock renders the same
+    ///   bytes wherever it is rendered, and [`Lock::read`] reads the render
+    ///   back as the lock.
     /// - provides: the file [`reconcile`](super::reconcile) and [`relock`]
     ///   write.
     /// - fails: never.
@@ -414,8 +481,10 @@ impl Lock
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a lock is written, read back equal and written again
-    ///   byte for byte from another working directory.
+    ///   byte for byte from another working directory, and one recording a
+    ///   revision reads back with it.
     /// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
+    /// - witness: `tests::package::a_gh_coordinate_reads_back_and_refuses_a_climbing_name_4714`
     #[spec(ensures: |ref ret| ret.starts_with(WRITTEN)
         && matches!(Split::of(Manifested(ret), Opening(WRITTEN)).authorship(), Authorship::Checker))]
     #[inline]
@@ -424,13 +493,16 @@ impl Lock
     {
         let mut body = format!("\n{TABLE}\n");
         let mut key = String::new();
-        for (coordinate, pointer) in &self.0 {
+        for (coordinate, &Locked { pointer, revision }) in &self.0 {
             key.clear();
             let _keyed = write!(key, "{coordinate}");
+            let _opened = write!(body, "{} = {{ ", Basic(&key));
+            if let Some(revision) = revision {
+                let _revised = write!(body, "revision = \"{revision}\", ");
+            }
             let _written = writeln!(
                 body,
-                "{} = {{ pointer = \"{}:{}\" }}",
-                Basic(&key),
+                "pointer = \"{}:{}\" }}",
                 pointer.digest(),
                 pointer.offset()
             );
@@ -489,7 +561,16 @@ fn parsed(body: Text<'_>) -> Option<Lock>
     for line in lines {
         let (coordinate, Text(rest)) = Text(line).basic()?;
         let coordinate = written(Text(&coordinate))?;
-        let (digest, Text(rest)) = Text(rest.strip_prefix(" = { pointer = \"")?).digest()?;
+        let rest = rest.strip_prefix(" = { ")?;
+        let (revision, rest) = match coordinate {
+            Coordinate::Path(_) => (None, rest),
+            Coordinate::GitHub(_) => {
+                let (revision, Written(rest)) =
+                    Revision::opening(Written(rest.strip_prefix("revision = \"")?))?;
+                (Some(revision), rest.strip_prefix("\", ")?)
+            },
+        };
+        let (digest, Text(rest)) = Text(rest.strip_prefix("pointer = \"")?).digest()?;
         let (offset, rest) = rest.strip_prefix(':')?.split_once('"')?;
         let parsed: u32 = offset.parse().ok()?;
         let canonical = offset.bytes().all(|digit| digit.is_ascii_digit())
@@ -497,10 +578,10 @@ fn parsed(body: Text<'_>) -> Option<Lock>
         if rest != " }" || !canonical {
             return None;
         }
-        let _first = lock.insert(
-            coordinate,
-            ContentPtr::new(ChunkDigest::from(digest.0), TokenOffset::from(parsed)),
-        );
+        let _first = lock.insert(coordinate, Locked {
+            pointer: ContentPtr::new(ChunkDigest::from(digest.0), TokenOffset::from(parsed)),
+            revision,
+        });
     }
     Some(Lock(lock))
 }
@@ -648,17 +729,23 @@ impl Package
     /// # Specification
     /// - requires: `grammar` is the grammar the packages' sources are read
     ///   under.
-    /// - ensures: for each of [`Package::dependencies`], the package its path,
-    ///   read from this package's root, roots; its own dependencies resolved
-    ///   the same way first, depth first with an explicit stack of the packages
-    ///   being resolved, and the lock standing at its root, which must be the
-    ///   one they resolve to — none at all when it has none; then its address
-    ///   over its own items and that lock's addresses, read back through
-    ///   `store`, and its signature key, as [`Package::identity`] gives them,
-    ///   committed to `store` together. Each dependency is locked under its
-    ///   coordinate by the pointer the commit returns. The lock is a function
-    ///   of the packages' contents and coordinates alone, whatever directory
-    ///   the process runs in and whatever the store held.
+    /// - ensures: for each of [`Package::dependencies`], the package it roots:
+    ///   a `path:` coordinate's directory, read from this package's root, and a
+    ///   `gh:` coordinate's checkout ([`fetch::fetched`]) at the revision the
+    ///   lock standing at this package's root records. Under
+    ///   [`Revisions::Asked`], a `gh:` coordinate that lock of the package
+    ///   resolution started at does not record is fetched at the remote's
+    ///   `HEAD` ([`fetch::head`]). Its own dependencies are resolved the same
+    ///   way first, depth first with an explicit stack of the packages being
+    ///   resolved, and the lock standing at its root must be the one they
+    ///   resolve to — none at all when it has none; then its address over its
+    ///   own items and that lock's addresses, read back through `store`, and
+    ///   its signature key, as [`Package::identity`] gives them, are committed
+    ///   to `store` together. Each dependency is locked under its coordinate by
+    ///   the pointer the commit returns, and a `gh:` one by its revision. The
+    ///   lock is a function of the packages' contents, coordinates and
+    ///   revisions alone, whatever directory the process runs in and whatever
+    ///   the store held.
     /// - provides: the lock `gandr check` reconciles and `gandr lock` writes.
     /// - fails: [`Unresolved`], at the first dependency that does not resolve.
     /// - panics: none.
@@ -667,6 +754,8 @@ impl Package
     ///
     /// # Errors
     /// [`Unresolved::Unpackaged`] for a coordinate rooting no package,
+    /// [`Unresolved::Unrevisioned`] for a `gh:` coordinate no lock gives a
+    /// revision, [`Unresolved::Unfetched`] for one whose tree is not fetched,
     /// [`Unresolved::Cycle`] for a root met twice on one chain,
     /// [`Unresolved::Unlocked`] for a dependency whose own lock is missing or
     /// stale, [`Unresolved::Unaddressed`] for a dependency with no address,
@@ -677,26 +766,57 @@ impl Package
     /// - hypothesis: L3 — one dependency resolves alike from two working
     ///   directories; a content edit to it moves its address and an inert edit
     ///   does not; two packages depending on each other are refused with their
-    ///   chain.
+    ///   chain; a `gh:` dependency is fetched at `HEAD` when locking, at the
+    ///   recorded revision when checking, and refused unrevisioned when no lock
+    ///   records one.
     /// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
     /// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
     /// - witness: `tests::package::a_dependency_cycle_is_refused_by_its_paths_3072`
+    /// - witness: `tests::package::a_gh_coordinate_is_fetched_at_the_revision_its_lock_records_4714`
     #[inline]
     pub fn resolve(
         &self,
         grammar: &gandr_surface_grammar::Pbg,
         store: &mut Store,
+        revisions: Revisions,
     ) -> Result<Lock, Unresolved>
     {
         let mut open = BTreeSet::from([self.root.clone()]);
         let mut frames = Vec::from([Frame::of(self.clone(), None, grammar)?]);
         loop {
+            let asking = revisions == Revisions::Asked && frames.len() == 1;
             let Some(frame) = frames.last_mut()
             else {
                 return Ok(Lock::default());
             };
             if let Some(coordinate) = frame.pending.next() {
-                let directory = coordinate.from(&frame.package.root);
+                let (directory, revision) = match coordinate {
+                    Coordinate::Path(ref directory) => (frame.package.root.join(directory), None),
+                    Coordinate::GitHub(ref repository) => {
+                        let revision = match (frame.standing.revision(&coordinate), asking) {
+                            (Some(revision), _) => revision,
+                            (None, true) => {
+                                fetch::head(repository).map_err(|fault| Unresolved::Unfetched {
+                                    coordinate: coordinate.clone(),
+                                    fault,
+                                })?
+                            },
+                            (None, false) => {
+                                return Err(Unresolved::Unrevisioned {
+                                    root: frame.package.root.clone(),
+                                    coordinate,
+                                });
+                            },
+                        };
+                        let fetched = fetch::fetched(repository, revision).map_err(|fault| {
+                            Unresolved::Unfetched {
+                                coordinate: coordinate.clone(),
+                                fault,
+                            }
+                        })?;
+                        (fetched, Some(revision))
+                    },
+                };
                 let rooted = directory.canonicalize().ok();
                 let dependency = match Self::discover(&directory) {
                     Maybe::Present(found) if rooted.as_deref() == Some(found.root()) => found,
@@ -710,12 +830,17 @@ impl Package
                 if !open.insert(dependency.root.clone()) {
                     return Err(cycle(&frames, dependency.root));
                 }
-                frames.push(Frame::of(dependency, Some(coordinate), grammar)?);
+                frames.push(Frame::of(
+                    dependency,
+                    Some((coordinate, revision)),
+                    grammar,
+                )?);
                 continue;
             }
             let Some(Frame {
                 package,
                 via,
+                standing,
                 entries,
                 ..
             }) = frames.pop()
@@ -724,13 +849,9 @@ impl Package
             };
             let _closed = open.remove(&package.root);
             let own = Lock(entries);
-            let (Some(parent), Some(coordinate)) = (frames.last_mut(), via)
+            let (Some(parent), Some((coordinate, revision))) = (frames.last_mut(), via)
             else {
                 return Ok(own);
-            };
-            let standing = match Lock::read(&package) {
-                Maybe::Present(standing) => standing,
-                Maybe::Absent(_) => Lock::default(),
             };
             if standing != own {
                 return Err(Unresolved::Unlocked {
@@ -750,24 +871,29 @@ impl Package
                     coordinate: coordinate.clone(),
                     fault: Box::new(fault),
                 })?;
-            let _first = parent.entries.insert(coordinate, pointer);
+            let _first = parent
+                .entries
+                .insert(coordinate, Locked { pointer, revision });
         }
     }
 }
 
-/// One package being resolved: the dependencies of it left to resolve, and
-/// the entries of its lock so far.
+/// One package being resolved: the dependencies of it left to resolve, the
+/// lock standing at its root, and the entries of its lock so far.
 struct Frame
 {
     /// The package.
     package: Package,
-    /// The coordinate its dependent imports it by; none for the package
-    /// resolution started at.
-    via: Option<Coordinate>,
+    /// The coordinate its dependent imports it by, and the revision a `gh:`
+    /// one was fetched at; none for the package resolution started at.
+    via: Option<(Coordinate, Option<Revision>)>,
     /// Its dependencies not yet resolved, in the coordinates' order.
     pending: alloc::collections::btree_set::IntoIter<Coordinate>,
+    /// The lock standing at its root, or none when it holds no lock the
+    /// checker wrote.
+    standing: Lock,
     /// Its dependencies resolved so far, by coordinate.
-    entries: BTreeMap<Coordinate, ContentPtr>,
+    entries: BTreeMap<Coordinate, Locked>,
 }
 
 impl Frame
@@ -778,15 +904,20 @@ impl Frame
     /// trivial.
     fn of(
         package: Package,
-        via: Option<Coordinate>,
+        via: Option<(Coordinate, Option<Revision>)>,
         grammar: &gandr_surface_grammar::Pbg,
     ) -> Result<Self, Unresolved>
     {
         let pending = package.dependencies(grammar)?.into_iter();
+        let standing = match Lock::read(&package) {
+            Maybe::Present(standing) => standing,
+            Maybe::Absent(_) => Lock::default(),
+        };
         Ok(Self {
             package,
             via,
             pending,
+            standing,
             entries: BTreeMap::new(),
         })
     }
@@ -831,6 +962,23 @@ pub enum Unresolved
         coordinate: Coordinate,
         /// The directory its coordinate names.
         path: PathBuf,
+    },
+    /// A `gh:` dependency whose revision the lock standing at its dependent's
+    /// root does not record, met where no revision may be asked.
+    Unrevisioned
+    {
+        /// The dependency.
+        coordinate: Coordinate,
+        /// Its dependent's root, where `gandr lock` writes the revision.
+        root: PathBuf,
+    },
+    /// A `gh:` dependency's tree, or its revision, was not fetched.
+    Unfetched
+    {
+        /// The dependency.
+        coordinate: Coordinate,
+        /// Why.
+        fault: Unfetched,
     },
     /// A package depends on itself through the chain of roots given,
     /// outermost first and ending where it began.
@@ -904,6 +1052,19 @@ impl core::fmt::Display for Unresolved
                 }
                 f.write_str(" depend on each other: remove one of the dependencies")
             },
+            Self::Unrevisioned {
+                ref coordinate,
+                ref root,
+            } => write!(
+                f,
+                "the lock at `{}` records no revision of `{coordinate}`: run `gandr lock {}`",
+                root.display(),
+                root.display()
+            ),
+            Self::Unfetched {
+                ref coordinate,
+                ref fault,
+            } => write!(f, "the dependency `{coordinate}` is not fetched: {fault}"),
             Self::Unlocked {
                 ref coordinate,
                 ref root,
@@ -1109,14 +1270,18 @@ pub fn relock(
 }
 
 /// The package source of the dependency `coordinate` names from `package`'s
-/// root; none when the lock standing at `package`'s root does not record the
-/// coordinate, or its directory roots no package.
+/// root, as its lock records it.
+///
+/// None when the lock standing at `package`'s root does not record the
+/// coordinate, or the directory roots no package: a `path:` coordinate's,
+/// and a `gh:` coordinate's checkout at the revision the lock records, which
+/// only a resolution fetches.
 ///
 /// # Specification
 /// trivial.
 #[inline]
 #[must_use]
-pub fn through(
+pub fn locked_source(
     package: &Package,
     coordinate: &Coordinate,
 ) -> Option<PathBuf>
@@ -1125,13 +1290,17 @@ pub fn through(
     else {
         return None;
     };
-    lock.locked(coordinate)?;
-    unpackaged(package.root(), coordinate)
+    let &Locked { revision, .. } = lock.0.get(coordinate)?;
+    match *coordinate {
+        Coordinate::Path(_) => unpackaged(package.root(), coordinate),
+        Coordinate::GitHub(ref repository) => source_of(&fetch::checkout(repository, revision?)?),
+    }
 }
 
 /// The package source of the dependency `coordinate` names from `directory`,
 /// where a source in no package reads it with no lock; none when its
-/// directory roots no package.
+/// directory roots no package, and for a `gh:` coordinate, which only a lock
+/// gives a revision.
 ///
 /// # Specification
 /// trivial.
@@ -1142,7 +1311,20 @@ pub fn unpackaged(
     coordinate: &Coordinate,
 ) -> Option<PathBuf>
 {
-    let Maybe::Present(dependency) = Package::discover(&coordinate.from(directory))
+    match *coordinate {
+        Coordinate::Path(ref path) => source_of(&directory.join(path)),
+        Coordinate::GitHub(_) => None,
+    }
+}
+
+/// The package source of the package `directory` roots; none when it roots
+/// none.
+///
+/// # Specification
+/// trivial.
+fn source_of(directory: &Path) -> Option<PathBuf>
+{
+    let Maybe::Present(dependency) = Package::discover(directory)
     else {
         return None;
     };
