@@ -1905,6 +1905,55 @@ fn a_module_named_where_a_value_is_read_is_its_model_4485()
     );
 }
 
+/// #4826: a module packed or named where a model type fixing its carrier is
+/// asked, a definition's signature or a parameter's type, packs without the
+/// carrier the type fixes, and checks there; a module whose carrier is
+/// another type is refused at the type it gives.
+#[test]
+fn a_module_packs_at_a_model_type_fixing_its_sorts_4826()
+{
+    let source = format!(
+        "{}module Words : Model(Counter) where {{\n  type C = String;\n  def start() -> -F String \
+         {{ \"\" }}\n  def step(s : String) -> -F String {{ s }}\n  def read(s : String) -> -F \
+         Integer {{ 0 }}\n}}\ndef packed : Model(Counter) with sort C = Integer ;\ndef packed = \
+         pack Opened at Model(Counter) ;\ndef bare : Model(Counter) with sort C = Integer ;\ndef \
+         bare = Opened ;\ndef started(m : Model(Counter) with sort C = Integer) -> Integer {{ 0 \
+         }}\ndef passed() -> Integer {{ started(Opened) }}\ndef wrong() -> Integer {{ \
+         started(Words) }}\ndef whole : Model(Counter) ;\ndef whole = Opened ;\n",
+        COUNTER.replace("module Open :", "module Opened :")
+    );
+    let mut lowered = lower(source.as_str());
+    let carried = |path| {
+        let mut pending = vec![body_of(&lowered, path)];
+        let mut codes = 0_usize;
+        while let Some(id) = pending.pop() {
+            match lowered.arena.value(id) {
+                Some(&Value::Tuple(ref components)) => pending.extend(components.iter()),
+                Some(&Value::Quote(_)) => codes = codes.saturating_add(1),
+                _ => {},
+            }
+        }
+        codes
+    };
+    assert_eq!(
+        ["packed", "bare", "whole"].map(carried),
+        [0_usize, 0_usize, 1_usize],
+        "a pack at the fixed type carries no code of its carrier, and one at the theory's models \
+         does"
+    );
+    let [packed, bare, passed, wrong, whole] = ["packed", "bare", "passed", "wrong", "whole"]
+        .map(|path| super::declaration(&lowered, path, Role::Declared).constant());
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        [packed, bare, passed, whole]
+            .iter()
+            .all(|&constant| judgements.contains(&(constant, Judgement::Checked)))
+            && judgements.contains(&(wrong, Judgement::Mismatched)),
+        "each pack checks at the type it is asked at, and a carrier of strings does not: \
+         {judgements:?}"
+    );
+}
+
 /// #4485: only a module declared before the name and ascribed a model type
 /// is read as a value; any other name stays unresolved.
 #[test]

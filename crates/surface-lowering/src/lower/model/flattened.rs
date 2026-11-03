@@ -358,6 +358,84 @@ impl<'source> Lowerer<'_, 'source>
             .map(Some)
     }
 
+    /// The sorts the type a module packed at `site` is checked against fixes,
+    /// each sort's name beside the type it is, when that type is a manifest
+    /// model type of the theory the path `theory` names (#4826).
+    ///
+    /// The type is the one a call's parameter writes, a definition's
+    /// signature, or an annotation: where a constructor reads its classifier.
+    ///
+    /// # Specification
+    /// - requires: `theory` is the path of the model type the module is packed
+    ///   at, written in `site`.
+    /// - ensures: [`Self::model_slot`]'s fixed sorts for that type when its
+    ///   slot is the theory's bundle with those sorts left out; nothing for a
+    ///   site no type is written for, a type no model type is, a model type of
+    ///   another theory, and one that fixes no sort.
+    /// - fails: the budget's refusal; every other refusal leaves the type to
+    ///   the check that reads it.
+    /// - panics: none.
+    /// - executable: none — the answer reads the tree and the theory's bundle,
+    ///   which a clause would read again whole.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module packed for a definition's signature and
+    ///   passed for a parameter, each at a model type fixing every sort or only
+    ///   some, drops the fixed sorts; one at the unfixed model type keeps them.
+    /// - witness: `tests::modules::models::a_module_packs_at_a_model_type_fixing_its_sorts_4826`
+    pub(in crate::lower) fn expected_fixed(
+        &mut self,
+        site: Site,
+        theory: &crate::form::WrittenPath,
+    ) -> Result<BTreeMap<Name, Placed>, LoweringRefusal<'source>>
+    {
+        let node = site.at.node;
+        let expected = self
+            .parameter_typed
+            .get(&node)
+            .map(|called| called.typed.node)
+            .or_else(|| match self.inherited.get(&node) {
+                Some(&crate::lower::native::Classifier::Written(typed)) => Some(typed),
+                _ => None,
+            })
+            .or_else(|| self.classifiers.get(&node).copied());
+        let Some(expected) =
+            expected.and_then(|typed| self.tree.node(typed).map(|at| Placed::of(typed, at)))
+        else {
+            return Ok(BTreeMap::new());
+        };
+        let slot = match self.model_slot(site, expected) {
+            Ok(Some(slot)) if !slot.fixed.is_empty() => slot,
+            Err(refusal @ LoweringRefusal::BudgetExceeded { .. }) => return Err(refusal),
+            Ok(_) | Err(_) => return Ok(BTreeMap::new()),
+        };
+        let written = Site {
+            at: theory.last,
+            ..site
+        };
+        let mut ours = match self.bundled(written, (site.at.span.start(), theory)) {
+            Ok(ours) => ours,
+            Err(refusal @ LoweringRefusal::BudgetExceeded { .. }) => return Err(refusal),
+            Err(_) => return Ok(BTreeMap::new()),
+        };
+        if let Some(outermost) = ours.first_mut() {
+            outermost
+                .signature
+                .components
+                .retain(|component| !slot.fixed.contains_key(&component.name));
+        }
+
+        Ok(if ours == slot.theories {
+            slot.fixed
+        }
+        else {
+            BTreeMap::new()
+        })
+    }
+
     /// The slot of the theory the path `theory` names, its refusals placed at
     /// `named`, read where a form starting at `at` reads it, each sort `sorts`
     /// names fixed to the type written beside it.
