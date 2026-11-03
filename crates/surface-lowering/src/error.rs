@@ -937,7 +937,7 @@ pub enum LoweringRefusal<'source>
     },
 
     /// A name read through a module path whose head names no module of the
-    /// package, or through the alias of a coordinate its `gandr.lock` does not
+    /// package, or through the alias of a coordinate its lock does not
     /// record: a coordinate is read only once `gandr lock` has locked it.
     UnlockedDependency
     {
@@ -2019,7 +2019,7 @@ impl fmt::Display for LoweringRefusal<'_>
             ),
             Self::UnlockedDependency { alias, .. } => write!(
                 f,
-                "`{alias}` names no module of this package and no dependency its `gandr.lock` records"
+                "`{alias}` names no module of this package and no dependency its lock records"
             ),
             Self::SignatureMismatch {
                 signature,

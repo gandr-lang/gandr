@@ -15885,7 +15885,7 @@ mod tests
         let text = "def r : Integer ≃ String ;\ndef r = 1 ;\n";
         std::fs::write(root.join("package.gandr"), text).expect("the library is written");
         std::fs::write(
-            root.join("gandr.toml"),
+            root.join("package.gandr.toml"),
             "[presentation]\nspelling = \"ascii\"\n",
         )
         .expect("the manifest is written");

@@ -1,8 +1,13 @@
-// A workspace is the packages its `workspace.gandr` names, found
-// above them. It is not a package: it states what its members share as a model
-// of `Gandr.Workspace`, which each member's package source imports, and names
-// its members, each a directory below it rooting a package. `gandr check` here
-// checks this source and every member, and writes each member's `gandr.toml`.
+// A workspace is the packages that its `workspace.gandr` names. The checker
+// finds it above them. It is not a package. It states what its members share
+// as a model of `Gandr.Workspace`, which the package source of each member
+// imports. Each member that it names is a directory below it that roots a
+// package.
+//
+// `gandr check` here checks this source and every member. It writes the
+// `package.gandr.toml` of each member and the `workspace.gandr.toml` of this
+// workspace. It also writes the one `workspace.gandr.lock` that the members
+// share.
 // The manifest theories.
 //
 // - see: #2687

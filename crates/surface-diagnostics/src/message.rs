@@ -290,7 +290,7 @@ fn lowered(
         ),
         LoweringRefusal::UnlockedDependency { alias, .. } => write!(
             f,
-            "`{alias}` is no module of this package and no dependency its `gandr.lock` records: run `gandr lock` to lock the coordinate it imports"
+            "`{alias}` is no module of this package and no dependency its lock records: run `gandr lock` to lock the coordinate it imports"
         ),
         LoweringRefusal::SignatureMismatch {
             signature,

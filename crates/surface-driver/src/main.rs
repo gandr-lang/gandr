@@ -10,7 +10,7 @@
 //! | Code | Meaning |
 //! | ---- | ------- |
 //! | `0` | every declaration settled, a script's run returned a value, every staged certificate was readmitted, every source was laid out, a ledger was written, every exemplar held, or a census read every path; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a Model Context Protocol session whose input ended, an engine hub that lingered out or found another serving its socket, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
-//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a package's source states no manifest, or its `gandr.toml` was edited by hand; a manifold `check` reads deploys a world its program lacks or its site does not offer; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; `gandr ledger exemplars` found an exemplar that does not hold; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
+//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a package's or a workspace's source states no manifest, or its manifest was edited by hand; a manifold `check` reads deploys a world its program lacks or its site does not offer; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; `gandr ledger exemplars` found an exemplar that does not hold; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
 //! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, `check`, `test` or `fmt` given no path outside every package, a user configuration file that cannot be read or names a spelling there is none of, output the driver could not write, a package manifest that could not be read or written, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a ledger that could not be generated, written or listed, or a source a census could not parse or lower, or that the lowering refused whole |
 //!
 //! A fault outranks an unsettled declaration: a run with both exits `2`. The
@@ -73,15 +73,19 @@
 //! work on the package the working directory sits in, or, in no package, on
 //! every member a `workspace.gandr` above it names, as they do given the
 //! workspace's directory (`gandr-surface-dispatcher`'s `package` and
-//! `workspace` modules). After its walk, `check` reconciles each such package's
-//! `gandr.toml` with the package source's `Package` model, `manifest: <path>:
-//! written`, `rewritten` or `unchanged` on standard output; a manifest edited
-//! by hand is left as it stands and is `gandr: <path>: drifted: …` on standard
-//! error. Each manifold the walk settles, a source declaring
-//! `Manifold.artifact` itself, is then judged as a deployment before any
-//! process starts: a placement of a world the program does not declare, and
-//! each entry of a world's `requires [ … ]` row its site's `offers` does not
-//! answer, is `gandr: <refusal>` on standard error
+//! `workspace` modules). After its walk, `check` reconciles the
+//! `package.gandr.toml` of each such package with the `Package` model of its
+//! package source. It also reconciles the `workspace.gandr.toml` of each such
+//! workspace with its `Workspace` model. It writes `manifest: <path>: written`,
+//! `rewritten` or `unchanged` on standard output. It keeps a manifest that a
+//! person edited, and writes `gandr: <path>: drifted: …` on standard error. The
+//! lock of a package is `package.gandr.lock` beside its source. For a package
+//! below a workspace, the lock is its table in the `workspace.gandr.lock` that
+//! all the packages of the workspace share. Each manifold the walk settles, a
+//! source declaring `Manifold.artifact` itself, is then judged as a deployment
+//! before any process starts: a placement of a world the program does not
+//! declare, and each entry of a world's `requires [ … ]` row its site's
+//! `offers` does not answer, is `gandr: <refusal>` on standard error
 //! (`gandr-surface-dispatcher`'s `manifold` module). A refusal, an unsettled
 //! declaration and a goal each print as a located source snippet — the class
 //! and message, the path with line and column, the lines the report covers with
@@ -349,13 +353,13 @@ use gandr_surface_dispatcher::FeatureId;
 use gandr_surface_dispatcher::FeatureLedger;
 use gandr_surface_dispatcher::FormatStep;
 use gandr_surface_dispatcher::Formatting;
+use gandr_surface_dispatcher::Gathered;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Hosted;
 use gandr_surface_dispatcher::Input;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Kept;
-use gandr_surface_dispatcher::LOCK;
 use gandr_surface_dispatcher::LedgerRun;
 use gandr_surface_dispatcher::LedgerTask;
 use gandr_surface_dispatcher::Line;
@@ -409,6 +413,7 @@ use gandr_surface_dispatcher::entries;
 use gandr_surface_dispatcher::measure;
 use gandr_surface_dispatcher::packaged;
 use gandr_surface_dispatcher::reconcile;
+use gandr_surface_dispatcher::reconcile_lock;
 use gandr_surface_dispatcher::relock;
 use gandr_surface_dispatcher::timed;
 use gandr_surface_format::Form;
@@ -540,8 +545,9 @@ enum Command
         jobs: Jobs,
         /// Source files, and directories searched for `.gandr` sources. A
         /// path inside a package checks the whole package, and writes its
-        /// `gandr.toml` and, when it has dependencies, its `gandr.lock`; a
-        /// workspace's directory checks each member it names; with no path,
+        /// `package.gandr.toml` and, when it has dependencies, its lock; a
+        /// workspace's directory checks each member it names and writes
+        /// `workspace.gandr.toml`; with no path,
         /// the package the working directory sits in, or the workspace when it
         /// sits in none.
         paths: Vec<PathBuf>,
@@ -564,8 +570,8 @@ enum Command
         /// working directory sits in, or the workspace when it sits in none.
         paths: Vec<PathBuf>,
     },
-    /// Resolve each package's dependencies again and write its `gandr.lock`,
-    /// whatever lock stands there.
+    /// Resolve each package's dependencies again and write its lock, whatever
+    /// lock stands there.
     ///
     /// Exits 0 when every lock is written, 1 when a package's dependencies
     /// do not resolve, and 2 when a lock cannot be written.
@@ -1362,6 +1368,8 @@ struct Pass<'packages>
     lints: Lints,
     /// The packages the walk's paths reached.
     packages: &'packages [Packaged],
+    /// The workspaces the walk's paths gathered.
+    workspaces: &'packages [Gathered],
     /// The store the packages were locked into, when any was reached.
     store: Option<&'packages mut Store>,
 }
@@ -1437,11 +1445,12 @@ fn opened() -> Result<Store, ExitCode>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: [`Package::resolve`] under the built-in grammar into `store`, at
-///   the revisions the locks record ([`Revisions::Locked`]), then [`reconcile`]
-///   of its [`LOCK`]: [`Locking::Held`] with what it did, the lock and the
-///   package's address over it, read through `store`, as [`Package::identity`]
-///   gives it; [`Locking::Refused`] with its fault, and [`Locking::Unresolved`]
-///   for dependencies that do not resolve or a grammar that does not build.
+///   the revisions the locks record ([`Revisions::Locked`]), then
+///   [`reconcile_lock`] of its lock: [`Locking::Held`] with what it did, the
+///   lock and the package's address over it, read through `store`, as
+///   [`Package::identity`] gives it; [`Locking::Refused`] with its fault, and
+///   [`Locking::Unresolved`] for dependencies that do not resolve or a grammar
+///   that does not build.
 /// - provides: the lock step of `gandr check`.
 /// - fails: never; each outcome is a variant.
 /// - panics: none.
@@ -1468,7 +1477,7 @@ fn locking(
         },
     };
     match package.resolve(&grammar, store, Revisions::Locked) {
-        Ok(lock) => match reconcile(&package.root().join(LOCK), &lock) {
+        Ok(lock) => match reconcile_lock(package, &lock) {
             Ok(reconciled) => {
                 let address = package
                     .identity(&grammar, &Unshadowed, &lock, store)
@@ -1508,7 +1517,7 @@ fn locking(
 fn lock(paths: Vec<PathBuf>) -> ExitCode
 {
     let packages = match packaged(paths, Path::new(".")) {
-        Ok((_, packages)) => packages,
+        Ok((_, packages, _)) => packages,
         Err(unpackaged) => return unpathed(&unpackaged),
     };
     let mut stdout = std::io::stdout().lock();
@@ -1526,7 +1535,7 @@ fn lock(paths: Vec<PathBuf>) -> ExitCode
     };
     let mut verdict = RunVerdict::Settled;
     for package in &packages {
-        let path = package.root().join(LOCK);
+        let path = package.lock();
         let (written, reached) = match package.resolve(&grammar, &mut store, Revisions::Asked) {
             Ok(lock) => match relock(package, &lock) {
                 Ok(reconciled) => (
@@ -1752,6 +1761,8 @@ fn main() -> ExitCode
     // The packages a `check` reached, whose manifests it reconciles, and the
     // store their locks and exports commit to.
     let mut packages: Vec<Packaged> = Vec::new();
+    // The workspaces that a `check` works on. It reconciles their manifests.
+    let mut workspaces: Vec<Gathered> = Vec::new();
     // The network, bindings and migrations a `run` or `host` gives its program.
     let mut hosting = Hosting::default();
     let mut store: Option<Store> = None;
@@ -1787,7 +1798,8 @@ fn main() -> ExitCode
             };
             let grant = grant.entering(entry);
             let paths = match packaged(paths, Path::new(".")) {
-                Ok((paths, reached)) => {
+                Ok((paths, reached, gathered)) => {
+                    workspaces = gathered;
                     if !reached.is_empty() {
                         let mut opened = match opened() {
                             Ok(store) => store,
@@ -1852,7 +1864,7 @@ fn main() -> ExitCode
         }) => (
             Invocation::Test {
                 paths: match packaged(paths, Path::new(".")) {
-                    Ok((paths, _)) => paths,
+                    Ok((paths, ..)) => paths,
                     Err(unpackaged) => return unpathed(&unpackaged),
                 },
                 width: Width::from(jobs),
@@ -1948,7 +1960,7 @@ fn main() -> ExitCode
         }) => (
             Invocation::Format {
                 paths: match packaged(paths, Path::new(".")) {
-                    Ok((paths, _)) => paths,
+                    Ok((paths, ..)) => paths,
                     Err(unpackaged) => return unpathed(&unpackaged),
                 },
                 options: FormatOptions {
@@ -2079,7 +2091,7 @@ fn main() -> ExitCode
             measuring,
             listing,
         },
-        &packages,
+        (&packages, &workspaces),
         hosting,
         store.as_mut(),
         &mut stdout,
@@ -3221,19 +3233,21 @@ fn doubled(doubled: Doubled) -> ExitCode
 ///   — prefixed with its path. Under `check --measure` each settled source then
 ///   prints its `measure:` lines, as [`run`] states. Each path the walk cannot
 ///   carry through the pipeline is a line on standard error. A walk under
-///   `check` then reconciles the lock and the manifest of each of `packages`,
-///   commits its export into `store`, and re-admits each dependency's export
-///   from it, as [`run`] does. The run's report and its verdict close standard
-///   output, and the exit code is the verdict's, or a lock's, a manifest's, an
-///   export's or a dependency's export's when that is worse. A script follows
-///   [`script`], its entry's `Net` operations served on a network bound as
-///   `hosting` says, its migrations sent where `hosting`'s bindings bind them,
-///   or its worlds served when `hosting` serves, the network bound first and
-///   its peer spelling, `<key>@<ip:port>`, the first line on standard error:
-///   what it prints goes to standard output, what it writes to standard error
-///   goes there beside its diagnostics, the lines it reads come from standard
-///   input, and its run status chooses the exit. A staging follows [`stage`], a
-///   formatting [`fmt`], a ledger task [`ledger`], and a census [`cells`].
+///   `check` then reconciles the lock and the manifest of each package
+///   `reached` holds, commits its export into `store`, re-admits each
+///   dependency's export from it, and reconciles the manifest of each workspace
+///   `reached` holds, as [`run`] does. The run's report and its verdict close
+///   standard output, and the exit code is the verdict's, or a lock's, a
+///   manifest's, an export's or a dependency's export's when that is worse. A
+///   script follows [`script`], its entry's `Net` operations served on a
+///   network bound as `hosting` says, its migrations sent where `hosting`'s
+///   bindings bind them, or its worlds served when `hosting` serves, the
+///   network bound first and its peer spelling, `<key>@<ip:port>`, the first
+///   line on standard error: what it prints goes to standard output, what it
+///   writes to standard error goes there beside its diagnostics, the lines it
+///   reads come from standard input, and its run status chooses the exit. A
+///   staging follows [`stage`], a formatting [`fmt`], a ledger task [`ledger`],
+///   and a census [`cells`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -3264,7 +3278,7 @@ fn doubled(doubled: Doubled) -> ExitCode
 fn render(
     outcome: Outcome,
     printing: Printing,
-    packages: &[Packaged],
+    reached: (&[Packaged], &[Gathered]),
     hosting: Hosting,
     store: Option<&mut Store>,
     stdout: &mut dyn std::io::Write,
@@ -3287,7 +3301,8 @@ fn render(
             Pass {
                 verb,
                 lints,
-                packages,
+                packages: reached.0,
+                workspaces: reached.1,
                 store,
             },
             walk,
@@ -3628,7 +3643,8 @@ fn stage(
 
 /// Visit `walk` on `pool` under the pass's verb, printing each step at the
 /// verbosity and in the spelling `printing` names, then each manifest the
-/// pass's packages reconcile, then the report and the verdict.
+/// packages and workspaces of the pass reconcile, then the report and the
+/// verdict.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -3719,6 +3735,7 @@ fn run(
         verb,
         lints,
         packages,
+        workspaces,
         mut store,
     } = pass;
     let Printing {
@@ -3826,6 +3843,10 @@ fn run(
             let reached = exported(&packaged.package, exporting, address, held, stderr)?;
             verdict = worse(verdict, reached);
         }
+    }
+    for gathered in workspaces {
+        let reached = gathered_manifest(gathered, verbosity, stdout, stderr)?;
+        verdict = worse(verdict, reached);
     }
     for manifold in &manifolds {
         let reached = deployed(manifold, stderr)?;
@@ -4050,7 +4071,7 @@ fn locked<'packaged>(
     Option<&'packaged Result<PackageAddress, Unaddressed>>,
 )>
 {
-    let path = packaged.package.root().join(LOCK);
+    let path = packaged.package.lock();
     match packaged.locking {
         Locking::Held(reconciled, ref lock, ref address) => {
             if lock.coordinates().next().is_some() || reconciled != Reconciled::Unchanged {
@@ -4199,6 +4220,79 @@ fn manifested(
                     Ok(RunVerdict::Unsettled)
                 },
             }
+        },
+        Err(fault) => {
+            writeln!(stderr, "gandr: {}: {fault}", path.display())?;
+            Ok(match fault {
+                ManifestFault::Drifted => RunVerdict::Unsettled,
+                ManifestFault::Io(_) => RunVerdict::Faulted,
+            })
+        },
+    }
+}
+
+/// Make the manifest of a gathered workspace agree with what its model states.
+/// Print the result, and give the verdict that it leaves the run at.
+///
+/// # Specification
+/// - requires: `gathered` is a workspace the run works on, as
+///   [`gandr_surface_dispatcher::Workspace::members`] gathered it.
+/// - ensures: if the model states no manifest, the function writes `gandr:
+///   <source>: <why>` on standard error, and the run is unsettled. If not, it
+///   reconciles the manifest beside the source of the workspace. A manifest
+///   that it writes, rewrites or keeps gives `manifest: <path>: <what>` on
+///   standard output, and the run stays settled. At the JSON level, this line
+///   is an object whose `level` is `manifest`. Drift gives `gandr: <path>:
+///   <why>` on standard error, and the run is unsettled. A file that the
+///   function cannot read or write gives the same line, and the run faults.
+/// - provides: the manifest step of a workspace, which `run` does after the
+///   steps of its packages.
+/// - fails: the first write error on either stream.
+/// - panics: none.
+/// - executable: none — the outcome is the file on disk and the bytes of the
+///   streams, which the CLI witnesses observe.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a check keeps the manifest of the witness workspace, and
+///   writes a manifest where none stands.
+/// - witness: `tests::cli::the_witness_workspace_s_manifests_are_its_models_2687`
+/// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
+fn gathered_manifest(
+    gathered: &Gathered,
+    verbosity: Verbosity,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> std::io::Result<RunVerdict>
+{
+    let manifest = match gathered.manifest {
+        Ok(ref manifest) => manifest,
+        Err(ref unstated) => {
+            writeln!(
+                stderr,
+                "gandr: {}: {unstated}",
+                gathered.workspace.source().display()
+            )?;
+            return Ok(RunVerdict::Unsettled);
+        },
+    };
+    let path = gathered.workspace.manifest();
+    match reconcile(&path, manifest) {
+        Ok(reconciled) => {
+            if verbosity == Verbosity::Json {
+                let line = serde_json::json!({
+                    "level": "manifest",
+                    "path": path.display().to_string(),
+                    "reconciled": reconciled.to_string(),
+                });
+                writeln!(stdout, "{line}")?;
+            }
+            else {
+                writeln!(stdout, "manifest: {}: {reconciled}", path.display())?;
+            }
+            Ok(RunVerdict::Settled)
         },
         Err(fault) => {
             writeln!(stderr, "gandr: {}: {fault}", path.display())?;

@@ -1010,8 +1010,8 @@ fn imported(
                     }
                 },
                 Some(&ImportTarget::Unlocked) => format!(
-                    "`{}` names no module of this package and no dependency its `gandr.lock` \
-                     records: run `gandr lock` to lock the coordinate it imports.",
+                    "`{}` names no module of this package and no dependency its lock records: \
+                     run `gandr lock` to lock the coordinate it imports.",
                     import.written.uri.as_ref()
                 ),
                 Some(&ImportTarget::Cycle) => format!(

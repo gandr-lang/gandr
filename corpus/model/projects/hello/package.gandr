@@ -1,7 +1,7 @@
 // A package is its `package.gandr` and its `sources`. That file declares the
-// package's model, and `gandr check` writes `gandr.toml` beside it. Its
-// modules sit under `src`, and its version is the one the workspace above it
-// states.
+// model of the package. `gandr check` writes `package.gandr.toml` beside it.
+// The modules of the package are under `src`. Its version is the version that
+// the workspace above it states.
 //
 // - see: #2687
 // - see: #4916
@@ -14,8 +14,8 @@ import std.build (Gandr);
 // The tone, a module three names deep.
 import text.tone.kind;
 
-/// The package: its name, its version and the rest of what `gandr.toml`
-/// records.
+/// The package: its name, its version and the rest of what
+/// `package.gandr.toml` records.
 pub module Package : Model(Gandr.Package) where {
   /// The name the manifest records.
   def name = "hello";

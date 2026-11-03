@@ -426,9 +426,9 @@ corpus/ledger/features/nested-operation-laws.gandr STE-6.3 44ad00b4a0c18a4c
 corpus/ledger/features/nested-operation-laws.gandr STE-6.3 7b0d5e32d89a9013
 corpus/ledger/features/nested-operation-laws.gandr STE-6.3 e4d150c61a68234c
 corpus/ledger/features/nested-operation-laws.gandr STE-8.1 44ad00b4a0c18a4c
-corpus/ledger/features/package-address.gandr STE-6.3 3bac9d9e9bcb7904
 corpus/ledger/features/package-address.gandr STE-6.3 451704cec76cc8bb
-corpus/ledger/features/package-address.gandr STE-8.1 3bac9d9e9bcb7904
+corpus/ledger/features/package-address.gandr STE-6.3 b1d2cad55e1a282c
+corpus/ledger/features/package-address.gandr STE-8.1 b1d2cad55e1a282c
 corpus/ledger/features/package-signature.gandr STE-6.3 a9adbdf3ca24dff7
 corpus/ledger/features/package-signature.gandr STE-6.3 dac2af7fb1d6a3c8
 corpus/ledger/features/package-toolchain.gandr STE-3.5 2a74ad5cebd233be
@@ -445,8 +445,8 @@ corpus/ledger/features/places.gandr STE-6.3 6457d2847ea7bf2e
 corpus/ledger/features/places.gandr STE-6.3 f4261a751997c940
 corpus/ledger/features/places.gandr STE-8.1 0609a5154362461e
 corpus/ledger/features/places.gandr STE-8.1 c34709c8e80af67c
-corpus/ledger/features/project-manifest.gandr STE-6.3 db022505285da879
-corpus/ledger/features/project-manifest.gandr STE-8.1 db022505285da879
+corpus/ledger/features/project-manifest.gandr STE-6.3 7a3248c92effd2c9
+corpus/ledger/features/project-manifest.gandr STE-8.1 7a3248c92effd2c9
 corpus/ledger/features/record-width-subtyping.gandr STE-3.6 c79f259f9faa0958
 corpus/ledger/features/relative-monads.gandr STE-3.6 18993404add22cc3
 corpus/ledger/features/relative-monads.gandr STE-3.2 53a8d96f88e0f1d2
@@ -2892,10 +2892,7 @@ corpus/model/moves/moved-to-closer.gandr What 48f3297cb85796c0
 corpus/model/package/build-stage.gandr STE-3.6 8fa6a27734a14358
 corpus/model/package/build-stage.gandr STE-3.2 d8aa53e394c8798b
 corpus/model/package/build-stage.gandr STE-6.3 190bff0e63f9ffaf
-corpus/model/package/build-stage.gandr InlineReference 3359a0535eb3f1b0
-corpus/model/package/build-stage.gandr InlineReference 9c71b8871fb6fdfa
-corpus/model/package/build-stage.gandr InlineReference 9ca5a71f4cdeec03
-corpus/model/package/build-stage.gandr What 3f3d92664d6d7338
+corpus/model/package/build-stage.gandr What 01f1e43cbeb447b0
 corpus/model/package/nix-attribute.gandr InlineReference 90451b14c777daf9
 corpus/model/package/nix-derivation.gandr STE-3.6 58cca8d42e35ac34
 corpus/model/package/nix-derivation.gandr STE-3.2 2f3a9b429ed57c1c
@@ -4897,7 +4894,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnknownCon
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnknownGenerator.txt STE-5.3 501323a4a2c6a177
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnknownTactic.txt STE-5.3 93c38e17aac983f3
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/Unlocated.txt STE-5.3 c7bd7e2325683c3a
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnlockedDependency.txt STE-5.3 1828db136ebde16d
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnlockedDependency.txt STE-5.3 19f4369ec5f582ab
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnmarkedSelfReference.txt STE-5.3 4db31bd807aaf1cf
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnofferedLabel.txt STE-5.3 b4dcad7d404f7cf3
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnprovenLaw.Admitted.txt STE-5.3 6dd4420754dc5df4

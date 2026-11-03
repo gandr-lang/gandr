@@ -1,5 +1,0 @@
-# Written by `gandr check` from the coordinates the package's sources import: relock with `gandr lock`, never by hand.
-# blake3: 2d21c8d962e513565e774c67f82ac81bbde883e52ff18836073c81c7ae7edf36
-
-[dependencies]
-"path:../hello" = { pointer = "2836c98873cf6b1204710b8cfe5289c100fdfcc4501116b25272d13b8ffd237e:0" }

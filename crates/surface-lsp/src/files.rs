@@ -285,9 +285,10 @@ impl Files
         }
         if self.workspaces.get(root).is_none_or(|held| held.0 != stamp) {
             let members = match Workspace::discover(root) {
-                Maybe::Present(workspace) if workspace.root() == root => {
-                    workspace.members().unwrap_or_default()
-                },
+                Maybe::Present(workspace) if workspace.root() == root => workspace
+                    .members()
+                    .map(|(members, _gathered)| members)
+                    .unwrap_or_default(),
                 Maybe::Present(_) | Maybe::Absent(workspace_root::Absent::Unworkspaced) => {
                     Vec::new()
                 },

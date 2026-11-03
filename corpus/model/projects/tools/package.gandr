@@ -14,9 +14,10 @@ pub theory Greeting where {
   oper welcome : String;
 }
 
-// The sibling package this one depends on, found at its coordinate and read
-// through `gandr.lock`, at the signature above: its `welcome`
-// and no other member.
+// The sibling package that this package depends on. The checker finds it at
+// its coordinate. It reads it through the table of this package in the
+// `workspace.gandr.lock` of the workspace. It reads it at the signature above:
+// its `welcome` and no other member.
 import "path:../hello" as hello : Greeting;
 // A module of `hello` beyond its root, named by a module path through the
 // alias.
@@ -25,7 +26,7 @@ import hello.text.greet (greeting);
 import std.build (Gandr);
 
 /// The package: its name, the version its workspace states, and the rest of
-/// what `gandr.toml` records.
+/// what `package.gandr.toml` records.
 pub module Package : Model(Gandr.Package) where {
   /// The name the manifest records.
   def name = "tools";

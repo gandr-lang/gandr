@@ -2,8 +2,8 @@
 //!
 //! # One table, two files
 //!
-//! The user's configuration file and a package's `gandr.toml` write the same
-//! table, byte for byte:
+//! The user's configuration file and a package's `package.gandr.toml` write
+//! the same table, byte for byte:
 //!
 //! ```toml
 //! [presentation]
@@ -267,7 +267,7 @@ mod tests
         let directory =
             std::env::temp_dir().join(format!("gandr-presentation-{}", std::process::id()));
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
-        let file = directory.join("gandr.toml");
+        let file = directory.join("package.gandr.toml");
         assert_eq!(
             read_presentation(file.clone()).expect("an absent file reads"),
             Presentation::default(),

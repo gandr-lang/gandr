@@ -1,5 +1,5 @@
 /// `package-address`: A package's address.
-/// Implemented: a package's address digests each item its sources declare, as its path and its content key, every inert component of its models left out and what a model asks of the toolchain kept; `gandr check` prints it on the manifest's line, and `gandr.toml` does not carry it.
+/// Implemented: a package's address digests each item its sources declare, as its path and its content key, every inert component of its models left out and what a model asks of the toolchain kept; `gandr check` prints it on the manifest's line, and `package.gandr.toml` does not carry it.
 ///
 /// - see: #3135 — `gandr`
 

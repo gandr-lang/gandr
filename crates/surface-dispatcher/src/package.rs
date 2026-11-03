@@ -1,6 +1,6 @@
 //! A package: a `package.gandr` at its root, the modules under the directory
-//! its model's `sources` names, and the `gandr.toml` the checker writes beside
-//! it from the package's own model.
+//! its model's `sources` names, and the `package.gandr.toml` the checker writes
+//! beside it from the package's own model.
 //!
 //! # A package is found by its package source
 //!
@@ -33,8 +33,18 @@
 //!
 //! # A package's dependencies are locked by address
 //!
-//! [`lock`] resolves the coordinates a package's sources import and writes the
-//! `gandr.lock` those imports read them through (#533 p3).
+//! [`lock`] resolves the coordinates that the sources of a package import. It
+//! writes the lock that these imports read them through (#533 p3). A package
+//! in no workspace keeps `package.gandr.lock` beside its package source. A
+//! package below a workspace keeps its own table in `workspace.gandr.lock`.
+//!
+//! # A workspace has a manifest too
+//!
+//! [`WorkspaceManifest`] holds what the `Workspace` model of a workspace
+//! states, and the members that `members` names. `gandr check` writes it as
+//! `workspace.gandr.toml` beside `workspace.gandr` when it works on the
+//! workspace. The header and the drift rule are the same as for the manifest
+//! of a package.
 //!
 //! # A package's toolchain constraints are checked
 //!
@@ -51,12 +61,12 @@
 //! | Role | Fields | Address |
 //! | --- | --- | --- |
 //! | inert | `name`, `version`, `authors`, `licence`, `documentation`, `endpoint`, `spelling`, `sources` | left out: an edit leaves it |
-//! | resolution | an import's coordinate, `import "path:…" as name ;` | written in the importer's source; each dependency's address enters through `gandr.lock`, never its alias or its coordinate |
+//! | resolution | an import's coordinate, `import "path:…" as name ;` | written in the importer's source; each dependency's address enters through the lock, never its alias or its coordinate |
 //! | syntax | an import's signature, `import <address> : S ;` | written in the importer's source, not in the model |
 //! | toolchain | `gandr`, `features`, `systems` | content: an edit moves it |
 //!
-//! The manifest's own bytes enter no address: `gandr.toml` is the checker's
-//! output, so identity enters through the items, the lock and the
+//! The manifest's own bytes enter no address: `package.gandr.toml` is the
+//! checker's output, so identity enters through the items, the lock and the
 //! constraints, never through the file. Where the sources sit enters none
 //! either: the address digests their content. A reference is an address and a
 //! coordinate kept apart: the address says what the package is, and a resolve
@@ -104,6 +114,7 @@ use crate::evaluate::Evaluation;
 use crate::evaluate::Program;
 use crate::evaluate::declaration_name;
 use crate::root::classify;
+use crate::workspace::Gathered;
 use crate::workspace::Unmembered;
 use crate::workspace::WORKSPACE;
 use crate::workspace::Workspace;
@@ -123,8 +134,9 @@ use self::toolchain::Toolchain;
 /// package's model.
 pub const PACKAGE: &str = "package.gandr";
 
-/// The file name of the manifest the checker writes at a package's root.
-pub const MANIFEST: &str = "gandr.toml";
+/// The file name of the manifest that the checker writes beside the source of
+/// a package, at its root.
+pub const MANIFEST: &str = "package.gandr.toml";
 
 /// The `Package` model's field naming the directory a package's modules sit
 /// under, as a model writes it.
@@ -133,6 +145,10 @@ const SOURCES: &str = "sources";
 /// The line that opens a manifest the checker wrote.
 const WRITTEN: &str = "# Written by `gandr check` from the package's `Package` model: edit the \
                        model, not this file.";
+
+/// The first line of a workspace manifest that the checker wrote.
+const WORKSPACE_WRITTEN: &str = "# Written by `gandr check` from the workspace's `Workspace` \
+                                 model: edit the model, not this file.";
 
 /// The prefix of the header line that carries the digest of the body.
 const DIGEST: &str = "# blake3: ";
@@ -428,8 +444,11 @@ fn inside(
     (!stated.as_os_str().is_empty()).then_some(below)
 }
 
-/// The paths a verb walks and the packages they reach, each path inside a
-/// package or naming a workspace widened to what it stands for.
+/// The paths that a verb walks, the packages that they reach and the
+/// workspaces that they gather.
+///
+/// The function widens each path in a package to the package, and each path
+/// that names a workspace to its members.
 ///
 /// # Specification
 /// - requires: `working` is the process's working directory, against which a
@@ -450,7 +469,10 @@ fn inside(
 ///   relative to it, `.` for `working` itself, as a path a caller gives would
 ///   be.
 /// - provides: the paths `check`, `test` and `fmt` walk, and the packages whose
-///   locks and manifests `check` reconciles.
+///   locks and manifests `check` reconciles. Also the workspaces whose
+///   manifests `check` reconciles. Each workspace that the verb works on is in
+///   the list one time, as [`Workspace::members`] gathers it. The order is the
+///   order in which the paths reach them.
 /// - fails: [`Unpathed::Nowhere`] when no path is given and `working` is in no
 ///   package and no workspace; [`Unpathed::Unmembered`] when a workspace the
 ///   verb works on names no packages.
@@ -470,7 +492,7 @@ fn inside(
 #[spec(
     captures: [given = paths.len()],
     ensures: |ret| match ret {
-        Ok((ref walked, ref packages)) => packages.iter().all(|package|
+        Ok((ref walked, ref packages, _)) => packages.iter().all(|package|
                 !package.sources().is_dir()
                 || walked.iter().any(|path| working.join(path).canonicalize()
                     .is_ok_and(|canonical| canonical == package.sources()))),
@@ -482,7 +504,7 @@ fn inside(
 pub fn packaged(
     paths: Vec<PathBuf>,
     working: &Path,
-) -> Result<(Vec<PathBuf>, Vec<Package>), Unpathed>
+) -> Result<Walked, Unpathed>
 {
     let base = working
         .canonicalize()
@@ -494,11 +516,19 @@ pub fn packaged(
         Ok(below) => below.to_path_buf(),
         Err(_) => path.to_path_buf(),
     };
-    let members = |workspace: &Workspace| {
-        workspace.members().map_err(|why| Unpathed::Unmembered {
+    let mut gathered: Vec<Gathered> = Vec::new();
+    let mut members = |workspace: &Workspace| {
+        let (members, read) = workspace.members().map_err(|why| Unpathed::Unmembered {
             workspace: workspace.source(),
             why,
-        })
+        })?;
+        if gathered
+            .iter()
+            .all(|standing| standing.workspace != *workspace)
+        {
+            gathered.push(read);
+        }
+        Ok(members)
     };
     let mut walked: Vec<PathBuf> = Vec::new();
     let mut packages: Vec<Package> = Vec::new();
@@ -522,7 +552,7 @@ pub fn packaged(
         else {
             return Err(Unpathed::Nowhere { working: base });
         }
-        return Ok((walked, packages));
+        return Ok((walked, packages, gathered));
     }
     for path in paths {
         let Maybe::Present(package) = Package::discover(&path)
@@ -549,8 +579,12 @@ pub fn packaged(
             walked.push(path);
         }
     }
-    Ok((walked, packages))
+    Ok((walked, packages, gathered))
 }
+
+/// The paths that [`packaged`] gives a verb to walk, the packages that they
+/// reach and the workspaces that they gather.
+pub type Walked = (Vec<PathBuf>, Vec<Package>, Vec<Gathered>);
 
 /// Why a verb has no paths to walk.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -775,6 +809,79 @@ impl Manifest
         }
         format!(
             "{WRITTEN}\n{DIGEST}{}\n{body}",
+            blake3::hash(body.as_bytes()).to_hex()
+        )
+    }
+}
+
+/// What the model of a workspace states for its manifest, and the members
+/// that the workspace names.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct WorkspaceManifest
+{
+    /// `Workspace.version`.
+    version: String,
+    /// Each member, as `members` names it, in order.
+    members: Vec<String>,
+    /// `Workspace.gandr`, `Workspace.features` and `Workspace.systems`.
+    toolchain: Toolchain,
+}
+
+impl WorkspaceManifest
+{
+    /// The manifest of a workspace. Its model states `version` and
+    /// `toolchain`, and the workspace names `members`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        version: String,
+        members: Vec<String>,
+        toolchain: Toolchain,
+    ) -> Self
+    {
+        Self {
+            version,
+            members,
+            toolchain,
+        }
+    }
+
+    /// The manifest as the checker writes it: the header, then the body.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the [`WORKSPACE_WRITTEN`] line comes first. The digest line
+    ///   follows. It holds the BLAKE3 digest of the body in lowercase
+    ///   hexadecimal. The body follows. It starts with a `[workspace]` table.
+    ///   In this table, `version` is a TOML basic string. `members` is an array
+    ///   of the members in order, one on each line, as in the `modules` of a
+    ///   package manifest. The `[toolchain]` table of a package manifest comes
+    ///   last. The same manifest always gives the same bytes.
+    /// - provides: the file [`reconcile`] writes beside `workspace.gandr`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a workspace's model renders its version, its members
+    ///   and its toolchain.
+    /// - witness: `tests::package::a_workspace_s_packages_share_one_lock_4921`
+    #[spec(ensures: |ref ret| ret.starts_with(WORKSPACE_WRITTEN)
+        && matches!(Split::of(Manifested(ret), Opening(WORKSPACE_WRITTEN)).authorship(), Authorship::Checker))]
+    #[inline]
+    #[must_use]
+    pub fn render(&self) -> String
+    {
+        let mut body = format!(
+            "\n[workspace]\nversion = {}\nmembers = {}\n",
+            Basic(&self.version),
+            Listed(&self.members)
+        );
+        let _written = write!(body, "{}", self.toolchain);
+        format!(
+            "{WORKSPACE_WRITTEN}\n{DIGEST}{}\n{body}",
             blake3::hash(body.as_bytes()).to_hex()
         )
     }
@@ -1614,6 +1721,59 @@ impl Held for Manifest
     type Fault = ManifestFault;
 
     const OPENING: &'static str = WRITTEN;
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn rendered(&self) -> String
+    {
+        self.render()
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn absent(&self) -> Absence
+    {
+        Absence::Written
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn edited(&self) -> ManifestFault
+    {
+        ManifestFault::Drifted
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn differing(
+        &self,
+        _body: Body<'_>,
+    ) -> Result<Differing, ManifestFault>
+    {
+        Ok(Differing::Rewritten)
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn unreadable(error: io::Error) -> ManifestFault
+    {
+        ManifestFault::Io(error)
+    }
+}
+
+/// The manifest of a workspace: a file that the checker writes from the
+/// `Workspace` model. A change to the model rewrites the file, as for the
+/// manifest of a package.
+impl Held for WorkspaceManifest
+{
+    type Fault = ManifestFault;
+
+    const OPENING: &'static str = WORKSPACE_WRITTEN;
 
     /// # Specification
     /// trivial.

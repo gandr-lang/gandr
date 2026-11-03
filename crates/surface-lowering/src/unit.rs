@@ -236,7 +236,7 @@ pub enum ImportTarget
     /// A source whose imports lead back to the importer.
     Cycle,
     /// A module path whose head names nothing among the package's sources, or
-    /// a coordinate the package's `gandr.lock` does not yet record (#533 p3,
+    /// a coordinate the package's lock does not yet record (#533 p3,
     /// #4527). The import binds nothing, and a name read through it is refused
     /// at that name.
     Unlocked,

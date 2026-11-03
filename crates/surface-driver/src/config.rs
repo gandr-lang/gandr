@@ -18,11 +18,11 @@
 //! ```
 //!
 //! The key path is the editor's `gandr.presentation.spelling` setting, and a
-//! package's `gandr.toml` carries the same table, which the dispatcher's
-//! presentation reader reads for both. The global `--spelling` flag outranks
-//! the file for one invocation, and a project's manifest and an editor's own
-//! setting outrank it for that editor's connection. A file that is absent
-//! configures nothing; one that cannot be read, is not TOML, or names a
+//! package's `package.gandr.toml` carries the same table, which the
+//! dispatcher's presentation reader reads for both. The global `--spelling`
+//! flag outranks the file for one invocation, and a project's manifest and an
+//! editor's own setting outrank it for that editor's connection. A file that is
+//! absent configures nothing; one that cannot be read, is not TOML, or names a
 //! spelling there is none of is a fault: the driver says so on standard
 //! error, `gandr: <path>: <fault>`, and exits `2` before any verb runs.
 //!

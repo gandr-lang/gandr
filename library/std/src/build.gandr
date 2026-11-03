@@ -1,7 +1,8 @@
 // `std.build`: the theories a project's manifest comes from. A package's
 // `package.gandr` declares `module Package : Model(Gandr.Package)`, and a
 // workspace's `workspace.gandr` declares a `Model(Gandr.Workspace)`.
-// `gandr check` writes each package's `gandr.toml` from its model.
+// `gandr check` writes the manifest of each from its model. It writes
+// `package.gandr.toml` or `workspace.gandr.toml` beside the source.
 //
 // No theory here states a law. An operation of each is a field the manifest
 // records, and no conversion relates two of them. An operation carrying
@@ -13,8 +14,8 @@
 // What a package depends on is not inert, and no model states it. A source
 // imports a dependency by its coordinate, `import "path:../hello" as hello;`.
 // `gandr check` commits each coordinate's address to the store and locks the
-// pointer to it in `gandr.lock`. The package's address digests those
-// addresses.
+// pointer to it in the lock of the package. The package's address digests
+// those addresses.
 //
 // Nor is what a package asks of the toolchain inert. `gandr check` refuses a
 // package whose `Toolchain` the running toolchain does not meet. The
@@ -61,7 +62,7 @@ pub theory Project where {
 }
 
 /// How a package's sources look: the `[presentation]` table of its
-/// `gandr.toml`. The user's configuration file writes the same table, and a
+/// `package.gandr.toml`. The user's configuration file writes the same table, and a
 /// language server reads the package's table over the user's. Each field is
 /// inert: how a source looks is not what it is.
 pub theory Presentation where {
@@ -73,8 +74,8 @@ pub theory Presentation where {
 
 /// A package: the project a `package.gandr` roots. The model its
 /// `module Package : Model(Gandr.Package)` declares describes it, and the
-/// checker writes the project's `gandr.toml` from that model. Its own fields
-/// are inert: its name, its authors, its documentation and its presentation
+/// checker writes the project's `package.gandr.toml` from that model. Its own
+/// fields are inert: its name, its authors, its documentation and its presentation
 /// leave its address alone. What it asks of the toolchain does not.
 pub theory Gandr.Package where {
   include Project;
@@ -106,8 +107,9 @@ pub theory Gandr.Package where {
 
 /// A workspace: the packages a `workspace.gandr` gathers, described by the
 /// model its `module Workspace : Model(Gandr.Workspace)` is, beside the
-/// `members` it names. Its members' package sources import it and read what it
-/// states.
+/// `members` it names. The checker writes the `workspace.gandr.toml` of the
+/// workspace from this model. Its members' package sources import it and read
+/// what it states.
 pub theory Gandr.Workspace where {
   include Project;
 }

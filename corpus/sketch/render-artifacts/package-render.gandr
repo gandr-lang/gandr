@@ -1,8 +1,9 @@
 /// A package's manifest rendered from its model by a metaprogram in the
 /// library.
 ///
-/// Today Rust writes each package's `gandr.toml`. A render in `std.build`
-/// moves that machinery into the library, where a reader checks it as gandr.
+/// Today Rust writes each package's `package.gandr.toml`. A render in
+/// `std.build` moves that machinery into the library, where a reader checks it
+/// as gandr.
 ///
 /// `@[render(std.build.manifest)]` names the render. `manifest` reads the
 /// module as a value, its signature a theory and its definitions a model, and

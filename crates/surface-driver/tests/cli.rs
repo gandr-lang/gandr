@@ -8,6 +8,7 @@
 //! The process-level cases, in a `cfg(test)` module so the crate's lint wall
 //! reads them as test code rather than as shipping code.
 
+use core::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
@@ -2053,12 +2054,12 @@ fn a_verb_with_no_path_checks_the_package_it_runs_in_2687()
     }
 }
 
-/// #2687, #3030: `check` writes a package's `gandr.toml` from its model,
-/// leaves it unchanged when the model is, rewrites it when the model changes,
-/// and refuses a hand edit as drift, leaving it as it stands; a package source
-/// that states no `version`, and one that does not settle, write none. Each
-/// reconciled manifest's line carries the package's address, which an edit to
-/// an inert field leaves and an edit to a module's item moves.
+/// #2687, #3030: `check` writes a package's `package.gandr.toml` from its
+/// model, leaves it unchanged when the model is, rewrites it when the model
+/// changes, and refuses a hand edit as drift, leaving it as it stands; a
+/// package source that states no `version`, and one that does not settle, write
+/// none. Each reconciled manifest's line carries the package's address, which
+/// an edit to an inert field leaves and an edit to a module's item moves.
 #[test]
 fn a_package_s_manifest_is_written_and_drift_refused_2687()
 {
@@ -2071,7 +2072,7 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
         Path::new("hello/src/text/greet.gandr"),
         Text::from("def greeting = \"hello, world\" ;\n"),
     );
-    let manifest = scratch.0.join("hello/gandr.toml");
+    let manifest = scratch.0.join("hello/package.gandr.toml");
     let checked = || {
         let mut command = gandr(&[Path::new("check"), &leaf]);
         command.current_dir(&scratch.0);
@@ -2152,7 +2153,7 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
     let drifted = checked();
     assert_eq!(code(&drifted), Code(1_i32), "a hand edit unsettles the run");
     assert!(
-        stderr(&drifted).contains("gandr.toml: drifted"),
+        stderr(&drifted).contains("package.gandr.toml: drifted"),
         "{}",
         stderr(&drifted)
     );
@@ -2195,7 +2196,7 @@ fn a_package_s_toolchain_is_met_or_refused_by_its_clause_3135()
         Path::new("hello/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}").as_str()),
     );
-    let manifest = scratch.0.join("hello/gandr.toml");
+    let manifest = scratch.0.join("hello/package.gandr.toml");
     let checked = || {
         let mut command = gandr(&[Path::new("check"), &library]);
         command.current_dir(&scratch.0);
@@ -2248,12 +2249,13 @@ fn a_package_s_toolchain_is_met_or_refused_by_its_clause_3135()
     }
 }
 
-/// #3072, #4527: `check` of a package importing a sibling by its coordinate
-/// writes its `gandr.lock` once, through which its source reads the sibling,
-/// and its manifest with no dependency table, and leaves the lock unchanged on
-/// a second run; a content edit to the sibling is refused as
-/// `LockDrift.path:../hello`, the lock left byte for byte, until `gandr lock`
-/// rewrites it and `check` settles again.
+/// #3072, #4527, #4921: a package in no workspace imports a sibling by its
+/// coordinate. `check` of the package writes its `package.gandr.lock` one time.
+/// Its source reads the sibling through this lock. The manifest has no
+/// dependency table. A second run keeps the lock. After a content edit to the
+/// sibling, the check refuses the lock as `LockDrift.path:../hello`. The lock
+/// stays byte for byte until `gandr lock` rewrites it. Then `check` settles
+/// again.
 #[test]
 fn check_writes_a_lock_and_refuses_its_drift_3072()
 {
@@ -2273,7 +2275,7 @@ fn check_writes_a_lock_and_refuses_its_drift_3072()
             .as_str(),
         ),
     );
-    let lock = scratch.0.join("sibling/gandr.lock");
+    let lock = scratch.0.join("sibling/package.gandr.lock");
     let verb = |name: &str| {
         let mut command = gandr(&[Path::new(name), Path::new("sibling")]);
         command.current_dir(&scratch.0);
@@ -2295,8 +2297,8 @@ fn check_writes_a_lock_and_refuses_its_drift_3072()
         stdout(&written)
     );
     let first = std::fs::read_to_string(&lock).expect("the lock reads");
-    let manifest =
-        std::fs::read_to_string(scratch.0.join("sibling/gandr.toml")).expect("the manifest reads");
+    let manifest = std::fs::read_to_string(scratch.0.join("sibling/package.gandr.toml"))
+        .expect("the manifest reads");
     assert!(
         !manifest.contains("[dependencies]"),
         "the manifest renders no dependency table: {manifest}"
@@ -2320,7 +2322,7 @@ fn check_writes_a_lock_and_refuses_its_drift_3072()
     let drifted = verb("check");
     assert_eq!(code(&drifted), Code(1_i32), "drift unsettles the run");
     assert!(
-        stderr(&drifted).contains("gandr.lock: LockDrift.path:../hello: "),
+        stderr(&drifted).contains("package.gandr.lock: LockDrift.path:../hello: "),
         "{}",
         stderr(&drifted)
     );
@@ -2449,8 +2451,8 @@ fn a_gh_coordinate_is_fetched_locked_and_read_again_4714()
     );
     let locked = verb("lock");
     assert_eq!(code(&locked), Code(0_i32), "{}", stderr(&locked));
-    let lock =
-        std::fs::read_to_string(scratch.0.join("sibling/gandr.lock")).expect("the lock reads");
+    let lock = std::fs::read_to_string(scratch.0.join("sibling/package.gandr.lock"))
+        .expect("the lock reads");
     assert!(
         lock.contains(&format!(
             "\"gh:acme-org/hello\" = {{ revision = \"{revision}\", pointer = "
@@ -2474,7 +2476,7 @@ fn a_gh_coordinate_is_fetched_locked_and_read_again_4714()
         "the check fetches the recorded revision again"
     );
     assert_eq!(
-        std::fs::read_to_string(scratch.0.join("sibling/gandr.lock")).ok(),
+        std::fs::read_to_string(scratch.0.join("sibling/package.gandr.lock")).ok(),
         Some(lock),
         "no check moves the lock"
     );
@@ -2513,8 +2515,8 @@ fn a_package_s_lock_points_into_the_store_the_run_opens_3157()
     };
     let first = check();
     assert_eq!(code(&first), Code(0_i32), "{}", stderr(&first));
-    let lock =
-        std::fs::read_to_string(scratch.0.join("sibling/gandr.lock")).expect("the lock reads");
+    let lock = std::fs::read_to_string(scratch.0.join("sibling/package.gandr.lock"))
+        .expect("the lock reads");
     let pointer = lock
         .lines()
         .find_map(|line| line.strip_prefix("\"path:../hello\" = { pointer = \""))
@@ -2533,7 +2535,7 @@ fn a_package_s_lock_points_into_the_store_the_run_opens_3157()
     let again = check();
     assert_eq!(code(&again), Code(0_i32), "{}", stderr(&again));
     assert_eq!(
-        std::fs::read_to_string(scratch.0.join("sibling/gandr.lock"))
+        std::fs::read_to_string(scratch.0.join("sibling/package.gandr.lock"))
             .ok()
             .as_ref(),
         Some(&lock),
@@ -2755,11 +2757,13 @@ fn a_dependent_re_admits_its_dependency_s_export_3285()
     );
 }
 
-/// #2687: a workspace's `check` with no path, at its root or in a directory
-/// of it in no package, checks its source and each member it names and writes
-/// each member's `gandr.toml` from that member's own model, though both
-/// package sources import the workspace and declare the same paths; a member
-/// rooting no package refuses the verb before any source is read.
+/// #2687, #4921: a `check` with no path at the root of a workspace, or in a
+/// directory of it in no package, checks the source of the workspace and each
+/// member that it names. It writes the `package.gandr.toml` of each member
+/// from the model of that member. Both package sources import the workspace
+/// and declare the same paths. The check also writes `workspace.gandr.toml`
+/// from the model of the workspace. A member that roots no package stops the
+/// verb before it reads a source.
 #[test]
 fn a_workspace_checks_each_member_it_names_2687()
 {
@@ -2802,8 +2806,12 @@ fn a_workspace_checks_each_member_it_names_2687()
         ran(command)
     };
     for directory in [".", "docs"] {
-        for member in ["hello", "tools"] {
-            let _removed = std::fs::remove_file(scratch.0.join(member).join("gandr.toml"));
+        for written in [
+            "hello/package.gandr.toml",
+            "tools/package.gandr.toml",
+            "workspace.gandr.toml",
+        ] {
+            let _removed = std::fs::remove_file(scratch.0.join(written));
         }
         let checked = within(directory);
         assert_eq!(code(&checked), Code(0_i32), "{}", stderr(&checked));
@@ -2813,13 +2821,23 @@ fn a_workspace_checks_each_member_it_names_2687()
             stdout(&checked)
         );
         for (member, name) in [("hello", "hello"), ("tools", "tools")] {
-            let manifest = std::fs::read_to_string(scratch.0.join(member).join("gandr.toml"))
-                .expect("each member's manifest is written");
+            let manifest =
+                std::fs::read_to_string(scratch.0.join(member).join("package.gandr.toml"))
+                    .expect("each member's manifest is written");
             assert!(
                 manifest.contains(&format!("name = \"{name}\"\nversion = \"0.2.0\"\n")),
                 "`{member}`'s manifest states its own model from `{directory}`: {manifest}"
             );
         }
+        let manifest = std::fs::read_to_string(scratch.0.join("workspace.gandr.toml"))
+            .expect("the workspace's manifest is written");
+        assert!(
+            manifest.contains(
+                "\n[workspace]\nversion = \"0.2.0\"\nmembers = [\n  \"hello\",\n  \"tools\",\n]\n"
+            ),
+            "the workspace's manifest states its model and its members from `{directory}`: \
+             {manifest}"
+        );
     }
     std::fs::write(&workspace, stated("#[\"hello\", \"docs\"]")).expect("a member is misnamed");
     let refused = within(".");
@@ -2832,37 +2850,66 @@ fn a_workspace_checks_each_member_it_names_2687()
     );
 }
 
-/// #2687: the witness workspace's committed `gandr.toml` files are the ones
-/// its members' models render: checking the workspace leaves each unchanged.
-/// #3072: `tools`' committed `gandr.lock` is the one its dependency on
-/// `hello` resolves to wherever the tree is checked out, so the check leaves
-/// it unchanged too.
+/// #2687, #3072, #4921: the tree commits the manifests and the lock of the
+/// witness workspace. Its models and the coordinates of its members give the
+/// same files in each checkout. A check of the workspace keeps each file. A
+/// check of a copy of its sources writes each file again, byte for byte. The
+/// lock is the one `workspace.gandr.lock` that the members share, and it holds
+/// the table of `tools`.
 #[test]
-fn the_witness_project_s_manifest_is_its_model_s_2687()
+fn the_witness_workspace_s_manifests_are_its_models_2687()
 {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/projects");
+    let written = [
+        "hello/package.gandr.toml",
+        "tools/package.gandr.toml",
+        "workspace.gandr.toml",
+        "workspace.gandr.lock",
+    ];
     let output = ran(gandr(&[Path::new("check"), &workspace]));
     assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
     let printed = stdout(&output);
     let reconciled: Vec<&str> = printed
         .lines()
-        .filter(|line| line.starts_with("manifest: "))
+        .filter(|line| line.starts_with("manifest: ") || line.starts_with("lock: "))
         .collect();
-    assert_eq!(reconciled.len(), 2, "{printed}");
-    assert!(
-        reconciled
-            .iter()
-            .all(|line| line.contains("gandr.toml: unchanged (address ")),
-        "{printed}"
-    );
-    let locked: Vec<&str> = printed
-        .lines()
-        .filter(|line| line.starts_with("lock: "))
-        .collect();
-    assert!(
-        matches!(locked.as_slice(), [line] if line.ends_with("projects/tools/gandr.lock: unchanged")),
-        "{printed}"
-    );
+    assert_eq!(reconciled.len(), 4, "{printed}");
+    let mut wanted = String::new();
+    for file in written {
+        wanted.clear();
+        let _formatted = write!(wanted, "projects/{file}: unchanged");
+        assert!(
+            reconciled.iter().any(|line| line.contains(&wanted)),
+            "`{file}` is unchanged: {printed}"
+        );
+    }
+    let scratch = Scratch::new(Path::new("witness"));
+    let mut pending = Vec::from([PathBuf::new()]);
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(workspace.join(&directory)).expect("the witness reads") {
+            let relative = directory.join(entry.expect("an entry reads").file_name());
+            let path = workspace.join(&relative);
+            if path.is_dir() {
+                pending.push(relative);
+            }
+            else if path
+                .extension()
+                .is_some_and(|extension| extension == "gandr")
+            {
+                let text = std::fs::read_to_string(&path).expect("a source reads");
+                let _copied = scratch.file(&relative, Text::from(text.as_str()));
+            }
+        }
+    }
+    let copied = ran(gandr(&[Path::new("check"), &scratch.0]));
+    assert_eq!(code(&copied), Code(0_i32), "{}", stderr(&copied));
+    for file in written {
+        assert_eq!(
+            std::fs::read_to_string(scratch.0.join(file)).ok(),
+            std::fs::read_to_string(workspace.join(file)).ok(),
+            "the copy writes `{file}` as the tree commits it"
+        );
+    }
 }
 
 /// #3558: `--admit native-conversion` takes the emitter tier's answer for
@@ -5213,7 +5260,9 @@ fn described_toolchain(
 /// A package's constraint chooses among the installed toolchains: the default
 /// when it meets it, else the highest version that does; a pin naming one
 /// that does not is refused by its source, and a constraint none meets by
-/// each clause. Each toolchain describes itself once per image.
+/// each clause. Each toolchain describes itself once per image. #4921: the
+/// manifest of a workspace constrains a directory in no package below it. The
+/// proxy reads the manifest of a package in the same directory first.
 #[cfg(unix)]
 #[test]
 fn a_package_s_constraint_chooses_among_the_toolchains()
@@ -5244,7 +5293,7 @@ fn a_package_s_constraint_chooses_among_the_toolchains()
     }
     let manifest = |gandr: &str| {
         std::fs::write(
-            package.join("gandr.toml"),
+            package.join("package.gandr.toml"),
             format!(
                 "[toolchain]\ngandr = \"{gandr}\"\nfeatures = [\n  \"shared\",\n]\nsystems = []\n"
             ),
@@ -5285,7 +5334,7 @@ fn a_package_s_constraint_chooses_among_the_toolchains()
         .canonicalize()
         .expect("the pin resolves");
     let constrained = package
-        .join("gandr.toml")
+        .join("package.gandr.toml")
         .canonicalize()
         .expect("the manifest resolves");
     let (pinned, _, refusal) = checked(&package);
@@ -5309,6 +5358,27 @@ fn a_package_s_constraint_chooses_among_the_toolchains()
         )),
         "{refusal}"
     );
+    let workspace = scratch.file(
+        Path::new("workspace.gandr.toml"),
+        Text::from(
+            "[toolchain]\ngandr = \">= 0.2\"\nfeatures = [\n  \"shared\",\n]\nsystems = []\n",
+        ),
+    );
+    assert_eq!(
+        checked(&scratch.0),
+        (Code(0_i32), String::from("ran new check\n"), String::new()),
+        "a workspace's manifest constrains a directory in no package"
+    );
+    let _beside = scratch.file(
+        Path::new("package.gandr.toml"),
+        Text::from("[toolchain]\ngandr = \">= 0.1\"\nfeatures = []\nsystems = []\n"),
+    );
+    assert_eq!(
+        checked(&scratch.0),
+        (Code(0_i32), String::from("ran old check\n"), String::new()),
+        "a package's manifest is read before the workspace's beside it"
+    );
+    std::fs::remove_file(&workspace).expect("the workspace's manifest is removed");
     let describe = ran(gandr(&["toolchain", "describe"]));
     assert_eq!(code(&describe), Code(0_i32), "{}", stderr(&describe));
     let description = stdout(&describe);

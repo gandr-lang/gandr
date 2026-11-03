@@ -16,19 +16,36 @@
 //!
 //! # The lock records pointers, and the address never records a coordinate
 //!
-//! `gandr.lock` at the package's root maps each coordinate to a content pointer
-//! into the store, the one store of the storage tier a run opens: resolving a
-//! dependency commits its address and its signature key there, and the lock
-//! records the pointer the value plane returns, as `<digest>:<offset>`. The
-//! checker writes the lock once, and every import of the coordinate reads it
-//! back, so two sources importing one coordinate read one address. A lock that
-//! says another thing than what the coordinates resolve to is refused as
-//! drift, coordinate by coordinate, until `gandr lock` writes it again, so a
-//! dependency never changes under its dependent unseen. The package's own
-//! address digests the addresses its lock's pointers name, read back through
-//! the store, and never their coordinates or the aliases its imports bind:
-//! where a dependency is found and what it is called are not what the package
-//! is.
+//! The lock maps each coordinate to a content pointer into the store, the one
+//! store of the storage tier a run opens: resolving a dependency commits its
+//! address and its signature key there, and the lock records the pointer the
+//! value plane returns, as `<digest>:<offset>`. The checker writes the lock
+//! once, and every import of the coordinate reads it back, so two sources
+//! importing one coordinate read one address. A lock that says another thing
+//! than what the coordinates resolve to is refused as drift, coordinate by
+//! coordinate, until `gandr lock` writes it again, so a dependency never
+//! changes under its dependent unseen. The package's own address digests the
+//! addresses its lock's pointers name, read back through the store, and never
+//! their coordinates or the aliases its imports bind: where a dependency is
+//! found and what it is called are not what the package is.
+//!
+//! # A workspace's packages share one lock
+//!
+//! A package in no workspace keeps its lock as `package.gandr.lock` beside its
+//! package source. A package below a workspace keeps its lock as a table in
+//! `workspace.gandr.lock`, beside `workspace.gandr`. The key of the table is
+//! the path from the root of the workspace to the root of the package. A
+//! `path:` coordinate reads from the root of its dependent. Thus two members
+//! can write one coordinate for two different packages, and each member needs
+//! its own table. Each package reconciles its own table. It does not change
+//! the other tables.
+//!
+//! **Choice.** A package below the directory of a workspace shares the lock of
+//! the workspace. This is also true when `members` does not name the package.
+//! Cargo also keeps one `Cargo.lock` for all the packages below the root of
+//! its workspace. To read membership, the checker must run the source of the
+//! workspace. Each import of a coordinate reads the lock. Thus the checker
+//! finds the file from the location of the package, and never from a run.
 //!
 //! # References
 //!
@@ -91,16 +108,30 @@ use crate::component::ImportBase;
 use crate::component::ImportPath;
 use crate::component::Unshadowed;
 use crate::component::path_imports;
+use crate::workspace::Workspace;
 
-/// The file name of the lock the checker writes at a package's root.
-pub const LOCK: &str = "gandr.lock";
+/// The file name of the lock that the checker writes beside the source of a
+/// package in no workspace.
+pub const LOCK: &str = "package.gandr.lock";
+
+/// The file name of the lock that the checker writes beside the source of a
+/// workspace. The lock has one table for each package below the workspace.
+pub const WORKSPACE_LOCK: &str = "workspace.gandr.lock";
 
 /// The line that opens a lock the checker wrote.
 const WRITTEN: &str = "# Written by `gandr check` from the coordinates the package's sources \
                        import: relock with `gandr lock`, never by hand.";
 
+/// The first line of a workspace lock that the checker wrote.
+const SHARED: &str = "# Written by `gandr check` from the coordinates the workspace's packages' \
+                      sources import: relock with `gandr lock`, never by hand.";
+
 /// The line that opens the lock's table.
 const TABLE: &str = "[dependencies]";
+
+/// The start of the line that opens the table of a package in a workspace
+/// lock. The key of the package follows it.
+const MEMBER: &str = "[dependencies.";
 
 /// The head every module path names the standard library by.
 pub const STANDARD: &str = "std";
@@ -492,6 +523,23 @@ impl Lock
     pub fn render(&self) -> String
     {
         let mut body = format!("\n{TABLE}\n");
+        self.entries(&mut body);
+        format!(
+            "{WRITTEN}\n{DIGEST}{}\n{body}",
+            blake3::hash(body.as_bytes()).to_hex()
+        )
+    }
+
+    /// Write one line for each coordinate of the lock to `body`. The lines are
+    /// the lines of the table that [`Lock::render`] writes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn entries(
+        &self,
+        body: &mut String,
+    )
+    {
         let mut key = String::new();
         for (coordinate, &Locked { pointer, revision }) in &self.0 {
             key.clear();
@@ -507,20 +555,18 @@ impl Lock
                 pointer.offset()
             );
         }
-        format!(
-            "{WRITTEN}\n{DIGEST}{}\n{body}",
-            blake3::hash(body.as_bytes()).to_hex()
-        )
     }
 
-    /// The lock standing at `package`'s root, as the checker wrote it.
+    /// The lock that stands for `package`, as the checker wrote it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the lock [`Lock::render`] would write as the file at the
-    ///   package's [`LOCK`] stands; `Unwritten` when no file stands there or it
-    ///   cannot be read, `Edited` when its header does not carry its body's
-    ///   digest, and `Unread` when its body is not a render.
+    ///   package's [`Package::lock`] stands. For a package below a workspace,
+    ///   the lock is its table in the workspace lock. `Unwritten` if no file
+    ///   stands there, if the file cannot be read, or if the file has no table
+    ///   for the package. `Edited` if the header does not hold the digest of
+    ///   the body. `Unread` if the body is not a render.
     /// - provides: the lock every import of a coordinate, and every check of a
     ///   dependency's own lock, reads.
     /// - fails: never; a missing or foreign file is the typed absence.
@@ -534,15 +580,30 @@ impl Lock
     #[inline]
     pub fn read(package: &Package) -> Maybe<Self, lock_file::Absent>
     {
-        let Ok(text) = std::fs::read_to_string(package.root().join(LOCK))
+        let (path, member) = match shared(package) {
+            Some((path, member)) => (path, Some(member)),
+            None => (package.root().join(LOCK), None),
+        };
+        let Ok(text) = std::fs::read_to_string(path)
         else {
             return Maybe::Absent(lock_file::Absent::Unwritten);
         };
-        let split = Split::of(Manifested(&text), Opening(WRITTEN));
+        let opening = if member.is_some() { SHARED } else { WRITTEN };
+        let split = Split::of(Manifested(&text), Opening(opening));
         if matches!(split.authorship(), Authorship::Hand) {
             return Maybe::Absent(lock_file::Absent::Edited);
         }
-        parsed(Text(split.body)).map_or(Maybe::Absent(lock_file::Absent::Unread), Maybe::Present)
+        let read = match member {
+            None => parsed(Text(split.body)),
+            Some(member) => match tables(Text(split.body)) {
+                Some(mut tables) => match tables.remove(&member) {
+                    Some(lock) => Some(lock),
+                    None => return Maybe::Absent(lock_file::Absent::Unwritten),
+                },
+                None => None,
+            },
+        };
+        read.map_or(Maybe::Absent(lock_file::Absent::Unread), Maybe::Present)
     }
 }
 
@@ -559,31 +620,126 @@ fn parsed(body: Text<'_>) -> Option<Lock>
     }
     let mut lock = BTreeMap::new();
     for line in lines {
-        let (coordinate, Text(rest)) = Text(line).basic()?;
-        let coordinate = written(Text(&coordinate))?;
-        let rest = rest.strip_prefix(" = { ")?;
-        let (revision, rest) = match coordinate {
-            Coordinate::Path(_) => (None, rest),
-            Coordinate::GitHub(_) => {
-                let (revision, Written(rest)) =
-                    Revision::opening(Written(rest.strip_prefix("revision = \"")?))?;
-                (Some(revision), rest.strip_prefix("\", ")?)
-            },
-        };
-        let (digest, Text(rest)) = Text(rest.strip_prefix("pointer = \"")?).digest()?;
-        let (offset, rest) = rest.strip_prefix(':')?.split_once('"')?;
-        let parsed: u32 = offset.parse().ok()?;
-        let canonical = offset.bytes().all(|digit| digit.is_ascii_digit())
-            && (offset == "0" || !offset.starts_with('0'));
-        if rest != " }" || !canonical {
-            return None;
-        }
-        let _first = lock.insert(coordinate, Locked {
-            pointer: ContentPtr::new(ChunkDigest::from(digest.0), TokenOffset::from(parsed)),
-            revision,
-        });
+        let (coordinate, locked) = entry(Text(line))?;
+        let _first = lock.insert(coordinate, locked);
     }
     Some(Lock(lock))
+}
+
+/// The tables of a body that [`shared_render`] wrote: the lock of each package
+/// by its key. None for a different body.
+///
+/// # Specification
+/// trivial.
+fn tables(body: Text<'_>) -> Option<BTreeMap<String, Lock>>
+{
+    let mut tables = BTreeMap::new();
+    let mut lines = body.0.lines().peekable();
+    while let Some(blank) = lines.next() {
+        let (member, Text(rest)) = Text(lines.next()?.strip_prefix(MEMBER)?).basic()?;
+        if !blank.is_empty() || rest != "]" {
+            return None;
+        }
+        let mut lock = BTreeMap::new();
+        while let Some(line) = lines.next_if(|line| !line.is_empty()) {
+            let (coordinate, locked) = entry(Text(line))?;
+            let _first = lock.insert(coordinate, locked);
+        }
+        if lock.is_empty() || tables.insert(member, Lock(lock)).is_some() {
+            return None;
+        }
+    }
+    Some(tables)
+}
+
+/// One coordinate and what the lock records for it, from a line of a table
+/// that [`Lock::render`] wrote. None for a different line.
+///
+/// # Specification
+/// trivial.
+fn entry(line: Text<'_>) -> Option<(Coordinate, Locked)>
+{
+    let (coordinate, Text(rest)) = line.basic()?;
+    let coordinate = written(Text(&coordinate))?;
+    let rest = rest.strip_prefix(" = { ")?;
+    let (revision, rest) = match coordinate {
+        Coordinate::Path(_) => (None, rest),
+        Coordinate::GitHub(_) => {
+            let (revision, Written(rest)) =
+                Revision::opening(Written(rest.strip_prefix("revision = \"")?))?;
+            (Some(revision), rest.strip_prefix("\", ")?)
+        },
+    };
+    let (digest, Text(rest)) = Text(rest.strip_prefix("pointer = \"")?).digest()?;
+    let (offset, rest) = rest.strip_prefix(':')?.split_once('"')?;
+    let parsed: u32 = offset.parse().ok()?;
+    let canonical = offset.bytes().all(|digit| digit.is_ascii_digit())
+        && (offset == "0" || !offset.starts_with('0'));
+    if rest != " }" || !canonical {
+        return None;
+    }
+    Some((coordinate, Locked {
+        pointer: ContentPtr::new(ChunkDigest::from(digest.0), TokenOffset::from(parsed)),
+        revision,
+    }))
+}
+
+/// A workspace lock as the checker writes it. The header comes first. One table
+/// follows for each package that records a dependency, in the order of the
+/// keys.
+///
+/// # Specification
+/// - requires: each lock of `tables` records a coordinate.
+/// - ensures: the [`SHARED`] line comes first. The digest line follows. It
+///   holds the BLAKE3 digest of the body in lowercase hexadecimal. The body has
+///   a part for each package. Each part is a blank line, then
+///   `[dependencies."<key>"]` with the key as a basic string, then the lines
+///   that [`Lock::render`] writes in its table. [`tables`] reads the body back
+///   as `tables`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a member's table is written, keyed by its path, and read
+///   back as its lock.
+/// - witness: `tests::package::a_workspace_s_packages_share_one_lock_4921`
+#[spec(ensures: |ref ret| ret.starts_with(SHARED)
+    && matches!(Split::of(Manifested(ret), Opening(SHARED)).authorship(), Authorship::Checker))]
+fn shared_render(tables: &BTreeMap<String, Lock>) -> String
+{
+    let mut body = String::new();
+    for (member, lock) in tables {
+        let _opened = write!(body, "\n{MEMBER}{}]\n", Basic(member));
+        lock.entries(&mut body);
+    }
+    format!(
+        "{SHARED}\n{DIGEST}{}\n{body}",
+        blake3::hash(body.as_bytes()).to_hex()
+    )
+}
+
+/// The workspace lock that holds the table of `package`, and the key of the
+/// table. The function finds the workspace from the directory above the root
+/// of the package. The lock is [`WORKSPACE_LOCK`] beside the source of the
+/// workspace. The key is the path from the directory of the workspace to the
+/// root of the package, with `/` between its components. None for a package
+/// below no workspace, or for a path that is not Unicode.
+///
+/// # Specification
+/// trivial.
+fn shared(package: &Package) -> Option<(PathBuf, String)>
+{
+    let Maybe::Present(workspace) = Workspace::discover(package.root().parent()?)
+    else {
+        return None;
+    };
+    let below = package.root().strip_prefix(workspace.root()).ok()?;
+    let key = below
+        .components()
+        .map(|component| component.as_os_str().to_str())
+        .collect::<Option<Vec<&str>>>()?
+        .join("/");
+    Some((workspace.root().join(WORKSPACE_LOCK), key))
 }
 
 /// Text of a lock file, read from its start.
@@ -674,6 +830,21 @@ quenchant_shape::reason_enum! {
 
 impl Package
 {
+    /// The path of the file that holds the lock of the package. For a package
+    /// below a workspace, this is [`WORKSPACE_LOCK`] beside the source of the
+    /// workspace. The file holds the table of the package and the tables of
+    /// the other packages. For a package below no workspace, this is [`LOCK`]
+    /// at its root.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn lock(&self) -> PathBuf
+    {
+        shared(self).map_or_else(|| self.root().join(LOCK), |(path, _member)| path)
+    }
+
     /// The coordinates the package's sources import, each once.
     ///
     /// # Specification
@@ -1196,14 +1367,7 @@ impl Held for Lock
         if standing == *self {
             return Ok(Differing::Kept);
         }
-        let coordinates: BTreeSet<&Coordinate> = standing.0.keys().chain(self.0.keys()).collect();
-        Err(LockFault::Drifted(
-            coordinates
-                .into_iter()
-                .filter(|coordinate| standing.0.get(*coordinate) != self.0.get(*coordinate))
-                .cloned()
-                .collect(),
-        ))
+        Err(LockFault::Drifted(drifted(&standing, self)))
     }
 
     /// # Specification
@@ -1215,16 +1379,102 @@ impl Held for Lock
     }
 }
 
-/// Write the lock at `package`'s root as `lock`, whatever stands there.
+/// Each coordinate that `standing` and `held` record differently, in order.
+/// This includes each coordinate that only one of them records.
+///
+/// # Specification
+/// trivial.
+fn drifted(
+    standing: &Lock,
+    held: &Lock,
+) -> Vec<Coordinate>
+{
+    let coordinates: BTreeSet<&Coordinate> = standing.0.keys().chain(held.0.keys()).collect();
+    coordinates
+        .into_iter()
+        .filter(|coordinate| standing.0.get(*coordinate) != held.0.get(*coordinate))
+        .cloned()
+        .collect()
+}
+
+/// Make the lock of `package` agree with `lock`, as `gandr check` does.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the file at the package's [`LOCK`] is `lock`'s render: written
-///   and [`Reconciled::Written`] where none stood, overwritten and
-///   [`Reconciled::Rewritten`] where another stood, and
+/// - ensures: for a package below no workspace, the function does
+///   [`reconcile`](super::reconcile) of the file at its [`Package::lock`] with
+///   `lock`. For a package below a workspace, it works on the table of the
+///   package in the workspace lock. If the file or the table is absent and
+///   `lock` records a dependency, it adds the table and writes the file. The
+///   result is [`Reconciled::Written`]. If `lock` records no dependency, it
+///   writes nothing, and the result is [`Reconciled::Unchanged`]. A table that
+///   records `lock` is [`Reconciled::Unchanged`]. A different table is
+///   [`LockFault::Drifted`]. This fault names each coordinate that the table
+///   and `lock` record differently, in order. A file whose header does not hold
+///   the digest of its body, or whose body is not a render, is
+///   [`LockFault::Edited`]. The function does not change a file that has a
+///   fault. It never changes the table of a different package.
+/// - provides: the lock step of `gandr check`.
+/// - fails: drift, an edited file, or a file that cannot be read or written.
+/// - panics: none.
+/// - executable: none — the clause is about the file, which the witnesses
+///   observe on disk.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a member's table is written once and kept, another
+///   member's run leaves it, and a table recording another lock is drift.
+/// - witness: `tests::package::a_workspace_s_packages_share_one_lock_4921`
+#[inline]
+pub fn reconcile_lock(
+    package: &Package,
+    lock: &Lock,
+) -> Result<Reconciled, LockFault>
+{
+    let Some((path, member)) = shared(package)
+    else {
+        return super::reconcile(&package.root().join(LOCK), lock);
+    };
+    let mut tables = match std::fs::read_to_string(&path) {
+        Ok(text) => {
+            let split = Split::of(Manifested(&text), Opening(SHARED));
+            if matches!(split.authorship(), Authorship::Hand) {
+                return Err(LockFault::Edited);
+            }
+            tables(Text(split.body)).ok_or(LockFault::Edited)?
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => BTreeMap::new(),
+        Err(error) => return Err(LockFault::Io(error)),
+    };
+    match tables.get(&member) {
+        Some(standing) if standing == lock => Ok(Reconciled::Unchanged),
+        Some(standing) => Err(LockFault::Drifted(drifted(standing, lock))),
+        None if lock.0.is_empty() => Ok(Reconciled::Unchanged),
+        None => {
+            let _absent = tables.insert(member, lock.clone());
+            std::fs::write(&path, shared_render(&tables))
+                .map(|()| Reconciled::Written)
+                .map_err(LockFault::Io)
+        },
+    }
+}
+
+/// Write `package`'s lock as `lock`, whatever stands there.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the file at the package's [`Package::lock`] holds `lock`'s
+///   render: written and [`Reconciled::Written`] where none stood, overwritten
+///   and [`Reconciled::Rewritten`] where another stood, and
 ///   [`Reconciled::Unchanged`] where it already was. A `lock` recording no
 ///   dependency leaves no file: one standing is removed and is
-///   [`Reconciled::Rewritten`].
+///   [`Reconciled::Rewritten`]. For a package below a workspace, the render is
+///   the workspace lock. In it, the table of the package is `lock`, or the
+///   function removes the table if `lock` records nothing. The other tables
+///   stay as they are. If the checker did not write the file, the function
+///   keeps no other table. It removes a file that has no table.
 /// - provides: `gandr lock`.
 /// - fails: a file that cannot be read, written or removed.
 /// - panics: none.
@@ -1236,29 +1486,56 @@ impl Held for Lock
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a drifted lock is rewritten, and `gandr check` then finds
-///   it unchanged.
+///   it unchanged; relocking a member of a workspace leaves the other's table,
+///   and relocking the last table away removes the file.
 /// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
+/// - witness: `tests::package::a_workspace_s_packages_share_one_lock_4921`
 #[inline]
 pub fn relock(
     package: &Package,
     lock: &Lock,
 ) -> Result<Reconciled, LockFault>
 {
-    let path = package.root().join(LOCK);
+    let (path, member) = match shared(package) {
+        Some((path, member)) => (path, Some(member)),
+        None => (package.root().join(LOCK), None),
+    };
     let standing = match std::fs::read_to_string(&path) {
         Ok(standing) => Some(standing),
         Err(error) if error.kind() == io::ErrorKind::NotFound => None,
         Err(error) => return Err(LockFault::Io(error)),
     };
-    if lock.0.is_empty() {
+    let rendered = member.map_or_else(
+        || (!lock.0.is_empty()).then(|| lock.render()),
+        |member| {
+            let mut tables = standing
+                .as_deref()
+                .and_then(|text| {
+                    let split = Split::of(Manifested(text), Opening(SHARED));
+                    match split.authorship() {
+                        Authorship::Checker => tables(Text(split.body)),
+                        Authorship::Hand => None,
+                    }
+                })
+                .unwrap_or_default();
+            if lock.0.is_empty() {
+                let _removed = tables.remove(&member);
+            }
+            else {
+                let _replaced = tables.insert(member, lock.clone());
+            }
+            (!tables.is_empty()).then(|| shared_render(&tables))
+        },
+    );
+    let Some(rendered) = rendered
+    else {
         return match standing {
             Some(_) => std::fs::remove_file(&path)
                 .map(|()| Reconciled::Rewritten)
                 .map_err(LockFault::Io),
             None => Ok(Reconciled::Unchanged),
         };
-    }
-    let rendered = lock.render();
+    };
     let reconciled = match standing {
         Some(ref standing) if *standing == rendered => return Ok(Reconciled::Unchanged),
         Some(_) => Reconciled::Rewritten,
@@ -1272,7 +1549,7 @@ pub fn relock(
 /// The package source of the dependency `coordinate` names from `package`'s
 /// root, as its lock records it.
 ///
-/// None when the lock standing at `package`'s root does not record the
+/// None when the lock standing for `package` does not record the
 /// coordinate, or the directory roots no package: a `path:` coordinate's,
 /// and a `gh:` coordinate's checkout at the revision the lock records, which
 /// only a resolution fetches.

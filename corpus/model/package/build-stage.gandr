@@ -1,4 +1,4 @@
-/// The default build stage: a package's `gandr.toml` body, rendered by a gandr function from its model's fields and modules.
+/// The default build stage: a package's `package.gandr.toml` body, rendered by a gandr function from its model's fields and modules.
 ///
 /// A package's own build stage is to write its manifest, the checker's fixed rule its default. Before the checker can run a stage, this source shows the default spelled in gandr: each run is the body of a manifest the tree commits.
 ///
@@ -7,9 +7,9 @@
 /// - see: #2764
 /// - see: #2997
 /// - see: #2998
-/// - see: `corpus/model/projects/hello/gandr.toml`
-/// - see: `corpus/model/projects/tools/gandr.toml`
-/// - see: `library/std/gandr.toml`
+/// - see: `corpus/model/projects/hello/package.gandr.toml`
+/// - see: `corpus/model/projects/tools/package.gandr.toml`
+/// - see: `library/std/package.gandr.toml`
 
 // The lists.
 import "../data/data-base.gandr";
@@ -42,14 +42,14 @@ def body(name : String, version : String, modules : List(String)) -> String {
   "\n[package]\nname = \"${ name }\"\nversion = \"${ version }\"\nmodules = ${ array }\n"
 }
 
-/// The body `corpus/model/projects/hello/gandr.toml` commits, with its one module.
+/// The body of the manifest of `hello`, with its one module.
 @[ runs("\"\\n[package]\\nname = \\\"hello\\\"\\nversion = \\\"0.1.0\\\"\\nmodules = [\\n  \\\"text.greet\\\",\\n]\\n\"") ]
 def hello() -> String { body("hello", "0.1.0", (Cons("text.greet", Nil) : List(String))) }
 
-/// The body `corpus/model/projects/tools/gandr.toml` commits, with no modules.
+/// The body of the manifest of `tools`, with no modules.
 @[ runs("\"\\n[package]\\nname = \\\"tools\\\"\\nversion = \\\"0.1.0\\\"\\nmodules = []\\n\"") ]
 def tools() -> String { body("tools", "0.1.0", (Nil : List(String))) }
 
-/// The body `library/std/gandr.toml` commits, the tree's own package.
+/// The body of the manifest of `std`, the package of the tree.
 @[ runs("\"\\n[package]\\nname = \\\"std\\\"\\nversion = \\\"0.1.0\\\"\\nmodules = [\\n  \\\"package\\\",\\n]\\n\"") ]
 def std() -> String { body("std", "0.1.0", (Cons("package", Nil) : List(String))) }

@@ -54,6 +54,8 @@ use gandr_surface_dispatcher::Unmembered;
 use gandr_surface_dispatcher::Unpathed;
 use gandr_surface_dispatcher::Unreadmitted;
 use gandr_surface_dispatcher::Unresolved;
+use gandr_surface_dispatcher::Unstated;
+use gandr_surface_dispatcher::WORKSPACE_LOCK;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::Workspace;
@@ -67,6 +69,7 @@ use gandr_surface_dispatcher::lower_unit_source;
 use gandr_surface_dispatcher::package_root;
 use gandr_surface_dispatcher::packaged;
 use gandr_surface_dispatcher::reconcile;
+use gandr_surface_dispatcher::reconcile_lock;
 use gandr_surface_dispatcher::relock;
 use gandr_surface_dispatcher::workspace_root;
 use gandr_surface_grammar::Pbg;
@@ -282,7 +285,7 @@ fn a_path_in_a_package_walks_the_whole_package_2687()
             paths.iter().map(|path| directory.join(path)).collect(),
             &directory.join(working),
         )
-        .map(|(walked, packages)| {
+        .map(|(walked, packages, _gathered)| {
             (
                 walked,
                 packages
@@ -368,7 +371,7 @@ fn a_package_root_walks_each_source_once_3889()
         sourced(Path::new("src")),
     )
     .expect("the package source is written");
-    let (walked, _packages) = packaged(Vec::from([directory.join("hello")]), &directory)
+    let (walked, ..) = packaged(Vec::from([directory.join("hello")]), &directory)
         .expect("the root stands in a package");
     let mut reached = Vec::new();
     let ControlFlow::Continue(_report) =
@@ -446,7 +449,7 @@ fn a_workspace_walks_every_member_it_names_2687()
             paths.iter().map(|path| path.to_path_buf()).collect(),
             &directory.join(working),
         )
-        .map(|(walked, packages)| {
+        .map(|(walked, packages, _gathered)| {
             (
                 walked,
                 packages
@@ -920,7 +923,7 @@ fn a_manifest_lists_the_modules_its_sources_make_2687()
 fn a_manifest_is_written_rewritten_and_refused_as_drift_2687()
 {
     let directory = scratch(Path::new("reconciled"), &[]);
-    let path = directory.join("gandr.toml");
+    let path = directory.join("package.gandr.toml");
     let first = manifest_of(SourceText::from(concat!(
         "module Package where { def name = \"hello\" ; def version = \"0.1.0\" ; ",
         rest!(),
@@ -1489,6 +1492,141 @@ fn rooted(root: &Path) -> Package
             panic!("`{}` roots a package", root.display())
         },
     }
+}
+
+/// #4921: the packages below a workspace share one lock, and each package has
+/// its own table in it. A package below no workspace keeps its own lock. The
+/// check writes the dependencies of a member as its table and reads them back
+/// from it. A member that records no dependency writes nothing. It keeps the
+/// table of the other member. A table that records a different lock is drift.
+/// When a relock removes the last table, it removes the file. The model of
+/// the workspace gives the manifest beside it. A model that does not define a
+/// toolchain field gives no manifest.
+#[test]
+fn a_workspace_s_packages_share_one_lock_4921()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let directory = siblings(Path::new("shared-lock"), Hello {
+        version: "0.1.0",
+        welcome: "hello",
+    });
+    let sibling = rooted(&directory.join("sibling"));
+    let hello = rooted(&directory.join("hello"));
+    assert_eq!(
+        sibling.lock(),
+        sibling.root().join(LOCK),
+        "a package below no workspace keeps its own lock"
+    );
+    let stated = |toolchain: &str| {
+        format!(
+            "import std.build (Gandr);\nimport std.list (List);\npub module Workspace : \
+             Model(Gandr.Workspace) where {{ def version = \"0.2.0\"; {toolchain}}}\npub def members : List(String) = #[\"hello\", \
+             \"sibling\"];\n"
+        )
+    };
+    std::fs::write(
+        directory.join("workspace.gandr"),
+        stated("def gandr = \">= 0.0\"; def features = \"\"; def systems = \"\"; "),
+    )
+    .expect("the workspace is written");
+    let shared = directory
+        .canonicalize()
+        .expect("the scratch directory resolves")
+        .join(WORKSPACE_LOCK);
+    assert_eq!(
+        (sibling.lock(), hello.lock()),
+        (shared.clone(), shared.clone()),
+        "both packages below the workspace keep their lock in its one file"
+    );
+    let mut store = stored(Path::new("shared-lock"));
+    let lock = sibling
+        .resolve(&grammar, &mut store, Revisions::Locked)
+        .expect("the dependencies resolve");
+    let coordinate = Coordinate::Path(String::from("../hello"));
+    assert!(
+        matches!(
+            reconcile_lock(&hello, &Lock::default()),
+            Ok(Reconciled::Unchanged)
+        ) && !shared.exists(),
+        "a member recording no dependency writes nothing"
+    );
+    assert!(
+        matches!(reconcile_lock(&sibling, &lock), Ok(Reconciled::Written)),
+        "the member's table is written"
+    );
+    let read = || std::fs::read_to_string(&shared).ok();
+    let written = read().expect("the shared lock reads");
+    assert!(
+        written.contains("\n\n[dependencies.\"sibling\"]\n\"path:../hello\" = { pointer = \""),
+        "the table is keyed by the member's path from the workspace: {written}"
+    );
+    assert!(
+        matches!(Lock::read(&sibling), Maybe::Present(ref table) if *table == lock),
+        "the member's table reads back as its lock"
+    );
+    assert!(
+        matches!(Lock::read(&hello), Maybe::Absent(_)),
+        "a member with no table reads no lock"
+    );
+    assert!(
+        matches!(reconcile_lock(&sibling, &lock), Ok(Reconciled::Unchanged))
+            && matches!(
+                reconcile_lock(&hello, &Lock::default()),
+                Ok(Reconciled::Unchanged)
+            )
+            && matches!(relock(&hello, &Lock::default()), Ok(Reconciled::Unchanged))
+            && read().as_ref() == Some(&written),
+        "a second run, and another member's check and relock, leave the table byte for byte"
+    );
+    let drifted = reconcile_lock(&sibling, &Lock::default());
+    assert!(
+        matches!(drifted, Err(LockFault::Drifted(ref coordinates)) if *coordinates == [coordinate])
+            && read().as_ref() == Some(&written),
+        "a table recording another lock is drift at `path:../hello`, left as it stands: {drifted:?}"
+    );
+    assert!(
+        matches!(
+            relock(&sibling, &Lock::default()),
+            Ok(Reconciled::Rewritten)
+        ) && !shared.exists(),
+        "relocking the last table away removes the file"
+    );
+    let Maybe::Present(workspace) = Workspace::discover(&directory)
+    else {
+        panic!("the scratch directory is a workspace");
+    };
+    let (members, gathered) = workspace
+        .members()
+        .expect("the workspace names its members");
+    assert_eq!(
+        members.iter().map(Package::root).collect::<Vec<_>>(),
+        [hello.root(), sibling.root()],
+        "the members are read in order"
+    );
+    let rendered = gathered
+        .manifest
+        .map(|manifest| manifest.render())
+        .expect("the model states a manifest");
+    assert_eq!(
+        rendered.split_once("\n\n").map(|(_, body)| body),
+        Some(
+            "[workspace]\nversion = \"0.2.0\"\nmembers = [\n  \"hello\",\n  \"sibling\",\n]\n\n[toolchain]\ngandr = \">= 0.0\"\nfeatures = []\nsystems = []\n"
+        ),
+        "the manifest records the model's version, its members and its toolchain"
+    );
+    std::fs::write(directory.join("workspace.gandr"), stated("")).expect("the model is cut");
+    let (_members, gathered) = workspace.members().expect("the workspace still names them");
+    assert!(
+        matches!(
+            gathered.manifest,
+            Err(Unstated::Unstrung {
+                field: "Workspace.gandr",
+                ..
+            })
+        ),
+        "a model defining no `gandr` gives no manifest, the field run to no string: {:?}",
+        gathered.manifest
+    );
 }
 
 /// #3072, #3157, #4527: the coordinate two sources of a package import is

@@ -4,8 +4,10 @@
 //! # The constraint chooses among the installed toolchains
 //!
 //! **Choice.** The constraint is the `[toolchain]` table of the nearest
-//! `gandr.toml` in the working directory or an ancestor. `gandr check` writes
-//! that table from the package's model, so the proxy reads it with no build.
+//! manifest in the working directory or an ancestor. In each directory, the
+//! proxy reads `package.gandr.toml` first, then `workspace.gandr.toml`. `gandr
+//! check` writes that table from the model of the package or the workspace.
+//! Thus the proxy reads it with no build.
 //! A toolchain named by `GANDR_TOOLCHAIN` or by a pin runs when it meets the
 //! constraint and is refused when it does not. Otherwise the default runs
 //! when it meets the constraint, else the installed toolchain of the highest
@@ -37,6 +39,7 @@ use gandr_surface_dispatcher::Described;
 use gandr_surface_dispatcher::MANIFEST;
 use gandr_surface_dispatcher::Separated;
 use gandr_surface_dispatcher::Toolchain;
+use gandr_surface_dispatcher::WORKSPACE_MANIFEST;
 use quenchant_shape::shape::Maybe;
 
 use super::Name;
@@ -88,21 +91,24 @@ quenchant_shape::reason_enum! {
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the first `gandr.toml` up from `working`, with its `[toolchain]`
-///   table read as `gandr check` writes it, when that table asks anything.
+/// - ensures: the first manifest up from `working`, with [`MANIFEST`] before
+///   [`WORKSPACE_MANIFEST`] in each directory. The function reads its
+///   `[toolchain]` table as `gandr check` writes it. It gives the table only if
+///   the table asks for something.
 /// - provides: [`unasked::Absent`] otherwise.
 /// - panics: none.
 /// - executable: none — the answer is the file system's.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a manifest above the working directory constrains the
-///   selection.
+/// - hypothesis: L3 — the manifest of a package above the working directory
+///   constrains the selection. The manifest of a workspace above a directory in
+///   no package also constrains it.
 /// - witness: `tests::cli::a_package_s_constraint_chooses_among_the_toolchains`
 fn asked(working: &Path) -> Maybe<(PathBuf, Toolchain), unasked::Absent>
 {
     let Some(manifest) = working
         .ancestors()
-        .map(|directory| directory.join(MANIFEST))
+        .flat_map(|directory| [MANIFEST, WORKSPACE_MANIFEST].map(|name| directory.join(name)))
         .find(|manifest| manifest.is_file())
     else {
         return Maybe::Absent(unasked::Absent::Unmanifested);

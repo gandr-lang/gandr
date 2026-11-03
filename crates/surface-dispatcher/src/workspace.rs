@@ -5,16 +5,20 @@
 //! [`Workspace::discover`] walks up from a path to the first directory that
 //! holds `workspace.gandr`, as Cargo walks up to the `Cargo.toml` holding
 //! `[workspace]`. The workspace is not a package: its source declares no
-//! package source, and the checker writes no manifest for it. It states what
-//! its members share as a model of `Gandr.Workspace`, which each member's
-//! `package.gandr` imports and reads, and it names its members by a
-//! free-standing `pub def members : List(String)`, its `List` listed from
-//! `std.list`, each a directory below the workspace that roots a package.
+//! package source. It states what its members share as a model of
+//! `Gandr.Workspace`, which each member's `package.gandr` imports and reads,
+//! and it names its members by a free-standing `pub def members :
+//! List(String)`, its `List` listed from `std.list`, each a directory below the
+//! workspace that roots a package.
 //!
 //! [`Workspace::members`] reads that list by checking the workspace's source
 //! alone and running `members`, so the list is gandr and never a second
-//! manifest language. A verb given no path in a workspace but in none of its
-//! packages, or given the workspace's directory, works on every member.
+//! manifest language. The same run reads the fields of the model. The checker
+//! writes `workspace.gandr.toml` beside the source from these fields. A verb
+//! works on every member when it gets the directory of the workspace. It does
+//! the same when it gets no path in a workspace but outside all of its
+//! packages. All the packages below the workspace share one
+//! `workspace.gandr.lock`.
 //!
 //! # References
 //!
@@ -57,7 +61,10 @@ use crate::evaluate::Terminal;
 use crate::evaluate::declaration_name;
 use crate::manifold::Placed;
 use crate::package::Package;
+use crate::package::WorkspaceManifest;
 use crate::package::package_root;
+use crate::package::toolchain::Separated;
+use crate::package::toolchain::Toolchain;
 use crate::root::classify;
 use crate::walk::SourceFault;
 use crate::walk::Standing;
@@ -66,8 +73,21 @@ use crate::walk::Step;
 /// The file name of a workspace's source, at the workspace's root.
 pub const WORKSPACE: &str = "workspace.gandr";
 
+/// The file name of the manifest that the checker writes beside the source of
+/// a workspace.
+pub const WORKSPACE_MANIFEST: &str = "workspace.gandr.toml";
+
 /// The declaration of a workspace's source that names its members.
 const MEMBERS: &str = "members";
+
+/// The fields of the `Workspace` model that the manifest of a workspace
+/// records, in the order in which the checker reads them.
+const FIELDS: [&str; 4] = [
+    "Workspace.version",
+    "Workspace.gandr",
+    "Workspace.features",
+    "Workspace.systems",
+];
 
 /// A workspace: the directory holding its source.
 #[repr(transparent)]
@@ -152,17 +172,35 @@ impl Workspace
         self.root.join(WORKSPACE)
     }
 
-    /// The packages the workspace names, in the order its `members` lists
-    /// them.
+    /// The path of the manifest of the workspace: [`WORKSPACE_MANIFEST`]
+    /// beside its source.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn manifest(&self) -> PathBuf
+    {
+        self.root.join(WORKSPACE_MANIFEST)
+    }
+
+    /// The packages that the workspace names, in the order of its `members`.
+    /// Also the workspace, with the manifest that its model states.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the workspace's source read, checked over the sources it
-    ///   imports, as the walk lays them out, and its `members` run; each string
-    ///   of the list a directory below the root, and the package
-    ///   [`Package::discover`] finds from it, which must be rooted at that
-    ///   directory.
-    /// - provides: the packages a verb works on in the workspace.
+    /// - ensures: the function reads the source of the workspace. It checks the
+    ///   source over the sources that it imports, as the walk lays them out. In
+    ///   this one check, it runs `members` and the `version`, `gandr`,
+    ///   `features` and `systems` of the `Workspace` model. Each string of the
+    ///   list is a directory below the root. [`Package::discover`] finds a
+    ///   package from this directory, and the package root must be this
+    ///   directory. The manifest holds `version`, the members as the list names
+    ///   them, and the toolchain that [`Toolchain::read`] reads. [`Unstated`]
+    ///   names the first field that is not declared or that runs to no string.
+    ///   It also names a `gandr` that states no constraint.
+    /// - provides: the packages that a verb works on in the workspace, and the
+    ///   manifest that `gandr check` writes for it.
     /// - fails: [`Unmembered::Unread`] for a source that cannot be read,
     ///   [`Unmembered::Refused`] for one that does not compose or is refused as
     ///   a whole, [`Unmembered::Undeclared`] for one declaring no `members`,
@@ -182,9 +220,12 @@ impl Workspace
     ///   is a string, are refused with what they state.
     /// - witness: `tests::package::a_workspace_walks_every_member_it_names_2687`
     #[inline]
-    pub fn members(&self) -> Result<Vec<Package>, Unmembered>
+    pub fn members(&self) -> Result<(Vec<Package>, Gathered), Unmembered>
     {
-        let [came] = match ran_alone(&self.source(), [SurfaceName::from(MEMBERS)]) {
+        let [came, version, gandr, features, systems] = match ran_alone(
+            &self.source(),
+            [MEMBERS, FIELDS[0], FIELDS[1], FIELDS[2], FIELDS[3]].map(SurfaceName::from),
+        ) {
             Ok(came) => came,
             Err(Unran::Unread { message }) => return Err(Unmembered::Unread { message }),
             Err(Unran::Refused { why }) => return Err(Unmembered::Refused { why }),
@@ -199,22 +240,148 @@ impl Workspace
         else {
             return Err(Unmembered::Unlisted { came });
         };
-        named
-            .into_iter()
+        let packages = named
+            .iter()
             .map(|member| {
-                let directory = self.root.join(&member);
+                let directory = self.root.join(member);
                 let rooted = directory.canonicalize().ok();
                 match Package::discover(&directory) {
                     Maybe::Present(package) if rooted.as_deref() == Some(package.root()) => {
                         Ok(package)
                     },
                     Maybe::Present(_) | Maybe::Absent(package_root::Absent::Unpackaged) => {
-                        Err(Unmembered::Unpackaged { member })
+                        Err(Unmembered::Unpackaged {
+                            member: member.clone(),
+                        })
                     },
                 }
             })
-            .collect()
+            .collect::<Result<Vec<Package>, Unmembered>>()?;
+        let manifest = stated([version, gandr, features, systems]).and_then(
+            |[version, gandr, features, systems]| {
+                let toolchain =
+                    Toolchain::read(gandr.clone(), Separated(&features), Separated(&systems))
+                        .map_err(|_unconstrained| Unstated::Unconstrained { came: gandr })?;
+                Ok(WorkspaceManifest::new(version, named, toolchain))
+            },
+        );
+        Ok((packages, Gathered {
+            workspace: self.clone(),
+            manifest,
+        }))
     }
+}
+
+/// Each of the [`FIELDS`] of a workspace model as a string. The function
+/// decodes the string from the spelling of the run of the field.
+///
+/// # Specification
+/// - requires: `came` holds what each of [`FIELDS`] ran to, in order.
+/// - ensures: the string of each field, which is the decoded content of a
+///   quoted spelling. [`Unstated::Undeclared`] names the first field that the
+///   source does not declare. [`Unstated::Unstrung`] names the first field
+///   whose run is not a string.
+/// - fails: as `ensures`.
+/// - panics: none.
+/// - executable: none — a clause would state the body again.
+///
+/// # Errors
+/// [`Unstated::Undeclared`] and [`Unstated::Unstrung`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a workspace's model reads each field, and one leaving
+///   `gandr` undefined is refused at it.
+/// - witness: `tests::package::a_workspace_s_packages_share_one_lock_4921`
+fn stated(came: [Maybe<String, declaration_name::Absent>; 4]) -> Result<[String; 4], Unstated>
+{
+    let mut read: [String; 4] = Default::default();
+    for ((slot, came), field) in read.iter_mut().zip(came).zip(FIELDS) {
+        let came = match came {
+            Maybe::Present(came) => came,
+            Maybe::Absent(declaration_name::Absent::Undeclared) => {
+                return Err(Unstated::Undeclared { field });
+            },
+        };
+        *slot = match Spelling(&came).quoted() {
+            Some((string, Spelling(""))) => string,
+            Some(_) | None => return Err(Unstated::Unstrung { field, came }),
+        };
+    }
+    Ok(read)
+}
+
+/// A workspace that a verb works on, and the manifest that its model states.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Gathered
+{
+    /// The workspace.
+    pub workspace: Workspace,
+    /// What its `Workspace` model states for its manifest, or why the model
+    /// states no manifest.
+    pub manifest: Result<WorkspaceManifest, Unstated>,
+}
+
+/// Why the model of a workspace states no manifest.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Unstated
+{
+    /// The source of the workspace does not declare the field.
+    Undeclared
+    {
+        /// The field, by its path from the top level of the source.
+        field: &'static str,
+    },
+    /// The field runs to a value that is not a string.
+    Unstrung
+    {
+        /// The field, by its path from the top level of the source.
+        field: &'static str,
+        /// The spelling of the value that its run gives.
+        came: String,
+    },
+    /// `Workspace.gandr` states no constraint.
+    Unconstrained
+    {
+        /// The value that it runs to.
+        came: String,
+    },
+}
+
+impl core::fmt::Display for Unstated
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::Undeclared { field } => write!(
+                f,
+                "`{WORKSPACE}` does not declare `{field}`. The checker writes no \
+                 `{WORKSPACE_MANIFEST}`. Import `std.build` and declare `module Workspace : \
+                 Model(Gandr.Workspace)` in it."
+            ),
+            Self::Unstrung { field, ref came } => write!(
+                f,
+                "`{field}` runs to `{came}`, which is not a string. The checker writes no \
+                 `{WORKSPACE_MANIFEST}`."
+            ),
+            Self::Unconstrained { ref came } => write!(
+                f,
+                "`{}` is `{came}`, which states no constraint. The checker writes no \
+                 `{WORKSPACE_MANIFEST}`. Write `>= <major>.<minor>`, or write nothing to accept \
+                 all versions.",
+                FIELDS[1]
+            ),
+        }
+    }
+}
+
+impl core::error::Error for Unstated
+{
 }
 
 /// What each declaration of `names` in the source at `source` runs to,
