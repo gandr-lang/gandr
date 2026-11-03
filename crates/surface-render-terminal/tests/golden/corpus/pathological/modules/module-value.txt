@@ -1,0 +1,8 @@
+error[UnresolvedName]: `Bare` is not defined
+   ╭▸ corpus/pathological/modules/module-value.gandr:37:29
+   │
+37 │ def named : Model(Ticker) = Bare;
+   │                             ━━━━ not found in this scope
+   │
+   ├ note: `named` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `Bare`, or import the module that exports it

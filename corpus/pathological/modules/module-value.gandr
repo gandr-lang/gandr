@@ -1,0 +1,37 @@
+/// A module no model type ascribes is no value.
+///
+/// A module's name stands as a value only through the model type its header
+/// ascribes.
+///
+/// A module with no ascription is a model of no theory, so its name stays
+/// unresolved where a value stands.
+///
+/// - see: #4485 — a module's name read as its model
+/// - see: `model/modules/module-value.gandr` — the ascribed twin
+
+/// A ticker: a carrier, a start and a step.
+theory Ticker where {
+  /// The carrier.
+  sort C : Type;
+
+  /// The start.
+  oper start : () --> C;
+  /// One step.
+  oper step : (c : C) --> C;
+}
+
+/// The ticker's members with no ascription.
+module Bare where {
+  /// The carrier.
+  type C = Integer;
+
+  /// Zero.
+  def start() -> Integer { 0 }
+
+  /// One more.
+  def step(n : Integer) -> Integer { n + 1 }
+}
+
+/// The unascribed module, named as a ticker.
+@[ refuses("UnresolvedName") ]
+def named : Model(Ticker) = Bare;

@@ -34,6 +34,10 @@
 //! is out of the fragment: the record would name the representation the seal
 //! hides, and a package over the abstract type carries such a module.
 //!
+//! A module's name read as a value, `M`, is that pack at the model type the
+//! module's own header ascribes, `module M : Model(T)`. No other form spells
+//! a model of a module, so the name needs no `pack`.
+//!
 //! # A member's sort is its definition's former
 //!
 //! A type member's position states no sort, so its definition's own former
@@ -2949,6 +2953,156 @@ impl<'source> Lowerer<'_, 'source>
         self.plan(site, Plan::Packed(Arc::new(theories)));
 
         Ok(())
+    }
+
+    /// Plan the capitalised name `name` at `site` as the module it names,
+    /// packed at the model type the module's own header ascribes: `M` read as
+    /// `pack M at Model(S)` is.
+    ///
+    /// # Specification
+    /// - requires: `site` is a capitalised name read as a value that no
+    ///   constructor, binder, declaration or stated type answers.
+    /// - ensures: when a module of the source declared before `site` is named
+    ///   `name` and its header ascribes `Model(S)`, `site` stands as a value
+    ///   planned as [`Self::packed_structure`] reads that module at `S`, with
+    ///   no sort fixed; otherwise nothing is planned and the name is
+    ///   unresolved.
+    /// - fails: the wrong-sort refusal where no value is read; the refusals
+    ///   [`Self::packed_structure`] yields, a sealed sort's among them.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The packing's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module named as a definition's body and as an
+    ///   argument packs as `pack M at Model(S)` does, a module no model type
+    ///   ascribes stays unresolved, and a sealed module is refused as its pack
+    ///   is.
+    /// - witness: `tests::modules::models::a_module_named_where_a_value_is_read_is_its_model_4485`
+    /// - witness: `tests::modules::models::a_module_no_model_type_ascribes_is_no_value_4485`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(()))) || matches!(self.plans.get(site.at.node), Some(&Plan::Packed(_))))]
+    pub(super) fn module_value(
+        &mut self,
+        site: Site,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<(), super::named::Absent>, LoweringRefusal<'source>>
+    {
+        let unresolved = Maybe::Absent(super::named::Absent::Unresolved);
+        let Some(outermost) = self.collected.structures.iter().rposition(|structure| {
+            structure.name.as_ref() == name.as_ref()
+                && matches!(structure.container, Container::TopLevel(_))
+                && matches!(structure.stratum, Stratum::Module)
+                && matches!(structure.model, Maybe::Present(_))
+                && structure.declared_by.span.end() <= site.at.span.start()
+        })
+        else {
+            return Ok(unresolved);
+        };
+        let Some(form) = self
+            .collected
+            .structures
+            .get(outermost)
+            .map(|structure| structure.declared_by)
+        else {
+            return Ok(unresolved);
+        };
+        let Maybe::Present(theory) = self.ascribed_theory(form)?
+        else {
+            return Ok(unresolved);
+        };
+        let _frame = self.require(site, Produced::Value)?;
+        let packed = self.packed_structure(
+            site,
+            (StructureIndex::from(outermost), site.at.span, name),
+            &theory,
+            &BTreeMap::new(),
+        )?;
+        self.plan(site, Plan::Packed(Arc::new(packed)));
+
+        Ok(Maybe::Present(()))
+    }
+
+    /// The theory's path `S` the header of the module form `form` ascribes,
+    /// `module M : Model(S)` or `module M :> Model(S)`.
+    ///
+    /// # Specification
+    /// - requires: `form` is a module form.
+    /// - ensures: the path after the header's last `:` or `:>` before `where`,
+    ///   when `Model(` and a theory's path follow it.
+    /// - fails: an unknown mold.
+    /// - panics: none.
+    /// - executable: none — the path is the header's tiles, which no predicate
+    ///   on the output reads again without re-reading the form.
+    ///
+    /// # Errors
+    /// The reading's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::module_value`].
+    /// - witness: `tests::modules::models::a_module_named_where_a_value_is_read_is_its_model_4485`
+    fn ascribed_theory(
+        &self,
+        form: Placed,
+    ) -> Result<Maybe<WrittenPath, super::named::Absent>, LoweringRefusal<'source>>
+    {
+        let unascribed = Maybe::Absent(super::named::Absent::Unresolved);
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, form.node, &mut pieces)?;
+        let header = pieces
+            .pieces
+            .iter()
+            .position(|piece| {
+                matches!(*piece, Piece::Tile {
+                    label: TileName::WHERE,
+                    ..
+                })
+            })
+            .unwrap_or(pieces.pieces.len());
+        let Some(ascribed) = pieces.pieces.get(.. header).and_then(|header| {
+            header.iter().rposition(|piece| {
+                matches!(*piece, Piece::Tile {
+                    label: TileName::COLON | TileName::SEAL,
+                    ..
+                })
+            })
+        })
+        else {
+            return Ok(unascribed);
+        };
+        let Some(after) = pieces.pieces.get(ascribed.saturating_add(1) .. header)
+        else {
+            return Ok(unascribed);
+        };
+        let mut cursor = Cursor::new(after, form.span);
+        let Maybe::Present(head) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        else {
+            return Ok(unascribed);
+        };
+        if self.name_at(head).as_ref() != super::MODEL {
+            return Ok(unascribed);
+        }
+        let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN)
+        else {
+            return Ok(unascribed);
+        };
+        let Maybe::Present(mut last) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        else {
+            return Ok(unascribed);
+        };
+        let mut prefix = Vec::new();
+        while let Maybe::Present(_) = cursor.tile(TileName::DOT) {
+            let next = match cursor.tile(TileName::TYPE_IDENTIFIER) {
+                Maybe::Present(next) => next,
+                Maybe::Absent(_) => match cursor.tile(TileName::IDENTIFIER) {
+                    Maybe::Present(next) => next,
+                    Maybe::Absent(_) => return Ok(unascribed),
+                },
+            };
+            prefix.push(core::mem::replace(&mut last, next));
+        }
+
+        Ok(Maybe::Present(WrittenPath { prefix, last }))
     }
 
     /// The theories [`Self::bundled`] reads off the theory the path `theory`

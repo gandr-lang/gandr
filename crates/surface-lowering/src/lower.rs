@@ -8582,13 +8582,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   type component or type member the name states, read as
     ///   [`Self::stated_type`] reads it, or a type atom, or `Type` for the
     ///   value universe at the fuss-free level, stands as a type, which a value
-    ///   position quotes.
+    ///   position quotes; otherwise a module declared before it stands as its
+    ///   model, as [`Self::module_value`] packs it.
     /// - provides: the term-position spelling of a type, of a nullary
     ///   constructor, and of a declaration named with a capital.
     /// - fails: yields the wrong-sort refusal for a resolved name or a type
     ///   where its position reads neither; a constructor's own refusals; the
-    ///   arity refusal for a family of parameters named alone; a name nothing
-    ///   answers is unresolved.
+    ///   arity refusal for a family of parameters named alone; a module's
+    ///   packing refusal; a name nothing answers is unresolved.
     /// - panics: none.
     ///
     /// # Errors
@@ -8605,6 +8606,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::native::tests::a_data_family_named_where_a_value_is_read_is_quoted`
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `lower::tests::an_unknown_capital_where_a_value_is_read_is_unresolved_2653`
+    /// - witness: `tests::modules::models::a_module_named_where_a_value_is_read_is_its_model_4485`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -8621,7 +8623,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             | Plan::Codata(..)
                             | Plan::Transparent(_)
                             | Plan::Sealed(_)
-                            | Plan::Instantiated(..))
+                            | Plan::Instantiated(..)
+                            | Plan::Packed(_))
                     )
                 )
         },
@@ -8674,6 +8677,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Plan::Universe(Universe::FUSS_FREE)
             },
             Maybe::Absent(_) => {
+                if self.module_value(site, name)? == Maybe::Present(()) {
+                    return Ok(());
+                }
                 return Err(LoweringRefusal::UnresolvedName {
                     span: site.at.span,
                     name,
