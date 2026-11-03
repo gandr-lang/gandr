@@ -524,7 +524,7 @@ fn a_row_names_each_interface_once()
     let module = lowered(
         SourceText::from(concat!(
             "def twice() -> -F [std.fs.Eff, std.fs.Eff] Integer { pure 1 }\n",
-            "def apart() -> -F [std.fs.Eff, Div] Integer { pure 1 }\n",
+            "def apart() -> -F [std.fs.Eff, Partial] Integer { pure 1 }\n",
         )),
         &mut arena,
     );

@@ -4,6 +4,6 @@ def tick(n : Integer) -> -F Unit {
   unit
 }
 @[ checks ]
-def spin(n : Integer) -> -F [Div] Integer {
+def spin(n : Integer) -> -F [Partial] Integer {
   loop { tick(n); }
 }

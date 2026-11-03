@@ -2,7 +2,7 @@
 // each interface once, and a row without an interface its computation
 // performs is not that computation's row (#2269).
 
-// `peek` reads through `std.fs.Eff`; `once` states `Div`.
+// `peek` reads through `std.fs.Eff`; `once` states `Partial`.
 import "../../model/control/capability-attenuate.gandr";
 import "../../model/control/divergence.gandr";
 
@@ -13,9 +13,9 @@ import "../../model/control/divergence.gandr";
 def namedTwice() -> -F [std.fs.Eff, std.fs.Eff] Integer { pure 1 }
 
 /// Sequencing joins the rows: the computation reads through `std.fs.Eff`, which the
-/// row `[Div]` does not hold.
+/// row `[Partial]` does not hold.
 @[ refuses("TypeMismatch") ]
-def narrowedRow(c : Cap { read }) -> [Div] Integer {
+def narrowedRow(c : Cap { read }) -> [Partial] Integer {
   let _ = peek(c);
   once(2)
 }

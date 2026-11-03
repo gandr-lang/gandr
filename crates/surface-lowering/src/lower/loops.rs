@@ -6,7 +6,7 @@
 //!
 //! A loop binds its own body as a recursive thunk, `fix k. b`, with no descent
 //! claim: a loop need not end, so its evidence is partial, and the checker
-//! accepts it only where the row of the type it stands at holds `Div`.
+//! accepts it only where the row of the type it stands at holds `Partial`.
 //!
 //! - `loop { b }` is `fix k. b'`.
 //! - `while c { b }` is `fix k. x ← c; case x { inl _ => b', inr _ => return ()

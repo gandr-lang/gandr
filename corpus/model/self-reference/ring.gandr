@@ -19,9 +19,9 @@ def rec node(nodes : List(Integer), i : Integer) -> Integer {
 
 /// A ring of three nodes, each naming the next by its index: four links from
 /// the first land on the second (#1183). The walk is a loop, so the row
-/// states `Div` (#1481).
+/// states `Partial` (#1481).
 @[ runs("1") ]
-def ring() -> [Div] Integer {
+def ring() -> [Partial] Integer {
   var i = 0;
   var steps = 4;
   while steps > 0 {

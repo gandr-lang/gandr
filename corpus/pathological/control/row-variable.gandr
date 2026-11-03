@@ -14,8 +14,8 @@ def either[e : Row](x : +U (-F [e] Unit), y : +U (-F [e] Unit)) -> [e] Unit {
   force x
 }
 
-/// A computation at `Div`, the rest of its row left open.
-def stall[r : Row](s : String) -> [Div | r] Unit { pure unit }
+/// A computation at `Partial`, the rest of its row left open.
+def stall[r : Row](s : String) -> [Partial | r] Unit { pure unit }
 
 /// `log` suspended and ignored: nothing reads its row, so nothing determines
 /// its `r`, and the call is refused naming the slot `log[.r = …]`.
@@ -23,7 +23,7 @@ def stall[r : Row](s : String) -> [Div | r] Unit { pure unit }
 def unread() -> Unit { ignored(thunk { log("unread") }) }
 
 /// `log` and `stall` made to share a row nothing reads: `[std.io.Console.Eff | r]`
-/// against `[Div | r′]`, each open row holding an interface the other lacks,
+/// against `[Partial | r′]`, each open row holding an interface the other lacks,
 /// is never decided.
 @[ refuses("ImplicitUnsolved") ]
 def undecided() -> Unit {
@@ -32,4 +32,4 @@ def undecided() -> Unit {
 
 /// A row without `std.io.Console.Eff` is not `log`'s row, whatever its `r`.
 @[ refuses("TypeMismatch") ]
-def narrowed() -> [Div] Unit { log("narrowed") }
+def narrowed() -> [Partial] Unit { log("narrowed") }

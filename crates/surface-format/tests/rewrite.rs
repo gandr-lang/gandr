@@ -353,28 +353,28 @@ def pass[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r) {
 }
 
 /// #2255: the sugared form writes a result row of several interfaces before
-/// its type, `[Div, std.process.Exit.Eff] B`, a row open through a tail as
-/// written, `[Div | r] B` and `[r] B`, and a type looser than an application
-/// parenthesised after it; a row under `+U` in a parameter's type is no result
-/// and keeps its returner.
+/// its type, `[Partial, std.process.Exit.Eff] B`, a row open through a tail as
+/// written, `[Partial | r] B` and `[r] B`, and a type looser than an
+/// application parenthesised after it; a row under `+U` in a parameter's type
+/// is no result and keeps its returner.
 #[test]
 fn a_result_row_is_written_before_its_type_2255()
 {
     let grammar = grammar();
     let source = "\
-def both() -> -F [Div, std.process.Exit.Eff] Integer {
+def both() -> -F [Partial, std.process.Exit.Eff] Integer {
   pure 1
 }
 
-def pair() -> -F [Div] (Integer * Integer) {
+def pair() -> -F [Partial] (Integer * Integer) {
   pure (1, 2)
 }
 
-def apply(k : +U (Unit -> -F [Div] Unit)) -> -F [Div] Unit {
+def apply(k : +U (Unit -> -F [Partial] Unit)) -> -F [Partial] Unit {
   k(unit)
 }
 
-def tailed[r : Row]() -> -F [Div | r] Unit {
+def tailed[r : Row]() -> -F [Partial | r] Unit {
   pure unit
 }
 
@@ -383,19 +383,19 @@ def open[r : Row]() -> -F [r] Unit {
 }
 ";
     let sugared = "\
-def both() -> [Div, std.process.Exit.Eff] Integer {
+def both() -> [Partial, std.process.Exit.Eff] Integer {
   pure 1
 }
 
-def pair() -> [Div] (Integer * Integer) {
+def pair() -> [Partial] (Integer * Integer) {
   pure (1, 2)
 }
 
-def apply(k : +U (Unit -> -F [Div] Unit)) -> [Div] Unit {
+def apply(k : +U (Unit -> -F [Partial] Unit)) -> [Partial] Unit {
   k(unit)
 }
 
-def tailed[r : Row]() -> [Div | r] Unit {
+def tailed[r : Row]() -> [Partial | r] Unit {
   pure unit
 }
 
@@ -423,11 +423,11 @@ def say() -> -F [out : std.io.Console.Eff] Unit {
   out.print(\"said\")
 }
 
-def both() -> -F [Div, out : std.io.Console.Eff] Unit {
+def both() -> -F [Partial, out : std.io.Console.Eff] Unit {
   out.print(\"said\")
 }
 
-def tailed[r : Row]() -> -F [d : std.io.Console.Eff, Div | r] Unit {
+def tailed[r : Row]() -> -F [d : std.io.Console.Eff, Partial | r] Unit {
   pure unit
 }
 ";
@@ -436,11 +436,11 @@ def say() -> [out : std.io.Console.Eff] Unit {
   out.print(\"said\")
 }
 
-def both() -> [Div, out : std.io.Console.Eff] Unit {
+def both() -> [Partial, out : std.io.Console.Eff] Unit {
   out.print(\"said\")
 }
 
-def tailed[r : Row]() -> [d : std.io.Console.Eff, Div | r] Unit {
+def tailed[r : Row]() -> [d : std.io.Console.Eff, Partial | r] Unit {
   pure unit
 }
 ";
@@ -2467,7 +2467,7 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
                   \n\
                   def pair() -> -F (Integer * Integer) { (1, 2) }\n\
                   \n\
-                  def spin(x : Integer) -> -F [Div] Integer { x }\n\
+                  def spin(x : Integer) -> -F [Partial] Integer { x }\n\
                   \n\
                   def call(f : +U (-F Integer)) -> -F Integer { force f }\n\
                   \n\
@@ -2496,7 +2496,7 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
 
         def pair() -> Integer * Integer { (1, 2) }
 
-        def spin(x : Integer) -> [Div] Integer { x }
+        def spin(x : Integer) -> [Partial] Integer { x }
 
         def call(f : () => Integer) -> Integer { force f }
 
@@ -2512,7 +2512,7 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
 
         def pair() -> -F #{Integer, Integer} { #{1, 2} }
 
-        def spin(x : Integer) -> -F [Div] Integer { x }
+        def spin(x : Integer) -> -F [Partial] Integer { x }
 
         def call(f : +U (-F Integer)) -> -F Integer { force f }
 

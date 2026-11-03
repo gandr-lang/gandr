@@ -59,7 +59,7 @@ def listed() -> -F Integer {
 /// A loop, an `if` or an access closing on its block, followed by another
 /// statement, needs no `;`.
 @[ checks ]
-def looped() -> -F [Div] Integer {
+def looped() -> -F [Partial] Integer {
   var n = 0;
   while n < 3 { n += 1; }
   if n == 3 { n += 10; } else { n -= 1; }

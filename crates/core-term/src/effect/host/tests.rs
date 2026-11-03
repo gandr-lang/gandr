@@ -3,12 +3,12 @@ use quenchant_shape::shape::Maybe;
 
 use super::AuthorityError;
 use super::CONSOLE;
-use super::DIV;
 use super::ENV;
 use super::EXEC;
 use super::FS;
 use super::HostSignatures;
 use super::NET;
+use super::PARTIAL;
 use super::PROC;
 use super::STDERR;
 use super::STDIN;
@@ -109,7 +109,7 @@ fn host_interfaces_pin_names_payloads_and_replies()
             ("get", string, string),
             ("path", unit, strings)
         ]),
-        (&host.div, DIV, alloc::vec![]),
+        (&host.partial, PARTIAL, alloc::vec![]),
         (&host.console, CONSOLE, alloc::vec![("print", string, unit)]),
         (&host.stderr, STDERR, alloc::vec![("eprint", string, unit)]),
         (&host.stdin, STDIN, alloc::vec![("read_line", unit, string)]),
@@ -136,8 +136,8 @@ fn host_interfaces_pin_names_payloads_and_replies()
         }
     }
     assert_eq!(
-        host.div,
-        super::divergence(),
+        host.partial,
+        super::partiality(),
         "the divergence interface needs no arena"
     );
 }

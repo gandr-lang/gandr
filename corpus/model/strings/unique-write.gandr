@@ -38,11 +38,11 @@ def holders(s : Repr) -> Integer {
 /// On a long string held once, the write that reads no count copies nothing,
 /// as copy-on-write does.
 @[ runs("0") ]
-def aloneCopies() -> [Div] Integer { let s = force long; copies(pushInPlace(s, 33)) }
+def aloneCopies() -> [Partial] Integer { let s = force long; copies(pushInPlace(s, 33)) }
 
 /// And its written buffer has the one holder copy-on-write's has.
 @[ runs("1") ]
-def aloneHolders() -> [Div] Integer {
+def aloneHolders() -> [Partial] Integer {
   let s = force long;
   let w = pushInPlace(s, 33);
   holders(written(w))
@@ -52,7 +52,7 @@ def aloneHolders() -> [Div] Integer {
 /// still has two holders, so the original would see the write. This is the
 /// write a grade must keep from a shared string.
 @[ runs("2") ]
-def sharedHolders() -> [Div] Integer {
+def sharedHolders() -> [Partial] Integer {
   let s = force long;
   let c = copy(s);
   let w = pushInPlace(c, 33);
@@ -62,7 +62,7 @@ def sharedHolders() -> [Div] Integer {
 /// Under a grade-one hold the string is made in place, so the write that reads
 /// no count, through the hold's exclusive view, copies nothing.
 @[ runs("0") ]
-def heldOnce() -> [Div] Integer {
+def heldOnce() -> [Partial] Integer {
   let bs = repeatOnto(97, 24, (Nil : List(Integer)));
   var[1] s = Shared(1, bs);
   access s as v { let w = pushInPlace(v, 33); let t = written(w); resume(v, t); copies(w) }
@@ -70,7 +70,7 @@ def heldOnce() -> [Div] Integer {
 
 /// And the buffer it wrote back still has its one holder.
 @[ runs("1") ]
-def heldOnceHolders() -> [Div] Integer {
+def heldOnceHolders() -> [Partial] Integer {
   let bs = repeatOnto(97, 24, (Nil : List(Integer)));
   var[1] s = Shared(1, bs);
   access s as v { let w = pushInPlace(v, 33); let t = written(w); resume(v, t); holders(t) }

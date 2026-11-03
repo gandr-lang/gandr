@@ -165,7 +165,7 @@ fn a_tail_over_a_row_literal_is_merged_at_mint()
         )
     };
     let console = interface("Console");
-    let div = interface("Div");
+    let div = interface("Partial");
     let both = console.union(&div, &arena).expect("apart");
     let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let open = arena.value_type_row_tail(variable);

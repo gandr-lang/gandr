@@ -25881,7 +25881,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                r"def counted() -> -F [Div] Integer {
+                r"def counted() -> -F [Partial] Integer {
   var n = 0;
   while n < 3 { n += 1; }
   if n == 3 { n += 10; } else { n += 20; }
@@ -25890,7 +25890,7 @@ mod tests
   n -= 1;
   return n
 }
-def ended() -> -F [Div] Unit {
+def ended() -> -F [Partial] Unit {
   var n = 0;
   while n < 3 { n += 1; }
 }

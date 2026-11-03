@@ -1427,7 +1427,7 @@ fn a_field_naming_its_own_or_a_later_position_is_refused_by_name()
 fn a_fixpoint_checks_at_every_computation_type()
 {
     // `fix rec. force rec` at `F 1`: a loop, which only a partial
-    // fixpoint may write, and only at a row stating `Div`.
+    // fixpoint may write, and only at a row stating `Partial`.
     let looping = |evidence: FixpointEvidence| {
         let mut arena = CoreArena::new();
         let unit_type = arena.value_type_unit();

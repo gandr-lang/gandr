@@ -413,7 +413,7 @@ mod tests
                 "def handled+2:10 : Nat",
                 "def handled+5:11 : Nat",
                 "def handled+6:19 : Integer",
-                "def handled+6:22 : Stack(-F [Div] Unit, -F [Div] Nat)",
+                "def handled+6:22 : Stack(-F [Partial] Unit, -F [Partial] Nat)",
                 "def find_succ+1:8 : Nat",
                 "def find_succ+4:13 : Nat",
                 "def for_each+1:8 : Nat",

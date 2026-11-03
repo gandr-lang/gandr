@@ -129,10 +129,10 @@ fn program() -> Program
     let unit_type = arena.value_type_unit();
     let unit_returner = arena.comp_type_returner(unit_type);
     let suspended_unit = arena.value_type_thunk(unit_returner);
-    // A loop states that it may run forever: `U (F^⟨Div⟩ 1)`.
+    // A loop states that it may run forever: `U (F^⟨Partial⟩ 1)`.
     let diverging = arena.comp_type_returner_with_effects(
         unit_type,
-        gandr_core_term::effect::EffectRow::singleton(gandr_core_term::effect::host::divergence()),
+        gandr_core_term::effect::EffectRow::singleton(gandr_core_term::effect::host::partiality()),
     );
     let suspended_diverging = arena.value_type_thunk(diverging);
     let looping = |arena: &mut CoreArena, evidence| {

@@ -260,7 +260,7 @@ fn add_type_rules(
     // The two rules give `-F` two molds, and the molder settles their tie at
     // the next token: a `[` continues only the row form, and anything else
     // only the bare one. The row form is pushed first so its mold numbers
-    // first, which is what keeps `-F [Div] A` a row: a `[` may also open an
+    // first, which is what keeps `-F [Partial] A` a row: a `[` may also open an
     // expression list in the operand's hole, a reading the bare form keeps
     // open, and an exact tie keeps the smaller mold. A row naming an instance
     // by a label, `-F [a : std.io.Console.Eff] A`, is the labelled form's
@@ -289,10 +289,10 @@ fn add_type_rules(
     ));
     // A definition's result written as a value type takes the returner the
     // lowering inserts, `-> B` for `-> -F B`, and the row of that returner is
-    // written before the type, as the row form writes it after `-F`: `-> [Div]
-    // B` for `-> -F [Div] B`, `-> [Div | r] B` and `-> [r] B` open through a
-    // tail. The form realises the kind `f_type` as the row form does; no other
-    // type form opens with `[`, and the lowering reads it only at a
+    // written before the type, as the row form writes it after `-F`: `-> [Partial]
+    // B` for `-> -F [Partial] B`, `-> [Partial | r] B` and `-> [r] B` open through
+    // a tail. The form realises the kind `f_type` as the row form does; no
+    // other type form opens with `[`, and the lowering reads it only at a
     // definition's result.
     rules.push(Rule::with_provenance(
         RuleName("f_type.result"),
@@ -1399,8 +1399,8 @@ pub(super) fn row_entry(ty: Sort) -> Regex
 }
 
 /// Builds the labelled rows: the returner's row and a definition's result row
-/// as `f_type.row` and `f_type.result` write them, `-F [Div, d : Console | r]
-/// A` and `-> [d : Console] B`, with an entry that names an instance by a
+/// as `f_type.row` and `f_type.result` write them, `-F [Partial, d : Console |
+/// r] A` and `-> [d : Console] B`, with an entry that names an instance by a
 /// label, `a : I`, beside the interfaces named whole. A row naming no label is
 /// the unlabelled forms' own, and a row open through a tail alone, `[r]`,
 /// only theirs.

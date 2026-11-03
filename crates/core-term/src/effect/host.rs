@@ -13,11 +13,11 @@
 //! clause resumes with and reclaims each one its `free` clause receives, so a
 //! closed program serves its own buffers.
 //!
-//! `Div` is divergence: an interface with no operation, which a computation's
-//! row holds when the computation may run forever. A partial fixpoint other
-//! than a ruled operation's introduces it; no handler eliminates it, and a row
-//! is subsumed into one holding it as into one holding any other interface.
-//! The empty row is the row of a computation that returns.
+//! `Partial` is divergence: an interface with no operation, which a
+//! computation's row holds when the computation may run forever. A partial
+//! fixpoint other than a ruled operation's introduces it; no handler eliminates
+//! it, and a row is subsumed into one holding it as into one holding any other
+//! interface. The empty row is the row of a computation that returns.
 //!
 //! `Console` is the process's output: `print` takes a string and replies the
 //! unit once the host has written it as one line. The host at a program's entry
@@ -46,8 +46,9 @@
 //! `io::Result`, and its name is its path: the module, then `Eff`. The
 //! standard streams and the ring sit under `std.io`, the process's execution
 //! and its early exit under `std.process`, and the filesystem, the
-//! environment and the network each in a module of its own. `Div` keeps its
-//! bare name until a ruling names its module.
+//! environment and the network each in a module of its own. `Partial` names
+//! the partiality monad and stays ambient by its bare name until
+//! `std.partial.Eff` reads by its path.
 //!
 //! | Interface | Path |
 //! | --- | --- |
@@ -60,7 +61,7 @@
 //! | the network | `std.net.Eff` |
 //! | execution | `std.process.Exec.Eff` |
 //! | early exit | `std.process.Exit.Eff` |
-//! | divergence | `Div` |
+//! | divergence | `Partial` |
 //!
 //! No two interfaces share an operation name, so an operation names its
 //! interface: [`HostSignatures::offering`] finds it, and
@@ -99,7 +100,7 @@ pub const ENV: &str = "std.env.Eff";
 /// The completion ring's buffer interface.
 pub const RING: &str = "std.io.Ring.Eff";
 /// The divergence interface, with no operation.
-pub const DIV: &str = "Div";
+pub const PARTIAL: &str = "Partial";
 /// The console interface: a line written to the process's output.
 pub const CONSOLE: &str = "std.io.Console.Eff";
 /// The error stream interface: a line written to the process's standard
@@ -111,7 +112,9 @@ pub const STDIN: &str = "std.io.Stdin.Eff";
 pub const NET: &str = "std.net.Eff";
 /// The names of the ten interfaces, in the order [`HostSignatures::interfaces`]
 /// returns them.
-pub const INTERFACES: [&str; 10] = [EXEC, FS, PROC, ENV, RING, DIV, CONSOLE, STDERR, STDIN, NET];
+pub const INTERFACES: [&str; 10] = [
+    EXEC, FS, PROC, ENV, RING, PARTIAL, CONSOLE, STDERR, STDIN, NET,
+];
 
 /// The ten interfaces, sharing their arena-owned payload and reply types.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -128,7 +131,7 @@ pub struct HostSignatures
     /// Allocate a buffer the ring fills, and free one back.
     pub ring: EffectSig,
     /// Run forever: no operation, and no handler.
-    pub div: EffectSig,
+    pub partial: EffectSig,
     /// Write a line to the console.
     pub console: EffectSig,
     /// Write a line to standard error.
@@ -168,20 +171,20 @@ pub enum AuthorityError
 /// type and needs no arena.
 ///
 /// # Specification
-/// - ensures: the signature named [`DIV`] with no operation, equal to the host
-///   table's.
+/// - ensures: the signature named [`PARTIAL`] with no operation, equal to the
+///   host table's.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the host table's divergence interface is this one.
 /// - witness: `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`
-#[spec(ensures: |ret| ret.name().as_ref() == DIV && ret.operations().len() == 0_usize)]
+#[spec(ensures: |ret| ret.name().as_ref() == PARTIAL && ret.operations().len() == 0_usize)]
 #[inline]
 #[must_use]
-pub fn divergence() -> EffectSig
+pub fn partiality() -> EffectSig
 {
     EffectSig(alloc::sync::Arc::new(super::Signature {
-        name: DIV.into(),
+        name: PARTIAL.into(),
         operations: alloc::collections::BTreeMap::new(),
     }))
 }
@@ -264,12 +267,12 @@ impl HostSignatures
     ///   product in place of a List changes an answer.
     /// - witness: `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|host|
-        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.div, &host.console, &host.stderr, &host.stdin, &host.net].iter().all(|signature|
+        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.partial, &host.console, &host.stderr, &host.stdin, &host.net].iter().all(|signature|
             signature.operations().all(|operation|
                 arena.value_type(operation.payload).is_some()
                     && arena.value_type(operation.reply).is_some()))
             && host.interfaces().iter().zip(INTERFACES).all(|(signature, name)| signature.name().as_ref() == name)
-            && host.div.operations().len() == 0_usize) || ret.is_err())]
+            && host.partial.operations().len() == 0_usize) || ret.is_err())]
     #[inline]
     pub fn new(arena: &mut CoreArena) -> Result<Self, EffectConflict>
     {
@@ -360,7 +363,7 @@ impl HostSignatures
                 reply: unit,
             },
         ])?;
-        let div = divergence();
+        let partial = partiality();
         let console = EffectSig::new(CONSOLE.into(), [EffectOp {
             name: "print".into(),
             payload: string,
@@ -411,7 +414,7 @@ impl HostSignatures
             proc,
             env,
             ring,
-            div,
+            partial,
             console,
             stderr,
             stdin,
@@ -433,7 +436,7 @@ impl HostSignatures
             &self.proc,
             &self.env,
             &self.ring,
-            &self.div,
+            &self.partial,
             &self.console,
             &self.stderr,
             &self.stdin,

@@ -1516,11 +1516,11 @@ fn named(row: &EffectRow) -> Vec<String>
 #[test]
 fn an_open_row_takes_what_the_other_row_adds_2270()
 {
-    // `F^[Console | ?r] Unit` against `F^[Console, Div] Unit` solves `?r` as
-    // `[Div]`; against `F^[Console] Unit` as the empty row; against
-    // `F^[Div] Unit`, which lacks `Console`, the rows clash.
+    // `F^[Console | ?r] Unit` against `F^[Console, Partial] Unit` solves `?r` as
+    // `[Partial]`; against `F^[Console] Unit` as the empty row; against
+    // `F^[Partial] Unit`, which lacks `Console`, the rows clash.
     for (written, solved) in [
-        (&["Console", "Div"][..], &["Div"][..]),
+        (&["Console", "Partial"][..], &["Partial"][..]),
         (&["Console"][..], &[][..]),
     ] {
         let mut arena = CoreArena::new();
@@ -1548,7 +1548,7 @@ fn an_open_row_takes_what_the_other_row_adds_2270()
     let hole = HoleId::from(0_u32);
     let _r = meta(&mut metas, hole, Binders::NONE);
     let open = returner(&mut arena, &["Console"], Some(hole));
-    let lacking = returner(&mut arena, &["Div"], None);
+    let lacking = returner(&mut arena, &["Partial"], None);
     assert!(
         matches!(
             solve(&mut arena, &mut metas, &[Equation::new(
@@ -1565,15 +1565,15 @@ fn an_open_row_takes_what_the_other_row_adds_2270()
 #[test]
 fn an_open_row_takes_the_other_row_s_tail_2270()
 {
-    // `F^[Console | ?a] Unit` against `F^[Console, Div | ?b] Unit`: `?a` is
-    // `[Div | ?b]`, the interface the other adds over the other's tail.
+    // `F^[Console | ?a] Unit` against `F^[Console, Partial | ?b] Unit`: `?a` is
+    // `[Partial | ?b]`, the interface the other adds over the other's tail.
     let mut arena = CoreArena::new();
     let mut metas = Metas::new();
     let (first, second) = (HoleId::from(0_u32), HoleId::from(1_u32));
     let a = meta(&mut metas, first, Binders::NONE);
     let _b = meta(&mut metas, second, Binders::NONE);
     let narrow = returner(&mut arena, &["Console"], Some(first));
-    let wide = returner(&mut arena, &["Console", "Div"], Some(second));
+    let wide = returner(&mut arena, &["Console", "Partial"], Some(second));
     assert_eq!(
         Verdict::Solved,
         solve(&mut arena, &mut metas, &[Equation::new(
@@ -1583,7 +1583,7 @@ fn an_open_row_takes_the_other_row_s_tail_2270()
         )])
     );
     let row = row_of(&arena, solution(&metas, a));
-    assert_eq!(named(&row), ["Div"], "the interface the other adds");
+    assert_eq!(named(&row), ["Partial"], "the interface the other adds");
     let tail = row.tail().expect("open");
     assert!(
         matches!(arena.value_type(tail), Some(&ValueType::RowTail(code)) if arena.value(code) == Some(&Value::Hole(second))),
@@ -1594,14 +1594,14 @@ fn an_open_row_takes_the_other_row_s_tail_2270()
 #[test]
 fn a_row_in_its_own_tail_is_refuted_2270()
 {
-    // `?a = [Div | ?a]`: no row is `Div` beside itself.
+    // `?a = [Partial | ?a]`: no row is `Partial` beside itself.
     let mut arena = CoreArena::new();
     let mut metas = Metas::new();
     let hole = HoleId::from(0_u32);
     let a = meta(&mut metas, hole, Binders::NONE);
     let unknown = arena.value_hole(hole);
     let tail = arena.value_type_row_tail(unknown);
-    let within = arena.value_row(interfaces(&["Div"]).with_tail(Some(tail)));
+    let within = arena.value_row(interfaces(&["Partial"]).with_tail(Some(tail)));
     assert_eq!(
         Verdict::Refuted(Refutation::Occurs { meta: a, within }),
         solve(&mut arena, &mut metas, &[Equation::new(
@@ -1615,7 +1615,7 @@ fn a_row_in_its_own_tail_is_refuted_2270()
 #[test]
 fn two_open_rows_each_lacking_an_interface_wait_2270()
 {
-    // `F^[Console | ?a] Unit` against `F^[Div | ?b] Unit`: each tail holds
+    // `F^[Console | ?a] Unit` against `F^[Partial | ?b] Unit`: each tail holds
     // what the other row writes, and the store mints no shared tail, so the
     // equation waits on both.
     let mut arena = CoreArena::new();
@@ -1624,7 +1624,7 @@ fn two_open_rows_each_lacking_an_interface_wait_2270()
     let a = meta(&mut metas, first, Binders::NONE);
     let b = meta(&mut metas, second, Binders::NONE);
     let console = returner(&mut arena, &["Console"], Some(first));
-    let div = returner(&mut arena, &["Div"], Some(second));
+    let div = returner(&mut arena, &["Partial"], Some(second));
     assert_eq!(
         Verdict::Postponed,
         solve(&mut arena, &mut metas, &[Equation::new(

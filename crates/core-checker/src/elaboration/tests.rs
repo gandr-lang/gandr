@@ -1224,9 +1224,9 @@ fn an_implicit_solved_past_its_scope_escapes_1216()
 #[test]
 fn a_row_open_through_an_implicit_is_solved_by_the_row_equation_2270()
 {
-    // `log("a")` where `[Console, Div]` is asked: `log`'s row `[Console | r]`,
-    // `r` omitted, against the closed row binds `r` to `[Div]`. Two closed
-    // rows are conversion's; against `[Div]`, which lacks `Console`, the open
+    // `log("a")` where `[Console, Partial]` is asked: `log`'s row `[Console | r]`,
+    // `r` omitted, against the closed row binds `r` to `[Partial]`. Two closed
+    // rows are conversion's; against `[Partial]`, which lacks `Console`, the open
     // row is apart.
     use gandr_core_term::effect::EffectName;
     use gandr_core_term::effect::EffectOp;
@@ -1246,7 +1246,7 @@ fn a_row_open_through_an_implicit_is_solved_by_the_row_equation_2270()
     let (hole, at, _) = nominated(&mut arena, &mut deferrals);
     let tail = arena.value_type_row_tail(at);
     let open = row(&["Console"]).with_tail(Some(tail));
-    let (asked, lacking) = (row(&["Console", "Div"]), row(&["Div"]));
+    let (asked, lacking) = (row(&["Console", "Partial"]), row(&["Partial"]));
     assert_eq!(
         deferrals.unify_rows(&mut arena, Binders::NONE, (&asked, &lacking)),
         super::Unified::Rigid,
@@ -1264,9 +1264,9 @@ fn a_row_open_through_an_implicit_is_solved_by_the_row_equation_2270()
             .is_ok_and(|solved| solved.get(&hole).is_some_and(|&(code, _)| {
                 matches!(arena.value(code), Some(Value::Row(solved))
                 if solved.tail().is_none()
-                    && solved.signatures().map(|signature| signature.name().as_ref()).eq(["Div"]))
+                    && solved.signatures().map(|signature| signature.name().as_ref()).eq(["Partial"]))
             })),
-        "`r` is solved as `[Div]`, closed: {solutions:?}"
+        "`r` is solved as `[Partial]`, closed: {solutions:?}"
     );
     assert_eq!(
         deferrals.unify_rows(&mut arena, Binders::NONE, (&open, &lacking)),

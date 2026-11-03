@@ -1,7 +1,7 @@
 // Loops and their exits. A `loop` or a `while` may run forever, so the
-// function holding one states `Div` in its row, `-F [Div] T`: the host
+// function holding one states `Partial` in its row, `-F [Partial] T`: the host
 // interface with no operation, which nothing handles (#1481). A caller holds
-// it in its own row, and an entry runs at `+U (-F [Div] T)`. A `for` over a
+// it in its own row, and an entry runs at `+U (-F [Partial] T)`. A `for` over a
 // list descends on the list and needs no entry; each `become` is an exit.
 
 data Nat : Type where {
@@ -14,22 +14,22 @@ def tick(n : Nat) -> Unit {
 }
 
 /// A loop that only runs `tick` again: it never leaves.
-def spin(n : Nat) -> [Div] Nat {
+def spin(n : Nat) -> [Partial] Nat {
   loop { tick(n); }
 }
 
 /// A `break` with a value leaves the loop with it, and what follows reads it.
-def first(n : Nat) -> [Div] Nat {
+def first(n : Nat) -> [Partial] Nat {
   let m = loop { break(Succ(n)) };
   Succ(m)
 }
 
 /// The value the `break` left with, one further.
 @[ runs("Succ(Succ(Zero))") ]
-def first_zero() -> [Div] Nat { become first(Zero) }
+def first_zero() -> [Partial] Nat { become first(Zero) }
 
 /// Each arm of a case leaves the loop with its own value.
-def pick(n : Nat) -> [Div] Nat {
+def pick(n : Nat) -> [Partial] Nat {
   let m = loop {
     match n {
       Zero => break(n),
@@ -41,10 +41,10 @@ def pick(n : Nat) -> [Div] Nat {
 
 /// The successor arm leaves with the predecessor.
 @[ runs("Succ(Succ(Zero))") ]
-def pick_two() -> [Div] Nat { become pick(Succ(Succ(Zero))) }
+def pick_two() -> [Partial] Nat { become pick(Succ(Succ(Zero))) }
 
 /// A `return` inside the loop leaves the function; `continue` runs the loop again.
-def leave(n : Nat) -> [Div] Nat {
+def leave(n : Nat) -> [Partial] Nat {
   loop {
     match n {
       Zero => continue,
@@ -55,33 +55,33 @@ def leave(n : Nat) -> [Div] Nat {
 
 /// One is a successor, so its predecessor is returned.
 @[ runs("Zero") ]
-def leave_one() -> [Div] Nat { become leave(Succ(Zero)) }
+def leave_one() -> [Partial] Nat { become leave(Succ(Zero)) }
 
 /// A loop whose body hands the rest of the run to another function.
-def hand(n : Nat) -> [Div] Nat {
+def hand(n : Nat) -> [Partial] Nat {
   loop { become leave(Succ(n)) }
 }
 
 /// The handed-on call returns at once.
 @[ runs("Succ(Zero)") ]
-def hand_one() -> [Div] Nat { become hand(Succ(Zero)) }
+def hand_one() -> [Partial] Nat { become hand(Succ(Zero)) }
 
 /// A `while` that returns from its first pass when its condition holds.
-def until_done(n : Integer) -> [Div] Integer {
+def until_done(n : Integer) -> [Partial] Integer {
   while n > 0 { return n };
   0
 }
 
 /// Three is above zero, so the loop returns it.
 @[ runs("3") ]
-def until_three() -> [Div] Integer { become until_done(3) }
+def until_three() -> [Partial] Integer { become until_done(3) }
 
 /// Zero is not above zero, so the loop never runs.
 @[ runs("0") ]
-def until_none() -> [Div] Integer { become until_done(0) }
+def until_none() -> [Partial] Integer { become until_done(0) }
 
 /// A bare `break` leaves the loop with unit, and what follows reads the binder.
-def sift(n : Nat) -> [Div] Nat {
+def sift(n : Nat) -> [Partial] Nat {
   loop {
     match n {
       Zero => { break; },
@@ -93,10 +93,10 @@ def sift(n : Nat) -> [Div] Nat {
 
 /// Zero breaks at once.
 @[ runs("Zero") ]
-def sift_zero() -> [Div] Nat { become sift(Zero) }
+def sift_zero() -> [Partial] Nat { become sift(Zero) }
 
 /// A loop inside a handler's body leaves with its value to the body.
-def handled(n : Nat) -> [Div] Nat {
+def handled(n : Nat) -> [Partial] Nat {
   handle c : std.process.Exit.Eff {
     let m = loop { break(Succ(n)) };
     pure m
@@ -108,7 +108,7 @@ def handled(n : Nat) -> [Div] Nat {
 
 /// The loop's value, through the `pure` clause.
 @[ runs("Succ(Succ(Zero))") ]
-def handled_zero() -> [Div] Nat { become handled(Zero) }
+def handled_zero() -> [Partial] Nat { become handled(Zero) }
 
 @[ refuses("OutsideLoop") ]
 def stray(n : Nat) -> -F Nat {
