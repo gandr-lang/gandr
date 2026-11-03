@@ -583,6 +583,39 @@ fn a_statement_in_a_derived_motive_formats_once_as_explicit_3891()
     );
 }
 
+/// A lambda stating its binder's type in `cong` formats once as explicit
+/// (#4671). The printer spells the motive's bind with a spaced `;`, and the
+/// explicit form writes it touching the token before it, as every later pass
+/// lays it.
+#[test]
+fn a_stated_binder_in_cong_formats_once_as_explicit_4671()
+{
+    let grammar = grammar();
+    let source = "def whiskered(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path(A, x, y),
+  f2 : Path(A, x, y),
+  a : Path(Path(A, x, y), f1, f2),
+  g : Path(A, y, z)
+) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+  cong(fun (q : Path(A, x, y)) { q then g }, a)
+}
+";
+    let once = spelled(&grammar, source, Form::Explicit, Selection::Every);
+    assert!(
+        once.contains("= pure b; transport("),
+        "the motive's bind touches its `;`: {once}"
+    );
+    assert_eq!(
+        spelled(&grammar, once.as_str(), Form::Explicit, Selection::Every),
+        once,
+        "the explicit form is a fixed point"
+    );
+}
+
 /// #778: an inverse and a map's action on a path move both ways as the
 /// composite does: desugared, each is the transport whose motive and moved
 /// reflexivity the lowering derived, spelled as the printer spells them;

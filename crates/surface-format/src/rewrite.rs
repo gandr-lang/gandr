@@ -3320,7 +3320,9 @@ impl<'source> Respelling<'_, 'source>
     }
 }
 
-/// Write `tokens` into `out`, as the printer spaced them.
+/// Write `tokens` into `out`, as the printer spaced them, except that a `,`
+/// or `;` touches the token before it, as the layout's `join` places one:
+/// the printer writes a bind's ` ;`, and a second pass would take its space.
 ///
 /// # Specification
 /// trivial.
@@ -3330,7 +3332,7 @@ fn written<'source>(
 )
 {
     for token in tokens {
-        if token.spaced == Spaced::Yes {
+        if token.spaced == Spaced::Yes && !matches!(token.text.as_str(), "," | ";") {
             out.gap(Spelling(" "));
         }
         out.fragment(SourceFragment::from(token.text.as_str()));
