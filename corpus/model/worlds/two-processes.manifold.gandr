@@ -14,8 +14,8 @@
 // - see: `two-processes.gandr` — the program it deploys
 // - see: `crates/surface-driver/tests/net.rs` — the two processes
 
-// The deployment theories, from `std.manifold` by its path.
-import "../../../library/std/src/manifold.gandr";
+// The deployment theories.
+import std.manifold (Site, Manifold, Placement, At);
 // The site `far` is placed at.
 import "./two-processes.site.gandr" as far;
 

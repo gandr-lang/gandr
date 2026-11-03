@@ -198,6 +198,7 @@ corpus/ledger/features/specification-monads.gandr Tense f32bc3c0e5b58f4d
 corpus/ledger/features/spinal-duplication.gandr Tense 0f7bf85f8890fdff
 corpus/ledger/features/spinal-duplication.gandr Tense 230726ff60b0ada4
 corpus/ledger/features/spinal-duplication.gandr Glossary 0f7bf85f8890fdff
+corpus/ledger/features/std-build.gandr Passive 1a5c0118912a83da
 corpus/ledger/features/std-build.gandr Tense f5e17851c8523bea
 corpus/ledger/features/std-string.gandr Tense 240a1f21bd78d871
 corpus/ledger/features/std-string.gandr Tense 3475dfd94a80588d

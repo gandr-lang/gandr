@@ -34,4 +34,4 @@ A module's interface is what its `pub` declarations state; a declaration is priv
 
 ## Importing it
 
-A project imports a module of `std` by the relative path to its source, `library/std/src/<module>.gandr`, until a package imports another by name (#533 p3). A source under any root may import one under the strict root, so the corpus's fixtures read `std` as a package does, and `std`'s declarations settle as strictly as they do alone.
+A source imports a module of `std` by name from under any root, `import std.string (concat);`. A module path whose head is `std` names the standard library's module when no source or locked dependency of the importer's package takes the name `std`. The standard library is `library/std` of the tree that built the toolchain. A source under any root may import one under the strict root, so the corpus's fixtures read `std` as a package does, and `std`'s declarations settle as strictly as they do alone.

@@ -53,12 +53,26 @@
 // `Nat`.
 import "../../data/data-base.gandr";
 
-// `Code`, `Codes`, `Row`, `Witness`, `Printed`, `Params`, `Declared`,
-// `Admission`, `summary`, `niched`, `admit`.
-import "../../../../library/std/src/boundary.gandr";
-
-// `U32`, `Ref`, `Field`, `Done`, `Variant`, `NoVariant`.
-import "../../../../library/std/src/layout.gandr";
+// The row, the codes and admission.
+import std.boundary (
+  Code,
+  Plain,
+  Sum,
+  Witness,
+  summary,
+  niched,
+  NoCode,
+  Arg,
+  Row,
+  Printed,
+  NoParam,
+  Param,
+  Declared,
+  Admission,
+  admit
+);
+// The scalars and the fields a code is laid out from.
+import std.layout (U32, Ref, Done, Field, NoVariant, Variant);
 
 // `Heap`, `vOpt`, `vInt`, `keptOpt`, `derefOrWp`, `derefOrMeets`.
 import "../../specification/niche-realizability.gandr";

@@ -2,8 +2,7 @@
 /// Implemented: a package's model states what it asks of the toolchain, `gandr`, the least language version as `>= 0.3`, `features`, keys of the features ledger, and `systems`, each `<architecture>-<os>`, an empty one asking nothing; `gandr check` refuses one the running toolchain leaves unmet as `ToolchainUnmet.gandr`, `ToolchainUnmet.feature.<key>` or `ToolchainUnmet.system`, naming the field and both sides, and writes no manifest; a met one is the manifest's `[toolchain]` table, and an edit to a constraint moves the package's address.
 /// Not implemented: an operation's port takes no list yet, so `features` and `systems` each stay one string until #2993 lands.
 
-// The manifest theories, from `std.build` by its path.
-import "../../../library/std/src/build.gandr";
+import std.build (Gandr);
 
 /// A package asking for this language version or later, two features this
 /// toolchain implements, and any system.

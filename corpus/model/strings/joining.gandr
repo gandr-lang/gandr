@@ -14,8 +14,8 @@
 //   refused
 // - see: #525 — admits a law over a definition
 
-// `empty`, `concat`, `isEmpty`.
-import "../../../library/std/src/string.gandr";
+// Joining, its unit and the emptiness test.
+import std.string (empty, concat, isEmpty);
 
 /// `greeted` joins a greeting and a name.
 @[ runs("\"hello, ada\"") ]

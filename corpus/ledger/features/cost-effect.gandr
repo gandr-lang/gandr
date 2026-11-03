@@ -5,10 +5,8 @@
 // three, and the same steps under a model that erases every charge, which
 // answer as the program does with no charge.
 
-// `Cost`, `Counting`, `costs`, `counted` and `countOf`.
-import "../../../library/std/src/cost.gandr";
-// `Count`.
-import "../../../library/std/src/grade.gandr";
+import std.cost (Cost, Counting, costs, counted, countOf);
+import std.grade (Count);
 
 /// Three steps: a charge of one, a charge of two, then seven.
 def threeSteps() -> [cost : Cost with sort N = Nat => Nat] Integer {
