@@ -188,7 +188,7 @@ def citations:
   | . as $crate
   | select(any(($vault.cited[$crate] // [])[]; . == "vault:\($page.mint)") | not)
   | select(any($read_in[]; any(.under[]; . == $page.name or . == "vault:\($page.mint)") and any(.crates[]; . == $crate)) | not)
-  | "`crates/\($crate)` cites no `vault:\($page.mint)` (`\($page.name)`), a primary source of #\($page.n), and the change touches its sources: add `- `vault:\($page.mint)` — <exemplar|lineage|background>: <what it decides>` to the `# References` of the module it decides something for, or name the crate under the page's `## Sources read` item as `  - read in: crates/\($crate) — <what the change does there>` if the page decided nothing there, or mark the page `read: <what it informed>` if it decided nothing in the code, then run `pr:open` again";
+  | "`crates/\($crate)` cites no `vault:\($page.mint)` (`\($page.name)`), a primary source of #\($page.n), and the change touches its sources: add `- `vault:\($page.mint)` — <newest|dependency|anchor|exemplar>: <what it decides>` to the `# References` of the module it decides something for, or name the crate under the page's `## Sources read` item as `  - read in: crates/\($crate) — <what the change does there>` if the page decided nothing there, or mark the page `read: <what it informed>` if it decided nothing in the code, then run `pr:open` again";
 
 # The refusals of `## Readings`: every axis answered in one of the four forms
 # once a unit is worked, and a selected axis left unanswered departed from.

@@ -7,9 +7,10 @@
 #
 #   cite     a key line of a module's `# References`:
 #              - `<key>` — <role>: <what it decides at this site>
-#            its role `exemplar`, `lineage` or `background`, its key the
-#            library's citation key or `vault:` and a vault page's `mint:`
-#            uuid
+#            its role `newest`, `dependency`, `anchor`, `exemplar`, `lineage`
+#            or `background`, a `dependency` line naming its section with
+#            `§`; its key the library's citation key or `vault:` and a vault
+#            page's `mint:` uuid
 #   mirror   a key line of the README's `## References`, the same shape
 #   locator  a DOI or arXiv locator anywhere in documentation outside a key
 #            line, its key the locator normalized: `doi:` and the DOI in
@@ -106,8 +107,9 @@ function cited(key, said,    why) {
   entry = "key"
   why = refusal(key)
   if (why != "") emit("refused", why, "")
-  else if (match(said, /^(exemplar|lineage|background): [^[:space:]]/)) emit(readme ? "mirror" : "cite", key, substr(said, 1, index(said, ":") - 1))
-  else emit("refused", "a References line gives its key a role and what it decides: - `" key "`" dash "<exemplar|lineage|background>: <what it decides>", "")
+  else if (said ~ /^dependency: / && index(said, "§") == 0) emit("refused", "a dependency names the section the site implements: - `" key "`" dash "dependency: <what it decides>, § <section>", "")
+  else if (match(said, /^(newest|dependency|anchor|exemplar|lineage|background): [^[:space:]]/)) emit(readme ? "mirror" : "cite", key, substr(said, 1, index(said, ":") - 1))
+  else emit("refused", "a References line gives its key a role and what it decides: - `" key "`" dash "<newest|dependency|anchor|exemplar>: <what it decides>", "")
 }
 
 BEGIN { dash = " — " }

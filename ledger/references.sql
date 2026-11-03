@@ -10,11 +10,17 @@ CREATE TABLE reference(
   -- The module whose documentation cites the key: its path, empty for the
   -- crate root, whose documentation is its root source's and its README's.
   module      TEXT NOT NULL CONSTRAINT "module is segments joined by ::, empty for the crate root" CHECK(module NOT GLOB '*[^a-z0-9_:]*'),
-  -- What the source is to the site, as its key line states:
-  --   exemplar    the construction the site builds, named by its design;
+  -- What the site takes from the source, as its key line states (#4532):
+  --   newest      the newest work stating the construction the site builds;
+  --   dependency  a definition, theorem, proof or appendix the site
+  --               implements, its key line naming the section with `§`;
+  --   anchor      the central statement a narrower newest work specialises;
+  --   exemplar    a work before the citation window that no newer work
+  --               states;
+  -- and, at a site no `fidelity` row records yet:
   --   lineage     the work the site's construction descends from;
   --   background  context the site reads against; every locator's.
-  role        TEXT NOT NULL CONSTRAINT "role is exemplar, lineage or background" CHECK(role IN ('exemplar', 'lineage', 'background')),
+  role        TEXT NOT NULL CONSTRAINT "role is newest, dependency, anchor, exemplar, lineage or background" CHECK(role IN ('newest', 'dependency', 'anchor', 'exemplar', 'lineage', 'background')),
   -- The last reading of the source against the site, as `mise run refs:read`
   -- stamps it: the commit checked out, the day, and the blob id of the
   -- module's source then. NULL until the site is read.
@@ -681,4 +687,36 @@ INSERT INTO work VALUES('doi:10.4230/lipics.types.2024.9',2025,NULL);
 INSERT INTO work VALUES('doi:10.4310/hha.2018.v20.n2.a11',2018,NULL);
 INSERT INTO work VALUES('doi:10.46298/lmcs-18(1:10)2022',2022,NULL);
 INSERT INTO work VALUES('doi:10.5381/jot.2022.21.2.a2',2022,NULL);
+CREATE TABLE fidelity(
+  -- A site the citation refresh has read against the newest work stating
+  -- what it builds, written by hand. The site is a crate's directory under
+  -- crates/ and its module's path, empty for the crate root, or `corpus` and
+  -- a source's path under corpus/.
+  crate      TEXT NOT NULL CONSTRAINT "crate is a directory under crates/ or corpus" CHECK(crate = 'corpus' OR (crate GLOB '[a-z]*-[a-z]*' AND crate NOT GLOB '*[^a-z0-9-]*')),
+  module     TEXT NOT NULL,
+  -- The work the site cited before the refresh, by its key or its locator.
+  old        TEXT NOT NULL CONSTRAINT "old is one word" CHECK(old <> '' AND instr(old, ' ') = 0 AND instr(old, char(9)) = 0),
+  -- How the site's code stands to the newest work:
+  --   historical  it follows the old work's framing, which the newest
+  --               supersedes, and `follow_up` names the refactor;
+  --   current     it already follows the newest work;
+  --   synthesis   it departs from both on purpose, and its module's
+  --               documentation says why.
+  verdict    TEXT NOT NULL CONSTRAINT "verdict is historical, current or synthesis" CHECK(verdict IN ('historical', 'current', 'synthesis')),
+  -- The issue that brings a historical site to the newest work's framing.
+  follow_up  INTEGER CONSTRAINT "follow_up is an issue number" CHECK(follow_up IS NULL OR follow_up > 0),
+  -- Every work traced from the newest one, cited or not, by key or locator,
+  -- one space between each; NULL before the trace.
+  followed   TEXT,
+  -- Whether the newest work states the whole of what the site builds, or a
+  -- narrower case of it.
+  scope      TEXT NOT NULL CONSTRAINT "scope is whole or narrower" CHECK(scope IN ('whole', 'narrower')),
+  -- For a narrower newest work: the key of the central statement it
+  -- specialises, which the site cites as `anchor`, or the statement that the
+  -- citation window holds none.
+  anchor     TEXT CONSTRAINT "anchor is one word" CHECK(anchor IS NULL OR (anchor <> '' AND instr(anchor, ' ') = 0)),
+  unanchored TEXT,
+  PRIMARY KEY(crate, module, old),
+  CONSTRAINT "a site names an anchor or states that none exists, not both" CHECK(anchor IS NULL OR unanchored IS NULL)
+) WITHOUT ROWID;
 COMMIT;
