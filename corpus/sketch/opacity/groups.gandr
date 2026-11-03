@@ -1,0 +1,50 @@
+/// Several definitions share one representation through a named group.
+///
+/// Each of a queue's operations reads its two-list representation. Its clients
+/// should see only the operations and their laws.
+///
+/// `opaque Rep;` declares the group, and its visibility is the name's own
+/// scope. `@[within(Rep)]` puts a definition in the group, and
+/// `@[unfolds(Rep)]` lets a law see into all of them.
+///
+/// - see: #4570 — the opacity sketch, its rulings in the issue body
+
+/// A queue as a front list and a reversed back list.
+data Queue(A : Type) : Type where {
+  /// The two lists.
+  | Queue : (front : List(A), back : List(A)) --> Queue(A)
+}
+
+/// The queue's representation, visible only in this module.
+private opaque Rep;
+
+/// The empty queue.
+@[within(Rep)]
+def empty[A : Type]() -> Queue(A) {
+  Queue(Nil, Nil)
+}
+
+/// A value at the back of the queue.
+@[within(Rep)]
+def push[A : Type](x : A, q : Queue(A)) -> Queue(A) {
+  Queue(q.front, Cons(x, q.back))
+}
+
+/// The front value and the rest, or nothing for an empty queue.
+@[within(Rep)]
+def pop[A : Type](q : Queue(A)) -> Maybe(A * Queue(A)) {
+  match q.front {
+    | Cons(x, rest) => Just((x, Queue(rest, q.back)))
+    | Nil => match reverse(q.back) {
+      | Nil => Nothing
+      | Cons(x, rest) => Just((x, Queue(rest, Nil)))
+    }
+  }
+}
+
+/// Popping a queue of one pushed value gives that value back. The law sees
+/// into the whole group.
+@[unfolds(Rep)]
+def popPush[A : Type](x : A) -> Path(Maybe(A * Queue(A)), pop(push(x, empty())), Just((x, empty()))) {
+  Path.here(Just((x, empty())))
+}

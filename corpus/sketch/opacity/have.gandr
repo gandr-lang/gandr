@@ -1,0 +1,17 @@
+/// A local binding hides its value from the rest of the body with `have`.
+///
+/// A `let` is transparent, so conversion may read its value. A large
+/// intermediate result should not unfold into every later type.
+///
+/// `have x = e;` binds `x` beside `let`. It elaborates to an auxiliary
+/// definition whose unfolding name the body does not hold.
+///
+/// - see: #4570 — the opacity sketch, its rulings in the issue body
+
+/// A bound read once and then only compared. The body checks against the
+/// bound's type and never unfolds the search that produced it.
+def withinBound(xs : List(Nat), x : Nat) -> Bool {
+  have bound = maximum(xs);
+  let slack = 2;
+  x <= bound + slack
+}

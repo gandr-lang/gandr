@@ -1,0 +1,37 @@
+/// A definition states which bodies it sees into, by an attribute.
+///
+/// Every definition is opaque by default, so conversion unfolds a body only
+/// where the checker holds that definition's unfolding name. A definition
+/// that needs another's body says so on its own head.
+///
+/// `@[unfolds(f)]` on `g` makes every unfolding of `g` an unfolding of `f`
+/// too. The relation is transitive, and the checker decides it by finite
+/// inclusion.
+///
+/// - see: #4570 — the opacity sketch, its rulings in the issue body
+/// - see: #4558 — the syntax inventory
+
+/// Natural addition by recursion on its first argument.
+def _+_(m : Nat, n : Nat) -> Nat {
+  match m {
+    | Zero => n
+    | Succ(k) => Succ(k + n)
+  }
+}
+
+/// `_++_` appends two vectors. The result's length `m + n` converts with each
+/// branch's only through addition's body, so the head unfolds `_+_`.
+@[unfolds(_+_)]
+def _++_[A : Type, m n : Nat](u : Vec(A, m), v : Vec(A, n)) -> Vec(A, m + n) {
+  match u {
+    | VNil => v
+    | VCons(x, rest) => VCons(x, rest ++ v)
+  }
+}
+
+/// A client of append. It unfolds `_++_`, and through it `_+_`, so its
+/// type converts.
+@[unfolds(_++_)]
+def appendNil[A : Type](v : Vec(A, 2)) -> Vec(A, 2) {
+  VNil ++ v
+}

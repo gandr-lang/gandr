@@ -1,0 +1,32 @@
+/// A statement opens one body for the rest of its block and nowhere else.
+///
+/// An attribute on a head reaches every client of that definition. A proof
+/// that needs a body for one step should not pass the need on.
+///
+/// `unfold f;` stands among a block's statements, as `open e;` does. It
+/// elaborates to an auxiliary definition, so the unfolding never reaches the
+/// enclosing definition's interface.
+///
+/// - see: #4570 — the opacity sketch, its rulings in the issue body
+
+/// Natural addition by recursion on its first argument.
+def _+_(m : Nat, n : Nat) -> Nat {
+  match m {
+    | Zero => n
+    | Succ(k) => Succ(k + n)
+  }
+}
+
+/// Zero is a left unit for addition. The proof opens addition for its own
+/// block, and a client of the lemma sees only its statement.
+def plusZero(n : Nat) -> Path(Nat, 0 + n, n) {
+  unfold _+_;
+  Path.here(n)
+}
+
+/// The successor moves out of the left argument. The first step opens
+/// addition, and the rest of the block reasons over the opened body.
+def plusSucc(m : Nat, n : Nat) -> Path(Nat, Succ(m) + n, Succ(m + n)) {
+  unfold _+_;
+  Path.here(Succ(m + n))
+}
