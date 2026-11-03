@@ -27,6 +27,8 @@ pub module Package : Model(Gandr.Package) where {
   def systems = "";
   /// The spelling the package asks for, inert as its name is.
   def spelling = "";
+  /// The directory the modules sit under, inert as its name is.
+  def sources = "src";
 }
 
 /// The package's content: an edit to it moves the address.

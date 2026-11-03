@@ -339,15 +339,16 @@ pub enum ImportBase
     /// The importing source's: a quoted path, `import "./base.gandr" ;`.
     Importer,
     /// The package's root module's: a module path, `import text.greet ;`,
-    /// whose file is `text/greet.gandr` beside the package's `package.gandr`.
+    /// whose file is `text/greet.gandr` under the sources the package's model
+    /// names.
     Root,
     /// The package's root: a coordinate, `import "path:../hello" as hello ;`,
     /// whose file is the package source of the package `../hello` roots.
     Coordinate,
     /// A dependency's sources: a module path whose head is the alias a
     /// coordinate import of the same source binds, `import hello.text.greet ;`,
-    /// whose file is `text/greet.gandr` beside the package source of the
-    /// package the coordinate roots.
+    /// whose file is `text/greet.gandr` under the sources of the package the
+    /// coordinate roots.
     Dependency,
 }
 
@@ -452,11 +453,10 @@ impl ImportPath
     }
 
     /// The file a source in `directory` names: joined to `directory`, or the
-    /// package source of the dependency its coordinate locks, or under the
-    /// directory of that package source for a module path through the
-    /// coordinate's alias, or under the directory of the root module of the
-    /// package `directory` sits in, or under the standard library for the head
-    /// `std`.
+    /// package source of the dependency its coordinate locks, or under that
+    /// dependency's sources for a module path through the coordinate's alias,
+    /// or under the sources of the package `directory` sits in, or under the
+    /// standard library for the head `std`.
     ///
     /// # Specification
     /// - requires: `directory` is the importing source's directory.
@@ -466,9 +466,9 @@ impl ImportPath
     ///   finds from `directory`, or as [`lock::unpackaged`] names it from
     ///   `directory` when it finds none, and [`Named::Unlocked`] of the
     ///   coordinate's directory where neither names one; an
-    ///   [`ImportBase::Dependency`] file under the directory of the package
-    ///   source its coordinate names so, and [`Named::Unlocked`] of the file
-    ///   under the coordinate's directory where none is named; an
+    ///   [`ImportBase::Dependency`] file under the sources of the package whose
+    ///   package source its coordinate names so, and [`Named::Unlocked`] of the
+    ///   file under the coordinate's directory where none is named; an
     ///   [`ImportBase::Root`] file as [`ImportPath::in_package`] names it under
     ///   the sources of the package [`Package::discover`] finds from
     ///   `directory`, or under `directory` when it finds none: a source in no
@@ -479,12 +479,13 @@ impl ImportPath
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a module path imported from a source under `src/text`
-    ///   names its file under `src`, and a quoted path its file beside the
-    ///   importer; a locked coordinate names the dependency's package source,
-    ///   and a module path whose head names no source is unlocked; a module
-    ///   path under `std` names the standard library's file from a source in no
-    ///   package; a module path through a locked coordinate's alias names the
-    ///   file under the dependency's sources.
+    ///   names its file under the package's sources, `src`, and a quoted path
+    ///   its file beside the importer; a locked coordinate names the
+    ///   dependency's package source, and a module path whose head names no
+    ///   source is unlocked; a module path under `std` names the standard
+    ///   library's file from a source in no package; a module path through a
+    ///   locked coordinate's alias names the file under the dependency's
+    ///   sources.
     /// - witness: `component::tests::a_module_path_is_named_from_its_package_s_root_2687`
     /// - witness: `component::tests::a_std_module_path_names_the_standard_library_from_any_root_4517`
     /// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
@@ -536,9 +537,9 @@ impl ImportPath
         }
     }
 
-    /// The file under the directory of `source`, a dependency's package
-    /// source; unlocked under the coordinate's directory `unlocked` gives when
-    /// no source is named.
+    /// The file under the sources of the package whose package source is
+    /// `source`, a dependency's; unlocked under the coordinate's directory
+    /// `unlocked` gives when no source is named.
     ///
     /// # Specification
     /// trivial.
@@ -548,7 +549,11 @@ impl ImportPath
         unlocked: impl FnOnce() -> PathBuf,
     ) -> Named
     {
-        source.and_then(Path::parent).map_or_else(
+        let sources = source.and_then(|source| match Package::discover(source) {
+            Maybe::Present(dependency) => Some(dependency.sources().to_path_buf()),
+            Maybe::Absent(_) => None,
+        });
+        sources.map_or_else(
             || Named::Unlocked(unlocked().join(&self.file)),
             |sources| Named::File(sources.join(&self.file)),
         )
@@ -3984,7 +3989,13 @@ mod tests
         .expect("the standard library is checked out");
         let importer =
             SourceText::from("import std.string (concat) ;\nimport std ;\ndef two = 2 ;");
-        let standard = [library.join("string.gandr"), library.join("package.gandr")];
+        let standard = [
+            library.join("string.gandr"),
+            library
+                .parent()
+                .expect("`src` has a parent")
+                .join("package.gandr"),
+        ];
         let loose = Scratch::new(Path::new("std-loose"), &[]);
         assert_eq!(
             imports_named(&grammar, &loose.0.join("use.gandr"), importer),

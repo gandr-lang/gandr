@@ -84,6 +84,12 @@ pub theory Gandr.Package where {
   /// Where the package is fetched from, a hint the resolver may try first.
   @[ inert ]
   oper endpoint : String;
+  /// The directory the package's modules sit under, a `/`-separated path
+  /// from the package's root, `src`: `text/greet.gandr` there is the module
+  /// `text.greet`. Discovery reads it as the string the model writes, before
+  /// any source is checked, so the model states it as a string literal.
+  @[ inert ]
+  oper sources : String;
 }
 
 /// A workspace: the packages a `workspace.gandr` gathers, described by the

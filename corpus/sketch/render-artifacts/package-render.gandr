@@ -12,7 +12,7 @@
 /// - see: #4719 — the render sketch, its rulings in the issue body
 /// - see: #4725 — the first unit, which ports the render into `std.build`
 /// - see: #4730 — the probe on reflecting a module as a value
-/// - see: `../../../library/std/src/package.gandr` — the model this restates
+/// - see: `../../../library/std/package.gandr` — the model this restates
 
 // The manifest theories.
 import std.build (Gandr);
@@ -51,4 +51,6 @@ pub module Package : Model(Gandr.Package) where {
   def systems = "";
   /// The spelling `std` asks for.
   def spelling = "";
+  /// The directory the modules of `std` sit under.
+  def sources = "src";
 }

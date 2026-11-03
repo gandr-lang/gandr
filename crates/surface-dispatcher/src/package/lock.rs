@@ -1039,7 +1039,7 @@ impl core::fmt::Display for Unresolved
             } => write!(
                 f,
                 "the coordinate `{coordinate}` names `{}`, which roots no package: point it at a \
-                 directory holding `package.gandr` or `src/package.gandr`",
+                 directory holding `package.gandr`",
                 path.display()
             ),
             Self::Cycle { ref chain } => {
@@ -1355,12 +1355,13 @@ pub fn standard(rest: Option<&Path>) -> Option<PathBuf>
 }
 
 /// The module path of the standard library's source at `path`, `std.io` for
-/// its `src/io.gandr`: the module whose host interfaces the source names
-/// without importing it (#4523).
+/// its `src/io.gandr` and `std` for its package source: the module whose
+/// host interfaces the source names without importing it (#4523).
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`STANDARD`], a dot and the path's module path under the standard
+/// - ensures: [`STANDARD`] for the standard library's package source, else
+///   [`STANDARD`], a dot and the path's module path under the standard
 ///   library's sources, as the package walk names it; none for a path outside
 ///   them, or when the tree this build was built from holds no standard
 ///   library.
@@ -1369,21 +1370,28 @@ pub fn standard(rest: Option<&Path>) -> Option<PathBuf>
 /// - executable: none — the clause reads the file system again.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `std.io`'s file is `std.io`, and a source beside the
-///   importer is none.
+/// - hypothesis: L3 — `std.io`'s file is `std.io`, the package source is `std`,
+///   and a source beside the importer is none.
 /// - witness: `component::tests::a_std_module_path_names_the_standard_library_from_any_root_4517`
 #[must_use]
 pub fn standard_module(path: &Path) -> Option<String>
 {
-    static SOURCES: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
-    let sources = SOURCES
+    static LIBRARY: std::sync::OnceLock<Option<(PathBuf, PathBuf)>> = std::sync::OnceLock::new();
+    let &(ref source, ref sources) = LIBRARY
         .get_or_init(|| match Package::discover(Path::new(STANDARD_ROOT)) {
-            Maybe::Present(library) => std::fs::canonicalize(library.sources()).ok(),
+            Maybe::Present(library) => Some((
+                library.source().to_path_buf(),
+                std::fs::canonicalize(library.sources()).ok()?,
+            )),
             Maybe::Absent(_) => None,
         })
-        .as_deref()?;
+        .as_ref()?;
+    let canonical = || std::fs::canonicalize(path).ok();
+    if path == source.as_path() || canonical().as_deref() == Some(source.as_path()) {
+        return Some(alloc::string::String::from(STANDARD));
+    }
     let module = super::module_path(sources, path).or_else(|| {
-        let canonical = std::fs::canonicalize(path).ok()?;
+        let canonical = canonical()?;
         super::module_path(sources, &canonical)
     })?;
     Some(alloc::format!("{STANDARD}.{module}"))

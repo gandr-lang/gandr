@@ -67,8 +67,8 @@
 //! A path is a source file of any name, or a directory searched for `.gandr`
 //! sources. The directories a source sits in decide its root — `strict`,
 //! `fixture`, or `fixture/pending` — and a source under none is strict
-//! (`gandr-surface-dispatcher`'s `root` module). A path inside a package — the
-//! sources beside a `package.gandr`, rooted above it when it sits in `src` —
+//! (`gandr-surface-dispatcher`'s `root` module). A path inside a package — its
+//! `package.gandr` and the modules under the directory its `sources` names —
 //! stands for the whole package, and `check`, `test` and `fmt` given no path
 //! work on the package the working directory sits in, or, in no package, on
 //! every member a `workspace.gandr` above it names, as they do given the

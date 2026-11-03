@@ -135,65 +135,114 @@ fn stored(test: &Path) -> Store
     Store::open(&directory).expect("the store opens")
 }
 
-/// The root and package source of the package `from` sits in, or none.
+/// The root, package source and sources of the package `from` sits in, or
+/// none.
 ///
 /// # Specification
 /// trivial.
-fn found(from: &Path) -> Option<(PathBuf, PathBuf)>
+fn found(from: &Path) -> Option<(PathBuf, PathBuf, PathBuf)>
 {
     match Package::discover(from) {
-        Maybe::Present(package) => {
-            Some((package.root().to_path_buf(), package.source().to_path_buf()))
-        },
+        Maybe::Present(package) => Some((
+            package.root().to_path_buf(),
+            package.source().to_path_buf(),
+            package.sources().to_path_buf(),
+        )),
         Maybe::Absent(package_root::Absent::Unpackaged) => None,
     }
 }
 
-/// #2687: a package is found from any path in it — a leaf deep in its
-/// sources, its `src` directory, its root — at its root, the directory above a
-/// package source in `src`, or the package source's own directory when the
-/// package source is not in one. An inner package source is found before an
-/// outer one, and a directory with no package source above it is in no package.
+/// A package source whose model states `sources` as `stated`, and nothing
+/// else: what discovery reads.
+///
+/// # Specification
+/// trivial.
+fn sourced(stated: &Path) -> String
+{
+    format!(
+        "pub module Package : Model(Gandr.Package) where {{\n  def sources = \"{}\";\n}}\n",
+        stated.display()
+    )
+}
+
+/// #2687, #4916: a package is found from any path in it — a leaf deep in its
+/// sources, its sources directory, its root — at its root, the directory
+/// holding its package source, with the sources its model names. A model
+/// naming `.` keeps its modules at the root, and one naming none, or a
+/// directory outside the root, has the root for its sources. A
+/// `src/package.gandr` roots a package at `src`. An inner package source is
+/// found before an outer one, and a directory with no package source above
+/// it is in no package.
 #[test]
 fn a_package_is_found_from_any_path_in_it_2687()
 {
     let directory = scratch(Path::new("found"), &[
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
         Path::new("hello/src/text/greet/words.gandr"),
         Path::new("flat/package.gandr"),
         Path::new("flat/inner/package.gandr"),
         Path::new("flat/inner/deep.gandr"),
+        Path::new("outside/package.gandr"),
+        Path::new("nested/src/package.gandr"),
         Path::new("loose/alone.gandr"),
     ]);
+    for (package, stated) in [("hello", "src"), ("flat", "."), ("outside", "../hello")] {
+        std::fs::write(
+            directory.join(package).join("package.gandr"),
+            sourced(Path::new(stated)),
+        )
+        .expect("the package source is written");
+    }
     let hello = (
         directory.join("hello"),
-        directory.join("hello/src/package.gandr"),
+        directory.join("hello/package.gandr"),
+        directory.join("hello/src"),
     );
     for from in [
         "hello/src/text/greet/words.gandr",
         "hello/src/text",
         "hello/src",
-        "hello/src/package.gandr",
+        "hello/package.gandr",
         "hello",
     ] {
         assert_eq!(
             found(&directory.join(from)),
             Some(hello.clone()),
-            "`{from}` is in the package rooted above its `src`"
+            "`{from}` is in the package rooted at `hello`, its sources at `src`"
         );
     }
+    let at_root = |package: &str| {
+        Some((
+            directory.join(package),
+            directory.join(package).join("package.gandr"),
+            directory.join(package),
+        ))
+    };
     assert_eq!(
         found(&directory.join("flat")),
-        Some((directory.join("flat"), directory.join("flat/package.gandr"))),
-        "a library outside `src` roots its own directory"
+        at_root("flat"),
+        "a package whose `sources` is `.` keeps its modules at its root"
     );
     assert_eq!(
         found(&directory.join("flat/inner/deep.gandr")),
-        Some((
-            directory.join("flat/inner"),
-            directory.join("flat/inner/package.gandr")
-        )),
-        "the nearest library is the package's"
+        at_root("flat/inner"),
+        "the nearest library is the package's, and one stating no `sources` keeps its \
+         modules at its root"
+    );
+    assert_eq!(
+        found(&directory.join("outside")),
+        at_root("outside"),
+        "a `sources` leaving the root names no sources of its own"
+    );
+    assert_eq!(
+        found(&directory.join("nested/src")),
+        at_root("nested/src"),
+        "a `src/package.gandr` roots a package at `src`, never above it"
+    );
+    assert_eq!(
+        found(&directory.join("nested")),
+        None,
+        "the directory above a `src/package.gandr` is in no package"
     );
     assert_eq!(
         found(&directory.join("loose/alone.gandr")),
@@ -208,20 +257,26 @@ fn a_package_is_found_from_any_path_in_it_2687()
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
 }
 
-/// #2687: a path inside a package walks the whole package, listed once, a
-/// path outside its sources but under its root is walked beside them, a path
-/// in no package is walked as given, and no path walks the package the
-/// working directory is in, or is refused outside every package.
+/// #2687, #4916: a path inside a package walks the whole package, listed
+/// once: its package source at its root, then its sources. A path outside
+/// its sources but under its root is walked beside them, a path in no package
+/// is walked as given, and no path walks the package the working directory is
+/// in, or is refused outside every package.
 #[test]
 fn a_path_in_a_package_walks_the_whole_package_2687()
 {
     let directory = scratch(Path::new("walked"), &[
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
         Path::new("hello/src/text/greet.gandr"),
         Path::new("hello/src/text/part.gandr"),
         Path::new("hello/tests/smoke.gandr"),
         Path::new("loose/alone.gandr"),
     ]);
+    std::fs::write(
+        directory.join("hello/package.gandr"),
+        sourced(Path::new("src")),
+    )
+    .expect("the package source is written");
     let walked = |paths: &[&str], working: &str| {
         packaged(
             paths.iter().map(|path| directory.join(path)).collect(),
@@ -238,10 +293,11 @@ fn a_path_in_a_package_walks_the_whole_package_2687()
         })
     };
     let hello = directory.join("hello");
+    let root_file = directory.join("hello/package.gandr");
     assert_eq!(
         walked(&[], "hello/src/text"),
         Ok((
-            Vec::from([directory.join("hello/src")]),
+            Vec::from([root_file.clone(), directory.join("hello/src")]),
             Vec::from([hello.clone()])
         )),
         "no path walks the package the working directory is in, whole"
@@ -249,14 +305,17 @@ fn a_path_in_a_package_walks_the_whole_package_2687()
     assert_eq!(
         walked(&[], "hello"),
         Ok((
-            Vec::from([PathBuf::from("src")]),
+            Vec::from([PathBuf::from("package.gandr"), PathBuf::from("src")]),
             Vec::from([hello.clone()])
         )),
-        "the sources below the working directory are listed relative to it"
+        "the package below the working directory is listed relative to it"
     );
     assert_eq!(
         walked(&[], "hello/src"),
-        Ok((Vec::from([PathBuf::from(".")]), Vec::from([hello.clone()]))),
+        Ok((
+            Vec::from([root_file.clone(), PathBuf::from(".")]),
+            Vec::from([hello.clone()])
+        )),
         "the working directory itself is `.`"
     );
     assert_eq!(
@@ -271,6 +330,7 @@ fn a_path_in_a_package_walks_the_whole_package_2687()
             &[
                 "hello/src/text/greet.gandr",
                 "loose/alone.gandr",
+                "hello/package.gandr",
                 "hello/src/text/part.gandr",
                 "hello/tests/smoke.gandr"
             ],
@@ -278,6 +338,7 @@ fn a_path_in_a_package_walks_the_whole_package_2687()
         ),
         Ok((
             Vec::from([
+                root_file,
                 directory.join("hello/src"),
                 directory.join("loose/alone.gandr"),
                 directory.join("hello/tests/smoke.gandr"),
@@ -285,7 +346,7 @@ fn a_path_in_a_package_walks_the_whole_package_2687()
             Vec::from([hello]),
         )),
         "a package once, at its first path; a path in none as given; one under the root \
-         beside the sources"
+         beside the sources, the package source not twice"
     );
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
 }
@@ -298,10 +359,15 @@ fn a_path_in_a_package_walks_the_whole_package_2687()
 fn a_package_root_walks_each_source_once_3889()
 {
     let directory = scratch(Path::new("root-once"), &[
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
         Path::new("hello/src/text/greet.gandr"),
         Path::new("hello/tests/smoke.gandr"),
     ]);
+    std::fs::write(
+        directory.join("hello/package.gandr"),
+        sourced(Path::new("src")),
+    )
+    .expect("the package source is written");
     let (walked, _packages) = packaged(Vec::from([directory.join("hello")]), &directory)
         .expect("the root stands in a package");
     let mut reached = Vec::new();
@@ -317,7 +383,7 @@ fn a_package_root_walks_each_source_once_3889()
     assert_eq!(
         reached,
         Vec::from([
-            PathBuf::from("hello/src/package.gandr"),
+            PathBuf::from("hello/package.gandr"),
             PathBuf::from("hello/src/text/greet.gandr"),
             PathBuf::from("hello/tests/smoke.gandr"),
         ]),
@@ -338,10 +404,16 @@ fn a_workspace_walks_every_member_it_names_2687()
 {
     let directory = scratch(Path::new("workspace"), &[
         Path::new("workspace.gandr"),
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
+        Path::new("hello/src/greet.gandr"),
         Path::new("tools/package.gandr"),
         Path::new("docs/notes.gandr"),
     ]);
+    std::fs::write(
+        directory.join("hello/package.gandr"),
+        sourced(Path::new("src")),
+    )
+    .expect("the package source is written");
     let source = directory.join("workspace.gandr");
     let stated = |members: &str| {
         format!(
@@ -353,7 +425,7 @@ fn a_workspace_walks_every_member_it_names_2687()
         stated("pub def members : List(String) = #[\"hello\", \"tools\"];"),
     )
     .expect("the workspace is written");
-    for from in ["", "docs", "hello/src", "tools/package.gandr"] {
+    for from in ["", "docs", "hello", "tools/package.gandr"] {
         assert!(
             matches!(
                 Workspace::discover(&directory.join(from)),
@@ -389,6 +461,7 @@ fn a_workspace_walks_every_member_it_names_2687()
         Ok((
             Vec::from([
                 PathBuf::from("workspace.gandr"),
+                PathBuf::from("hello/package.gandr"),
                 PathBuf::from("hello/src"),
                 PathBuf::from("tools"),
             ]),
@@ -399,7 +472,12 @@ fn a_workspace_walks_every_member_it_names_2687()
     assert_eq!(
         walked(&[], "docs"),
         Ok((
-            Vec::from([source.clone(), hello.join("src"), tools.clone()]),
+            Vec::from([
+                source.clone(),
+                hello.join("package.gandr"),
+                hello.join("src"),
+                tools.clone(),
+            ]),
             Vec::from([hello.clone(), tools.clone()]),
         )),
         "no path in the workspace outside every package walks it whole, each path not below \
@@ -408,14 +486,22 @@ fn a_workspace_walks_every_member_it_names_2687()
     assert_eq!(
         walked(&[&directory], "docs"),
         Ok((
-            Vec::from([source.clone(), hello.join("src"), tools.clone()]),
+            Vec::from([
+                source.clone(),
+                hello.join("package.gandr"),
+                hello.join("src"),
+                tools.clone(),
+            ]),
             Vec::from([hello.clone(), tools]),
         )),
         "the workspace's directory given walks it whole"
     );
     assert_eq!(
         walked(&[], "hello"),
-        Ok((Vec::from([PathBuf::from("src")]), Vec::from([hello]))),
+        Ok((
+            Vec::from([PathBuf::from("package.gandr"), PathBuf::from("src")]),
+            Vec::from([hello])
+        )),
         "no path in a member walks that member alone"
     );
     for (members, refused) in [
@@ -480,7 +566,8 @@ fn settled_of(source: SourceText<'static>) -> (Program<'static>, SettleReport<'s
 /// # Specification
 /// - requires: as [`settled_of`].
 /// - ensures: [`Manifest::of`] the program `source` composes to and its report,
-///   for a scratch package whose sources hold nothing but its `package.gandr`.
+///   for a scratch package whose root holds nothing but its `package.gandr`,
+///   `source` itself, so discovery reads the `sources` it states.
 /// - fails: never on the admitted domain.
 /// - panics: as [`settled_of`], and as [`scratch`].
 /// - executable: none — reading the manifest runs the program, which a
@@ -493,6 +580,9 @@ fn settled_of(source: SourceText<'static>) -> (Program<'static>, SettleReport<'s
 fn manifest_of(source: SourceText<'static>) -> Result<Manifest, Unmanifested>
 {
     let directory = scratch(Path::new("alone"), &[Path::new("package.gandr")]);
+    if let Err(why) = std::fs::write(directory.join("package.gandr"), source.as_ref()) {
+        panic!("the package source is written: {why}");
+    }
     let Maybe::Present(package) = Package::discover(&directory)
     else {
         panic!("the scratch package is found");
@@ -507,7 +597,7 @@ macro_rules! rest {
     () => {
         "def authors = \"Ada, Grace\" ; def licence = \"MIT\" ; def documentation = \
          \"https://d.example\" ; def endpoint = \"https://e.example\" ; def gandr = \">= 0.1\" ; \
-         def features = \"a, b\" ; def systems = \"\" ; def spelling = \"\" ;"
+         def features = \"a, b\" ; def systems = \"\" ; def spelling = \"\" ; def sources = \".\" ;"
     };
 }
 
@@ -592,6 +682,75 @@ fn a_manifest_reads_the_package_model_2687()
     );
 }
 
+/// #4916: a model's `sources` is the string literal discovery reads before
+/// any source is checked. One computed from another declaration runs to a
+/// string discovery never read, and one naming a directory above the root
+/// leaves the package; the manifest refuses both. Discovery reads `src`, `.`
+/// and the empty string as written, and nothing from an escaped string or a
+/// module nested in the model.
+#[test]
+fn a_model_s_sources_is_the_literal_discovery_reads_4916()
+{
+    let model = |sources: &str| {
+        format!(
+            "module Package where {{ def name = \"p\" ; def version = \"0.1.0\" ; def authors = \
+             \"A\" ; def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" ; \
+             def gandr = \">= 0.1\" ; def features = \"\" ; def systems = \"\" ; def spelling = \
+             \"\" ; {sources} }}"
+        )
+    };
+    let manifest = |sources: &str| {
+        let text: &'static str = String::leak(model(sources));
+        manifest_of(SourceText::from(text))
+    };
+    assert!(
+        manifest("def sources = \"src\" ;").is_ok(),
+        "a literal reads"
+    );
+    assert_eq!(
+        manifest("def here = \".\" ; def sources = here ;"),
+        Err(Unmanifested::Unstated {
+            came: String::from("."),
+        }),
+        "a computed `sources`"
+    );
+    assert_eq!(
+        manifest("def sources = \"../elsewhere\" ;"),
+        Err(Unmanifested::Outside {
+            came: String::from("../elsewhere"),
+        }),
+        "a `sources` above the root"
+    );
+    assert_eq!(
+        manifest(""),
+        Err(Unmanifested::Undeclared(Field::Sources)),
+        "a missing `sources`"
+    );
+    let directory = scratch(Path::new("stated"), &[Path::new("package.gandr")]);
+    let stated = |sources: &str| {
+        std::fs::write(directory.join("package.gandr"), model(sources))
+            .expect("the package source is written");
+        match Package::discover(&directory) {
+            Maybe::Present(package) => package.stated().map(Path::to_path_buf),
+            Maybe::Absent(_) => panic!("the scratch package is found"),
+        }
+    };
+    for (sources, read) in [
+        ("def sources = \"src\" ;", Some("src")),
+        ("def sources = \".\" ;", Some(".")),
+        ("def sources = \"\" ;", Some("")),
+        ("def sources = \"s\\u{72}c\" ;", None),
+        ("module Inner where { def sources = \"src\" ; }", None),
+    ] {
+        assert_eq!(
+            stated(sources),
+            read.map(PathBuf::from),
+            "`{sources}` reads as {read:?}"
+        );
+    }
+    std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+}
+
 /// #2687: a manifest renders its header, the digest of its body and its
 /// table, the same bytes each time, an empty module list as `[]` the way the
 /// tree's TOML formatter writes it, and escapes what TOML's basic strings
@@ -643,7 +802,7 @@ fn a_manifest_renders_the_toolchain_its_model_asks_for_3135()
             manifest_of(SourceText::from(concat!(
                 "module Package where { def name = \"p\" ; def version = \"0.1.0\" ; def authors = \
                  \"A\" ; def licence = \"MIT\" ; def documentation = \"d\" ; def endpoint = \"e\" \
-                 ; def spelling = \"\" ; ",
+                 ; def spelling = \"\" ; def sources = \".\" ; ",
                 $toolchain,
                 " }"
             )))
@@ -691,7 +850,7 @@ fn a_manifest_renders_the_presentation_its_model_names_3135()
                  ; def gandr = \">= 0.1\" ; def features = \"a, b\" ; def systems = \"\" ; def \
                  spelling = ",
                 $spelling,
-                " ; }"
+                " ; def sources = \".\" ; }"
             )))
         };
     }
@@ -723,22 +882,25 @@ fn a_manifest_renders_the_presentation_its_model_names_3135()
 fn a_manifest_lists_the_modules_its_sources_make_2687()
 {
     let directory = scratch(Path::new("modules"), &[
-        Path::new("hello/src/package.gandr"),
-        Path::new("hello/src/util.gandr"),
-        Path::new("hello/src/text/greet.gandr"),
-        Path::new("hello/src/text/notes.md"),
-        Path::new("hello/src/vendored/package.gandr"),
-        Path::new("hello/src/vendored/inner.gandr"),
+        Path::new("hello/package.gandr"),
+        Path::new("hello/util.gandr"),
+        Path::new("hello/text/greet.gandr"),
+        Path::new("hello/text/notes.md"),
+        Path::new("hello/vendored/package.gandr"),
+        Path::new("hello/vendored/inner.gandr"),
     ]);
+    let model = concat!(
+        "module Package where { def name = \"hello\" ; def version = \"0.1.0\" ; ",
+        rest!(),
+        " }"
+    );
+    std::fs::write(directory.join("hello/package.gandr"), model)
+        .expect("the package source is written");
     let Maybe::Present(package) = Package::discover(&directory.join("hello"))
     else {
         panic!("the package is found");
     };
-    let (mut program, report) = settled_of(SourceText::from(concat!(
-        "module Package where { def name = \"hello\" ; def version = \"0.1.0\" ; ",
-        rest!(),
-        " }"
-    )));
+    let (mut program, report) = settled_of(SourceText::from(model));
     let rendered = Manifest::of(&mut program, &report, &package)
         .expect("the model reads")
         .render();
@@ -922,10 +1084,10 @@ const STD_PACKAGE: &str = concat!(
 fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
 {
     let directory = scratch(Path::new("address"), &[
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
         Path::new("hello/src/text/greet.gandr"),
     ]);
-    let library = directory.join("hello/src/package.gandr");
+    let library = directory.join("hello/package.gandr");
     let leaf = directory.join("hello/src/text/greet.gandr");
     let stated = |name: &str, gandr: &str| {
         format!(
@@ -933,7 +1095,8 @@ fn an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030()
              Model(Gandr.Package) where {{\n  def name : String = \"{name}\";\n  def version = \
              \"0.1.0\";\n  def authors = \"Ada\";\n  def licence = \"MIT\";\n  def documentation \
              = \"d\";\n  def endpoint = \"e\";\n  def gandr = \"{gandr}\";\n  def features = \
-             \"\";\n  def systems = \"\";\n  def spelling = \"\";\n}}\npub def welcome = greeting;\n"
+             \"\";\n  def systems = \"\";\n  def spelling = \"\";\n  def sources = \"src\";\n}}\npub def \
+             welcome = greeting;\n"
         )
     };
     std::fs::write(&library, stated("hello", ">= 0.0")).expect("the library is written");
@@ -1148,9 +1311,9 @@ fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
     let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let store = stored(Path::new("inert-corpus"));
     for library in [
-        "corpus/model/projects/hello/src/package.gandr",
+        "corpus/model/projects/hello/package.gandr",
         "corpus/model/projects/tools/package.gandr",
-        "library/std/src/package.gandr",
+        "library/std/package.gandr",
     ] {
         let library = tree
             .join(library)
@@ -1240,7 +1403,7 @@ impl Library<'_>
              String = \"p\";\n  def version = \"{version}\";\n  def authors = \"Ada\";\n  def \
              licence = \"MIT\";\n  def documentation = \"d\";\n  def endpoint = \"e\";\n  def \
              gandr = \"\";\n  def features = \"\";\n  def systems = \"\";\n  def spelling = \
-             \"\";\n}}\n{rest}"
+             \"\";\n  def sources = \"src\";\n}}\n{rest}"
         )
     }
 }
@@ -1269,13 +1432,13 @@ fn siblings(
 ) -> PathBuf
 {
     let directory = scratch(test, &[
-        Path::new("hello/src/package.gandr"),
-        Path::new("sibling/src/package.gandr"),
+        Path::new("hello/package.gandr"),
+        Path::new("sibling/package.gandr"),
         Path::new("sibling/src/again.gandr"),
     ]);
     write_hello(&directory, written);
     std::fs::write(
-        directory.join("sibling/src/package.gandr"),
+        directory.join("sibling/package.gandr"),
         Library {
             imports: "import \"path:../hello\" as hello;\n",
             version: "0.1.0",
@@ -1303,7 +1466,7 @@ fn write_hello(
 {
     let rest = format!("pub def welcome = \"{}\";\n", written.welcome);
     std::fs::write(
-        directory.join("hello/src/package.gandr"),
+        directory.join("hello/package.gandr"),
         Library {
             imports: "",
             version: written.version,
@@ -1459,10 +1622,10 @@ fn a_module_path_through_a_coordinate_s_alias_reads_the_dependency_s_module_4715
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let directory = scratch(Path::new("aliased-path"), &[
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
         Path::new("hello/src/text/greet.gandr"),
-        Path::new("sibling/src/package.gandr"),
-        Path::new("stray/src/package.gandr"),
+        Path::new("sibling/package.gandr"),
+        Path::new("stray/package.gandr"),
     ]);
     write_hello(&directory, Hello {
         version: "0.1.0",
@@ -1486,7 +1649,7 @@ fn a_module_path_through_a_coordinate_s_alias_reads_the_dependency_s_module_4715
         ),
     ] {
         std::fs::write(
-            directory.join(package).join("src/package.gandr"),
+            directory.join(package).join("package.gandr"),
             Library {
                 imports,
                 version: "0.1.0",
@@ -1720,12 +1883,12 @@ fn a_dependency_cycle_is_refused_by_its_paths_3072()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let directory = scratch(Path::new("cycle"), &[
-        Path::new("a/src/package.gandr"),
-        Path::new("b/src/package.gandr"),
+        Path::new("a/package.gandr"),
+        Path::new("b/package.gandr"),
     ]);
     for (from, to) in [("a", "b"), ("b", "a")] {
         std::fs::write(
-            directory.join(from).join("src/package.gandr"),
+            directory.join(from).join("package.gandr"),
             format!("import \"path:../{to}\" as {to};\n{STD_PACKAGE}"),
         )
         .expect("the library is written");
@@ -1872,7 +2035,7 @@ fn a_package_s_export_holds_what_its_check_admitted_3225()
     let export = export.expect("every source settles");
     let mut store = stored(Path::new("export"));
     let grammar = built_in().expect("the built-in grammar builds");
-    let address = rooted(&directory)
+    let address = rooted(&directory.join("src"))
         .identity(&grammar, &Held::default(), &Lock::default(), &store)
         .expect("the package addresses")
         .address;
@@ -1975,7 +2138,7 @@ fn a_dependency_s_export_is_re_admitted_through_the_kernel_3285()
     let export = export.expect("every source settles");
     let mut store = stored(Path::new("readmit"));
     let grammar = built_in().expect("the built-in grammar builds");
-    let address = rooted(&directory)
+    let address = rooted(&directory.join("src"))
         .identity(&grammar, &Held::default(), &Lock::default(), &store)
         .expect("the package addresses")
         .address;
@@ -2156,8 +2319,8 @@ fn a_gh_coordinate_is_fetched_at_the_revision_its_lock_records_4714()
 
     let grammar = built_in().expect("the built-in grammar builds");
     let directory = scratch(Path::new("gh"), &[
-        Path::new("hello/src/package.gandr"),
-        Path::new("sibling/src/package.gandr"),
+        Path::new("hello/package.gandr"),
+        Path::new("sibling/package.gandr"),
         Path::new("remote/acme-org/hello/HEAD"),
     ]);
     let remote = directory.join("remote");
@@ -2181,7 +2344,7 @@ fn a_gh_coordinate_is_fetched_at_the_revision_its_lock_records_4714()
         welcome: "hello",
     });
     std::fs::write(
-        directory.join("sibling/src/package.gandr"),
+        directory.join("sibling/package.gandr"),
         Library {
             imports: "import \"gh:acme-org/hello\" as hello;\n",
             version: "0.1.0",
@@ -2223,7 +2386,7 @@ fn a_gh_coordinate_is_fetched_at_the_revision_its_lock_records_4714()
     );
     let checkout = checkouts.join("acme-org/hello").join(&first);
     assert!(
-        checkout.join("src/package.gandr").is_file() && !checkout.join(".git").exists(),
+        checkout.join("package.gandr").is_file() && !checkout.join(".git").exists(),
         "the checkout is the tree at the revision, with no repository"
     );
     assert!(
@@ -2261,7 +2424,7 @@ fn a_gh_coordinate_is_fetched_at_the_revision_its_lock_records_4714()
         "a check fetches the recorded revision again"
     );
     assert!(
-        checkout.join("src/package.gandr").is_file(),
+        checkout.join("package.gandr").is_file(),
         "the checkout stands again"
     );
     assert!(

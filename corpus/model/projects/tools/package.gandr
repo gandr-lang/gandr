@@ -43,6 +43,8 @@ pub module Package : Model(Gandr.Package) where {
   /// The spelling the package asks an editor to show its sources in, over
   /// the user's own: ASCII.
   def spelling = "ascii";
+  /// The directory the modules sit under: the package's root.
+  def sources = ".";
 }
 
 /// hello's greeting, which the alias reads through the lock.

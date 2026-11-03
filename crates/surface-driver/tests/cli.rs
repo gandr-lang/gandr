@@ -1980,7 +1980,7 @@ macro_rules! fields {
         "  def authors = \"Ada\";\n  def licence = \"MIT\";\n  def documentation = \
          \"https://d.example\";\n  def endpoint = \"https://e.example\";\n  def gandr = \">= \
          0.0\";\n  def features = \"project-manifest\";\n  def systems = \"\";\n  def spelling = \
-         \"\";\n"
+         \"\";\n  def sources = \"src\";\n"
     };
 }
 
@@ -2009,7 +2009,7 @@ fn a_verb_with_no_path_checks_the_package_it_runs_in_2687()
 {
     let scratch = Scratch::new(Path::new("no-path"));
     let _library = scratch.file(
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}").as_str()),
     );
     let _leaf = scratch.file(
@@ -2064,7 +2064,7 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
 {
     let scratch = Scratch::new(Path::new("manifest"));
     let library = scratch.file(
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}").as_str()),
     );
     let leaf = scratch.file(
@@ -2192,7 +2192,7 @@ fn a_package_s_toolchain_is_met_or_refused_by_its_clause_3135()
 {
     let scratch = Scratch::new(Path::new("toolchain"));
     let library = scratch.file(
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}").as_str()),
     );
     let manifest = scratch.0.join("hello/gandr.toml");
@@ -2259,11 +2259,11 @@ fn check_writes_a_lock_and_refuses_its_drift_3072()
 {
     let scratch = Scratch::new(Path::new("lock"));
     let hello = scratch.file(
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
     );
     let _sibling = scratch.file(
-        Path::new("sibling/src/package.gandr"),
+        Path::new("sibling/package.gandr"),
         Text::from(
             format!(
                 "import \"path:../hello\" as hello;\n{STD_PACKAGE}{}pub def greeting = \
@@ -2387,11 +2387,11 @@ fn a_gh_coordinate_is_fetched_locked_and_read_again_4714()
 {
     let scratch = Scratch::new(Path::new("gh"));
     let _hello = scratch.file(
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
     );
     let _sibling = scratch.file(
-        Path::new("sibling/src/package.gandr"),
+        Path::new("sibling/package.gandr"),
         Text::from(
             format!(
                 "import \"gh:acme-org/hello\" as hello;\n{STD_PACKAGE}{}pub def greeting = \
@@ -2461,7 +2461,7 @@ fn a_gh_coordinate_is_fetched_locked_and_read_again_4714()
         .join("cache/gandr/checkouts/acme-org/hello")
         .join(&revision);
     assert!(
-        checkout.join("src/package.gandr").is_file(),
+        checkout.join("package.gandr").is_file(),
         "the checkout sits under the user's cache"
     );
     let checked = verb("check");
@@ -2470,7 +2470,7 @@ fn a_gh_coordinate_is_fetched_locked_and_read_again_4714()
     let refetched = verb("check");
     assert_eq!(code(&refetched), Code(0_i32), "{}", stderr(&refetched));
     assert!(
-        checkout.join("src/package.gandr").is_file(),
+        checkout.join("package.gandr").is_file(),
         "the check fetches the recorded revision again"
     );
     assert_eq!(
@@ -2490,11 +2490,11 @@ fn a_package_s_lock_points_into_the_store_the_run_opens_3157()
 {
     let scratch = Scratch::new(Path::new("store"));
     let _hello = scratch.file(
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
     );
     let _sibling = scratch.file(
-        Path::new("sibling/src/package.gandr"),
+        Path::new("sibling/package.gandr"),
         Text::from(
             format!(
                 "import \"path:../hello\" as hello;\n{STD_PACKAGE}{}pub def greeting = \
@@ -2566,7 +2566,7 @@ fn a_checked_package_s_export_is_named_by_its_address_3225()
 {
     let scratch = Scratch::new(Path::new("export"));
     let _library = scratch.file(
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
     );
     let _module = scratch.file(
@@ -2603,7 +2603,7 @@ fn a_checked_package_s_export_is_named_by_its_address_3225()
     let first = check();
     assert_eq!(code(&first), Code(0_i32), "{}", stderr(&first));
     let (pointer, export) = exported(&first);
-    for source in ["src/package.gandr", "src/text/greet.gandr"] {
+    for source in ["package.gandr", "src/text/greet.gandr"] {
         assert!(
             matches!(export.artifact(Path::new(source)), Maybe::Present(_)),
             "the export holds {source}'s artifact"
@@ -2645,11 +2645,11 @@ fn a_dependent_re_admits_its_dependency_s_export_3285()
 {
     let scratch = Scratch::new(Path::new("readmit"));
     let _hello = scratch.file(
-        Path::new("hello/src/package.gandr"),
+        Path::new("hello/package.gandr"),
         Text::from(format!("{STD_PACKAGE}{LIBRARY}pub def welcome = \"hello\";\n").as_str()),
     );
     let _sibling = scratch.file(
-        Path::new("sibling/src/package.gandr"),
+        Path::new("sibling/package.gandr"),
         Text::from(
             format!(
                 "import \"path:../hello\" as hello;\n{STD_PACKAGE}{}pub def greeting = \
@@ -2776,7 +2776,7 @@ fn a_workspace_checks_each_member_it_names_2687()
         Text::from(stated("#[\"hello\", \"tools\"]").as_str()),
     );
     for (library, name, up) in [
-        ("hello/src/package.gandr", "hello", "../.."),
+        ("hello/package.gandr", "hello", ".."),
         ("tools/package.gandr", "tools", ".."),
     ] {
         let _library = scratch.file(

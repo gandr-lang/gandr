@@ -1565,8 +1565,8 @@ fn the_standard_package_theory_is_read_by_its_path_2767()
                   : String = \"Ada\";\n  def licence : String = \"MIT\";\n  def documentation : \
                   String = \"d\";\n  def endpoint : String = \"e\";\n  def gandr : String = \
                   \"\";\n  def features : String = \"\";\n  def systems : String = \"\";\n  def \
-                  spelling : String = \"\";\n}\nmodule Partial : Model(Gandr.Package) where {\n  def \
-                  name : String = \"partial\";\n}\n";
+                  spelling : String = \"\";\n  def sources : String = \"src\";\n}\nmodule Partial : \
+                  Model(Gandr.Package) where {\n  def name : String = \"partial\";\n}\n";
     let (text, unit) = laid(&[
         (
             SourceText::from(include_str!("../../../library/std/src/build.gandr")),
@@ -1590,7 +1590,8 @@ fn the_standard_package_theory_is_read_by_its_path_2767()
             "authors",
             "licence",
             "documentation",
-            "endpoint"
+            "endpoint",
+            "sources"
         ]
         .map(|member| format!("{:?}", LoweringRefusal::UnknownMember {
             span: ByteSpan::new(ByteOffset::from(partial), ByteOffset::from(partial + 7))
