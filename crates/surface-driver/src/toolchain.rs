@@ -462,7 +462,7 @@ fn select(
 /// # Adequacy
 /// - hypothesis: L3 — a linked toolchain runs, an unlinked one is refused.
 /// - witness: `tests::cli::a_linked_toolchain_is_the_one_the_proxy_runs`
-/// - witness: `tests::cli::a_name_no_toolchain_answers_is_refused_by_its_source`
+/// - witness: `tests::cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745`
 fn executable(
     toolchains: &Path,
     selected: Selected,
@@ -524,7 +524,7 @@ pub enum Proxied
 ///   that build.
 /// - witness: `tests::cli::a_linked_toolchain_is_the_one_the_proxy_runs`
 /// - witness: `tests::cli::the_environment_outranks_the_pin_and_the_pin_the_default`
-/// - witness: `tests::cli::a_name_no_toolchain_answers_is_refused_by_its_source`
+/// - witness: `tests::cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745`
 /// - witness: `tests::cli::a_cargo_run_of_the_driver_runs_its_own_build_4511`
 /// - witness: `tests::cli::a_build_run_from_its_profile_directory_runs_itself_4510`
 pub fn proxy() -> Result<Proxied, ToolchainFault>
