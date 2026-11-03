@@ -3290,6 +3290,89 @@ fn a_declaration_read_through_an_import_is_spelled_as_its_reader_writes_it_3498(
     );
 }
 
+/// A refusal spells each type as the source holding the refused declaration
+/// reads it, whatever source the unit lays last: an importer refused at a
+/// declaration it reads through an alias spells it after the alias, beside a
+/// later source that opens the same module (#4813).
+#[test]
+fn a_refusal_is_spelled_as_its_own_source_reads_it_4813()
+{
+    use gandr_core_checker::HostGrant;
+    use gandr_surface_corpus::CorpusRoot;
+    use gandr_surface_dispatcher::judge_member;
+    use gandr_surface_dispatcher::lower_parsed_unit;
+    use gandr_surface_lowering::ImportTarget;
+    use gandr_surface_lowering::SourceIndex;
+    use gandr_surface_lowering::Unit;
+    use gandr_surface_lowering::UnitSource;
+
+    let pbg = built_in().expect("the built-in grammar builds");
+    let exported = "pub data Box : Type where {\n  | Wrap : (n : Integer) --> Box\n}\n";
+    let aliased = "import \"./base.gandr\" as base ;\ndef boxed : base.Box ;\ndef boxed = 1 ;\n";
+    let opened = "import \"./base.gandr\" ;\ndef other : Integer ;\ndef other = 2 ;\n";
+    let text = format!("{exported}{aliased}{opened}");
+    let imports = || vec![ImportTarget::Source(SourceIndex::from(0_usize))];
+    let unit = Unit::new(vec![
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(ByteOffset::from(exported.len()), imports()),
+        UnitSource::new(ByteOffset::from(exported.len() + aliased.len()), imports()),
+    ])
+    .expect("three sources make a unit");
+    let parsed = gandr_surface_parser::parse(&pbg, SourceText::from(text.as_str()))
+        .expect("the unit parses");
+    let Lowered::Module { module, arena } = lower_parsed_unit(
+        &pbg,
+        parsed,
+        &unit,
+        &mut LoweringCount::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
+    .expect("the unit lowers")
+    .into_lowered()
+    else {
+        panic!("the unit is one module");
+    };
+    let (settled, _admission) = judge_member(
+        CorpusRoot::Strict,
+        (module, SourceText::from(text.as_str())),
+        arena,
+        &HostGrant::UNBOUNDED,
+        ByteOffset::from(0_usize),
+    )
+    .into_parts();
+    let Ok(Composed::Settled {
+        report, spellings, ..
+    }) = settled
+    else {
+        panic!("the unit settles");
+    };
+    let spelled: Vec<[Option<String>; 2]> = report
+        .declarations()
+        .iter()
+        .filter_map(|declaration| match declaration.produced().refusal() {
+            Maybe::Present(Refusal::Checking(refusal)) => Some(refusal.compared()),
+            Maybe::Present(Refusal::Lowering(_) | Refusal::Corpus(_)) | Maybe::Absent(_) => None,
+        })
+        .map(|compared| {
+            [compared.expected, compared.found].map(|side| match side {
+                Maybe::Present(node) => match spellings.spelled(Spelling::Unicode).get(node) {
+                    Maybe::Present(presentation) => Some(presentation.to_string()),
+                    Maybe::Absent(_) => None,
+                },
+                Maybe::Absent(_) => None,
+            })
+        })
+        .collect();
+    assert_eq!(
+        spelled,
+        [[
+            Some(String::from("base.Box")),
+            Some(String::from("Integer"))
+        ]],
+        "the importer's refusal spells `Box` after its alias, not as the last source reads it"
+    );
+}
+
 /// A split that opens two binders at once, the second's type naming the
 /// first, names them as the pattern writes them and spells the second under
 /// the first: never under the binder before the split, which its type does
