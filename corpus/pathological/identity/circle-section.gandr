@@ -31,7 +31,7 @@ def rec wind(p : Path(Circle, Base, Base)) -> Int {
 /// Spinning: a successor is a loop, a predecessor its inverse.
 def rec spin(n : Int) -> Path(Circle, Base, Base) {
   match n {
-    Z => here(Base),
+    Z => Path.here(Base),
     S(x) => loop ∷ spin[<](x),
     P(x) => back(loop) ∷ spin[<](x)
   }
@@ -58,22 +58,22 @@ def rec forged(p : Path(Circle, Base, Base)) -> Path(
   p
 ) {
   match p {
-    here => here(here(Base)),
+    here => Path.here(Path.here(Base)),
     loop ∷ q => forged[<](q),
-    back(loop) ∷ q => { let ih = forged[<](q); cong(unloopOn, ih) }
+    back(loop) ∷ q => { let ih = forged[<](q); Path.ap(unloopOn, ih) }
   }
 }
 
 /// A path at every loop whose inverse arm drops its rest's path: each arm
 /// checks at its letter, but at `loop ∷ back(loop) ∷ q` the loop arm carries
-/// the inverse arm's reflexivity to `here(loop ∷ back(loop) ∷ q)`, which is
+/// the inverse arm's reflexivity to `Path.here(loop ∷ back(loop) ∷ q)`, which is
 /// not the path at `q` the cancellation's right side reads. Read as a set,
 /// the loops would identify the two; the words are not read as one.
 @[ refuses("RuleNotRespected") ]
 def rec rewound(p : Path(Circle, Base, Base)) -> Path(Path(Circle, Base, Base), p, p) {
   match p {
-    here => here(here(Base)),
-    loop ∷ q => { let ih = rewound[<](q); cong(loopOn, ih) },
-    back(loop) ∷ q => here(back(loop) ∷ q)
+    here => Path.here(Path.here(Base)),
+    loop ∷ q => { let ih = rewound[<](q); Path.ap(loopOn, ih) },
+    back(loop) ∷ q => Path.here(back(loop) ∷ q)
   }
 }

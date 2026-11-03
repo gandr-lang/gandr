@@ -1,36 +1,36 @@
 // The syntax's constructors and operations respect paths: the successor,
 // a variable, an abstraction, weakening and a substitution each carry a path
-// between their arguments to one between their results. `cong` takes a
+// between their arguments to one between their results. `Path.ap` takes a
 // named function, so each constructor is given one; a substitution's
-// congruence in its term is a `transport` along the path.
+// congruence in its term is a `Path.walk` along the path.
 
 // The naturals; the syntax and its substitution.
 import "../model-in-source.gandr";
 import "./syntax.gandr";
 
-/// The successor, as a function `cong` can take.
+/// The successor, as a function `Path.ap` can take.
 pub def succOf(n : N) -> N {
   S(n)
 }
 
-/// A variable, as a function `cong` can take.
+/// A variable, as a function `Path.ap` can take.
 pub def ixOf(n : N) -> Term {
   Ix(n)
 }
 
-/// An abstraction, as a function `cong` can take.
+/// An abstraction, as a function `Path.ap` can take.
 pub def lamOf(t : Term) -> Term {
   Lam(t)
 }
 
 /// Equal indices are equal variables.
 pub def ixCong(x : N, y : N, p : Path(N, x, y)) -> Path(Term, Ix(x), Ix(y)) {
-  cong(ixOf, p)
+  Path.ap(ixOf, p)
 }
 
 /// Equal terms weaken to equal terms.
 pub def wkCong(x : Term, y : Term, p : Path(Term, x, y)) -> Path(Term, wk(x), wk(y)) {
-  cong(wk, p)
+  Path.ap(wk, p)
 }
 
 /// Equal terms under one substitution are equal.
@@ -39,5 +39,5 @@ pub def substCong(s : Env, x : Term, y : Term, p : Path(Term, x, y)) -> Path(
   subst(x, s),
   subst(y, s)
 ) {
-  transport(fun (z) { Path(Term, subst(x, s), subst(z, s)) }, p, here(subst(x, s)))
+  Path.walk(fun (z) { Path(Term, subst(x, s), subst(z, s)) }, p, Path.here(subst(x, s)))
 }

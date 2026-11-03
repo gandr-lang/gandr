@@ -1,5 +1,5 @@
 /// `session-identity`: Session identity (Path_U and Flow_U at sessions).
-/// Implemented: a protocol's evolution as a certified path or flow between session types, a recorded run transported along it by conversion and on the machine, and `bisim(A, B, p)` paying differing payloads with paths.
+/// Implemented: a protocol's evolution as a certified path or flow between session types, a recorded run transported along it by conversion and on the machine, and `Path.bisim(A, B, p)` paying differing payloads with paths.
 /// Not implemented: a run of a recursive session on the machine, refused by name, and a univalence over a record a parameter binds; #1734 owes it.
 // A seat's protocol evolved: session subtyping as a flow and equi-recursive
 // unfolding as a path (Gay and Hole, _Subtyping for Session Types in the Pi
@@ -35,17 +35,17 @@ module Evolution where {
   };
   /// The old protocol flows to the one with the pause, by simulation.
   @[ checks ]
-  def sub : Flow(Type, SeatEnd, SeatEnd′) = sim(SeatEnd, SeatEnd′) ;
+  def sub : Flow(Type, SeatEnd, SeatEnd′) = Flow.sim(SeatEnd, SeatEnd′) ;
   /// The protocol and its one-step unrolling are one type, by bisimulation.
   @[ checks ]
-  def eq : Path(Type, SeatEnd, SeatEnd2) = bisim(SeatEnd, SeatEnd2) ;
+  def eq : Path(Type, SeatEnd, SeatEnd2) = Path.bisim(SeatEnd, SeatEnd2) ;
   /// The stationary flow at the old protocol.
   @[ checks ]
-  def kept : Flow(Type, SeatEnd, SeatEnd) = stay(SeatEnd) ;
+  def kept : Flow(Type, SeatEnd, SeatEnd) = Flow.stay(SeatEnd) ;
   /// The stationary flow, then the simulation.
   @[ checks ]
   def widened() -> Flow(Type, SeatEnd, SeatEnd′) {
-    kept then sub
+    Flow.then(kept, sub)
   }
 }
 
@@ -62,7 +62,7 @@ def served : Run(Seat.SeatEnd) = recorded(
 /// A recorded run ridden forward along the simulation.
 @[ checks ]
 def forward(receipt : Run(Seat.SeatEnd)) -> Run(Evolution.SeatEnd′) {
-  ride(fun (X) { Run(X) }, Evolution.sub, receipt)
+  Flow.ride(fun (X) { Run(X) }, Evolution.sub, receipt)
 }
 
 /// The old run ridden forward by a run: the record is unchanged.

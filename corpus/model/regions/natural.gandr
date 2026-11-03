@@ -28,7 +28,7 @@ def passNatural() -> Integer {
         (() => Integer) at outer => (() => Integer) at inner,
         fun (x) { let y : (() => Integer) at outer = pass(x); pure y },
         fun (x) { let z : (() => Integer) at inner = x; pass(z) }
-      ) = here(fun (x) { let y : (() => Integer) at outer = pass(x); pure y });
+      ) = Path.here(fun (x) { let y : (() => Integer) at outer = pass(x); pure y });
       force k
     } with {
       pure(y) => pure y,
@@ -52,7 +52,7 @@ def touchNatural() -> Integer {
         (() => Integer) at outer => (() => Integer) at inner,
         fun (x) { let y : (() => Integer) at outer = touch(x); pure y },
         fun (x) { let z : (() => Integer) at inner = x; touch(z) }
-      ) = here(fun (x) { let y : (() => Integer) at outer = touch(x); pure y });
+      ) = Path.here(fun (x) { let y : (() => Integer) at outer = touch(x); pure y });
       force k
     } with {
       pure(y) => pure y,

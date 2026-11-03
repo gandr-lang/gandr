@@ -1,4 +1,4 @@
-error[EndpointMismatch]: `here` needs both endpoints of the path to equal its point
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/data/conversion-budget.gandr:43:3
    │
 42 │   def agree() -> Path(Nat, fib(nineteen()), fibFrom(nineteen(), Zero, Succ(Zero))) {
@@ -6,8 +6,8 @@ error[EndpointMismatch]: `here` needs both endpoints of the path to equal its po
    │   │                        │
    │ ┌─┘                        an endpoint the point is not shown to convert to within the conversion's step budget
    │ │
-43 │ │   here(fib(nineteen()))
-   │ │   ━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
+43 │ │   Path.here(fib(nineteen()))
+   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
 44 │ │ }
    │ └─┘ checked against `() => Path(Nat, fib(force nineteen), fibFrom(force nineteen, Zero, Succ(Zero)))`; while checking the body of this thunk
    │

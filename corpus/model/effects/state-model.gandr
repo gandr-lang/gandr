@@ -58,7 +58,7 @@ module Overwriting : Model(StatePutPut) with sort S = Integer where {
     put(s, put(u, k)),
     put(u, k)
   ) {
-    here(put(u, k))
+    Path.here(put(u, k))
   }
 }
 
@@ -83,7 +83,7 @@ def passing : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Uni
 /// The same model carried along negation of the counts: `get`'s continuation
 /// is a function of the state, so the state it is handed is negated back and
 /// the computation it answers negated forth.
-def negated : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = transport(
+def negated : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = Path.walk(
   fun (x) { type(Model(State) with sort S = x with sort C = (x => Integer)) },
   countsNegated,
   passing

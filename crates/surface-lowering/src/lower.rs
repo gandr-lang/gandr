@@ -2737,8 +2737,8 @@ enum Plan
     /// A first-class continuation's type over the computation types it runs
     /// from and to: `Stack(C, D)`.
     Stack(NodeIndex, NodeIndex),
-    /// A session statement, `bisim(A, B)` or `sim(A, B)`, over its two codes,
-    /// and the payload paths `bisim(A, B, p)` writes.
+    /// A session statement, `Path.bisim(A, B)` or `Flow.sim(A, B)`, over its
+    /// two codes, and the payload paths `Path.bisim(A, B, p)` writes.
     SessionRelated(
         gandr_core_term::session::SessionRelation,
         NodeIndex,
@@ -2753,7 +2753,8 @@ enum Plan
     FunctionFlow(NodeIndex, NodeIndex),
     /// The product of two universe flows.
     FlowProduct(NodeIndex, NodeIndex),
-    /// Two flows composed, returned: `f then g` where a flow is answered.
+    /// Two flows composed, returned: `Flow.then(f, g)` where a flow is
+    /// answered.
     FlowThen(NodeIndex, NodeIndex),
     /// A recorded run, its moves in order, each payload the node it was
     /// written as.
@@ -11704,7 +11705,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::Fill { .. } | Plan::Generic | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Dialogue(_) | Plan::Decompose(_) | Plan::Ride(..))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::Fill { .. } | Plan::Generic | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::FlowThen(..) | Plan::Recorded(_) | Plan::Dialogue(_) | Plan::Decompose(_) | Plan::Ride(..))) => true,
                     | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..) | Plan::Data(..) | Plan::Codata(..))) => {
                         matches!(site.reading, Reading::Value(_)) || site.reading.family() == Family::Type
                     },
@@ -12265,11 +12266,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ] => (label, at, Arguments::Binary([first.node, second.node])),
             _ => return Err(site.fault(site.at.span, FormFault::MisplacedTile)),
         };
-        if label == TileName::THEN
-            && let Arguments::Binary([first, second]) = arguments
-        {
-            return self.then(site, frame, first, second);
-        }
         // A negated `f64`-suffixed number is the float's negation: the integer
         // row would refuse its operand, and the printers write a negative float
         // so.
@@ -26764,8 +26760,8 @@ def ended() -> -F [Div] Unit {
         };
 
         assert_eq!(
-            refusal(SourceText::from("def code = stay(type({Unit})) ;")),
-            block_as_type(at(16_usize, 28_usize)),
+            refusal(SourceText::from("def code = Flow.stay(type({Unit})) ;")),
+            block_as_type(at(21_usize, 33_usize)),
             "a labelled sum with its `+` left out quotes a block, refused at the quote, which \
              touches where the `+` stood, not at the statement inside it"
         );
@@ -27917,7 +27913,7 @@ def ended() -> -F [Div] Unit {
         let pbg = grammar();
         for (source, point, form, ending, why) in [
             (
-                "def four : Path(Integer 4, 4) ;\ndef four = here(4) ;\n",
+                "def four : Path(Integer 4, 4) ;\ndef four = Path.here(4) ;\n",
                 23_usize,
                 "path_type",
                 crate::form::Ending::Unnamed,

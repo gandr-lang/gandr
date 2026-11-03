@@ -27,8 +27,8 @@ data Circle : Type where {
 def costly(x : Circle) -> -F Path(Circle, x, x) {
   match x {
     Base => match power(power(Succ(Succ(Succ(Zero))))) {
-      Zero => here(Base),
-      Succ(p) => here(Base)
+      Zero => Path.here(Base),
+      Succ(p) => Path.here(Base)
     }
   }
 }

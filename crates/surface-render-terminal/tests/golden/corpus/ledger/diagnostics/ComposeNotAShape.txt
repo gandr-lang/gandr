@@ -35,9 +35,9 @@ error[ComposeNotAShape]: `compose` needs a level-two shape the wreath holds with
    ╭▸ corpus/ledger/diagnostics/ComposeNotAShape.gandr:30:3
    │
 29 │   def whiskerPastDegree(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Pa…
-   │   │                     ┬         ┬      ┬      ┬      ┬─                  ┬─                  ┬─                                ─ checked against `(a : Path(A, y, z)) -> -F Path(Path(A, x, z), fm then a, fp then a)`; while checking the body of this function; binds g : Path(A, y, z)
+   │   │                     ┬         ┬      ┬      ┬      ┬─                  ┬─                  ┬─                                ─ checked against `(a : Path(A, y, z)) -> -F Path(Path(A, x, z), Path.step(fm, a), Path.step(fp, a))`; while checking the body of this function; binds g : Path(A, y, z)
    │   │                     │         │      │      │      │                   │                   │
-   │   │                     │         │      │      │      │                   │                   checked against `Path(Path(A, x, y), fm, fp) -> (g : Path(A, y, z)) -> -F Path(Path(A, x, z), fm then g, fp then g)`; while checking the body of this function; binds fa : Path(Path(A, x, y), fm, fp)
+   │   │                     │         │      │      │      │                   │                   checked; while checking the body of this function; binds fa : Path(Path(A, x, y), fm, fp)
    │   │                     │         │      │      │      │                   checked; while checking the body of this function; binds fp : Path(A, x, y)
    │   │                     │         │      │      │      checked; while checking the body of this function; binds fm : Path(A, x, y)
    │   │                     │         │      │      checked; while checking the body of this function; binds z : A

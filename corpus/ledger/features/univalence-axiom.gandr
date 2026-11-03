@@ -22,14 +22,14 @@ import "../../model/identity/circle.gandr" ;
 /// Transport forward along a path between types, the map `idtoequiv` packages.
 @[ checks ]
 def fwdAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> b {
-  transport(fun (X) { X }, p, x)
+  Path.walk(fun (X) { X }, p, x)
 }
 
 /// Transport back along a path between types: the map the round trips are
 /// stated over.
 @[ checks ]
 def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> a {
-  transport(fun (X) { X }, back(p), y)
+  Path.walk(fun (X) { X }, Path.back(p), y)
 }
 
 /// The transport back written out in a record's field converts, under the
@@ -37,11 +37,11 @@ def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> a {
 @[ checks ]
 def oneBack(a : Type, b : Type, p : Path(Type, a, b)) -> #{
   g : b => a,
-  law : (z : b) => Path(a, g(z), transport(fun (X) { X }, back(p), z))
+  law : (z : b) => Path(a, g(z), Path.walk(fun (X) { X }, Path.back(p), z))
 } {
   (
-    fun (z) { transport(fun (X) { X }, back(p), z) },
-    fun (z) { here(transport(fun (X) { X }, back(p), z)) }
+    fun (z) { Path.walk(fun (X) { X }, Path.back(p), z) },
+    fun (z) { Path.here(Path.walk(fun (X) { X }, Path.back(p), z)) }
   )
 }
 
@@ -53,16 +53,16 @@ def sectAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> Path(
   bwdAlong(a, b, p, fwdAlong(a, b, p, x)),
   x
 ) {
-  transport(
+  Path.walk(
     (y : Type, z : Path(Type, a, y)) => Path(
       a,
       bwdAlong(a, y, z, fwdAlong(a, y, z, x)),
       x
     ),
     p,
-    here(a),
-    here(p),
-    here(x)
+    Path.here(a),
+    Path.here(p),
+    Path.here(x)
   )
 }
 
@@ -73,16 +73,16 @@ def retrAll(a : Type, b : Type, p : Path(Type, a, b)) -> (w : b) => Path(
   fwdAlong(a, b, p, bwdAlong(a, b, p, w)),
   w
 ) {
-  transport(
+  Path.walk(
     (y : Type, z : Path(Type, a, y)) => (w : y) => Path(
       y,
       fwdAlong(a, y, z, bwdAlong(a, y, z, w)),
       w
     ),
     p,
-    here(a),
-    here(p),
-    fun (w) { here(w) }
+    Path.here(a),
+    Path.here(p),
+    fun (w) { Path.here(w) }
   )
 }
 
@@ -108,11 +108,11 @@ def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> a ≃ b {
     fun (x) { fwdAlong(a, b, p, x) },
     (
       (
-        fun (y) { transport(fun (X) { X }, back(p), y) },
+        fun (y) { Path.walk(fun (X) { X }, Path.back(p), y) },
         fun (x) { sectAlong(a, b, p, x) }
       ),
       (
-        fun (y) { transport(fun (X) { X }, back(p), y) },
+        fun (y) { Path.walk(fun (X) { X }, Path.back(p), y) },
         fun (y) { retrAlong(a, b, p, y) }
       )
     )
@@ -163,25 +163,25 @@ def uaBeta(
   r : (y : b) => Path(b, t(h(y)), y),
   x : a
 ) -> Path(b, fwdAlong(a, b, ua((t, ((g, s), (h, r)))), x), t(x)) {
-  here(t(x))
+  Path.here(t(x))
 }
 
 /// `uaβ` run at the loops' record: a loop carried along `ua(winding)` runs to
 /// the record's map at it. The record's laws are carried, never run.
 @[ runs("S(Z)") ]
-def uaBetaRun() -> Int { transport(fun (X) { X }, ua(winding), loop) }
+def uaBetaRun() -> Int { Path.walk(fun (X) { X }, ua(winding), loop) }
 
 /// A loop carried along the loops' path to the integers is its winding
 /// number, by conversion.
 @[ checks ]
 def windingBeta(x : Path(Circle, Base, Base)) -> Path(
   Int,
-  transport(fun (X) { X }, loopsAreIntegers, x),
+  Path.walk(fun (X) { X }, loopsAreIntegers, x),
   wind(x)
 ) {
-  here(wind(x))
+  Path.here(wind(x))
 }
 
 /// A loop carried to the integers runs to its winding number.
 @[ runs("S(Z)") ]
-def windingRun() -> Int { transport(fun (X) { X }, loopsAreIntegers, loop) }
+def windingRun() -> Int { Path.walk(fun (X) { X }, loopsAreIntegers, loop) }

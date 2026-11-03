@@ -14,7 +14,7 @@ def composedPaths(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, 
   x,
   z
 ) {
-  p then q
+  Path.step(p, q)
 }
 
 /// A function's action on a path, whose type states its endpoints.
@@ -23,7 +23,7 @@ def actedOn(B : Type, C : Type, F : B => C, b1 : B, b2 : B, p : Path(B, b1, b2))
   F(b1),
   F(b2)
 ) {
-  cong(F, p)
+  Path.ap(F, p)
 }
 
 /// The associator by based path induction on `h`.
@@ -36,13 +36,16 @@ def associatedPaths(
   f : Path(A, x, y),
   g : Path(A, y, z),
   h : Path(A, z, w)
-) -> Path(Path(A, x, w), (f then g) then h, f then (g then h)) {
-  transport(
-    (v : A, k : Path(A, z, v)) => Path(Path(A, x, v), (f then g) then k, f then (g then k)),
+) -> Path(Path(A, x, w), Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
+  Path.walk(
+    (
+      v : A,
+      k : Path(A, z, v)
+    ) => Path(Path(A, x, v), Path.step(Path.step(f, g), k), Path.step(f, Path.step(g, k))),
     h,
-    here(z),
-    here(h),
-    here(f then g)
+    Path.here(z),
+    Path.here(h),
+    Path.here(Path.step(f, g))
   )
 }
 
@@ -56,11 +59,11 @@ def whiskeredRight(
   f2 : Path(A, x, y),
   a : Path(Path(A, x, y), f1, f2),
   g : Path(A, y, z)
-) -> Path(Path(A, x, z), f1 then g, f2 then g) {
+) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {
   actedOn(
     Path(A, x, y),
     Path(A, x, z),
-    (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
+    (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
     f1,
     f2,
     a
@@ -78,29 +81,29 @@ def twiceWhiskeredThen(
   g : Path(A, y, z),
   h : Path(A, z, w),
   r : Path(A, x, w),
-  k : Path(Path(A, x, w), (fm then g) then h, r)
+  k : Path(Path(A, x, w), Path.step(Path.step(fm, g), h), r)
 ) -> Path(
-  Path(Path(A, x, w), (fm then g) then h, r),
+  Path(Path(A, x, w), Path.step(Path.step(fm, g), h), r),
   composedPaths(
     Path(A, x, w),
-    (fm then g) then h,
-    (fm then g) then h,
+    Path.step(Path.step(fm, g), h),
+    Path.step(Path.step(fm, g), h),
     r,
     whiskeredRight(
       A,
       x,
       z,
       w,
-      fm then g,
-      fm then g,
-      whiskeredRight(A, x, y, z, fm, fm, here(fm), g),
+      Path.step(fm, g),
+      Path.step(fm, g),
+      whiskeredRight(A, x, y, z, fm, fm, Path.here(fm), g),
       h
     ),
     k
   ),
   k
 ) {
-  here(k)
+  Path.here(k)
 }
 
 /// A reflexivity whiskered twice, then the associator, is the associator.
@@ -114,25 +117,25 @@ def twiceWhiskeredThenAssoc(
   g : Path(A, y, z),
   h : Path(A, z, w)
 ) -> Path(
-  Path(Path(A, x, w), (fm then g) then h, fm then (g then h)),
+  Path(Path(A, x, w), Path.step(Path.step(fm, g), h), Path.step(fm, Path.step(g, h))),
   composedPaths(
     Path(A, x, w),
-    (fm then g) then h,
-    (fm then g) then h,
-    fm then (g then h),
+    Path.step(Path.step(fm, g), h),
+    Path.step(Path.step(fm, g), h),
+    Path.step(fm, Path.step(g, h)),
     whiskeredRight(
       A,
       x,
       z,
       w,
-      fm then g,
-      fm then g,
-      whiskeredRight(A, x, y, z, fm, fm, here(fm), g),
+      Path.step(fm, g),
+      Path.step(fm, g),
+      whiskeredRight(A, x, y, z, fm, fm, Path.here(fm), g),
       h
     ),
     associatedPaths(A, x, y, z, w, fm, g, h)
   ),
   associatedPaths(A, x, y, z, w, fm, g, h)
 ) {
-  here(associatedPaths(A, x, y, z, w, fm, g, h))
+  Path.here(associatedPaths(A, x, y, z, w, fm, g, h))
 }

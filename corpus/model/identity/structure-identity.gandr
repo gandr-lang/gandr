@@ -12,15 +12,15 @@
 import "./transport-list.gandr";
 
 /// A pair relates to a pair by a path in each place.
-def corners : Path(Integer * Integer, (2, 3), (2, 3)) = (here(2), here(3));
+def corners : Path(Integer * Integer, (2, 3), (2, 3)) = (Path.here(2), Path.here(3));
 
 /// A pair carried along negation is each component carried, so it relates to
 /// the swapped pair by a reflexivity in each place.
 def swappedPair : Path(
   Bool * Bool,
-  transport(fun (t) { type(t * t) }, negation, (+{.0 = unit}, +{.1 = unit})),
+  Path.walk(fun (t) { type(t * t) }, negation, (+{.0 = unit}, +{.1 = unit})),
   (+{.1 = unit}, +{.0 = unit})
-) = (here(+{.1 = unit}), here(+{.0 = unit}));
+) = (Path.here(+{.1 = unit}), Path.here(+{.0 = unit}));
 
 /// A carrier with a start and a stop, starting false.
 def rising : #{t : Type, start : t, stop : t} = (Bool, (+{.0 = unit}, +{.1 = unit}));
@@ -32,13 +32,13 @@ def falling : #{t : Type, start : t, stop : t} = (Bool, (+{.1 = unit}, +{.0 = un
 /// carried along it to the other's.
 def oneStructure : Path(#{t : Type, start : t, stop : t}, rising, falling) = (
   negation,
-  (here(+{.1 = unit}), here(+{.0 = unit}))
+  (Path.here(+{.1 = unit}), Path.here(+{.0 = unit}))
 );
 
 /// Carried along reflexivity instead, the points stay where they are, and the
 /// path between the structures is refused at the first point.
 @[ refuses("EndpointMismatch") ]
 def stayed : Path(#{t : Type, start : t, stop : t}, rising, falling) = (
-  here(Bool),
-  (here(+{.1 = unit}), here(+{.0 = unit}))
+  Path.here(Bool),
+  (Path.here(+{.1 = unit}), Path.here(+{.0 = unit}))
 );

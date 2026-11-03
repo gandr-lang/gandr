@@ -2303,7 +2303,7 @@ fn a_coherence_between_composites_is_a_higher_cell()
   sort Ob : Type;
   oper id : (a : Ob) --> Ob;
   rule unitL : id(a) ==> a;
-  rule triangle : (unitL(a) then unitL(a)) ==> unitL(a);
+  rule triangle : (Path.step(unitL(a), unitL(a))) ==> unitL(a);
   rule face : (f) ==> (z : Ob) { node : id(f) --> (z); };
 }";
     let report = described(source);

@@ -1,13 +1,13 @@
-// A function written as `fun (q) { e }` acts on a path through `cong`.
+// A function written as `fun (q) { e }` acts on a path through `Path.ap`.
 //
 // Whiskering composes each path of a path of paths with a fixed path. The
 // function that does it is short, and a stated type for it only repeats
 // the path's type.
 //
 // The binder takes the type of the path's points. Where no path type is
-// stated, `cong` reads its own off the path type the body has.
+// stated, `Path.ap` reads its own off the path type the body has.
 //
-// - see: #3773 — a lambda as `cong`'s function, refused before
+// - see: #3773 — a lambda as `Path.ap`'s function, refused before
 // - see: #3829 — a lambda where no path type is stated, refused before
 // - see: #3919 — a lambda stating its binder's type, refused before
 
@@ -21,12 +21,12 @@ def whiskerRight(
   f2 : Path(A, x, y),
   a : Path(Path(A, x, y), f1, f2),
   g : Path(A, y, z)
-) -> Path(Path(A, x, z), f1 then g, f2 then g) {
-  cong(fun (q) { q then g }, a)
+) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {
+  Path.ap(fun (q) { Path.step(q, g) }, a)
 }
 
-/// The whisker composed with a reflexivity: `cong` stands under `then`,
-/// where no path type is stated.
+/// The whisker composed with a reflexivity: `Path.ap` stands under
+/// `Path.step`, where no path type is stated.
 def whiskerThenHere(
   A : Type,
   x : A,
@@ -36,8 +36,8 @@ def whiskerThenHere(
   f2 : Path(A, x, y),
   a : Path(Path(A, x, y), f1, f2),
   g : Path(A, y, z)
-) -> Path(Path(A, x, z), f1 then g, f2 then g) {
-  cong(fun (q) { q then g }, a) then here(f2 then g)
+) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {
+  Path.step(Path.ap(fun (q) { Path.step(q, g) }, a), Path.here(Path.step(f2, g)))
 }
 
 /// The whisker as an endpoint of a stated path type: its reflexivity.
@@ -51,11 +51,11 @@ def whiskerHere(
   a : Path(Path(A, x, y), f1, f2),
   g : Path(A, y, z)
 ) -> Path(
-  Path(Path(A, x, z), f1 then g, f2 then g),
-  cong(fun (q) { q then g }, a),
-  cong(fun (q) { q then g }, a)
+  Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)),
+  Path.ap(fun (q) { Path.step(q, g) }, a),
+  Path.ap(fun (q) { Path.step(q, g) }, a)
 ) {
-  here(cong(fun (q) { q then g }, a))
+  Path.here(Path.ap(fun (q) { Path.step(q, g) }, a))
 }
 
 /// The whisker's reflexivity again, its binder stating the type of the path's
@@ -70,9 +70,9 @@ def whiskerStatedHere(
   a : Path(Path(A, x, y), f1, f2),
   g : Path(A, y, z)
 ) -> Path(
-  Path(Path(A, x, z), f1 then g, f2 then g),
-  cong(fun (q : Path(A, x, y)) { q then g }, a),
-  cong(fun (q : Path(A, x, y)) { q then g }, a)
+  Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)),
+  Path.ap(fun (q : Path(A, x, y)) { Path.step(q, g) }, a),
+  Path.ap(fun (q : Path(A, x, y)) { Path.step(q, g) }, a)
 ) {
-  here(cong(fun (q : Path(A, x, y)) { q then g }, a))
+  Path.here(Path.ap(fun (q : Path(A, x, y)) { Path.step(q, g) }, a))
 }

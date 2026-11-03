@@ -18,7 +18,7 @@ import "../../../library/std/src/grade.gandr";
 
 /// Many is not under once: usage keeps them apart.
 @[ refuses("EndpointMismatch") ]
-def manyUnderOnce : Path(Bool, Usage.le(Many, Once), true) = here(true);
+def manyUnderOnce : Path(Bool, Usage.le(Many, Once), true) = Path.here(true);
 
 /// Eight gibibytes are not under two.
 @[ refuses("EndpointMismatch") ]
@@ -26,7 +26,7 @@ def eightUnderTwoGiB : Path(
   Bool,
   Count.le((8589934592 : Nat), (2147483648 : Nat)),
   true
-) = here(true);
+) = Path.here(true);
 
 /// Counted bytes in the native integers: the order is the integer primitive.
 module Bytes : Model(Grade) where {
@@ -46,4 +46,4 @@ module Bytes : Model(Grade) where {
 
 /// Two is under four, but over the native integers no conversion shows it.
 @[ refuses("EndpointMismatch") ]
-def twoUnderFourBytes : Path(Bool, Bytes.le(2, 4), true) = here(true);
+def twoUnderFourBytes : Path(Bool, Bytes.le(2, 4), true) = Path.here(true);

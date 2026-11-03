@@ -27,7 +27,7 @@ The source formatter: a parsed gandr source laid out at a page width through `ga
 
 - Sorawee Porncharoenwase, Justin Pombrio, and Emina Torlak. "A Pretty Expressive Printer." _Proceedings of the ACM on Programming Languages_ 7, OOPSLA2, October 2023. [doi:10.1145/3622837](https://doi.org/10.1145/3622837), [arXiv:2310.01530](https://arxiv.org/abs/2310.01530) — the cost order the layouts are chosen under.
 - Philip Wadler. "A Prettier Printer." In Jeremy Gibbons and Oege de Moor (editors), _The Fun of Programming_, Palgrave Macmillan, 2003. [prettier.pdf](https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf) — a group that is flat only when everything inside it is.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: `p then q` is the composite at the 2-chain, written explicit as the fold it realises.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: `Path.step(p, q)` is the composite at the 2-chain, written explicit as the fold it realises.
 - The Go authors. [gofmt](https://pkg.go.dev/cmd/gofmt) — a formatter that keeps the line breaks an author wrote between statements and changes only the layout around them.
 
 ## Provided features
@@ -61,7 +61,7 @@ assert_eq!(<&str>::from(formatted.text()), "def answer = 42;\n");
 
 ## The tree, never the core
 
-The formatter reads the concrete syntax tree, because the core drops comments and undoes the shorthand the surface exists for. Layout alone never lowers, types or marks a source; a rewrite between spellings is checked by lowering, and the explicit `then` spells its motive through the presentation printer (see `src/lib.rs`).
+The formatter reads the concrete syntax tree, because the core drops comments and undoes the shorthand the surface exists for. Layout alone never lowers, types or marks a source; a rewrite between spellings is checked by lowering, and the explicit `Path.step` spells its motive through the presentation printer (see `src/lib.rs`).
 
 ## What moves and what does not
 

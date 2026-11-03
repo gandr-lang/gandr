@@ -20,7 +20,7 @@ def substTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> Path(
   subst(subst(Lam(b), s1), s2),
   Lam(subst(subst(b, Lift(s1)), Lift(s2)))
 ) {
-  here(Lam(subst(subst(b, Lift(s1)), Lift(s2))))
+  Path.here(Lam(subst(subst(b, Lift(s1)), Lift(s2))))
 }
 
 /// A lookup under one binder, under a lifted substitution, is the
@@ -30,10 +30,10 @@ def substLookWeakens(s1 : Env, s2 : Env, m : N) -> Path(
   subst(look(m, s1, S(Z)), Lift(s2)),
   subst(wk(look(m, s1, Z)), Lift(s2))
 ) {
-  transport(
+  Path.walk(
     fun (z) { Path(Term, subst(look(m, s1, S(Z)), Lift(s2)), subst(z, Lift(s2))) },
     lookWeakens(m, s1, Z),
-    here(subst(look(m, s1, S(Z)), Lift(s2)))
+    Path.here(subst(look(m, s1, S(Z)), Lift(s2)))
   )
 }
 
@@ -44,7 +44,7 @@ def substLookWeakenLift(s1 : Env, s2 : Env, m : N) -> Path(
   subst(look(m, s1, S(Z)), Lift(s2)),
   wk(subst(look(m, s1, Z), s2))
 ) {
-  substLookWeakens(s1, s2, m) then substWeaken(look(m, s1, Z), s2)
+  Path.step(substLookWeakens(s1, s2, m), substWeaken(look(m, s1, Z), s2))
 }
 
 /// The hypothesis at `m`, weakened.
@@ -56,7 +56,7 @@ def weakenedComposites(
   h : (n : N) => Path(Term, subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2)),
   m : N
 ) -> Path(Term, wk(subst(look(m, s1, Z), s2)), wk(subst(look(m, u1, Z), u2))) {
-  cong(wk, h(m))
+  Path.ap(wk, h(m))
 }
 
 /// A pointwise agreement of two composites holds of their lifts.
@@ -69,11 +69,11 @@ def substSquareLift(
   n : N
 ) -> Path(Term, subst(look(n, Lift(s1), Z), Lift(s2)), subst(look(n, Lift(u1), Z), Lift(u2))) {
   match n {
-    Z => here(Ix(Z)),
+    Z => Path.here(Ix(Z)),
     S(m) => compose[5, 7](chain(3), (
       substLookWeakenLift(s1, s2, m),
       weakenedComposites(s1, s2, u1, u2, h, m),
-      back(substLookWeakenLift(u1, u2, m))
+      Path.back(substLookWeakenLift(u1, u2, m))
     ))
   }
 }
@@ -90,7 +90,7 @@ pub def rec substSquare(
 ) -> Path(Term, subst(subst(t, s1), s2), subst(subst(t, u1), u2)) {
   match t {
     Ix(n) => h(n),
-    Lam(b) => cong(
+    Lam(b) => Path.ap(
       lamOf,
       substSquare[<](
         b,
@@ -101,21 +101,21 @@ pub def rec substSquare(
         fun (n) { substSquareLift(s1, s2, u1, u2, h, n) }
       )
     ),
-    Ap(f, x) => transport(
+    Ap(f, x) => Path.walk(
       fun (z) { Path(
         Term,
         Ap(subst(subst(f, s1), s2), subst(subst(x, s1), s2)),
         Ap(z, subst(subst(x, u1), u2))
       ) },
       substSquare[<](f, s1, s2, u1, u2, h),
-      transport(
+      Path.walk(
         fun (z) { Path(
           Term,
           Ap(subst(subst(f, s1), s2), subst(subst(x, s1), s2)),
           Ap(subst(subst(f, s1), s2), z)
         ) },
         substSquare[<](x, s1, s2, u1, u2, h),
-        here(Ap(subst(subst(f, s1), s2), subst(subst(x, s1), s2)))
+        Path.here(Ap(subst(subst(f, s1), s2), subst(subst(x, s1), s2)))
       )
     )
   }

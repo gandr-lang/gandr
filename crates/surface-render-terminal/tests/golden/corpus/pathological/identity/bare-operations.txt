@@ -1,0 +1,26 @@
+error[UnresolvedName]: `here` is not defined
+  ╭▸ corpus/pathological/identity/bare-operations.gandr:7:38
+  │
+7 │ def bareHere : Path(Integer, 4, 4) = here(4);
+  │                                      ━━━━ not found in this scope
+  │
+  ├ note: `bareHere` is refused with UnresolvedName, as its expectation states
+  ╰ help: define `here`, or import the module that exports it
+
+error[UnresolvedName]: `transport` is not defined
+   ╭▸ corpus/pathological/identity/bare-operations.gandr:11:31
+   │
+11 │ def bareTransport : Integer = transport(fun (X) { X }, Path.here(Integer), 2);
+   │                               ━━━━━━━━━ not found in this scope
+   │
+   ├ note: `bareTransport` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `transport`, or import the module that exports it
+
+error[UnresolvedName]: `stay` is not defined
+   ╭▸ corpus/pathological/identity/bare-operations.gandr:15:38
+   │
+15 │ def bareStay : Flow(Integer, 4, 4) = stay(4);
+   │                                      ━━━━ not found in this scope
+   │
+   ├ note: `bareStay` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `stay`, or import the module that exports it

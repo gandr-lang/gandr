@@ -24,29 +24,29 @@ module Versions where {
   }
   /// The flow from the first version to the second.
   @[ checks ]
-  def first : Flow(Type, V1, V2) = forward(toV2);
+  def first : Flow(Type, V1, V2) = Flow.into(toV2);
   /// The flow from the second version to the third.
   @[ checks ]
-  def second : Flow(Type, V2, V3) = forward(toV3);
+  def second : Flow(Type, V2, V3) = Flow.into(toV3);
   /// The stationary flow at the first version.
   @[ checks ]
-  def kept : Flow(Type, V1, V1) = stay(V1);
+  def kept : Flow(Type, V1, V1) = Flow.stay(V1);
   /// The stationary flow, then the first.
   @[ checks ]
   def early() -> Flow(Type, V1, V2) {
-    kept then first
+    Flow.then(kept, first)
   }
   /// Both translations in sequence.
   @[ checks ]
   def both() -> Flow(Type, V1, V3) {
     let start = early();
-    start then second
+    Flow.then(start, second)
   }
   /// A record ridden along the composite.
   @[ checks ]
   def moved(record : V1) -> V3 {
     let along = both();
-    ride(fun (X) { X }, along, record)
+    Flow.ride(fun (X) { X }, along, record)
   }
   /// A first-version record migrated to the third by a run.
   @[ runs("(+{.1 = unit}, 30, \"ada\")") ]

@@ -1,7 +1,7 @@
 // A derived path operation reads its operand's path type off what the
 // operand is when its form does not spell one: a parameter by the type its
 // binder writes, a call by the result its declaration writes, a recursive
-// call by its own function's result, and `cong` over a parameter function by
+// call by its own function's result, and `Path.ap` over a parameter function by
 // that function's written result, which may read the parameters before it.
 // In a body and in a type alike, none of these needs a stated type (#423).
 // The operations are the HoTT book's inverse and composite (Lemmas 2.1.1 and
@@ -18,45 +18,45 @@ def next(n : Nat) -> Nat {
 /// A parameter's inverse, read at the parameter's written type, then the
 /// parameter again.
 def backThen(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {
-  back(p) then p
+  Path.step(Path.back(p), p)
 }
 
 /// A parameter composed in a type, and reflexivity at it (#423).
 def stated(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
-  p then loop,
-  p then loop
+  Path.step(p, loop),
+  Path.step(p, loop)
 ) {
-  here(p then loop)
+  Path.here(Path.step(p, loop))
 }
 
 /// A loop walked twice.
 def walkTwice(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {
-  p then p
+  Path.step(p, p)
 }
 
 /// A call's inverse, read at the result `walkTwice` writes, then the loop.
 def untwice(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {
-  back(walkTwice(p)) then loop
+  Path.step(Path.back(walkTwice(p)), loop)
 }
 
 /// A call composed in a type (#423).
 def thrice(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
-  walkTwice(p) then p,
-  walkTwice(p) then p
+  Path.step(walkTwice(p), p),
+  Path.step(walkTwice(p), p)
 ) {
-  here(walkTwice(p) then p)
+  Path.here(Path.step(walkTwice(p), p))
 }
 
 /// A call of a declaration whose own type holds a derived operation: that
 /// type is read before the operation over it.
 def unthrice(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
-  walkTwice(p) then p,
-  walkTwice(p) then p
+  Path.step(walkTwice(p), p),
+  Path.step(walkTwice(p), p)
 ) {
-  back(thrice(p))
+  Path.back(thrice(p))
 }
 
 /// A path the signature alone states.
@@ -65,43 +65,43 @@ def stay : (a : Nat) => Path(Nat, a, a);
 
 /// A call of a signature, read at the result it states.
 def stayUp(a : Nat) -> Path(Nat, Succ(a), Succ(a)) {
-  cong(next, stay(a)) then here(Succ(a))
+  Path.step(Path.ap(next, stay(a)), Path.here(Succ(a)))
 }
 
 /// A recursive call, read at its function's own result.
 def rec still(b : Nat) -> Path(Nat, b, b) {
   match b {
-    Zero => here(Zero),
-    Succ(x) => cong(next, still[<](x)) then here(Succ(x))
+    Zero => Path.here(Zero),
+    Succ(x) => Path.step(Path.ap(next, still[<](x)), Path.here(Succ(x)))
   }
 }
 
-/// `cong` over a parameter function, read at the result its type writes.
+/// `Path.ap` over a parameter function, read at the result its type writes.
 def mapped(f : Circle => Nat) -> Path(Nat, f(Base), f(Base)) {
-  back(cong(f, loop))
+  Path.back(Path.ap(f, loop))
 }
 
-/// `cong` at a parameter map whose type reads an earlier parameter, the type
+/// `Path.ap` at a parameter map whose type reads an earlier parameter, the type
 /// it maps from: its result read where the operation stands (#546).
 def mappedOver(b : Type, g : b => Nat, u : b, v : b, q : Path(b, u, v)) -> Path(
   Nat,
   g(v),
   g(u)
 ) {
-  back(cong(g, q))
+  Path.back(Path.ap(g, q))
 }
 
 /// The same map into a type it reads, in a type and in a body (#546).
 def mappedInto(a : Type, b : Type, g : b => a, u : b, v : b, q : Path(b, u, v)) -> Path(
   Path(a, g(u), g(v)),
-  cong(g, q),
-  cong(g, q)
+  Path.ap(g, q),
+  Path.ap(g, q)
 ) {
-  here(cong(g, q))
+  Path.here(Path.ap(g, q))
 }
 
 /// A parameter of no path type gives no path to read.
 @[ refuses("OutOfFragment.Unannotated") ]
 def pointed(c : Circle) -> -F Path(Circle, Base, Base) {
-  back(c) then loop
+  Path.step(Path.back(c), loop)
 }

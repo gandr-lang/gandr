@@ -15,16 +15,16 @@ import "./univalence.gandr";
 /// `f` and winds the result, by conversion.
 def funBeta(f : Path(Circle, Base, Base) => Path(Circle, Base, Base)) -> Path(
   Int => Int,
-  transport(fun (X) { X => X }, loopsAreIntegers, f),
+  Path.walk(fun (X) { X => X }, loopsAreIntegers, f),
   fun (n) { wind(f(spin(n))) }
 ) {
-  here(fun (n) { wind(f(spin(n))) })
+  Path.here(fun (n) { wind(f(spin(n))) })
 }
 
 /// Adding a loop, carried along `loopsAreIntegers`, adds one: the integer
 /// spins back to its word, gains a loop and winds to its successor, by a run.
 @[ runs("S(S(S(Z)))") ]
 def funRun() -> Int {
-  let g = transport(fun (X) { X => X }, loopsAreIntegers, fun (l) { loopOn(l) });
+  let g = Path.walk(fun (X) { X => X }, loopsAreIntegers, fun (l) { loopOn(l) });
   g(S(S(Z)))
 }

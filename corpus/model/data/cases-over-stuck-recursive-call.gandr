@@ -57,7 +57,7 @@ def wrappedRec(
   a : Nat,
   b : Nat
 ) -> Path(Maybe(Nat), outer(first(look(a, b))), outer(second(look(a, b)))) {
-  here(outer(first(look(a, b))))
+  Path.here(outer(first(look(a, b))))
 }
 
 /// The outer case meets its twin over one inner case.
@@ -65,5 +65,5 @@ def twinRec(
   a : Nat,
   b : Nat
 ) -> Path(Maybe(Nat), outer(first(look(a, b))), outerTwin(first(look(a, b)))) {
-  here(outer(first(look(a, b))))
+  Path.here(outer(first(look(a, b))))
 }

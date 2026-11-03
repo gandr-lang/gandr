@@ -60,7 +60,7 @@ pub def rec wind(p : Path(Circle, Base, Base)) -> Int {
 /// cancellations.
 pub def rec spin(n : Int) -> Path(Circle, Base, Base) {
   match n {
-    Z => here(Base),
+    Z => Path.here(Base),
     S(x) => loop ∷ spin[<](x),
     P(x) => back(loop) ∷ spin[<](x)
   }
@@ -83,14 +83,14 @@ pub def unloopOn(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {
 /// `spin(wind(q))` to `q`, and carried along `loopOn` it relates `loop ∷
 /// spin(wind(q))`, which `spin(wind(loop ∷ q))` runs to, to `loop ∷ q`. The
 /// case respects the cancellations: at `loop ∷ back(loop) ∷ q` the arms
-/// compose to `cong(loopOn, cong(unloopOn, p))`, whose functions compose to
+/// compose to `Path.ap(loopOn, Path.ap(unloopOn, p))`, whose functions compose to
 /// the identity under the words' rules, so the chain is `p` itself, the
 /// answer at `q`.
 pub def rec sect(p : Path(Circle, Base, Base)) -> Path(Path(Circle, Base, Base), spin(wind(p)), p) {
   match p {
-    here => here(here(Base)),
-    loop ∷ q => cong(loopOn, sect[<](q)),
-    back(loop) ∷ q => cong(unloopOn, sect[<](q))
+    here => Path.here(Path.here(Base)),
+    loop ∷ q => Path.ap(loopOn, sect[<](q)),
+    back(loop) ∷ q => Path.ap(unloopOn, sect[<](q))
   }
 }
 
@@ -99,9 +99,9 @@ pub def rec sect(p : Path(Circle, Base, Base)) -> Path(Path(Circle, Base, Base),
 /// a predecessor along `down`.
 pub def rec retr(n : Int) -> Path(Int, wind(spin(n)), n) {
   match n {
-    Z => here(Z),
-    S(x) => cong(up, retr[<](x)),
-    P(x) => cong(down, retr[<](x))
+    Z => Path.here(Z),
+    S(x) => Path.ap(up, retr[<](x)),
+    P(x) => Path.ap(down, retr[<](x))
   }
 }
 
@@ -116,7 +116,7 @@ pub def selfloop(x : Circle) -> Path(Circle, x, x) {
 /// Every point's reflexivity, which conjugation fixes as well.
 pub def selfrefl(x : Circle) -> Path(Circle, x, x) {
   match x {
-    Base => here(Base)
+    Base => Path.here(Base)
   }
 }
 
@@ -125,7 +125,7 @@ pub def selfrefl(x : Circle) -> Path(Circle, x, x) {
 pub def invLooper(x : Circle) -> Circle {
   match x {
     Base => Base,
-    loop => back(loop)
+    loop => Path.back(loop)
   }
 }
 

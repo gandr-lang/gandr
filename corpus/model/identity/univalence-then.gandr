@@ -1,7 +1,7 @@
 // Transport along a composite ending in `ua`: the cubical case table of
 // Cohen, Coquand, Huber and Mörtberg, _Cubical Type Theory: a constructive
 // interpretation of the univalence axiom_ (TYPES 2015, arXiv:1611.02108),
-// § 4.5, read at the universe. `p then ua(e)` is the transport of `p` along
+// § 4.5, read at the universe. `Path.step(p, ua(e))` is the transport of `p` along
 // `ua(e)` in `y. Path(Type, a, y)`, and transport along it moves the operand
 // along `p`, then applies the record's forward map. A first path that does
 // not compute, as `p` here, is carried on as the value it stands for.
@@ -20,8 +20,8 @@ def thenBeta(
   p : Path(Type, a, b),
   e : b ≃ c,
   x : a
-) -> Path(c, fwdAlong(a, c, p then ua(e), x), fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x))) {
-  here(fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x)))
+) -> Path(c, fwdAlong(a, c, Path.step(p, ua(e)), x), fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x))) {
+  Path.here(fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x)))
 }
 
 /// Transport along a path from the loops at the point to the integers, then
@@ -30,21 +30,21 @@ def loopsRound(
   p : Path(Type, Path(Circle, Base, Base), Int),
   x : Path(Circle, Base, Base)
 ) -> Path(Circle, Base, Base) {
-  transport(fun (X) { X }, p then back(p), x)
+  Path.walk(fun (X) { X }, Path.step(p, Path.back(p)), x)
 }
 
 /// A loop carried to the integers and back again is the loop, by a run.
-@[ runs("loop ∷ here(Base)") ]
+@[ runs("loop ∷ Path.here(Base)") ]
 def roundRun : () => Path(Circle, Base, Base) = loopsRound(loopsAreIntegers, loop);
 
-/// The round trip named, its type stated. `then` and `back` read the type
+/// The round trip named, its type stated. `Path.step` and `Path.back` read the type
 /// `loopsAreIntegers` states.
 def loopsAndBack : Path(
   Type,
   Path(Circle, Base, Base),
   Path(Circle, Base, Base)
-) = loopsAreIntegers then back(loopsAreIntegers);
+) = Path.step(loopsAreIntegers, Path.back(loopsAreIntegers));
 
 /// A loop carried along the named round trip is the loop, by a run.
-@[ runs("loop ∷ here(Base)") ]
-def namedRoundRun() -> Path(Circle, Base, Base) { transport(fun (X) { X }, loopsAndBack, loop) }
+@[ runs("loop ∷ Path.here(Base)") ]
+def namedRoundRun() -> Path(Circle, Base, Base) { Path.walk(fun (X) { X }, loopsAndBack, loop) }

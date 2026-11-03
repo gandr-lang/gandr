@@ -1,16 +1,17 @@
 /// A transport whose motive starts at another point than its moved path prints
 /// as the transport it is.
 ///
-/// A transport along `r` of `here(f)`, under a motive `Path(C, l, c)`, is the
-/// composite `here(f) then r` exactly when `l` is `f`. Reading that composite
-/// back takes the motive's start from `here(f)`. A motive that starts at
-/// `f then here(z)` is another type, which the composite does not spell.
+/// A transport along `r` of `Path.here(f)`, under a motive `Path(C, l, c)`,
+/// is the composite `Path.step(Path.here(f), r)` exactly when `l` is `f`.
+/// Reading that composite back takes the motive's start from `Path.here(f)`.
+/// A motive that starts at `Path.step(f, Path.here(z))` is another type,
+/// which the composite does not spell.
 ///
 /// The printer writes a transport as a composite only where the moved path's
 /// start is the motive's. Otherwise it writes the transport in full.
 ///
 /// - see: #4218 — the printer wrote both transports as one composite
-/// - see: #754 — a returned composite of paths is written infix
+/// - see: #754 — a returned composite of paths is written as a step
 
 /// Motives whose fixed starts differ by the right unit of a variable path.
 def unitVariable(
@@ -22,8 +23,8 @@ def unitVariable(
   r : Path(Path(A, x, z), f, m)
 ) -> Path(
   Path(Path(A, x, z), f, m),
-  transport(fun (c) { Path(Path(A, x, z), f then here(z), c) }, r, here(f)),
-  transport(fun (c) { Path(Path(A, x, z), f, c) }, r, here(f))
+  Path.walk(fun (c) { Path(Path(A, x, z), Path.step(f, Path.here(z)), c) }, r, Path.here(f)),
+  Path.walk(fun (c) { Path(Path(A, x, z), f, c) }, r, Path.here(f))
 ) {
-  here(transport(fun (c) { Path(Path(A, x, z), f, c) }, r, here(f)))
+  Path.here(Path.walk(fun (c) { Path(Path(A, x, z), f, c) }, r, Path.here(f)))
 }

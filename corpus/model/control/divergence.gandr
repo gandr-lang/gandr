@@ -51,7 +51,7 @@ def unreadCall(a : Type, b : Type, f : a => b, g : a => b) -> Path(
   fun (x) { let _ = g(x); f(x) },
   f
 ) {
-  here(f)
+  Path.here(f)
 }
 
 /// Two unread calls in a row are dropped one after the other.
@@ -60,7 +60,7 @@ def unreadTwice(a : Type, b : Type, f : a => b, g : a => b, h : a => b) -> Path(
   fun (x) { let _ = g(x); let _ = h(x); f(x) },
   f
 ) {
-  here(f)
+  Path.here(f)
 }
 
 /// Applies `h` to `x`.
@@ -76,5 +76,5 @@ def unreadApplied(a : Type, b : Type, f : a => b, g : a => b) -> Path(
   fun (x) { let _ = g(x); apply(a, b, f, x) },
   f
 ) {
-  here(f)
+  Path.here(f)
 }

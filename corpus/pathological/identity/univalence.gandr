@@ -21,7 +21,7 @@ import "../../model/identity/circle.gandr";
 @[ refuses("EndpointMismatch") ]
 def collapsedPath : Path(Type, Two, One) = ua((
   collapse,
-  ((pick, thunk { fun (x) { here(x) } }), (pick, single))
+  ((pick, thunk { fun (x) { Path.here(x) } }), (pick, single))
 ));
 
 /// A transport along `ua` of a bi-invertible map from `Type` to itself,
@@ -29,7 +29,7 @@ def collapsedPath : Path(Type, Two, One) = ua((
 /// `Type[1]`, not of `Type`.
 @[ refuses("LevelMismatch") ]
 def alongTypeSelf(e : Type ≃ Type, x : Type) -> Type {
-  transport(fun (X) { X }, ua(e), x)
+  Path.walk(fun (X) { X }, ua(e), x)
 }
 
 /// A record written out where nothing names the path it builds, refused at
@@ -47,7 +47,7 @@ def alongLiteral(
   r : (y : b) => Path(b, t(h(y)), y),
   x : a
 ) -> b {
-  transport(fun (X) { X }, ua((t, ((g, s), (h, r)))), x)
+  Path.walk(fun (X) { X }, ua((t, ((g, s), (h, r)))), x)
 }
 
 /// `ua` after `idtoequiv` converted with the path, refused even at
@@ -56,10 +56,10 @@ def alongLiteral(
 @[ refuses("EndpointMismatch") ]
 def uaEtaByConversion(a : Type) -> Path(
   Path(Type, a, a),
-  ua(idtoequiv(a, a, here(a))),
-  here(a)
+  ua(idtoequiv(a, a, Path.here(a))),
+  Path.here(a)
 ) {
-  here(here(a))
+  Path.here(Path.here(a))
 }
 
 /// The loops' path to the integers ascribed a type whose right end is a

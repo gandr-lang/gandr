@@ -7,8 +7,8 @@ error[LoopUndecided]: deciding whether this case respects its sort's loops ran p
    │ │
 28 │ │┏   match x {
 29 │ │┃     Base => match power(power(Succ(Succ(Succ(Zero))))) {
-30 │ │┃       Zero => here(Base),
-31 │ │┃       Succ(p) => here(Base)
+30 │ │┃       Zero => Path.here(Base),
+31 │ │┃       Succ(p) => Path.here(Base)
 32 │ │┃     }
 33 │ │┃   }
    │ │┗━━━┛ a case whose loop obligation ran past its budget

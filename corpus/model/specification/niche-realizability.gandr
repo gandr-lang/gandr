@@ -358,10 +358,10 @@ def sectAt(vt : (Nat, Heap) => Type, h : Heap, w : Nat) -> (ok : vOpt(vt, w, h))
 ) {
   match w {
     Zero => match h {
-      Emp => return fun (ok) { here((Zero, ok)) },
-      Cell(l, v, rest) => return fun (ok) { here((Zero, ok)) }
+      Emp => return fun (ok) { Path.here((Zero, ok)) },
+      Cell(l, v, rest) => return fun (ok) { Path.here((Zero, ok)) }
     },
-    Succ(n) => return fun (ok) { here((Succ(n), ok)) }
+    Succ(n) => return fun (ok) { Path.here((Succ(n), ok)) }
   }
 }
 
@@ -391,8 +391,8 @@ def retrNone(vt : (Nat, Heap) => Type, h : Heap, p : Nat) -> (ok : vTag(
 ) {
   match p {
     Zero => match h {
-      Emp => return fun (ok) { here((Tag(Zero, Zero), ok)) },
-      Cell(l, v, rest) => return fun (ok) { here((Tag(Zero, Zero), ok)) }
+      Emp => return fun (ok) { Path.here((Tag(Zero, Zero), ok)) },
+      Cell(l, v, rest) => return fun (ok) { Path.here((Tag(Zero, Zero), ok)) }
     },
     Succ(_n) => return fun (none) { match (none : Void) {} }
   }
@@ -411,7 +411,7 @@ def retrSome(vt : (Nat, Heap) => Type, h : Heap, s : Nat, p : Nat) -> (ok : vTag
   match s {
     Zero => match p {
       Zero => return fun (none) { match (none : Void) {} },
-      Succ(n) => return fun (ok) { here((Tag(Succ(Zero), Succ(n)), ok)) }
+      Succ(n) => return fun (ok) { Path.here((Tag(Succ(Zero), Succ(n)), ok)) }
     },
     Succ(_n) => return fun (none) { match (none : Void) {} }
   }

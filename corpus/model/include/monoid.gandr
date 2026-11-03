@@ -69,7 +69,7 @@ pub module Endo : Model(Monoid) where {
     g : Integer => Integer,
     h : Integer => Integer
   ) -> Path(Integer => Integer, mul(mul(f, g), h), mul(f, mul(g, h))) {
-    here(thunk { andThen(f, thunk { andThen(g, h) }) })
+    Path.here(thunk { andThen(f, thunk { andThen(g, h) }) })
   }
 
   /// The left unit law.
@@ -78,7 +78,7 @@ pub module Endo : Model(Monoid) where {
     mul(one(), f),
     f
   ) {
-    here(f)
+    Path.here(f)
   }
 
   /// The right unit law.
@@ -87,7 +87,7 @@ pub module Endo : Model(Monoid) where {
     mul(f, one()),
     f
   ) {
-    here(f)
+    Path.here(f)
   }
 }
 

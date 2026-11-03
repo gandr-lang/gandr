@@ -23,7 +23,7 @@ def restricted : Path(
   Model(Semigroup),
   endoSemigroup,
   Monoid.Semigroup(endoMonoid)
-) = here(endoSemigroup);
+) = Path.here(endoSemigroup);
 
 /// Whether a semigroup's multiplication is there to read: every semigroup's
 /// is, so this answers zero.

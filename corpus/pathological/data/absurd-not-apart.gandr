@@ -32,8 +32,8 @@ data Circle : Type where {
 @[ refuses("NotApart") ]
 def cancelled(e : Path(
   Path(Circle, Base, Base),
-  loop ∷ back(loop) ∷ here(Base),
-  here(Base)
+  loop ∷ back(loop) ∷ Path.here(Base),
+  Path.here(Base)
 )) -> Empty {
   match e {}
 }

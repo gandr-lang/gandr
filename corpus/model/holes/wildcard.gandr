@@ -30,16 +30,16 @@ def same[a : Type](y : a) -> a { y }
 @[ runs("3") ]
 def slotForced() -> Integer { same[.a = _](3) }
 
-/// A path's right end left in an ascription's type: checking `here(3)`
+/// A path's right end left in an ascription's type: checking `Path.here(3)`
 /// against it forces the end to `3`, and the path runs as its two maps, both
 /// the identity (#1979).
 @[ runs("(thunk { fun (a) { a } }, thunk { fun (a) { a } })") ]
-def endForced() -> Path(Integer, 3, 3) { (here(3) : Path(Integer, 3, _)) }
+def endForced() -> Path(Integer, 3, 3) { (Path.here(3) : Path(Integer, 3, _)) }
 
 /// A definition its annotation signs, the path's right end left open: no
-/// other type meets the annotation's, so `here(3)`'s point alone forces the
+/// other type meets the annotation's, so `Path.here(3)`'s point alone forces the
 /// end (#1979).
-def endSigned = (here(3) : Path(Integer, 3, _));
+def endSigned = (Path.here(3) : Path(Integer, 3, _));
 
 /// A path the caller passes, ascribed a type whose right end is left open:
 /// the value bridge meets that end against the path's own and forces it

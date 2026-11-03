@@ -4,7 +4,7 @@
 // `winding` these laws read through, `int-sum.gandr` the integers' sum and
 // its laws, and `circle-rotation.gandr` the circle's multiplication. Where
 // cubical fills a cube by `hcomp`, a law here is conversion on words or
-// `cong`.
+// `Path.ap`.
 //
 // Out of reach by design: `ΩS¹≡ℤ`, the loops equal to the integers as types,
 // needs univalence; `isSetΩS¹` and `toPropElim` need the h-level ladder;
@@ -18,30 +18,30 @@ import "./int-sum.gandr";
 /// Spinning a successor is one loop more (cubical's `intLoop-sucℤ`), by
 /// computation.
 def spinUp(n : Int) -> Path(Path(Circle, Base, Base), spin(S(n)), loop ∷ spin(n)) {
-  here(loop ∷ spin(n))
+  Path.here(loop ∷ spin(n))
 }
 
 /// Spinning a predecessor is one inverse loop more (cubical's
 /// `intLoop-predℤ`), by computation.
 def spinDown(n : Int) -> Path(Path(Circle, Base, Base), spin(P(n)), back(loop) ∷ spin(n)) {
-  here(back(loop) ∷ spin(n))
+  Path.here(back(loop) ∷ spin(n))
 }
 
 /// Spinning a sum is composing the spins (cubical's `intLoop-hom`), by
 /// induction on the second summand. `spin` puts its new loop first where
 /// cubical's `intLoop` puts it last, so the law composes the spins the other
-/// way round, as the words compute: `(loop ∷ p) then q` is
-/// `loop ∷ (p then q)` (#422). At zero `spin(Z)` is a call that returns the
+/// way round, as the words compute: `Path.step(loop ∷ p, q)` is
+/// `loop ∷ Path.step(p, q)` (#422). At zero `spin(Z)` is a call that returns the
 /// empty word, and the composite over it runs that call first (#473); the
 /// composites the arms carry convert through their definitions (#440).
 def rec spinHom(
   a : Int,
   b : Int
-) -> Path(Path(Circle, Base, Base), spin(plus(a, b)), spin(b) then spin(a)) {
+) -> Path(Path(Circle, Base, Base), spin(plus(a, b)), Path.step(spin(b), spin(a))) {
   match b {
-    Z => here(spin(a)),
-    S(x) => cong(loopOn, spinHom[<](a, x)),
-    P(x) => cong(unloopOn, spinHom[<](a, x))
+    Z => Path.here(spin(a)),
+    S(x) => Path.ap(loopOn, spinHom[<](a, x)),
+    P(x) => Path.ap(unloopOn, spinHom[<](a, x))
   }
 }
 
@@ -49,32 +49,32 @@ def rec spinHom(
 /// induction on the first loop, written last so its match stands directly
 /// under the recursion, where the checkers read it as a fold, and summed with
 /// `wind(q)` first because the sum descends its second summand:
-/// `here(wind(q))` on the empty word, and the recursive call carried along
+/// `Path.here(wind(q))` on the empty word, and the recursive call carried along
 /// `up` or `down`. The composite in its type is read off the parameters'
 /// written types (#423), and the kernel reads its endpoint
 /// `plus(wind(q), wind(p))` as the call it returns (#424).
 def rec windHom(
   q : Path(Circle, Base, Base),
   p : Path(Circle, Base, Base)
-) -> Path(Int, wind(p then q), plus(wind(q), wind(p))) {
+) -> Path(Int, wind(Path.step(p, q)), plus(wind(q), wind(p))) {
   match p {
-    here => here(wind(q)),
-    loop ∷ r => cong(up, windHom[<](q, r)),
-    back(loop) ∷ r => cong(down, windHom[<](q, r))
+    here => Path.here(wind(q)),
+    loop ∷ r => Path.ap(up, windHom[<](q, r)),
+    back(loop) ∷ r => Path.ap(down, windHom[<](q, r))
   }
 }
 
-/// The spin of `plusComm`, written as the transport `cong(spin, …)`
+/// The spin of `plusComm`, written as the transport `Path.ap(spin, …)`
 /// derives: a static motive whose endpoints call the group's operations, each
 /// call the value it returns, as the kernel replays it (#4618).
 def spunComm(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
 ) -> Path(Path(Circle, Base, Base), spin(plus(wind(q), wind(p))), spin(plus(wind(p), wind(q)))) {
-  transport(
+  Path.walk(
     fun (a) { Path(Path(Circle, Base, Base), spin(plus(wind(q), wind(p))), spin(a)) },
     plusComm(wind(q), wind(p)),
-    here(spin(plus(wind(q), wind(p))))
+    Path.here(spin(plus(wind(q), wind(p))))
   )
 }
 
@@ -85,13 +85,13 @@ def spunComm(
 def comm(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
-) -> Path(Path(Circle, Base, Base), p then q, q then p) {
+) -> Path(Path(Circle, Base, Base), Path.step(p, q), Path.step(q, p)) {
   compose[9, 11](chain(5), (
-    back(sect(p then q)),
-    cong(spin, windHom(q, p)),
-    cong(spin, plusComm(wind(q), wind(p))),
-    back(cong(spin, windHom(p, q))),
-    sect(q then p)
+    Path.back(sect(Path.step(p, q))),
+    Path.ap(spin, windHom(q, p)),
+    Path.ap(spin, plusComm(wind(q), wind(p))),
+    Path.back(Path.ap(spin, windHom(p, q))),
+    sect(Path.step(q, p))
   ))
 }
 

@@ -11,7 +11,7 @@ def twoUnderEightGiB : Path(
   Bool,
   Count.le((2147483648 : Nat), (8589934592 : Nat)),
   true
-) = here(true);
+) = Path.here(true);
 
 /// Three uses, counted, cover a need of once.
-def threeCoversOnce : Path(Bool, covers(count, usage, collapse, Once, (3 : Nat)), true) = here(true);
+def threeCoversOnce : Path(Bool, covers(count, usage, collapse, Once, (3 : Nat)), true) = Path.here(true);

@@ -3891,8 +3891,8 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
              Path(Circle, Base, Base)) ; def once = thunk { loop } ;",
         );
         for (spelling, spelled) in [
-            (Spelling::Unicode, "loop ∷ here(Base)"),
-            (Spelling::Ascii, "loop :: here(Base)"),
+            (Spelling::Unicode, "loop ∷ Path.here(Base)"),
+            (Spelling::Ascii, "loop :: Path.here(Base)"),
         ] {
             words.spell_in(spelling);
             assert_eq!(
@@ -4112,7 +4112,7 @@ def alias : Type ; def alias = small ;
 def again : Type ; def again = alias ;
 def wide : Type ; def wide = String ;
 def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
-  transport(fun (y) { Path(Integer, y, y) }, p then p, here(1))
+  Path.walk(fun (y) { Path(Integer, y, y) }, Path.step(p, p), Path.here(1))
 }",
         );
         assert!(
@@ -4143,9 +4143,9 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
     {
         let mut laws = program(
             r"def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
-  transport(fun (y) { Path(Integer, y, y) }, p then p, here(1))
+  Path.walk(fun (y) { Path(Integer, y, y) }, Path.step(p, p), Path.here(1))
 }
-def reached : +U (-F Path(Integer, 1, 1)) ; def reached = thunk { law(here(1)) } ;
+def reached : +U (-F Path(Integer, 1, 1)) ; def reached = thunk { law(Path.here(1)) } ;
 def kept : +U (-F (+U (-F Path(Integer, 1, 1)))) ; def kept = thunk { return reached } ;",
         );
         for name in ["law", "reached"] {
@@ -4408,7 +4408,7 @@ def bad : Integer ; def bad = "text" ;"#,
             r#"def answer = 42 ; def later : Integer ;
 def bad : Integer ; def bad = "text" ;
 def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
-  transport(fun (y) { Path(Integer, y, y) }, p then p, here(1))
+  Path.walk(fun (y) { Path(Integer, y, y) }, Path.step(p, p), Path.here(1))
 }"#,
         );
         let defined = written.met(ConstantIndex::from(0_usize));

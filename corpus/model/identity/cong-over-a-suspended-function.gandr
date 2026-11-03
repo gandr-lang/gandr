@@ -1,9 +1,9 @@
-// `cong` acts on a path through a suspended function that states its type.
+// `Path.ap` acts on a path through a suspended function that states its type.
 //
 // The editor answers at every node the checker judges. A function given to
-// `cong` holds such nodes, as a function given to a call does.
+// `Path.ap` holds such nodes, as a function given to a call does.
 //
-// The declaration whiskers a path of paths through `cong`.
+// The declaration whiskers a path of paths through `Path.ap`.
 //
 // - see: #3787 — no editor entry inside the function, before
 // - see: #3801 — the census reprints the thunk's path types one binder off, before
@@ -19,6 +19,9 @@ def whiskeredBySuspension(
   f2 : Path(A, x, y),
   a : Path(Path(A, x, y), f1, f2),
   g : Path(A, y, z)
-) -> Path(Path(A, x, z), f1 then g, f2 then g) {
-  cong((thunk { fun (q : Path(A, x, y)) { q then g } } : Path(A, x, y) => Path(A, x, z)), a)
+) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {
+  Path.ap(
+    (thunk { fun (q : Path(A, x, y)) { Path.step(q, g) } } : Path(A, x, y) => Path(A, x, z)),
+    a
+  )
 }

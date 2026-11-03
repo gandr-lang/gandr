@@ -53,7 +53,7 @@ pub module Counting : Model(Cost) with sort N = Nat => Nat where {
   }
   /// Charging nothing is the identity, by η.
   def chargeZero(k : (Nat => Nat) => Nat) -> Path((Nat => Nat) => Nat, charge(zero, k), k) {
-    here(k)
+    Path.here(k)
   }
   /// Two charges are one, by β and the associativity of `run`.
   def chargeTwice(a : Nat => Nat, b : Nat => Nat, k : (Nat => Nat) => Nat) -> Path(
@@ -61,7 +61,7 @@ pub module Counting : Model(Cost) with sort N = Nat => Nat where {
     charge(a, charge(b, k)),
     charge(plus(a, b), k)
   ) {
-    here(charge(plus(a, b), k))
+    Path.here(charge(plus(a, b), k))
   }
 }
 

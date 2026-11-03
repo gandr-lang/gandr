@@ -1641,7 +1641,7 @@ fn a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157()
         sibling
             .identity(&grammar, &Held::default(), &lock, &committed)
             .map(|identity| identity.address),
-        "and the store then answers it alike"
+        "and the Path.step(store, answers) it alike"
     );
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
     for scratch in [committed.root(), empty.root()] {

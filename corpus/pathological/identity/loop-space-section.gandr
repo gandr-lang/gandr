@@ -50,8 +50,8 @@ def unaround(c : Circle) -> Circle {
 @[ refuses("TypeMismatch") ]
 def rec forged(c : Circle) -> Path(Circle, spin(wind(c)), c) {
   match c {
-    Base => here(Base),
+    Base => Path.here(Base),
     Loop(x) => forged[<](x),
-    Unloop(x) => { let p = forged[<](x); cong(unaround, p) }
+    Unloop(x) => { let p = forged[<](x); Path.ap(unaround, p) }
   }
 }

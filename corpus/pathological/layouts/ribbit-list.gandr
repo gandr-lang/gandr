@@ -35,8 +35,8 @@ def listOf(t : Tags) -> Ints {
 @[ refuses("EndpointMismatch") ]
 def restored(l : Ints) -> Path(Ints, listOf(tagsOf(l)), l) {
   match l {
-    Nil => here(Nil),
-    Cons(x, rest) => here(Cons(x, rest))
+    Nil => Path.here(Nil),
+    Cons(x, rest) => Path.here(Cons(x, rest))
   }
 }
 

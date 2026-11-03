@@ -41,5 +41,5 @@ def fibAgrees() -> Path(
   fib(Succ(Succ(twelve))),
   fibFrom(Succ(Succ(twelve)), Zero, Succ(Zero))
 ) {
-  here(fib(Succ(Succ(twelve))))
+  Path.here(fib(Succ(Succ(twelve))))
 }

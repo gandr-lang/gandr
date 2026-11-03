@@ -630,39 +630,44 @@ pub enum Former<'source, Node>
     /// A static application of an operator to one argument; the printer
     /// spells a spine of them as one application, `f(a, b)`.
     StaticApplication(Node, Node),
-    /// Element identity `here(a)`, the reflexivity the surface writes.
+    /// Element identity `Path.here(a)`, the reflexivity the surface writes.
     Here(Node),
-    /// Function extensionality `funext(f, g)` over its two functions.
+    /// Function extensionality `Path.funext(f, g)` over its two functions.
     Funext(Node, Node),
     /// Universe equivalence `equiv(f, g)` over its two translators.
     Equiv(Node, Node),
     /// Univalence `ua(e)` over its record; the forward map the core node
     /// carries is derived from the record and never written.
     Univalence(Node),
-    /// A session statement, `bisim(a, b)` or `sim(a, b)`, over its two codes,
-    /// with the payload paths `bisim(a, b, p)` writes when it writes any.
+    /// A session statement, `Path.bisim(a, b)` or `Flow.sim(a, b)`, over its
+    /// two codes, with the payload paths `Path.bisim(a, b, p)` writes when it
+    /// writes any.
     SessionRelated(
         gandr_core_term::session::SessionRelation,
         Node,
         Node,
         Option<Node>,
     ),
-    /// Directed reflexivity `stay(a)`.
+    /// Directed reflexivity `Flow.stay(a)`.
     Stay(Node),
-    /// Directed composition, `f then g`.
+    /// Directed composition, `Flow.then(f, g)`.
     Then(Node, Node),
-    /// A path's inverse, `back(p)`, over the path: the sugared reading of the
-    /// transport the inverse derives.
+    /// The composite of two paths, `Path.step(p, q)`, over the transported
+    /// path and the path it moves along: the sugared reading of the
+    /// transport the composite derives.
+    Step(Node, Node),
+    /// A path's inverse, `Path.back(p)`, over the path: the sugared reading of
+    /// the transport the inverse derives.
     Back(Node),
-    /// A map's action on a path, `cong(f, p)`, over the map as the derived
+    /// A map's action on a path, `Path.ap(f, p)`, over the map as the derived
     /// transport's motive holds it, one binder deeper, and the path: the
     /// sugared reading of the transport the action derives.
     Cong(Node, Node),
-    /// The product of two universe flows, `flowProduct(p, q)`.
+    /// The product of two universe flows, `Flow.product(p, q)`.
     FlowProduct(Node, Node),
-    /// A forward flow `forward(f)` over its translator.
+    /// A forward flow `Flow.into(f)` over its translator.
     Forward(Node),
-    /// A function flow `arrow(d, c)` over its domain and codomain flows.
+    /// A function flow `Flow.arrow(d, c)` over its domain and codomain flows.
     FunctionFlow(Node, Node),
     /// The recorded runs of a session code, `Run(s)`.
     RunType(Node),
@@ -858,9 +863,9 @@ pub enum Former<'source, Node>
         /// How many arguments it takes.
         arity: Arity,
     },
-    /// Transport along a native universe path, `transport(p, x)`.
+    /// Transport along a native universe path, `Path.walk(p, x)`.
     Transport(Node, Node),
-    /// Transport along an element path, `transport(fun (a) { M }, p, x)`: the
+    /// Transport along an element path, `Path.walk(fun (a) { M }, p, x)`: the
     /// motive, a value type under one binder, the path and the value.
     PathTransport
     {
@@ -871,7 +876,7 @@ pub enum Former<'source, Node>
         /// The value transported.
         value: Node,
     },
-    /// Transport over a two-entry telescope, `transport(+U M, p, s, q, x)`:
+    /// Transport over a two-entry telescope, `Path.walk(+U M, p, s, q, x)`:
     /// the motive, a computation type whose arrows bind the telescope.
     TelescopeTransport
     {
@@ -886,8 +891,8 @@ pub enum Former<'source, Node>
         /// The value transported.
         value: Node,
     },
-    /// Transport along a flow, `ride(fun (a) { M }, f, x)`: the motive, a value
-    /// type under one binder, the flow and the value.
+    /// Transport along a flow, `Flow.ride(fun (a) { M }, f, x)`: the motive, a
+    /// value type under one binder, the flow and the value.
     Ride
     {
         /// The motive, under one binder.
@@ -1282,7 +1287,7 @@ pub enum Notation
     /// type the checker does not synthesise there, or one read as a type,
     /// `m.0`, which the type grammar writes only as a path of names.
     Positional,
-    /// A transport along a type equality, written `transport(e, v)`.
+    /// A transport along a type equality, written `Path.walk(e, v)`.
     Transport,
     /// A handler's resumption, written `resume(k, v)`.
     Resume,

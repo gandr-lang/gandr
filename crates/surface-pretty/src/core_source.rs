@@ -162,7 +162,7 @@ pub enum FamilyKey<'text>
 /// Two families under one key keep the first one recorded. A family of words
 /// is recorded consed: each of its one-field constructors is a letter, written
 /// before the rest of the word, and its nullary constructor, the empty word,
-/// is written as a value at its point, `here(a)`, and as a pattern bare. A
+/// is written as a value at its point, `Path.here(a)`, and as a pattern bare. A
 /// family with loops records them after its constructors: a data case over it
 /// takes one branch per constructor and then one per loop, each loop arm
 /// written under the loop's name.
@@ -1103,7 +1103,8 @@ impl<'arena> CoreSource<'arena>
     }
 
     /// The computation `id` is written as: the fold a returned binary
-    /// composite realises, since `p then q` writes it, and `id` otherwise.
+    /// composite realises, since `Path.step(p, q)` writes it, and `id`
+    /// otherwise.
     ///
     /// # Specification
     /// trivial.
@@ -1218,8 +1219,8 @@ impl<'arena> CoreSource<'arena>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each value former read as its [`Former`], the binary
-    ///   composite, returned or not, as the fold `p then q` writes, any other
-    ///   composite as [`Former::Compose`] and a fill as [`Former::Fill`];
+    ///   composite, returned or not, as the fold `Path.step(p, q)` writes, any
+    ///   other composite as [`Former::Compose`] and a fill as [`Former::Fill`];
     ///   [`Former::Unreadable`] for an id the arena does not hold, and for a
     ///   constructor whose classifier names no data family.
     /// - provides: the value half of [`Source::read`].
@@ -1437,7 +1438,7 @@ impl<'arena> CoreSource<'arena>
             )]
             Value::Mark { .. } => Former::Unreadable(Unreadable::Mark),
             Value::Returned(body) => Former::Returned(CoreNode::Computation(self.written(body))),
-            // The binary composite is written `p then q`, the fold it realises.
+            // The binary composite is written `Path.step(p, q)`, the fold it realises.
             Value::Compose {
                 composite,
                 realised,
@@ -1949,8 +1950,8 @@ impl<'arena> CoreSource<'arena>
     ///   as nodes of their families and its names spelled: a primitive by its
     ///   prelude function's name, an operation and a record field by their own,
     ///   a scope by its interface's; the binary composite returned as the fold
-    ///   `p then q` writes; a hole and a mark as the honest set's, and an id
-    ///   the arena does not hold as dangling.
+    ///   `Path.step(p, q)` writes; a hole and a mark as the honest set's, and
+    ///   an id the arena does not hold as dangling.
     /// - provides: the computation half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.

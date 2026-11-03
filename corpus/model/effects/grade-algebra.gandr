@@ -21,33 +21,33 @@
 import "../../../library/std/src/grade.gandr";
 
 /// Once is under many.
-def onceUnderMany : Path(Bool, Usage.le(Once, Many), true) = here(true);
+def onceUnderMany : Path(Bool, Usage.le(Once, Many), true) = Path.here(true);
 
 /// Once beside once is many.
-def twiceIsMany : Path(Use, Usage.plus(Once, Once), Many) = here(Many);
+def twiceIsMany : Path(Use, Usage.plus(Once, Once), Many) = Path.here(Many);
 
 /// Two is under four, counted.
-def twoUnderFour : Path(Bool, Count.le((2 : Nat), (4 : Nat)), true) = here(true);
+def twoUnderFour : Path(Bool, Count.le((2 : Nat), (4 : Nat)), true) = Path.here(true);
 
 /// Two gibibytes are under eight.
 def twoUnderEightGiB : Path(
   Bool,
   Count.le((2147483648 : Nat), (8589934592 : Nat)),
   true
-) = here(true);
+) = Path.here(true);
 
 /// Two and three are five.
-def twoAndThree : Path(Nat, Count.plus((2 : Nat), (3 : Nat)), (5 : Nat)) = here((5 : Nat));
+def twoAndThree : Path(Nat, Count.plus((2 : Nat), (3 : Nat)), (5 : Nat)) = Path.here((5 : Nat));
 
 /// Twice three is six.
-def twiceThree : Path(Nat, Count.times((2 : Nat), (3 : Nat)), (6 : Nat)) = here((6 : Nat));
+def twiceThree : Path(Nat, Count.times((2 : Nat), (3 : Nat)), (6 : Nat)) = Path.here((6 : Nat));
 
 /// The test at a packed algebra: many covers once.
-def manyFitsOnce : Path(Bool, fits(usage, Once, Many), true) = here(true);
+def manyFitsOnce : Path(Bool, fits(usage, Once, Many), true) = Path.here(true);
 
 /// Three uses, counted, cover a need of once once counting collapses to usage.
 def threeCoversOnce : Path(
   Bool,
   covers(count, usage, collapse, Once, (3 : Nat)),
   true
-) = here(true);
+) = Path.here(true);

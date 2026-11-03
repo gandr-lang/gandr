@@ -110,11 +110,11 @@ const FIBONACCI: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n 
 
 /// Both definitions at nineteen: equal, but past the conversion's step budget.
 const FIBONACCI_AGREE: &str = "def agree() -> Path(Nat, fib(nineteen()), fibFrom(nineteen(), \
-                               Zero, Succ(Zero))) {\n  here(fib(nineteen()))\n}\n";
+                               Zero, Succ(Zero))) {\n  Path.here(fib(nineteen()))\n}\n";
 
 /// Fibonacci at five against the iteration started one step on: apart.
 const FIBONACCI_APART: &str = "def apart() -> Path(Nat, fib(five()), fibFrom(five(), Succ(Zero), \
-                               Succ(Zero))) {\n  here(fib(five()))\n}\n";
+                               Succ(Zero))) {\n  Path.here(fib(five()))\n}\n";
 
 /// A fresh scratch directory, removed when dropped.
 #[repr(transparent)]
@@ -613,7 +613,7 @@ fn a_word_spells_by_its_letters()
     assert_eq!(
         mismatch.detail.compared.expected,
         Maybe::Present(String::from(
-            "Path(Path(Circle, Base, Base), back(loop) ∷ here(Base), here(Base))"
+            "Path(Path(Circle, Base, Base), back(loop) ∷ Path.here(Base), Path.here(Base))"
         )),
         "a word's type is its path type, a letter conses before the rest, and the empty \
              word is `here` at the point"
@@ -625,7 +625,7 @@ fn a_word_spells_by_its_letters()
     assert_eq!(
         preceded.detail.compared.expected,
         Maybe::Present(String::from(
-            "Path(Path(Circle, Base, Base), back(loop) ∷ here(Base), here(Base))"
+            "Path(Path(Circle, Base, Base), back(loop) ∷ Path.here(Base), Path.here(Base))"
         )),
         "the point is spelled by its own family's constructors, not an earlier family's"
     );
@@ -883,7 +883,7 @@ fn a_shared_field_variable_answers_at_the_depth_it_was_judged_1515()
     let text = SourceText::from(
         "def selfEquiv(b : Type) -> -F (#{ x : b, y : b, p : Path(b, x, y) } ≃ #{ x : b, y : b, \
          p : Path(b, x, y) }) {\n  (\n    thunk { fun (w) { w } },\n    ((thunk { fun (w) { w } }, \
-         thunk { fun (w) { here(w) } }), (thunk { fun (w) { w } }, thunk { fun (w) { here(w) } }))\n  \
+         thunk { fun (w) { Path.here(w) } }), (thunk { fun (w) { w } }, thunk { fun (w) { Path.here(w) } }))\n  \
          )\n}\n",
     );
     let Lowered::Module { module, arena } =
@@ -1000,7 +1000,7 @@ fn a_loop_arm_is_named_by_its_loop_823()
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
         "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\ndef invLooper(x : \
-         Circle) -> -F Circle {\n  match x {\n    Base => Base,\n    loop => back(loop)\n  }\n}\n",
+         Circle) -> -F Circle {\n  match x {\n    Base => Base,\n    loop => Path.back(loop)\n  }\n}\n",
     );
     let Lowered::Module { module, arena } =
         lower_source(&grammar, text, &mut LoweringCount::default())
@@ -1051,8 +1051,8 @@ fn a_loop_arm_is_named_by_its_loop_823()
         ),
         (
             String::from(
-                "fun (a) { match a { Base => Base, loop => transport(fun (b) { Path(Circle, b, Base) }, \
-                 loop, here(Base)) } }"
+                "fun (a) { match a { Base => Base, loop => Path.walk(fun (b) { Path(Circle, b, Base) }, \
+                 loop, Path.here(Base)) } }"
             ),
             Fidelity::Faithful,
             true

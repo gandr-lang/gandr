@@ -72,7 +72,7 @@ impl<'nodes> ContentSource<'nodes>
     }
 
     /// The node `body` is written as: the fold a returned binary composite
-    /// realises, since `p then q` writes it, and `body` otherwise.
+    /// realises, since `Path.step(p, q)` writes it, and `body` otherwise.
     ///
     /// # Specification
     /// trivial.
@@ -133,11 +133,11 @@ impl Source for ContentSource<'_>
     /// - ensures: each core former read as its [`Former`], over the same
     ///   indices; a family by its key, a constructor by the name the
     ///   constructor table gives its family's tag, the binary composite,
-    ///   returned or not, as the fold `p then q` writes, any other composite as
-    ///   [`Former::Compose`] and a fill as [`Former::Fill`]; the honest set's
-    ///   members — a hole, a mark, the unknown type, a lift — as unreadable, an
-    ///   unresolved node and an index past the table as dangling, and a name
-    ///   the table cannot spell as unnamed.
+    ///   returned or not, as the fold `Path.step(p, q)` writes, any other
+    ///   composite as [`Former::Compose`] and a fill as [`Former::Fill`]; the
+    ///   honest set's members — a hole, a mark, the unknown type, a lift — as
+    ///   unreadable, an unresolved node and an index past the table as
+    ///   dangling, and a name the table cannot spell as unnamed.
     /// - provides: the printer's input over checkpoint tables.
     /// - fails: never.
     /// - panics: none.
@@ -620,7 +620,7 @@ impl Source for ContentSource<'_>
                 right,
             },
             ContentNode::Returned(body) => Former::Returned(self.written(body)),
-            // The binary composite is written `p then q`, the fold it realises.
+            // The binary composite is written `Path.step(p, q)`, the fold it realises.
             ContentNode::Compose {
                 composite,
                 realised,

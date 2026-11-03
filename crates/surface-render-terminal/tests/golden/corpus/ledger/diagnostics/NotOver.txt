@@ -1,5 +1,5 @@
-error[NotOver]: `transport` needs its identity over the path to start from the start transported along the path
-   ╭▸ corpus/ledger/diagnostics/NotOver.gandr:25:76
+error[NotOver]: `Path.walk` needs its identity over the path to start from the start transported along the path
+   ╭▸ corpus/ledger/diagnostics/NotOver.gandr:25:81
    │
 24 │   def astray(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
    │   │          ┬       ┬       ┬                   ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds v : Nat
@@ -8,10 +8,10 @@ error[NotOver]: `transport` needs its identity over the path to start from the s
    │   │          │       checked against `(b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat`; while checking the body of this function; binds b : Nat
    │ ┌─┘          checked against `(a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat`; while checking the body of this function; binds a : Nat
    │ │
-25 │ │   transport(+U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat), q, here(a), here(here(a)), v)
-   │ │   ┬────────────────────────────────────────────────────────────────────────┯━━━━━━━━━━━━────
-   │ │   │                                                                        │
-   │ │   │                                                                        an identity not over the path: expected `Path(Path(Nat, a, b), here(a) then q, here(a))`, found `Path(Path(Nat, a, a), here(a), here(a))`
+25 │ │   Path.walk(+U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat), q, Path.here(a), Path.here(Path.here(a)), v)
+   │ │   ┬─────────────────────────────────────────────────────────────────────────────┯━━━━━━━━━━━━━━━━━━━━━━────
+   │ │   │                                                                             │
+   │ │   │                                                                             an identity not over the path: expected `Path(Path(Nat, a, b), Path.step(Path.here(a), q), Path.here(a))`, found `Path(Path(Nat, a, a), Path.here(a), Path.here(a))`
    │ │   checked against `-F Nat`; while synthesising the identity over the path this transport follows
 26 │ │ }
    │ └─┘ checked against `(a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat`; while checking the body of this thunk

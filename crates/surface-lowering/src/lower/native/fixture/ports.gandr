@@ -11,7 +11,7 @@ def both : Expr;
 def both = Add(Share(Lit(1)).left, Share(Lit(1)).right);
 
 def apart : Path(Expr, Share(Lit(1)).left, Share(Lit(1)).right);
-def apart = here(Share(Lit(1)).left);
+def apart = Path.here(Share(Lit(1)).left);
 
 def whole : #{left : Expr, right : Expr};
 def whole = Share(Lit(1));

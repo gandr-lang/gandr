@@ -42,7 +42,7 @@ def shape_laws() -> Integer { law_count(CircleShape) }
 
 /// The presented integers as a model of the shape: `base` zero, a value, as
 /// the theory's `base : Pt` is a constant; `turn` the successor and `unturn`
-/// the predecessor. Each law is proved by `here`: conversion reads the inner
+/// the predecessor. Each law is proved by `Path.here`: conversion reads the inner
 /// call under the constructor the outer one builds, and the integers' rules
 /// cancel the pair.
 pub module Winding : Model(CircleShape) where {
@@ -55,11 +55,11 @@ pub module Winding : Model(CircleShape) where {
   def unturn(n : Int) -> Int { P(n) }
 
   def turnUnturn(n : Int) -> Path(Int, turn(unturn(n)), n) {
-    here(n)
+    Path.here(n)
   }
 
   def unturnTurn(n : Int) -> Path(Int, unturn(turn(n)), n) {
-    here(n)
+    Path.here(n)
   }
 
   @[ runs("S(S(Z))") ]

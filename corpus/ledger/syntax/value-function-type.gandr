@@ -3,5 +3,5 @@
 /// later domain reads named, and it stands as a transport's family.
 @[ checks ]
 def back(a : Integer, b : Integer, q : Path(Integer, a, b)) -> Path(Integer, b, a) {
-  transport((y : Integer, Path(Integer, a, y)) => Path(Integer, y, a), q, here(a), here(q), here(a))
+  Path.walk((y : Integer, Path(Integer, a, y)) => Path(Integer, y, a), q, Path.here(a), Path.here(q), Path.here(a))
 }

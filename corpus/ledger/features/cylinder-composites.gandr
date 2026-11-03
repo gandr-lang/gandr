@@ -1,6 +1,6 @@
 /// `cylinder-composites`: squares and triangles of paths compose at dimension 2, as Catt's built-ins compose them, and `fill` and suspension compose cylinders and cones at dimension 3.
 ///
-/// Implemented: the module holds the composite of two squares side by side, the stack of two squares and the composite of two triangles over one apex. Each stands in two readings, and the kernel replays each. The Path reading is the term Catt's built-in prints. The cells reading is its whiskers as level-two composites joined by `then`, with no associator written. The composite at `n + 1` is `fill` at the composite at `n`: Example 1.2 at `n = 2`, and the level-two `fill` over `[2](1, 1)` at `n = 3`, its points fixed. `cattCylinder3` states the type Catt answers for `cylcomp(3,1,3)` at identity verticals and inhabits it by `cylinderFill3`. Along dimension 2, `cylinderSuspended3` and `coneSuspended3` state the types Catt prints for `cylcomp(3,2,3)` and `conecomp(3,2,3)`. Each is a composite at `n = 2` at a path type, beside the interchangers `j⁻` and `j⁺`.
+/// Implemented: the module holds the composite of two squares side by side, the stack of two squares and the composite of two triangles over one apex. Each stands in two readings, and the kernel replays each. The Path reading is the term Catt's built-in prints. The cells reading is its whiskers as level-two composites joined by `Path.step`, with no associator written. The composite at `n + 1` is `fill` at the composite at `n`: Example 1.2 at `n = 2`, and the level-two `fill` over `[2](1, 1)` at `n = 3`, its points fixed. `cattCylinder3` states the type Catt answers for `cylcomp(3,1,3)` at identity verticals and inhabits it by `cylinderFill3`. Along dimension 2, `cylinderSuspended3` and `coneSuspended3` state the types Catt prints for `cylcomp(3,2,3)` and `conecomp(3,2,3)`. Each is a composite at `n = 2` at a path type, beside the interchangers `j⁻` and `j⁺`.
 ///
 /// Not implemented: #4240 owes the other composites along dimension 1 at dimension 3, with their verticals free.
 ///
@@ -21,234 +21,234 @@ import "../../../library/math/src/path.gandr";
 
 /// Two squares of reflexivities side by side compose to the reflexivity of the reflexivity.
 def cylinderCompositeAtHere(A : Type, x : A) -> Path(
-  Path(Path(A, x, x), here(x), here(x)),
+  Path(Path(A, x, x), Path.here(x), Path.here(x)),
   cylinderComposite2(
     A,
     x,
     x,
-    here(x),
+    Path.here(x),
     x,
     x,
-    here(x),
-    here(x),
-    here(x),
-    here(here(x)),
+    Path.here(x),
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x)),
     x,
-    here(x),
+    Path.here(x),
     x,
-    here(x),
-    here(x),
-    here(here(x))
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x))
   ),
-  here(here(x))
+  Path.here(Path.here(x))
 ) {
-  here(here(here(x)))
+  Path.here(Path.here(Path.here(x)))
 }
 
 /// Two squares of reflexivities filled side by side reduce to the reflexivity of the reflexivity, as Catt's composite does.
 def cylinderFillAtHere(A : Type, x : A) -> Path(
-  Path(Path(A, x, x), here(x), here(x)),
+  Path(Path(A, x, x), Path.here(x), Path.here(x)),
   cylinderFill2(
     A,
     x,
     x,
-    here(x),
+    Path.here(x),
     x,
     x,
-    here(x),
-    here(x),
-    here(x),
-    here(here(x)),
+    Path.here(x),
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x)),
     x,
-    here(x),
+    Path.here(x),
     x,
-    here(x),
-    here(x),
-    here(here(x))
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x))
   ),
-  here(here(x))
+  Path.here(Path.here(x))
 ) {
-  here(here(here(x)))
+  Path.here(Path.here(Path.here(x)))
 }
 
 /// A stack of two squares of reflexivities composes to the reflexivity of the reflexivity.
 def cylinderStackAtHere(A : Type, x : A) -> Path(
-  Path(Path(A, x, x), here(x), here(x)),
+  Path(Path(A, x, x), Path.here(x), Path.here(x)),
   cylinderStack2(
     A,
     x,
     x,
-    here(x),
+    Path.here(x),
     x,
     x,
-    here(x),
-    here(x),
-    here(x),
-    here(here(x)),
+    Path.here(x),
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x)),
     x,
     x,
-    here(x),
-    here(x),
-    here(x),
-    here(here(x))
+    Path.here(x),
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x))
   ),
-  here(here(x))
+  Path.here(Path.here(x))
 ) {
-  here(here(here(x)))
+  Path.here(Path.here(Path.here(x)))
 }
 
 /// Two triangles of reflexivities over one apex compose to the reflexivity of the reflexivity.
 def coneCompositeAtHere(A : Type, x : A) -> Path(
-  Path(Path(A, x, x), here(x), here(x)),
+  Path(Path(A, x, x), Path.here(x), Path.here(x)),
   coneComposite2(
     A,
     x,
     x,
-    here(x),
+    Path.here(x),
     x,
-    here(x),
-    here(x),
-    here(here(x)),
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x)),
     x,
-    here(x),
-    here(x),
-    here(here(x))
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x))
   ),
-  here(here(x))
+  Path.here(Path.here(x))
 ) {
-  here(here(here(x)))
+  Path.here(Path.here(Path.here(x)))
 }
 
 /// Two squares of reflexivities side by side compose in the cells reading to the reflexivity of the reflexivity.
 def cylinderCompositeCellsAtHere(A : Type, x : A) -> Path(
-  Path(Path(A, x, x), here(x), here(x)),
+  Path(Path(A, x, x), Path.here(x), Path.here(x)),
   cylinderCompositeCells2(
     A,
     x,
     x,
-    here(x),
+    Path.here(x),
     x,
     x,
-    here(x),
-    here(x),
-    here(x),
-    here(here(x)),
+    Path.here(x),
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x)),
     x,
-    here(x),
+    Path.here(x),
     x,
-    here(x),
-    here(x),
-    here(here(x))
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x))
   ),
-  here(here(x))
+  Path.here(Path.here(x))
 ) {
-  here(here(here(x)))
+  Path.here(Path.here(Path.here(x)))
 }
 
 /// A stack of two squares of reflexivities composes in the cells reading to the reflexivity of the reflexivity.
 def cylinderStackCellsAtHere(A : Type, x : A) -> Path(
-  Path(Path(A, x, x), here(x), here(x)),
+  Path(Path(A, x, x), Path.here(x), Path.here(x)),
   cylinderStackCells2(
     A,
     x,
     x,
-    here(x),
+    Path.here(x),
     x,
     x,
-    here(x),
-    here(x),
-    here(x),
-    here(here(x)),
+    Path.here(x),
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x)),
     x,
     x,
-    here(x),
-    here(x),
-    here(x),
-    here(here(x))
+    Path.here(x),
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x))
   ),
-  here(here(x))
+  Path.here(Path.here(x))
 ) {
-  here(here(here(x)))
+  Path.here(Path.here(Path.here(x)))
 }
 
 /// Two triangles of reflexivities over one apex compose in the cells reading to the reflexivity of the reflexivity.
 def coneCompositeCellsAtHere(A : Type, x : A) -> Path(
-  Path(Path(A, x, x), here(x), here(x)),
+  Path(Path(A, x, x), Path.here(x), Path.here(x)),
   coneCompositeCells2(
     A,
     x,
     x,
-    here(x),
+    Path.here(x),
     x,
-    here(x),
-    here(x),
-    here(here(x)),
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x)),
     x,
-    here(x),
-    here(x),
-    here(here(x))
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x))
   ),
-  here(here(x))
+  Path.here(Path.here(x))
 ) {
-  here(here(here(x)))
+  Path.here(Path.here(Path.here(x)))
 }
 
 /// Two 3-cylinders of reflexivities along a shared square compose to the reflexivity of the reflexivity of the reflexivity.
 def cylinderSuspendedAtHere(A : Type, x : A) -> Path(
-  Path(Path(Path(A, x, x), here(x), here(x)), here(here(x)), here(here(x))),
+  Path(Path(Path(A, x, x), Path.here(x), Path.here(x)), Path.here(Path.here(x)), Path.here(Path.here(x))),
   cylinderSuspended3(
     A,
     x,
     x,
-    here(x),
-    here(x),
-    here(here(x)),
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x)),
     x,
     x,
-    here(x),
-    here(x),
-    here(here(x)),
-    here(x),
-    here(x),
-    here(here(x)),
-    here(here(x)),
-    here(here(here(x))),
-    here(x),
-    here(here(x)),
-    here(x),
-    here(here(x)),
-    here(here(x)),
-    here(here(here(x)))
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x)),
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x)),
+    Path.here(Path.here(x)),
+    Path.here(Path.here(Path.here(x))),
+    Path.here(x),
+    Path.here(Path.here(x)),
+    Path.here(x),
+    Path.here(Path.here(x)),
+    Path.here(Path.here(x)),
+    Path.here(Path.here(Path.here(x)))
   ),
-  here(here(here(x)))
+  Path.here(Path.here(Path.here(x)))
 ) {
-  here(here(here(here(x))))
+  Path.here(Path.here(Path.here(Path.here(x))))
 }
 
 /// Two 3-cones of reflexivities along a shared triangle compose to the reflexivity of the reflexivity of the reflexivity.
 def coneSuspendedAtHere(A : Type, x : A) -> Path(
-  Path(Path(Path(A, x, x), here(x), here(x)), here(here(x)), here(here(x))),
+  Path(Path(Path(A, x, x), Path.here(x), Path.here(x)), Path.here(Path.here(x)), Path.here(Path.here(x))),
   coneSuspended3(
     A,
     x,
     x,
-    here(x),
-    here(x),
-    here(here(x)),
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x)),
     x,
-    here(x),
-    here(x),
-    here(here(x)),
-    here(here(x)),
-    here(here(here(x))),
-    here(x),
-    here(here(x)),
-    here(here(x)),
-    here(here(here(x)))
+    Path.here(x),
+    Path.here(x),
+    Path.here(Path.here(x)),
+    Path.here(Path.here(x)),
+    Path.here(Path.here(Path.here(x))),
+    Path.here(x),
+    Path.here(Path.here(x)),
+    Path.here(Path.here(x)),
+    Path.here(Path.here(Path.here(x)))
   ),
-  here(here(here(x)))
+  Path.here(Path.here(Path.here(x)))
 ) {
-  here(here(here(here(x))))
+  Path.here(Path.here(Path.here(Path.here(x))))
 }
 
 /// Catt's `cylcomp(2,1,2)` at identity verticals, its points fixed.
@@ -263,8 +263,8 @@ def cattSquare(
   g0 : Path(A, y, z),
   g1 : Path(A, y, z),
   b : Path(Path(A, y, z), g0, g1)
-) -> Path(Path(A, x, z), f0 then g0, f1 then g1) {
-  cylinderComposite2(A, x, y, f0, x, y, f1, here(x), here(y), a, z, g0, z, g1, here(z), b)
+) -> Path(Path(A, x, z), Path.step(f0, g0), Path.step(f1, g1)) {
+  cylinderComposite2(A, x, y, f0, x, y, f1, Path.here(x), Path.here(y), a, z, g0, z, g1, Path.here(z), b)
 }
 
 /// Catt's horizontal composite: the right whisker of `fa`, then the left whisker of `ga`.
@@ -279,8 +279,8 @@ def cattHorizontal(
   gm : Path(A, y, z),
   gp : Path(A, y, z),
   ga : Path(Path(A, y, z), gm, gp)
-) -> Path(Path(A, x, z), fm then gm, fp then gp) {
-  whiskerRight(A, x, y, z, fm, fp, fa, gm) then whiskerLeft(A, x, y, z, fp, gm, gp, ga)
+) -> Path(Path(A, x, z), Path.step(fm, gm), Path.step(fp, gp)) {
+  Path.step(whiskerRight(A, x, y, z, fm, fp, fa, gm), whiskerLeft(A, x, y, z, fp, gm, gp, ga))
 }
 
 /// The generated square and Catt's agree at a reflexive first cell, by induction on the second.
@@ -294,20 +294,20 @@ def squaresAgreeAtHere(
   g1 : Path(A, y, z),
   b : Path(Path(A, y, z), g0, g1)
 ) -> Path(
-  Path(Path(A, x, z), f then g0, f then g1),
-  cylinderFillAt2(A, x, y, z, f, f, here(f), g0, g1, b),
-  cattSquare(A, x, y, z, f, f, here(f), g0, g1, b)
+  Path(Path(A, x, z), Path.step(f, g0), Path.step(f, g1)),
+  cylinderFillAt2(A, x, y, z, f, f, Path.here(f), g0, g1, b),
+  cattSquare(A, x, y, z, f, f, Path.here(f), g0, g1, b)
 ) {
-  transport(
+  Path.walk(
     (w : Path(A, y, z), m : Path(Path(A, y, z), g0, w)) => Path(
-      Path(Path(A, x, z), f then g0, f then w),
-      cylinderFillAt2(A, x, y, z, f, f, here(f), g0, w, m),
-      cattSquare(A, x, y, z, f, f, here(f), g0, w, m)
+      Path(Path(A, x, z), Path.step(f, g0), Path.step(f, w)),
+      cylinderFillAt2(A, x, y, z, f, f, Path.here(f), g0, w, m),
+      cattSquare(A, x, y, z, f, f, Path.here(f), g0, w, m)
     ),
     b,
-    here(g0),
-    here(b),
-    here(here(f then g0))
+    Path.here(g0),
+    Path.here(b),
+    Path.here(Path.here(Path.step(f, g0)))
   )
 }
 
@@ -324,19 +324,19 @@ def squaresAgree(
   g1 : Path(A, y, z),
   b : Path(Path(A, y, z), g0, g1)
 ) -> Path(
-  Path(Path(A, x, z), f0 then g0, f1 then g1),
+  Path(Path(A, x, z), Path.step(f0, g0), Path.step(f1, g1)),
   cylinderFillAt2(A, x, y, z, f0, f1, a, g0, g1, b),
   cattSquare(A, x, y, z, f0, f1, a, g0, g1, b)
 ) {
-  transport(
+  Path.walk(
     (v : Path(A, x, y), k : Path(Path(A, x, y), f0, v)) => Path(
-      Path(Path(A, x, z), f0 then g0, v then g1),
+      Path(Path(A, x, z), Path.step(f0, g0), Path.step(v, g1)),
       cylinderFillAt2(A, x, y, z, f0, v, k, g0, g1, b),
       cattSquare(A, x, y, z, f0, v, k, g0, g1, b)
     ),
     a,
-    here(f0),
-    here(a),
+    Path.here(f0),
+    Path.here(a),
     squaresAgreeAtHere(A, x, y, z, f0, g0, g1, b)
   )
 }
@@ -352,20 +352,20 @@ def horizontalsAgreeAtHere(
   gp : Path(A, y, z),
   ga : Path(Path(A, y, z), gm, gp)
 ) -> Path(
-  Path(Path(A, x, z), f then gm, f then gp),
-  cattHorizontal(A, x, y, z, f, f, here(f), gm, gp, ga),
-  liftHorizontal(A, x, y, z, f, f, here(f), gm, gp, ga)
+  Path(Path(A, x, z), Path.step(f, gm), Path.step(f, gp)),
+  cattHorizontal(A, x, y, z, f, f, Path.here(f), gm, gp, ga),
+  liftHorizontal(A, x, y, z, f, f, Path.here(f), gm, gp, ga)
 ) {
-  transport(
+  Path.walk(
     (w : Path(A, y, z), m : Path(Path(A, y, z), gm, w)) => Path(
-      Path(Path(A, x, z), f then gm, f then w),
-      cattHorizontal(A, x, y, z, f, f, here(f), gm, w, m),
-      liftHorizontal(A, x, y, z, f, f, here(f), gm, w, m)
+      Path(Path(A, x, z), Path.step(f, gm), Path.step(f, w)),
+      cattHorizontal(A, x, y, z, f, f, Path.here(f), gm, w, m),
+      liftHorizontal(A, x, y, z, f, f, Path.here(f), gm, w, m)
     ),
     ga,
-    here(gm),
-    here(ga),
-    here(here(f then gm))
+    Path.here(gm),
+    Path.here(ga),
+    Path.here(Path.here(Path.step(f, gm)))
   )
 }
 
@@ -382,19 +382,19 @@ def horizontalsAgree(
   gp : Path(A, y, z),
   ga : Path(Path(A, y, z), gm, gp)
 ) -> Path(
-  Path(Path(A, x, z), fm then gm, fp then gp),
+  Path(Path(A, x, z), Path.step(fm, gm), Path.step(fp, gp)),
   cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
   liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga)
 ) {
-  transport(
+  Path.walk(
     (v : Path(A, x, y), k : Path(Path(A, x, y), fm, v)) => Path(
-      Path(Path(A, x, z), fm then gm, v then gp),
+      Path(Path(A, x, z), Path.step(fm, gm), Path.step(v, gp)),
       cattHorizontal(A, x, y, z, fm, v, k, gm, gp, ga),
       liftHorizontal(A, x, y, z, fm, v, k, gm, gp, ga)
     ),
     fa,
-    here(fm),
-    here(fa),
+    Path.here(fm),
+    Path.here(fa),
     horizontalsAgreeAtHere(A, x, y, z, fm, gm, gp, ga)
   )
 }
@@ -409,19 +409,19 @@ def whiskerHereRight(
   h : Path(Path(A, x, z), h0, h1)
 ) -> Path(
   Path(Path(A, x, z), h0, h1),
-  whiskerRight(A, x, z, z, h0, h1, h, here(z)),
+  whiskerRight(A, x, z, z, h0, h1, h, Path.here(z)),
   h
 ) {
-  transport(
+  Path.walk(
     (v : Path(A, x, z), k : Path(Path(A, x, z), h0, v)) => Path(
       Path(Path(A, x, z), h0, v),
-      whiskerRight(A, x, z, z, h0, v, k, here(z)),
+      whiskerRight(A, x, z, z, h0, v, k, Path.here(z)),
       k
     ),
     h,
-    here(h0),
-    here(h),
-    here(here(h0))
+    Path.here(h0),
+    Path.here(h),
+    Path.here(Path.here(h0))
   )
 }
 
@@ -435,19 +435,19 @@ def whiskerHereLeft(
   h : Path(Path(A, x, z), h0, h1)
 ) -> Path(
   Path(Path(A, x, z), h0, h1),
-  whiskerLeft(A, x, x, z, here(x), h0, h1, h),
+  whiskerLeft(A, x, x, z, Path.here(x), h0, h1, h),
   h
 ) {
-  transport(
+  Path.walk(
     (v : Path(A, x, z), k : Path(Path(A, x, z), h0, v)) => Path(
       Path(Path(A, x, z), h0, v),
-      whiskerLeft(A, x, x, z, here(x), h0, v, k),
+      whiskerLeft(A, x, x, z, Path.here(x), h0, v, k),
       k
     ),
     h,
-    here(h0),
-    here(h),
-    here(here(h0))
+    Path.here(h0),
+    Path.here(h),
+    Path.here(Path.here(h0))
   )
 }
 
@@ -465,7 +465,7 @@ def unwhiskerSource(
   pa : Path(Path(A, x, y), pm, pp),
   am : Path(Path(A, x, y), fm, pm),
   ap : Path(Path(A, x, y), fp, pp),
-  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  aa : Path(Path(Path(A, x, y), fm, pp), Path.step(am, pa), Path.step(fa, ap)),
   gm : Path(A, y, z),
   gp : Path(A, y, z),
   ga : Path(Path(A, y, z), gm, gp),
@@ -474,20 +474,20 @@ def unwhiskerSource(
   qa : Path(Path(A, y, z), qm, qp),
   km : Path(Path(A, y, z), gm, qm),
   kp : Path(Path(A, y, z), gp, qp),
-  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+  ka : Path(Path(Path(A, y, z), gm, qp), Path.step(km, qa), Path.step(ga, kp))
 ) -> Path(
-  Path(Path(A, x, z), fm then gm, pp then qp),
-  whiskerRight(
+  Path(Path(A, x, z), Path.step(fm, gm), Path.step(pp, qp)),
+  Path.step(whiskerRight(
     A,
     x,
     z,
     z,
-    fm then gm,
-    fp then gp,
+    Path.step(fm, gm),
+    Path.step(fp, gp),
     cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
-    here(z)
-  ) then cattSquare(A, x, y, z, fp, pp, ap, gp, qp, kp),
-  cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then cattSquare(
+    Path.here(z)
+  ), cattSquare(A, x, y, z, fp, pp, ap, gp, qp, kp)),
+  Path.step(cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga), cattSquare(
     A,
     x,
     y,
@@ -498,30 +498,30 @@ def unwhiskerSource(
     gp,
     qp,
     kp
-  )
+  ))
 ) {
   whiskerRight(
     Path(A, x, z),
-    fm then gm,
-    fp then gp,
-    pp then qp,
+    Path.step(fm, gm),
+    Path.step(fp, gp),
+    Path.step(pp, qp),
     whiskerRight(
       A,
       x,
       z,
       z,
-      fm then gm,
-      fp then gp,
+      Path.step(fm, gm),
+      Path.step(fp, gp),
       cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
-      here(z)
+      Path.here(z)
     ),
     cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
     whiskerHereRight(
       A,
       x,
       z,
-      fm then gm,
-      fp then gp,
+      Path.step(fm, gm),
+      Path.step(fp, gp),
       cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga)
     ),
     cattSquare(A, x, y, z, fp, pp, ap, gp, qp, kp)
@@ -542,7 +542,7 @@ def liftSource(
   pa : Path(Path(A, x, y), pm, pp),
   am : Path(Path(A, x, y), fm, pm),
   ap : Path(Path(A, x, y), fp, pp),
-  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  aa : Path(Path(Path(A, x, y), fm, pp), Path.step(am, pa), Path.step(fa, ap)),
   gm : Path(A, y, z),
   gp : Path(A, y, z),
   ga : Path(Path(A, y, z), gm, gp),
@@ -551,10 +551,10 @@ def liftSource(
   qa : Path(Path(A, y, z), qm, qp),
   km : Path(Path(A, y, z), gm, qm),
   kp : Path(Path(A, y, z), gp, qp),
-  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+  ka : Path(Path(Path(A, y, z), gm, qp), Path.step(km, qa), Path.step(ga, kp))
 ) -> Path(
-  Path(Path(A, x, z), fm then gm, pp then qp),
-  cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then cattSquare(
+  Path(Path(A, x, z), Path.step(fm, gm), Path.step(pp, qp)),
+  Path.step(cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga), cattSquare(
     A,
     x,
     y,
@@ -565,8 +565,8 @@ def liftSource(
     gp,
     qp,
     kp
-  ),
-  liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then cattSquare(
+  )),
+  Path.step(liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga), cattSquare(
     A,
     x,
     y,
@@ -577,13 +577,13 @@ def liftSource(
     gp,
     qp,
     kp
-  )
+  ))
 ) {
   whiskerRight(
     Path(A, x, z),
-    fm then gm,
-    fp then gp,
-    pp then qp,
+    Path.step(fm, gm),
+    Path.step(fp, gp),
+    Path.step(pp, qp),
     cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
     liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
     horizontalsAgree(A, x, y, z, fm, fp, fa, gm, gp, ga),
@@ -605,7 +605,7 @@ def fillSource(
   pa : Path(Path(A, x, y), pm, pp),
   am : Path(Path(A, x, y), fm, pm),
   ap : Path(Path(A, x, y), fp, pp),
-  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  aa : Path(Path(Path(A, x, y), fm, pp), Path.step(am, pa), Path.step(fa, ap)),
   gm : Path(A, y, z),
   gp : Path(A, y, z),
   ga : Path(Path(A, y, z), gm, gp),
@@ -614,10 +614,10 @@ def fillSource(
   qa : Path(Path(A, y, z), qm, qp),
   km : Path(Path(A, y, z), gm, qm),
   kp : Path(Path(A, y, z), gp, qp),
-  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+  ka : Path(Path(Path(A, y, z), gm, qp), Path.step(km, qa), Path.step(ga, kp))
 ) -> Path(
-  Path(Path(A, x, z), fm then gm, pp then qp),
-  liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then cattSquare(
+  Path(Path(A, x, z), Path.step(fm, gm), Path.step(pp, qp)),
+  Path.step(liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga), cattSquare(
     A,
     x,
     y,
@@ -628,8 +628,8 @@ def fillSource(
     gp,
     qp,
     kp
-  ),
-  liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then cylinderFillAt2(
+  )),
+  Path.step(liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga), cylinderFillAt2(
     A,
     x,
     y,
@@ -640,17 +640,17 @@ def fillSource(
     gp,
     qp,
     kp
-  )
+  ))
 ) {
   whiskerLeft(
     Path(A, x, z),
-    fm then gm,
-    fp then gp,
-    pp then qp,
+    Path.step(fm, gm),
+    Path.step(fp, gp),
+    Path.step(pp, qp),
     liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
     cattSquare(A, x, y, z, fp, pp, ap, gp, qp, kp),
     cylinderFillAt2(A, x, y, z, fp, pp, ap, gp, qp, kp),
-    back(squaresAgree(A, x, y, z, fp, pp, ap, gp, qp, kp))
+    Path.back(squaresAgree(A, x, y, z, fp, pp, ap, gp, qp, kp))
   )
 }
 
@@ -668,7 +668,7 @@ def fillComposite(
   pa : Path(Path(A, x, y), pm, pp),
   am : Path(Path(A, x, y), fm, pm),
   ap : Path(Path(A, x, y), fp, pp),
-  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  aa : Path(Path(Path(A, x, y), fm, pp), Path.step(am, pa), Path.step(fa, ap)),
   gm : Path(A, y, z),
   gp : Path(A, y, z),
   ga : Path(Path(A, y, z), gm, gp),
@@ -677,10 +677,10 @@ def fillComposite(
   qa : Path(Path(A, y, z), qm, qp),
   km : Path(Path(A, y, z), gm, qm),
   kp : Path(Path(A, y, z), gp, qp),
-  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+  ka : Path(Path(Path(A, y, z), gm, qp), Path.step(km, qa), Path.step(ga, kp))
 ) -> Path(
-  Path(Path(A, x, z), fm then gm, pp then qp),
-  liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga) then cylinderFillAt2(
+  Path(Path(A, x, z), Path.step(fm, gm), Path.step(pp, qp)),
+  Path.step(liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga), cylinderFillAt2(
     A,
     x,
     y,
@@ -691,8 +691,8 @@ def fillComposite(
     gp,
     qp,
     kp
-  ),
-  cylinderFillAt2(A, x, y, z, fm, pm, am, gm, qm, km) then liftHorizontal(
+  )),
+  Path.step(cylinderFillAt2(A, x, y, z, fm, pm, am, gm, qm, km), liftHorizontal(
     A,
     x,
     y,
@@ -703,9 +703,9 @@ def fillComposite(
     qm,
     qp,
     qa
-  )
+  ))
 ) {
-  back(cylinderFill3(
+  Path.back(cylinderFill3(
     A,
     x,
     y,
@@ -745,7 +745,7 @@ def unfillTarget(
   pa : Path(Path(A, x, y), pm, pp),
   am : Path(Path(A, x, y), fm, pm),
   ap : Path(Path(A, x, y), fp, pp),
-  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  aa : Path(Path(Path(A, x, y), fm, pp), Path.step(am, pa), Path.step(fa, ap)),
   gm : Path(A, y, z),
   gp : Path(A, y, z),
   ga : Path(Path(A, y, z), gm, gp),
@@ -754,10 +754,10 @@ def unfillTarget(
   qa : Path(Path(A, y, z), qm, qp),
   km : Path(Path(A, y, z), gm, qm),
   kp : Path(Path(A, y, z), gp, qp),
-  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+  ka : Path(Path(Path(A, y, z), gm, qp), Path.step(km, qa), Path.step(ga, kp))
 ) -> Path(
-  Path(Path(A, x, z), fm then gm, pp then qp),
-  cylinderFillAt2(A, x, y, z, fm, pm, am, gm, qm, km) then liftHorizontal(
+  Path(Path(A, x, z), Path.step(fm, gm), Path.step(pp, qp)),
+  Path.step(cylinderFillAt2(A, x, y, z, fm, pm, am, gm, qm, km), liftHorizontal(
     A,
     x,
     y,
@@ -768,8 +768,8 @@ def unfillTarget(
     qm,
     qp,
     qa
-  ),
-  cattSquare(A, x, y, z, fm, pm, am, gm, qm, km) then liftHorizontal(
+  )),
+  Path.step(cattSquare(A, x, y, z, fm, pm, am, gm, qm, km), liftHorizontal(
     A,
     x,
     y,
@@ -780,13 +780,13 @@ def unfillTarget(
     qm,
     qp,
     qa
-  )
+  ))
 ) {
   whiskerRight(
     Path(A, x, z),
-    fm then gm,
-    pm then qm,
-    pp then qp,
+    Path.step(fm, gm),
+    Path.step(pm, qm),
+    Path.step(pp, qp),
     cylinderFillAt2(A, x, y, z, fm, pm, am, gm, qm, km),
     cattSquare(A, x, y, z, fm, pm, am, gm, qm, km),
     squaresAgree(A, x, y, z, fm, pm, am, gm, qm, km),
@@ -808,7 +808,7 @@ def unliftTarget(
   pa : Path(Path(A, x, y), pm, pp),
   am : Path(Path(A, x, y), fm, pm),
   ap : Path(Path(A, x, y), fp, pp),
-  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  aa : Path(Path(Path(A, x, y), fm, pp), Path.step(am, pa), Path.step(fa, ap)),
   gm : Path(A, y, z),
   gp : Path(A, y, z),
   ga : Path(Path(A, y, z), gm, gp),
@@ -817,10 +817,10 @@ def unliftTarget(
   qa : Path(Path(A, y, z), qm, qp),
   km : Path(Path(A, y, z), gm, qm),
   kp : Path(Path(A, y, z), gp, qp),
-  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+  ka : Path(Path(Path(A, y, z), gm, qp), Path.step(km, qa), Path.step(ga, kp))
 ) -> Path(
-  Path(Path(A, x, z), fm then gm, pp then qp),
-  cattSquare(A, x, y, z, fm, pm, am, gm, qm, km) then liftHorizontal(
+  Path(Path(A, x, z), Path.step(fm, gm), Path.step(pp, qp)),
+  Path.step(cattSquare(A, x, y, z, fm, pm, am, gm, qm, km), liftHorizontal(
     A,
     x,
     y,
@@ -831,8 +831,8 @@ def unliftTarget(
     qm,
     qp,
     qa
-  ),
-  cattSquare(A, x, y, z, fm, pm, am, gm, qm, km) then cattHorizontal(
+  )),
+  Path.step(cattSquare(A, x, y, z, fm, pm, am, gm, qm, km), cattHorizontal(
     A,
     x,
     y,
@@ -843,17 +843,17 @@ def unliftTarget(
     qm,
     qp,
     qa
-  )
+  ))
 ) {
   whiskerLeft(
     Path(A, x, z),
-    fm then gm,
-    pm then qm,
-    pp then qp,
+    Path.step(fm, gm),
+    Path.step(pm, qm),
+    Path.step(pp, qp),
     cattSquare(A, x, y, z, fm, pm, am, gm, qm, km),
     liftHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa),
     cattHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa),
-    back(horizontalsAgree(A, x, y, z, pm, pp, pa, qm, qp, qa))
+    Path.back(horizontalsAgree(A, x, y, z, pm, pp, pa, qm, qp, qa))
   )
 }
 
@@ -871,7 +871,7 @@ def whiskerTarget(
   pa : Path(Path(A, x, y), pm, pp),
   am : Path(Path(A, x, y), fm, pm),
   ap : Path(Path(A, x, y), fp, pp),
-  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  aa : Path(Path(Path(A, x, y), fm, pp), Path.step(am, pa), Path.step(fa, ap)),
   gm : Path(A, y, z),
   gp : Path(A, y, z),
   ga : Path(Path(A, y, z), gm, gp),
@@ -880,10 +880,10 @@ def whiskerTarget(
   qa : Path(Path(A, y, z), qm, qp),
   km : Path(Path(A, y, z), gm, qm),
   kp : Path(Path(A, y, z), gp, qp),
-  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+  ka : Path(Path(Path(A, y, z), gm, qp), Path.step(km, qa), Path.step(ga, kp))
 ) -> Path(
-  Path(Path(A, x, z), fm then gm, pp then qp),
-  cattSquare(A, x, y, z, fm, pm, am, gm, qm, km) then cattHorizontal(
+  Path(Path(A, x, z), Path.step(fm, gm), Path.step(pp, qp)),
+  Path.step(cattSquare(A, x, y, z, fm, pm, am, gm, qm, km), cattHorizontal(
     A,
     x,
     y,
@@ -894,23 +894,23 @@ def whiskerTarget(
     qm,
     qp,
     qa
-  ),
-  cattSquare(A, x, y, z, fm, pm, am, gm, qm, km) then whiskerLeft(
+  )),
+  Path.step(cattSquare(A, x, y, z, fm, pm, am, gm, qm, km), whiskerLeft(
     A,
     x,
     x,
     z,
-    here(x),
-    pm then qm,
-    pp then qp,
+    Path.here(x),
+    Path.step(pm, qm),
+    Path.step(pp, qp),
     cattHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa)
-  )
+  ))
 ) {
   whiskerLeft(
     Path(A, x, z),
-    fm then gm,
-    pm then qm,
-    pp then qp,
+    Path.step(fm, gm),
+    Path.step(pm, qm),
+    Path.step(pp, qp),
     cattSquare(A, x, y, z, fm, pm, am, gm, qm, km),
     cattHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa),
     whiskerLeft(
@@ -918,17 +918,17 @@ def whiskerTarget(
       x,
       x,
       z,
-      here(x),
-      pm then qm,
-      pp then qp,
+      Path.here(x),
+      Path.step(pm, qm),
+      Path.step(pp, qp),
       cattHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa)
     ),
-    back(whiskerHereLeft(
+    Path.back(whiskerHereLeft(
       A,
       x,
       z,
-      pm then qm,
-      pp then qp,
+      Path.step(pm, qm),
+      Path.step(pp, qp),
       cattHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa)
     ))
   )
@@ -950,7 +950,7 @@ def cattCylinder3(
   pa : Path(Path(A, x, y), pm, pp),
   am : Path(Path(A, x, y), fm, pm),
   ap : Path(Path(A, x, y), fp, pp),
-  aa : Path(Path(Path(A, x, y), fm, pp), am then pa, fa then ap),
+  aa : Path(Path(Path(A, x, y), fm, pp), Path.step(am, pa), Path.step(fa, ap)),
   gm : Path(A, y, z),
   gp : Path(A, y, z),
   ga : Path(Path(A, y, z), gm, gp),
@@ -959,31 +959,31 @@ def cattCylinder3(
   qa : Path(Path(A, y, z), qm, qp),
   km : Path(Path(A, y, z), gm, qm),
   kp : Path(Path(A, y, z), gp, qp),
-  ka : Path(Path(Path(A, y, z), gm, qp), km then qa, ga then kp)
+  ka : Path(Path(Path(A, y, z), gm, qp), Path.step(km, qa), Path.step(ga, kp))
 ) -> Path(
-  Path(Path(A, x, z), fm then gm, pp then qp),
-  whiskerRight(
+  Path(Path(A, x, z), Path.step(fm, gm), Path.step(pp, qp)),
+  Path.step(whiskerRight(
     A,
     x,
     z,
     z,
-    fm then gm,
-    fp then gp,
+    Path.step(fm, gm),
+    Path.step(fp, gp),
     cattHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga),
-    here(z)
-  ) then cattSquare(A, x, y, z, fp, pp, ap, gp, qp, kp),
-  cattSquare(A, x, y, z, fm, pm, am, gm, qm, km) then whiskerLeft(
+    Path.here(z)
+  ), cattSquare(A, x, y, z, fp, pp, ap, gp, qp, kp)),
+  Path.step(cattSquare(A, x, y, z, fm, pm, am, gm, qm, km), whiskerLeft(
     A,
     x,
     x,
     z,
-    here(x),
-    pm then qm,
-    pp then qp,
+    Path.here(x),
+    Path.step(pm, qm),
+    Path.step(pp, qp),
     cattHorizontal(A, x, y, z, pm, pp, pa, qm, qp, qa)
-  )
+  ))
 ) {
-  unwhiskerSource(
+  Path.step(Path.step(Path.step(Path.step(Path.step(Path.step(unwhiskerSource(
     A,
     x,
     y,
@@ -1006,8 +1006,7 @@ def cattCylinder3(
     km,
     kp,
     ka
-  )
-    then liftSource(
+  ), liftSource(
       A,
       x,
       y,
@@ -1030,8 +1029,7 @@ def cattCylinder3(
       km,
       kp,
       ka
-    )
-    then fillSource(
+    )), fillSource(
       A,
       x,
       y,
@@ -1054,8 +1052,7 @@ def cattCylinder3(
       km,
       kp,
       ka
-    )
-    then fillComposite(
+    )), fillComposite(
       A,
       x,
       y,
@@ -1078,8 +1075,7 @@ def cattCylinder3(
       km,
       kp,
       ka
-    )
-    then unfillTarget(
+    )), unfillTarget(
       A,
       x,
       y,
@@ -1102,8 +1098,7 @@ def cattCylinder3(
       km,
       kp,
       ka
-    )
-    then unliftTarget(
+    )), unliftTarget(
       A,
       x,
       y,
@@ -1126,8 +1121,7 @@ def cattCylinder3(
       km,
       kp,
       ka
-    )
-    then whiskerTarget(
+    )), whiskerTarget(
       A,
       x,
       y,
@@ -1150,5 +1144,5 @@ def cattCylinder3(
       km,
       kp,
       ka
-    )
+    ))
 }

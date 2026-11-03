@@ -24,7 +24,7 @@ pub def exchange(b : Bool) -> Bool {
 }
 
 /// The identity on the booleans, which is no inverse of the swap; named
-/// apart from the flow former `stay`.
+/// apart from the flow former `Flow.stay`.
 pub def boolId(b : Bool) -> Bool {
   b
 }

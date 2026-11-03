@@ -199,7 +199,7 @@ impl fmt::Display for Filler
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: writes `here` for [`Filler::Here`].
+    /// - ensures: writes `Path.here` for [`Filler::Here`].
     /// - fails: propagates a refusing sink as `fmt::Error`.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither emitted text nor
@@ -209,7 +209,8 @@ impl fmt::Display for Filler
     /// Returns `fmt::Error` when the sink refuses a write.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a discharged law's cell spells its source `here`.
+    /// - hypothesis: L3 — a discharged law's cell spells its source
+    ///   `Path.here`.
     /// - witness: `settle::tests::a_discharged_law_lists_its_cell_and_its_source_4112`
     #[inline]
     fn fmt(
@@ -218,7 +219,7 @@ impl fmt::Display for Filler
     ) -> fmt::Result
     {
         f.write_str(match *self {
-            Self::Here => "here",
+            Self::Here => "Path.here",
         })
     }
 }
@@ -2943,7 +2944,7 @@ mod tests
             ),
         ] = *cells
         else {
-            panic!("one law discharged `here` and one refused: {cells:?}");
+            panic!("one law discharged `Path.here` and one refused: {cells:?}");
         };
         assert_eq!(
             *converts,
@@ -2952,7 +2953,7 @@ mod tests
         );
         assert_eq!(
             Filler::Here.to_string(),
-            "here",
+            "Path.here",
             "the cells report spells the source as the law's body is written"
         );
     }
@@ -3844,7 +3845,7 @@ data NatUnits : Type where {{
                   type T = Bool;
                   def f(x : Bool) -> Bool { match x { true => false, false => true } }
                   @[ refuses("EndpointMismatch") ]
-                  def idem(x : Bool) -> Path(Bool, f(f(x)), f(x)) { here(f(x)) }
+                  def idem(x : Bool) -> Path(Bool, f(f(x)), f(x)) { Path.here(f(x)) }
                 }"#,
                 RefusalName::EndpointMismatch,
             ),

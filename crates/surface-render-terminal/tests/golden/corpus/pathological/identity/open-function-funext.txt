@@ -1,4 +1,4 @@
-error[FunextUnsupported]: `funext` needs two closed pure functions between types built from units, integers, strings, pairs, two-way sums and data types that do not hold themselves; an argument may itself be a function between such types
+error[FunextUnsupported]: `Path.funext` needs two closed pure functions between types built from units, integers, strings, pairs, two-way sums and data types that do not hold themselves; an argument may itself be a function between such types
    ╭▸ corpus/pathological/identity/open-function-funext.gandr:9:3
    │
  4 │   def open(f : Unit + Unit => Unit + Unit) -> Path(
@@ -10,8 +10,8 @@ error[FunextUnsupported]: `funext` needs two closed pure functions between types
  6 │ │   f,
  7 │ │   f
  8 │ │ ) {
- 9 │ │   funext(f, f)
-   │ │   ━━━━━━━━━━━━ functions past the first-order boundary: found `Bool => Bool`
+ 9 │ │   Path.funext(f, f)
+   │ │   ━━━━━━━━━━━━━━━━━ functions past the first-order boundary: found `Bool => Bool`
 10 │ │ }
    │ └─┘ checked against `(f : Bool => Bool) => Path(Bool => Bool, f, f)`; while checking the body of this thunk
    │

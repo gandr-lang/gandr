@@ -44,7 +44,7 @@ def popShared(
 ) {
   (
     SomeV(IntV(b)),
-    (cong(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
+    (Path.ap(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
   )
 }
 
@@ -72,6 +72,6 @@ def popListedAsEmpty(
 ) {
   (
     SomeV(IntV(b)),
-    (cong(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
+    (Path.ap(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
   )
 }

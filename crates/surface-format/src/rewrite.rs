@@ -81,14 +81,14 @@ pub enum RewriteName
     /// The default grade of a thunk type: `+U[ω] B` and `+U B`, both forms
     /// leaving it unwritten as the printer does.
     DefaultGrade,
-    /// The path composite: `transport(fun (y) { Path(A, a, y) }, q, p)` and
-    /// `p then q`.
+    /// The path composite: `Path.walk(fun (y) { Path(A, a, y) }, q, p)` and
+    /// `Path.step(p, q)`.
     PathComposite,
-    /// The path inverse: `transport(fun (y) { Path(A, y, a) }, p, here(a))`
-    /// and `back(p)`.
+    /// The path inverse: `Path.walk(fun (y) { Path(A, y, a) }, p,
+    /// Path.here(a))` and `Path.back(p)`.
     PathInverse,
-    /// A map's action on a path: `transport(fun (y) { Path(B, f(a), f(y)) },
-    /// p, here(f(a)))` and `cong(f, p)`.
+    /// A map's action on a path: `Path.walk(fun (y) { Path(B, f(a), f(y)) }, p,
+    /// Path.here(f(a)))` and `Path.ap(f, p)`.
     PathAction,
     /// A tail's exit: `return v` where a path through a body ends, over a
     /// value, and `v`; only the sugared form moves it, leaving out the
@@ -307,48 +307,48 @@ pub const REWRITES: [Rewrite; 33] = [
         name: RewriteName::PathComposite,
         direction: Direction::Sugar,
         mold: MoldName("call_expression"),
-        from: Spelling("transport(fun (y) { Path(A, a, y) }, q, p)"),
-        to: Spelling("p then q"),
+        from: Spelling("Path.walk(fun (y) { Path(A, a, y) }, q, p)"),
+        to: Spelling("Path.step(p, q)"),
         enabled: Enabled::On,
     },
     Rewrite {
         name: RewriteName::PathComposite,
         direction: Direction::Desugar,
-        mold: MoldName("binary_expression.then"),
-        from: Spelling("p then q"),
-        to: Spelling("transport(fun (y) { Path(A, a, y) }, q, p)"),
+        mold: MoldName("call_expression"),
+        from: Spelling("Path.step(p, q)"),
+        to: Spelling("Path.walk(fun (y) { Path(A, a, y) }, q, p)"),
         enabled: Enabled::On,
     },
     Rewrite {
         name: RewriteName::PathInverse,
         direction: Direction::Sugar,
         mold: MoldName("call_expression"),
-        from: Spelling("transport(fun (y) { Path(A, y, a) }, p, here(a))"),
-        to: Spelling("back(p)"),
+        from: Spelling("Path.walk(fun (y) { Path(A, y, a) }, p, Path.here(a))"),
+        to: Spelling("Path.back(p)"),
         enabled: Enabled::On,
     },
     Rewrite {
         name: RewriteName::PathInverse,
         direction: Direction::Desugar,
         mold: MoldName("call_expression"),
-        from: Spelling("back(p)"),
-        to: Spelling("transport(fun (y) { Path(A, y, a) }, p, here(a))"),
+        from: Spelling("Path.back(p)"),
+        to: Spelling("Path.walk(fun (y) { Path(A, y, a) }, p, Path.here(a))"),
         enabled: Enabled::On,
     },
     Rewrite {
         name: RewriteName::PathAction,
         direction: Direction::Sugar,
         mold: MoldName("call_expression"),
-        from: Spelling("transport(fun (y) { Path(B, f(a), f(y)) }, p, here(f(a)))"),
-        to: Spelling("cong(f, p)"),
+        from: Spelling("Path.walk(fun (y) { Path(B, f(a), f(y)) }, p, Path.here(f(a)))"),
+        to: Spelling("Path.ap(f, p)"),
         enabled: Enabled::On,
     },
     Rewrite {
         name: RewriteName::PathAction,
         direction: Direction::Desugar,
         mold: MoldName("call_expression"),
-        from: Spelling("cong(f, p)"),
-        to: Spelling("transport(fun (y) { Path(B, f(a), f(y)) }, p, here(f(a)))"),
+        from: Spelling("Path.ap(f, p)"),
+        to: Spelling("Path.walk(fun (y) { Path(B, f(a), f(y)) }, p, Path.here(f(a)))"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -660,8 +660,7 @@ impl Band
                 | "f_type.result"
                 | "f_type.row.labelled"
                 | "f_type.result.labelled"
-                | "at_type"
-                | "binary_expression.then",
+                | "at_type",
                 _,
             )
             | ("send_session_type" | "receive_session_type", Position::First) => Self::Atom,
@@ -689,8 +688,7 @@ impl Band
             "product_type" => Self::Product,
             "sum_type" => Self::Sum,
             "lazy_product_type" => Self::Lazy,
-            "binary_expression.then"
-            | "function_type"
+            "function_type"
             | "value_function_type"
             | "union_type"
             | "equivalence_type"
@@ -1422,7 +1420,7 @@ impl<'source> Respelling<'_, 'source>
 
     /// Spell again as written each derived path operation the sugared form
     /// wrote among the operands of the call whose parts are `parts`, when
-    /// that call is a `transport(…)` kept as written, and every one each of
+    /// that call is a `Path.walk(…)` kept as written, and every one each of
     /// those holds so in turn: the printer writes a derived operation
     /// standing as a transport's operand as the transport it derives,
     /// nothing there stating the operation's type. Whether any was.
@@ -1477,7 +1475,7 @@ impl<'source> Respelling<'_, 'source>
 
     /// Push onto `stack`, to enter, each derived path operation the sugared
     /// form wrote among the operands of the call whose parts are `parts`,
-    /// when that call is a `transport(…)`, removing each from the
+    /// when that call is a `Path.walk(…)`, removing each from the
     /// derivations.
     ///
     /// # Specification
@@ -1497,7 +1495,7 @@ impl<'source> Respelling<'_, 'source>
             .tokens(callee)
             .iter()
             .map(|&token| <&str>::from(token))
-            .ne(["transport"])
+            .ne(WALK.iter().map(|spelling| spelling.0))
         {
             return;
         }
@@ -2306,10 +2304,14 @@ impl<'source> Respelling<'_, 'source>
                 else {
                     return None;
                 };
-                out.place(&self.operand(first), Band::Atom);
-                out.spaced(Spelling(" then "));
-                out.place(&self.operand(second), Band::Atom);
-                Band::Loose
+                held(&mut out, STEP);
+                out.token(OPEN_PAREN);
+                out.place(&self.operand(first), Band::Loose);
+                out.token(COMMA);
+                out.gap(Spelling(" "));
+                out.place(&self.operand(second), Band::Loose);
+                out.token(CLOSE_PAREN);
+                Band::Atom
             },
             (RewriteName::PathInverse, Direction::Sugar) => {
                 if self.motives.standing(extent) != Standing::Returned {
@@ -2319,7 +2321,7 @@ impl<'source> Respelling<'_, 'source>
                 else {
                     return None;
                 };
-                out.token(BACK);
+                held(&mut out, BACK);
                 out.token(OPEN_PAREN);
                 out.place(&self.operand(path), Band::Loose);
                 out.token(CLOSE_PAREN);
@@ -2333,7 +2335,7 @@ impl<'source> Respelling<'_, 'source>
                 else {
                     return None;
                 };
-                out.token(CONG);
+                held(&mut out, CONG);
                 out.token(OPEN_PAREN);
                 out.place(&self.operand(map), Band::Loose);
                 out.token(COMMA);
@@ -2346,16 +2348,10 @@ impl<'source> Respelling<'_, 'source>
                 if self.motives.standing(extent) == Standing::Flows {
                     return None;
                 }
-                let (owns, operands) = split(parts);
-                let (&[then], &[first, second]) = (owns.as_slice(), operands.as_slice())
+                let &[first, second] = self.called(parts, STEP)?.as_slice()
                 else {
                     return None;
                 };
-                if <&str>::from(then) != "then"
-                    || parts.iter().any(|part| matches!(part.role, Role::Comment))
-                {
-                    return None;
-                }
                 self.transport(&mut out, extent, second, Moved::Written(first))?;
                 Band::Atom
             },
@@ -3109,11 +3105,12 @@ impl<'source> Respelling<'_, 'source>
 
     /// The derived path operation the transport call whose parts are `parts`
     /// spells, when its motive `fun (y) { Path(A, l, r) }`, its body quoted
-    /// or not, is one the lowering derives: `p then q` for `transport(fun (y) {
-    /// Path(A, a, y) }, q, p)`, `back(p)` for `transport(fun (y) { Path(A,
-    /// y, a) }, p, here(a))` and `cong(f, p)` for `transport(fun (y) {
-    /// Path(B, f(a), f(y)) }, p, here(f(a)))`, where neither the carrier,
-    /// the fixed endpoint nor the map names `y`.
+    /// or not, is one the lowering derives: `Path.step(p, q)` for
+    /// `Path.walk(fun (y) { Path(A, a, y) }, q, p)`, `Path.back(p)` for
+    /// `Path.walk(fun (y) { Path(A, y, a) }, p, Path.here(a))` and `Path.ap(f,
+    /// p)` for `Path.walk(fun (y) { Path(B, f(a), f(y)) }, p,
+    /// Path.here(f(a)))`, where neither the carrier, the fixed endpoint nor the
+    /// map names `y`.
     ///
     /// # Specification
     /// trivial.
@@ -3134,7 +3131,7 @@ impl<'source> Respelling<'_, 'source>
             .tokens(callee)
             .iter()
             .map(|&token| <&str>::from(token))
-            .ne(["transport"])
+            .ne(WALK.iter().map(|spelling| spelling.0))
         {
             return None;
         }
@@ -3221,8 +3218,10 @@ impl<'source> Respelling<'_, 'source>
         // endpoint.
         let moved = self.tokens(moved);
         let reflexive = |fixed: &[SourceFragment<'source>]| match moved.as_slice() {
-            &[here, open, ref inner @ .., close] => {
-                <&str>::from(here) == "here"
+            &[path, dot, here, open, ref inner @ .., close] => {
+                <&str>::from(path) == "Path"
+                    && <&str>::from(dot) == "."
+                    && <&str>::from(here) == "here"
                     && <&str>::from(open) == "("
                     && <&str>::from(close) == ")"
                     && inner == fixed
@@ -3261,14 +3260,14 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// The operands after the head of the call whose parts are `parts`, when
-    /// its head is the name `head` alone.
+    /// its head is spelled `head` alone, `Path.back`.
     ///
     /// # Specification
     /// trivial.
     fn called(
         &self,
         parts: &[Part<'source>],
-        head: Spelling,
+        head: &[Spelling],
     ) -> Option<Vec<Child<'source>>>
     {
         if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
@@ -3279,7 +3278,7 @@ impl<'source> Respelling<'_, 'source>
         self.tokens(callee)
             .iter()
             .map(|&token| <&str>::from(token))
-            .eq([head.0])
+            .eq(head.iter().map(|spelling| spelling.0))
             .then(|| arguments.to_vec())
     }
 
@@ -3303,7 +3302,7 @@ impl<'source> Respelling<'_, 'source>
             self.unspelled.push(extent);
             return None;
         };
-        out.token(Spelling("transport"));
+        held(out, WALK);
         out.token(OPEN_PAREN);
         written(out, motive);
         out.token(COMMA);
@@ -3344,7 +3343,7 @@ fn written<'source>(
 #[derive(Clone, Copy)]
 enum Operation<'source>
 {
-    /// `p then q`.
+    /// `Path.step(p, q)`.
     Composite
     {
         /// `p`, the transported value.
@@ -3352,13 +3351,13 @@ enum Operation<'source>
         /// `q`, the path it moves along.
         second: Child<'source>,
     },
-    /// `back(p)`.
+    /// `Path.back(p)`.
     Inverse
     {
         /// `p`.
         path: Child<'source>,
     },
-    /// `cong(f, p)`.
+    /// `Path.ap(f, p)`.
     Action
     {
         /// `f`.
@@ -3413,7 +3412,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 36] = [
+const RULES: [MoldName; 35] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -3443,7 +3442,6 @@ const RULES: [MoldName; 36] = [
     MoldName("forget_model_expression"),
     MoldName("path_type"),
     MoldName("type_quote_expression"),
-    MoldName("binary_expression.then"),
     MoldName("send_session_type"),
     MoldName("receive_session_type"),
     MoldName("return_expression"),
@@ -3477,11 +3475,31 @@ const COMMA: Spelling = Spelling(",");
 /// `.`.
 const DOT: Spelling = Spelling(".");
 
-/// `back`.
-const BACK: Spelling = Spelling("back");
+/// `Path.back`, the path inverse under its former.
+const BACK: &[Spelling] = &[Spelling("Path"), Spelling("."), Spelling("back")];
 
-/// `cong`.
-const CONG: Spelling = Spelling("cong");
+/// `Path.ap`, a function's action on a path under its former.
+const CONG: &[Spelling] = &[Spelling("Path"), Spelling("."), Spelling("ap")];
+
+/// `Path.step`, the composite of two paths under its former.
+const STEP: &[Spelling] = &[Spelling("Path"), Spelling("."), Spelling("step")];
+
+/// `Path.walk`, the eliminator under its former.
+const WALK: &[Spelling] = &[Spelling("Path"), Spelling("."), Spelling("walk")];
+
+/// Write `spellings`, an operation's head under its former, as one name.
+///
+/// # Specification
+/// trivial.
+fn held(
+    out: &mut Builder<'_>,
+    spellings: &[Spelling],
+)
+{
+    for &spelling in spellings {
+        out.token(spelling);
+    }
+}
 
 /// `[`.
 const OPEN_BRACKET: Spelling = Spelling("[");

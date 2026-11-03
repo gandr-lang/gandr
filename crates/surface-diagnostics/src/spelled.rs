@@ -1099,7 +1099,7 @@ fn words_point(
 ///
 /// Each constructor is kept by its name and field count in tag order, and
 /// a family records whether it is the words of a family's loops, whose empty
-/// word is spelled `here(a)` at their point `a` as a value and `here` as a
+/// word is spelled `Path.here(a)` at their point `a` as a value and `here` as a
 /// pattern, and whose letters cons onto the rest of a word. The core names a
 /// constructor by its family and its tag, and a data case matches by tag
 /// alone, so a printer reads the names here, owned so a table outliving the
@@ -1124,7 +1124,7 @@ struct Family
     constant: ConstantIndex,
     /// Each constructor's name and field count, in tag order.
     constructors: Vec<(String, usize)>,
-    /// The empty word as a value is written, `here(a)`, when the family is
+    /// The empty word as a value is written, `Path.here(a)`, when the family is
     /// the words of a family's loops.
     empty: Option<String>,
     /// The names of the family's loops, in the order a data case over the
@@ -1180,8 +1180,8 @@ impl Families
     ///   its family's path, `Theory.App`, or by its module's path for a family
     ///   a module declares, `M.B`; then its loops named as written, the words
     ///   declaring them in module order; the words of a family's loops are
-    ///   consed, their empty word written `here(a)` as a value at their point
-    ///   `a`; no case.
+    ///   consed, their empty word written `Path.here(a)` as a value at their
+    ///   point `a`; no case.
     /// - provides: the constructor names a [`CoreSource`] over any arena spells
     ///   a constructor value with.
     /// - fails: never.
@@ -1278,10 +1278,12 @@ impl Families
                         (spelled, fields.len())
                     })
                     .collect();
+                // The empty word's pattern is its bare name, `here`; as a
+                // value it is reflexivity at the point, under its former.
                 let empty = match point {
-                    Maybe::Present((_, ref point)) => {
-                        names.first().map(|name| alloc::format!("{name}({point})"))
-                    },
+                    Maybe::Present((_, ref point)) => names
+                        .first()
+                        .map(|name| alloc::format!("Path.{name}({point})")),
                     Maybe::Absent(_) => None,
                 };
                 Some(Family {

@@ -2099,9 +2099,10 @@ mod tests
         );
     }
 
-    /// Hovering a declaration's name and hovering its written type print the
-    /// type in one form: the sugared default writes the composite the
-    /// transport derives as `then`, as the source does.
+    /// Hovering a declaration's name and hovering the composite its written
+    /// type states print the composite in one form: the sugared default writes
+    /// the composite the transport derives as `Path.step(p, q)`, as the source
+    /// does.
     #[test]
     fn a_declaration_s_name_and_its_written_type_print_one_form_754()
     {
@@ -2129,16 +2130,23 @@ mod tests
                 Maybe::Absent(reason) => panic!("the position hovers nothing: {reason:?}"),
             }
         };
-        let ty = "Path(Path(Circle, Base, Base), loop then here(Base), loop)";
+        let composite = "Path.step(loop, Path.here(Base))";
+        let ty = format!("Path(Path(Circle, Base, Base), {composite}, loop)");
         let named = at(line.saturating_add("def jo".len()));
         assert!(
             named.starts_with(&fenced(SourceText::from(format!("joined : {ty}").as_str()))),
             "the name prints the type as written: {named}"
         );
+        let stated = written
+            .get(line ..)
+            .and_then(|rest| rest.find(composite))
+            .expect("the written type states the composite");
         assert_eq!(
-            at(line.saturating_add("def joined : Pa".len())),
-            fenced(SourceText::from(format!("{ty} : Type").as_str())),
-            "the written type prints the same text"
+            at(line.saturating_add(stated).saturating_add("Path.s".len())),
+            fenced(SourceText::from(
+                format!("{composite} : -F Path(Circle, Base, Base)").as_str()
+            )),
+            "the written composite prints the same text"
         );
     }
 
@@ -2337,7 +2345,7 @@ mod tests
             ),
             (
                 "a declaration written with a dependent record",
-                "def r$0ing : #{n : Integer, v : Path(Integer, n, n)} ;\ndef ring = #{2, here(2)} \
+                "def r$0ing : #{n : Integer, v : Path(Integer, n, n)} ;\ndef ring = #{2, Path.here(2)} \
                  ;\n",
                 Ok(fenced(SourceText::from(
                     "ring : #{n : Integer, v : Path(Integer, n, n)}",

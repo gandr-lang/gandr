@@ -17,7 +17,7 @@ def uaEtaForward(a : Type, b : Type, p : Path(Type, a, b)) -> Path(
   fun (x) { fwdAlong(a, b, ua(idtoequiv(a, b, p)), x) },
   fun (x) { fwdAlong(a, b, p, x) }
 ) {
-  here(fun (x) { fwdAlong(a, b, p, x) })
+  Path.here(fun (x) { fwdAlong(a, b, p, x) })
 }
 
 /// `ua` after `idtoequiv` transports back as the path does: one function, at
@@ -27,7 +27,7 @@ def uaEtaBackward(a : Type, b : Type, p : Path(Type, a, b)) -> Path(
   fun (y) { bwdAlong(a, b, ua(idtoequiv(a, b, p)), y) },
   fun (y) { bwdAlong(a, b, p, y) }
 ) {
-  here(fun (y) { bwdAlong(a, b, p, y) })
+  Path.here(fun (y) { bwdAlong(a, b, p, y) })
 }
 
 /// `idtoequiv` after `ua` transports forward as the record's map: one
@@ -45,5 +45,5 @@ def idtoequivUaForward(
   fun (x) { fwdAlong(a, b, ua((t, ((g, s), (h, r)))), x) },
   t
 ) {
-  here(t)
+  Path.here(t)
 }

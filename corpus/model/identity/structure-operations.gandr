@@ -3,7 +3,7 @@
 // types_, § 5, `posCounter ≡ negCounter`), related along negation. Each
 // operation is carried along the carrier's path, its argument moved back by
 // the equivalence's backward map and its result forward by its forward map,
-// and the carried operation is related to the other structure's by `funext`.
+// and the carried operation is related to the other structure's by `Path.funext`.
 // A reading carried between two different carriers, booleans tagged with
 // unit and the booleans, is related the same way.
 
@@ -26,14 +26,18 @@ pub def flippedToggle : #{t : Type, start : t, step : t => t, read : t => Bool} 
 
 /// The step carried along negation is the step: negating back, stepping and
 /// negating again steps.
-pub def stepped : Path(Bool => Bool, transport(fun (t) { t => t }, negation, not), not) = funext(
-  transport(fun (t) { t => t }, negation, not),
+pub def stepped : Path(Bool => Bool, Path.walk(fun (t) { t => t }, negation, not), not) = Path.funext(
+  Path.walk(fun (t) { t => t }, negation, not),
   not
 );
 
 /// The reading carried along negation reads negated.
-pub def reread : Path(Bool => Bool, transport(fun (t) { t => Bool }, negation, same), not) = funext(
-  transport(fun (t) { t => Bool }, negation, same),
+pub def reread : Path(
+  Bool => Bool,
+  Path.walk(fun (t) { t => Bool }, negation, same),
+  not
+) = Path.funext(
+  Path.walk(fun (t) { t => Bool }, negation, same),
   not
 );
 
@@ -43,12 +47,16 @@ def oneToggle : Path(
   #{t : Type, start : t, step : t => t, read : t => Bool},
   plainToggle,
   flippedToggle
-) = (negation, (here(+{.1 = unit}), (stepped, reread)));
+) = (negation, (Path.here(+{.1 = unit}), (stepped, reread)));
 
 /// The reading carried along negation is not the reading left as it is.
 @[ refuses("PointwiseDistinct") ]
-def unread : Path(Bool => Bool, transport(fun (t) { t => Bool }, negation, same), same) = funext(
-  transport(fun (t) { t => Bool }, negation, same),
+def unread : Path(
+  Bool => Bool,
+  Path.walk(fun (t) { t => Bool }, negation, same),
+  same
+) = Path.funext(
+  Path.walk(fun (t) { t => Bool }, negation, same),
   same
 );
 
@@ -76,9 +84,9 @@ def readTagged(p : Bool * Unit) -> Bool {
 /// checker ran it once, and refused the pointwise evidence.
 def untagged : Path(
   Bool => Bool,
-  transport(fun (t) { t => Bool }, tagging, readTagged),
+  Path.walk(fun (t) { t => Bool }, tagging, readTagged),
   same
-) = funext(
-  transport(fun (t) { t => Bool }, tagging, readTagged),
+) = Path.funext(
+  Path.walk(fun (t) { t => Bool }, tagging, readTagged),
   same
 );

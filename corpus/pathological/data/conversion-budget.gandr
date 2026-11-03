@@ -40,5 +40,5 @@ def nineteen() -> Nat {
 /// step budget before it shows it.
 @[ refuses("EndpointMismatch") ]
 def agree() -> Path(Nat, fib(nineteen()), fibFrom(nineteen(), Zero, Succ(Zero))) {
-  here(fib(nineteen()))
+  Path.here(fib(nineteen()))
 }

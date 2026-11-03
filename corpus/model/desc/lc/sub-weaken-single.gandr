@@ -20,8 +20,8 @@ def weakenSingleAgree(a : Term, n : N) -> Path(
   subst(look(n, Shift(Z), Z), Shift(Z))
 ) {
   match n {
-    Z => here(Ix(Z)),
-    S(j) => here(Ix(S(j)))
+    Z => Path.here(Ix(Z)),
+    S(j) => Path.here(Ix(S(j)))
   }
 }
 

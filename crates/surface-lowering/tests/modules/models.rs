@@ -41,7 +41,7 @@ const SIGN: &str = "theory CatShape where {\n  sort Ob : Type;\n  sort Hom(dom: 
 
 /// The category of discrete setoids: types and functions, composition by
 /// sequencing, each law holding by computation.
-const SETOIDS: &str = "type Ob = Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    let y = f(x);\n    become g(y)\n  }\n  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become ident(t) } }\n  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {\n    return thunk { become compose(t, u, v, f, g) }\n  }\n  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) { return here(f) }\n  def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, q, q, f, id(q)), f) { return here(f) }\n  def assoc(p : Type, q : Type, r : Type, s : Type, f : +U[ω] (p -> -F q), g : +U[ω] (q -> -F r), h : +U[ω] (r -> -F s)) -> -F Path((+U[ω] (p -> -F s)), comp(p, r, s, comp(p, q, r, f, g), h), comp(p, q, s, f, comp(q, r, s, g, h))) {\n    return here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })\n  }\n";
+const SETOIDS: &str = "type Ob = Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    let y = f(x);\n    become g(y)\n  }\n  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become ident(t) } }\n  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {\n    return thunk { become compose(t, u, v, f, g) }\n  }\n  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) { return Path.here(f) }\n  def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, q, q, f, id(q)), f) { return Path.here(f) }\n  def assoc(p : Type, q : Type, r : Type, s : Type, f : +U[ω] (p -> -F q), g : +U[ω] (q -> -F r), h : +U[ω] (r -> -F s)) -> -F Path((+U[ω] (p -> -F s)), comp(p, r, s, comp(p, q, r, f, g), h), comp(p, q, s, f, comp(q, r, s, g, h))) {\n    return Path.here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })\n  }\n";
 
 /// The signature `Model(CatShape)` derives, written out by hand, its laws
 /// stated over the operations of the module `Derived` so the two signatures
@@ -703,7 +703,7 @@ fn a_model_missing_an_operation_is_refused_naming_it()
 #[test]
 fn a_stated_law_is_a_component_a_model_proves_2356()
 {
-    let source = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Proved : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  def refl(a : One) -> Path(Bool, same(a, a), true) { here(true) }\n  def trans(a : One, b : One, c : One, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) -> Path(Bool, same(a, c), true) { here(true) }\n}\nmodule Admitted : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl admitted;\n  law trans admitted;\n}\nmodule Short : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  law refl admitted;\n}\n";
+    let source = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Proved : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  def refl(a : One) -> Path(Bool, same(a, a), true) { Path.here(true) }\n  def trans(a : One, b : One, c : One, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) -> Path(Bool, same(a, c), true) { Path.here(true) }\n}\nmodule Admitted : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl admitted;\n  law trans admitted;\n}\nmodule Short : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  law refl admitted;\n}\n";
     let mut lowered = lower(source);
     let found = rows(&lowered);
     for (path, role, amounts) in [
@@ -773,11 +773,11 @@ fn an_instance_with_a_wrong_law_endpoint_is_refused_naming_the_law()
              : Ob) = Integer;\n  def id(a : Type) -> -F Hom(a, a) {{ return 0 }}\n  def comp(a : \
              Type, b : Type, c : Type, f : Hom(a, b), g : Hom(b, c)) -> -F Hom(a, c) {{ return f \
              }}\n  def unitL(a : Type, b : Type, f : Hom(a, b)) -> -F Path(Hom(a, b), \
-             {statement}) {{ return here(f) }}\n  def unitR(a : Type, b : Type, f : Hom(a, b)) -> \
-             -F Path(Hom(a, b), comp(a, b, b, f, id(b)), f) {{ return here(f) }}\n  def assoc(a : \
+             {statement}) {{ return Path.here(f) }}\n  def unitR(a : Type, b : Type, f : Hom(a, b)) -> \
+             -F Path(Hom(a, b), comp(a, b, b, f, id(b)), f) {{ return Path.here(f) }}\n  def assoc(a : \
              Type, b : Type, c : Type, d : Type, f : Hom(a, b), g : Hom(b, c), h : Hom(c, d)) -> \
              -F Path(Hom(a, d), comp(a, c, d, comp(a, b, c, f, g), h), comp(a, b, d, f, comp(b, \
-             c, d, g, h))) {{ return here(f) }}\n}}\n"
+             c, d, g, h))) {{ return Path.here(f) }}\n}}\n"
         )
     };
     let judged = |source: &str| {

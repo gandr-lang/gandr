@@ -1,14 +1,15 @@
 /// A lambda over a composite path, against the composite of two lambdas.
 ///
-/// `q ↦ (q then g) then h` and the composite of `q ↦ q then g` and `r ↦ r then
-/// h` are one function. Each body agrees with the other once the machine takes
-/// the bind at the endpoint of `q then g`.
+/// `q ↦ Path.step(Path.step(q, g), h)` and the composite of
+/// `q ↦ Path.step(q, g)` and `r ↦ Path.step(r, h)` are one function. Each body
+/// agrees with the other once the machine takes the bind at the endpoint of
+/// `Path.step(q, g)`.
 ///
-/// The composite's body binds `q then g`, a transport stuck on `g`, into `t ↦ t
-/// then h`. That transport returns the value it moves, whatever its path. So
-/// the bind is its continuation at that endpoint, the transport along `h` that
-/// the lambda writes. Inside an action's motive, the kernel reads the two codes
-/// by its own rules, which run the composite's calls.
+/// The composite's body binds `Path.step(q, g)`, a transport stuck on `g`, into
+/// `t ↦ Path.step(t, h)`. That transport returns the value it moves, whatever
+/// its path. So the bind is its continuation at that endpoint, the transport
+/// along `h` that the lambda writes. Inside an action's motive, the kernel
+/// reads the two codes by its own rules, which run the composite's calls.
 ///
 /// - see: #3824 — a call of a returning variable held by the same law
 /// - see: #4011 — the checker refused the composite against its two lambdas
@@ -31,16 +32,18 @@ def oneLambdaAgainstCompose(
   h : Path(A, z, w)
 ) -> Path(
   Path(A, x, y) => Path(A, x, w),
-  (fun (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)),
+  (fun (q : Path(A, x, y)) { Path.step(Path.step(q, g), h) } : Path(A, x, y) => Path(A, x, w)),
   composeAfter(
     Path(A, x, y),
     Path(A, x, z),
     Path(A, x, w),
-    (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
-    (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w))
+    (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
+    (fun (r : Path(A, x, z)) { Path.step(r, h) } : Path(A, x, z) => Path(A, x, w))
   )
 ) {
-  here((fun (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)))
+  Path.here((fun (q : Path(A, x, y)) {
+    Path.step(Path.step(q, g), h)
+  } : Path(A, x, y) => Path(A, x, w)))
 }
 
 /// The same pair, the composite of the two lambdas its point.
@@ -58,18 +61,18 @@ def composeAgainstOneLambda(
     Path(A, x, y),
     Path(A, x, z),
     Path(A, x, w),
-    (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
-    (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w))
+    (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
+    (fun (r : Path(A, x, z)) { Path.step(r, h) } : Path(A, x, z) => Path(A, x, w))
   ),
-  (fun (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w))
+  (fun (q : Path(A, x, y)) { Path.step(Path.step(q, g), h) } : Path(A, x, y) => Path(A, x, w))
 ) {
-  here(
+  Path.here(
     composeAfter(
       Path(A, x, y),
       Path(A, x, z),
       Path(A, x, w),
-      (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
-      (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w))
+      (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
+      (fun (r : Path(A, x, z)) { Path.step(r, h) } : Path(A, x, z) => Path(A, x, w))
     )
   )
 }
@@ -80,7 +83,7 @@ def actThrough(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) 
   F(x),
   F(y)
 ) {
-  cong(F, p)
+  Path.ap(F, p)
 }
 
 /// The action of the composite of `F` and then `G` on `p`.
@@ -111,11 +114,11 @@ def composedAgainstActOfCompose(
   g : Path(A, y, z),
   h : Path(A, z, w)
 ) -> Path(
-  Path(Path(A, x, w), (fm then g) then h, (fp then g) then h),
+  Path(Path(A, x, w), Path.step(Path.step(fm, g), h), Path.step(Path.step(fp, g), h)),
   actThrough(
     Path(A, x, y),
     Path(A, x, w),
-    (fun (q : Path(A, x, y)) { (q then g) then h } : Path(A, x, y) => Path(A, x, w)),
+    (fun (q : Path(A, x, y)) { Path.step(Path.step(q, g), h) } : Path(A, x, y) => Path(A, x, w)),
     fm,
     fp,
     fa
@@ -124,20 +127,20 @@ def composedAgainstActOfCompose(
     Path(A, x, y),
     Path(A, x, z),
     Path(A, x, w),
-    (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
-    (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+    (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
+    (fun (r : Path(A, x, z)) { Path.step(r, h) } : Path(A, x, z) => Path(A, x, w)),
     fm,
     fp,
     fa
   )
 ) {
-  here(
+  Path.here(
     actOfCompose(
       Path(A, x, y),
       Path(A, x, z),
       Path(A, x, w),
-      (fun (q : Path(A, x, y)) { q then g } : Path(A, x, y) => Path(A, x, z)),
-      (fun (r : Path(A, x, z)) { r then h } : Path(A, x, z) => Path(A, x, w)),
+      (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
+      (fun (r : Path(A, x, z)) { Path.step(r, h) } : Path(A, x, z) => Path(A, x, w)),
       fm,
       fp,
       fa

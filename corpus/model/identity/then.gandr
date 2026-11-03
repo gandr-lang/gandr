@@ -1,6 +1,6 @@
 // The composite of two paths, the HoTT book's Lemma 2.1.2 (`p · q`), at the
-// integers: `q then r` joins a path to one leaving its endpoint, and a run
-// joins reflexivity to itself. `q then r` is the unbiased composite of the
+// integers: `Path.step(q, r)` joins a path to one leaving its endpoint, and a run
+// joins reflexivity to itself. `Path.step(q, r)` is the unbiased composite of the
 // 2-chain at its least stratum, `compose[3, 5](chain(2), (q, r))`.
 
 // Reflexivity at seven.
@@ -15,19 +15,19 @@ def join(
   q : Path(Integer, a, b),
   r : Path(Integer, b, c)
 ) -> Path(Integer, a, c) {
-  q then r
+  Path.step(q, r)
 }
 
 /// Reflexivity at seven composed with itself by a run.
 def joined_here() -> Path(Integer, 7, 7) { join(7, 7, 7, p, p) }
 
-/// `then` is the composite of the 2-chain its two paths fill.
+/// `Path.step` is the composite of the 2-chain its two paths fill.
 def joined_unbiased(
   a : Integer,
   b : Integer,
   c : Integer,
   q : Path(Integer, a, b),
   r : Path(Integer, b, c)
-) -> Path(Path(Integer, a, c), q then r, compose[3, 5](chain(2), (q, r))) {
-  here(q then r)
+) -> Path(Path(Integer, a, c), Path.step(q, r), compose[3, 5](chain(2), (q, r))) {
+  Path.here(Path.step(q, r))
 }

@@ -1,10 +1,10 @@
-/// A definition's composite meets `then` over the same paths, at endpoints that
+/// A definition's composite meets `Path.step` over the same paths, at endpoints that
 /// stuck calls return.
 ///
-/// `concat`'s body is `p then q`, so a type written with `concat` reads as one
-/// written with `then`. At variable endpoints the two read alike. At a stuck
+/// `concat`'s body is `Path.step(p, q)`, so a type written with `concat` reads as one
+/// written with `Path.step`. At variable endpoints the two read alike. At a stuck
 /// call, `concat`'s type reads the endpoint through the environment its call
-/// bound, which holds it. The type written with `then` writes the call in place.
+/// bound, which holds it. The type written with `Path.step` writes the call in place.
 ///
 /// The machine runs the written call where its type reads it. It compares the
 /// result with the held endpoint, and the kernel replays the comparison by its
@@ -16,7 +16,7 @@
 
 /// The composite of two paths, by definition.
 def concat(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(A, x, z) {
-  p then q
+  Path.step(p, q)
 }
 
 /// Reflexivity at `concat`'s composite, its type written with `concat`.
@@ -28,10 +28,10 @@ def concatHere(
   p : Path(A, x, y),
   q : Path(A, y, z)
 ) -> Path(Path(A, x, z), concat(A, x, y, z, p, q), concat(A, x, y, z, p, q)) {
-  here(concat(A, x, y, z, p, q))
+  Path.here(concat(A, x, y, z, p, q))
 }
 
-/// `concatHere` at variable endpoints, against `then`.
+/// `concatHere` at variable endpoints, against `Path.step`.
 def atVariables(
   A : Type,
   x : A,
@@ -39,11 +39,11 @@ def atVariables(
   z : A,
   p : Path(A, x, y),
   q : Path(A, y, z)
-) -> Path(Path(A, x, z), p then q, p then q) {
+) -> Path(Path(A, x, z), Path.step(p, q), Path.step(p, q)) {
   concatHere(A, x, y, z, p, q)
 }
 
-/// `concatHere` at endpoints that are the stuck composite `f then g`.
+/// `concatHere` at endpoints that are the stuck composite `Path.step(f, g)`.
 def atComposite(
   A : Type,
   x : A,
@@ -51,10 +51,10 @@ def atComposite(
   z : A,
   f : Path(A, x, y),
   g : Path(A, y, z),
-  p : Path(Path(A, x, z), f then g, f then g),
-  q : Path(Path(A, x, z), f then g, f then g)
-) -> Path(Path(Path(A, x, z), f then g, f then g), p then q, p then q) {
-  concatHere(Path(A, x, z), f then g, f then g, f then g, p, q)
+  p : Path(Path(A, x, z), Path.step(f, g), Path.step(f, g)),
+  q : Path(Path(A, x, z), Path.step(f, g), Path.step(f, g))
+) -> Path(Path(Path(A, x, z), Path.step(f, g), Path.step(f, g)), Path.step(p, q), Path.step(p, q)) {
+  concatHere(Path(A, x, z), Path.step(f, g), Path.step(f, g), Path.step(f, g), p, q)
 }
 
 /// `concatHere` at endpoints that apply a variable function.
@@ -66,6 +66,6 @@ def atApplication(
   z : A,
   p : Path(A, F(x), F(y)),
   q : Path(A, F(y), z)
-) -> Path(Path(A, F(x), z), p then q, p then q) {
+) -> Path(Path(A, F(x), z), Path.step(p, q), Path.step(p, q)) {
   concatHere(A, F(x), F(y), z, p, q)
 }

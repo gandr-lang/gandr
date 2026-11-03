@@ -12,7 +12,7 @@ derive invFour : inv(inv(inv(inv(x)))) <=> x in Involution
 module Same : Model(Involution) where {
   type G = Integer;
   def inv(x : Integer) -> Integer { x }
-  def invInv(x : Integer) -> Path(Integer, inv(inv(x)), x) { here(x) }
+  def invInv(x : Integer) -> Path(Integer, inv(inv(x)), x) { Path.here(x) }
   @[ refuses("DerivedComponent") ]
-  def invFour(x : Integer) -> Path(Integer, inv(inv(inv(inv(x)))), x) { here(x) }
+  def invFour(x : Integer) -> Path(Integer, inv(inv(inv(inv(x)))), x) { Path.here(x) }
 }

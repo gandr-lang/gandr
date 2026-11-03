@@ -119,9 +119,9 @@
 //! | `tuple`          | `#{a, b, …}`            | `(a, b, …)`     |
 //! | `value-function` | `+U ((x : A) -> B -> -F C)` | `(x : A, B) => C` |
 //! | `default-grade`  | `+U B`, from `+U[ω] B`  | `+U B`, from `+U[ω] B` |
-//! | `path-composite` | `transport(fun (y) { Path(A, a, y) }, q, p)` | `p then q` |
-//! | `path-inverse`   | `transport(fun (y) { Path(A, y, a) }, p, here(a))` | `back(p)` |
-//! | `path-action`    | `transport(fun (y) { Path(B, f(a), f(y)) }, p, here(f(a)))` | `cong(f, p)` |
+//! | `path-composite` | `Path.walk(fun (y) { Path(A, a, y) }, q, p)` | `Path.step(p, q)` |
+//! | `path-inverse`   | `Path.walk(fun (y) { Path(A, y, a) }, p, Path.here(a))` | `Path.back(p)` |
+//! | `path-action`    | `Path.walk(fun (y) { Path(B, f(a), f(y)) }, p, Path.here(f(a)))` | `Path.ap(f, p)` |
 //! | `tail-return`    | `return v`, as written  | `v`, where a path ends |
 //! | `inserted-returner` | `-> -F B`, as written | `-> B`, at a definition's result |
 //! | `short-alias`    | `(x : A) => B`, as written | `A => B`, `x` unread |
@@ -224,19 +224,19 @@
 //! lays the closure out as `gandr check` does. [`format`] formats a source
 //! alone.
 //!
-//! `p then q` is the transport `transport(fun (y) { Path(A, a, y) }, q, p)`,
-//! and the syntax holds neither the carrier `A` nor the fixed endpoint `a`:
-//! they are the type of `p`, which the lowering derives. So the explicit form
-//! reads the motive from the lowering — the transport it minted at the
+//! `Path.step(p, q)` is the transport `Path.walk(fun (y) { Path(A, a, y) }, q,
+//! p)`, and the syntax holds neither the carrier `A` nor the fixed endpoint
+//! `a`: they are the type of `p`, which the lowering derives. So the explicit
+//! form reads the motive from the lowering — the transport it minted at the
 //! composite — and spells it through the presentation printer under the names
 //! the source writes for the binders around the composite, as
 //! `gandr-surface-diagnostics` names the module's constants and binders for
 //! it. A composite whose motive the printer cannot spell, one under a binder
-//! the source names nothing, keeps `then` and is reported; a composite of
+//! the source names nothing, keeps `Path.step` and is reported; a composite of
 //! flows is its own explicit spelling and stays. The sugared form writes
-//! `then` for the same transports, those the lowering returns at a
+//! `Path.step` for the same transports, those the lowering returns at a
 //! composite, as the printer does: a transport a body runs as written stays
-//! `transport(…)`.
+//! `Path.walk(…)`.
 //!
 //! - Choice: the motive spelled by the shared printer from the lowering the
 //!   meaning check already runs, so the explicit spelling is the printer's
@@ -638,7 +638,8 @@ impl fmt::Display for Withdrawn
                 )
             },
             Self::Unspelled => f.write_str(
-                "a path composite it writes has no motive the printer spells, so it keeps `then`",
+                "a path composite it writes has no motive the printer spells, so it keeps \
+                 `Path.step`",
             ),
             Self::Read(ref reader) => write!(
                 f,

@@ -399,7 +399,7 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             miss: EndpointMiss::Unshown,
             ..
         } => String::from(
-            "give `here` a point that both endpoints convert to, or change the endpoints",
+            "give `Path.here` a point that both endpoints convert to, or change the endpoints",
         ),
         CheckRefusal::EndpointMismatch {
             miss: EndpointMiss::Budget,

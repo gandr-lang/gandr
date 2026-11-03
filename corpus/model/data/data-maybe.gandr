@@ -21,8 +21,8 @@ def unwrap_or_zero() -> Integer {
 /// each arm answers the type as written, `m` read as itself (#616).
 def kept(m : Maybe(Integer)) -> Path(Maybe(Integer), m, m) {
   match m {
-    None => here(m),
-    Some(x) => here(m)
+    None => Path.here(m),
+    Some(x) => Path.here(m)
   }
 }
 

@@ -44,7 +44,7 @@ def oneSharing() -> Path(
   Type,
   Model(Counter) with sort C = Unit + (Unit + Unit),
   Model(Counter) with sort C = (Unit + Unit) + Unit
-) { cong(countersOn, nestings) }
+) { Path.ap(countersOn, nestings) }
 
 /// One state on, modulo three, nested to the right.
 def onward(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
@@ -68,7 +68,7 @@ def rightward : Model(Counter) with sort C = Unit + (Unit + Unit) = #{
 };
 
 /// The same counter carried to the left nesting.
-def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit = transport(
+def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit = Path.walk(
   fun (x) { type(Model(Counter) with sort C = x) },
   nestings,
   rightward
@@ -102,5 +102,5 @@ def secondLeft() -> (Unit + Unit) + Unit { stepOnceLeft(leftward) }
 /// definition first, runs to the same state.
 @[ runs("+{.0 = +{.1 = unit}}") ]
 def inlineLeft() -> (Unit + Unit) + Unit {
-  stepOnceLeft(transport(fun (x) { type(Model(Counter) with sort C = x) }, nestings, rightward))
+  stepOnceLeft(Path.walk(fun (x) { type(Model(Counter) with sort C = x) }, nestings, rightward))
 }

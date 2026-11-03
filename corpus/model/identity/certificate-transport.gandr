@@ -15,19 +15,19 @@ import "./circle-base.gandr";
 /// The certificate that rewrites the peak at its root: `S(P(y)) ==> y` with
 /// `y = S(x)`, a reflexivity once the rules convert the peak.
 def atRoot(x : Int) -> Path(Int, S(P(S(x))), S(x)) {
-  here(S(x))
+  Path.here(S(x))
 }
 
 /// The certificate that rewrites inside the successor: `P(S(x)) ==> x`
 /// carried along `up`.
 def inside(x : Int) -> Path(Int, S(P(S(x))), S(x)) {
-  cong(up, here(x))
+  Path.ap(up, Path.here(x))
 }
 
 /// The two certificates of the peak's boundary are one path: the rules
 /// convert both to the reflexivity at the join.
 def identified(x : Int) -> Path(Path(Int, S(P(S(x))), S(x)), atRoot(x), inside(x)) {
-  here(atRoot(x))
+  Path.here(atRoot(x))
 }
 
 /// The certificate types of the peak's boundary and of the join's own, one
@@ -36,8 +36,8 @@ def certificates(x : Int) -> Path(Type, Path(Int, S(P(S(x))), S(x)), Path(Int, S
   ua((
     fun (c) { c },
     (
-      (fun (c) { c }, fun (c) { here(c) }),
-      (fun (c) { c }, fun (c) { here(c) })
+      (fun (c) { c }, fun (c) { Path.here(c) }),
+      (fun (c) { c }, fun (c) { Path.here(c) })
     )
   ))
 }
@@ -46,20 +46,20 @@ def certificates(x : Int) -> Path(Type, Path(Int, S(P(S(x))), S(x)), Path(Int, S
 /// the same consumer at the join's, by conversion.
 def carried(x : Int, f : Path(Int, S(P(S(x))), S(x)) => Int) -> Path(
   Path(Int, S(x), S(x)) => Int,
-  transport(fun (X) { X => Int }, certificates(x), f),
+  Path.walk(fun (X) { X => Int }, certificates(x), f),
   fun (d) { f(d) }
 ) {
-  here(fun (d) { f(d) })
+  Path.here(fun (d) { f(d) })
 }
 
 /// The carried consumer, run on a certificate of the join's boundary: it
 /// transports `S(Z)` along the certificate and keeps it.
 @[ runs("S(Z)") ]
 def carriedRun() -> Int {
-  let g = transport(
+  let g = Path.walk(
     fun (X) { X => Int },
     certificates(Z),
-    fun (c) { transport(fun (y) { Int }, c, S(Z)) }
+    fun (c) { Path.walk(fun (y) { Int }, c, S(Z)) }
   );
-  g(here(S(Z)))
+  g(Path.here(S(Z)))
 }

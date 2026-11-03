@@ -33,4 +33,4 @@ def countedSteps() -> (Nat => Nat) => Nat {
 /// The bound two is one step too small: the count of the steps is three, so
 /// `Count.le` answers `false`.
 @[ refuses("EndpointMismatch") ]
-def boundTwo : Path(Bool, Count.le(countOf(countedSteps()), (2 : Nat)), true) = here(true);
+def boundTwo : Path(Bool, Count.le(countOf(countedSteps()), (2 : Nat)), true) = Path.here(true);

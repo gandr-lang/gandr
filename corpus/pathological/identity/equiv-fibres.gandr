@@ -27,7 +27,7 @@ pub def pick(u : One) -> Two {
 /// Every point of `One` is `Only`, by induction on it.
 pub def single(u : One) -> Path(One, collapse(pick(u)), u) {
   match u {
-    Only => here(Only)
+    Only => Path.here(Only)
   }
 }
 
@@ -35,4 +35,7 @@ pub def single(u : One) -> Path(One, collapse(pick(u)), u) {
 /// trip: `pick(collapse(x))` is `Yes` at every `x`, so reflexivity at `x`
 /// does not reach it (#514).
 @[ refuses("EndpointMismatch") ]
-def collapsed : Two ≃ One = (collapse, ((pick, thunk { fun (x) { here(x) } }), (pick, single)));
+def collapsed : Two ≃ One = (
+  collapse,
+  ((pick, thunk { fun (x) { Path.here(x) } }), (pick, single))
+);

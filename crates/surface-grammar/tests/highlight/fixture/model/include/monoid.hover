@@ -260,23 +260,23 @@
 71:68-71:68 ) ⇒ -F (Integer => Integer) @71:52-71:69
 71:69-71:69 ) ⇒ Path(Integer => Integer, mul(mul(f, g), h), mul(f, mul(g, h))) : Type @71:8-71:70
 71:71-71:71 { ⇒ assoc : (f : Integer => Integer, g : Integer => Integer, h : Integer => Integer) =>⏎  Path(Integer => Integer, Endo.mul(Endo.mul(f, g), h), Endo.mul(f, Endo.mul(g,⏎  h)))⏎⏎Associativity, the included law. @67:3-73:4
-72:5-72:9 here( ⇒ Path(Integer => Integer, Endo.mul(Endo.mul(f, g), h), Endo.mul(f, Endo.mul(g, h)⏎)) @72:5-72:56
-72:10-72:16 thunk { ⇒ Integer => Integer @72:10-72:55
-72:18-72:24 andThen ⇒ andThen : (Integer => Integer, Integer => Integer, Integer) => Integer @72:18-72:25
-72:25-72:25 ( ⇒ Integer -> -F Integer @72:18-72:53
-72:26-72:26 f ⇒ f : Integer => Integer @72:26-72:27
-72:27-72:27 , ⇒ Integer -> -F Integer @72:18-72:53
-72:29-72:35 thunk { ⇒ Integer => Integer @72:29-72:52
-72:37-72:43 andThen ⇒ andThen : (Integer => Integer, Integer => Integer, Integer) => Integer @72:37-72:44
-72:44-72:44 ( ⇒ Integer -> -F Integer @72:37-72:50
-72:45-72:45 g ⇒ g : Integer => Integer @72:45-72:46
-72:46-72:46 , ⇒ Integer -> -F Integer @72:37-72:50
-72:48-72:48 h ⇒ h : Integer => Integer @72:48-72:49
-72:49-72:49 ) ⇒ Integer -> -F Integer @72:37-72:50
-72:51-72:51 } ⇒ Integer => Integer @72:29-72:52
-72:52-72:52 ) ⇒ Integer -> -F Integer @72:18-72:53
-72:54-72:54 } ⇒ Integer => Integer @72:10-72:55
-72:55-72:55 ) ⇒ Path(Integer => Integer, Endo.mul(Endo.mul(f, g), h), Endo.mul(f, Endo.mul(g, h)⏎)) @72:5-72:56
+72:5-72:14 Path.here( ⇒ Path.here(thunk { andThen(f, thunk { andThen(g, h) }) }) : Path(Integer => Integer, Endo.mul(Endo.mul(f, g), h), Endo.mul(f, Endo.mul(g, h)⏎)) @72:5-72:61
+72:15-72:21 thunk { ⇒ Integer => Integer @72:15-72:60
+72:23-72:29 andThen ⇒ andThen : (Integer => Integer, Integer => Integer, Integer) => Integer @72:23-72:30
+72:30-72:30 ( ⇒ Integer -> -F Integer @72:23-72:58
+72:31-72:31 f ⇒ f : Integer => Integer @72:31-72:32
+72:32-72:32 , ⇒ Integer -> -F Integer @72:23-72:58
+72:34-72:40 thunk { ⇒ Integer => Integer @72:34-72:57
+72:42-72:48 andThen ⇒ andThen : (Integer => Integer, Integer => Integer, Integer) => Integer @72:42-72:49
+72:49-72:49 ( ⇒ Integer -> -F Integer @72:42-72:55
+72:50-72:50 g ⇒ g : Integer => Integer @72:50-72:51
+72:51-72:51 , ⇒ Integer -> -F Integer @72:42-72:55
+72:53-72:53 h ⇒ h : Integer => Integer @72:53-72:54
+72:54-72:54 ) ⇒ Integer -> -F Integer @72:42-72:55
+72:56-72:56 } ⇒ Integer => Integer @72:34-72:57
+72:57-72:57 ) ⇒ Integer -> -F Integer @72:23-72:58
+72:59-72:59 } ⇒ Integer => Integer @72:15-72:60
+72:60-72:60 ) ⇒ Path.here(thunk { andThen(f, thunk { andThen(g, h) }) }) : Path(Integer => Integer, Endo.mul(Endo.mul(f, g), h), Endo.mul(f, Endo.mul(g, h)⏎)) @72:5-72:61
 73:3-73:3 } ⇒ assoc : (f : Integer => Integer, g : Integer => Integer, h : Integer => Integer) =>⏎  Path(Integer => Integer, Endo.mul(Endo.mul(f, g), h), Endo.mul(f, Endo.mul(g,⏎  h)))⏎⏎Associativity, the included law. @67:3-73:4
 76:3-76:5 def ⇒ unitL : (f : Integer => Integer) => Path(Integer => Integer, Endo.mul(force Endo.one, f⏎), f)⏎⏎The left unit law. @76:3-80:5
 76:7-76:12 unitL( ⇒ unitL : (f : Integer => Integer) => Path(Integer => Integer, Endo.mul(force Endo.one, f⏎), f)⏎⏎The left unit law. @76:7-76:12
@@ -302,9 +302,9 @@
 79:5-79:5 f ⇒ f : Integer => Integer @79:5-79:6
 80:3-80:3 ) ⇒ Type @76:40-80:4
 80:5-80:5 { ⇒ unitL : (f : Integer => Integer) => Path(Integer => Integer, Endo.mul(force Endo.one, f⏎), f)⏎⏎The left unit law. @76:3-82:4
-81:5-81:9 here( ⇒ Path(Integer => Integer, Endo.mul(force Endo.one, f), f) @81:5-81:12
-81:10-81:10 f ⇒ f : Integer => Integer @81:10-81:11
-81:11-81:11 ) ⇒ Path(Integer => Integer, Endo.mul(force Endo.one, f), f) @81:5-81:12
+81:5-81:14 Path.here( ⇒ Path.here(f) : Path(Integer => Integer, Endo.mul(force Endo.one, f), f) @81:5-81:17
+81:15-81:15 f ⇒ f : Integer => Integer @81:15-81:16
+81:16-81:16 ) ⇒ Path.here(f) : Path(Integer => Integer, Endo.mul(force Endo.one, f), f) @81:5-81:17
 82:3-82:3 } ⇒ unitL : (f : Integer => Integer) => Path(Integer => Integer, Endo.mul(force Endo.one, f⏎), f)⏎⏎The left unit law. @76:3-82:4
 85:3-85:5 def ⇒ unitR : (f : Integer => Integer) => Path(Integer => Integer, Endo.mul(f, force Endo.one⏎), f)⏎⏎The right unit law. @85:3-89:5
 85:7-85:12 unitR( ⇒ unitR : (f : Integer => Integer) => Path(Integer => Integer, Endo.mul(f, force Endo.one⏎), f)⏎⏎The right unit law. @85:7-85:12
@@ -330,9 +330,9 @@
 88:5-88:5 f ⇒ f : Integer => Integer @88:5-88:6
 89:3-89:3 ) ⇒ Type @85:40-89:4
 89:5-89:5 { ⇒ unitR : (f : Integer => Integer) => Path(Integer => Integer, Endo.mul(f, force Endo.one⏎), f)⏎⏎The right unit law. @85:3-91:4
-90:5-90:9 here( ⇒ Path(Integer => Integer, Endo.mul(f, force Endo.one), f) @90:5-90:12
-90:10-90:10 f ⇒ f : Integer => Integer @90:10-90:11
-90:11-90:11 ) ⇒ Path(Integer => Integer, Endo.mul(f, force Endo.one), f) @90:5-90:12
+90:5-90:14 Path.here( ⇒ Path.here(f) : Path(Integer => Integer, Endo.mul(f, force Endo.one), f) @90:5-90:17
+90:15-90:15 f ⇒ f : Integer => Integer @90:15-90:16
+90:16-90:16 ) ⇒ Path.here(f) : Path(Integer => Integer, Endo.mul(f, force Endo.one), f) @90:5-90:17
 91:3-91:3 } ⇒ unitR : (f : Integer => Integer) => Path(Integer => Integer, Endo.mul(f, force Endo.one⏎), f)⏎⏎The right unit law. @85:3-91:4
 92:1-92:1 } ⇒ module Endo : Model(Monoid)⏎⏎The functions on the integers under composition: every law holds by⏎conversion, and the members it gives for the included semigroup are its⏎multiplication and associativity. @92:1-92:2
 95:1-95:14 @[ runs("8") ] ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @95:1-96:1

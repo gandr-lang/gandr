@@ -21,12 +21,12 @@ import "./loop-words.gandr";
 
 /// `plusS` read backwards.
 def flipS(x : Int, a : Int) -> Path(Int, S(plus(x, a)), plus(S(x), a)) {
-  back(plusS(x, a))
+  Path.back(plusS(x, a))
 }
 
 /// `plusP` read backwards.
 def flipP(x : Int, a : Int) -> Path(Int, P(plus(x, a)), plus(P(x), a)) {
-  back(plusP(x, a))
+  Path.back(plusP(x, a))
 }
 
 /// The successor of a commuting pair of sums commutes.
@@ -35,7 +35,7 @@ def upOf(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
   S(plus(a, x)),
   S(plus(x, a))
 ) {
-  cong(up, e)
+  Path.ap(up, e)
 }
 
 /// The predecessor of a commuting pair of sums commutes.
@@ -44,7 +44,7 @@ def downOf(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
   P(plus(a, x)),
   P(plus(x, a))
 ) {
-  cong(down, e)
+  Path.ap(down, e)
 }
 
 /// One successor step of commutativity: the call's image, then the lemma.
@@ -53,7 +53,7 @@ def upAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
   S(plus(a, x)),
   plus(S(x), a)
 ) {
-  upOf(a, x, e) then flipS(x, a)
+  Path.step(upOf(a, x, e), flipS(x, a))
 }
 
 /// One predecessor step of commutativity: the call's image, then the lemma.
@@ -62,7 +62,7 @@ def downAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
   P(plus(a, x)),
   plus(P(x), a)
 ) {
-  downOf(a, x, e) then flipP(x, a)
+  Path.step(downOf(a, x, e), flipP(x, a))
 }
 
 /// Addition commutes, through `upAlong` and `downAlong` rather than
@@ -71,20 +71,20 @@ def downAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
 /// in the integers between the same two sums, so they are one path (#427).
 def rec plusCommAlong(a : Int, b : Int) -> Path(Int, plus(a, b), plus(b, a)) {
   match b {
-    Z => back(plusZ(a)),
+    Z => Path.back(plusZ(a)),
     S(x) => upAlong(a, x, plusCommAlong[<](a, x)),
     P(x) => downAlong(a, x, plusCommAlong[<](a, x))
   }
 }
 
 /// A fold into the circle's loops is held to its arms as written: at
-/// `S(P(x))` it computes `turned(x) then loop` against `turned(x)`, two
+/// `S(P(x))` it computes `Path.step(turned(x), loop)` against `turned(x)`, two
 /// loops the circle tells apart, so the case is refused.
 @[ refuses("RuleNotRespected") ]
 def rec turned(b : Int) -> Path(Circle, Base, Base) {
   match b {
-    Z => here(Base),
-    S(x) => turned[<](x) then loop,
+    Z => Path.here(Base),
+    S(x) => Path.step(turned[<](x), loop),
     P(x) => turned[<](x)
   }
 }
@@ -95,8 +95,8 @@ def rec turned(b : Int) -> Path(Circle, Base, Base) {
 /// two agree by their endpoints and the case respects its rules.
 def rec rewound(w : Words) -> Path(Words, w, w) {
   match w {
-    Nil => here(Nil),
-    Loop(x) => cong(around, rewound[<](x)),
-    Unloop(x) => here(Unloop(x))
+    Nil => Path.here(Nil),
+    Loop(x) => Path.ap(around, rewound[<](x)),
+    Unloop(x) => Path.here(Unloop(x))
   }
 }

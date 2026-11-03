@@ -9796,8 +9796,8 @@ mod tests
                 "def kept+0:53 `m` variable→parameter",
                 "def kept+0:56 `m` variable→parameter",
                 "def kept+1:8 `m` variable→parameter",
-                "def kept+2:17 `m` variable→parameter",
-                "def kept+3:20 `m` variable→parameter",
+                "def kept+2:22 `m` variable→parameter",
+                "def kept+3:25 `m` variable→parameter",
                 "def keptTally+1:8 `t` variable→parameter",
                 "def keptDuo+1:8 `d` variable→parameter",
             ],
@@ -9923,10 +9923,10 @@ mod tests
                 "def kept+0:56 `m` parameter value",
                 "def kept+1:8 `m` parameter value",
                 "def kept+2:4 `None` enumMember value",
-                "def kept+2:17 `m` parameter value",
+                "def kept+2:22 `m` parameter value",
                 "def kept+3:4 `Some` enumMember value",
                 "def kept+3:9 `x` variable declaration+value",
-                "def kept+3:20 `m` parameter value",
+                "def kept+3:25 `m` parameter value",
             ],
             "the family, its constructors and their telescope binder, each definition, parameter \
              and pattern variable declare; a constructor matched in a pattern and each name read \
@@ -11200,7 +11200,7 @@ mod tests
             (elim.as_str(), "def involutive("),
             (
                 elim.as_str(),
-                "transport(fun (x) { Path(Circle, Base, invLooper(x)) }",
+                "Path.walk(fun (x) { Path(Circle, Base, invLooper(x)) }",
             ),
         ]
         .map(|(text, held)| {

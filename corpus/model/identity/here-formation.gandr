@@ -1,9 +1,9 @@
-// Reflexivity, the HoTT book's § 1.12 (`refl`), written `here`: a path
+// Reflexivity, the HoTT book's § 1.12 (`refl`), written `Path.here`: a path
 // formed at a point, read at its synthesised type or checked against a
 // written one, and handed through a function as a value.
 
 /// Reflexivity at four, its type synthesised.
-def four_eq_four = here(4);
+def four_eq_four = Path.here(4);
 
 /// A path between four and itself, given back.
 def cast(p : Path(Integer, 4, 4)) -> Path(Integer, 4, 4) {
@@ -11,7 +11,7 @@ def cast(p : Path(Integer, 4, 4)) -> Path(Integer, 4, 4) {
 }
 
 /// Reflexivity at four, checked against its written type.
-def checked : Path(Integer, 4, 4) = here(4);
+def checked : Path(Integer, 4, 4) = Path.here(4);
 
 /// Reflexivity at four handed through `cast` by a run.
 def cast_four() -> Path(Integer, 4, 4) { cast(four_eq_four) }
@@ -23,4 +23,4 @@ def pick(t : Type, x : t) -> t {
 
 /// A path type written as `pick`'s type argument is the code of the type it
 /// spells, not a constructor (#539).
-def picked() -> Path(Integer, 4, 4) { pick(Path(Integer, 4, 4), here(4)) }
+def picked() -> Path(Integer, 4, 4) { pick(Path(Integer, 4, 4), Path.here(4)) }

@@ -9,11 +9,11 @@ import "./circle-base.gandr";
 /// Reflexivity at `q`, by transport along `q` in the family of each path's
 /// reflexivity.
 def looped(a : Nat, b : Nat, q : Path(Nat, a, b)) -> Path(Path(Nat, a, b), q, q) {
-  transport(
+  Path.walk(
     (y : Nat, z : Path(Nat, a, y)) => Path(Path(Nat, a, y), z, z),
     q,
-    here(a),
-    here(q),
-    here(here(a))
+    Path.here(a),
+    Path.here(q),
+    Path.here(Path.here(a))
   )
 }

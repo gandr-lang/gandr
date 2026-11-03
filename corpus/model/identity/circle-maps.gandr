@@ -38,28 +38,28 @@ def second(b : Circle, a : Circle) -> Circle {
 /// reflexivity at `Base` is the loop's inverse, then the loop.
 def throughName(b : Circle) -> Path(Circle, circleId(b), b) {
   match b {
-    Base => here(Base)
+    Base => Path.here(Base)
   }
 }
 
 /// A map of two arguments, the point through the first.
 def throughFirst(b : Circle) -> Path(Circle, first(b, Base), b) {
   match b {
-    Base => here(Base)
+    Base => Path.here(Base)
   }
 }
 
 /// A map of two arguments, the point through the second.
 def throughSecond(b : Circle) -> Path(Circle, second(Base, b), b) {
   match b {
-    Base => here(Base)
+    Base => Path.here(Base)
   }
 }
 
 /// Two maps of two arguments, one inside the other.
 def throughBoth(b : Circle) -> Path(Circle, second(Base, first(b, Base)), b) {
   match b {
-    Base => here(Base)
+    Base => Path.here(Base)
   }
 }
 
@@ -68,7 +68,7 @@ def throughBoth(b : Circle) -> Path(Circle, second(Base, first(b, Base)), b) {
 @[ refuses("LoopNotRespected") ]
 def twisted(b : Circle) -> Path(Circle, first(b, Base), Base) {
   match b {
-    Base => here(Base)
+    Base => Path.here(Base)
   }
 }
 
@@ -77,6 +77,6 @@ def twisted(b : Circle) -> Path(Circle, first(b, Base), Base) {
 /// `selfloop`, and the transport computes (#425).
 def unitRight(b : Circle) -> Path(Circle, mul(b, Base), b) {
   match b {
-    Base => here(Base)
+    Base => Path.here(Base)
   }
 }

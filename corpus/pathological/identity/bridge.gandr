@@ -13,7 +13,7 @@
 
 /// Reflexivity at a bridge is refused, because a bridge has no reflexivity.
 @[ refuses("ShapeMismatch") ]
-def fourHere : Bridge(Integer, 4, 4) = here(4);
+def fourHere : Bridge(Integer, 4, 4) = Path.here(4);
 
 /// Two lists of different digits are refused, because their fibre is empty.
 @[ refuses("TypeMismatch") ]

@@ -6,7 +6,7 @@ error[DependentBind]: the result type of this `let` depends on the value it bind
    │ │   ─── checked against `-F Integer`; while synthesising the computation this binds
 10 │ │     let n = one();
    │ │     ━━━ its type mentions the bound value: found `-F Path(Integer, n, n)`
-11 │ │     pure here(n)
+11 │ │     pure Path.here(n)
 12 │ │   };
 13 │ │   pure 1
 14 │ │ }

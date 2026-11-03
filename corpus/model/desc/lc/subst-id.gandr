@@ -17,7 +17,7 @@ def substIdLift(s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n)), n : N)
   Ix(n)
 ) {
   match n {
-    Z => here(Ix(Z)),
+    Z => Path.here(Ix(Z)),
     S(m) => compose[5, 7](chain(3), (
       lookWeakens(m, s, Z),
       wkCong(look(m, s, Z), Ix(m), h(m)),
@@ -34,14 +34,14 @@ pub def rec substId(t : Term, s : Env, h : (n : N) => Path(Term, look(n, s, Z), 
 ) {
   match t {
     Ix(n) => h(n),
-    Lam(b) => cong(lamOf, substId[<](b, Lift(s), fun (n) { substIdLift(s, h, n) })),
-    Ap(f, x) => transport(
+    Lam(b) => Path.ap(lamOf, substId[<](b, Lift(s), fun (n) { substIdLift(s, h, n) })),
+    Ap(f, x) => Path.walk(
       fun (z) { Path(Term, Ap(subst(f, s), subst(x, s)), Ap(z, x)) },
       substId[<](f, s, h),
-      transport(
+      Path.walk(
         fun (z) { Path(Term, Ap(subst(f, s), subst(x, s)), Ap(subst(f, s), z)) },
         substId[<](x, s, h),
-        here(Ap(subst(f, s), subst(x, s)))
+        Path.here(Ap(subst(f, s), subst(x, s)))
       )
     )
   }
@@ -50,7 +50,7 @@ pub def rec substId(t : Term, s : Env, h : (n : N) => Path(Term, look(n, s, Z), 
 /// The shift by zero is the identity at every index.
 pub def shiftZeroIsId(n : N) -> Path(Term, look(n, Shift(Z), Z), Ix(n)) {
   match n {
-    Z => here(Ix(Z)),
-    S(j) => here(Ix(S(j)))
+    Z => Path.here(Ix(Z)),
+    S(j) => Path.here(Ix(S(j)))
   }
 }

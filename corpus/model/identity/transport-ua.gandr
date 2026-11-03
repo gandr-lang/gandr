@@ -10,43 +10,43 @@ import "./circle-base.gandr";
 import "./circle.gandr";
 
 /// A family that never reads its argument keeps the value, by conversion.
-def constantBeta : Path(Int, transport(fun (X) { Int }, ua(winding), Z), Z) = here(Z);
+def constantBeta : Path(Int, Path.walk(fun (X) { Int }, ua(winding), Z), Z) = Path.here(Z);
 
 /// A family that never reads its argument keeps the value, by a run.
 @[ runs("Z") ]
-def constantRun() -> Int { transport(fun (X) { Int }, ua(winding), Z) }
+def constantRun() -> Int { Path.walk(fun (X) { Int }, ua(winding), Z) }
 
 /// A pair carried along the loops' path carries each component, by
 /// conversion: the book's Theorem 2.6.4.
 def pairBeta : Path(
   Int * Int,
-  transport(fun (X) { type(X * X) }, ua(winding), (loop, loop)),
+  Path.walk(fun (X) { type(X * X) }, ua(winding), (loop, loop)),
   (S(Z), S(Z))
-) = here((S(Z), S(Z)));
+) = Path.here((S(Z), S(Z)));
 
 /// A pair carried along the loops' path carries each component, by a run.
 @[ runs("(S(Z), S(Z))") ]
-def pairRun() -> Int * Int { transport(fun (X) { type(X * X) }, ua(winding), (loop, loop)) }
+def pairRun() -> Int * Int { Path.walk(fun (X) { type(X * X) }, ua(winding), (loop, loop)) }
 
 /// An injection carried along the loops' path carries its payload in its own
 /// summand, by conversion: the book's § 2.12.
 def sumBeta : Path(
   Unit + Int,
-  transport(fun (X) { type(Unit + X) }, ua(winding), +{.1 = loop}),
+  Path.walk(fun (X) { type(Unit + X) }, ua(winding), +{.1 = loop}),
   +{.1 = S(Z)}
-) = here(+{.1 = S(Z)});
+) = Path.here(+{.1 = S(Z)});
 
 /// An injection carried along the loops' path carries its payload, by a run.
 @[ runs("+{.1 = S(Z)}") ]
-def sumRun() -> Unit + Int { transport(fun (X) { type(Unit + X) }, ua(winding), +{.1 = loop}) }
+def sumRun() -> Unit + Int { Path.walk(fun (X) { type(Unit + X) }, ua(winding), +{.1 = loop}) }
 
 /// A list carried along the loops' path carries every cell, by conversion.
 def listBeta : Path(
   List(Int),
-  transport(fun (X) { List(X) }, ua(winding), cons(loop, nil)),
+  Path.walk(fun (X) { List(X) }, ua(winding), cons(loop, nil)),
   cons(S(Z), nil)
-) = here(cons(S(Z), nil));
+) = Path.here(cons(S(Z), nil));
 
 /// A list carried along the loops' path carries every cell, by a run.
 @[ runs("cons(S(Z), nil)") ]
-def listRun() -> List(Int) { transport(fun (X) { List(X) }, ua(winding), cons(loop, nil)) }
+def listRun() -> List(Int) { Path.walk(fun (X) { List(X) }, ua(winding), cons(loop, nil)) }

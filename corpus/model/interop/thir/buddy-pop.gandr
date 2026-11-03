@@ -2,7 +2,7 @@
 //
 // Corten's case study verifies a buddy allocator against a representation predicate over Rust's value forest. This is its second rung after Corten's `example`, a function that reads, matches on and writes through a place.
 //
-// The body is THIR written as data, its precondition computed by a weakest-precondition fold over it. A read or a write is an existential, a value the place holds with its equation, so stuck places stay in path endpoints. The proof cases on the free list and carries each equation by `cong` and transport.
+// The body is THIR written as data, its precondition computed by a weakest-precondition fold over it. A read or a write is an existential, a value the place holds with its equation, so stuck places stay in path endpoints. The proof cases on the free list and carries each equation by `Path.ap` and transport.
 //
 // - see: Farka et al., Corten, arXiv:2609.04372, 2026, § 3 and § 8
 // - see: corpus/model/interop/thir/example.gandr
@@ -434,11 +434,11 @@ pub def isSome(m : Maybe(Val)) -> Type {
 
 /// No path joins `Some(y)` to `None`, since `isSome` holds at one end only.
 pub def noneHeld(y : Val, h : Path(Maybe(Val), (Some(y) : Maybe(Val)), (None : Maybe(Val)))) -> Void {
-  transport(
+  Path.walk(
     (m : Maybe(Val), Path(Maybe(Val), (Some(y) : Maybe(Val)), m)) => isSome(m),
     h,
-    here((Some(y) : Maybe(Val))),
-    here(h),
+    Path.here((Some(y) : Maybe(Val))),
+    Path.here(h),
     unit
   )
 }
@@ -458,7 +458,7 @@ pub def rec nthSet(vs : Vals, i : Nat, x : Val, y : Val) -> (Path(
       Succ(_j) => return fun (h) { match (noneHeld(y, h) : Void) {} }
     },
     VCons(_v, rest) => match i {
-      Zero => return fun (_h) { here((Some(x) : Maybe(Val))) },
+      Zero => return fun (_h) { Path.here((Some(x) : Maybe(Val))) },
       Succ(j) => nthSet[<](rest, j, x, y)
     }
   }
@@ -493,16 +493,16 @@ pub def headsSet(
   (Some(buddy(blocks, setN(heads, order, w))) : Maybe(Val)),
   setAt(Down(Succ(Zero), Down(order, Here)), buddy(blocks, heads), w)
 ) {
-  transport(
+  Path.walk(
     (m : Maybe(Val), Path(Maybe(Val), (Some(y) : Maybe(Val)), m)) => Path(
       Maybe(Val),
       (Some(buddy(blocks, setN(heads, order, w))) : Maybe(Val)),
       setHeadsAt(blocks, heads, order, w, m)
     ),
     h,
-    here((Some(y) : Maybe(Val))),
-    here(h),
-    here((Some(buddy(blocks, setN(heads, order, w))) : Maybe(Val)))
+    Path.here((Some(y) : Maybe(Val))),
+    Path.here(h),
+    Path.here((Some(buddy(blocks, setN(heads, order, w))) : Maybe(Val)))
   )
 }
 
@@ -511,7 +511,7 @@ pub def emptyEnds(blocks : Vals, heads : Vals) -> #{
   none : Path(Val, NoneV, NoneV),
   kept : Path(State, Own(Zero, Whole, buddy(blocks, heads)), Own(Zero, Whole, buddy(blocks, heads)))
 } {
-  #{none = here(NoneV), kept = here(Own(Zero, Whole, buddy(blocks, heads)))}
+  #{none = Path.here(NoneV), kept = Path.here(Own(Zero, Whole, buddy(blocks, heads)))}
 }
 
 /// The rest of the list, rooted at the heads set to its head.
@@ -548,7 +548,7 @@ pub def popNone(
   popPost(blocks, heads, order, INil),
   Own(Zero, Whole, buddy(blocks, heads))
 ) {
-  (NoneV, (cong(keepSome, h), emptyEnds(blocks, heads)))
+  (NoneV, (Path.ap(keepSome, h), emptyEnds(blocks, heads)))
 }
 
 /// After the write, `pop` answers `b`, and the rest of the list stays free.
@@ -568,8 +568,8 @@ pub def afterWrite(
   popPost(blocks, heads, order, ICons(b, rest)),
   Own(Zero, Whole, buddy(blocks, setN(heads, order, headOf(rest))))
 ) {
-  (here(SomeV(IntV(b))), (setN(heads, order, headOf(rest)), (
-    here(Own(Zero, Whole, buddy(blocks, setN(heads, order, headOf(rest))))),
+  (Path.here(SomeV(IntV(b))), (setN(heads, order, headOf(rest)), (
+    Path.here(Own(Zero, Whole, buddy(blocks, setN(heads, order, headOf(rest))))),
     (restFree(blocks, heads, order, rest, SomeV(IntV(b)), h, link), apart)
   )))
 }
@@ -631,7 +631,7 @@ pub def popSome(
   match wf {
     #{held, link, apart} => (
       SomeV(IntV(b)),
-      (cong(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
+      (Path.ap(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
     )
   }
 }

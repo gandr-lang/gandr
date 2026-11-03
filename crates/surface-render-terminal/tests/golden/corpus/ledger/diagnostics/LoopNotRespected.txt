@@ -6,7 +6,7 @@ error[LoopNotRespected]: this case might tell a loop apart from staying put: car
    │ ┌──┘
    │ │
  9 │ │┏   match x {
-10 │ │┃     Base => here(Base)
+10 │ │┃     Base => Path.here(Base)
 11 │ │┃   }
    │ │┗━━━┛ a case its sort's loops do not admit
 12 │ │  }

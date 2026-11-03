@@ -1862,7 +1862,7 @@ impl fmt::Display for Checked
                 "a law is admitted only where the host asserts it of a primitive, and any other is proved",
             ),
             | CheckRefusal::UndischargedLaw { .. } => f.write_str(
-                "an omitted law is discharged by `here` where its sides convert, and any other is proved or admitted",
+                "an omitted law is discharged by `Path.here` where its sides convert, and any other is proved or admitted",
             ),
             | CheckRefusal::CapabilityUngranted { constant, .. } => write!(
                 f,

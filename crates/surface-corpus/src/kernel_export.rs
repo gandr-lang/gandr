@@ -54,11 +54,11 @@
 //!
 //! `kernel_export::kernel_here_congruence_readmission::reflexivities_related_through_the_wrong_side_are_refused_by_name`
 //! readmits `corpus/model/identity/here-congruence.gandr`, whose
-//! `here_two_up` relates `here(two)` to `here(here(2))` by the dialogue that
-//! decomposes the two reflexivities to their points and unfolds `two`, then
-//! tampers that dialogue so it reads the unfolding on the other point: the
-//! kernel refuses `here_two_up` at that decision, naming the endpoint and the
-//! replay refusal.
+//! `here_two_up` relates `Path.here(two)` to `Path.here(Path.here(2))` by the
+//! dialogue that decomposes the two reflexivities to their points and unfolds
+//! `two`, then tampers that dialogue so it reads the unfolding on the other
+//! point: the kernel refuses `here_two_up` at that decision, naming the
+//! endpoint and the replay refusal.
 //!
 //! `kernel_export::kernel_discard_readmission::an_unread_call_readmits_and_a_discard_on_the_other_side_is_refused_by_name`
 //! readmits `corpus/model/control/divergence.gandr`, whose `unreadApplied`
@@ -99,10 +99,10 @@
 //! `kernel_export::kernel_presented_readmission::a_loop_readmits_as_its_words_and_dropped_cancellations_are_refused_by_name`
 //! readmits `corpus/model/identity/circle.gandr`, whose `loop : Base <-> Base`
 //! crosses as one type of words over the circle's point and whose `cancelled`
-//! relates `then(loop, back(loop))` to `here(Base)` by reflexivity alone: the
-//! kernel re-mints the words from their cell and reads the path type at the
-//! point as them. A twin whose words keep their cell but drop the cancellations
-//! is refused at the words, naming the fault.
+//! relates `Path.step(loop, Path.back(loop))` to `Path.here(Base)` by
+//! reflexivity alone: the kernel re-mints the words from their cell and reads
+//! the path type at the point as them. A twin whose words keep their cell but
+//! drop the cancellations is refused at the words, naming the fault.
 //!
 //! `kernel_export::kernel_presented_readmission::an_absurd_case_readmits_by_apartness_and_forged_twins_are_refused_by_name`
 //! readmits `corpus/model/data/empty.gandr`, whose `not_zero` eliminates a
@@ -1627,9 +1627,9 @@ mod kernel_here_congruence_readmission
         else {
             panic!("`here_two_up` crosses as the kernel's reflexivity");
         };
-        // The right endpoint `here(here(2))` meets the point `here(two)`: the
-        // dialogue decomposes the two reflexivities and unfolds `two` on the
-        // left, which the twin reads on the right instead.
+        // The right endpoint `Path.here(Path.here(2))` meets the point
+        // `Path.here(two)`: the dialogue decomposes the two reflexivities and
+        // unfolds `two` on the left, which the twin reads on the right instead.
         let mut tampered = (*dialogues).clone();
         let Some(misread) = tampered
             .right

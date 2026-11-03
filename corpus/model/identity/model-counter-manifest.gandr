@@ -38,7 +38,7 @@ def observedManifest() -> Integer { observe(upManifest) }
 def observedAscribed() -> Integer { observe((upManifest : Model(Counter))) }
 
 /// The manifest counter carried along negation.
-pub def negatedManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = transport(
+pub def negatedManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = Path.walk(
   fun (x) { type(Model(Counter) with sort C = x) },
   countsNegated,
   upManifest
@@ -99,7 +99,7 @@ def observedBoth() -> Integer { observeShown(upBoth) }
 
 /// The counter with both sorts manifest carried along negation of its
 /// counts, its readings fixed as they are.
-def negatedBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer = transport(
+def negatedBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer = Path.walk(
   fun (x) { type(Model(ReadCounter) with sort C = x with sort R = Integer) },
   countsNegated,
   upBoth
@@ -156,9 +156,9 @@ def stepZero(a : Model(Counter)) -> Integer {
 
 /// Counting up and counting down read alike through the operations each
 /// selects, along the path between the models: a selection is a function of
-/// the model, so `cong` carries the path to the readings.
+/// the model, so `Path.ap` carries the path to the readings.
 def selectedAlike() -> Path(Integer, stepZero(upModel), stepZero(downModel)) {
-  cong(stepZero, oneCounter)
+  Path.ap(stepZero, oneCounter)
 }
 
 /// A manifest counter's zero, stepped and read by its own operations: its

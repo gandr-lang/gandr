@@ -10,7 +10,7 @@
 
 /// The diagonal of the path space: a point, to itself, along reflexivity.
 def diag(b : Type, v : b) -> #{x : b, y : b, p : Path(b, x, y)} {
-  (v, (v, here(v)))
+  (v, (v, Path.here(v)))
 }
 
 /// The first end of a path.
@@ -34,16 +34,16 @@ def diagSource(b : Type, w : #{x : b, y : b, p : Path(b, x, y)}) -> Path(
   w
 ) {
   match w {
-    #{.x = u, .y = v, .p = q} => transport(
+    #{.x = u, .y = v, .p = q} => Path.walk(
       (y : b, z : Path(b, u, y)) => Path(
         #{x : b, y : b, p : Path(b, x, y)},
         diag(b, u),
         (u, (y, z))
       ),
       q,
-      here(u),
-      here(q),
-      here(diag(b, u))
+      Path.here(u),
+      Path.here(q),
+      Path.here(diag(b, u))
     )
   }
 }
@@ -53,7 +53,7 @@ def diagEquiv(b : Type) -> b ≃ #{x : b, y : b, p : Path(b, x, y)} {
   (
     fun (v) { diag(b, v) },
     (
-      (fun (w) { source(b, w) }, fun (v) { here(v) }),
+      (fun (w) { source(b, w) }, fun (v) { Path.here(v) }),
       (fun (w) { source(b, w) }, fun (w) { diagSource(b, w) })
     )
   )
@@ -63,19 +63,19 @@ def diagEquiv(b : Type) -> b ≃ #{x : b, y : b, p : Path(b, x, y)} {
 /// again is itself, at every function, by `J` on the path.
 def roundTrip(b : Type, x : Type, y : Type, p : Path(Type, x, y)) -> (u : y => b) => Path(
   y => b,
-  transport(fun (Z) { Z => b }, p, transport(fun (Z) { Z => b }, back(p), u)),
+  Path.walk(fun (Z) { Z => b }, p, Path.walk(fun (Z) { Z => b }, Path.back(p), u)),
   u
 ) {
-  transport(
+  Path.walk(
     (w : Type, z : Path(Type, x, w)) => (v : w => b) => Path(
       w => b,
-      transport(fun (Z) { Z => b }, z, transport(fun (Z) { Z => b }, back(z), v)),
+      Path.walk(fun (Z) { Z => b }, z, Path.walk(fun (Z) { Z => b }, Path.back(z), v)),
       v
     ),
     p,
-    here(x),
-    here(p),
-    fun (v) { here(v) }
+    Path.here(x),
+    Path.here(p),
+    fun (v) { Path.here(v) }
   )
 }
 
@@ -89,17 +89,17 @@ def carryPath(
   u : x => b,
   v : x => b,
   e : Path(x => b, u, v)
-) -> Path(y => b, transport(fun (Z) { Z => b }, p, u), transport(fun (Z) { Z => b }, p, v)) {
-  transport(
+) -> Path(y => b, Path.walk(fun (Z) { Z => b }, p, u), Path.walk(fun (Z) { Z => b }, p, v)) {
+  Path.walk(
     (w : x => b, Path(x => b, u, w)) => Path(
       y => b,
-      transport(fun (Z) { Z => b }, p, u),
-      transport(fun (Z) { Z => b }, p, w)
+      Path.walk(fun (Z) { Z => b }, p, u),
+      Path.walk(fun (Z) { Z => b }, p, w)
     ),
     e,
-    here(u),
-    here(e),
-    here(transport(fun (Z) { Z => b }, p, u))
+    Path.here(u),
+    Path.here(e),
+    Path.here(Path.walk(fun (Z) { Z => b }, p, u))
   )
 }
 
@@ -115,7 +115,7 @@ def chain(
   c : Path(y => b, s, r),
   m : Path(y => b, r, v)
 ) -> Path(y => b, u, v) {
-  back(l) then c then m
+  Path.step(Path.step(Path.back(l), c), m)
 }
 
 /// Carrying back along a path between types is injective: two functions
@@ -129,8 +129,8 @@ def carryInjective(
   v : y => b,
   e : Path(
     x => b,
-    transport(fun (Z) { Z => b }, back(p), u),
-    transport(fun (Z) { Z => b }, back(p), v)
+    Path.walk(fun (Z) { Z => b }, Path.back(p), u),
+    Path.walk(fun (Z) { Z => b }, Path.back(p), v)
   )
 ) -> Path(y => b, u, v) {
   let all = roundTrip(b, x, y, p);
@@ -141,16 +141,16 @@ def carryInjective(
     x,
     y,
     p,
-    transport(fun (Z) { Z => b }, back(p), u),
-    transport(fun (Z) { Z => b }, back(p), v),
+    Path.walk(fun (Z) { Z => b }, Path.back(p), u),
+    Path.walk(fun (Z) { Z => b }, Path.back(p), v),
     e
   );
   chain(
     b,
     y,
     u,
-    transport(fun (Z) { Z => b }, p, transport(fun (Z) { Z => b }, back(p), u)),
-    transport(fun (Z) { Z => b }, p, transport(fun (Z) { Z => b }, back(p), v)),
+    Path.walk(fun (Z) { Z => b }, p, Path.walk(fun (Z) { Z => b }, Path.back(p), u)),
+    Path.walk(fun (Z) { Z => b }, p, Path.walk(fun (Z) { Z => b }, Path.back(p), v)),
     v,
     l,
     c,
@@ -173,13 +173,13 @@ def endsAgree(b : Type) -> Path(
     ua((
       thunk { fun (v) { diag(b, v) } },
       (
-        (thunk { fun (w) { source(b, w) } }, thunk { fun (v) { here(v) } }),
+        (thunk { fun (w) { source(b, w) } }, thunk { fun (v) { Path.here(v) } }),
         (thunk { fun (w) { source(b, w) } }, thunk { fun (w) { diagSource(b, w) } })
       )
     )),
     thunk { fun (w) { source(b, w) } },
     thunk { fun (w) { target(b, w) } },
-    here(thunk { fun (v) { v } })
+    Path.here(thunk { fun (v) { v } })
   )
 }
 
@@ -193,16 +193,16 @@ def whisker(
   t : #{x : b, y : b, p : Path(b, x, y)} => b,
   e : Path(#{x : b, y : b, p : Path(b, x, y)} => b, s, t)
 ) -> Path(a => b, fun (x) { s(k(x)) }, fun (x) { t(k(x)) }) {
-  transport(
+  Path.walk(
     (w : #{x : b, y : b, p : Path(b, x, y)} => b, Path(
       #{x : b, y : b, p : Path(b, x, y)} => b,
       s,
       w
     )) => Path(a => b, fun (x) { s(k(x)) }, fun (x) { w(k(x)) }),
     e,
-    here(s),
-    here(e),
-    here(fun (x) { s(k(x)) })
+    Path.here(s),
+    Path.here(e),
+    Path.here(fun (x) { s(k(x)) })
   )
 }
 

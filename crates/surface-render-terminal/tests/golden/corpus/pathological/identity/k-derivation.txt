@@ -1,7 +1,7 @@
-error[WithoutK]: a path cannot be matched against `here`; use it by transport, through `back`, `then` or `cong`
+error[WithoutK]: a path cannot be matched against `here`; use it by `Path.walk`, through `Path.back`, `Path.step` or `Path.ap`
   ╭▸ corpus/pathological/identity/k-derivation.gandr:7:13
   │
-7 │   match p { here => match q { here => return here(p) } }
+7 │   match p { here => match q { here => return Path.here(p) } }
   │             ━━━━ a path matched against reflexivity
   │
   ╰ note: `uip` is refused with WithoutK, as its expectation states

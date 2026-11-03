@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xe9201244af7d499b`
-- Rules: 175 — 174 committed, 1 internal
-- Molds: 2953
+- Grammar fingerprint: `0xc048b33b171ef45b`
+- Rules: 174 — 173 committed, 1 internal
+- Molds: 2952
 - Attributes: 17
 
 ## Reading a form
@@ -65,7 +65,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`identifier.pattern`](../corpus/ledger/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | admitted | Variable |
 | [`unit.pattern`](../corpus/ledger/syntax/unit.pattern.gandr) | `unit` | `pattern.atom` | `unit` | admitted | Keyword |
 
-## `expression` — 91 rules
+## `expression` — 90 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -81,7 +81,6 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`binary_expression.cmp.le`](../corpus/ledger/syntax/binary-expression.cmp.le.gandr) | `EXPRESSION <= EXPRESSION` | `expression.cmp` | `binary_expression` | admitted | Operator |
 | [`binary_expression.cmp.gt`](../corpus/ledger/syntax/binary-expression.cmp.gt.gandr) | `EXPRESSION > EXPRESSION` | `expression.cmp` | `binary_expression` | admitted | Operator |
 | [`binary_expression.cmp.ge`](../corpus/ledger/syntax/binary-expression.cmp.ge.gandr) | `EXPRESSION >= EXPRESSION` | `expression.cmp` | `binary_expression` | admitted | Operator |
-| [`binary_expression.then`](../corpus/ledger/syntax/binary-expression.then.gandr) | `EXPRESSION then EXPRESSION` | `expression.cmp` | `binary_expression` | admitted | Keyword |
 | [`binary_expression.cons`](../corpus/ledger/syntax/binary-expression.cons.gandr) | `EXPRESSION ∷ EXPRESSION` or `EXPRESSION :: EXPRESSION` | `expression.cons` | `binary_expression` | admitted | Operator |
 | [`binary_expression.add.concat`](../corpus/ledger/syntax/binary-expression.add.concat.gandr) | `EXPRESSION ++ EXPRESSION` | `expression.add` | `binary_expression` | unadmitted | Operator |
 | [`binary_expression.add.plus`](../corpus/ledger/syntax/binary-expression.add.plus.gandr) | `EXPRESSION + EXPRESSION` | `expression.add` | `binary_expression` | admitted | Operator |
@@ -266,7 +265,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
 
-## Decisions — 111 of 175 rules decided at every token
+## Decisions — 110 of 174 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -321,7 +320,6 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `binary_expression.cmp.le` | expression | 1 | `<=` | — | 0 |
 | `binary_expression.cmp.gt` | expression | 1 | `>` | — | 0 |
 | `binary_expression.cmp.ge` | expression | 1 | `>=` | — | 0 |
-| `binary_expression.then` | expression | 1 | `then` | — | 0 |
 | `binary_expression.cons` | expression | 1 | `∷` | — | 0 |
 | `binary_expression.add.concat` | expression | 1 | `++` | — | 0 |
 | `binary_expression.add.plus` | expression | 1 | `+` | — | 0 |
@@ -448,7 +446,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `f_type.row.labelled` | type | 18 | `-F` | `f_type`, `f_type.row` | 4 |
 | `f_type.result.labelled` | type | 17 | `[` | `f_type.result` | 4 |
 
-## Menus — 204 labels
+## Menus — 203 labels
 
 Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.
 
@@ -642,7 +640,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `subshell_close` | 1 | 1 | 0 |
 | `subshell_open` | 1 | 1 | 1 |
 | `tail` | 1 | 1 | 1 |
-| `then` | 1 | 1 | 1 |
 | `theory` | 1 | 1 | 1 |
 | `thunk` | 1 | 1 | 1 |
 | `type(` | 1 | 1 | 1 |

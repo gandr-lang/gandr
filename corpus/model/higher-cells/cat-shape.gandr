@@ -64,7 +64,7 @@ module SetoidCat : Model(CatShape) where {
     comp(p, p, q, id(p), f),
     f
   ) {
-    here(f)
+    Path.here(f)
   }
 
   /// The right unit law, by conversion.
@@ -73,7 +73,7 @@ module SetoidCat : Model(CatShape) where {
     comp(p, q, q, f, id(q)),
     f
   ) {
-    here(f)
+    Path.here(f)
   }
 
   /// Associativity, by conversion through `compose`.
@@ -90,7 +90,7 @@ module SetoidCat : Model(CatShape) where {
     comp(p, r, s, comp(p, q, r, f, g), h),
     comp(p, q, s, f, comp(q, r, s, g, h))
   ) {
-    here(thunk { compose(p, q, s, f, thunk { compose(q, r, s, g, h) }) })
+    Path.here(thunk { compose(p, q, s, f, thunk { compose(q, r, s, g, h) }) })
   }
 
   /// The left unit law stated by the right one, whose type converts to it.

@@ -1,7 +1,7 @@
 // Transport back along `ua`: the cubical case table of Cohen, Coquand, Huber
 // and Mörtberg, _Cubical Type Theory: a constructive interpretation of the
 // univalence axiom_ (TYPES 2015, arXiv:1611.02108), § 4.5, read at the
-// universe. `back(ua(e))` is the transport of `here(a)` along `ua(e)` in `y.
+// universe. `Path.back(ua(e))` is the transport of `Path.here(a)` along `ua(e)` in `y.
 // Path(Type, y, a)`, and transport along it applies the record's left
 // inverse `g`.
 
@@ -21,7 +21,7 @@ def backBeta(
   r : (y : b) => Path(b, t(h(y)), y),
   y : b
 ) -> Path(a, bwdAlong(a, b, ua((t, ((g, s), (h, r)))), y), g(y)) {
-  here(g(y))
+  Path.here(g(y))
 }
 
 /// Transport back along a path from the loops at the point to the integers.
@@ -29,19 +29,19 @@ def loopsBack(
   p : Path(Type, Path(Circle, Base, Base), Int),
   y : Int
 ) -> Path(Circle, Base, Base) {
-  transport(fun (X) { X }, back(p), y)
+  Path.walk(fun (X) { X }, Path.back(p), y)
 }
 
 /// Two carried back along the loops' path is the word of two loops, by a run.
-@[ runs("loop ∷ loop ∷ here(Base)") ]
+@[ runs("loop ∷ loop ∷ Path.here(Base)") ]
 def backRun : () => Path(Circle, Base, Base) = loopsBack(loopsAreIntegers, S(S(Z)));
 
 /// The loops' path reversed and named, its type stated. `back` reads the
 /// type `loopsAreIntegers` states.
-def integersAreLoops : Path(Type, Int, Path(Circle, Base, Base)) = back(loopsAreIntegers);
+def integersAreLoops : Path(Type, Int, Path(Circle, Base, Base)) = Path.back(loopsAreIntegers);
 
 /// Two carried along the named reversal is the word of two loops, by a run.
-@[ runs("loop ∷ loop ∷ here(Base)") ]
+@[ runs("loop ∷ loop ∷ Path.here(Base)") ]
 def namedBackRun() -> Path(Circle, Base, Base) {
-  transport(fun (X) { X }, integersAreLoops, S(S(Z)))
+  Path.walk(fun (X) { X }, integersAreLoops, S(S(Z)))
 }

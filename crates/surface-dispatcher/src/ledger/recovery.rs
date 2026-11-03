@@ -1167,11 +1167,19 @@ mod tests
         }
     }
 
+    /// A path composed with itself over a cell named `loop`, its declaration
+    /// at the offsets the retired infix exemplar held it.
+    const PATH_STEP: &str = "/// `Path.step` composes two paths: one path, then the next after that.\n\
+                             @[ checks ]\ndata Circle : Type where {\n  | Base : Circle\n  \
+                             | loop : Base <-> Base\n}\n@[ checks ]\ndef twice : Path(Circle, Base, \
+                             Base) ;\ndef twice = Path.step(loop, loop) ;\n";
+
     /// #2876: `rec` deleted from `def rec down` leaves a definition that
     /// cannot call itself, and `loop` missed as `loo` renames a declaration
-    /// the exemplar names by the keyword. Each leaves a source with another
+    /// the source names by the keyword. Each leaves a source with another
     /// meaning, refused only at a use no declaration answers, so it is counted
-    /// well formed and not filed.
+    /// well formed and not filed. The composite's source is written here: no
+    /// syntax exemplar declares a cell named `loop`.
     #[test]
     fn a_mutant_leaving_only_unresolved_names_is_no_finding_2876()
     {
@@ -1186,10 +1194,7 @@ mod tests
                 "run-expression.gandr",
                 include_str!("../../../../corpus/ledger/syntax/run-expression.gandr"),
             ),
-            (
-                "binary-expression.then.gandr",
-                include_str!("../../../../corpus/ledger/syntax/binary-expression.then.gandr"),
-            ),
+            ("path-step.gandr", PATH_STEP),
         ] {
             std::fs::write(folder.join(name), text).expect("the exemplar is written");
         }
@@ -1199,7 +1204,7 @@ mod tests
         let unresolved = [
             ("run-expression.gandr", 157_usize, "rec", Mutation::Deleted),
             (
-                "binary-expression.then.gandr",
+                "path-step.gandr",
                 124,
                 "loop",
                 Mutation::Missed(String::from("loo")),

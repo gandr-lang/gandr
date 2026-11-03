@@ -166,7 +166,7 @@ const KEYWORDS: &[&str] = &[
     "let", "leta", "loop", "match", "migrate", "mobile", "module", "mu", "node", "obs", "offer",
     "offers", "on", "op", "oper", "pack", "package", "pi+", "postfix", "prefix", "pub", "pure",
     "rec", "recv", "release", "requires", "resume", "return", "rule", "run", "select", "send",
-    "shape", "sort", "tail", "then", "theory", "thunk", "type", "type(", "under", "unit", "unpack",
+    "shape", "sort", "tail", "theory", "thunk", "type", "type(", "under", "unit", "unpack",
     "unwind", "var", "via", "where", "while", "with", "world",
 ];
 

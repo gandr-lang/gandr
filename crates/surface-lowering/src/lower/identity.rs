@@ -1,8 +1,9 @@
 //! Element identity in the lowering: the path type `Path(A, a, b)`, its
-//! reflexivity `here(a)`, function extensionality `funext(f, g)`, universe
-//! equivalence `equiv(f, g)`, the product of two universe paths
-//! `pathProduct(p, q)`, transport `transport(fun (X) { T }, p, v)` and its
-//! dependent form `transport(M, p, z₀, q, v)`, and `back`, `then` and `cong`,
+//! reflexivity `Path.here(a)`, function extensionality `Path.funext(f, g)`,
+//! universe equivalence `equiv(f, g)`, the product of two universe paths
+//! `Path.product(p, q)`, transport `Path.walk(fun (X) { T }, p, v)` and its
+//! dependent form `Path.walk(M, p, z₀, q, v)`, and `Path.back`, `Path.step`
+//! and `Path.ap`,
 //! each unfolded to the transport it derives; and the native list's
 //! constructors `nil` and `cons(h, t)`, the recursive motive transport first
 //! moves along a universe path.
@@ -44,24 +45,24 @@
 //! which the grammar parses, was the alternative, declined because a cell over
 //! a tail that is no literal has no literal spelling to print back.
 //!
-//! `funext(f, g)` and `equiv(f, g)` stand as values, as `here` does, and read
-//! both functions as values; the checker synthesises the path type from the
-//! first and decides it by computation (`gandr_core_checker`'s funext and
+//! `Path.funext(f, g)` and `equiv(f, g)` stand as values, as `here` does, and
+//! read both functions as values; the checker synthesises the path type from
+//! the first and decides it by computation (`gandr_core_checker`'s funext and
 //! equiv rules). Univalence at a stratum, `ua[n, k](a, b, f, g)`, is the same
 //! kind of name with its stratum in the head; [`super::ua`] lowers it.
 //!
-//! `pathProduct(p, q)` stands as a value over two paths read as values: the
+//! `Path.product(p, q)` stands as a value over two paths read as values: the
 //! kernel's native product of universe paths, which relates the eager pairs of
 //! the two paths' endpoints, nested to the right as `ua[n, k]` nests its
 //! telescope. Every name of the derived form then has a spelling, so the
 //! degree-one derivation can be written by hand and compared with it.
-//! `flowProduct(p, q)` is its directed twin over two universe flows, the
+//! `Flow.product(p, q)` is its directed twin over two universe flows, the
 //! kernel's own former, so the degree-one universe flow over a telescope has a
 //! spelling too.
 //!
 //! # `transport` states its motive
 //!
-//! `transport(fun (X) { T }, p, v)` moves `v : T[a/X]` along `p : Path(A, a,
+//! `Path.walk(fun (X) { T }, p, v)` moves `v : T[a/X]` along `p : Path(A, a,
 //! b)` to `T[b/X]`. Its motive is written as a static abstraction whose body is
 //! the family over the path's carrier, so `fun (X) { List(X) }` over a universe
 //! path is `y. List(El y)`; the transport stands as a computation. A motive
@@ -72,27 +73,27 @@
 //!
 //! # A derived operation synthesises its path at the words
 //!
-//! `back(p)`, `p then q` and `cong(f, p)` are transports whose motive names
-//! the carrier and the endpoint that stays fixed (`gandr_core_term::identity`).
-//! Where the position answers a written path type — the function's result or
-//! the match's answer, `-F Path(A, a, b)` or `Path(A, a, b)` — the lowering
-//! reads both off it, relocated to where the operation stands. Anywhere else,
-//! in a type, a constant's value, a call's argument or a thunk, the operation
-//! synthesises them from its operands: the loop, a word of the loop's words,
-//! or another derived operation stands at `Path(F, x, x)` or at the path type
-//! recorded against it, `F` the family and `x` the point its words spell, so
-//! `back(p)` at `p : Path(A, a, b)` stands at `Path(A, b, a)`, `p then q` at
-//! `Path(A, a, c)` and `cong(f, p)` at `Path(B, ⟨f a⟩, ⟨f b⟩)`, `B` the result
-//! type `f`'s definition writes under no binder of its telescope, or the
-//! codomain of the map its signature states. An operation
-//! whose motive's path — `back`'s and `cong`'s path, `then`'s first — is read
-//! no such way, or whose function did not lower, is refused as unannotated,
-//! and `cong` at a constructor as [`FragmentBoundary::NotAFunction`]. A
-//! lambda `fun (q) { e }` as `cong`'s
-//! function takes the carrier its path's written type states, and the
-//! motive reads its body `e` where `⟨f y⟩` would stand. The
-//! operation then stands as the value its pure transport returns, so it is an
-//! endpoint, a constant's value or an operand without a run. No core node is
+//! `Path.back(p)`, `Path.step(p, q)` and `Path.ap(f, p)` are transports whose
+//! motive names the carrier and the endpoint that stays fixed
+//! (`gandr_core_term::identity`). Where the position answers a written path
+//! type — the function's result or the match's answer, `-F Path(A, a, b)` or
+//! `Path(A, a, b)` — the lowering reads both off it, relocated to where the
+//! operation stands. Anywhere else, in a type, a constant's value, a call's
+//! argument or a thunk, the operation synthesises them from its operands: the
+//! loop, a word of the loop's words, or another derived operation stands at
+//! `Path(F, x, x)` or at the path type recorded against it, `F` the family and
+//! `x` the point its words spell, so `Path.back(p)` at `p : Path(A, a, b)`
+//! stands at `Path(A, b, a)`, `Path.step(p, q)` at `Path(A, a, c)` and
+//! `Path.ap(f, p)` at `Path(B, ⟨f a⟩, ⟨f b⟩)`, `B` the result type `f`'s
+//! definition writes under no binder of its telescope, or the codomain of the
+//! map its signature states. An operation whose motive's path — `back`'s and
+//! `cong`'s path, `then`'s first — is read no such way, or whose function did
+//! not lower, is refused as unannotated, and `cong` at a constructor as
+//! [`FragmentBoundary::NotAFunction`]. A lambda
+//! `fun (q) { e }` as `cong`'s function takes the carrier its path's written
+//! type states, and the motive reads its body `e` where `⟨f y⟩` would stand.
+//! The operation then stands as the value its pure transport returns, so it is
+//! an endpoint, a constant's value or an operand without a run. No core node is
 //! added: the transport is the one the answer would have given. The kernel
 //! runs a returned path before transporting along it, as the evaluator reads
 //! every returned value, so an operation over another replays. The
@@ -138,7 +139,7 @@
 //!
 //! # A dependent `transport` reads its motive as a thunked telescope
 //!
-//! Five operands, `transport(+U ((y : A) -> (z : B) -> -F C), p, z₀, q, v)`,
+//! Five operands, `Path.walk(+U ((y : A) -> (z : B) -> -F C), p, z₀, q, v)`,
 //! spell the transport whose motive depends on the path's endpoint `y` and on
 //! an element `z` of the family over it (`gandr_core_term::identity`):
 //! `p : Path(A, a, b)`, `z₀ : B[a]`, `q` an identity over `p` from `z₀`
@@ -172,23 +173,23 @@
 //!
 //! # Session identity names the engine's two relations
 //!
-//! `bisim(A, B)` and `sim(A, B)` read two session codes as values and stand
-//! as values of `Path(Type, A, B)` and of the directed `Flow(Type, A, B)`;
-//! `bisim(A, B, p)` reads its payload paths `p` as a value too.
+//! `Path.bisim(A, B)` and `Flow.sim(A, B)` read two session codes as values and
+//! stand as values of `Path(Type, A, B)` and of the directed `Flow(Type, A,
+//! B)`; `Path.bisim(A, B, p)` reads its payload paths `p` as a value too.
 //! `gandr_core_checker`'s flow rules decide both by the session engine and
 //! record the decisions the kernel replays. `Flow(A, a, b)` is read as
-//! `Path(A, a, b)` is. `stay(a)` is the identity flow, `f then g` composes
-//! two flows where the position answers a written flow type, and
-//! `ride(fun (X) { T }, f, v)` moves `v` along `f` in the family its static
-//! abstraction states, as `transport` does. The alternatives — an infix
+//! `Path(A, a, b)` is. `Flow.stay(a)` is the identity flow, `Flow.then(f, g)`
+//! composes two flows where the position answers a written flow type, and
+//! `Flow.ride(fun (X) { T }, f, v)` moves `v` along `f` in the family its
+//! static abstraction states, as `Path.walk` does. The alternatives — an infix
 //! `A <: B`, statements over translators as `equiv` takes — are recorded with
 //! the checker's rules.
 //!
 //! # A flow between data is one translator
 //!
-//! `forward(f)` reads one closed translator as a value and stands as a value
+//! `Flow.into(f)` reads one closed translator as a value and stands as a value
 //! of `Flow(Type, A, B)`, `f : U(A → F B)`; the checker decides it by running
-//! `f` at every input pattern of `A`. `arrow(d, c)` reads two flows, `d :
+//! `f` at every input pattern of `A`. `Flow.arrow(d, c)` reads two flows, `d :
 //! Flow(Type, A', A)` into the argument and `c : Flow(Type, B, B')` out of the
 //! result, and stands as a value of `Flow(Type, ⌜U(A → F B)⌝, ⌜U(A' → F
 //! B')⌝)`: the domain flow is written first and runs against the function, as
@@ -198,8 +199,8 @@
 //! Reversal: a type-directed `forward` that reads its endpoints off the
 //! position's answer, once the checker elaborates against expected types.
 //!
-//! `back(f)` where the position answers a written flow type is the symmetry
-//! ride `ride(fun (y) { Flow(A, y, b) }, f, stay(b))`
+//! `Path.back(f)` where the position answers a written flow type is the
+//! symmetry ride `Flow.ride(fun (y) { Flow(A, y, b) }, f, Flow.stay(b))`
 //! (`gandr_core_term::identity::back_flow`), which the checker refuses by
 //! its motive; `cong` has no flow reading.
 //!
@@ -239,7 +240,7 @@
 //!   B) => Path(B, into(from(b)), b)}}`. Every pair of translators is named
 //!   `into` and `from`, each inverse's `from` inside its own record.
 //! - `A ⇝ B`, also written `A ~~> B`, the flow `Flow(Type, A, B)` between two
-//!   codes at the universe a bare `Type` names; `forward(f)` introduces it.
+//!   codes at the universe a bare `Type` names; `Flow.into(f)` introduces it.
 //!
 //! Each mints exactly the core its written record or flow lowers to, so a
 //! value of the one is a value of the other and the kernel gains no node. The
@@ -339,6 +340,7 @@ use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
 use crate::form::Piece;
+use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Shape;
 use crate::form::TileName;
@@ -520,10 +522,11 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - ensures: reflexivity, function and universe extensionality, the product of
 ///   two universe paths, transport in a one-binder motive or a telescope, the
-///   two derived operations, the native list cell, the two session statements,
-///   the identity flow, the forward flow of a translator, the function flow of
-///   two boundary flows, a ride along a flow, a recorded run, a dialogue and a
-///   dialogue's decomposition, spelled as calls.
+///   two derived operations, the composites of two paths and of two flows, the
+///   native list cell, the two session statements, the identity flow, the
+///   forward flow of a translator, the function flow of two boundary flows, a
+///   ride along a flow, a recorded run, a dialogue and a dialogue's
+///   decomposition, spelled as calls.
 /// - executable: none — a tag holds no head to check its spelling against.
 ///
 /// # Adequacy
@@ -539,37 +542,41 @@ quenchant_shape::reason_enum! {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) enum Operation
 {
-    /// `here(a)`.
+    /// `Path.here(a)`.
     Here,
-    /// `funext(f, g)`.
+    /// `Path.funext(f, g)`.
     Funext,
     /// `equiv(f, g)`.
     Equiv,
     /// `ua(e)`.
     Univalence,
-    /// `pathProduct(p, q)`.
+    /// `Path.product(p, q)`.
     PathProduct,
-    /// `transport(fun (X) { T }, p, v)`.
+    /// `Path.walk(fun (X) { T }, p, v)`.
     Transport,
-    /// `back(p)`.
+    /// `Path.back(p)`.
     Back,
-    /// `cong(f, p)`.
+    /// `Path.ap(f, p)`.
     Cong,
+    /// `Path.step(p, q)`.
+    Step,
     /// `cons(h, t)`.
     Cons,
-    /// `bisim(A, B)` or `bisim(A, B, p)`.
+    /// `Path.bisim(A, B)` or `Path.bisim(A, B, p)`.
     Bisim,
-    /// `sim(A, B)`.
+    /// `Flow.sim(A, B)`.
     Sim,
-    /// `stay(a)`.
+    /// `Flow.stay(a)`.
     Stay,
-    /// `forward(f)`.
+    /// `Flow.then(f, g)`.
+    Then,
+    /// `Flow.into(f)`.
     Forward,
-    /// `arrow(d, c)`.
+    /// `Flow.arrow(d, c)`.
     Arrow,
-    /// `flowProduct(p, q)`.
+    /// `Flow.product(p, q)`.
     FlowProduct,
-    /// `ride(fun (X) { T }, f, v)`.
+    /// `Flow.ride(fun (X) { T }, f, v)`.
     Ride,
     /// `recorded(m₀, …, mₙ)`.
     Recorded,
@@ -579,11 +586,28 @@ pub(super) enum Operation
     Decompose,
 }
 
-/// The identity operations a call's head spells, by name.
+/// What an identity operation's spelling stands under: no former, or the
+/// former it builds or reads, whose tile heads the call as `Path.here(a)`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) enum Holder
+{
+    /// A bare name, `equiv(f, g)`, which a binder of the name shadows.
+    Bare,
+    /// The path former's tile, `Path`.
+    Path,
+    /// The flow former's tile, `Flow`.
+    Flow,
+}
+
+/// The identity operations a call's head spells, by what they stand under
+/// and their name.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: each operation once, under its surface name.
+/// - ensures: each operation once, under its holder and its surface name.
 /// - provides: the table [`Lowerer::identity_head`] resolves against.
 /// - fails: never.
 /// - panics: none.
@@ -600,26 +624,28 @@ pub(super) enum Operation
 /// - witness: `lower::identity::tests::directed_statements_lower_to_their_formers`
 /// - witness: `lower::identity::tests::a_path_product_lowers_to_its_former`
 /// - witness: `lower::identity::tests::a_flow_product_lowers_to_its_former`
-const SPELLED: [(&str, Operation); 19] = [
-    (HERE, Operation::Here),
-    ("funext", Operation::Funext),
-    ("equiv", Operation::Equiv),
-    ("ua", Operation::Univalence),
-    ("pathProduct", Operation::PathProduct),
-    ("transport", Operation::Transport),
-    (BACK, Operation::Back),
-    ("cong", Operation::Cong),
-    ("cons", Operation::Cons),
-    ("bisim", Operation::Bisim),
-    ("sim", Operation::Sim),
-    ("stay", Operation::Stay),
-    ("forward", Operation::Forward),
-    ("arrow", Operation::Arrow),
-    ("flowProduct", Operation::FlowProduct),
-    ("ride", Operation::Ride),
-    ("recorded", Operation::Recorded),
-    ("dialogue", Operation::Dialogue),
-    ("decompose", Operation::Decompose),
+pub(super) const SPELLED: [(Holder, &str, Operation); 21] = [
+    (Holder::Path, HERE, Operation::Here),
+    (Holder::Path, "funext", Operation::Funext),
+    (Holder::Bare, "equiv", Operation::Equiv),
+    (Holder::Bare, "ua", Operation::Univalence),
+    (Holder::Path, "product", Operation::PathProduct),
+    (Holder::Path, "walk", Operation::Transport),
+    (Holder::Path, BACK, Operation::Back),
+    (Holder::Path, "ap", Operation::Cong),
+    (Holder::Path, "step", Operation::Step),
+    (Holder::Bare, "cons", Operation::Cons),
+    (Holder::Path, "bisim", Operation::Bisim),
+    (Holder::Flow, "sim", Operation::Sim),
+    (Holder::Flow, "stay", Operation::Stay),
+    (Holder::Flow, "then", Operation::Then),
+    (Holder::Flow, "into", Operation::Forward),
+    (Holder::Flow, "arrow", Operation::Arrow),
+    (Holder::Flow, "product", Operation::FlowProduct),
+    (Holder::Flow, "ride", Operation::Ride),
+    (Holder::Bare, "recorded", Operation::Recorded),
+    (Holder::Bare, "dialogue", Operation::Dialogue),
+    (Holder::Bare, "decompose", Operation::Decompose),
 ];
 
 /// A derived operation's written operands.
@@ -635,13 +661,13 @@ const SPELLED: [(&str, Operation); 19] = [
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum Derivation
 {
-    /// `back(path)`.
+    /// `Path.back(path)`.
     Back
     {
         /// The path reversed.
         path: NodeIndex,
     },
-    /// `cong(function, path)`.
+    /// `Path.ap(function, path)`.
     Cong
     {
         /// The map applied along the path.
@@ -887,8 +913,8 @@ enum Typed
     },
     /// A call, by its function's written result.
     Called(Callee),
-    /// A reflexivity `here(x)` at a binder, by the binder's written type `A`:
-    /// the reflexivity stands at `Path(A, x, x)`.
+    /// A reflexivity `Path.here(x)` at a binder, by the binder's written type
+    /// `A`: the reflexivity stands at `Path(A, x, x)`.
     Point
     {
         /// The binder's written type.
@@ -1689,8 +1715,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `head` is the first operand of the call at `site`.
     /// - ensures: the operation a bare name spells when no binder and no
-    ///   earlier declaration carries that name; the unspelled absence for any
-    ///   other head.
+    ///   earlier declaration carries that name, and the operation a selection
+    ///   off the `Path` or `Flow` tile spells, `Path.here`; the unspelled
+    ///   absence for any other head.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
     ///   not hold; the refusals the name's resolution yields.
     /// - panics: none.
@@ -1699,23 +1726,17 @@ impl<'source> Lowerer<'_, 'source>
     /// The resolution's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a free spelling and a bound one take their own
-    ///   readings.
+    /// - hypothesis: L3 — a free spelling, a bound one and one under its former
+    ///   take their own readings.
     /// - witness: `lower::identity::tests::a_bound_name_shadows_an_identity_operation`
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
+    /// - witness: `lower::identity::tests::an_operation_answers_only_under_its_former`
     /// - witness: `tests::modules::a_forward_member_reference_is_refused_by_position`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body searches the fixed spelling table for the head's name once; the check searches it once more"
-        )
-    )]
     #[spec(
         ensures: |ret| match ret {
             | Ok(Maybe::Present(operation)) => SPELLED
                 .iter()
-                .any(|&(spelling, spelled)| spelled == operation && self.text_at(head).as_ref() == spelling),
+                .any(|&(_holder, _spelling, spelled)| spelled == operation),
             | _ => true,
         },
     )]
@@ -1729,17 +1750,27 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Maybe::Absent(spelled::Absent::Unspelled));
         };
-        let Shape::Form {
-            former: Former::Name,
-            ..
-        } = shape_of(self.pbg, node)?
-        else {
-            return Ok(Maybe::Absent(spelled::Absent::Unspelled));
+        let former = match shape_of(self.pbg, node)? {
+            Shape::Form {
+                former: Former::Name,
+                ..
+            } => Former::Name,
+            Shape::Form {
+                former: Former::Projection,
+                ..
+            } => Former::Projection,
+            Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+                return Ok(Maybe::Absent(spelled::Absent::Unspelled));
+            },
         };
+        if former == Former::Projection {
+            return self.held_head(head);
+        }
         let name = self.name_at(head);
-        let Some(&(_spelling, operation)) = SPELLED
-            .iter()
-            .find(|&&(spelling, _operation)| name.as_ref() == spelling)
+        let Some(&(_holder, _spelling, operation)) =
+            SPELLED.iter().find(|&&(holder, spelling, _operation)| {
+                holder == Holder::Bare && name.as_ref() == spelling
+            })
         else {
             return Ok(Maybe::Absent(spelled::Absent::Unspelled));
         };
@@ -1751,30 +1782,106 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Maybe::Present(operation))
     }
 
+    /// The identity operation the selection `head`, `Path.here` or
+    /// `Flow.stay`, names under the former tile it selects from.
+    ///
+    /// # Specification
+    /// - requires: `head` is a projection.
+    /// - ensures: the operation whose holder's tile is the selection's target
+    ///   and whose name is its label; the unspelled absence for a target that
+    ///   is no former tile, or a label its former holds no operation under.
+    /// - fails: the refusals reading the projection's pieces yields.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The pieces' refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::identity_head`].
+    /// - witness: `lower::identity::tests::an_operation_answers_only_under_its_former`
+    #[spec(
+        ensures: |ret| match ret {
+            | Ok(Maybe::Present(operation)) => SPELLED
+                .iter()
+                .any(|&(holder, _spelling, spelled)| spelled == operation && holder != Holder::Bare),
+            | _ => true,
+        },
+    )]
+    fn held_head(
+        &self,
+        head: Placed,
+    ) -> Result<Maybe<Operation, spelled::Absent>, LoweringRefusal<'source>>
+    {
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, head.node, &mut pieces)?;
+        let &[
+            Piece::Operand(target),
+            Piece::Tile {
+                label: TileName::DOT,
+                ..
+            },
+            Piece::Tile {
+                label: TileName::IDENTIFIER,
+                at: selected,
+            },
+        ] = pieces.pieces.as_slice()
+        else {
+            return Ok(Maybe::Absent(spelled::Absent::Unspelled));
+        };
+        let Some(target_node) = self.tree.node(target.node)
+        else {
+            return Ok(Maybe::Absent(spelled::Absent::Unspelled));
+        };
+        let Shape::Form {
+            former: Former::TypeHead | Former::Constructor,
+            ..
+        } = shape_of(self.pbg, target_node)?
+        else {
+            return Ok(Maybe::Absent(spelled::Absent::Unspelled));
+        };
+        let holder = match self.text_at(target).as_ref() {
+            "Path" => Holder::Path,
+            "Flow" => Holder::Flow,
+            _ => return Ok(Maybe::Absent(spelled::Absent::Unspelled)),
+        };
+        let label = self.text_at(selected);
+        Ok(SPELLED
+            .iter()
+            .find(|&&(held, spelling, _operation)| held == holder && label.as_ref() == spelling)
+            .map_or(
+                Maybe::Absent(spelled::Absent::Unspelled),
+                |&(_holder, _spelling, operation)| Maybe::Present(operation),
+            ))
+    }
+
     /// Classify the call of `operation` at `site`, its head read, the cursor
     /// at its arguments.
     ///
     /// # Specification
     /// - requires: `operation` is what the call's head spells.
-    /// - ensures: `here(a)` and `stay(a)` stand as values reading their point
-    ///   as a value at an endpoint, but `here(a)` at the point of a family's
-    ///   loops is the empty word of their words, as [`Self::looped_point`]
-    ///   reads it; `funext(f, g)`, `equiv(f, g)`, `pathProduct(p, q)`,
-    ///   `flowProduct(p, q)`, `cons(h, t)`, `bisim(A, B)` and `sim(A, B)` stand
-    ///   as values reading both operands as values, and `bisim(A, B, p)` all
-    ///   three; `ua(e)` stands as a value reading its record as a value, its
-    ///   forward map derived from it; `transport(fun (X) { T }, p, v)` and
-    ///   `ride(fun (X) { T }, f, v)` stand as computations reading their
-    ///   motive, path or flow and value as values, the transport read as a
-    ///   value being the value it returns, as a derived operation is, since it
-    ///   runs nothing, and `transport(M, p, z₀, q, v)` as a computation reading
-    ///   its motive as a value type and the other four as values; `back(p)` and
-    ///   `cong(f, p)` stand as computations derived as [`Self::derive`] does;
-    ///   `recorded(m₀, …, mₙ)` stands as a value over its moves, each read as
-    ///   [`Self::recorded_move`] reads it, and `dialogue(m₀, …, mₙ)` over its
-    ///   moves, each read as [`Self::dialogue_move`] reads it; `decompose(d)`
-    ///   stands as a computation reading its dialogue as a value. Every operand
-    ///   is read under the site's frame.
+    /// - ensures: `Path.here(a)` and `Flow.stay(a)` stand as values reading
+    ///   their point as a value at an endpoint, but `Path.here(a)` at the point
+    ///   of a family's loops is the empty word of their words, as
+    ///   [`Self::looped_point`] reads it; `Path.funext(f, g)`, `equiv(f, g)`,
+    ///   `Path.product(p, q)`, `Flow.product(p, q)`, `cons(h, t)`,
+    ///   `Path.bisim(A, B)` and `Flow.sim(A, B)` stand as values reading both
+    ///   operands as values, and `Path.bisim(A, B, p)` all three; `ua(e)`
+    ///   stands as a value reading its record as a value, its forward map
+    ///   derived from it; `Path.walk(fun (X) { T }, p, v)` and `Flow.ride(fun
+    ///   (X) { T }, f, v)` stand as computations reading their motive, path or
+    ///   flow and value as values, the transport read as a value being the
+    ///   value it returns, as a derived operation is, since it runs nothing,
+    ///   and `Path.walk(M, p, z₀, q, v)` as a computation reading its motive as
+    ///   a value type and the other four as values; `Path.back(p)` and
+    ///   `Path.ap(f, p)` stand as computations derived as [`Self::derive`]
+    ///   does; `Path.step(p, q)` and `Flow.then(f, g)` stand as computations
+    ///   composed as [`Self::then`] composes them, the two paths a composite
+    ///   derives over kept in the operand store; `recorded(m₀, …, mₙ)` stands
+    ///   as a value over its moves, each read as [`Self::recorded_move`] reads
+    ///   it, and `dialogue(m₀, …, mₙ)` over its moves, each read as
+    ///   [`Self::dialogue_move`] reads it; `decompose(d)` stands as a
+    ///   computation reading its dialogue as a value. Every operand is read
+    ///   under the site's frame.
     /// - fails: the wrong-sort refusal where the operation's sort is not read;
     ///   the arity refusal for other than one argument to `here`, `stay`,
     ///   `forward`, `ua`, `back` or `decompose`, two to `funext`, `equiv`,
@@ -1806,7 +1913,9 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| {
-            self.operands.len() == start
+            (self.operands.len() == start
+                || (matches!(operation, Operation::Step | Operation::Then)
+                    && self.operands.len() == start.saturating_add(2_usize)))
                 && (ret.is_err()
                     || match (operation, self.plans.get(site.at.node)) {
                         | (Operation::Here, Some(&Plan::Here(point)))
@@ -1827,6 +1936,7 @@ impl<'source> Lowerer<'_, 'source>
                         | (Operation::Decompose, Some(&Plan::Decompose(_)))
                         | (Operation::Transport, Some(&(Plan::Transport(..) | Plan::TelescopeTransport(_))))
                         | (Operation::Back | Operation::Cong, Some(&Plan::Derived(_)))
+                        | (Operation::Step | Operation::Then, Some(&(Plan::Derived(_) | Plan::FlowThen(..))))
                         | (Operation::Here, Some(&Plan::Constructor(_))) => true,
                         | _ => false,
                     })
@@ -1855,6 +1965,8 @@ impl<'source> Lowerer<'_, 'source>
             | Operation::Recorded
             | Operation::Dialogue => Produced::Value,
             Operation::Back
+            | Operation::Step
+            | Operation::Then
             | Operation::Cong
             | Operation::Transport
             | Operation::Ride
@@ -1888,6 +2000,8 @@ impl<'source> Lowerer<'_, 'source>
             | Operation::Forward
             | Operation::Arrow
             | Operation::Back
+            | Operation::Step
+            | Operation::Then
             | Operation::Cong
             | Operation::Transport
             | Operation::Ride
@@ -1919,6 +2033,8 @@ impl<'source> Lowerer<'_, 'source>
                     | Operation::Transport
                     | Operation::Back
                     | Operation::Cong
+                    | Operation::Step
+                    | Operation::Then
                     | Operation::Cons
                     | Operation::Bisim
                     | Operation::Sim
@@ -1967,6 +2083,8 @@ impl<'source> Lowerer<'_, 'source>
                     | Operation::Transport
                     | Operation::Back
                     | Operation::Cong
+                    | Operation::Step
+                    | Operation::Then
                     | Operation::Stay
                     | Operation::Forward
                     | Operation::Ride
@@ -2019,6 +2137,8 @@ impl<'source> Lowerer<'_, 'source>
                     | Operation::Transport
                     | Operation::Back
                     | Operation::Cong
+                    | Operation::Step
+                    | Operation::Then
                     | Operation::Cons
                     | Operation::Bisim
                     | Operation::Sim
@@ -2100,6 +2220,9 @@ impl<'source> Lowerer<'_, 'source>
             },
             (Operation::Cong, 2_usize, Some(function), Some(path), _) => {
                 self.derive(site, frame, Derivation::Cong { function, path })
+            },
+            (Operation::Step | Operation::Then, 2_usize, Some(first), Some(second), _) => {
+                self.then(site, frame, first, second)
             },
             _ => Err(site.out(FragmentBoundary::Arity(OperandCount::from(count)))),
         }
@@ -2737,9 +2860,10 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
-    /// Classify `first then second` at `site`, standing as a computation under
-    /// `frame`: the returned composite of two flows where a flow is answered,
-    /// and the composite of two paths at the 2-chain anywhere else.
+    /// Classify `Path.step(first, second)` at `site`, standing as a computation
+    /// under `frame`: the returned composite of two flows where a flow is
+    /// answered, and the composite of two paths at the 2-chain anywhere
+    /// else.
     ///
     /// # Specification
     /// - requires: `site` stands as a computation under `frame`, or as a value
@@ -2758,7 +2882,7 @@ impl<'source> Lowerer<'_, 'source>
     /// The composite's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `p then q` under a path answer lowers to the
+    /// - hypothesis: L3 — `Path.step(p, q)` under a path answer lowers to the
     ///   composite of the two at the 2-chain, and under a flow answer to the
     ///   flows' composite.
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
@@ -2894,7 +3018,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `answered` is [`Self::answered`] at `site`.
     /// - ensures: every operand is read as a value under `frame`. Where the
     ///   position answers a type, the operation is planned against that path
-    ///   type, and `back(f)` against a flow type, as the symmetry ride the
+    ///   type, and `Path.back(f)` against a flow type, as the symmetry ride the
     ///   checker refuses. Where it answers none, the operation is planned as
     ///   synthesised from its operands, `cong` reading its codomain as
     ///   [`Self::mapped`] reads it — off its function's written result, or off
@@ -3707,9 +3831,9 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the ascending sweep has classified every node.
-    /// - ensures: through transparent plans, [`Typed::Point`] for `here(x)`
-    ///   whose point [`Self::point_binder`] reads; [`Self::typed`]'s answer
-    ///   otherwise.
+    /// - ensures: through transparent plans, [`Typed::Point`] for
+    ///   `Path.here(x)` whose point [`Self::point_binder`] reads;
+    ///   [`Self::typed`]'s answer otherwise.
     /// - fails: as [`Self::typed`].
     /// - panics: none.
     ///
@@ -4048,9 +4172,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   the synthesised operations whose own type is read.
     /// - ensures: through parentheses, the node itself when it is a loop, a
     ///   word of a loop's words, an answered derived operation, one in `read`,
-    ///   a reflexivity `here(x)` whose point is a binder of a written type that
-    ///   lowers, or whose point `x` is read so, or a parameter, a call or a
-    ///   named declaration [`Self::typed`] reads in a declaration that lowers.
+    ///   a reflexivity `Path.here(x)` whose point is a binder of a written type
+    ///   that lowers, or whose point `x` is read so, or a parameter, a call or
+    ///   a named declaration [`Self::typed`] reads in a declaration that
+    ///   lowers.
     /// - fails: [`synthesised::Absent::Unread`] for any other path;
     ///   [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
     ///   allowance.
@@ -4094,7 +4219,7 @@ impl<'source> Lowerer<'_, 'source>
                 Some(&Plan::Constructor(constructed)) => {
                     matches!(self.words_at(constructed.family), Maybe::Present(_))
                 },
-                // `here(x)` at a binder of any written type stands at `Path(A,
+                // `Path.here(x)` at a binder of any written type stands at `Path(A,
                 // x, x)`, `A` that type (#3834). At any other point, one
                 // reflexivity is read through to the path the point is.
                 Some(&Plan::Here(point)) if reflexivity.is_none() => {
@@ -4317,21 +4442,22 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the carrier and the endpoints are the answer's, a returner
     ///   over `Path(A, a, b)` or `Flow(A, a, b)` relocated to the operation's
     ///   frame, or, synthesised, the path's own as [`Self::identity_of`] reads
-    ///   it: `back(p)` at `p : Path(A, a, b)` stands at `Path(A, b, a)`, `p
-    ///   then q` at `Path(A, a, c)` for `q : Path(A, b, c)`, and `cong(f, p)`
-    ///   at `Path(B, ⟨f a⟩, ⟨f b⟩)`, `B` the result type `f`'s definition
-    ///   writes. `back(p)` is `tr(y. Path(A, y, b), p, here(b))`, `p then q` is
-    ///   `tr(y. Path(A, a, y), q, p)` and `cong(f, p)` is `tr(y. Path(A, a,
-    ///   ⟨force f y⟩), p, here(a))`, or `tr(y. Path(A, a, ⟨e⟩), p, here(a))`
-    ///   for a lambda `fun (q) { e }` [`Self::cong_map`] recorded, its body
-    ///   read under the motive's binder; `back(f)` under a flow answer is the
-    ///   symmetry ride `ride(y. Flow(A, y, b), f, stay(b))`. The path type an
-    ///   operation stands at is recorded against its transport when both its
-    ///   endpoints are read. The operation carries the written origin, the lift
-    ///   of `cong`'s map under the motive's binder the map's own, as the copy
-    ///   of the one the transport reads, and every other node minted for it the
-    ///   inserted identity origin. Nothing when an operand, the answer or the
-    ///   codomain did not lower.
+    ///   it: `Path.back(p)` at `p : Path(A, a, b)` stands at `Path(A, b, a)`,
+    ///   `p then q` at `Path(A, a, c)` for `q : Path(A, b, c)`, and `cong(f,
+    ///   p)` at `Path(B, ⟨f a⟩, ⟨f b⟩)`, `B` the result type `f`'s definition
+    ///   writes. `Path.back(p)` is `tr(y. Path(A, y, b), p, Path.here(b))`,
+    ///   `Path.step(p, q)` is `tr(y. Path(A, a, y), q, p)` and `Path.ap(f, p)`
+    ///   is `tr(y. Path(A, a, ⟨force f y⟩), p, here(a))`, or `tr(y. Path(A, a,
+    ///   ⟨e⟩), p, here(a))` for a lambda `fun (q) { e }` [`Self::cong_map`]
+    ///   recorded, its body read under the motive's binder; `Path.back(f)`
+    ///   under a flow answer is the symmetry ride `Flow.ride(y. Flow(A, y, b),
+    ///   f, Flow.stay(b))`. The path type an operation stands at is recorded
+    ///   against its transport when both its endpoints are read. The operation
+    ///   carries the written origin, the lift of `cong`'s map under the
+    ///   motive's binder the map's own, as the copy of the one the transport
+    ///   reads, and every other node minted for it the inserted identity
+    ///   origin. Nothing when an operand, the answer or the codomain did not
+    ///   lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -4628,7 +4754,7 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The empty word at `point` when `point` is a looped point: the
-    /// reflexivity a written `here(point)` lowers to there.
+    /// reflexivity a written `Path.here(point)` lowers to there.
     ///
     /// # Specification
     /// - requires: `point` is minted in `sink`'s arena.
@@ -4644,8 +4770,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   length; recursion-free.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `back(loop)` at the circle's point moves the empty
-    ///   word, and `back(p)` over a parameter's point moves `here`.
+    /// - hypothesis: L3 — `Path.back(loop)` at the circle's point moves the
+    ///   empty word, and `Path.back(p)` over a parameter's point moves `here`.
     /// - witness: `lower::identity::tests::back_at_a_looped_point_moves_its_empty_word_1003`
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     fn looped_reflexivity(
@@ -4803,13 +4929,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the operands, a `cong`'s codomain and the types
     ///   [`Self::synthesised_types`] lists are already minted or absent;
     ///   [`Self::refuse_unsynthesised`] admitted the operation.
-    /// - ensures: for `back(p)` at `p : Path(A, a, b)`, `Path(A, b, a)`; for `p
-    ///   then q`, `Path(A, a, c)` with `c` read when `q : Path(A, b, c)` is,
-    ///   absent otherwise; for `cong(f, p)`, `Path(B, ⟨force f a⟩, ⟨force f
-    ///   b⟩)` with `B` the returner's result the codomain mints: closed for a
-    ///   declared function, carried as [`Self::carried`] carries it for a bound
-    ///   map, and for a lambda the path type its body stands at, read out from
-    ///   under the lambda's binder and a stated binder's bind
+    /// - ensures: for `Path.back(p)` at `p : Path(A, a, b)`, `Path(A, b, a)`;
+    ///   for `p then q`, `Path(A, a, c)` with `c` read when `q : Path(A, b, c)`
+    ///   is, absent otherwise; for `Path.ap(f, p)`, `Path(B, ⟨force f a⟩,
+    ///   ⟨force f b⟩)` with `B` the returner's result the codomain mints:
+    ///   closed for a declared function, carried as [`Self::carried`] carries
+    ///   it for a bound map, and for a lambda the path type its body stands at,
+    ///   read out from under the lambda's binder and a stated binder's bind
     ///   ([`Self::lambda_codomain`]). Each path's type is read as
     ///   [`Self::identity_of`] reads it under `frame`.
     /// - fails: the unminted absence when the motive's path's type is not read;
@@ -5067,10 +5193,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   operation stands; otherwise a loop, or a word of a loop's words,
     ///   stands at `Path(F, x, x)`, `F` its family and `x` the point the words
     ///   spell, minted as [`Self::words_point`] mints them, a reflexivity
-    ///   `here(x)` at `Path(A, x, x)` when its point is a binder whose written
-    ///   type `A` carries to where the operation stands, and otherwise at
-    ///   `Path(Path(A, a, b), p, p)` when its point `p` stands at `Path(A, a,
-    ///   b)`, and a derived operation's returned transport at the path type
+    ///   `Path.here(x)` at `Path(A, x, x)` when its point is a binder whose
+    ///   written type `A` carries to where the operation stands, and otherwise
+    ///   at `Path(Path(A, a, b), p, p)` when its point `p` stands at `Path(A,
+    ///   a, b)`, and a derived operation's returned transport at the path type
     ///   recorded against it.
     /// - fails: [`synthesised::Absent::Unread`] for any other value, and for a
     ///   path or a type that did not lower.
@@ -5511,7 +5637,7 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Mint `transport(fun (X) { T }, p, v)` or `transport(P, p, v)`: the
+    /// Mint `Path.walk(fun (X) { T }, p, v)` or `Path.walk(P, p, v)`: the
     /// element transport in the family the motive denotes under its binder.
     ///
     /// # Specification
@@ -5577,9 +5703,9 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(Lowered::Computation(root))
     }
 
-    /// Mint `ride(fun (X) { T }, f, v)` or `ride(P, f, v)`: the ride of the
-    /// value along the flow in the family the motive denotes under its
-    /// binder.
+    /// Mint `Flow.ride(fun (X) { T }, f, v)` or `Flow.ride(P, f, v)`: the ride
+    /// of the value along the flow in the family the motive denotes under
+    /// its binder.
     ///
     /// # Specification
     /// - requires: the three operands are already minted or absent.
@@ -5641,7 +5767,7 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(Lowered::Computation(root))
     }
 
-    /// Mint `f then g` where a flow is answered: the returned composite.
+    /// Mint `Flow.then(f, g)` where a flow is answered: the returned composite.
     ///
     /// # Specification
     /// - requires: both operands are already minted or absent.

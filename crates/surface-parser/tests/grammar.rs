@@ -210,7 +210,10 @@ fn each_ascii_spelling_molds_as_its_glyph_782() -> Result<(), Box<dyn Error>>
     let cases = [
         ("def e : A ≃ B;", "def e : A <~> B;"),
         ("def e : A ⇝ B;", "def e : A ~~> B;"),
-        ("def w = loop ∷ here(Base);", "def w = loop :: here(Base);"),
+        (
+            "def w = loop ∷ Path.here(Base);",
+            "def w = loop :: Path.here(Base);",
+        ),
         (
             "def f(p : Path(Circle, Base, Base)) -> -F Integer {\n  match p {\n    loop ∷ q => \
              1\n  }\n}",

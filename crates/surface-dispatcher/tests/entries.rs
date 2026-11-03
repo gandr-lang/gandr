@@ -243,27 +243,32 @@ const KINDS: &[(&str, Standing)] = &[
 ];
 
 /// The names of the primitive formers a call can head: the call is one
-/// core node, and its head names the former rather than a term.
+/// core node, and its head names the former rather than a term. A former
+/// under `Path` or `Flow` heads its call qualified, `Path.ap(f, p)`; the
+/// inverse letter of a word heads it bare, `back(loop) ∷ w`.
 const FORMERS: &[&str] = &[
+    "Flow.arrow",
+    "Flow.into",
+    "Flow.product",
+    "Flow.ride",
+    "Flow.sim",
+    "Flow.stay",
+    "Flow.then",
+    "Path.ap",
+    "Path.back",
+    "Path.bisim",
+    "Path.funext",
+    "Path.here",
+    "Path.product",
+    "Path.step",
+    "Path.walk",
     "abandon",
-    "arrow",
     "back",
-    "bisim",
-    "cong",
     "cons",
     "decompose",
     "dialogue",
     "equiv",
-    "flowProduct",
-    "forward",
-    "funext",
-    "here",
-    "pathProduct",
     "recorded",
-    "ride",
-    "sim",
-    "stay",
-    "transport",
     "ua",
 ];
 
@@ -419,10 +424,11 @@ enum Placed
     /// lowering's result is the term the program means, and the case around
     /// the value answers.
     Discarded,
-    /// A lambda `cong` maps a path by, `fun (q) { q then g }` in `cong(fun (q)
-    /// { q then g }, a)` (#3773): the lowering reads the lambda's body into
-    /// the transport's motive, its binder the motive's, so no judged core
-    /// node holds the lambda itself; its body's nodes and the `cong` answer.
+    /// A lambda `Path.ap` maps a path by, `fun (q) { Path.step(q, g) }` in
+    /// `Path.ap(fun (q) { Path.step(q, g) }, a)` (#3773): the lowering reads
+    /// the lambda's body into the transport's motive, its binder the
+    /// motive's, so no judged core node holds the lambda itself; its body's
+    /// nodes and the `Path.ap` answer.
     Mapped,
     /// An arrow of the kind a data family writes after its parameters,
     /// `Nat -> Type` in `data Vec(a : Type) : Nat -> Type { … }`, and each
@@ -943,9 +949,9 @@ fn gated(
             continue;
         }
         // A constructor qualified by its family heading its call,
-        // `Term.App(…)`, stands as a bare one does, and so does a theory's
+        // `Term.App(…)`, stands as a bare one does, and so do a theory's
         // operation qualified by the theory whose terms it builds,
-        // `Mag.mul(…)`.
+        // `Mag.mul(…)`, and a former qualified by its family, `Path.ap(…)`.
         let qualified = melded
             && def.label == "."
             && (text
@@ -955,7 +961,8 @@ fn gated(
                 || text
                     .split('.')
                     .next()
-                    .is_some_and(|theory| models.theories.contains(theory.trim())));
+                    .is_some_and(|theory| models.theories.contains(theory.trim()))
+                || FORMERS.contains(&text.trim()));
         let head = parent.is_some_and(|(_, label, headed, ..)| {
             headed
                 && if melded {
@@ -1070,7 +1077,7 @@ fn gated(
             && def.sort == Sort::Expression
             && source
                 .get(.. usize::from(span.start()))
-                .is_some_and(|before| before.trim_end().ends_with("cong("));
+                .is_some_and(|before| before.trim_end().ends_with("Path.ap("));
         let templated = flows.iter().any(|&(start, end)| {
             start <= usize::from(span.start()) && usize::from(span.end()) <= end
         });

@@ -32,7 +32,7 @@ def index_of(p : #{n : Integer, w : Ix(n)}) -> Integer {
 def index() -> Integer { index_of(tagged) }
 
 /// A pair whose second component is a loop at its first.
-def ring : #{n : Integer, v : Path(Integer, n, n)} = (2, here(2));
+def ring : #{n : Integer, v : Path(Integer, n, n)} = (2, Path.here(2));
 
 /// The second projection's type reads the first.
 def lap(p : #{n : Integer, v : Path(Integer, n, n)}) -> Path(Integer, p.n, p.n) {
@@ -57,7 +57,7 @@ def rebuilt(p : #{
   v : Path(Integer, n, n)
 }) -> Path(#{n : Integer, v : Path(Integer, n, n)}, p, p) {
   match p {
-    #{.n = m, .v = w} => here((m, w))
+    #{.n = m, .v = w} => Path.here((m, w))
   }
 }
 
@@ -70,7 +70,7 @@ def againAt(
   w : #{x : b, y : b, p : Path(b, x, y)}
 ) -> Path(#{x : b, y : b, p : Path(b, x, y)}, w, w) {
   match w {
-    #{.x = u, .y = v, .p = q} => here((u, (v, q)))
+    #{.x = u, .y = v, .p = q} => Path.here((u, (v, q)))
   }
 }
 
@@ -84,8 +84,8 @@ def selfEquiv(b : Type) -> #{x : b, y : b, p : Path(b, x, y)} ≃ #{
   (
     fun (w) { w },
     (
-      (fun (w) { w }, fun (w) { here(w) }),
-      (fun (w) { w }, fun (w) { here(w) })
+      (fun (w) { w }, fun (w) { Path.here(w) }),
+      (fun (w) { w }, fun (w) { Path.here(w) })
     )
   )
 }
@@ -100,25 +100,25 @@ def middle(t : #{a : Integer, b : Integer, c : Path(Integer, a, a)}) -> Integer 
 
 /// A path between pairs is a path between the first components and, over
 /// it, a path between the second.
-def both : Path(#{n : Integer, v : Path(Integer, n, n)}, (2, here(2)), (2, here(2))) = (
-  here(2),
-  here(here(2))
+def both : Path(#{n : Integer, v : Path(Integer, n, n)}, (2, Path.here(2)), (2, Path.here(2))) = (
+  Path.here(2),
+  Path.here(Path.here(2))
 );
 
 /// A declared pair's path reads the pair it unfolds to.
 def ring_around : Path(#{n : Integer, v : Path(Integer, n, n)}, ring, ring) = (
-  here(2),
-  here(here(2))
+  Path.here(2),
+  Path.here(Path.here(2))
 );
 
 /// The constant path at `tagged`, the second component's over the first's.
 def tagged_around : Path(#{n : Integer, w : Ix(n)}, tagged, tagged) = (
-  here(3),
-  here((MkIx : Ix(3)))
+  Path.here(3),
+  Path.here((MkIx : Ix(3)))
 );
 
 /// Five, carried along `both` through the constant family.
-def moved() -> Integer { transport(fun (s) { Integer }, both, 5) }
+def moved() -> Integer { Path.walk(fun (s) { Integer }, both, 5) }
 
 /// A later entry's type may apply the earlier one: the type printed for the
 /// pair, `Path(Integer, e.0(0), 0)` at its second entry, reads back to it
@@ -127,5 +127,5 @@ def calledFiber(e : #{
   cell : Integer => Integer,
   fix : Path(Integer, cell(0), 0)
 }) -> Path(#{cell : Integer => Integer, fix : Path(Integer, cell(0), 0)}, (e.cell, e.fix), e) {
-  here(e)
+  Path.here(e)
 }

@@ -29,5 +29,5 @@ def rebuilt() -> Path(
   #{.tag = nest.tag, .inner = nest.inner},
   nest
 ) {
-  here(nest)
+  Path.here(nest)
 }

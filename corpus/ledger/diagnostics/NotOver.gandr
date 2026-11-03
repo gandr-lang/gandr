@@ -22,5 +22,5 @@ data Nat : Type where {
 
 @[ refuses("NotOver") ]
 def astray(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
-  transport(+U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat), q, here(a), here(here(a)), v)
+  Path.walk(+U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat), q, Path.here(a), Path.here(Path.here(a)), v)
 }

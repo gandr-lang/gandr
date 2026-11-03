@@ -7,10 +7,10 @@ module Evolution where {
   type Kept = ?String. mu turn. +{ report : !String. &{ next : turn }, handoff : !String. end };
   @[ checks ]
   def keep : Flow(Type, SeatEnd, Kept) ;
-  def keep = sim(SeatEnd, Kept) ;
+  def keep = Flow.sim(SeatEnd, Kept) ;
 }
 
 @[ refuses("RideUnsupported") ]
 def listed : () => List(Evolution.Kept) ;
 
-def listed = thunk { ride(fun (X) { List(X) }, Evolution.keep, []) } ;
+def listed = thunk { Flow.ride(fun (X) { List(X) }, Evolution.keep, []) } ;

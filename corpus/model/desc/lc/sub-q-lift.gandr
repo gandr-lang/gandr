@@ -8,5 +8,5 @@ import "./syntax.gandr";
 
 /// A lifted substitution at the newest variable is that variable.
 pub def subQLift(s : Env) -> Path(Term, subst(Ix(Z), Lift(s)), Ix(Z)) {
-  here(Ix(Z))
+  Path.here(Ix(Z))
 }

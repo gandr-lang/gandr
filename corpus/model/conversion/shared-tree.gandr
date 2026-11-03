@@ -50,5 +50,5 @@ def rec built(n : Nat) -> Tree {
 
 /// The two trees agree at depth twelve.
 def treesAgree() -> Path(Tree, held(twelve), built(twelve)) {
-  here(held(twelve))
+  Path.here(held(twelve))
 }
