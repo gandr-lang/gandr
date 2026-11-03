@@ -3755,6 +3755,93 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Planned(true))
     }
 
+    /// How many outputs the call `bound` returns, read under `frame` ahead of
+    /// the walk from `anchor`: those of the earlier declaration its head
+    /// names, when that declaration's result is written as a group.
+    ///
+    /// # Specification
+    /// - requires: `bound` is `anchor` or under it.
+    /// - ensures: the count of the outputs the callee's result writes, when
+    ///   `bound` is a call whose head is one name resolving to a declaration
+    ///   whose result is planned as a [`Plan::Returns`] or written as a group,
+    ///   as [`Self::written_group`] reads it; nothing for any other form, a
+    ///   head a binder answers, or a callee returning one value. The nodes
+    ///   under `bound` take `anchor`'s owner, as the walk would give them.
+    /// - fails: the name's resolution refusal; a foreign mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::resolve_name`], and [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of a function returning two outputs, and one
+    ///   returning a pair.
+    /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_a_call`
+    pub(super) fn called_outputs(
+        &mut self,
+        frame: Frame,
+        bound: Placed,
+        anchor: NodeIndex,
+    ) -> Result<Option<usize>, LoweringRefusal<'source>>
+    {
+        let Some((name, Former::Call)) = self.form_at(bound)?
+        else {
+            return Ok(None);
+        };
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read =
+            read_pieces(self.pbg, self.tree, bound.node, &mut scratch).map(|()| match Cursor::new(
+                &scratch.pieces,
+                bound.span,
+            )
+            .operands()
+            {
+                Run::One(head) => Some(head),
+                Run::Empty(_) | Run::Several { .. } => None,
+            });
+        self.scratch = scratch;
+        let Some(head) = read?
+        else {
+            return Ok(None);
+        };
+        if !matches!(self.form_at(head)?, Some((written, _)) if written == FormName::IDENTIFIER) {
+            return Ok(None);
+        }
+        // The name is read before the walk reaches it, so it takes the
+        // statement's owner now, which its resolution reads.
+        self.own_written(bound.node, anchor);
+        let site = Site {
+            at: head,
+            name,
+            reading: Reading::Head(frame),
+        };
+        let Maybe::Present(Resolved::Declaration { constant, .. }) =
+            self.resolve_name(site, frame, self.name_at(head))?
+        else {
+            return Ok(None);
+        };
+        let Some(mut at) = self.callee_result(constant)
+        else {
+            return Ok(None);
+        };
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
+            at = inner;
+        }
+        if let Some(&Plan::Returns(outputs)) = self.plans.get(at) {
+            return Ok(Some(outputs.end.saturating_sub(outputs.start)));
+        }
+        // A callee the walk has not reached yet is read off its syntax.
+        let Some(tree) = self.tree.node(at)
+        else {
+            return Ok(None);
+        };
+        let result = Placed::of(at, tree);
+        if !self.written_group(result, frame)? {
+            return Ok(None);
+        }
+        Ok(Some(self.domain_entries(result, frame)?.len()))
+    }
+
     /// The entries of the parenthesised domain list `domain` of a value
     /// function space under `frame`, as written.
     ///

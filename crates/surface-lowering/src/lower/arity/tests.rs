@@ -213,6 +213,12 @@ fn shown(
                     Root::Computation(bound),
                     Root::Computation(body),
                 ]),
+                Some(&Computation::BindAll { bound, arity, body }) => {
+                    (format!("bindall{}", usize::from(arity)), vec![
+                        Root::Computation(bound),
+                        Root::Computation(body),
+                    ])
+                },
                 Some(&Computation::With(ref components)) => (
                     format!("with{}", components.len()),
                     components
@@ -1886,6 +1892,62 @@ fn a_tuple_ending_a_body_of_outputs_returns_each_member()
         body(&arena, &module, "paired"),
         ["thunk", "lambda", "lambda", "return", "tuple2", "#0", "#1"],
         "a tuple ending a body of one product returns the one tuple"
+    );
+}
+
+#[test]
+fn a_tuple_pattern_binds_each_output_of_a_call()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
+         second(a : Integer, b : Integer) -> Integer { let (q, r) = divmod(a, b); r }\ndef \
+         first(a : Integer, b : Integer) -> Integer { let (q, r) = divmod(a, b); q }\ndef \
+         pair(a : Integer) -> Integer * Integer { (a, a) }\ndef split(a : Integer) -> Integer { \
+         let (x, y) = pair(a); y }",
+        &mut arena,
+    );
+
+    let second = body(&arena, &module, "second");
+    assert_eq!(
+        second.get(.. 4_usize),
+        Some(
+            &[
+                String::from("thunk"),
+                String::from("lambda"),
+                String::from("lambda"),
+                String::from("bindall2")
+            ][..]
+        ),
+        "each output of the call is bound by one bind, {second:?}"
+    );
+    assert_eq!(
+        second.last().map(String::as_str),
+        Some("#0"),
+        "the last output is the innermost binder"
+    );
+    assert_eq!(
+        body(&arena, &module, "first").last().map(String::as_str),
+        Some("#1"),
+        "the first output is the outermost binder"
+    );
+    assert!(
+        !body(&arena, &module, "split")
+            .iter()
+            .any(|token| token.starts_with("bindall")),
+        "a call returning a pair is split, not bound output by output"
+    );
+    let source = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
+                  three(a : Integer) -> Integer { let (q, r, s) = divmod(a, a); q }";
+    assert!(
+        matches!(
+            refused(source),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(operands),
+                ..
+            } if usize::from(operands) == 3
+        ),
+        "a pattern binds every output of the call, no more"
     );
 }
 

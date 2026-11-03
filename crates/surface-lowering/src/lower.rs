@@ -1844,6 +1844,16 @@ enum StatementBinding
         /// The tuple pattern's own node.
         pattern: NodeIndex,
     },
+    /// `let (q, r, …) = f(a) ;` binds each output of a call whose result is a
+    /// group, one named binder per output, the first outermost, with no
+    /// product built.
+    Outputs
+    {
+        /// How many outputs the call returns.
+        arity: gandr_core_term::ComponentCount,
+        /// The pattern's own node.
+        pattern: NodeIndex,
+    },
     /// `let x : A = c ;` ascribes `c` the returner `-F A`, pure as the
     /// annotation writes no row, and names the value it returns for the rest
     /// of the block, so a computation that returns no `A` refuses.
@@ -6874,7 +6884,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |_| usize::from(self.collected.owner.count()) == before.0
             && self.collected.owner_of(anchor) == before.1,
     )]
-    fn own_written(
+    pub(super) fn own_written(
         &mut self,
         written: NodeIndex,
         anchor: NodeIndex,
@@ -11269,11 +11279,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: the statement's computation is read under `frame` and the
     ///   statement recorded with the tile at `statement`; the frame binding the
     ///   statement's names over `frame`, which the rest of the block reads
-    ///   under, is returned. A tuple pattern `(x, y, …)` binds the returned
-    ///   tuple under a nameless binder and each component's name over it, in
-    ///   order, and the statement is recorded as that split. A name or a tuple
-    ///   pattern annotated `: A` reads `A` in `frame` and binds over it, and
-    ///   the statement is recorded as the bind of `c` ascribed `-F A`. A name
+    ///   under, is returned. A tuple pattern `(x, y, …)` of a call whose result
+    ///   is a group of as many outputs, as [`Self::called_outputs`] reads it,
+    ///   binds each output to its component's name, in order, and the statement
+    ///   is recorded as that bind of outputs; any other tuple pattern binds the
+    ///   returned tuple under a nameless binder and each component's name over
+    ///   it, in order, and the statement is recorded as that split. pattern
+    ///   annotated `: A` reads `A` in `frame` and binds over it, and the
+    ///   statement is recorded as the bind of `c` ascribed `-F A`. A name
     ///   written with no type is recorded with `frame` and `c`, which
     ///   [`Self::ran_type`] reads its type off.
     /// - fails: yields the unadmitted refusal for a binder pattern other than a
@@ -11301,7 +11314,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.statements.len() == before.saturating_add(1_usize)
                     && self.statements.last().is_some_and(|last| {
                         last.origin == statement.at.node
-                            && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Placed(_) | StatementBinding::Split { .. } | StatementBinding::Typed { .. } | StatementBinding::TypedSplit { .. })
+                            && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Placed(_) | StatementBinding::Split { .. } | StatementBinding::Outputs { .. } | StatementBinding::Typed { .. } | StatementBinding::TypedSplit { .. })
                             && self.reading(last.bound) == Reading::Computation(frame)
                     })
             },
@@ -11326,6 +11339,35 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             self.read(bound.node, Reading::Computation(frame));
             let arity = gandr_core_term::ComponentCount::from(names.len());
+            let outputs = match annotation {
+                None => self.called_outputs(frame, bound, run.node)?,
+                Some(_) => None,
+            };
+            // A pattern of a call returning outputs binds every one of them.
+            if outputs.is_some_and(|outputs| outputs != names.len()) {
+                let pattern = Site {
+                    at: binder,
+                    name: FormName::TUPLE_PATTERN,
+                    reading: Reading::Computation(frame),
+                };
+                return Err(pattern.out(FragmentBoundary::Arity(OperandCount::from(names.len()))));
+            }
+            if outputs == Some(names.len()) {
+                self.statements.push(Statement {
+                    origin: run.node,
+                    bound: bound.node,
+                    binding: StatementBinding::Outputs {
+                        arity,
+                        pattern: binder.node,
+                    },
+                    rest: exits::Rest::Bound,
+                });
+                let mut inner = frame;
+                for (name, written) in names {
+                    inner = Frame::Inner(self.scope.extend(inner, name, Maybe::Present(written)));
+                }
+                return Ok(inner);
+            }
             let binding = annotation.map_or_else(
                 || StatementBinding::Split {
                     arity,
@@ -19678,7 +19720,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | StatementBinding::Received { .. }
                 | StatementBinding::Held { .. }
                 | StatementBinding::Located { .. }
-                | StatementBinding::Opened { .. } => None,
+                | StatementBinding::Opened { .. }
+                | StatementBinding::Outputs { .. } => None,
                 StatementBinding::Discarded => Some(gandr_core_term::ComponentCount::default()),
                 StatementBinding::Split { arity, .. }
                 | StatementBinding::TypedSplit { arity, .. } => Some(arity),
@@ -19786,13 +19829,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | StatementBinding::TypedLet { .. }
                 | StatementBinding::Discarded
                 | StatementBinding::Split { .. }
+                | StatementBinding::Outputs { .. }
                 | StatementBinding::Forked { .. }
                 | StatementBinding::Received { .. }
                 | StatementBinding::Held { .. }
                 | StatementBinding::Located { .. }
                 | StatementBinding::Opened { .. } => bound,
             };
-            let id = sink.arena.computation_bind(bound, chain);
+            // A call's outputs bind one binder each, the first outermost.
+            let id = if let StatementBinding::Outputs { arity, .. } = statement.binding {
+                sink.arena.computation_bind_all(bound, arity, chain)
+            }
+            else {
+                sink.arena.computation_bind(bound, chain)
+            };
             sink.origins.record_computation(id, origin);
             if let StatementBinding::Named(name)
             | StatementBinding::Placed(name)
@@ -19912,7 +19962,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             StatementBinding::Named(_)
             | StatementBinding::Placed(_)
             | StatementBinding::Discarded
-            | StatementBinding::Split { .. } => {
+            | StatementBinding::Split { .. }
+            | StatementBinding::Outputs { .. } => {
                 self.computation_at(statement.bound).map(|_bound| ())
             },
         }
