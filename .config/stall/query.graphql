@@ -11,6 +11,7 @@ query($owner: String!, $name: String!) {
         createdAt
         mergeable
         isInMergeQueue
+        mergeQueueEntry { mergeQueue { resourcePath } }
         body
         timelineItems(last: 30, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) {
           nodes {

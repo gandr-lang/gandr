@@ -18,6 +18,11 @@
             "createdAt": "2026-10-26T20:00:00Z",
             "mergeable": "MERGEABLE",
             "isInMergeQueue": true,
+            "mergeQueueEntry": {
+              "mergeQueue": {
+                "resourcePath": "/gandr-lang/gandr/queue/main"
+              }
+            },
             "timelineItems": {
               "nodes": [
                 {
@@ -93,7 +98,7 @@
         ]
       }
     },
-    "output": "{\"prs\":[{\"number\":2776,\"draft\":false,\"bot\":false,\"head\":\"corpus-2444\",\"base\":\"main\",\"oid\":\"5e1f\",\"created\":1793044800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"removals\":[{\"at\":1793046735,\"reason\":\"stack_invalidated\"}],\"checks\":[{\"name\":\"test the workspace (linux)\",\"verdict\":\"pass\",\"conclusion\":\"SUCCESS\",\"started\":1793048400,\"completed\":1793049600},{\"name\":\"check Clippy wall\",\"verdict\":\"pending\",\"conclusion\":null,\"started\":1793048460,\"completed\":null},{\"name\":\"lint the pull request title\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793048520,\"completed\":1793048520}],\"foreign\":[]},{\"number\":2800,\"draft\":true,\"bot\":true,\"head\":\"dependabot/cargo/serde\",\"base\":\"main\",\"oid\":\"aa\",\"created\":1793044800,\"mergeable\":\"UNKNOWN\",\"queued\":false,\"removals\":[],\"checks\":[],\"foreign\":[]}],\"merged\":[],\"filed\":[],\"claimed\":[]}"
+    "output": "{\"prs\":[{\"number\":2776,\"draft\":false,\"bot\":false,\"head\":\"corpus-2444\",\"base\":\"main\",\"oid\":\"5e1f\",\"created\":1793044800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"queue\":\"main\",\"removals\":[{\"at\":1793046735,\"reason\":\"stack_invalidated\"}],\"checks\":[{\"name\":\"test the workspace (linux)\",\"verdict\":\"pass\",\"conclusion\":\"SUCCESS\",\"started\":1793048400,\"completed\":1793049600},{\"name\":\"check Clippy wall\",\"verdict\":\"pending\",\"conclusion\":null,\"started\":1793048460,\"completed\":null},{\"name\":\"lint the pull request title\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793048520,\"completed\":1793048520}],\"foreign\":[]},{\"number\":2800,\"draft\":true,\"bot\":true,\"head\":\"dependabot/cargo/serde\",\"base\":\"main\",\"oid\":\"aa\",\"created\":1793044800,\"mergeable\":\"UNKNOWN\",\"queued\":false,\"queue\":null,\"removals\":[],\"checks\":[],\"foreign\":[]}],\"merged\":[],\"filed\":[],\"claimed\":[]}"
   },
   {
     "name": "a green mergeable root out of the queue past the threshold is root-unqueued (#2785)",
@@ -2025,6 +2030,7 @@
           "created": 90000,
           "mergeable": "MERGEABLE",
           "queued": true,
+          "queue": "triage-4058-stall-lane",
           "removals": [],
           "checks": [
             {
@@ -2046,6 +2052,7 @@
           "created": 91000,
           "mergeable": "MERGEABLE",
           "queued": true,
+          "queue": "main",
           "removals": [],
           "checks": [
             {
@@ -2067,6 +2074,7 @@
           "created": 92000,
           "mergeable": "MERGEABLE",
           "queued": true,
+          "queue": "program-4160",
           "removals": [],
           "checks": [
             {
@@ -2113,6 +2121,7 @@
           "created": 90000,
           "mergeable": "MERGEABLE",
           "queued": true,
+          "queue": "triage-4058-stall-lane",
           "removals": [],
           "checks": [
             {
@@ -2134,6 +2143,7 @@
           "created": 91000,
           "mergeable": "MERGEABLE",
           "queued": true,
+          "queue": "main",
           "removals": [],
           "checks": [
             {
@@ -2155,6 +2165,7 @@
           "created": 92000,
           "mergeable": "MERGEABLE",
           "queued": true,
+          "queue": "program-4160",
           "removals": [],
           "checks": [
             {
@@ -2172,6 +2183,53 @@
       "stalled": { "4158": 99400 }
     },
     "output": "{\"findings\":[{\"kind\":\"queued-off-trunk\",\"number\":4158,\"lane\":\"triage-2\",\"placed\":true,\"age\":10,\"line\":\"STALL queued-off-trunk #4158 triage-2 10m: in the merge queue of `triage-4058-stall-lane`, which heads no open pull request and merges nothing into main\"}],\"pages\":[],\"repages\":[{\"kind\":\"queued-off-trunk\",\"number\":4158,\"lane\":\"triage-2\",\"placed\":true,\"age\":10,\"line\":\"STALL queued-off-trunk #4158 triage-2 10m: in the merge queue of `triage-4058-stall-lane`, which heads no open pull request and merges nothing into main\"}],\"stall\":[],\"release\":[],\"seen\":{\"4158:base-blocked:o4158\":100000,\"4158:queued-off-trunk:triage-4058-stall-lane\":99400},\"paged\":{\"4158:queued-off-trunk\":{\"first\":99400,\"last\":100000}},\"stalled\":{\"4158\":99400}}"
+  },
+  {
+    "name": "a stack member in the trunk's merge queue whose base merged under it is not queued-off-trunk (#4643)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 10,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "lanes": ["triage", "toolchain"],
+      "areas": { "triage": ["workflow"], "toolchain": ["surface"] },
+      "prs": [
+        {
+          "number": 4557,
+          "draft": false,
+          "bot": false,
+          "head": "triage-4298-module-data",
+          "base": "toolchain-4508-static-fun",
+          "oid": "o4557",
+          "created": 90000,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "queue": "main",
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        }
+      ]
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"4557:base-blocked:o4557\":100000},\"paged\":{},\"stalled\":{}}"
   },
   {
     "name": "a detector whose last reading is two intervals old is alive (#4167)",
@@ -2313,7 +2371,7 @@
         "nodes": []
       }
     },
-    "output": "{\"prs\":[{\"number\":4541,\"draft\":false,\"bot\":false,\"head\":\"refactor-lowering-keys-4372\",\"base\":\"main\",\"oid\":\"f909202f0\",\"created\":1793656800,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"removals\":[],\"checks\":[],\"foreign\":[]},{\"number\":4547,\"draft\":false,\"bot\":false,\"head\":\"toolchain-4508-static-fun\",\"base\":\"triage-4542-focus\",\"oid\":\"9122e195f\",\"created\":1793656800,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"removals\":[],\"checks\":[],\"foreign\":[{\"oid\":\"5c79abb95\",\"subject\":\"refactor(surface): key node tables by layout block (#4372)\",\"units\":[4372],\"pulls\":[4541]}]},{\"number\":4557,\"draft\":false,\"bot\":false,\"head\":\"triage-4298-module-data\",\"base\":\"toolchain-4508-static-fun\",\"oid\":\"71fc698b1\",\"created\":1793656800,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"removals\":[],\"checks\":[],\"foreign\":[]}],\"merged\":[],\"filed\":[],\"claimed\":[]}"
+    "output": "{\"prs\":[{\"number\":4541,\"draft\":false,\"bot\":false,\"head\":\"refactor-lowering-keys-4372\",\"base\":\"main\",\"oid\":\"f909202f0\",\"created\":1793656800,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"queue\":null,\"removals\":[],\"checks\":[],\"foreign\":[]},{\"number\":4547,\"draft\":false,\"bot\":false,\"head\":\"toolchain-4508-static-fun\",\"base\":\"triage-4542-focus\",\"oid\":\"9122e195f\",\"created\":1793656800,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"queue\":null,\"removals\":[],\"checks\":[],\"foreign\":[{\"oid\":\"5c79abb95\",\"subject\":\"refactor(surface): key node tables by layout block (#4372)\",\"units\":[4372],\"pulls\":[4541]}]},{\"number\":4557,\"draft\":false,\"bot\":false,\"head\":\"triage-4298-module-data\",\"base\":\"toolchain-4508-static-fun\",\"oid\":\"71fc698b1\",\"created\":1793656800,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"queue\":null,\"removals\":[],\"checks\":[],\"foreign\":[]}],\"merged\":[],\"filed\":[],\"claimed\":[]}"
   },
   {
     "name": "a pull request carrying another unit's commit is foreign-commit at once, naming the commit, its unit and that unit's pull request (#4638)",

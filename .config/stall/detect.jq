@@ -26,10 +26,13 @@
 #                  head, for `base_blocked` minutes since the detector first
 #                  saw it so (#2972): the member's own stall, though no root.
 #   queued-off-trunk
-#                  in the merge queue on a base that is neither the trunk nor
-#                  an open pull request's head (#4168): that branch's queue
-#                  merges nothing into the trunk, and every stack carrying
-#                  its commits waits on it. It is paged at once, its age
+#                  in the merge queue of a branch that is neither the trunk
+#                  nor an open pull request's head (#4168): that branch's
+#                  queue merges nothing into the trunk, and every stack
+#                  carrying its commits waits on it. The queue is the one
+#                  holding it, never read off its base: GitHub queues a
+#                  stack's member in the trunk's queue under the base it
+#                  keeps until a restack (#4643). It is paged at once, its age
 #                  counted from the reading that first saw it so.
 #   foreign-commit
 #                  its commits hold one that names a unit its body does not
@@ -96,7 +99,7 @@
 #               null reads as none;
 #   seen        when each `<number>:conflicting:<head>`,
 #               `<number>:base-blocked:<head>`,
-#               `<number>:queued-off-trunk:<base>`,
+#               `<number>:queued-off-trunk:<queue>`,
 #               `<number>:foreign-commit:<head>` and `<lane>:seat-idle` was
 #               first read so, from the last reading; absent reads as none;
 #   paged       each `<number>:<kind>` finding's `{first, last}`, or
@@ -152,10 +155,10 @@
       elif $below.mergeable == "CONFLICTING" then "its base #\($below.number) conflicts with its own base"
       else empty
       end;
-  # In the merge queue on a base no open pull request heads, other than the
-  # trunk: a queue that never merges into the trunk.
+  # In the merge queue of a branch no open pull request heads, other than
+  # the trunk: a queue that never merges into the trunk.
   def off_trunk: . as $pr
-    | $pr.queued and $pr.base != $in.trunk and all($in.prs[]; .head != $pr.base);
+    | $pr.queue != null and $pr.queue != $in.trunk and all($in.prs[]; .head != $pr.queue);
   # The lanes that hold a seat and nothing in hand: no open pull request on
   # a branch of the lane, and no claimed issue it holds, by the claim's marker
   # or, with none, by one of its areas.
@@ -167,7 +170,7 @@
     | $lane] as $idle
 | ([$prs[] | select(.mergeable == "CONFLICTING") | "\(.number):conflicting:\(.oid)"]
     + [$prs[] | select([blocker] != []) | "\(.number):base-blocked:\(.oid)"]
-    + [$prs[] | select(off_trunk) | "\(.number):queued-off-trunk:\(.base)"]
+    + [$prs[] | select(off_trunk) | "\(.number):queued-off-trunk:\(.queue)"]
     + [$prs[] | select((.foreign // []) != []) | "\(.number):foreign-commit:\(.oid)"]
     + [$idle[] | "\(.):seat-idle"]
     | map({key: ., value: ($seen[.] // $in.now)}) | from_entries) as $seen_now
@@ -205,8 +208,8 @@
       | select($in.now - $since >= $t.base_blocked * 60)
       | finding("base-blocked"; $since; $what)),
     ($prs[] | select(off_trunk)
-      | finding("queued-off-trunk"; $seen_now["\(.number):queued-off-trunk:\(.base)"];
-          "in the merge queue of `\(.base)`, which heads no open pull request and merges nothing into \($in.trunk)")),
+      | finding("queued-off-trunk"; $seen_now["\(.number):queued-off-trunk:\(.queue)"];
+          "in the merge queue of `\(.queue)`, which heads no open pull request and merges nothing into \($in.trunk)")),
     ($prs[] | select((.foreign // []) != [])
       | finding("foreign-commit"; $seen_now["\(.number):foreign-commit:\(.oid)"];
           "carries another unit's commit: \(.foreign | map("`\(.oid[0:9])` names \(.units | map("#\(.)") | join(", "))\(if .pulls == [] then "" else " (\(.pulls | map("#\(.)") | join(", ")))" end)") | join("; ")); drop each from the branch")),
