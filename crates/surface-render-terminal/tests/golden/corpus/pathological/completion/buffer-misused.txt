@@ -60,7 +60,8 @@ error[BufferRead]: a buffer can be used only by the `send`, the operation or the
 55 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `readWhileHeld` is refused with BufferRead, as its expectation states
+   ├ note: `readWhileHeld` is refused with BufferRead, as its expectation states
+   ╰ help: return the buffer with `send`, the operation or `resume`
 
 error[BufferUnreturned]: the buffer placed live here is not handed back before its body ends
    ╭▸ corpus/pathological/completion/buffer-misused.gandr:61:3

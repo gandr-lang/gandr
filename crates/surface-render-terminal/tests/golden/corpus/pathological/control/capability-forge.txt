@@ -13,4 +13,5 @@ error[CapabilityForged]: a capability cannot be made from a term; only one held 
 21 │ │ }
    │ └─┘ checked against `+U (-F [std.fs.Eff] String)`; while checking the body of this thunk
    │
-   ╰ note: `forged` is refused with CapabilityForged, as its expectation states
+   ├ note: `forged` is refused with CapabilityForged, as its expectation states
+   ╰ help: pass a capability that a hold binds or the host grants

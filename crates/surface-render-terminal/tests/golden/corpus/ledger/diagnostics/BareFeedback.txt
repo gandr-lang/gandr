@@ -6,4 +6,5 @@ error[BareFeedback]: this port is fed back from the rule's own output and read u
 8 │     node : zip(stream, state) --> (out);
   │                        ━━━━━ fed back, and read under no observation
   │
-  ╰ note: `Wheel` is refused with BareFeedback, as its expectation states
+  ├ note: `Wheel` is refused with BareFeedback, as its expectation states
+  ╰ help: observe the port's sort before feeding it back

@@ -4,4 +4,5 @@ error[AmbiguousMethod]: `len` is a method of both `Str` and `Bytes`; a call sele
 26 │   s.len()
    │     ━━━ a method of several modules
    │
-   ╰ note: `measured` is refused with AmbiguousMethod, as its expectation states
+   ├ note: `measured` is refused with AmbiguousMethod, as its expectation states
+   ╰ help: call the intended method through its module

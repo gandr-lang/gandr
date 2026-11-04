@@ -50,6 +50,8 @@ use gandr_core_checker::worlds::Predicate;
 use gandr_core_term::compose::Form;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::host;
+use gandr_surface_corpus::BoundaryClause;
+use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
@@ -111,6 +113,12 @@ pub fn advice(refusal: Refusal<'_>) -> Maybe<String, help::Absent>
     match refusal {
         Refusal::Lowering(refusal) => lowered(refusal),
         Refusal::Checking(refusal) => checked(refusal),
+        Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+            clause: BoundaryClause::Size,
+            ..
+        }) => Maybe::Present(String::from(
+            "make each member type have the size its boundary row states",
+        )),
         Refusal::Corpus(_) => Maybe::Absent(help::Absent::Unworded),
     }
 }
@@ -259,6 +267,12 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::RulesNeverComplete { .. } => String::from(
             "add a rule that joins the normal forms without wrapping the earlier completion",
         ),
+        LoweringRefusal::BareFeedback { .. } => {
+            String::from("observe the port's sort before feeding it back")
+        },
+        LoweringRefusal::AmbiguousMethod { .. } => {
+            String::from("call the intended method through its module")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::DuplicateSignature { .. }
@@ -269,7 +283,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::UnexportedName { .. }
         | LoweringRefusal::ShadowedBuiltin { .. }
         | LoweringRefusal::OutOfFragment { .. }
-        | LoweringRefusal::BareFeedback { .. }
         | LoweringRefusal::GradedBridge { .. }
         | LoweringRefusal::MalformedLiteral { .. }
         | LoweringRefusal::NoUniverseAbove { .. }
@@ -295,7 +308,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::InstanceAmbiguous { .. }
         | LoweringRefusal::RegionAsValue { .. }
         | LoweringRefusal::EntryType { .. }
-        | LoweringRefusal::AmbiguousMethod { .. }
         | LoweringRefusal::ViewOfNoPlace { .. }
         | LoweringRefusal::MismatchedPattern { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
@@ -775,6 +787,30 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::SessionNotEquivalent { .. } => {
             String::from("make the two protocols bisimilar at every step")
         },
+        CheckRefusal::Access {
+            defect: AccessDefect::Unended,
+            ..
+        } => String::from("end the access body with `resume` or `abort`"),
+        CheckRefusal::AtomTransport { .. } => {
+            String::from("add a transport law to the abstract type's identity attribute")
+        },
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::BufferRead { .. },
+            ..
+        } => String::from("return the buffer with `send`, the operation or `resume`"),
+        CheckRefusal::Located {
+            defect: LocatedDefect::CapabilityCaptured { .. },
+            ..
+        } => String::from("move the `migrate` outside the thunk that captures its capability"),
+        CheckRefusal::CapabilityForged { .. } => {
+            String::from("pass a capability that a hold binds or the host grants")
+        },
+        CheckRefusal::CapabilityConsumable(_) => {
+            String::from("remove the capability's `[1]` grade")
+        },
+        CheckRefusal::Boundary { .. } => {
+            String::from("write the boundary flow in the direction its position's variance permits")
+        },
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
@@ -783,7 +819,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::AbstractKindNotUniverse(_)
         | CheckRefusal::RepresentationAboveKind { .. }
         | CheckRefusal::NotAnAbstractType(_)
-        | CheckRefusal::AtomTransport { .. }
         | CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::DataArgumentArity(_)
         | CheckRefusal::UnknownConstructor { .. }
@@ -834,10 +869,8 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::Access { .. }
         | CheckRefusal::Codata { .. }
         | CheckRefusal::Located { .. }
-        | CheckRefusal::CapabilityForged { .. }
         | CheckRefusal::LiteralAmbiguous { .. }
         | CheckRefusal::CapabilityOutsideAuthority { .. }
-        | CheckRefusal::CapabilityConsumable(_)
         | CheckRefusal::CapabilityUngranted { .. }
         | CheckRefusal::FootprintsOverlap { .. }
         | CheckRefusal::SessionNotSubtype { .. }
@@ -846,8 +879,7 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::RideUnsupported { .. }
         | CheckRefusal::DialogueUnmatched { .. }
         | CheckRefusal::DialogueInverted { .. }
-        | CheckRefusal::ForwardUnsupported { .. }
-        | CheckRefusal::Boundary { .. } => return Maybe::Absent(help::Absent::Unworded),
+        | CheckRefusal::ForwardUnsupported { .. } => return Maybe::Absent(help::Absent::Unworded),
     })
 }
 
@@ -863,7 +895,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 95] = [
+    const WORDED: [&str; 105] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -960,11 +992,20 @@ mod tests
         "UnwindEffect",
         "ViewReadOnly",
         "ViewSpent",
+        "AmbiguousMethod",
+        "AtomTransport",
+        "BareFeedback",
+        "Boundary",
+        "BoundaryUnrealised.Size",
+        "BufferRead",
+        "CapabilityCaptured",
+        "CapabilityConsumable",
+        "CapabilityForged",
+        "ViewUnended",
     ];
 
-    /// Every worded name's refusal has a one-line help that opens with a
-    /// lowercase verb; every other name's is unworded, and a corpus refusal
-    /// is too.
+    /// Every worded name has a one-line help that opens with a lowercase verb.
+    /// Every other name is unworded.
     #[test]
     fn the_most_seen_names_are_worded_on_one_line()
     {
