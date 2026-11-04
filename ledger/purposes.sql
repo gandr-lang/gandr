@@ -2986,10 +2986,12 @@ INSERT INTO purpose VALUES('surface-lsp','protocol::WorkspaceDocumentReport','st
 INSERT INTO purpose VALUES('surface-lsp','protocol::WorkspaceEdit','struct','Edits to several documents: by URI, or, for a client that takes them so, as each document''s edits with the version of its copy they were made against and the annotations they name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::WorkspaceOptions','struct','The workspace features, as advertised.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::WorkspaceReport','struct','What `workspace/diagnostic` answers: a report for each source.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','quiet::Behind','struct','Whether an input holds bytes past the last message the reader took: the start of a frame the client wrote with it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','quiet::Changes','struct','A handle a watch, or another connection, hands a paced loop the files it saw change by.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','quiet::Holding','struct','Whether a publication withheld any diagnostic.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','quiet::Inbox','struct','Where a paced loop takes what it meets: its reader''s messages and a watch''s changes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','quiet::QUIET','constant','How long a document goes without a change before the diagnostics held for the form under its caret publish, when the client names no other interval.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','quiet::Unread','trait','An input that says whether it holds bytes it read and did not hand out.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','recheck::Reached','enum','How far a tried candidate got, best first.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','recheck::Tried','struct','One candidate revision as a trial judged it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','rpc::Asked','enum','The parameters of a request of the server''s.',NULL,'fits','sound',NULL);

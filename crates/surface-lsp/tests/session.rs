@@ -237,7 +237,8 @@ fn written(output: &Body) -> Vec<Value>
 fn logged(messages: &[Value]) -> (Served, Vec<Value>, Vec<String>)
 {
     let input = frames(messages);
-    let mut stream = input.as_ref();
+    let bytes: &[u8] = input.as_ref();
+    let mut stream = std::io::BufReader::new(bytes);
     let mut output = Vec::new();
     let mut log = Vec::new();
     let served = serve(
@@ -646,7 +647,7 @@ fn a_stream_closed_without_exit_ends_abruptly()
         "a stream closed after shutdown is clean"
     );
 
-    let mut cut: &[u8] = b"Content-Length: 40\r\n\r\n{\"jsonrpc\"";
+    let mut cut = std::io::BufReader::new(&b"Content-Length: 40\r\n\r\n{\"jsonrpc\""[..]);
     let mut output = Vec::new();
     assert!(
         matches!(
@@ -763,6 +764,18 @@ impl std::io::BufRead for Lingering
     )
     {
         self.read = self.read.saturating_add(amount).min(self.frames.len());
+    }
+}
+
+impl gandr_surface_lsp::Unread for Lingering
+{
+    /// Whether frames are left to read.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unread(&self) -> gandr_surface_lsp::Behind
+    {
+        gandr_surface_lsp::Behind(self.read < self.frames.len())
     }
 }
 
@@ -1194,7 +1207,8 @@ fn an_edit_that_changes_nothing_republishes_the_same_bytes()
         );
         messages.extend(closing());
         let input = frames(&messages);
-        let mut stream = input.as_ref();
+        let bytes: &[u8] = input.as_ref();
+        let mut stream = std::io::BufReader::new(bytes);
         let mut output = Vec::new();
         let mut log = Vec::new();
         let served = serve(

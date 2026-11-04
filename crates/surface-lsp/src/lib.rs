@@ -74,7 +74,7 @@
 //! # Example
 //!
 //! ```
-//! use std::io::Cursor;
+//! use std::io::BufReader;
 //!
 //! use gandr_surface_lsp::Body;
 //! use gandr_surface_lsp::Served;
@@ -93,7 +93,7 @@
 //! }
 //! let mut output = Vec::new();
 //! let served = serve(
-//!     &mut Cursor::new(input),
+//!     &mut BufReader::new(input.as_slice()),
 //!     &mut output,
 //!     &mut Vec::new(),
 //!     Workspace::spelled(Spelling::Unicode),
@@ -470,9 +470,11 @@ pub use crate::protocol::ContentChange;
 pub use crate::protocol::Diagnostic;
 pub use crate::protocol::DocumentUri;
 pub use crate::protocol::DocumentVersion;
+pub use crate::quiet::Behind;
 pub use crate::quiet::Changes;
 pub use crate::quiet::Inbox;
 pub use crate::quiet::QUIET;
+pub use crate::quiet::Unread;
 pub use crate::recheck::Reached;
 pub use crate::recheck::Tried;
 pub use crate::saved::Saved;

@@ -160,7 +160,7 @@ fn a_session_asking_for_a_trace_writes_one_its_replay_holds()
             .expect("a vector takes every frame");
     }
     let served = serve(
-        &mut input.as_slice(),
+        &mut std::io::BufReader::new(input.as_slice()),
         &mut Vec::new(),
         &mut Vec::new(),
         Workspace::spelled(Spelling::Unicode),
