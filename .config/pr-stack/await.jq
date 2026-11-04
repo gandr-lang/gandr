@@ -14,25 +14,16 @@ def arm($n): "arm: /bin/bash -c 'mise run pr:await \($n)' timer-await-\($n)";
 # The event `pr:await` reads off one poll, or null while it waits on.
 #
 # Input: an object with
-#   kind    `issue` for an issue waiting on `shape:signed`, `pull` for a top,
-#           `hold` for the stack top's hold (#5122);
+#   kind    `issue` for an issue waiting on `shape:signed`, `pull` for a top;
 #   state   `OPEN`, `CLOSED` or, for a pull request, `MERGED`;
 #   labels  the issue's label names;
 #   merge   the top's `mergeStateStatus`;
 #   lacks   whether the top still lacks a trunk change the branch builds on;
-#   age     seconds since the top's head commit was made;
-#   hold    for `hold`, the record `{holder, head, began, deadline}`, or null
-#           once it is released;
-#   now     for `hold`, the time, in epoch seconds.
+#   age     seconds since the top's head commit was made.
 # Output: null, or `{event, exit}`: exit 0 for an event `pr:open` reruns on,
 # 1 for a change that needs a hand.
 def awaited:
-  if .kind == "hold" then
-    if .hold == null then {event: "hold-released", exit: 0}
-    elif .hold.deadline <= .now then {event: "hold-expired", exit: 0}
-    else null
-    end
-  elif .kind == "issue" then
+  if .kind == "issue" then
     if .state != "OPEN" then {event: "issue-closed", exit: 1}
     elif .labels | index("shape:signed") then {event: "signed", exit: 0}
     else null

@@ -24,6 +24,16 @@
 #     Exits 0 when a gate passed on the tree of <commit> and ran every check
 #     that the commit's change selects (`select.bash`). Otherwise it names
 #     the command to run, and exits 2.
+#   passed.bash carry <gated> <head> <base>
+#     Carries the gate on the tree of <gated> to the tree of <head>, when
+#     <head>'s own commits above <base> keep the patches of as many commits
+#     at the tip of <gated> (`git patch-id --stable`). `pr:open` stacks a
+#     branch on the top and rebases its own commits; the gate on those
+#     commits counts on the rebased head, and the merge queue checks the
+#     combination. The stack stays first come, first served: no seat gates
+#     again for another's `pr:open`. Each carried record names the tree it
+#     came from. Exits 0 when the trees are one, or once it carries; exits 2,
+#     naming why, when <gated> has no record or a patch differs.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 records=$(git rev-parse --path-format=absolute --git-common-dir)/gandr-gate
@@ -60,6 +70,31 @@ case ${1:-} in
     mv "$file" "$records/$tree/${file##*/.record.}.json"
     echo "$gate: passed on the tree $tree; \`pr:open\` and \`pr:land\` accept a head with this tree"
     ;;
+  carry)
+    (( $# == 4 )) || { echo 'usage: passed.bash carry <gated> <head> <base>' >&2; exit 2; }
+    gated=$(git rev-parse "$2^{commit}")
+    head=$(git rev-parse "$3^{commit}")
+    from=$(git rev-parse "$gated^{tree}")
+    tree=$(git rev-parse "$head^{tree}")
+    [[ $from != "$tree" ]] || exit 0
+    shopt -s nullglob
+    files=("$records/$from"/*.json)
+    (( ${#files[@]} > 0 )) || { echo "pr:open: no gate passed on the tree of $gated, so none carries to $head" >&2; exit 2; }
+    "$0" require pr:open "$gated" || exit 2
+    count=$(git rev-list --count "$4..$head")
+    patches() { git rev-list --reverse -n "$count" "$1" | while IFS= read -r c; do git show --format= "$c" | git patch-id --stable | awk '{ print $1 }'; done; }
+    if (( count == 0 )) || [[ $(patches "$gated") != "$(patches "$head")" ]]; then
+      echo "pr:open: the stacked head's $count own commits do not keep the patches the gate on $gated passed; run \`mise run check\` on it, then \`pr:open\` again" >&2
+      exit 2
+    fi
+    mkdir -p "$records/$tree"
+    for f in "${files[@]}"; do
+      file=$(mktemp "$records/$tree/.record.XXXXXX")
+      jq --arg tree "$tree" --arg commit "$head" --arg from "$from" '. + {tree: $tree, commit: $commit, carried: $from}' "$f" > "$file"
+      mv "$file" "$records/$tree/${file##*/.record.}.json"
+    done
+    echo "pr:open: the gate on the tree $from carries to the stacked tree $tree: its $count own commits keep their patches"
+    ;;
   require)
     (( $# == 3 )) || { echo 'usage: passed.bash require <command> <commit>' >&2; exit 2; }
     command=$2
@@ -72,6 +107,11 @@ case ${1:-} in
       exit 2
     fi
     passed=$(jq -cs . "${files[@]}")
+    # A carried record (`carry`) took its gate from a head this reading
+    # accepted, with that head's selection. The stacked head's change against
+    # the trunk adds the commits of the pull requests below it, which their
+    # own gates and the merge queue check, so its selection is not read again.
+    if jq -e 'any(.[]; .carried != null)' <<< "$passed" > /dev/null; then exit 0; fi
     selected=$(GATE_TASKS=$(jq -c '.[0].tasks' <<< "$passed") "$here/select.bash" "$commit" 2> /dev/null | jq -R . | jq -cs .)
     verdict=$(jq -n --arg tree "$tree" --argjson selected "$selected" --argjson records "$passed" \
       '{tree: $tree, selected: $selected, records: $records}' | jq -c -f "$here/passed.jq")
@@ -80,7 +120,7 @@ case ${1:-} in
     exit 2
     ;;
   *)
-    echo 'usage: passed.bash (tree | record <gate> <tree> <check>... | require <command> <commit>)' >&2
+    echo 'usage: passed.bash (tree | record <gate> <tree> <check>... | require <command> <commit> | carry <gated> <head> <base>)' >&2
     exit 2
     ;;
 esac

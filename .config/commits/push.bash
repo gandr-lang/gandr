@@ -4,11 +4,8 @@
 # trailer-less commit would fail the format gate and hold every pull request
 # stacked above it. prek runs it at `pre-push` with the pushed commit in
 # `PRE_COMMIT_TO_REF` and the remote ref in `PRE_COMMIT_REMOTE_BRANCH`; a
-# deletion pushes no commit. The stack top's hold (`refs/pr-stack/*`, #5122,
-# `.config/pr-stack/hold.bash`) is a record with no change of its own, so its
-# push has no commit to lint.
+# deletion pushes no commit.
 set -euo pipefail
-[[ ${PRE_COMMIT_REMOTE_BRANCH:-} != refs/pr-stack/* ]] || exit 0
 head=${PRE_COMMIT_TO_REF:-}
 [[ -n "$head" && ! "$head" =~ ^0+$ ]] || exit 0
 COMMITLINT_BIN=$(mise which commitlint)

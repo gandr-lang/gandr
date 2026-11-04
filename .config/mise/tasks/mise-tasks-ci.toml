@@ -3333,18 +3333,6 @@ fi
 # started inside it holds and queues the top. A top changed or restacked by
 # then is refused, to be opened again.
 #
-# One `pr:open` at a time holds the top from its stacking to its push
-# (#5122, `.config/pr-stack/hold.bash`): a restack changes the tree, the
-# head waits for a gate of 6 to 35 minutes, and another seat's `pr:open`
-# inside that wait would move the top again. The hold is taken before the
-# branch stacks. A refusal for want of a gate on the stacked head keeps it,
-# so the seat gates that head and runs `pr:open` again on the same top; every
-# other exit releases it, the push among them. A `pr:open` that finds
-# another branch holding the top prints its `wait:` line and the `arm:` line
-# for `pr:await hold`, and exits 0 with nothing restacked. The server keeps
-# the hold, so seats on two hosts share it, and a hold its holder left
-# stands until its deadline.
-#
 # A top can lack a change of the trunk that the new pull request builds on
 # (#3654): it forked before the change merged. The rebase onto it then
 # conflicts, though the own commits apply to the trunk. A top bound for the
@@ -3453,8 +3441,6 @@ body=$(realpath "${usage_body:?}")
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
-keep_top_hold=false
-trap '[[ $keep_top_hold == true ]] || top_hold_release' EXIT
 own=$(git branch --show-current)
 [[ -n "$own" && "$own" != "$trunk" ]] || { echo "pr:open opens the checked-out branch; check out a unit branch, not $trunk" >&2; exit 2; }
 if existing=$(gh pr view "$own" -R "$repo" --json number,state --jq 'select(.state == "OPEN") | .number' 2> /dev/null) && [[ -n "$existing" ]]; then
@@ -3465,9 +3451,10 @@ fi
 # selects (#5076, `.config/gate-scope/passed.bash`): CI otherwise finds what
 # the gate finds. A reworded commit or a rebase that changes nothing keeps
 # its tree, so its gate counts. This first read refuses before any GitHub
-# call. The stack below can rebase the branch onto its top, so the gate is
-# read again on the head that is pushed (#5091).
+# call. The stack below can rebase the branch onto its top; the gate on this
+# head then carries to the head that is pushed (#5091, `passed.bash carry`).
 "$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" require pr:open HEAD || exit 2
+gated=$(git rev-parse HEAD)
 claims=$(git rev-parse --show-toplevel)/.config/claims
 issues=$(jq -Rrs -L "$claims" 'include "targets"; targets(working) | unique[]' "$body" \
   | while IFS= read -r number; do gh api "repos/$repo/issues/$number" --jq '{number, body: (.body // ""), labels: [.labels[].name]}'; done \
@@ -3584,7 +3571,6 @@ if [[ -n "$unblocks" ]]; then
     || { echo "the body must name #$unblocks, the pull request this fix unblocks" >&2; exit 2; }
   top=null
 else
-  top_hold_take "$own" "$(git rev-parse HEAD)" || { status=$?; (( status == 3 )) && exit 0; exit 2; }
   top=$(await_top "$own")
 fi
 git fetch --quiet origin "$trunk"
@@ -3659,19 +3645,14 @@ fi
 # (`body:check`, #2530) and keep the body rules (`body:prose`, #3591).
 mise run --quiet body:check --title "${usage_title:?}" "$body"
 mise run --quiet body:prose "$body"
-# The head that is pushed is the head the gate passed on (#5091): a stack or
-# a restack above rebases the branch onto the top and changes its tree. A
-# refusal here leaves the branch stacked and unpushed, and a rerun on an
-# unchanged top keeps the tree, so a gate run on the stacked head counts.
-if ! "$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" require pr:open HEAD; then
-  # The head stacked on a top this run holds, so it stays held while the
-  # seat gates it (#5122).
-  if [[ -n $top_hold_sha ]]; then
-    keep_top_hold=true
-    echo "the stack top stays held for $own until $(date -u -d "@$(($(date +%s) + top_hold_seconds))" +%FT%TZ): gate this head and run \`pr:open\` again, and no other \`pr:open\` restacks meanwhile" >&2
-  fi
-  exit 2
-fi
+# The head that is pushed carries the gate (#5091): a stack or a restack
+# above rebases the branch onto the top and changes its tree. The gate on the
+# branch's own commits counts while the rebase keeps their patches
+# (`passed.bash carry`), and the merge queue checks the combination. The
+# stack is first come, first served: no `pr:open` waits on another, and no
+# seat gates again because another seat opened first.
+"$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" carry "$gated" HEAD "$(git merge-base HEAD "origin/$base")" || exit 2
+"$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" require pr:open HEAD || exit 2
 git push --quiet --force-with-lease -u origin HEAD
 hold=${usage_hold:-}
 url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body" ${hold:+--draft})
@@ -4134,20 +4115,14 @@ echo "#$number released: its next \`pr:watch\` lands it once green"
 
 # The wake-up a seat arms when `pr:open` waits on a future event (#4164),
 # from the `arm:` line `pr:open` prints. It polls the issue or the top pull
-# request it names every 30 seconds, or with `hold` the stack top's hold
-# (#5122, `.config/pr-stack/hold.bash`), and exits the moment its event
-# happens, printing one line and nothing else on stdout
-# (`.config/pr-stack/await.jq`):
+# request it names every 30 seconds, and exits the moment its event happens,
+# printing one line and nothing else on stdout (`.config/pr-stack/await.jq`):
 #   signed #n         the issue carries `shape:signed` (exit 0)
 #   top-merged #n     the top merged (exit 0)
 #   top-current #n    the top holds every change of the trunk the branch
 #                     builds on, and does not conflict (exit 0)
 #   top-stale #n      the top has conflicted with the trunk past its seat's
 #                     claim window, so `pr:open` stacks past it (exit 0)
-#   hold-released     the holder's push released the stack top's hold, so
-#                     `pr:open` stacks on the holder's head (exit 0)
-#   hold-expired      the hold passed its deadline, so `pr:open` takes it
-#                     over (exit 0)
 #   issue-closed #n   the issue closed (exit 1)
 #   top-closed #n     the top closed without merging (exit 1)
 #   await-timeout #n  the deadline passed (exit 2)
@@ -4155,10 +4130,10 @@ echo "#$number released: its next \`pr:watch\` lands it once green"
 # reading that fails, a rate-limited one among them, is tried again at the
 # next poll. It runs in the branch's worktree, which `top-current` reads.
 ["pr:await"]
-description = "Wait for the future event pr:open waits on: an issue's sign-off, a top that merged, is current or went stale, or the release of the stack top's hold"
+description = "Wait for the future event pr:open waits on: an issue's sign-off, or a top that merged, is current or went stale"
 quiet = true
 usage = '''
-arg "<number>" help="the issue waiting on `shape:signed`, the top pull request, or `hold` for the stack top's hold"
+arg "<number>" help="the issue waiting on `shape:signed`, or the top pull request"
 flag "--timeout <seconds>" default="10800" help="give up after this many seconds"
 '''
 tools.jq = "1.8.1"
@@ -4167,23 +4142,17 @@ run = '''
 set -euo pipefail
 number=${usage_number:?}
 timeout=${usage_timeout:-10800}
-[[ "$number" =~ ^[1-9][0-9]*$ || "$number" == hold ]] || { echo 'Expected an issue or pull request number, or `hold`' >&2; exit 2; }
+[[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected an issue or pull request number' >&2; exit 2; }
 [[ "$timeout" =~ ^[0-9]+$ ]] || { echo 'Expected --timeout in seconds' >&2; exit 2; }
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 deadline=$((SECONDS + timeout))
-# The subject each printed line names, and the lock's key: one wait a number
-# on a host (#4268), so a second `pr:await` on the same issue or pull request
-# is refused while the first runs. Each seat waits on the one hold for its own
-# branch, so the hold's lock is keyed by the branch.
-if [[ $number == hold ]]; then
-  subject=$top_hold_ref
-  key=hold-$(git branch --show-current)
-else
-  subject=#$number
-  key=$number
-fi
+# The lock's key: one wait a number on a host (#4268), so a second
+# `pr:await` on the same issue or pull request is refused while the first
+# runs.
+subject=#$number
+key=$number
 await_lock=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch/$key.await
 mkdir -p "$(dirname "$await_lock")"
 if [[ -f $await_lock ]] && kill -0 "$(< "$await_lock")" 2> /dev/null; then
@@ -4192,23 +4161,16 @@ if [[ -f $await_lock ]] && kill -0 "$(< "$await_lock")" 2> /dev/null; then
 fi
 echo $$ > "$await_lock"
 trap 'rm -f "$await_lock"' EXIT
-# One poll's reading, as `awaited` reads it: the stack top's hold and the
-# time; an issue's state and labels; or a pull request's state, merge state,
-# the age of its head commit and whether it still lacks a trunk change the
-# branch builds on. The hold is one `ls-remote` (`top_hold_reading`). An open
-# pull request is read from the host's one shared reading of the open pull
-# requests (`pulls_reading`), so the 30 s polls of every wait on the host
-# cost one query between them (#5061). Only an issue, or a pull request no
-# longer open, is read alone. The poll calls it as a condition, where
-# `set -e` does not hold, so each step that can fail fails the reading
-# itself (#4803).
+# One poll's reading, as `awaited` reads it: an issue's state and labels; or
+# a pull request's state, merge state, the age of its head commit and whether
+# it still lacks a trunk change the branch builds on. An open pull request is
+# read from the host's one shared reading of the open pull requests
+# (`pulls_reading`), so the 30 s polls of every wait on the host cost one
+# query between them (#5061). Only an issue, or a pull request no longer
+# open, is read alone. The poll calls it as a condition, where `set -e` does
+# not hold, so each step that can fail fails the reading itself (#4803).
 reading() {
-  local all issue pull head lacked lacks=false hold
-  if [[ $number == hold ]]; then
-    hold=$(top_hold_reading) || return 1
-    jq -nc --argjson hold "$hold" --argjson now "$(date +%s)" '{kind: "hold", hold: $hold, now: $now}'
-    return
-  fi
+  local all issue pull head lacked lacks=false
   all=$(pulls_reading) || return 1
   pull=$(jq -c --argjson n "$number" '.[] | select(.number == $n)' <<< "$all") || return 1
   if [[ -z $pull ]]; then
