@@ -2113,6 +2113,71 @@ fn a_tuple_pattern_binds_each_output_of_an_operation_4855()
     );
 }
 
+/// An operation's outputs carry the labels its ports are written with, so a
+/// selection, a labelled pattern and a call that stands as one value read an
+/// operation's outputs as they do a function's, and a label the operation
+/// lacks is refused at its tile.
+#[test]
+fn an_operation_s_outputs_are_selected_and_bound_by_label_5147()
+{
+    let operation = "data Flag : Type where {\n    | Down : Flag\n    | Up : Flag\n    oper \
+                     swap : (a : Flag, b : Flag) --> (x : Flag, y : Flag);\n    rule : swap a \
+                     b ==> (b, a);\n}\n";
+    let source = format!(
+        "{operation}def first(a : Flag, b : Flag) -> Flag {{ (swap a b).x }}\ndef last(a : Flag, \
+         b : Flag) -> Flag {{ (swap a b).y }}\ndef punned(a : Flag, b : Flag) -> Flag {{ let *{{.y, \
+         .x}} = swap a b; y }}\ndef renamed(a : Flag, b : Flag) -> Flag {{ let *{{.y = q, .x = p}} \
+         = swap a b; p }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source.as_str(), &mut arena);
+    let first = body(&arena, &module, "first");
+    assert!(
+        first.iter().any(|token| token == "bindall2"),
+        "a selection binds every output of the operation's call, {first:?}"
+    );
+    assert_eq!(
+        first.get(first.len().saturating_sub(2_usize) ..),
+        Some(&[String::from("return"), String::from("#1")][..]),
+        "`.x` returns the first output, the outermost binder"
+    );
+    let last = body(&arena, &module, "last");
+    assert_eq!(
+        last.get(last.len().saturating_sub(2_usize) ..),
+        Some(&[String::from("return"), String::from("#0")][..]),
+        "`.y` returns the last output, {last:?}"
+    );
+    assert_eq!(
+        body(&arena, &module, "punned").last().map(String::as_str),
+        Some("#0"),
+        "`.y` binds the last output, written first"
+    );
+    assert_eq!(
+        body(&arena, &module, "renamed").last().map(String::as_str),
+        Some("#1"),
+        "`.x = p` binds the first output to `p`, written last"
+    );
+    let stray =
+        format!("{operation}def stray(a : Flag) -> Flag {{ let *{{.z, .x}} = swap a a; x }}\n");
+    assert!(
+        matches!(refused(stray.as_str()), LoweringRefusal::MalformedForm {
+            fault: FormFault::MisplacedTile,
+            ..
+        }),
+        "a label names an output of the operation"
+    );
+    let kept =
+        format!("{operation}def kept(a : Flag, b : Flag) -> Flag {{ let r = swap a b; r.x }}\n");
+    let mut arena = CoreArena::new();
+    let module = lowered(kept.as_str(), &mut arena);
+    let kept = body(&arena, &module, "kept");
+    assert!(
+        kept.iter().any(|token| token == "bindall2")
+            && kept.iter().any(|token| token == "record{x,y}"),
+        "an operation's call bound to one name binds the record of its labelled outputs, {kept:?}"
+    );
+}
+
 #[test]
 fn a_selected_output_binds_every_output_and_returns_one()
 {

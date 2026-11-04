@@ -663,6 +663,9 @@ enum Held
     /// A product of thunk types inside a type quote, whose desugar the
     /// formatter withdraws (#5207).
     Withdrawn,
+    /// A printing of a bind or a return of several values, which the printer
+    /// reads as no former of one term (#5173).
+    SeveralResults,
 }
 
 impl fmt::Display for Held
@@ -683,6 +686,7 @@ impl fmt::Display for Held
             Self::Inverse => "#5205, a printed path inverse",
             Self::Juxtaposed => "#5200, a type application juxtaposed inside an expression",
             Self::Withdrawn => "#5207, a product of thunk types the formatter withdraws in a quote",
+            Self::SeveralResults => "#5173, a bind of a call's outputs",
         })
     }
 }
@@ -848,6 +852,13 @@ fn unfaithful(
         .all(|&reason| reason == Unspelled::Unreadable(Unreadable::Unclassified))
     {
         Spelt::Held(Held::Computed)
+    }
+    // A pattern over a call's outputs binds several values at once.
+    else if unspelled
+        .iter()
+        .all(|&reason| reason == Unspelled::Unreadable(Unreadable::SeveralResults))
+    {
+        Spelt::Held(Held::SeveralResults)
     }
     // A handler written as `reset` and `shift` leaves the scope of each
     // capability it delimits unnamed, so its region is elided with it.
