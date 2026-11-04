@@ -1172,7 +1172,7 @@ mod tests
     const PATH_STEP: &str = "/// `Path.step` composes two paths: one path, then the next after that.\n\
                              @[ checks ]\ndata Circle : Type where {\n  | Base : Circle\n  \
                              | loop : Base <-> Base\n}\n@[ checks ]\ndef twice : Path[.A = Circle](Base, \
-                             Base) ;\ndef twice = Path.step(loop, loop) ;\n";
+                             Base) ;\ndef twice = Path.step loop loop ;\n";
 
     /// #2876: `rec` deleted from `def rec down` leaves a definition that
     /// cannot call itself, and `loop` missed as `loo` renames a declaration

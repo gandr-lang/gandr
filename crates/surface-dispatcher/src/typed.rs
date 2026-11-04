@@ -6059,9 +6059,9 @@ mod tests
             "def lift(d : Ctx, g : Ctx, r : Ren(Extend(d, 5), Extend(g, 6))) -> Integer { 0 }\n",
             "data Box : Type where { | Wrap : (g : Ctx) --> Box }\n",
             "def boxed() -> Box {\n",
-            "  let one = Extend(Empty, 1);\n",
-            "  let two = Extend(one, 2);\n",
-            "  Wrap(two)\n",
+            "  let one = Extend Empty 1;\n",
+            "  let two = Extend one 2;\n",
+            "  Wrap two\n",
             "}\n",
         );
         let table = table(SourceText::from(source));
@@ -6069,7 +6069,7 @@ mod tests
         for (written, context) in [
             ("Extend(d, 5)", "Ren(Extend(d, 5)"),
             ("Extend(g, 6)", ", Extend(g, 6))"),
-            ("two", "Wrap(two)"),
+            ("two", "Wrap two"),
         ] {
             let at = source.find(context).expect("the context occurs");
             let start = at + context.find(written).expect("the context holds the term");
@@ -7536,15 +7536,16 @@ mod tests
     }
 
     /// #4958: the digit of a negated literal answers at its own span, and the
-    /// operator keeps the entry of the negative literal.
+    /// operator keeps the entry of the negative literal. The sign stands
+    /// apart from the digits, `- 4`, since a glued `-4` is one run (#4853).
     #[test]
     fn a_negated_literal_s_number_answers_at_its_own_span_4958()
     {
-        let written = "def integerOrder() -> Bool { -4 < 9 }\n";
+        let written = "def integerOrder() -> Bool { - 4 < 9 }\n";
         let source = SourceText::from(written);
         let table = table(source);
-        let start = written.find("-4").expect("the negated literal is written");
-        let digit = ByteOffset::from(start.saturating_add(1));
+        let start = written.find("- 4").expect("the negated literal is written");
+        let digit = ByteOffset::from(start.saturating_add(2));
         let text =
             |span: ByteSpan| written.get(usize::from(span.start()) .. usize::from(span.end()));
         let answered = table.answering(digit);
@@ -7556,7 +7557,7 @@ mod tests
         let minus = table.answering(ByteOffset::from(start));
         assert_eq!(
             minus.and_then(text),
-            Some("-4"),
+            Some("- 4"),
             "the operator keeps the negative literal: {minus:?}"
         );
         let nine = written.find('9').expect("the other literal is written");
@@ -7628,16 +7629,14 @@ mod tests
                        (x : Nat, y : Nat) --> At2(x, y)\n}\ndef pair(p : Nat, q : Nat, t : Two(p, \
                        q)) -> At2(p, q) {\n  match t { | T(x, y) => A2 x y }\n}\n";
         let table = table(SourceText::from(written));
-        let call = written
-            .rfind("A2(x, y)")
-            .expect("the arm's body is written");
+        let call = written.rfind("A2 x y").expect("the arm's body is written");
         let own = |at: usize| {
             table
                 .answering(ByteOffset::from(at))
                 .map(|span| (usize::from(span.start()), usize::from(span.end())))
         };
         let x = call.saturating_add(3_usize);
-        let y = call.saturating_add(6_usize);
+        let y = call.saturating_add(5_usize);
         assert_eq!(
             (own(x), own(y)),
             (
@@ -7813,7 +7812,7 @@ mod tests
 
     /// A later entry's type that applies an earlier entry of the bound record
     /// reads back to the certificate. The printer spells that application as
-    /// `e.cell(0)`.
+    /// `e.cell 0`.
     #[test]
     fn a_record_entry_naming_an_earlier_entry_reads_back_4950()
     {
@@ -7826,8 +7825,8 @@ mod tests
 
         let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
         for spelled in [
-            "Path[.A = Integer](e.cell(0), 0)",
-            "-F Path[.A = Integer](e.cell(0), 0)",
+            "Path[.A = Integer](e.cell 0, 0)",
+            "-F Path[.A = Integer](e.cell 0, 0)",
         ] {
             let trips: Vec<&RoundTrip> = read
                 .iter()
@@ -8340,10 +8339,10 @@ mod tests
     {
         let source = SourceText::from(concat!(
             "def made(a : Type, b : Type, i : *{to : +U (a -> -F b), back : +U (b -> -F a), ",
-            "sect : (x : a) => Path[.A = a](back(to(x)), x), retr : (y : b) => Path[.A = b](to(back(y)), y)}) ",
-            "-> -F #{to : +U (a -> -F b), linv : #{g : +U (b -> -F a), sect : (x : a) => Path[.A = a](g(to(x)), x)}, ",
-            "rinv : #{h : +U (b -> -F a), retr : (y : b) => Path[.A = b](to(h(y)), y)}} {\n",
-            "  match i {\n    #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}}\n  }\n}\n",
+            "sect : (x : a) -> Path[.A = a](back (to x), x), retr : (y : b) -> Path[.A = b](to (back y), y)}) ",
+            "-> -F *{to : +U (a -> -F b), linv : *{g : +U (b -> -F a), sect : (x : a) -> Path[.A = a](g (to x), x)}, ",
+            "rinv : *{h : +U (b -> -F a), retr : (y : b) -> Path[.A = b](to (h y), y)}} {\n",
+            "  match i {\n    | *{t, k, s, r} => *{t, *{*{k, s}, *{k, r}}}\n  }\n}\n",
         ));
         let table = table(source);
         assert_eq!(
@@ -8363,16 +8362,16 @@ mod tests
     {
         let source = SourceText::from(concat!(
             "def nested(p : *{x : Integer, inner : *{y : Integer, q : Path[.A = Integer](x, y)}}) ",
-            "-> -F Integer {\n  match p {\n    #{x, #{y, q}} => y\n  }\n}\n",
+            "-> -F Integer {\n  match p {\n    | *{x, *{y, q}} => y\n  }\n}\n",
             "def flat(p : *{x : Integer, y : Integer, q : Path[.A = Integer](x, y)}) ",
-            "-> -F Integer {\n  match p {\n    #{x, y, q} => y\n  }\n}\n",
+            "-> -F Integer {\n  match p {\n    | *{x, y, q} => y\n  }\n}\n",
         ));
         let table = table(source);
         assert_eq!(
             answer(&table, source, SourceText::from("*{y, q}")),
             Maybe::Present(Answer {
                 subject: Subject::Binder,
-                ty: String::from("#{y : Integer, q : Path[.A = Integer](x, y)}"),
+                ty: String::from("*{y : Integer, q : Path[.A = Integer](x, y)}"),
                 expected: Maybe::Absent(checked_against::Absent::Agreed),
             }),
             "the inner record answers at the pair's second component, under the `x` the \
@@ -8382,7 +8381,7 @@ mod tests
             answer(&table, source, SourceText::from("*{x, y, q}")),
             Maybe::Present(Answer {
                 subject: Subject::Binder,
-                ty: String::from("#{x : Integer, y : Integer, q : Path[.A = Integer](x, y)}"),
+                ty: String::from("*{x : Integer, y : Integer, q : Path[.A = Integer](x, y)}"),
                 expected: Maybe::Absent(checked_against::Absent::Agreed),
             }),
             "a record of three answers as itself, its labels as written, not as the pair the \
@@ -8678,13 +8677,13 @@ mod tests
              rule unitL : comp (id a) f <=> f;\n}\n\nmodule Fns : Model(Cat) where {\n  type Ob = \
              Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : \
              t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t \
-             -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    let y = f(x);\n    become \
-             g(y)\n  }\n  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become \
-             ident(t) } }\n  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : \
+             -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    let y = f x;\n    become \
+             g y\n  }\n  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become \
+             ident t } }\n  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : \
              +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {\n    return thunk { become \
-             compose(t, u, v, f, g) }\n  }\n  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F \
-             q)) -> -F Path[.A = (+U[ω] (p -> -F q))](comp(p, p, q, id(p), f), f) {\n    return \
-             Path.here(f)\n  }\n}\n",
+             compose t u v f g }\n  }\n  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F \
+             q)) -> -F Path[.A = (+U[ω] (p -> -F q))](comp p p q (id p) f, f) {\n    return \
+             Path.here f\n  }\n}\n",
         );
         let table = table(source);
         assert_eq!(
@@ -9059,7 +9058,7 @@ mod tests
         );
         assert!(
             spelled.iter().any(|entry| entry.ty().as_ref()
-                == "((c : a) => Path[.A = a](k(t(c)), c)) * ((c : b) => Path[.A = b](t(k(c)), c))"),
+                == "((c : a) -> Path[.A = a](k (t c), c)) * ((c : b) -> Path[.A = b](t (k c), c))"),
             "the remainder after `t` names it: {spelled:#?}"
         );
     }
@@ -9072,13 +9071,13 @@ mod tests
     {
         for (pattern, remainder, reason) in [
             (
-                "#{.from = k} => k",
-                "((c : a) => Path[.A = a](k(into(c)), c)) * ((c : b) => Path[.A = b](into(k(c)), c))",
+                "| *{.from = k} => k",
+                "((c : a) -> Path[.A = a](k (into c), c)) * ((c : b) -> Path[.A = b](into (k c), c))",
                 "the omitted forward map answers by its label",
             ),
             (
-                "#{.from = into} => into",
-                "((c : a) => Path[.A = a](into(into′(c)), c)) * ((c : b) => Path[.A = b](into′(into(c)), c))",
+                "| *{.from = into} => into",
+                "((c : a) -> Path[.A = a](into (into′ c), c)) * ((c : b) -> Path[.A = b](into′ (into c), c))",
                 "the label primed apart from the written `into`",
             ),
         ] {
@@ -9107,7 +9106,7 @@ mod tests
     #[test]
     fn a_dependent_record_spells_its_variables_where_it_stands_1515()
     {
-        let record = "#{ x : b, y : b, p : Path[.A = b](x, y) }";
+        let record = "*{ x : b, y : b, p : Path[.A = b](x, y) }";
         let source = format!(
             "def againAt(b : Type, w : {record}) -> -F Path[.A = {record}](w, w) {{\n  match w {{\n    \
              | *{{.x = u, .y = v, .p = q}} => Path.here *{{u, *{{v, q}}}}\n  }}\n}}\n\ndef selfEquiv(b : \
@@ -9127,7 +9126,7 @@ mod tests
         assert!(
             spelled
                 .iter()
-                .any(|entry| entry.ty().as_ref().contains("(u, y′)")),
+                .any(|entry| entry.ty().as_ref().contains("*{u, y′}")),
             "the rest of the record answers by its label: {spelled:#?}"
         );
         for (name, declared) in
@@ -9210,7 +9209,7 @@ mod tests
             .collect();
         for spelled in [
             "(x : Type) -> -F Path[.A = Type](same(same(x)), x)",
-            "#{a : Type => Type, b : (b : Type) => Path[.A = Type](same(a(b)), b)}",
+            "*{a : +U (Type -> -F Type), b : (b : Type) -> Path[.A = Type](same(a(b)), b)}",
         ] {
             assert!(
                 trips.iter().any(|&(ref printed, _)| printed == spelled),
@@ -9340,7 +9339,7 @@ mod tests
             .collect();
         assert!(
             trips.iter().any(|&(ref spelled, _)| spelled
-                == "Path[.A = #{x : Integer, y : Integer}](#{.x = 9, .y = 3}, #{.x = 9, .y = 3})"),
+                == "Path[.A = *{x : Integer, y : Integer}](*{.x = 9, .y = 3}, *{.x = 9, .y = 3})"),
             "both orders print as the record they build: {trips:?}"
         );
         assert!(
@@ -9366,7 +9365,7 @@ mod tests
             .into_iter()
             .map(|back| (back.spelled, back.reprinted))
             .collect();
-        let record = "#{x : b, y : b, p : Path[.A = b](x, y)}";
+        let record = "*{x : b, y : b, p : Path[.A = b](x, y)}";
         assert!(
             reads.iter().any(|&(ref spelled, _)| spelled == record),
             "the record prints with its labels: {reads:?}"
@@ -9399,8 +9398,8 @@ mod tests
         let reads: Vec<super::ReadBack> =
             table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
         for record in [
-            "#{x : b, y : b, z : b, f : Path[.A = b](x, y), g : Path[.A = b](y, z)}",
-            "#{n : Integer, a : Type, v : a}",
+            "*{x : b, y : b, z : b, f : Path[.A = b](x, y), g : Path[.A = b](y, z)}",
+            "*{n : Integer, a : Type, v : a}",
         ] {
             let spelling: Vec<&super::ReadBack> = reads
                 .iter()
@@ -9435,9 +9434,9 @@ mod tests
         let reads: Vec<super::ReadBack> =
             table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
         for selected in [
-            "(r : #{x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z)}) => Path[.A = A](r.x, \
+            "(r : *{x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z)}) -> Path[.A = A](r.x, \
              r.z)",
-            "(r : #{x : A, y : A, g : Path[.A = A](x, y)}) => Path[.A = Path[.A = A](r.x, r.y)](r.g, r.g)",
+            "(r : *{x : A, y : A, g : Path[.A = A](x, y)}) -> Path[.A = Path[.A = A](r.x, r.y)](r.g, r.g)",
         ] {
             let spelling: Vec<&super::ReadBack> = reads
                 .iter()
@@ -9483,9 +9482,9 @@ mod tests
         for (parameter, record) in [
             (
                 "\n  h : ",
-                "#{x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z)}",
+                "*{x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z)}",
             ),
-            ("\n  k : ", "#{x : A, y : A, g : Path[.A = A](x, y)}"),
+            ("\n  k : ", "*{x : A, y : A, g : Path[.A = A](x, y)}"),
         ] {
             let at = text
                 .find(parameter)
@@ -9536,7 +9535,7 @@ mod tests
         );
         for selected in [
             "Path[.A = A](r.x, r.y)",
-            "#{z : A, f : Path[.A = A](r.x, r.y), g : Path[.A = A](r.y, z)}",
+            "*{z : A, f : Path[.A = A](r.x, r.y), g : Path[.A = A](r.y, z)}",
         ] {
             let spelling: Vec<&super::ReadBack> = reads
                 .iter()
@@ -9570,8 +9569,8 @@ mod tests
         let reads: Vec<super::ReadBack> =
             table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
         for composite in [
-            "Path[.A = Path[.A = A](x, w)](compose[5, 7](chain(3), (p, q, r)), Path.step(Path.step(p, q), r))",
-            "Path[.A = Path[.A = A](x, y)](compose[0, 0](chain(1), p), p)",
+            "Path[.A = Path[.A = A](x, w)](compose[5, 7] (chain 3) (p, q, r), Path.step (Path.step p q) r)",
+            "Path[.A = Path[.A = A](x, y)](compose[0, 0] (chain 1) p, p)",
         ] {
             let spelling: Vec<&super::ReadBack> = reads
                 .iter()
@@ -9796,7 +9795,7 @@ mod tests
             .into_iter()
             .map(|back| (back.spelled, back.reprinted))
             .collect();
-        let arrow = "(y : b) => Path[.A = b](t(h(y)), y)";
+        let arrow = "(y : b) -> Path[.A = b](t (h y), y)";
         assert!(
             reads.iter().any(|&(ref spelled, _)| spelled == arrow),
             "the arrow prints with its written binder: {reads:?}"

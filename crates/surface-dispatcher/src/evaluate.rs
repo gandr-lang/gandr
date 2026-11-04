@@ -3917,8 +3917,8 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
              Path[.A = Circle](Base, Base)) ; def once = thunk { loop } ;",
         );
         for (spelling, spelled) in [
-            (Spelling::Unicode, "loop ∷ Path.here (Base)"),
-            (Spelling::Ascii, "loop :: Path.here (Base)"),
+            (Spelling::Unicode, "loop ∷ Path.here Base"),
+            (Spelling::Ascii, "loop :: Path.here Base"),
         ] {
             words.spell_in(spelling);
             assert_eq!(
@@ -4191,7 +4191,7 @@ def kept : +U (-F (+U (-F Path[.A = Integer](1, 1)))) ; def kept = thunk { retur
         }
         assert_eq!(
             run(&mut laws, SurfaceName::from("kept")).to_string(),
-            "thunk { law (thunk { fun (a) { a } }, thunk { fun (a) { a } }) }",
+            "thunk { law *{thunk { fun (a) { a } }, thunk { fun (a) { a } }} }",
             "a run that carries the unfocused body without reaching it returns"
         );
     }
@@ -4534,7 +4534,7 @@ def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
         };
         assert_eq!(
             spelled(&core, returned),
-            Ok(String::from("(first, (second, first))"))
+            Ok(String::from("*{first, *{second, first}}"))
         );
         for (summand, expected) in [
             (0_usize, "+{.0 = second}"),
