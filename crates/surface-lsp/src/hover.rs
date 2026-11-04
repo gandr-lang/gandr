@@ -259,6 +259,9 @@ pub struct Hovering
     /// The canonical path of each source of the table's unit, in the unit's
     /// order; empty for a text typed alone.
     paths: Vec<PathBuf>,
+    /// The path each source of the table's unit was opened at, in the unit's
+    /// order, no symbolic link resolved; empty for a text typed alone.
+    opened: Vec<PathBuf>,
     /// The document's path, as the hover was asked about it.
     document: PathBuf,
     /// What each of the document's path imports resolved to, in the order the
@@ -302,17 +305,18 @@ impl Hovering
         &self.signatures
     }
 
-    /// The canonical path of the unit's source `referent` stands in, none for
-    /// a text typed alone.
+    /// The path the unit's source `referent` stands in was opened at, no
+    /// symbolic link resolved: the path an editor names it by. None for a
+    /// text typed alone.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn path(
+    pub(crate) fn opened(
         &self,
         referent: &Referent,
     ) -> Option<&Path>
     {
-        self.paths
+        self.opened
             .get(usize::from(referent.source()))
             .map(PathBuf::as_path)
     }
@@ -459,7 +463,7 @@ pub fn hovering_laid<Store, Blocks>(
 ) -> Hovering
 {
     let grammar = session.grammar();
-    let (typed, paths, targets) = match *laid {
+    let (typed, (paths, opened), targets) = match *laid {
         Maybe::Present(ref laid) => {
             let typed = judged.or_else(|| {
                 let mut signatures = Signatures::default();
@@ -483,7 +487,7 @@ pub fn hovering_laid<Store, Blocks>(
                 .last()
                 .map(|importer| importer.imports().to_vec())
                 .unwrap_or_default();
-            (typed, laid.paths.clone(), targets)
+            (typed, (laid.paths.clone(), laid.opened.clone()), targets)
         },
         Maybe::Absent(_) => (
             judged.or_else(|| {
@@ -495,7 +499,7 @@ pub fn hovering_laid<Store, Blocks>(
                 let table = TypeTable::of_parsed(grammar, parsed).ok()?;
                 Some((table, signatures))
             }),
-            Vec::new(),
+            (Vec::new(), Vec::new()),
             Vec::new(),
         ),
     };
@@ -504,6 +508,7 @@ pub fn hovering_laid<Store, Blocks>(
         names: Names::of(&table),
         table,
         paths,
+        opened,
         document: path.to_path_buf(),
         targets,
         signatures,
@@ -2606,14 +2611,23 @@ mod tests
 
     /// #4963: a link to a declaration writes a Markdown reference line after
     /// the documentation, which names the declaring file and the line of the
-    /// name, a sibling's included. A link to a constructor writes none.
+    /// name, a sibling's included. A link to a constructor writes none. #5090:
+    /// the files stand under a symbolic link, as a macOS temporary directory
+    /// does, and each link names its file by the path the document reads it
+    /// at.
     #[test]
     fn a_documentation_link_writes_its_reference_line_4963()
     {
-        let directory =
+        let scratch =
             std::env::temp_dir().join(format!("gandr-hover-links-{}", std::process::id()));
-        let _cleared = std::fs::remove_dir_all(&directory);
-        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let _cleared = std::fs::remove_dir_all(&scratch);
+        let real = scratch.join("real");
+        std::fs::create_dir_all(&real).expect("the scratch directory is created");
+        let directory = scratch.join("linked");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real, &directory).expect("the link to it is made");
+        #[cfg(not(unix))]
+        let directory = real;
         let base = directory.join("base.gandr");
         std::fs::write(&base, "def one = 1 ;\ndef cube = 3 ;\n").expect("the sibling is written");
         let path = directory.join("top.gandr");
@@ -2659,7 +2673,7 @@ mod tests
             },
             PLAIN,
         );
-        let _cleared = std::fs::remove_dir_all(&directory);
+        let _cleared = std::fs::remove_dir_all(&scratch);
         let uri = |path: &std::path::Path| {
             crate::protocol::DocumentUri::of_path(path).expect("the path is absolute")
         };

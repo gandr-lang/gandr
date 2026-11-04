@@ -271,9 +271,10 @@ impl ParsedBytes
 ///   dependency order, one newline apart, the importer last and starting at
 ///   `base`; `unit` says where each starts and what each path import resolved
 ///   to, the prelude its first source; `paths` holds each source's canonical
-///   path by its position in the unit, the prelude's named [`prelude::NAME`];
-///   `written` holds the path addresses the importer's root imports write, in
-///   source order, as the lay-out read them.
+///   path by its position in the unit, the prelude's named [`prelude::NAME`],
+///   and `opened` the path each was opened at; `written` holds the path
+///   addresses the importer's root imports write, in source order, as the
+///   lay-out read them.
 /// - panics: none.
 /// - executable: none — a data type; [`lay_out`] and [`Laid::alone`] carry the
 ///   clauses.
@@ -295,6 +296,11 @@ pub struct Laid
     /// Each source's canonical path, by its position in the unit; the
     /// prelude's, first, is [`prelude::NAME`].
     pub paths: Vec<PathBuf>,
+    /// Each source's path as it was opened, by its position in the unit, no
+    /// symbolic link resolved: the importer's path as given, and each
+    /// imported file's as its first importer reads it. An editor names a
+    /// source by it.
+    pub opened: Vec<PathBuf>,
     /// Every path an import of a source the closure read names, resolved or
     /// not, sorted, as [`lay_out`] states.
     pub named: Vec<PathBuf>,
@@ -786,6 +792,10 @@ struct Read
 {
     /// Its canonical path.
     path: PathBuf,
+    /// The path it was opened at, no symbolic link resolved: the path given
+    /// for a source given, else its first importer's opened directory joined
+    /// with the path the import names.
+    opened: PathBuf,
     /// The root its canonical path sits under.
     root: SourceRoot,
     /// Its text, taken when its component is laid out.
@@ -1062,6 +1072,7 @@ pub fn lay_out(
 /// - witness: `component::tests::an_importer_not_yet_on_disk_is_laid_after_what_it_imports_1443`
 #[spec(ensures: |ref ret| ret.text.get(usize::from(ret.base) ..) == Some(text.as_ref())
     && ret.paths.len() == ret.unit.sources().len()
+    && ret.opened.len() == ret.paths.len()
     && ret.unit.prelude().is_some()
     && ret.named.windows(2).all(|pair| matches!(*pair, [ref first, ref second] if first < second)))]
 #[inline]
@@ -1108,6 +1119,7 @@ pub fn lay_out_shadowed(
 /// - witness: `component::tests::an_importer_given_its_imports_is_laid_out_as_read_2439`
 #[spec(ensures: |ref ret| ret.text.get(usize::from(ret.base) ..) == Some(text.as_ref())
     && ret.paths.len() == ret.unit.sources().len()
+    && ret.opened.len() == ret.paths.len()
     && ret.unit.prelude().is_some()
     && match written {
         Maybe::Present(given) => !text.as_ref().contains(IMPORT) || ret.written.as_slice() == given,
@@ -1126,7 +1138,11 @@ pub fn lay_out_written(
         return Laid::alone(path, text, (Vec::new(), Vec::new()));
     }
     let mut graph = Graph::default();
-    let importer = graph.admit(named_path(path), root, String::from(text.as_ref()));
+    let importer = graph.admit(
+        (named_path(path), path.to_path_buf()),
+        root,
+        String::from(text.as_ref()),
+    );
     if let Maybe::Present(given) = written {
         graph.given = Some((importer, given.to_vec()));
     }
@@ -1146,14 +1162,15 @@ pub fn lay_out_written(
     else {
         return Laid::alone(path, text, (named, read));
     };
-    let paths = core::iter::once(PathBuf::from(prelude::NAME))
-        .chain(
-            laying
-                .0
-                .iter()
-                .filter_map(|position| graph.read.get(position.0).map(|read| read.path.clone())),
-        )
-        .collect();
+    let (paths, opened) =
+        core::iter::once((PathBuf::from(prelude::NAME), PathBuf::from(prelude::NAME)))
+            .chain(laying.0.iter().filter_map(|position| {
+                graph
+                    .read
+                    .get(position.0)
+                    .map(|read| (read.path.clone(), read.opened.clone()))
+            }))
+            .unzip();
     match graph.lay(&laying) {
         Maybe::Present(component) => {
             let base = component
@@ -1165,6 +1182,7 @@ pub fn lay_out_written(
                 unit: component.unit,
                 base,
                 paths,
+                opened,
                 named,
                 written: read,
             }
@@ -1184,7 +1202,7 @@ impl Laid
     /// - ensures: the prelude's text, a newline, then `text` from
     ///   [`prelude::base`]; a unit of the prelude and the source, whose path
     ///   imports answer unresolved; the prelude's name and the source's path,
-    ///   as [`named_path`] names it.
+    ///   as [`named_path`] names it and as given.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1214,6 +1232,7 @@ impl Laid
             .unwrap_or_default(),
             base,
             paths: Vec::from([PathBuf::from(prelude::NAME), named_path(path)]),
+            opened: Vec::from([PathBuf::from(prelude::NAME), path.to_path_buf()]),
             named,
             written,
         }
@@ -1303,7 +1322,7 @@ pub fn group(
     };
     let positions: Vec<Position> = given
         .into_iter()
-        .map(|source| graph.admit(source.path, source.root, source.text))
+        .map(|source| graph.admit((source.path.clone(), source.path), source.root, source.text))
         .collect();
     graph.expand(grammar, &Unshadowed);
     for path in apart {
@@ -1385,7 +1404,7 @@ impl Graph
     #[spec(ensures: |ret| ret.0 < self.read.len())]
     fn admit(
         &mut self,
-        path: PathBuf,
+        (path, opened): (PathBuf, PathBuf),
         root: SourceRoot,
         text: String,
     ) -> Position
@@ -1397,6 +1416,7 @@ impl Graph
         let _fresh = self.index.insert(path.clone(), position);
         self.read.push(Read {
             path,
+            opened,
             root,
             text,
             edges: Vec::new(),
@@ -1449,8 +1469,11 @@ impl Graph
                 next = next.saturating_add(1);
                 continue;
             }
+            // The importer's opened directory, so an import names its file as
+            // the importer reads it; `locate` still keys it by its canonical
+            // path.
             let directory = source
-                .path
+                .opened
                 .parent()
                 .map(Path::to_path_buf)
                 .unwrap_or_default();
@@ -1535,8 +1558,9 @@ impl Graph
     /// - requires: nothing.
     /// - ensures: the graph names `target` as [`named_path`] names it. The
     ///   position of the source at that path, appended when new, under the root
-    ///   it is classified under: read as `shadows` holds it when it holds it,
-    ///   else from the file there as [`locate`] and [`Graph::fetch`] read it;
+    ///   it is classified under and opened at `target` as written, no symbolic
+    ///   link resolved: read as `shadows` holds it when it holds it, else from
+    ///   the file there as [`locate`] and [`Graph::fetch`] read it;
     ///   [`Edge::Unresolved`] when neither `shadows` nor a readable file holds
     ///   it, or it is classified under a root other than `root` and other than
     ///   [`SourceRoot::Strict`].
@@ -1598,7 +1622,7 @@ impl Graph
             }
         };
         if reachable(found) {
-            Edge::To(self.admit(named, found, text))
+            Edge::To(self.admit((named, target.components().collect()), found, text))
         }
         else {
             Edge::Unresolved
@@ -2961,6 +2985,50 @@ mod tests
         );
     }
 
+    /// #5090: a closure opened through a symbolic link names each source by
+    /// its canonical path in `paths`, and by the path the editor opens it at
+    /// in `opened`: the importer's path as given, and the sibling's beside it.
+    #[cfg(unix)]
+    #[test]
+    fn a_closure_opened_through_a_link_keeps_each_opened_path_5090()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let importer =
+            SourceText::from("import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;");
+        let tree = Scratch::new(Path::new("opened"), &[(
+            Path::new("base.gandr"),
+            SourceText::from("def one : Integer ;\ndef one = 1 ;"),
+        )]);
+        let linked = tree.0.with_extension("linked");
+        let _cleared = std::fs::remove_file(&linked);
+        std::os::unix::fs::symlink(&tree.0, &linked).expect("the link is made");
+        let laid = lay_out(
+            &grammar,
+            &linked.join("main.gandr"),
+            SourceRoot::Strict,
+            importer,
+        );
+        let _removed = std::fs::remove_file(&linked);
+        assert_eq!(
+            laid.paths,
+            [
+                PathBuf::from(prelude::NAME),
+                tree.0.join("base.gandr"),
+                tree.0.join("main.gandr")
+            ],
+            "the closure keys each source by its canonical path"
+        );
+        assert_eq!(
+            laid.opened,
+            [
+                PathBuf::from(prelude::NAME),
+                linked.join("base.gandr"),
+                linked.join("main.gandr")
+            ],
+            "an editor names each source by the path the importer reads it at"
+        );
+    }
+
     /// #2439: an importer given the imports a parse of its text reads is laid
     /// out exactly as when it is parsed whole; given other imports, it is laid
     /// out over the sources those name, which is what the judgement's own
@@ -3318,7 +3386,10 @@ mod tests
         let laid = || {
             let mut graph = super::Graph::default();
             let _importer = graph.admit(
-                named_path(&tree.0.join("importer.gandr")),
+                (
+                    named_path(&tree.0.join("importer.gandr")),
+                    tree.0.join("importer.gandr"),
+                ),
                 SourceRoot::Strict,
                 String::from(importer),
             );
@@ -3429,7 +3500,10 @@ mod tests
         let laid = |shadows: &dyn super::Shadows| {
             let mut graph = super::Graph::default();
             let _importer = graph.admit(
-                named_path(&tree.0.join("importer.gandr")),
+                (
+                    named_path(&tree.0.join("importer.gandr")),
+                    tree.0.join("importer.gandr"),
+                ),
                 SourceRoot::Strict,
                 String::from(importer),
             );

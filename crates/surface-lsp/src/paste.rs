@@ -82,7 +82,7 @@ pub fn copied(
                 Some(uri.clone())
             }
             else {
-                hovering.path(&referent).and_then(DocumentUri::of_path)
+                hovering.opened(&referent).and_then(DocumentUri::of_path)
             }
         })
         .collect::<BTreeSet<_>>()
