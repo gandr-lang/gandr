@@ -7,16 +7,19 @@
 // Dependent type theory states its syntax and its models through this
 // signature. `Tm(g, a)` reads `a` at the sort `Ty(g)`, so a term's sort
 // names the context of its type. Comprehension extends a context by a type,
-// and substitution moves types and terms between contexts.
+// and substitution moves types and terms between contexts. The block's value
+// of `Theory` keeps each index as data, so a program reads it back.
 //
 // The standard model reads a context as a type. A type in a context is a
-// family over it, and a term is a section of that family. The block's value
-// of `Theory` keeps each index as data, so a program reads it back. The twin
-// refuses the laws until the units that admit them land.
+// family over it, and a term is a section of that family. The block states
+// the category laws and the laws on types. Their rules carry each context
+// that a substitution stands between, so two identities compose at one
+// context and the unit laws join. The twin keeps the laws on terms.
 //
 // - see: #522
 // - see: #5016
 // - see: #5017
+// - see: #5042
 
 /// The CwF signature: four sorts, each over the sorts before it, and the
 /// operations of a category with families.
@@ -50,6 +53,17 @@ pub theory CwF where {
   oper q : (a : Ty(g)) --> Tm(ext(g, a), subTy(a, p(a)));
   /// A substitution extended by a term.
   oper pair : (s : Sub(d, g), t : Tm(d, subTy(a, s))) --> Sub(d, ext(g, a));
+
+  /// The identity on the left.
+  rule idl : comp(id(g), s) ==> s;
+  /// The identity on the right.
+  rule idr : comp(s, id(d)) ==> s;
+  /// Composition is associative.
+  rule assoc : comp(comp(s, t), u) ==> comp(s, comp(t, u));
+  /// The identity leaves a type as it is.
+  rule tyId : subTy(a, id(g)) ==> a;
+  /// Two substitutions in turn move a type as their composite does.
+  rule tyComp : subTy(subTy(a, s), t) ==> subTy(a, comp(s, t));
 }
 
 /// The standard model: a context is a type, a type in it a family over it,

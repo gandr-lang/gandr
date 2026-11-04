@@ -16,7 +16,9 @@
 //! the results tuple, an operation above every other operation its rules call,
 //! directly or through others, and an operation the description does not
 //! declare above no operation it declares. Arguments of one symbol compare
-//! left to right. The order is a simplification order, so a face it orients
+//! left to right. An application that carries implicit indices before its
+//! written arguments compares the written ones first, then the indices. The
+//! order is a simplification order, so a face it orients
 //! decreases every term the face rewrites, in any context, and a description
 //! all of whose faces it orients terminates. [`path_greater`] is the order on
 //! two terms, and [`embeds`] the homeomorphic embedding every simplification
@@ -101,6 +103,7 @@ use alloc::vec::Vec;
 use core::marker::PhantomData;
 
 use anodized::spec;
+use gandr_theory_path_orders::Explicit;
 use gandr_theory_path_orders::Former;
 use gandr_theory_path_orders::Place;
 use gandr_theory_path_orders::Status;
@@ -877,7 +880,11 @@ impl Valued for Side<'_, '_>
 }
 
 /// A [`Precedence`] as the path order reads it: an operation at its rank,
-/// every other symbol ground, every status lexicographic.
+/// every other symbol ground. A declared operation's arguments compare at
+/// explicit status over its input ports. An application that carries its
+/// implicit indices first, as the indexed reading of a law writes it, so
+/// compares the arguments it is written with before them. Every other status
+/// is lexicographic.
 ///
 /// # Specification
 /// trivial.
@@ -919,16 +926,27 @@ impl<'term> gandr_theory_path_orders::Precedence for Ranks<'_, '_, 'term>
         }
     }
 
-    /// Lexicographic, for every symbol.
+    /// Explicit over a declared operation's input ports; lexicographic for
+    /// every other symbol.
     ///
     /// # Specification
     /// trivial.
     fn status(
         &self,
-        _symbol: Symbol<'term>,
+        symbol: Symbol<'term>,
     ) -> Status
     {
-        Status::Lexicographic
+        let Symbol::Op(name) = symbol
+        else {
+            return Status::Lexicographic;
+        };
+        self.precedence
+            .opers
+            .iter()
+            .find(|operation| operation.name == *name)
+            .map_or(Status::Lexicographic, |operation| {
+                Status::Explicit(Explicit::from(operation.arity.inputs.len()))
+            })
     }
 }
 

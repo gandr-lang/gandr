@@ -21,7 +21,7 @@
 //!
 //! - [`term`]: the term view, [`Term`], [`Valued`], [`Former`], [`Node`].
 //! - [`precedence`]: the precedence as data, [`Precedence`], [`Place`],
-//!   [`Rank`], [`Status`].
+//!   [`Rank`], [`Status`], [`Explicit`].
 //! - [`evidence`]: the evidence, [`Evidence`], [`Derivation`], [`Step`],
 //!   [`Clause`], [`Cover`].
 //! - [`lpo`]: the lexicographic path order with status, read at an
@@ -50,6 +50,7 @@ pub use crate::evidence::Derivation;
 pub use crate::evidence::Evidence;
 pub use crate::evidence::Relation;
 pub use crate::evidence::Step;
+pub use crate::precedence::Explicit;
 pub use crate::precedence::Place;
 pub use crate::precedence::Precedence;
 pub use crate::precedence::Rank;

@@ -56,6 +56,41 @@ impl From<Rank> for u64
     }
 }
 
+/// How many arguments of an application its symbol is written with: the last
+/// ones. The arguments before them are ones the symbol's sorting fixes.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Explicit(usize);
+
+impl From<usize> for Explicit
+{
+    /// The count `count`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<Explicit> for usize
+{
+    /// The count's number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: Explicit) -> Self
+    {
+        count.0
+    }
+}
+
 /// How two applications of one symbol compare their arguments.
 ///
 /// # Specification
@@ -68,6 +103,12 @@ pub enum Status
     /// As multisets: the arguments the other does not share are each below
     /// one of the arguments this one does not share, and this one has one.
     Multiset,
+    /// Left to right over the last arguments, as many as the count states,
+    /// then left to right over the ones before them: the first pair that
+    /// differs decides. The arguments the symbol is written with decide
+    /// before the ones its sorting fixes. At a count no less than the
+    /// argument count this is [`Status::Lexicographic`].
+    Explicit(Explicit),
 }
 
 /// The precedence over a signature's symbols, as data.

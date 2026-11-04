@@ -190,12 +190,13 @@ pub enum Clause
     /// (F>): the left head precedes the right head, and the left subterm
     /// covers every argument of the right.
     Precedence,
-    /// (F=) at lexicographic status: one head, the arguments before
-    /// `argument` pairwise equal and the pair at `argument` ordered, and the
-    /// left subterm covers every argument of the right.
+    /// (F=) at lexicographic or explicit status: one head, the argument pairs
+    /// before `argument` in the status's order pairwise equal and the pair at
+    /// `argument` ordered, and the left subterm covers every argument of the
+    /// right.
     Lexicographic
     {
-        /// The first argument pair that differs.
+        /// The first argument pair that differs, in the status's order.
         argument: Argument,
     },
     /// (F=) at multiset status: one head, and the covers match each right

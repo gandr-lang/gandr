@@ -15,20 +15,28 @@
 //! Over those terms an overlap unifies the indices too, so the critical pairs
 //! are the well-sorted ones.
 //!
-//! Only an index at a rigid sort is carried. A sort is flexible when a rule's
-//! side applies an operation whose output stands at it, or an operation whose
-//! output stands at it takes an input at a flexible sort; every other sort is
-//! rigid, and a position whose binder ranges over a flexible sort is left off
-//! the sort term. A rigid term holds only rigid subterms, and no rule rewrites
-//! one, so two rigid terms are equal exactly when they are one term: a clash
-//! of carried indices is a clash of sorts. An index at a flexible sort, a
-//! whisker's composite `comp(f, h)`, equals another only modulo the rules, so
-//! it is left off, and the overlaps it would refuse are kept (#1510).
+//! A sort is flexible when a rule's side applies an operation whose output
+//! stands at it, or an operation whose output stands at it takes an input at
+//! a flexible sort; every other sort is rigid. A rigid term holds only rigid
+//! subterms, and no rule rewrites one, so two rigid terms are equal exactly
+//! when they are one term. An index at a flexible sort, a context of a
+//! category with families, equals another only modulo the rules.
 //!
-//! Termination stays the written rules' own. An indexed rule strips to its
-//! written rule by dropping the indices. No step rewrites inside an index,
-//! which is a rigid term no rule's left side matches, so every step strips to
-//! a step of the written rules.
+//! The reading first carries every index. It keeps that reading when every
+//! rule reads in it and the path order over the stated ranks orients each
+//! rule so read, an operation's written arguments compared before its indices
+//! ([`gandr_theory_path_orders::Status::Explicit`]) (#5016). Otherwise a
+//! position whose binder ranges over a flexible sort is left off the sort
+//! term, and the overlaps it would refuse are kept (#1510).
+//!
+//! Termination holds either way. Where every index is carried, a step may
+//! rewrite inside an index, and the path order orients every rule that
+//! carries it, so the indexed rules terminate on their own. Otherwise an
+//! index is rigid, no step rewrites inside one, and every step strips to a
+//! step of the written rules, which terminate. An overlap that the carried
+//! indices refuse is no peak of the indexed rules: no term carrying its
+//! indices holds both redexes. By the critical pair lemma the indexed rules
+//! then lose no peak.
 //!
 //! A presentation the reading does not cover has none, and its rules are
 //! decided as written: no sort indexed; a port that binds or abstracts; an
@@ -132,19 +140,35 @@ struct Sorting<'arena>
     named: BTreeMap<&'arena StringLiteral, Named>,
 }
 
-/// The sorting of each operation of an indexed presentation, by name, and the
-/// index positions it leaves off.
+/// Which index positions the indexed reading carries.
 ///
 /// # Specification
 /// trivial.
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Carry
+{
+    /// Only the positions whose binder ranges over a rigid sort.
+    Rigid,
+    /// Every position.
+    Every,
+}
+
+/// The sorting of each operation of an indexed presentation, by name, and the
+/// index positions at a flexible sort.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
 pub(super) struct Signature<'arena>
 {
     /// Each operation's sorting over the indices it carries, by name.
     operations: BTreeMap<&'arena StringLiteral, Sorting<'arena>>,
     /// Each indexed sort's positions whose binder ranges over a flexible
-    /// sort, which no sort term carries.
+    /// sort.
     dropped: BTreeMap<&'arena StringLiteral, BTreeSet<usize>>,
+    /// Which positions the sort terms carry: under [`Carry::Rigid`] no sort
+    /// term carries a position of `dropped`.
+    carry: Carry,
 }
 
 impl Signature<'_>
@@ -163,6 +187,30 @@ impl Signature<'_>
                 .get(name)
                 .is_some_and(|sorting| !sorting.implicits.is_empty()),
         )
+    }
+
+    /// Whether some index position stands at a flexible sort.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn flexible(&self) -> Verdict
+    {
+        Verdict::from(!self.dropped.is_empty())
+    }
+
+    /// The number of input ports of the operation `name`, when it declares
+    /// one.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn inputs(
+        &self,
+        name: &StringLiteral,
+    ) -> Option<FieldCount>
+    {
+        self.operations
+            .get(name)
+            .map(|sorting| FieldCount::from(sorting.inputs.len()))
     }
 }
 
@@ -249,9 +297,10 @@ impl<'arena> Reader<'arena>
     ///   `Computation` of `sorts` has an index port, each index port a `Port`,
     ///   and every `Oper`, `Obs`, `Const` and `Nested` of `operations` has a
     ///   distinct name, only `Port` inputs and one `Port` output, each index
-    ///   term a `Var`, or an `App` or `Con` over its `Arg` chain. A position is
-    ///   left off when its binder ranges over a flexible sort (see the module
-    ///   documentation), the rules read so far seeding the flexible sorts; each
+    ///   term a `Var`, or an `App` or `Con` over its `Arg` chain. A position
+    ///   whose binder ranges over a flexible sort (see the module
+    ///   documentation) is recorded as flexible, the rules read so far seeding
+    ///   the flexible sorts, and under [`Carry::Rigid`] it is left off; each
     ///   operation's implicit indices are the names its ports' carried index
     ///   terms' `Var`s name that no input port does, in pre-order, inputs then
     ///   the output, each once. [`None`] otherwise.
@@ -265,10 +314,12 @@ impl<'arena> Reader<'arena>
     ///   objects and its identity in none, so its laws read indexed; a plain
     ///   signature has no indexed reading.
     /// - witness: `theory_rules::tests::a_categorys_laws_join_over_their_objects_1510`
+    /// - witness: `theory_rules::tests::a_cwfs_laws_join_over_every_index_5016`
     pub(super) fn signature(
         &self,
         sorts: ValueId,
         operations: ValueId,
+        carry: Carry,
     ) -> Option<Signature<'arena>>
     {
         let tagged = |found: Option<(ConstructorTag, &'arena [ValueId])>| {
@@ -356,6 +407,7 @@ impl<'arena> Reader<'arena>
         let mut signature = Signature {
             operations: BTreeMap::new(),
             dropped,
+            carry,
         };
         let mut pending = Vec::new();
         for (name, inputs, output) in read {
@@ -497,7 +549,10 @@ impl<'arena> Reader<'arena>
     {
         let start = pending.len();
         let count = usize::from(self.index_terms(port.indices, pending)?);
-        let Some(dropped) = signature.dropped.get(port.sort)
+        let Some(dropped) = signature
+            .dropped
+            .get(port.sort)
+            .filter(|_| signature.carry == Carry::Rigid)
         else {
             return Some(FieldCount::from(count));
         };

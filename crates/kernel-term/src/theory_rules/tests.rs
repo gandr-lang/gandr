@@ -1799,3 +1799,100 @@ fn a_categorys_laws_join_over_their_objects_1510()
         "written as they are, the unit laws part at `comp(id(a), id(b))`"
     );
 }
+
+/// #5016: in a category with families no sort is rigid. The laws rewrite
+/// `Sub`, `subTy` takes a `Sub` and `ext` takes a `Ty`, so the context of
+/// a substitution stands at a flexible sort. The reading carries it all the
+/// same, because the path order orients every law with its indices last. The
+/// unit laws' overlap `comp(id(a), id(b))` is then one well-sorted term and
+/// joins, beside associativity and the two laws on types.
+#[test]
+fn a_cwfs_laws_join_over_every_index_5016()
+{
+    let literal = |text: &str| StringLiteral::new(String::from(text));
+    let tag = ConstructorTag::from;
+    let (sort, oper, port, rule_tag, rank_tag) = (
+        tag(super::tag::SORT),
+        tag(super::tag::OPER),
+        tag(super::tag::PORT),
+        tag(super::tag::RULE),
+        tag(super::tag::RANK),
+    );
+    let mut code = Code::new();
+    let [con, sub, ty, g_name, d_name, id, comp, ext, sub_ty, unnamed] = [
+        "Con", "Sub", "Ty", "g", "d", "id", "comp", "ext", "subTy", "",
+    ]
+    .map(|name| code.text(literal(name)));
+    let [s_name, t_name, a_name] = ["s", "t", "a"].map(|name| code.text(literal(name)));
+    let [target, middle, origin] = ["g", "d", "e"].map(|name| code.var(literal(name)));
+    let end = code.end();
+    // `Con`, `Sub(d : Con, g : Con)` and `Ty(g : Con)`.
+    let ty_index = code.node(port, vec![g_name, con, end, end]);
+    let g_index = code.node(port, vec![g_name, con, end, end]);
+    let sub_indices = code.node(port, vec![d_name, con, end, g_index]);
+    let ty_sort = code.node(sort, vec![ty, ty_index, end]);
+    let sub_sort = code.node(sort, vec![sub, sub_indices, ty_sort]);
+    let sorts = code.node(sort, vec![con, end, sub_sort]);
+    let [gg, dg, ed, eg, at_g, at_d] = [
+        &[target, target][..],
+        &[middle, target][..],
+        &[origin, middle][..],
+        &[origin, target][..],
+        &[target][..],
+        &[middle][..],
+    ]
+    .map(|terms| chain(&mut code, terms));
+    // `subTy : (a : Ty(g), s : Sub(d, g)) --> Ty(d)`.
+    let sub_ty_output = code.node(port, vec![unnamed, ty, at_d, end]);
+    let sub_ty_s = code.node(port, vec![s_name, sub, dg, end]);
+    let sub_ty_a = code.node(port, vec![a_name, ty, at_g, sub_ty_s]);
+    let substitution = code.node(oper, vec![sub_ty, sub_ty_a, sub_ty_output, end]);
+    // `ext : (g : Con, a : Ty(g)) --> Con`.
+    let ext_output = code.node(port, vec![unnamed, con, end, end]);
+    let ext_a = code.node(port, vec![a_name, ty, at_g, end]);
+    let ext_g = code.node(port, vec![g_name, con, end, ext_a]);
+    let extension = code.node(oper, vec![ext, ext_g, ext_output, substitution]);
+    // `comp : (s : Sub(d, g), t : Sub(e, d)) --> Sub(e, g)`.
+    let comp_output = code.node(port, vec![unnamed, sub, eg, end]);
+    let comp_t = code.node(port, vec![t_name, sub, ed, end]);
+    let comp_s = code.node(port, vec![s_name, sub, dg, comp_t]);
+    let composition = code.node(oper, vec![comp, comp_s, comp_output, extension]);
+    // `id : (g : Con) --> Sub(g, g)`.
+    let id_output = code.node(port, vec![unnamed, sub, gg, end]);
+    let id_g = code.node(port, vec![g_name, con, end, end]);
+    let operations = code.node(oper, vec![id, id_g, id_output, composition]);
+    let [first, second, third, family] = ["s", "t", "u", "a"].map(|name| code.var(literal(name)));
+    let [at_g_id, at_d_id] = [target, middle].map(|object| code.app(literal("id"), &[object]));
+    let left_unit = code.app(literal("comp"), &[at_g_id, first]);
+    let right_unit = code.app(literal("comp"), &[first, at_d_id]);
+    let [first_second, second_third] =
+        [[first, second], [second, third]].map(|pair| code.app(literal("comp"), &pair));
+    let left_nested = code.app(literal("comp"), &[first_second, third]);
+    let right_nested = code.app(literal("comp"), &[first, second_third]);
+    let along_id = code.app(literal("subTy"), &[family, at_g_id]);
+    let along_first = code.app(literal("subTy"), &[family, first]);
+    let twice = code.app(literal("subTy"), &[along_first, second]);
+    let once = code.app(literal("subTy"), &[family, first_second]);
+    let [unit_left, unit_right, assoc, ty_id, ty_comp, one] =
+        ["idl", "idr", "assoc", "tyId", "tyComp", "1"].map(|name| code.text(literal(name)));
+    let members = vec![
+        (rule_tag, vec![unit_left, left_unit, first]),
+        (rule_tag, vec![unit_right, right_unit, first]),
+        (rule_tag, vec![assoc, left_nested, right_nested]),
+        (rule_tag, vec![ty_id, along_id, family]),
+        (rule_tag, vec![ty_comp, twice, once]),
+        (rank_tag, vec![sub_ty, one]),
+    ];
+    let cwf = code.presenting(sorts, operations, members);
+    let read = TheoryRules::read(&code.arena, cwf).expect("the CwF's laws read");
+    assert_ne!(
+        read.decided(),
+        read.rules(),
+        "the laws read with the contexts each substitution stands between"
+    );
+    assert_eq!(
+        read.decide(&mut fuel()),
+        Ok(()),
+        "over every index the unit laws' overlap is `id(a)` both ways"
+    );
+}

@@ -1,40 +1,26 @@
-// The checker refuses the laws of a category with families for now. The cell
-// layer carries no index at a sort that the laws rewrite (Huang and Angiuli,
-// _Fat cell structures and generalized algebraic theories_,
-// doi:10.4230/LIPIcs.LICS.2026.58, § 1.1).
+// The checker refuses the laws on terms of a category with families.
+// Huang and Angiuli state these laws (_Fat cell structures and generalized
+// algebraic theories_, doi:10.4230/LIPIcs.LICS.2026.58, § 1.1).
 //
-// The category laws rewrite substitutions, a type moves along a substitution
-// and comprehension takes a type. So every sort of the CwF is flexible, and
-// the rule reading carries none of their indices.
+// A law on terms relates two sides whose sorts agree only modulo a law on
+// types. The sort of `subTm(t, id(g))` is `Tm(g, subTy(a, id(g)))`, and the
+// sort of `t` is `Tm(g, a)`.
 //
-// Without the indices two laws part where the sorting joins them. A law on
-// terms relates two sides whose sorts agree only modulo a law on types.
+// The reading carries an index only as a variable or an operation without
+// indices of its own. The index `subTy(a, id(g))` applies `subTy`, which
+// carries the context of `a`.
 //
-// - see: #5016
+// - see: #5042
 
 /// The CwF signature that the model source declares.
 import "../../model/desc/cwf.gandr";
-
-/// The unit laws of composition give two results for `comp(id(a), id(b))`,
-/// and the sorting reads both at one context.
-@[ refuses("RulesUncompleted") ]
-theory CwFUnits where {
-  /// The sorts and operations of a category with families.
-  include CwF;
-  /// The identity on the left.
-  rule idl : comp(id(g), s) ==> s;
-  /// The identity on the right.
-  rule idr : comp(s, id(d)) ==> s;
-}
 
 /// The sort of a term after the identity agrees with its own sort only
 /// modulo the law on types.
 @[ refuses("UndescribedMember.NestedOperation") ]
 theory CwFTermIdentity where {
-  /// The sorts and operations of a category with families.
+  /// The sorts, operations and laws of a category with families.
   include CwF;
-  /// The identity leaves a type as it is.
-  rule tyId : subTy(a, id(g)) ==> a;
   /// The identity leaves a term as it is.
   rule tmId : subTm(t, id(g)) ==> t;
 }

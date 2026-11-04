@@ -548,9 +548,9 @@ where
                     return None;
                 }
                 match heads {
-                    Some(Status::Lexicographic) => {
+                    Some(status @ (Status::Lexicographic | Status::Explicit(_))) => {
                         let (index, (one, two)) = self
-                            .pairs(row, column)
+                            .ordered(status, row, column)
                             .enumerate()
                             .find(|&(_, (one, two))| !grid.at(one, two).equal)?;
                         grid.at(one, two).above.map(|_| Clause::Lexicographic {
@@ -604,6 +604,32 @@ where
     ) -> impl Iterator<Item = (Node, Node)> + Clone
     {
         self.left.arguments(row).zip(self.right.arguments(column))
+    }
+
+    /// The argument pairs of the subterms at `row` and `column` in the order
+    /// `status` compares them: left to right, or for [`Status::Explicit`] the
+    /// last arguments first, as many as it counts, then the ones before them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn ordered(
+        &self,
+        status: Status,
+        row: Node,
+        column: Node,
+    ) -> impl Iterator<Item = (Node, Node)> + Clone
+    {
+        let leading = match status {
+            Status::Explicit(count) => self
+                .left
+                .arguments(row)
+                .count()
+                .saturating_sub(usize::from(count)),
+            Status::Lexicographic | Status::Multiset => 0,
+        };
+        self.pairs(row, column)
+            .skip(leading)
+            .chain(self.pairs(row, column).take(leading))
     }
 
     /// The precedence clause, when the left head is a symbol above the right
@@ -847,7 +873,9 @@ where
                 },
                 Clause::Precedence | Clause::Lexicographic { .. } | Clause::Instance { .. } => {
                     if let Clause::Lexicographic { argument } = clause
-                        && let Some(pair) = self.pairs(row, column).nth(usize::from(argument))
+                        && let Some(status) = self.one_head(row, column)
+                        && let Some(pair) =
+                            self.ordered(status, row, column).nth(usize::from(argument))
                     {
                         pending.push(pair);
                     }
@@ -965,8 +993,9 @@ where
                 self.covered(derivation, pending, step, Coverage::Plain)
             },
             Clause::Lexicographic { argument } => {
-                (self.one_head(row, column)? == Status::Lexicographic).then_some(())?;
-                let mut pairs = self.pairs(row, column);
+                let status = self.one_head(row, column)?;
+                matches!(status, Status::Lexicographic | Status::Explicit(_)).then_some(())?;
+                let mut pairs = self.ordered(status, row, column);
                 for (one, two) in pairs.by_ref().take(usize::from(argument)) {
                     self.equal(pending, one, two)?;
                 }

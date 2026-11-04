@@ -3996,6 +3996,7 @@ INSERT INTO purpose VALUES('theory-path-orders','lpo::Refusal','enum','Where a d
 INSERT INTO purpose VALUES('theory-path-orders','lpo::Replay','enum','Whether a derivation replays.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-path-orders','lpo::check','function','Whether `derivation` replays as a derivation of `left` above `right` over `precedence`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-path-orders','lpo::orient','function','Whether the order over `precedence` puts `left` above `right`, and the derivation when it does.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-path-orders','precedence::Explicit','struct','How many of an application''s last arguments its symbol is written with, which explicit status compares first.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-path-orders','precedence::Place','enum','A symbol''s place in the precedence.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-path-orders','precedence::Precedence','trait','The precedence over a signature''s symbols, as data.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-path-orders','precedence::Rank','struct','A ranked symbol''s rank.',NULL,'fits','sound',NULL);

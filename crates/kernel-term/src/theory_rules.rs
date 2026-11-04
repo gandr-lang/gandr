@@ -44,8 +44,10 @@
 //! sides one: a category's `comp(id(a), id(b))`. Steps 3 and 4 then read
 //! each rule with its operations' implicit indices first, solved from the
 //! sorts their arguments stand at ([`indexed`]), and step 2 orders the rules
-//! as written. A presentation that reading does not cover is decided as
-//! written.
+//! as written. A reading that carries an index at a flexible sort is kept only
+//! when the same order orients each rule as read, an operation's written
+//! arguments compared before its indices. A presentation that reading does not
+//! cover is decided as written.
 //!
 //! The terms are first order but for instantiations. A symbol is an
 //! operation application, a constructor application, a results tuple, an
@@ -117,6 +119,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_theory_path_orders::Evidence;
+use gandr_theory_path_orders::Explicit;
 use gandr_theory_path_orders::Former;
 use gandr_theory_path_orders::Place;
 use gandr_theory_path_orders::Precedence;
@@ -147,6 +150,7 @@ use crate::term::ConstantIndex;
 use crate::term::ConstructorTag;
 use crate::theory_rules::higher::Higher;
 use crate::theory_rules::higher::Pair;
+use crate::theory_rules::indexed::Carry;
 use crate::theory_rules::row::RowExtent;
 use crate::theory_rules::row::RowLabel;
 use crate::theory_rules::row::RuleRow;
@@ -1008,6 +1012,10 @@ pub struct TheoryRules
     /// empty where the presentation has none, its pairs then decided over
     /// `rules`.
     indexed: Vec<TheoryRule>,
+    /// How many arguments each symbol is written with, by its position: an
+    /// operation that carries implicit indices takes them before these. A
+    /// symbol past the end is written with every argument.
+    explicit: Vec<FieldCount>,
 }
 
 impl TheoryRules
@@ -1028,6 +1036,7 @@ impl TheoryRules
             rules: written,
             peaks: Vec::new(),
             indexed: Vec::new(),
+            explicit: Vec::new(),
         }
     }
 
@@ -1129,7 +1138,10 @@ impl TheoryRules
     ///   every operation application's implicit indices first, the variables
     ///   its ports' sorts name that no input port is, solved by unifying the
     ///   sorts its arguments stand at ([`Self::decided`]); otherwise there is
-    ///   no such reading.
+    ///   no such reading. The indices carried are every index when some index
+    ///   stands at a flexible sort, every rule reads with every index, and the
+    ///   path order over the stated ranks orients each rule so read, written
+    ///   arguments before indices; otherwise only the indices at rigid sorts.
     /// - fails: [`TheoryRuleFault::Unreadable`] at the rule the chain stops
     ///   being readable at: a member out of that order, a condition before
     ///   every written rule or after a row, an `Open` after no `Under`, a term
@@ -1160,9 +1172,11 @@ impl TheoryRules
     ///   does; a variable split across the abstraction on a left side is
     ///   refused undecided; an occurrence no abstraction binds is unreadable. A
     ///   category's left unit law reads with the three objects `id(a)` and `f`
-    ///   fix, and laws over no indexed sort have no indexed reading.
+    ///   fix, and laws over no indexed sort have no indexed reading. A category
+    ///   with families carries the contexts of its substitutions.
     /// - witness: `theory_rules::tests::a_presentation_value_reads_as_its_oriented_rules`
     /// - witness: `theory_rules::tests::a_categorys_laws_join_over_their_objects_1510`
+    /// - witness: `theory_rules::tests::a_cwfs_laws_join_over_every_index_5016`
     /// - witness: `theory_rules::tests::an_occurrence_counts_to_its_abstraction`
     /// - witness: `theory_rules::tests::rules_under_rows_join_under_the_row_their_overlap_composes_2448`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |rules| rules.peaks.len() <= rules.rules.len()))]
@@ -2544,16 +2558,22 @@ impl Precedence for StatedRanks<'_>
         }
     }
 
-    /// Lexicographic, for every symbol.
+    /// Explicit over the arguments an operation is written with; lexicographic
+    /// for every other symbol.
     ///
     /// # Specification
     /// trivial.
     fn status(
         &self,
-        _symbol: TheorySymbol,
+        symbol: TheorySymbol,
     ) -> Status
     {
-        Status::Lexicographic
+        match self.0.symbols.get(symbol.0) {
+            Some(&(SymbolKind::Operation(_), arity)) => Status::Explicit(Explicit::from(
+                usize::from(self.0.explicit.get(symbol.0).copied().unwrap_or(arity)),
+            )),
+            Some(_) | None => Status::Lexicographic,
+        }
     }
 }
 
@@ -3353,10 +3373,19 @@ impl<'arena> Reader<'arena>
                 fault: TheoryRuleFault::UndecidedCondition,
             });
         }
-        let indexed = self
-            .signature(sorts, operations)
-            .and_then(|signature| self.indexed(&signature))
+        let rigid = self.signature(sorts, operations, Carry::Rigid);
+        let indexed = rigid
+            .as_ref()
+            .and_then(|signature| self.indexed(signature))
             .unwrap_or_default();
+        // Where some index stands at a flexible sort, the reading that carries
+        // every index is the candidate; its rules replace the rigid reading's
+        // once the path order orients each of them.
+        let every = rigid
+            .as_ref()
+            .filter(|signature| signature.flexible() == Verdict::Holds)
+            .and_then(|_| self.signature(sorts, operations, Carry::Every))
+            .and_then(|signature| Some((self.indexed(&signature)?, signature)));
         let symbols = self
             .keys
             .iter()
@@ -3380,12 +3409,34 @@ impl<'arena> Reader<'arena>
                 (kind, arity)
             })
             .collect();
-        Ok(TheoryRules {
+        let mut rules = TheoryRules {
             symbols,
             rules: self.rules,
             peaks: self.peaks,
             indexed,
-        })
+            explicit: Vec::new(),
+        };
+        if let Some((carried, signature)) = every {
+            rules.explicit = self
+                .keys
+                .iter()
+                .map(|&(class, name, arity)| match (class, name) {
+                    (Class::Operation, Some(name)) => signature.inputs(name).unwrap_or(arity),
+                    _ => arity,
+                })
+                .collect();
+            let mut buffers = OrderBuffers::default();
+            if carried
+                .iter()
+                .all(|rule| rules.path_greater(rule, &mut buffers) == Verdict::Holds)
+            {
+                rules.indexed = carried;
+            }
+            else {
+                rules.explicit.clear();
+            }
+        }
+        Ok(rules)
     }
 
     /// Whether a term of the presentation can name an atom or a bound variable:

@@ -12,15 +12,20 @@
 //! the indices too, so a critical pair is well sorted, and a closed call
 //! carries the indices its arguments' sorts fix.
 //!
-//! Only an index at a rigid sort is carried: a sort no law rewrites at, and
-//! none of whose operations takes an argument at a sort one does. Two terms of
-//! a rigid sort are equal exactly when they are one term, so a clash there is a
-//! clash of sorts, and an overlap the carried indices refuse is ill sorted. An
-//! index at a flexible sort, a 1-cell indexing a 2-cell under a law of
-//! composition, is equal to another only modulo the laws, so the reading
-//! leaves it off and keeps every overlap it would refuse: a whisker's
-//! composite index `comp(f, h)` is never carried. A law's two sides are still
-//! checked to stand at one sort over every index as written.
+//! A sort is rigid when no law rewrites at it and none of its operations takes
+//! an argument at a sort a law rewrites at. Two terms of a rigid sort are equal
+//! exactly when they are one term. An index at a flexible sort, a context of a
+//! category with families, is equal to another only modulo the laws.
+//!
+//! The reading carries every index when each law reads over every index and
+//! the path order orients each law so read, an operation's written arguments
+//! compared before its indices (#5016). A step may then rewrite inside an
+//! index, and the order makes the carried rules terminate on their own. An
+//! overlap the carried indices refuse is no peak of the carried rules, since
+//! no term with those indices holds both redexes. Otherwise only an index at a
+//! rigid sort is carried, and the reading keeps every overlap it would refuse:
+//! a whisker's composite index `comp(f, h)` is not carried (#1510). A law's two
+//! sides are still checked to stand at one sort over every index as written.
 //!
 //! The reading carries a presentation's own laws
 //! ([`crate::elaborate_theory_desc`]), a closed call and the oriented rules it
@@ -56,11 +61,13 @@ use anodized::spec;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::OperDesc;
+use gandr_theory_levitation::Precedence;
 use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::SortRef;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::TheoryDesc;
+use gandr_theory_levitation::path_greater;
 use quenchant_shape::shape::Maybe;
 
 quenchant_shape::reason_enum! {
@@ -445,10 +452,14 @@ impl Indexing
     /// indexed and every operation's ports are ones the reading carries.
     ///
     /// # Specification
-    /// - ensures: one sorting per operation over the indices it carries, at
-    ///   rigid sorts ([`Flexible`]), and one over every index as written, each
-    ///   one's implicit indices the variables its ports' sorts name that no
-    ///   input port binds, in order of first occurrence.
+    /// - ensures: one sorting per operation over the indices it carries, and
+    ///   one over every index as written, each one's implicit indices the
+    ///   variables its ports' sorts name that no input port binds, in order of
+    ///   first occurrence. Where no index stands at a flexible sort
+    ///   ([`Flexible`]) every index is carried. Otherwise every index is
+    ///   carried when each law of `description` reads over every index and the
+    ///   path order over the precedence its laws induce ([`Precedence::of`])
+    ///   orients each law so read; else only the indices at rigid sorts are.
     /// - fails: [`indexed_reading::Absent::Unindexed`] when no sort is indexed;
     ///   [`indexed_reading::Absent::Unsupported`] when a port binds or
     ///   abstracts, or an operation has other than one output. A carried index
@@ -459,8 +470,10 @@ impl Indexing
     /// # Adequacy
     /// - hypothesis: L3 — a category's composition is implicit in its three
     ///   objects and its identity in none, and a plain signature has no indexed
-    ///   reading.
+    ///   reading; a category with families carries the context its
+    ///   substitutions stand between, though its laws rewrite substitutions.
     /// - witness: `indexing::tests::a_categorys_laws_carry_their_objects`
+    /// - witness: `indexing::tests::a_cwfs_laws_carry_every_index_5016`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(ref indexing) => indexing.operations.len() == description.opers.len(),
         Maybe::Absent(indexed_reading::Absent::Unindexed) => description.sorts.iter().all(|sort| sort.indices.is_empty()),
@@ -474,6 +487,40 @@ impl Indexing
             return Maybe::Absent(indexed_reading::Absent::Unindexed);
         }
         let flexible = Flexible::of(description);
+        let rigid = Self::carrying(description, &flexible);
+        if flexible.positions.is_empty() {
+            return rigid;
+        }
+        let Maybe::Present(every) = Self::carrying(description, &Flexible {
+            positions: BTreeMap::new(),
+        })
+        else {
+            return rigid;
+        };
+        let precedence = Precedence::of(description);
+        let oriented = description.rules.iter().all(|face| {
+            every.face(face).is_ok_and(|indexed| {
+                bool::from(path_greater(&precedence, &indexed.lhs, &indexed.rhs))
+            })
+        });
+        if oriented {
+            Maybe::Present(every)
+        }
+        else {
+            rigid
+        }
+    }
+
+    /// The reading of `description`'s operations that leaves off the index
+    /// positions `flexible` names.
+    ///
+    /// # Specification
+    /// trivial.
+    fn carrying<G>(
+        description: &TheoryDesc<G>,
+        flexible: &Flexible<'_>,
+    ) -> Maybe<Self, indexed_reading::Absent>
+    {
         let (mut operations, mut written) = (BTreeMap::new(), BTreeMap::new());
         for operation in &description.opers {
             let ports = operation
@@ -1202,6 +1249,108 @@ mod tests
         );
     }
 
+    /// The substitutions and types of a category with families, with its unit
+    /// laws: no sort is rigid, since the laws rewrite `Sub`, `subTy` takes a
+    /// `Sub` and `ext` takes a `Ty`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn cwf() -> TheoryDesc<Ungraded>
+    {
+        let mut description = theory(
+            [
+                SortDesc::new("Con", DeclPolarity::Data),
+                SortDesc::family("Sub", DeclPolarity::Data, [
+                    SortIndex::new("d", "Con"),
+                    SortIndex::new("g", "Con"),
+                ]),
+                SortDesc::family("Ty", DeclPolarity::Data, [SortIndex::new("g", "Con")]),
+            ],
+            [
+                oper(
+                    "id",
+                    [SortRef::new("g", "Con")],
+                    port("out", "Sub", [var("g"), var("g")]),
+                ),
+                oper(
+                    "comp",
+                    [
+                        port("s", "Sub", [var("d"), var("g")]),
+                        port("t", "Sub", [var("e"), var("d")]),
+                    ],
+                    port("out", "Sub", [var("e"), var("g")]),
+                ),
+                oper(
+                    "ext",
+                    [SortRef::new("g", "Con"), port("a", "Ty", [var("g")])],
+                    SortRef::new("out", "Con"),
+                ),
+                oper(
+                    "subTy",
+                    [
+                        port("a", "Ty", [var("g")]),
+                        port("s", "Sub", [var("d"), var("g")]),
+                    ],
+                    port("out", "Ty", [var("d")]),
+                ),
+            ],
+        );
+        description.rules = [
+            face(op("comp", [op("id", [var("g")]), var("s")]), var("s")),
+            face(op("comp", [var("s"), op("id", [var("d")])]), var("s")),
+        ]
+        .into();
+        description
+    }
+
+    /// #5016: the context a substitution stands between stands at a flexible
+    /// sort, and the reading carries it, because the path order orients each
+    /// unit law with its contexts last. The left unit law then carries the
+    /// contexts its identity fixes, so its overlap with the right unit law is
+    /// one context. The reading of rigid sorts alone leaves every context off.
+    #[test]
+    fn a_cwfs_laws_carry_every_index_5016()
+    {
+        let Maybe::Present(indexing) = Indexing::of(&cwf())
+        else {
+            panic!("a CwF's substitutions are indexed");
+        };
+        let unit = face(op("comp", [op("id", [var("g")]), var("s")]), var("s"));
+        let indexed = indexing
+            .face(&unit)
+            .expect("the left unit law is well sorted");
+        let Some(source) = indexed
+            .lhs
+            .collect_vars()
+            .into_iter()
+            .find(|name| name.as_ref().starts_with(super::UNKNOWN))
+        else {
+            panic!("the source of `s` is fixed by no written variable");
+        };
+        assert_eq!(
+            indexed.lhs,
+            op("comp", [
+                var("g"),
+                var("g"),
+                var(source),
+                op("id", [var("g")]),
+                var("s")
+            ]),
+            "composition carries its three contexts, two fixed by the identity"
+        );
+        let description = cwf();
+        let Maybe::Present(rigid) =
+            Indexing::carrying(&description, &super::Flexible::of(&description))
+        else {
+            panic!("the rigid reading reads the CwF");
+        };
+        assert_eq!(
+            rigid.face(&unit).map(|indexed| indexed.lhs),
+            Ok(unit.lhs.clone()),
+            "the rigid reading leaves every context off"
+        );
+    }
+
     /// A closed choice carries the grade its failure stands at, and a failure
     /// passed where a cut is asked is refused.
     #[test]
@@ -1273,9 +1422,11 @@ mod tests
     /// A whisker's composite index is carried only while no law rewrites the
     /// homs it composes. With none, the homs are rigid, vertical associativity
     /// reads with its 1-cells, and a law meeting the composite is refused.
-    /// Under associativity the homs are flexible: a 2-cell carries no 1-cell,
-    /// interchange reads with the objects its whiskering hom fixes, and a law
-    /// whose sides stand at two 2-cell sorts is still refused (#1510).
+    /// Under associativity the homs are flexible. Interchange over every index
+    /// meets the whisker's composite, so the reading keeps the rigid sorts: a
+    /// 2-cell carries no 1-cell, interchange reads with the objects its
+    /// whiskering hom fixes, and a law whose sides stand at two 2-cell sorts is
+    /// still refused (#1510).
     #[test]
     fn a_whiskers_composite_index_leaves_the_other_laws_indexed_1510()
     {
@@ -1301,22 +1452,25 @@ mod tests
             Err(Unsorted::Nested),
             "a whiskered composite's index applies composition, which the reading does not carry"
         );
-        let mut composed = two_cells();
-        composed.rules = Vec::from([face(
-            op("comp", [op("comp", [var("f"), var("g")]), var("h")]),
-            op("comp", [var("f"), op("comp", [var("g"), var("h")])]),
-        )])
-        .into();
-        let Maybe::Present(flexible) = Indexing::of(&composed)
-        else {
-            panic!("the objects stay indexed");
-        };
         let unit = || op("id", [var("a")]);
         let whiskered = |cell: FreeTerm| op("whiskerR", [cell, unit()]);
         let interchange = face(
             op("vcomp", [whiskered(var("s")), whiskered(var("t"))]),
             whiskered(op("vcomp", [var("s"), var("t")])),
         );
+        let mut composed = two_cells();
+        composed.rules = Vec::from([
+            face(
+                op("comp", [op("comp", [var("f"), var("g")]), var("h")]),
+                op("comp", [var("f"), op("comp", [var("g"), var("h")])]),
+            ),
+            interchange.clone(),
+        ])
+        .into();
+        let Maybe::Present(flexible) = Indexing::of(&composed)
+        else {
+            panic!("the objects stay indexed");
+        };
         let carried = |cell: FreeTerm| op("whiskerR", [var("a"), var("a"), cell, unit()]);
         assert_eq!(
             flexible.face(&interchange),

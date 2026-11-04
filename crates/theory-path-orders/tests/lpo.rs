@@ -9,6 +9,7 @@ use gandr_theory_path_orders::Cover;
 use gandr_theory_path_orders::CoverIndex;
 use gandr_theory_path_orders::Derivation;
 use gandr_theory_path_orders::Evidence;
+use gandr_theory_path_orders::Explicit;
 use gandr_theory_path_orders::Former;
 use gandr_theory_path_orders::Node;
 use gandr_theory_path_orders::Place;
@@ -424,6 +425,49 @@ fn multiset_status_orients_what_lexicographic_status_does_not()
     assert_eq!(
         orient(&left, &right, &lexicographic, buffers),
         Orientation::Unoriented
+    );
+}
+
+/// `f(x, s(y)) ==> f(y, y)` orients at explicit status over the last
+/// argument, where `s(y)` above `y` decides first, and not at lexicographic
+/// status, where `x` and `y` decide first and neither is above the other.
+/// The derivation replays at the status it was found at and at no other.
+#[test]
+fn explicit_status_compares_the_written_arguments_first()
+{
+    let left = Side::new(&[
+        op(F, Arity(2)),
+        Spelled::Var(X),
+        op(SUCC, Arity(1)),
+        Spelled::Var(Y),
+    ]);
+    let right = Side::new(&[op(F, Arity(2)), Spelled::Var(Y), Spelled::Var(Y)]);
+    let buffers = &mut Buffers::default();
+    let explicit = Ranks(alloc::vec![(
+        F,
+        ranked(Rank::from(1_u64)),
+        Status::Explicit(Explicit::from(1_usize))
+    )]);
+    let derivation = derivation(orient(&left, &right, &explicit, buffers));
+    assert_eq!(root_clause(&derivation), Clause::Lexicographic {
+        argument: Argument::from(0_usize),
+    });
+    assert_eq!(
+        check(&left, &right, &explicit, &derivation, buffers),
+        Replay::Holds
+    );
+    let lexicographic = Ranks(alloc::vec![(
+        F,
+        ranked(Rank::from(1_u64)),
+        Status::Lexicographic
+    )]);
+    assert_eq!(
+        orient(&left, &right, &lexicographic, buffers),
+        Orientation::Unoriented
+    );
+    assert_ne!(
+        check(&left, &right, &lexicographic, &derivation, buffers),
+        Replay::Holds
     );
 }
 
