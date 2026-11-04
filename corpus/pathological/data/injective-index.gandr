@@ -1,0 +1,36 @@
+// A case arm that cannot learn its fields from a constructor equation.
+//
+// The constructor has a later field whose type reads an earlier field. A path
+// for the later field would join ends of two types.
+//
+// The checker does not split the equation. It refuses the arm with
+// `TypeMismatch`.
+//
+// - see: #3403
+
+// The naturals the indices count in.
+import "../../model/data/data-base.gandr";
+
+// The predecessor family and the witnesses.
+import "../../model/data/injective-index.gandr";
+
+/// A natural beside a predecessor of its successor.
+pub data Sig : Type where {
+  /// The natural `n` and a predecessor at `Succ(n)`.
+  | Pack : (n : Nat, v : Pred(Succ(n))) --> Sig
+}
+
+/// A family that holds a packed natural in its index.
+pub data Packed : (s : Sig) --> Type where {
+  /// The witness over the pack of `n` and `v`.
+  | Hold : (n : Nat, v : Pred(Succ(n))) --> Packed(Pack(n, v))
+}
+
+/// The arm binds `Pack(m, w) = Pack(n, v)`, where the type of `w` reads `m`.
+/// The checker does not split that equation, so the arm does not learn `m`.
+@[ refuses("TypeMismatch") ]
+def first(n : Nat, v : Pred(Succ(n)), h : Packed(Pack(n, v))) -> At(n) {
+  match h {
+    Hold(m, w) => A(m)
+  }
+}

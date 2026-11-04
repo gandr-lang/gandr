@@ -13,6 +13,16 @@
 //! along the equation carries it to the variable. A case on a variable
 //! generalises its later binders the same way, through its motive.
 //!
+//! The injectivity step reads an equation between two applications of one
+//! constructor ([`split_step`]). It binds one path for each field that the two
+//! applications write apart. Each path is the transport of the reflexivity at
+//! the stated field along the equation, in a family that projects the field
+//! by a case. The transport gives the path to that case. An ascription gives
+//! the path to the field itself, because the kernel compares a case nested in
+//! an index as syntax. A later solution step then solves each field path. The
+//! step takes a datatype indexed by nothing whose fields read no earlier
+//! field. No path is transported along itself, so the step needs no K.
+//!
 //! The judgement checks the refined term in place of the written one and
 //! records the pair. The kernel checks the refined term as any other term. The
 //! core body keeps the term as written, so the evaluator and the machine run
@@ -43,6 +53,10 @@
 //! - Conor `McBride`, _Elimination with a Motive_, TYPES 2000, LNCS 2277,
 //!   doi:10.1007/3-540-45842-5_13 — the generalisation of the goal over the
 //!   binders after the solved variable.
+//! - Jesper Cockx and Dominique Devriese, _Proof-relevant unification:
+//!   dependent pattern matching with only the axioms of your type theory_, JFP
+//!   2018 — exemplar: the injectivity rule, an equivalence that takes a
+//!   constructor equation to the equations of its fields.
 //! - `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — exemplar: §
 //!   elim-refine-with-abstraction, one transport per solved equation.
 
@@ -480,6 +494,37 @@ struct Solved
     forward: Vec<ValueTypeId>,
 }
 
+/// An equation between two applications of one constructor, split into one
+/// equation per field the two applications write apart (#3403).
+#[derive(Clone, Debug)]
+struct Split
+{
+    /// The depth of the context the step was taken in.
+    depth: BinderDepth,
+    /// The equation's place.
+    equation: BinderDepth,
+    /// Each field's path, in order: the transport's motive, under one binder
+    /// past the depth the path is bound at, the reflexivity it carries, read
+    /// at that depth, and the returner of the path type between the field's
+    /// two sides. The transport synthesises the path to the case the motive
+    /// writes. The kernel compares a call nested in an index as syntax, so
+    /// the ascription to the two sides lets a later step read them.
+    fields: Vec<(ValueTypeId, ValueId, CompTypeId)>,
+    /// Each node the motives and the reflexivities hold, which stands for no
+    /// written node.
+    minted: Vec<TermNode>,
+}
+
+/// One step of an arm's refinement, as the refined term writes it.
+#[derive(Clone, Debug)]
+enum Taken
+{
+    /// An equation solved at a variable side.
+    Solved(Solved),
+    /// An equation split by the injectivity of its constructor.
+    Split(Split),
+}
+
 /// The arm `arm` of an indexed family's case, refined by the index equations
 /// it binds, checked at `expected`.
 ///
@@ -494,13 +539,17 @@ struct Solved
 ///   replaced by the other side, along the equation, and applies it to the
 ///   binders it abstracts. Inside the thunk, each staged binder among them is
 ///   bound to its own transport, over a set alone ([`moving`]). The step
-///   repeats for the equations left. The refined arm carries each written
-///   lambda to its copy, and names each lambda or bind of a thunk beside the
-///   binder it stands for. [`unrefined::Absent::Unsolved`] when no equation
-///   qualifies, and [`unrefined::Absent::Unshaped`] for a family indexed by
-///   nothing or an arm or a type of another form.
+///   repeats for the equations left. When no equation has such a side, an
+///   equation between two applications of one constructor splits into one path
+///   for each field ([`split_step`]), and the steps go on past the paths. The
+///   refinement drops a split that no solution follows. The refined arm carries
+///   each written lambda to its copy, and names each lambda or bind of a thunk
+///   beside the binder it stands for. [`unrefined::Absent::Unsolved`] when no
+///   equation qualifies, and [`unrefined::Absent::Unshaped`] for a family
+///   indexed by nothing or an arm or a type of another form.
 /// - fails: [`CheckRefusal::DanglingNode`] for a node the arena does not hold,
-///   and [`CheckRefusal::MachineInvariant`] for a binder count past any index.
+///   and [`CheckRefusal::MachineInvariant`] for a binder count past any index,
+///   or for a constructor tag or a field that the signature does not hold.
 /// - panics: none.
 ///
 /// # Errors
@@ -511,6 +560,7 @@ struct Solved
 ///   that reads a binder at the index separate the goal's substitution from the
 ///   binder's generalisation; each refined arm checks in both checkers.
 /// - witness: `tests::native_formers::an_arm_is_refined_by_its_index_equation_in_both_checkers_3483`
+/// - witness: `tests::native_formers::an_arm_is_refined_through_the_injectivity_of_its_constructor_3403`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
     | Maybe::Present(ref refined) => refined.term != arm && matches!(context.arena().computation(refined.term), Some(&Computation::Lambda(_))),
     | Maybe::Absent(_) => true,
@@ -570,22 +620,42 @@ pub fn refined_arm(
             .map(BinderDepth::from)
             .collect(),
     };
+    // Each step beside the body it was taken on. A split that no solution
+    // follows refines nothing, so the body before it stands.
     let (mut steps, mut carried) = (Vec::new(), Vec::new());
-    while let Maybe::Present((solved, next)) = step(context, &problem, &mut carried)? {
-        steps.push(solved);
-        problem = next;
+    loop {
+        if let Maybe::Present((solved, next)) = step(context, &problem, &mut carried)? {
+            steps.push((Taken::Solved(solved), problem.body));
+            problem = next;
+            continue;
+        }
+        if let Maybe::Present((split, next)) = split_step(context, &problem, &mut carried)? {
+            steps.push((Taken::Split(split), problem.body));
+            problem = next;
+            continue;
+        }
+        break;
+    }
+    while let Some(&(Taken::Split(_), body)) = steps.last() {
+        problem.body = body;
+        let _unsolved = steps.pop();
     }
     if steps.is_empty() {
         return Ok(Maybe::Absent(unrefined::Absent::Unsolved));
     }
     let (mut refined, mut generalising, mut minted) = (problem.body, Vec::new(), Vec::new());
-    for solved in steps.iter().rev() {
-        refined = wrapped(
-            context.arena_mut(),
-            solved,
-            refined,
-            (&mut generalising, &mut minted),
-        )?;
+    for &(ref taken, _) in steps.iter().rev() {
+        refined = match *taken {
+            Taken::Solved(ref solved) => wrapped(
+                context.arena_mut(),
+                solved,
+                refined,
+                (&mut generalising, &mut minted),
+            )?,
+            Taken::Split(ref split) => {
+                split_wrapped(context.arena_mut(), split, refined, &mut minted)?
+            },
+        };
     }
     for &lambda in written.iter().rev() {
         refined = context.arena_mut().computation_lambda(refined);
@@ -1335,6 +1405,244 @@ fn step(
     Ok(Maybe::Absent(unrefined::Absent::Unsolved))
 }
 
+/// One split of `problem`: its first equation between two applications of one
+/// constructor of a family indexed by nothing, read as one equation per field
+/// that the two applications write apart.
+///
+/// # Specification
+/// - requires: `problem`'s binders, body and goal are scoped as its fields
+///   state.
+/// - ensures: for the first such equation that the body does not name, and
+///   whose constructor's fields read no field before them, one path per field
+///   whose two sides differ. Each path is the transport of the reflexivity at
+///   the stated side along the equation, in the family that reads the field off
+///   its point ([`projected`]). The problem past the paths binds each at the
+///   field's two sides and holds the paths in place of the equation. `carried`
+///   gains each body node the weakening changed.
+///   [`unrefined::Absent::Unsolved`] when no equation qualifies.
+/// - fails: as [`refined_arm`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an arm that needs `m = n` from `S(m) = S(n)` splits once
+///   and then solves, in both checkers.
+/// - witness: `tests::native_formers::an_arm_is_refined_through_the_injectivity_of_its_constructor_3403`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
+    | Maybe::Present((ref split, ref next)) => problem.equations.contains(&split.equation)
+        && !next.equations.contains(&split.equation)
+        && next.binders.len() == problem.binders.len().saturating_add(split.fields.len()),
+    | Maybe::Absent(reason) => reason == unrefined::Absent::Unsolved,
+}))]
+fn split_step(
+    context: &mut CheckingContext<'_>,
+    problem: &Problem,
+    carried: &mut Vec<Carried>,
+) -> Result<Maybe<(Split, Problem), unrefined::Absent>, CheckRefusal>
+{
+    let depth = BinderDepth::from(problem.binders.len());
+    let body = CoreNode::Term(TermNode::Computation(problem.body));
+    for &equation in &problem.equations {
+        let arena = context.arena();
+        if reads(arena, body, index_at(depth, equation)?)? == Reading::Reads {
+            continue;
+        }
+        let &ty = problem
+            .binders
+            .get(usize::from(equation))
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let Some(&ValueType::Path {
+            carrier,
+            left,
+            right,
+        }) = arena.value_type(ty)
+        else {
+            continue;
+        };
+        let (
+            Some(&Value::Constructor {
+                tag,
+                fields: ref stated,
+                ..
+            }),
+            Some(&Value::Constructor {
+                tag: other,
+                fields: ref scrutinised,
+                ..
+            }),
+        ) = (arena.value(left), arena.value(right))
+        else {
+            continue;
+        };
+        if tag != other || stated.len() != scrutinised.len() {
+            continue;
+        }
+        // Each field the two sides write apart, beside its two sides.
+        let apart: Vec<(usize, ValueId, ValueId)> = stated
+            .iter()
+            .zip(scrutinised)
+            .enumerate()
+            .filter(|&(_, (stated, scrutinised))| stated != scrutinised)
+            .map(|(position, (&stated, &scrutinised))| (position, stated, scrutinised))
+            .collect();
+        if apart.is_empty() {
+            continue;
+        }
+        let signature = crate::former::signature(context, carrier)?;
+        if !signature.indices().is_empty() {
+            continue;
+        }
+        let declared = signature
+            .constructors()
+            .get(usize::from(tag))
+            .ok_or(CheckRefusal::MachineInvariant)?
+            .clone();
+        let arities: Vec<gandr_kernel_term::FieldCount> = signature
+            .constructors()
+            .iter()
+            .map(|fields| gandr_kernel_term::FieldCount::from(fields.len()))
+            .collect();
+        let mut types = Vec::with_capacity(apart.len());
+        for &(position, ..) in &apart {
+            let &field = declared
+                .get(position)
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            let at = gandr_kernel_term::FieldPosition::from(position);
+            match crate::former::field_outside(context, carrier, field, at)? {
+                Maybe::Present(found) => types.push(found),
+                Maybe::Absent(_) => break,
+            }
+        }
+        if types.len() != apart.len() {
+            continue;
+        }
+        let arena = context.arena_mut();
+        let (mut binders, mut fields, mut minted) = (
+            problem.binders.clone(),
+            Vec::with_capacity(apart.len()),
+            Vec::new(),
+        );
+        for (&(position, stated, scrutinised), &field) in apart.iter().zip(&types) {
+            let at = BinderDepth::from(binders.len());
+            let carrier = carried_value_type(arena, field, (equation, at), &[])?;
+            let left = carried_value(arena, stated, (equation, at), &[])?;
+            let right = carried_value(arena, scrutinised, (equation, at), &[])?;
+            let motive = projected(
+                arena,
+                (field, stated),
+                (equation, at),
+                (
+                    tag,
+                    gandr_kernel_term::FieldPosition::from(position),
+                    &arities,
+                ),
+                &mut minted,
+            )?;
+            let reflexivity = arena.value_here(left);
+            minted.extend([TermNode::Value(left), TermNode::Value(reflexivity)]);
+            let path = arena.value_type_path(carrier, left, right);
+            binders.push(path);
+            fields.push((motive, reflexivity, arena.comp_type_returner(path)));
+        }
+        let inner = BinderDepth::from(binders.len());
+        let body = carried_computation(arena, problem.body, (depth, inner), &[], carried)?;
+        let goal = carried_comp_type(arena, problem.goal, (depth, inner), &[])?;
+        let equations = problem
+            .equations
+            .iter()
+            .copied()
+            .filter(|&place| place != equation)
+            .chain((usize::from(depth) .. usize::from(inner)).map(BinderDepth::from))
+            .collect();
+        let split = Split {
+            depth,
+            equation,
+            fields,
+            minted,
+        };
+        let next = Problem {
+            binders,
+            body,
+            goal,
+            equations,
+        };
+        return Ok(Maybe::Present((split, next)));
+    }
+    Ok(Maybe::Absent(unrefined::Absent::Unsolved))
+}
+
+/// The family that reads one field off a point of a datatype indexed by
+/// nothing, under one binder past `at`: the path from the field's stated side
+/// to what a case on the point answers. The case answers the field at the
+/// constructor `tag` and the stated side at every other constructor.
+///
+/// # Specification
+/// - requires: `field` and `stated` are read at depth `equation`, and the
+///   constructors take `arities`' count of fields each.
+/// - ensures: `Path(A, a, case p { tag(…) => the field at position, _ => a })`,
+///   with `A` the field type and `a` the stated side. At the constructor's own
+///   application, the case answers that application's field, so the family
+///   holds the reflexivity at the stated side. Each node of the case joins
+///   `minted`.
+/// - fails: as [`refined_arm`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`split_step`].
+/// - witness: `tests::native_formers::an_arm_is_refined_through_the_injectivity_of_its_constructor_3403`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&ty| matches!(arena.value_type(ty), Some(&ValueType::Path { .. }))))]
+fn projected(
+    arena: &mut CoreArena,
+    (field, stated): (ValueTypeId, ValueId),
+    (equation, at): (BinderDepth, BinderDepth),
+    (tag, position, arities): (
+        gandr_core_term::ConstructorTag,
+        gandr_kernel_term::FieldPosition,
+        &[gandr_kernel_term::FieldCount],
+    ),
+    minted: &mut Vec<TermNode>,
+) -> Result<ValueTypeId, CheckRefusal>
+{
+    let point = depth_past(at, 1)?;
+    let carrier = carried_value_type(arena, field, (equation, point), &[])?;
+    let fixed = carried_value(arena, stated, (equation, point), &[])?;
+    let scrutinee = variable_at(arena, point, at)?;
+    let answered = carried_value_type(arena, field, (equation, depth_past(point, 1)?), &[])?;
+    let motive = arena.comp_type_returner(answered);
+    let mut branches = Vec::with_capacity(arities.len());
+    for (constructor, &arity) in arities.iter().enumerate() {
+        let width = usize::from(arity);
+        let inside = depth_past(point, width)?;
+        let answer = if gandr_core_term::ConstructorTag::from(constructor) == tag {
+            variable_at(arena, inside, depth_past(point, usize::from(position))?)?
+        }
+        else {
+            carried_value(arena, stated, (equation, inside), &[])?
+        };
+        let mut branch = arena.computation_return(answer);
+        minted.extend([TermNode::Value(answer), TermNode::Computation(branch)]);
+        for _ in 0 .. width {
+            branch = arena.computation_lambda(branch);
+            minted.push(TermNode::Computation(branch));
+        }
+        branches.push(branch);
+    }
+    let case = arena.computation_data_case(scrutinee, motive, branches, arities.to_vec());
+    let read = arena.value_returned(case);
+    minted.extend([
+        TermNode::Value(fixed),
+        TermNode::Value(scrutinee),
+        TermNode::Computation(case),
+        TermNode::Value(read),
+    ]);
+    Ok(arena.value_type_path(carrier, fixed, read))
+}
+
 /// Whether the staged binders of a step move along its equation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Moving
@@ -2008,6 +2316,49 @@ fn wrapped(
             TermNode::Computation(refined),
         ]);
     }
+    Ok(refined)
+}
+
+/// The refinement `split` writes around `inner`, the body past its paths: one
+/// bind per field, of the transport that gives the field's path.
+///
+/// # Specification
+/// - requires: `inner` is read past the paths of `split`.
+/// - ensures: a bind of each field's transport, outermost first, each at the
+///   depth past the paths before it. Each node it mints, and each node of the
+///   motives, joins `minted`.
+/// - fails: as [`refined_arm`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`split_step`].
+/// - witness: `tests::native_formers::an_arm_is_refined_through_the_injectivity_of_its_constructor_3403`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&refined| split.fields.is_empty() || matches!(arena.computation(refined), Some(&Computation::Bind(..)))))]
+fn split_wrapped(
+    arena: &mut CoreArena,
+    split: &Split,
+    inner: ComputationId,
+    minted: &mut Vec<TermNode>,
+) -> Result<ComputationId, CheckRefusal>
+{
+    let mut refined = inner;
+    for (position, &(motive, reflexivity, stated)) in split.fields.iter().enumerate().rev() {
+        let at = depth_past(split.depth, position)?;
+        let path = variable_at(arena, at, split.equation)?;
+        let transport = arena.computation_path_transport(motive, path, reflexivity);
+        let ascribed = arena.computation_ascribe(transport, stated);
+        refined = arena.computation_bind(ascribed, refined);
+        minted.extend([
+            TermNode::Value(path),
+            TermNode::Computation(transport),
+            TermNode::Computation(ascribed),
+            TermNode::Computation(refined),
+        ]);
+    }
+    minted.extend(split.minted.iter().copied());
     Ok(refined)
 }
 

@@ -1,9 +1,9 @@
 // Bounded naturals as they should read, and what refuses each program.
 //
-// `Fin(n)` holds the naturals below `n`. A case on one binds each arm's index
-// equation. It solves an equation with a variable side and prunes an arm whose
-// ends are apart. It prunes no match of no arms. An equation between two
-// successors stays unsolved.
+// `Finite(n)` holds the naturals below `n`. A case on one binds each arm's
+// index equation. It solves an equation with a variable side and prunes an
+// arm whose ends are apart. It prunes no match of no arms. The model source
+// `injective-index` declares `Finite` and holds `toNat` and `lookup`.
 //
 // The checker refuses each declaration below by the name its attribute
 // states. Each turns to `checks` as its rung lands, and the source then moves
@@ -11,47 +11,17 @@
 //
 // - owes: #3484 — the empty match at an indexed family, for
 //   `absurdFin`
-// - owes: #3515 — injectivity, for `lookup`
 // - see: #3481 — the spike that wrote these programs
 
 // The naturals the bounds count in.
 import "../../model/data/data-base.gandr";
 
-// The vectors a bound looks into.
-import "../../model/data/vectors.gandr";
-
-/// The naturals below `n`.
-data Fin : Nat -> Type where {
-  /// Zero, below every successor.
-  | FZero : (n : Nat) --> Fin(Succ(n))
-  /// One past a bound, below the successor of that bound.
-  | FSucc : (n : Nat, i : Fin(n)) --> Fin(Succ(n))
-}
+// The bounds.
+import "../../model/data/injective-index.gandr";
 
 /// No natural lies below zero. Each constructor stands at a successor, apart
 /// from zero, so the match needs no arm.
 @[ refuses("NonExhaustiveMatch") ]
-def absurdFin(i : Fin(Zero)) -> Integer {
+def absurdFin(i : Finite(Zero)) -> Integer {
   match i {}
 }
-
-/// A bound read back as the natural it is.
-def rec toNat(n : Nat, i : Fin(n)) -> Nat {
-  match i {
-    FZero(_) => Zero,
-    FSucc(m, j) => Succ(toNat[<](m, j))
-  }
-}
-
-/// The element at a bound below the vector's length. The solver does not take
-/// apart the inner `FSucc` arm's path between two successors.
-@[ refuses("TypeMismatch") ]
-def rec lookup(a : Type, n : Nat, v : Vec(a, n), i : Fin(n)) -> a {
-  match i {
-    FZero(m) => match v { VCons(_, h, _) => h },
-    FSucc(m, j) => match v { VCons(_, _, t) => lookup[<](a, m, t, j) }
-  }
-}
-
-/// The bound one below two.
-def one() -> Fin(Succ(Succ(Zero))) { FSucc(Succ(Zero), FZero(Zero)) }

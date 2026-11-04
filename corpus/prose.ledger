@@ -462,11 +462,12 @@ corpus/ledger/features/implicit-arguments.gandr STE-8.1 7cf1e834ca3f5ea2
 corpus/ledger/features/implicit-arguments.gandr STE-4.3 c5a89bbfe9fd8185
 corpus/ledger/features/indexed-data.gandr STE-3.2 2c9daa3e530dfc8d
 corpus/ledger/features/indexed-data.gandr STE-3.2 8d210e27c33b4200
+corpus/ledger/features/indexed-data.gandr STE-3.2 c4c41ec636d0e3e4
 corpus/ledger/features/indexed-data.gandr STE-3.5 5a46085657e485e5
 corpus/ledger/features/indexed-data.gandr STE-6.3 654affcdcfa2b286
 corpus/ledger/features/indexed-data.gandr STE-6.3 8d210e27c33b4200
 corpus/ledger/features/indexed-data.gandr STE-8.1 654affcdcfa2b286
-corpus/ledger/features/indexed-data.gandr STE-6.6 11404ef45d03d7ac
+corpus/ledger/features/indexed-data.gandr STE-6.6 685a0b37e181ad7c
 corpus/ledger/features/indexed-sorts.gandr STE-3.2 45720986ee126271
 corpus/ledger/features/indexed-sorts.gandr STE-3.2 6b60898902d1cf02
 corpus/ledger/features/indexed-sorts.gandr STE-3.2 a8801bb6141675f7
@@ -788,7 +789,7 @@ corpus/ledger/features/two-layouts-one-code.gandr STE-8.1 548980abc5a7fd81
 corpus/ledger/features/unbiased-composition.gandr STE-3.6 4a0c61c372d1e848
 corpus/ledger/features/unbiased-composition.gandr STE-6.3 055895e8396c2c23
 corpus/ledger/features/unbiased-composition.gandr STE-6.6 3fa46eddbee76685
-corpus/ledger/features/unification.gandr STE-3.2 7cde8828df84f1a6
+corpus/ledger/features/unification.gandr STE-3.2 3efe2d6056ee4e88
 corpus/ledger/features/unification.gandr STE-6.3 0002a9cd69375977
 corpus/ledger/features/unification.gandr STE-6.3 e1e296c9c5511a36
 corpus/ledger/features/univalence-axiom.gandr STE-3.6 0990e7398be80f2e

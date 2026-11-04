@@ -9,7 +9,7 @@
 // another. The semantic type of an arrow is the Kripke function space over
 // renamings. A recursion computes it from the object type.
 //
-// The evaluator, reflection and reification stop at five refusals. The twin
+// The evaluator, reflection and reification stop at four refusals. The twin
 // in the pathological corpus names each of them.
 //
 // - see: #5032
@@ -172,6 +172,23 @@ pub def apply(
   w(d)(r)(v)
 }
 
+/// A renaming lifted under one more entry, at one variable. The arm `Here`
+/// learns that `c` is `a` from the split of `Extend(_h, c) = Extend(g, a)`.
+pub def liftAt(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g), b : ObjTy, x : Var(Extend(g, a), b)) -> Var(
+  Extend(d, a),
+  b
+) {
+  match x {
+    Here(_h, c) => Here(d, c),
+    There(_h, c, _e, y) => There(d, c, a, r(c)(y))
+  }
+}
+
+/// The renamer under one more entry.
+pub def lift(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, a), Extend(g, a)) {
+  return fun (b) { return fun (x) { liftAt(d, g, a, r, b, x) } }
+}
+
 /// The size of a term. Each recursive call is at the indices its pattern
 /// binds.
 pub def rec size(g : Ctx, a : ObjTy, t : Tm(g, a)) -> Integer {
@@ -234,3 +251,16 @@ rec {
 /// The depth of `Base -> Base` as reification reads it: one arrow.
 @[ runs("1") ]
 def arrowDepth() -> Integer { reifyDepth(Arr(Base, Base), Empty) }
+
+/// The lookup of a variable in an environment. Each inner case omits `ENil`
+/// and learns the indices of `ECons` from the equations that it binds.
+pub def rec lookVar(g : Ctx, a : ObjTy, x : Var(g, a), d : Ctx, rho : SemEnv(g, d)) -> sem(a, d) {
+  match x {
+    Here(_h, _b) => match rho {
+      ECons(_h, _b, _d, _rest, v) => v
+    },
+    There(h, b, _c, y) => match rho {
+      ECons(_h, _c, _d, rest, _v) => lookVar[<](h, b, y, d, rest)
+    }
+  }
+}

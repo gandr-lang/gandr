@@ -1,8 +1,8 @@
 /// `unification`: Unification and index refinement.
-/// Implemented: the solution step, which replaces the variable side of an arm's index equation by the other side, in the arm's goal and in each later binder the arm reads.
-/// Not implemented: injectivity, a clash as a refutation and a conversion failure as a refusal.
+/// Implemented: the solution step, which replaces the variable side of an arm's index equation by the other side, in the arm's goal and in each later binder the arm reads. The injectivity step, which splits an equation between two applications of one constructor into one path for each field.
+/// Not implemented: a clash as a refutation and a conversion failure as a refusal.
 ///
-/// - owes: #3515
+/// - owes: #391
 //! Values tagged by the code of their type: a family whose constructors each
 //! state the code they stand at. A case on a tagged value solves each arm's
 //! equation from its constructor's code to the scrutinee's, so the arm's goal
