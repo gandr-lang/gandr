@@ -12,7 +12,7 @@
     "output": "exit 0; 1 open, 0 closed; 1 links; the body ends `from: #5`"
   },
   {
-    "name": "#5149: two refactor:file runs for one pull request, from two clones with runtime directories of their own, both read the board before either files and leave one open issue and the later one closed as its duplicate",
+    "name": "#5149: two refactor:file runs for one pull request, from two clones with runtime directories of their own, both read the board before either files and leave one open issue and the later one closed as its duplicate; the stub's lock holds on a host with no flock(1) (#5159)",
     "kind": "race",
     "subs": 50,
     "output": "exit 0 0; 1 open, 1 closed; closed: `issue close 2 -R case/case --duplicate-of 1`"
