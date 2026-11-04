@@ -1,0 +1,222 @@
+[
+  {
+    "name": "#5146: the gate refuses a branch `sorts-3403-chain` whose issue holds no claim, and names claim:take",
+    "input": {
+      "step": "gate",
+      "branch": "sorts-3403-chain",
+      "lanes": ["core", "triage", "triage-2", "toolchain"],
+      "issue": { "number": 3403, "state": "open", "labels": ["kind:gap"], "body": "Text.\n" }
+    },
+    "output": {
+      "verdict": "refused",
+      "line": "check: sorts-3403-chain works #3403, and #3403 holds no claim of sorts, so claim:next can give it to another lane; run `mise run claim:take 3403` and gate again"
+    }
+  },
+  {
+    "name": "#5146: the gate passes the same branch over the claim of `sorts`",
+    "input": {
+      "step": "gate",
+      "branch": "sorts-3403-chain",
+      "lanes": ["core", "triage", "triage-2", "toolchain"],
+      "issue": {
+        "number": 3403,
+        "state": "open",
+        "labels": ["kind:gap", "status:claimed"],
+        "body": "Text.\n\n<!-- claim: lane=sorts -->\n"
+      }
+    },
+    "output": { "verdict": "held" }
+  },
+  {
+    "name": "the gate refuses a branch whose issue another lane claims, and names that lane",
+    "input": {
+      "step": "gate",
+      "branch": "triage-3403-index-injectivity",
+      "lanes": ["core", "triage", "triage-2", "toolchain"],
+      "issue": {
+        "number": 3403,
+        "state": "open",
+        "labels": ["status:claimed"],
+        "body": "Text.\n\n<!-- claim: lane=sorts -->\n"
+      }
+    },
+    "output": {
+      "verdict": "refused",
+      "line": "check: triage-3403-index-injectivity works #3403, and sorts holds its claim, not triage; the coordinator decides which lane works it"
+    }
+  },
+  {
+    "name": "a claim marker with no status:claimed is no claim, so the gate refuses",
+    "input": {
+      "step": "gate",
+      "branch": "sorts-3402",
+      "lanes": ["core", "triage"],
+      "issue": {
+        "number": 3402,
+        "state": "open",
+        "labels": [],
+        "body": "Text.\n\n<!-- claim: lane=sorts -->\n"
+      }
+    },
+    "output": {
+      "verdict": "refused",
+      "line": "check: sorts-3402 works #3402, and #3402 holds no claim of sorts, so claim:next can give it to another lane; run `mise run claim:take 3402` and gate again"
+    }
+  },
+  {
+    "name": "a claim marker quoted in a fenced block is text, never the lane's claim",
+    "input": {
+      "step": "gate",
+      "branch": "sorts-3402",
+      "lanes": ["core", "triage"],
+      "issue": {
+        "number": 3402,
+        "state": "open",
+        "labels": ["status:claimed"],
+        "body": "Text.\n\n```\n<!-- claim: lane=sorts -->\n```\n"
+      }
+    },
+    "output": {
+      "verdict": "refused",
+      "line": "check: sorts-3402 works #3402, and #3402 holds no claim of sorts, so claim:next can give it to another lane; run `mise run claim:take 3402` and gate again"
+    }
+  },
+  {
+    "name": "the gate passes a branch over a closed issue, which takes no claim",
+    "input": {
+      "step": "gate",
+      "branch": "triage-4909-html-site",
+      "lanes": ["core", "triage"],
+      "issue": { "number": 4909, "state": "closed", "labels": [], "body": "Text.\n" }
+    },
+    "output": { "verdict": "closed" }
+  },
+  {
+    "name": "a failed read leaves the gate to run, and says so",
+    "input": {
+      "step": "gate",
+      "branch": "triage-5146-claim-take",
+      "lanes": ["core", "triage"],
+      "issue": null
+    },
+    "output": {
+      "verdict": "unread",
+      "line": "check: triage-5146-claim-take works #5146, and its issue could not be read, so its claim goes unchecked; the next gate reads it again"
+    }
+  },
+  {
+    "name": "a branch with no number works no unit, and the gate reads nothing",
+    "input": {
+      "step": "gate",
+      "branch": "triage-clippy-scope",
+      "lanes": ["core", "triage"],
+      "issue": null
+    },
+    "output": { "verdict": "none" }
+  },
+  {
+    "name": "a detached head names no branch and works no unit",
+    "input": { "step": "branch", "branch": "", "lanes": ["core", "triage"] },
+    "output": null
+  },
+  {
+    "name": "a branch under a `/` works no unit",
+    "input": { "step": "branch", "branch": "wip/2813", "lanes": ["core", "triage"] },
+    "output": null
+  },
+  {
+    "name": "a lane worktree's branch names a lane after its word, and works no unit",
+    "input": { "step": "branch", "branch": "lane-triage", "lanes": ["core", "triage"] },
+    "output": null
+  },
+  {
+    "name": "the longest lane key the branch starts with is its lane, so `triage-2` reads as one lane",
+    "input": {
+      "step": "branch",
+      "branch": "triage-2-4321-pruning",
+      "lanes": ["core", "triage", "triage-2"]
+    },
+    "output": { "lane": "triage-2", "number": 4321 }
+  },
+  {
+    "name": "a lane no key names reads as the letters before the first number",
+    "input": { "step": "branch", "branch": "coordinator-5122-hold", "lanes": ["core", "triage"] },
+    "output": { "lane": "coordinator", "number": 5122 }
+  },
+  {
+    "name": "a branch of the number alone after its lane works that unit",
+    "input": { "step": "branch", "branch": "sorts-3403", "lanes": ["core", "triage"] },
+    "output": { "lane": "sorts", "number": 3403 }
+  },
+  {
+    "name": "claim:take writes the lane's claim marker on an unclaimed body",
+    "input": {
+      "step": "take",
+      "lane": "sorts",
+      "issue": { "number": 3403, "state": "open", "labels": ["kind:gap"], "body": "Text.\n" }
+    },
+    "output": { "verdict": "write", "body": "Text.\n\n<!-- claim: lane=sorts -->\n" }
+  },
+  {
+    "name": "claim:take takes a release marker off as it claims",
+    "input": {
+      "step": "take",
+      "lane": "sorts",
+      "issue": {
+        "number": 3403,
+        "state": "open",
+        "labels": [],
+        "body": "Text.\n\n<!-- released: lane=triage at=2026-11-04T10:00:00Z -->\n"
+      }
+    },
+    "output": { "verdict": "write", "body": "Text.\n\n<!-- claim: lane=sorts -->\n" }
+  },
+  {
+    "name": "claim:take does nothing for an issue the lane holds",
+    "input": {
+      "step": "take",
+      "lane": "sorts",
+      "issue": {
+        "number": 3403,
+        "state": "open",
+        "labels": ["status:claimed"],
+        "body": "Text.\n\n<!-- claim: lane=sorts -->\n"
+      }
+    },
+    "output": { "verdict": "held" }
+  },
+  {
+    "name": "claim:take refuses an issue another lane claims, and names that lane",
+    "input": {
+      "step": "take",
+      "lane": "triage",
+      "issue": {
+        "number": 3403,
+        "state": "open",
+        "labels": ["status:claimed"],
+        "body": "Text.\n\n<!-- claim: lane=sorts -->\n"
+      }
+    },
+    "output": {
+      "verdict": "refused",
+      "line": "claim:take: sorts holds the claim of #3403; the coordinator decides which lane works it"
+    }
+  },
+  {
+    "name": "claim:take refuses a closed issue",
+    "input": {
+      "step": "take",
+      "lane": "triage",
+      "issue": { "number": 4909, "state": "closed", "labels": [], "body": "Text.\n" }
+    },
+    "output": {
+      "verdict": "refused",
+      "line": "claim:take: #4909 is closed; a closed issue takes no claim"
+    }
+  },
+  {
+    "name": "a step the program does not know is refused",
+    "input": { "step": "drop", "lane": "triage" },
+    "fails": true
+  }
+]

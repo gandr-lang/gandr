@@ -40,6 +40,7 @@ site = [
   { file = ".config/claims/deps.bash", scope = "deps_open_graph", api = "graphql", identity = "read", calls = 1, points = 16, measured = "cost", hour = 8, trigger = "claim:next: the open issues' graph, 8 pages at 2 points" },
   { file = ".config/claims/deps.bash", scope = "deps_set_block", api = "rest", identity = "write", calls = 1, points = 1, measured = "rest", hour = 16, trigger = "issue:file: each block it sets" },
   { file = ".config/claims/deps.bash", scope = "deps_sub_issues", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 8, trigger = "epics:link and report:deps: one read an epic" },
+  { file = ".config/claims/taken.bash", scope = "-", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 16, trigger = "check and gate:all on a unit branch: one read of the branch's issue a gate, about 2 gates a seat an hour; a branch that works no unit reads nothing" },
 
   # Epics: epics.yml closes an epic whose last child closed (Actions).
   { file = ".config/epics/epics.sh", scope = "-", api = "graphql", identity = "actions", calls = 3, points = 5, measured = "rule", hour = 8, trigger = "epics.yml: each issue closed; the repository, then a comment and a close" },
@@ -83,6 +84,8 @@ site = [
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "claim:next", api = "rest", identity = "write", calls = 3, points = 3, measured = "rest", hour = 8, trigger = "claim:next: the label and the body's marker" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "claim:release", api = "rest", identity = "read", calls = 2, points = 2, measured = "rest", hour = 2, trigger = "claim:release by hand" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "claim:release", api = "rest", identity = "write", calls = 2, points = 2, measured = "rest", hour = 2, trigger = "claim:release by hand" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "claim:take", api = "rest", identity = "read", calls = 2, points = 3, measured = "rest", hour = 2, trigger = "claim:take by hand: the repository, the issue, and the issue once more after the write" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "claim:take", api = "rest", identity = "write", calls = 3, points = 3, measured = "rest", hour = 2, trigger = "claim:take by hand: the label and the body's marker, and the body written back when another lane claimed first" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "epic:deps", api = "rest", identity = "read", calls = 2, points = 2, measured = "rest", hour = 1, trigger = "epic:deps by hand" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "epic:order", api = "graphql", identity = "write", calls = 1, points = 2, measured = "rule", hour = 1, trigger = "epic:order by hand" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "epic:order", api = "rest", identity = "read", calls = 2, points = 2, measured = "rest", hour = 1, trigger = "epic:order by hand" },
