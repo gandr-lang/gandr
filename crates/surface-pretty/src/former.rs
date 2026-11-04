@@ -1453,13 +1453,15 @@ pub trait Source
     ///   [`Former::RecordUpdate`], a [`Former::RecordType`], a
     ///   [`Former::Session`], a [`Former::Data`], a [`Former::Codata`], a
     ///   [`Former::Constructor`], a [`Former::Primitive`], a [`Former::Case`],
-    ///   a [`Former::DataCase`], a [`Former::Handle`], a [`Former::Scope`] or a
-    ///   [`Former::Offer`] for `node` and `index` is below its arity: a
-    ///   record's fields and the fields an update writes in label order, a
-    ///   session type's payloads in slot order, a family's arguments and a
-    ///   constructor's fields in telescope order, a primitive's arguments, a
-    ///   case's branches, a handler's operation clauses and an offer's arms in
-    ///   order; none otherwise.
+    ///   a [`Former::DataCase`], a [`Former::Handle`], a [`Former::Scope`], a
+    ///   [`Former::Offer`], a [`Former::Returns`] or a
+    ///   [`Former::EffectfulReturner`] that returns a group for `node` and
+    ///   `index` is below its arity: a record's fields and the fields an update
+    ///   writes in label order, a session type's payloads in slot order, a
+    ///   family's arguments and a constructor's fields in telescope order, a
+    ///   primitive's arguments, a case's branches, a handler's operation
+    ///   clauses, an offer's arms and a returner's results in order; none
+    ///   otherwise.
     /// - provides: the children of an n-ary former, which a [`Former`] counts
     ///   but does not hold.
     /// - fails: never; a missing component is an absence, which the printer
