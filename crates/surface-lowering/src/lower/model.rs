@@ -63,6 +63,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::Binders;
+use gandr_core_term::Carried;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Sort;
@@ -4557,8 +4558,11 @@ fn member_read<'source>(
 ///   after `mark`; every argument is a value of the context the result is read
 ///   in.
 /// - ensures: the substituted value, each node minted since `mark` carrying the
-///   origin of the node it rewrote, or `origin` for one it built; nothing when
-///   the substitution yields no value.
+///   origin of the node it rewrote, or `origin` for one it built. An argument
+///   the definition reads under a binder stands as a raised copy, which the
+///   trace reports from both the parameter and the argument. The copy carries
+///   the argument's origin, as an argument read at no binder is the argument
+///   itself. Nothing when the substitution yields no value.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -4584,6 +4588,12 @@ fn substitute_arguments(
         &environment,
         &mut carried,
     );
+    // The copy of an argument stands for what the application writes, so the
+    // argument's pair goes before the parameter's, which the origin table
+    // would read first by its smaller node.
+    let written: alloc::collections::BTreeSet<ValueId> = arguments.iter().copied().collect();
+    carried
+        .sort_by_key(|pair| !matches!(*pair, Carried::Value(held, _) if written.contains(&held)));
     exits::record_copies(sink, mark, &carried, origin);
     match substituted {
         TermId::Value(substituted) => Maybe::Present(substituted),

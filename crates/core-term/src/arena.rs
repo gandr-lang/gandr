@@ -1205,6 +1205,23 @@ impl CoreArena
         self.alloc_value(Value::Constant(index))
     }
 
+    /// Mint a fresh value equal to `at`, over the same children.
+    ///
+    /// A copy stands apart from its original by its id, so a reader that keys
+    /// a table by node tells the two places apart.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_copy(
+        &mut self,
+        at: ValueId,
+    ) -> Option<ValueId>
+    {
+        let node = self.value(at)?.clone();
+        Some(self.alloc_value(node))
+    }
+
     /// Mint the unit value, the tuple of no components.
     ///
     /// # Specification
