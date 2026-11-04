@@ -14,7 +14,7 @@ import "../../model/specification/niche-realizability.gandr";
 
 /// `int deref(const int *_Nonnull p)`, specified by hand: no precondition
 /// at null; otherwise `p` points to an int and it answers that int.
-def derefWp(w : Nat, q : *{Nat, Nat, Heap} -> Type, h : Heap) -> Type =
+def derefWp(w : Nat, q : (Nat, Nat, Heap) -> Type, h : Heap) -> Type =
   match w
     | Zero => return Void
     | Succ(_n) => return type(*{

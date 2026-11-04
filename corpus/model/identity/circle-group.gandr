@@ -91,13 +91,13 @@ def comm(
   p : Path[.A = Circle](Base, Base),
   q : Path[.A = Circle](Base, Base)
 ) -> Path[.A = Path[.A = Circle](Base, Base)](Path.step p q, Path.step q p) =
-  compose[9, 11] (chain 5) (*{
+  compose[9, 11] (chain 5) (
     Path.back (sect (Path.step p q)),
     Path.ap spin (windHom q p),
     Path.ap spin (plusComm (wind q) (wind p)),
     Path.back (Path.ap spin (windHom p q)),
     sect (Path.step q p)
-  })
+  )
 
 /// Three loops spun and wound count three (cubical's `test-winding-pos`).
 @[ runs("S (S (S Z))") ]

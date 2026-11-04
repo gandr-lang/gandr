@@ -55,7 +55,7 @@ def overGenerated(
 
 /// A composite of `Path.here` cells: `Path.walk` over it reduces to its base.
 def overComposite(A : Type, M : A -> Type, x : A, v : M(x)) -> Path[.A = M(x)](
-  Path.walk (fun (a) { M a }) (compose[3, 5] (chain 2) (*{Path.here x, Path.here x})) v,
+  Path.walk (fun (a) { M a }) (compose[3, 5] (chain 2) (Path.here x, Path.here x)) v,
   v
 ) =
   Path.here v

@@ -186,7 +186,7 @@ pub def printed(c : Code) -> Printed =
 def rec printedParams(cs : Coded) -> Params =
   match cs
     | NoCoded => NoParam
-    | Coded(n, c, rest) => Param (n (printed c)) (printedParams[<] rest)
+    | Coded(n, c, rest) => Param n (printed c) (printedParams[<] rest)
 
 /// A signature against a row: Rust's default layout prints the type of each
 /// declaration, and admission compares it with the row.

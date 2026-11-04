@@ -68,7 +68,7 @@ module ByHand where {
     Flow.ride (fun (X) { X }) opposite_dir_by_hand t
 
   /// A telescope ridden forward by a run.
-  @[ runs("(unit, (+{.0 = unit}, +{.1 = unit}))") ]
+  @[ runs("*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}}") ]
   def ridden : () -> Tel = forth (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}});
 
   /// Riding moves the telescope as transport does.

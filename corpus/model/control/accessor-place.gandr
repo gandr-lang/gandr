@@ -39,7 +39,7 @@ def tagged(a : Integer) -> List(Integer * Integer) =
 /// An element written back past the head: the cells before it are copied
 /// and share their elements, the cells after it are shared, and fresh pairs
 /// allocated after the write-back leave both untouched.
-@[ runs("cons (9, 9) (cons (1, 1) (cons (5, 5) (cons (1, 3) nil)))") ]
+@[ runs("cons *{9, 9} (cons *{1, 1} (cons *{5, 5} (cons *{1, 3} nil)))") ]
 def rebuilt() -> List(Integer * Integer) =
   let l = tagged 1
   var xs = l

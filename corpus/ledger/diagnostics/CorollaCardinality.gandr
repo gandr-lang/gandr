@@ -23,4 +23,4 @@ def narrow(e : Unit + Unit + Unit + Unit) -> -F Bool =
     | +{.3 = u} => +{.1 = u}
 
 @[ refuses("CorollaCardinality") ]
-def uneven = ua[1, 4] Semi (Rig (*{.mul = widen})) (*{.plus = narrow}) ;
+def uneven = ua[1, 4] Semi Rig (*{.mul = widen}) (*{.plus = narrow}) ;

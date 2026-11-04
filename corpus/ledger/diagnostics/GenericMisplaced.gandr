@@ -4,4 +4,4 @@ data Point : Type where
   | Point : (x : Integer, y : Integer) --> Point
 
 @[ refuses("GenericMisplaced") ]
-def same() -> Bool { Eq.generic Point (Point 1 2) (Point 1 2) }
+def same() -> Bool { ((Eq.generic Point) (Point 1 2)) (Point 1 2) }

@@ -55,11 +55,15 @@ def sectAlong(a : Type, b : Type, p : Path[.A = Type](a, b), x : a) -> Path[.A =
   bwdAlong a b p (fwdAlong a b p x),
   x
 ) =
-  Path.walk ((y : Type, z : Path[.A = Type](a, y)) -> Path[.A = a](
+  Path.walk
+    ((y : Type, z : Path[.A = Type](a, y)) -> Path[.A = a](
       bwdAlong a y z (fwdAlong a y z x),
       x
     ))
-    (p (Path.here a) (Path.here p)) (Path.here x)
+    p
+    (Path.here a)
+    (Path.here p)
+    (Path.here x)
 
 /// Forward after back is the identity at every point, by `J` on the path.
 @[ checks ]
@@ -67,11 +71,15 @@ def retrAll(a : Type, b : Type, p : Path[.A = Type](a, b)) -> (w : b) -> Path[.A
   fwdAlong a b p (bwdAlong a b p w),
   w
 ) =
-  Path.walk ((y : Type, z : Path[.A = Type](a, y)) -> ((w : y) -> Path[.A = y](
+  Path.walk
+    ((y : Type, z : Path[.A = Type](a, y)) -> ((w : y) -> Path[.A = y](
       fwdAlong a y z (bwdAlong a y z w),
       w
     )))
-    (p (Path.here a) (Path.here p)) (fun (w) { Path.here w })
+    p
+    (Path.here a)
+    (Path.here p)
+    (fun (w) { Path.here w })
 
 /// Forward after back is the identity at `y`.
 @[ checks ]
@@ -149,7 +157,7 @@ def uaBeta(
 /// `uaβ` run at the loops' record: a loop carried along `ua(winding)` runs to
 /// the record's map at it. The record's laws are carried, never run.
 @[ runs("S Z") ]
-def uaBetaRun() -> Int { Path.walk (fun (X) { X }) (ua winding) loop }
+def uaBetaRun() -> Int { Path.walk (fun (X) { X }) (ua winding) (loop) }
 
 /// A loop carried along the loops' path to the integers is its winding
 /// number, by conversion.
@@ -162,4 +170,4 @@ def windingBeta(x : Path[.A = Circle](Base, Base)) -> Path[.A = Int](
 
 /// A loop carried to the integers runs to its winding number.
 @[ runs("S Z") ]
-def windingRun() -> Int { Path.walk (fun (X) { X }) loopsAreIntegers loop }
+def windingRun() -> Int { Path.walk (fun (X) { X }) loopsAreIntegers (loop) }

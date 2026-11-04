@@ -30,4 +30,4 @@ def measured(b : Bool) -> -F Bool =
 def compared = ua[
   1,
   4
-] Magma (Magma (*{.mul = measured, .one = keep})) (*{.mul = measured, .one = keep}) ;
+] Magma Magma (*{.mul = measured, .one = keep}) (*{.mul = measured, .one = keep}) ;

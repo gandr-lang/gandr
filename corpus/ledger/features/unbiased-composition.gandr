@@ -14,7 +14,7 @@
 
 /// Three reflexivities composed unbiased are reflexivity.
 def composedAtHere(A : Type, x : A) -> Path[.A = Path[.A = A](x, x)](
-  compose[5, 7] (chain 3) (*{Path.here x, Path.here x, Path.here x}),
+  compose[5, 7] (chain 3) (Path.here x, Path.here x, Path.here x),
   Path.here x
 ) =
   Path.here (Path.here x)
@@ -22,7 +22,7 @@ def composedAtHere(A : Type, x : A) -> Path[.A = Path[.A = A](x, x)](
 /// The right nesting of three paths is their unbiased composite, so reflexivity relates the two.
 def nestedIsComposite(A : Type, x : A, y : A, z : A, w : A, f : Path[.A = A](x, y), g : Path(y, z), h : Path(z, w)) -> Path[.A = Path[.A = A](x, w)](
   Path.step f (Path.step g h),
-  compose[5, 7] (chain 3) (*{f, g, h})
+  compose[5, 7] (chain 3) (f, g, h)
 ) =
   Path.here (Path.step f (Path.step g h))
 
@@ -32,7 +32,7 @@ def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Pa
 
 /// The whisker `[2](1, 0)`: a 2-cell beside a 1-cell, composed at level two.
 def whiskered(A : Type, x : A, y : A, z : A, fm : Path(x, y), fp : Path(x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) =
-  compose[4, 9] (chain 2 (*{1, 0})) (*{fa, g})
+  compose[4, 9] (chain 2 (1, 0)) (fa, g)
 
 /// The level-two whisker is the right whisker, so reflexivity relates the two.
 def whiskeredIsRight(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
@@ -50,7 +50,7 @@ def whiskeredThenBackAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A]
 
 /// The horizontal composite `[2](1, 1)` of two 2-cells side by side.
 def horizontal(A : Type, x : A, y : A, z : A, f : Path(x, y), f2 : Path(x, y), g : Path(y, z), g2 : Path(y, z), a : Path[.A = Path[.A = A](x, y)](f, f2), b : Path[.A = Path[.A = A](y, z)](g, g2)) -> Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f2 g2) =
-  compose[5, 11] (chain 2 (*{1, 1})) (*{a, b})
+  compose[5, 11] (chain 2 (1, 1)) (a, b)
 
 /// The left whisker of `ga` by `f`: the transport along `ga` of the composite's second half.
 def leftWhisker(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), gm : Path(y, z), gp : Path(y, z), ga : Path[.A = Path[.A = A](y, z)](gm, gp)) -> Path[.A = Path[.A = A](x, z)](Path.step f gm, Path.step f gp) =

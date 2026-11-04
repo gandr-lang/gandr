@@ -58,7 +58,7 @@ def substRenameSquareLift(
 ) -> Path[.A = Term](look (rlook n (RLift r)) (Lift s) Z, rename (look n (Lift u) Z) (RLift q)) =
   match n
     | Z => Path.here (Ix Z)
-    | S(m) => compose[7, 9] (chain 4) (*{
+    | S(m) => compose[7, 9] (chain 4) (
       lookWeakens (rlook m r) s Z,
       weakenedSquare r s u q h m,
       renameSquare
@@ -69,7 +69,7 @@ def substRenameSquareLift(
         (RLift q)
         (fun (i) { shiftPastLift q i }),
       renameLookWeakens u q m
-    })
+    )
 
 /// Renaming by `r` then substituting `s` is substituting `u` then renaming
 /// by `q`, given the two agree at every index.

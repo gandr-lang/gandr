@@ -62,11 +62,11 @@ def substSquareLift(
 ) -> Path[.A = Term](subst (look n (Lift s1) Z) (Lift s2), subst (look n (Lift u1) Z) (Lift u2)) =
   match n
     | Z => Path.here (Ix Z)
-    | S(m) => compose[5, 7] (chain 3) (*{
+    | S(m) => compose[5, 7] (chain 3) (
       substLookWeakenLift s1 s2 m,
       weakenedComposites s1 s2 u1 u2 h m,
       Path.back (substLookWeakenLift u1 u2 m)
-    })
+    )
 
 /// Substituting `s1` then `s2` is substituting `u1` then `u2`, given the
 /// two composites agree at every index.

@@ -295,7 +295,7 @@ def fromTagged(vt : (Nat, Heap) -> Type, h : Heap, y : *{r : Tagged, ok : vTag(v
     }
 
 /// A niche realiser marshalled and back is itself, at a word.
-def sectAt(vt : *{Nat, Heap} -> Type, h : Heap, w : Nat) -> (ok : vOpt(vt, w, h)) -> Path[.A = *{
+def sectAt(vt : (Nat, Heap) -> Type, h : Heap, w : Nat) -> (ok : vOpt(vt, w, h)) -> Path[.A = *{
   w : Nat,
   ok : vOpt(vt, w, h)
 }](
@@ -309,7 +309,7 @@ def sectAt(vt : *{Nat, Heap} -> Type, h : Heap, w : Nat) -> (ok : vOpt(vt, w, h)
     | Succ(n) => return fun (ok) { Path.here (*{Succ n, ok}) }
 
 /// A niche realiser marshalled and back is itself.
-def nicheSect(vt : *{Nat, Heap} -> Type, h : Heap, x : *{w : Nat, ok : vOpt(vt, w, h)}) -> Path(
+def nicheSect(vt : (Nat, Heap) -> Type, h : Heap, x : *{w : Nat, ok : vOpt(vt, w, h)}) -> Path(
   fromTagged vt h (toTagged vt h x),
   x
 ) =
@@ -363,7 +363,7 @@ def retrAt(vt : (Nat, Heap) -> Type, h : Heap, t : Nat, p : Nat) -> (ok : vTag(
     | Succ(s) => retrSome vt h s p
 
 /// A tagged realiser marshalled back and again is itself, at a pair.
-def retrTagged(vt : *{Nat, Heap} -> Type, h : Heap, r : Tagged) -> (ok : vTag(
+def retrTagged(vt : (Nat, Heap) -> Type, h : Heap, r : Tagged) -> (ok : vTag(
   vt,
   r,
   h
@@ -375,7 +375,7 @@ def retrTagged(vt : *{Nat, Heap} -> Type, h : Heap, r : Tagged) -> (ok : vTag(
     | Tag(t, p) => retrAt vt h t p
 
 /// A tagged realiser marshalled back and again is itself.
-def taggedRetr(vt : *{Nat, Heap} -> Type, h : Heap, y : *{r : Tagged, ok : vTag(vt, r, h)}) -> Path(
+def taggedRetr(vt : (Nat, Heap) -> Type, h : Heap, y : *{r : Tagged, ok : vTag(vt, r, h)}) -> Path(
   toTagged vt h (fromTagged vt h y),
   y
 ) =

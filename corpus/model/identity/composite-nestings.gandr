@@ -25,7 +25,7 @@ def rightNested(
   h : Path[.A = A](z, w)
 ) -> Path[.A = Path[.A = A](x, w)](
   Path.step f (Path.step g h),
-  compose[5, 7] (chain 3) (*{f, g, h})
+  compose[5, 7] (chain 3) (f, g, h)
 ) =
   Path.here (Path.step f (Path.step g h))
 

@@ -1,16 +1,16 @@
 /// `ComposeDoesNotFill`: a composite whose cells do not meet end to end.
 @[ checks ]
 def meeting(A : Type, x : A, y : A, z : A, p : Path(x, y), q : Path(y, z)) -> Path(x, z) =
-  compose[3, 5] (chain 2) (*{p, q})
+  compose[3, 5] (chain 2) (p, q)
 
 @[ refuses("ComposeDoesNotFill") ]
 def apart(A : Type, x : A, y : A, z : A, p : Path(x, y), q : Path(x, z)) -> Path(x, z) =
-  compose[3, 5] (chain 2) (*{p, q})
+  compose[3, 5] (chain 2) (p, q)
 
 @[ checks ]
 def stacked(A : Type, x : A, y : A, f : Path(x, y), g : Path(x, y), h : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), b : Path[.A = Path[.A = A](x, y)](g, h)) -> Path[.A = Path[.A = A](x, y)](f, h) =
-  compose[4, 9] (chain 1 2) (*{a, b})
+  compose[4, 9] (chain 1 2) (a, b)
 
 @[ refuses("ComposeDoesNotFill") ]
 def columnApart(A : Type, x : A, y : A, f : Path(x, y), g : Path(x, y), h : Path(x, y), k : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), b : Path[.A = Path[.A = A](x, y)](h, k)) -> Path[.A = Path[.A = A](x, y)](f, k) =
-  compose[4, 9] (chain 1 2) (*{a, b})
+  compose[4, 9] (chain 1 2) (a, b)

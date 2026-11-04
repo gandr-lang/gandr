@@ -27,9 +27,9 @@ pub def subWeakenSingle(
   b : Term,
   a : Term
 ) -> Path(subst (subst b (Shift (S Z))) (Cons a (Shift Z)), b) =
-  compose[5, 7] (chain 3) (*{
+  compose[5, 7] (chain 3) (
     substSquare
       (b (Shift (S Z)) (Cons a (Shift Z)) (Shift Z) (Shift Z)) (fun (n) { weakenSingleAgree a n }),
     substCong (Shift Z) (subst b (Shift Z)) b (substId (b (Shift Z)) (fun (n) { shiftZeroIsId n })),
     substId (b (Shift Z)) (fun (n) { shiftZeroIsId n })
-  })
+  )

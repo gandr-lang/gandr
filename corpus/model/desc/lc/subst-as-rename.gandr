@@ -29,11 +29,11 @@ def substRenamesLift(
 ) -> Path[.A = Term](look n (Lift s) Z, Ix (rlook n (RLift r))) =
   match n
     | Z => Path.here (Ix Z)
-    | S(m) => compose[5, 7] (chain 3) (*{
+    | S(m) => compose[5, 7] (chain 3) (
       lookWeakens m s Z,
       weakenedVariable s r h m,
       ixShiftAdds (rlook m r) (S Z)
-    })
+    )
 
 /// A substitution that renames at every index is that renaming.
 pub def rec substRenames(

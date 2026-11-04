@@ -54,7 +54,7 @@ pub def whiskerLeft(
   g2 : Path[.A = A](y, z),
   b : Path[.A = Path[.A = A](y, z)](g1, g2)
 ) -> Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f g2) =
-  compose[4, 9] (chain 2 (*{0, 1})) (*{f, b})
+  compose[4, 9] (chain 2 (0, 1)) (f, b)
 
 /// The right whisker: a path composed after a path of paths, the level-two composite whose first column holds the 2-cell.
 pub def whiskerRight(
@@ -67,7 +67,7 @@ pub def whiskerRight(
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
   g : Path[.A = A](y, z)
 ) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) =
-  compose[4, 9] (chain 2 (*{1, 0})) (*{a, g})
+  compose[4, 9] (chain 2 (1, 0)) (a, g)
 
 /// A dependent function's action on a path: its value at the start carried along the path meets its value at the end.
 pub def apd(

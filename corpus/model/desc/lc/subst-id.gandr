@@ -21,11 +21,11 @@ def substIdLift(
 ) =
   match n
     | Z => Path.here (Ix Z)
-    | S(m) => compose[5, 7] (chain 3) (*{
+    | S(m) => compose[5, 7] (chain 3) (
       lookWeakens m s Z,
       wkCong (look m s Z) (Ix m) (h m),
       ixShiftAdds m (S Z)
-    })
+    )
 
 /// A substitution that is the identity at every index is the identity.
 pub def rec substId(
