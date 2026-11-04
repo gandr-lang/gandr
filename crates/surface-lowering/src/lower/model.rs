@@ -576,6 +576,7 @@ impl<'source> Lowerer<'_, 'source>
         {
             if let FamilyForm::Written(kind) = check.stated {
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
+                let _fresh = self.kinds.insert(kind.node);
             }
         }
 

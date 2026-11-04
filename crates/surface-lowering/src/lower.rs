@@ -1102,7 +1102,7 @@ impl Reading
     /// - hypothesis: L3 — wrong-sort refusals distinguish the expected value,
     ///   computation and type positions; function sites report a declaration.
     /// - witness: `lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
-    /// - witness: `lower::tests::a_computation_codomain_of_a_static_pi_is_refused`
+    /// - witness: `lower::tests::a_computation_codomain_of_a_box_is_refused`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     #[spec(
         ensures: |ret| {
@@ -3500,6 +3500,10 @@ struct Lowerer<'run, 'source>
     /// Each type head that stands for a type minted elsewhere: a manifest
     /// component's or a functor instance's, which the head adopts.
     stand_ins: BTreeSet<NodeIndex>,
+    /// Each type written as a kind, a type's own classifier, with each
+    /// codomain of an arrow it heads: an arrow there is the static Pi, never
+    /// the box.
+    kinds: BTreeSet<NodeIndex>,
     /// Each `Model(T)` application a manifest type closes, with the sorts it
     /// fixes: each sort's name beside the type it is, in written order.
     fixed_sorts: BTreeMap<NodeIndex, Vec<(Placed, Placed)>>,
@@ -4845,6 +4849,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         && self.thunked.is_empty()
         && self.inherited.is_empty()
         && self.stand_ins.is_empty()
+        && self.kinds.is_empty()
         && self.fixed_sorts.is_empty()
         && self.answers.is_empty()
         && self.cocased.is_empty()
@@ -4894,6 +4899,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.thunked.clear();
         self.inherited.clear();
         self.stand_ins.clear();
+        self.kinds.clear();
         self.fixed_sorts.clear();
         self.answers.clear();
         self.cocased.clear();
@@ -5565,6 +5571,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             covers: Vec::new(),
             data_frames: Vec::new(),
             stand_ins: BTreeSet::new(),
+            kinds: BTreeSet::new(),
             fixed_sorts: BTreeMap::new(),
             fixed_carriers: Vec::new(),
             ahead: Vec::new(),
@@ -6527,6 +6534,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             if let Maybe::Present(kind) = recorded.kind {
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
+                let _fresh = self.kinds.insert(kind.node);
             }
         }
         for component in self
@@ -6538,6 +6546,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             if let ParameterForm::Abstract(Maybe::Present(kind)) = component.form {
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
+                let _fresh = self.kinds.insert(kind.node);
             }
         }
         for &(root, seen) in self.collected.scopes.iter().skip(from.scopes) {
@@ -16069,23 +16078,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 
     /// Classify an arrow type: the computation arrow `A -> C`, the dependent
-    /// arrow `(x : A) -> C`, or the static Pi `A -> B` where a value type is
-    /// read.
+    /// arrow `(x : A) -> C`, and where a value type is read the static Pi
+    /// `A -> B` of a type operator or the box `A -> B` of a function value.
     ///
     /// # Specification
     /// - requires: `site` is an arrow in type position, or in value position
     ///   where a type is quoted.
-    /// - ensures: an arrow standing as a value type is the static Pi, its
-    ///   domain and codomain each read as a value type under the arrow's own
-    ///   frame, since the codomain binds nothing; any other arrow stands as a
-    ///   computation type: one whose domain is one binder is the dependent
-    ///   arrow [`Self::dependent_arrow`] plans, and the rest read their domain
-    ///   as a value type and their codomain as a computation type. Each is
-    ///   planned over both operands.
-    /// - provides: the function type of the fragment and the classifier of a
-    ///   type operator.
+    /// - ensures: an arrow standing as a value type that is written as a kind,
+    ///   or whose domain classifies codes, as [`Self::ranges_over_codes`] reads
+    ///   it, is the static Pi, its domain and codomain each read as a value
+    ///   type under the arrow's own frame, since the codomain binds nothing,
+    ///   and a kind's codomain is a kind; any other arrow standing as a value
+    ///   type is the box [`Self::boxed`] plans, the value function `=>` writes.
+    ///   Any other arrow stands as a computation type: one whose domain is one
+    ///   binder is the dependent arrow [`Self::dependent_arrow`] plans, and the
+    ///   rest read their domain as a value type and their codomain as a
+    ///   computation type. Each is planned over both operands.
+    /// - provides: the function type of the fragment, the box of a function
+    ///   value and the classifier of a type operator.
     /// - fails: yields the wrong-sort refusal where neither sort suits the
-    ///   position, and either hole's own refusal.
+    ///   position, the chained-arrow refusal for a box whose output is an arrow
+    ///   written without parentheses, and either hole's own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -16093,19 +16106,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an arrow where a computation type is read, where a
-    ///   value type is read, nested to the right as an operator's classifier,
-    ///   and over a computation codomain where a value type is read, each
-    ///   asserted as the exact core node read back out of the arena or the
-    ///   exact refusal.
+    ///   value type is read over universes, nested to the right as an
+    ///   operator's classifier, over a computation codomain where a value type
+    ///   is read, a box over value types, and a kind over a type that
+    ///   classifies no codes, each asserted as the exact core node read back
+    ///   out of the arena or the exact refusal.
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
     /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
-    /// - witness: `lower::tests::a_computation_codomain_of_a_static_pi_is_refused`
+    /// - witness: `lower::tests::a_computation_codomain_of_a_box_is_refused`
+    /// - witness: `lower::tests::an_arrow_between_value_types_is_the_box_4853`
     /// - witness: `lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
+    /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || match self.plans.get(site.at.node) {
-                    | Some(&Plan::StaticPi(..)) => matches!(site.reading, Reading::ValueType(_)),
+                    | Some(&(Plan::StaticPi(..) | Plan::ValueFunction(..) | Plan::Telescope(..))) => matches!(site.reading, Reading::ValueType(_)),
                     | Some(&(Plan::Arrow(..) | Plan::DependentArrow(..))) => !matches!(site.reading, Reading::ValueType(_)),
                     | _ => false,
                 }
@@ -16117,8 +16133,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let static_pi = matches!(site.reading, Reading::ValueType(_));
-        let produced = if static_pi {
+        let value_typed = matches!(site.reading, Reading::ValueType(_));
+        let produced = if value_typed {
             Produced::ValueType
         }
         else {
@@ -16129,13 +16145,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
         closed(site, &mut cursor, TileName::ARROW)?;
         let codomain = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
-        if !static_pi
+        let kind = self.kinds.contains(&site.at.node);
+        if value_typed && !kind && !self.ranges_over_codes(domain)? {
+            // A box whose output is a box writes the output in parentheses,
+            // `A -> (B -> C)`; a flat box writes its inputs as one group,
+            // `(A, B) -> C`.
+            if matches!(self.form_at(codomain)?, Some((_, Former::ArrowType))) {
+                return Err(site.out(FragmentBoundary::ChainedArrow));
+            }
+            return self.boxed(site, frame, domain, codomain);
+        }
+        if !value_typed
             && self.dependent_arrow(site, frame, domain, codomain)? == arity::Planned(true)
         {
             return Ok(());
         }
         self.read(domain.node, Reading::ValueType(frame));
-        if static_pi {
+        if value_typed {
+            if kind {
+                let _fresh = self.kinds.insert(codomain.node);
+            }
             self.read(codomain.node, Reading::ValueType(frame));
             self.plan(site, Plan::StaticPi(domain.node, codomain.node));
         }
@@ -16145,6 +16174,59 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
 
         Ok(())
+    }
+
+    /// Whether the type written at `domain` classifies codes, by its syntax: a
+    /// universe, the row kind, or an arrow whose domain classifies codes,
+    /// through parentheses.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true for `Type`, `Type[-]`, `Row`, `Type -> Type` and `(Type
+    ///   -> Type)`; false for any other type, a name an alias gives a kind
+    ///   included.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Termination
+    /// Each round descends to an operand of the finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a kind arrow over universes stays the static Pi and
+    ///   an arrow between value types is the box.
+    /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
+    /// - witness: `lower::tests::an_arrow_between_value_types_is_the_box_4853`
+    fn ranges_over_codes(
+        &mut self,
+        domain: Placed,
+    ) -> Result<bool, LoweringRefusal<'source>>
+    {
+        let mut at = domain;
+        loop {
+            match self.form_at(at)? {
+                Some((_, Former::Universe)) => return Ok(true),
+                Some((_, Former::TypeHead)) => return Ok(self.name_at(at).as_ref() == "Row"),
+                Some((_, Former::ParenthesizedType | Former::ArrowType)) => {
+                    let mut scratch = core::mem::take(&mut self.scratch);
+                    let read = read_pieces(self.pbg, self.tree, at.node, &mut scratch).map(|()| {
+                        scratch.pieces.iter().find_map(|piece| match *piece {
+                            Piece::Operand(operand) => Some(operand),
+                            Piece::Tile { .. } => None,
+                        })
+                    });
+                    self.scratch = scratch;
+                    let Some(first) = read?
+                    else {
+                        return Ok(false);
+                    };
+                    at = first;
+                },
+                _ => return Ok(false),
+            }
+        }
     }
 
     /// Classify an eager product type, `A * B`, a sum type, `A + B`, or a lazy
@@ -16334,12 +16416,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is a value function space in type position, or in
     ///   value position where a type is quoted.
-    /// - ensures: the alias stands as a value type; a domain list naming a
-    ///   binder, `(x : A, …) => B`, is the telescope; else its domains — each
-    ///   member of a parenthesised list written before `=>`, none for `()`,
-    ///   else the one operand there — and its codomain are each read as value
-    ///   types under its own frame, and it is planned as the thunked arrow over
-    ///   them.
+    /// - ensures: the alias stands as a value type and is the box
+    ///   [`Self::boxed`] plans over its two operands.
     /// - provides: the value function space, the alias of `+U (A1 -> … -> An ->
     ///   -F B)`, which is `+U (-F B)` at no domain.
     /// - fails: yields the wrong-sort refusal where no value type is read,
@@ -16348,9 +16426,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The alias's refusal.
-    ///
-    /// # Termination
-    /// The domain loop runs once per entry of the finite domain stretch.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — no domain, one domain, a list of two, and an alias
@@ -16378,6 +16453,52 @@ impl<'run, 'source> Lowerer<'run, 'source>
         closed(site, &mut cursor, TileName::FAT_ARROW)?;
         let codomain = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
+
+        self.boxed(site, frame, domain, codomain)
+    }
+
+    /// Plan the box from `domain` to `codomain`: the thunked flat arrow a
+    /// function value has.
+    ///
+    /// # Specification
+    /// - requires: `site` stands as a value type under `frame`; `domain` and
+    ///   `codomain` are its operands.
+    /// - ensures: a domain list naming a binder, `(x : A, …) -> B`, is the
+    ///   telescope; else its domains — each member of a parenthesised list,
+    ///   none for `()`, else the one operand there — and its codomain are each
+    ///   read as value types under `frame`, and it is planned as the thunked
+    ///   arrow over them.
+    /// - provides: the one reading of the box `->` and the alias `=>` share.
+    /// - fails: either hole's own refusal, and a domain list's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The box's refusal.
+    ///
+    /// # Termination
+    /// The domain loop runs once per entry of the finite domain stretch.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value_function`] and [`Self::arrow`].
+    /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+    /// - witness: `lower::tests::an_arrow_between_value_types_is_the_box_4853`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(site.at.node),
+                    Some(&(Plan::ValueFunction(..) | Plan::Telescope(..)))
+                )
+        },
+    )]
+    fn boxed(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        domain: Placed,
+        codomain: Placed,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
         if self.telescope_function(site, frame, domain, codomain)? == arity::Planned(true) {
             return Ok(());
         }
@@ -28349,7 +28470,48 @@ def ended() -> -F [Partial] Unit {
                 form: FormName::from(NamedKind("parenthesized_type")),
                 fault: FormFault::MisplacedTile,
             },
-            "a type list anywhere but before `=>` is refused at its first comma"
+            "a type list anywhere but before an arrow is refused at its first comma"
+        );
+    }
+
+    #[test]
+    fn an_arrow_between_value_types_is_the_box_4853()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def a : Integer -> String ; def b : Integer => String ; def c : (Integer, String) \
+                 -> Unit ; def d : (Integer, String) => Unit ; def e : Integer -> (Integer -> \
+                 String) ; def f : Integer => Integer => String ; def g : () -> String ; def h : \
+                 () => String ;",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let declared = |at: usize| spine(&arena, declared_of(lowered[at]));
+
+        assert_eq!(
+            declared(0_usize),
+            ["U", "->", "Integer", "F", "String"],
+            "an arrow between value types is the box, the thunked arrow into the returner"
+        );
+        for (box_, alias) in [(0_usize, 1_usize), (2, 3), (4, 5), (6, 7)] {
+            assert_eq!(
+                declared(box_),
+                declared(alias),
+                "each box is the core type the alias `=>` spells"
+            );
+        }
+        assert_eq!(
+            refusal(SourceText::from("def z : Integer -> Integer -> String ;")),
+            LoweringRefusal::OutOfFragment {
+                span: at(8_usize, 36_usize),
+                form: FormName::from(NamedKind("function_type")),
+                sort: FragmentSort::ValueType,
+                boundary: FragmentBoundary::ChainedArrow,
+            },
+            "arrows do not chain: the source writes one group or the output in parentheses"
         );
     }
 
@@ -28475,7 +28637,7 @@ def ended() -> -F [Partial] Unit {
     }
 
     #[test]
-    fn a_computation_codomain_of_a_static_pi_is_refused()
+    fn a_computation_codomain_of_a_box_is_refused()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
 
@@ -28487,7 +28649,7 @@ def ended() -> -F [Partial] Unit {
                 sort: FragmentSort::ValueType,
                 boundary: FragmentBoundary::WrongSort,
             },
-            "an arrow in a declaration's type is a static Pi, whose codomain is a value type"
+            "an arrow between value types is the box, whose output is a value type"
         );
     }
 

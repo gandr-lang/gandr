@@ -431,6 +431,10 @@ fn lowered(
                     "a receive gives its message and a fork its parent's end, each linear, and \
                      no name holds this one",
                 ),
+                FragmentBoundary::ChainedArrow => f.write_str(
+                    "arrows do not chain: write `(A, B) -> C` for one function of two inputs, or \
+                     `A -> (B -> C)` for a function whose output is a function",
+                ),
             }
         },
         LoweringRefusal::BareFeedback { .. } => f.write_str(

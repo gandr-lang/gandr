@@ -2545,6 +2545,7 @@ impl<'source> Lowerer<'_, 'source>
             }
             if let Maybe::Present(kind) = form.kind {
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
+                let _fresh = self.kinds.insert(kind.node);
             }
             // Each index reads under the parameters and the indices before
             // it, a named one by its name; the generators read under the
