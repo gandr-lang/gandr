@@ -783,10 +783,12 @@ pub fn refined_case(
 ///   binder more.
 /// - ensures: when `bound` is `return v`, `v` copies ([`copies`]), `body` reads
 ///   its binder and every copy stands at the binder's world, `body` with that
-///   binder replaced by `v` read one binder out, still under the binder, which
-///   stands unread. The refined body carries each node the replacement rewrote
-///   and mints none. [`unrefined::Absent::Unshaped`] for a bound of another
-///   form, a bare thunk or a value that does not copy,
+///   binder replaced by a fresh copy of `v` read one binder out, still under
+///   the binder, which stands unread. The copy is minted after `body`, so each
+///   place it stands at reads back as the name written there and the bound `v`
+///   reads back as itself. The refined body carries each node the replacement
+///   rewrote and mints no other node. [`unrefined::Absent::Unshaped`] for a
+///   bound of another form, a bare thunk or a value that does not copy,
 ///   [`unrefined::Absent::Unsolved`] for a body that does not read its binder,
 ///   and [`unrefined::Absent::Located`] when `migrating` is
 ///   [`Migrating::Judged`] or the body holds a migration ([`migrates`]).
@@ -843,9 +845,12 @@ pub fn defined_body(
         return Ok(Maybe::Absent(unrefined::Absent::Located));
     }
     let arena = context.arena_mut();
+    let placed = arena.value_copy(value).ok_or(CheckRefusal::DanglingNode {
+        node: CoreNode::Term(TermNode::Value(value)),
+    })?;
     let mut carried = Vec::new();
     let instantiated =
-        gandr_core_term::instantiate_computation_traced(arena, body, value, &mut carried);
+        gandr_core_term::instantiate_computation_traced(arena, body, placed, &mut carried);
     let refined =
         gandr_core_term::shift_computation_under(arena, instantiated, Binders::NONE, Binders::ONE)
             .settle_traced(arena, &mut carried);

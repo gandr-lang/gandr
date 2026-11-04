@@ -5937,6 +5937,46 @@ mod tests
         TypeTable::of(&grammar, source).expect("the source parses")
     }
 
+    /// #5064: an argument that a dependent alias reads under its own binder,
+    /// and a `let` name read after its binding, each keep an entry at their own
+    /// bytes. Each stands in the checked term as a copy, and the copy reads
+    /// back to the name or the argument as written.
+    #[test]
+    fn a_term_carried_under_a_binder_answers_at_its_own_bytes_5064()
+    {
+        let source = concat!(
+            "data Ctx : Type where { | Empty : Ctx | Extend : (g : Ctx, n : Integer) --> Ctx }\n",
+            "data Var : (g : Ctx, n : Integer) --> Type where {\n",
+            "  | Here : (g : Ctx, n : Integer) --> Var(Extend(g, n), n)\n",
+            "}\n",
+            "type Ren(d : Ctx, g : Ctx) = (n : Integer) => Var(g, n) => Var(d, n);\n",
+            "def lift(d : Ctx, g : Ctx, r : Ren(Extend(d, 5), Extend(g, 6))) -> Integer { 0 }\n",
+            "data Box : Type where { | Wrap : (g : Ctx) --> Box }\n",
+            "def boxed() -> Box {\n",
+            "  let one = Extend(Empty, 1);\n",
+            "  let two = Extend(one, 2);\n",
+            "  Wrap(two)\n",
+            "}\n",
+        );
+        let table = table(SourceText::from(source));
+        // Each written term, beside the text that places it in the source.
+        for (written, context) in [
+            ("Extend(d, 5)", "Ren(Extend(d, 5)"),
+            ("Extend(g, 6)", ", Extend(g, 6))"),
+            ("two", "Wrap(two)"),
+        ] {
+            let at = source.find(context).expect("the context occurs");
+            let start = at + context.find(written).expect("the context holds the term");
+            let end = start + written.len();
+            assert!(
+                table.spans().any(
+                    |span| usize::from(span.start()) == start && usize::from(span.end()) == end
+                ),
+                "`{written}` answers at its own bytes"
+            );
+        }
+    }
+
     /// The table [`TypeTable::of_unit`] builds for `source` laid importing
     /// every host interface's module ([`crate::tests::Listed::hosted`]), its
     /// offsets the source's own; panics when the grammar or the parse fails.
