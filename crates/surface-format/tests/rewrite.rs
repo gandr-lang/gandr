@@ -847,7 +847,7 @@ fn a_derived_operand_of_a_kept_transport_keeps_its_transport()
          Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, p, p), Path.here(Base)))",
     ] {
         let source = format!(
-            "{CIRCLE}def twice(p: Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) \
+            "{CIRCLE}def twice(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) \
              {{\n  {body}\n}}\n"
         );
         let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
@@ -913,7 +913,7 @@ fn a_rule_s_outputs_are_not_a_tuple()
             Form::Explicit,
             Selection::Every
         ),
-        format!("{rules}def pair = #{{1, 2}};\n")
+        format!("{rules}def pair = *{{1, 2}};\n")
     );
 }
 
@@ -1066,11 +1066,11 @@ fn a_composite_under_a_parameter_takes_its_motive_803()
 {
     let grammar = grammar();
     let source = format!(
-        "{CIRCLE}def onward(x: Circle, q: Path[.A = Circle](x, Base)) -> -F Path[.A = Circle](x, Base) {{
+        "{CIRCLE}def onward(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Circle](x, Base) {{
   Path.step(q, Path.here(Base))
 }}
 
-def stated(x: Circle, q: Path[.A = Circle](x, Base)) -> -F Path[.A = Path[.A = Circle](x, Base)](Path.step(q, Path.here(Base)), Path.step(q, Path.here(Base))) {{
+def stated(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Path[.A = Circle](x, Base)](Path.step(q, Path.here(Base)), Path.step(q, Path.here(Base))) {{
   Path.here(Path.step(q, Path.here(Base)))
 }}
 "
@@ -1111,11 +1111,11 @@ fn a_composite_beside_a_call_takes_its_own_motive_3772()
 {
     let grammar = grammar();
     let source = format!(
-        "{CIRCLE}def twice(q: Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q)) {{
+        "{CIRCLE}def twice(q : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q)) {{
   Path.here(Path.step(q, q))
 }}
 
-def beside(q: Path[.A = Circle](Base, Base), r: Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q))) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q)) {{
+def beside(q : Path[.A = Circle](Base, Base), r : Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q))) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q)) {{
   Path.step(r, twice(q))
 }}
 "
@@ -1219,9 +1219,9 @@ module OnePointReassociated = Reassociating(OnePoint);
 fn a_composite_of_types_sugars_back_803()
 {
     let grammar = grammar();
-    let source = "def joined(a: Type, b: Type, c: Type, p: Path[.A = Type](a, b), q: Path[.A = Type](b, c)) -> -F \
-                  Path[.A = Path[.A = Type](a, c)](Path.walk(fun (d) { type(Path[.A = Type](a, d)) }, q, p), Path.walk(fun (d) { \
-                  type(Path[.A = Type](a, d)) }, q, p)) {\n  Path.here(Path.walk(fun (d) { type(Path[.A = Type](a, d)) }, q, p))\n}\n";
+    let source = "def joined(a : Type, b : Type, c : Type, p : Path[.A = Type](a, b), q : Path[.A = Type](b, c)) -> -F \
+                  Path[.A = Path[.A = Type](a, c)](Path.walk (fun (d) { type(Path[.A = Type](a, d)) }) q p, Path.walk (fun (d) { \
+                  type(Path[.A = Type](a, d)) }) q p) {\n  Path.here (Path.walk (fun (d) { type(Path[.A = Type](a, d)) }) q p)\n}\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1259,14 +1259,13 @@ data Nat : Type where {
   | Succ : (n : Nat) --> Nat
 }
 
-def kept(a: Nat, b: Nat, q: Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) {
-  become Path.walk(
-    +U ((y : Nat) -> (z : Path[.A = Nat](a, y)) -> -F Path[.A = Nat](y, a)),
-    q,
-    Path.here(a),
-    Path.here(q),
-    Path.here(a)
-  )
+def kept(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) {
+  become Path.walk
+    (+U ((y : Nat) -> (z : Path[.A = Nat](a, y)) -> -F Path[.A = Nat](y, a)))
+    q
+    (Path.here a)
+    (Path.here q)
+    (Path.here a)
 }
 ";
     let parsed = parse(&grammar, SourceText::from(argument)).expect("the source parses");
@@ -1355,8 +1354,8 @@ def onType(t : Type) -> -F Type {
   return (+U (t -> -F t))
 }
 
-def flat(a: Nat, b: Nat, q: Path[.A = Nat](a, b), v: Nat) -> -F Nat {
-  become Path.walk(+U (Nat -> -F Nat), q, v, v, v)
+def flat(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> -F Nat {
+  become Path.walk (+U (Nat -> -F Nat)) q v v v
 }
 ";
     expect![[r#"
@@ -2201,7 +2200,7 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
 
         def block() -> -F Integer { let m = twice(1); return m }
 
-        def pair() -> -F #{Integer, Integer} { return #{1, 2} }
+        def pair() -> -F *{Integer, Integer} { return *{1, 2} }
 
         def commented : +U (-F Integer);
         def commented = thunk {

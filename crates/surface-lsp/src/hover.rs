@@ -2693,7 +2693,7 @@ mod tests
     fn a_deprecated_declaration_hovers_its_note()
     {
         let text = SourceText::from(
-            "/// The answer.\n@[ deprecated(#{ since = \"0.2\", note = \"use `other`\" }) ]\ndef \
+            "/// The answer.\n@[ deprecated(*{ since = \"0.2\", note = \"use `other`\" }) ]\ndef \
              answer = 42 ;\n@[ deprecated ] def bare = 1 ;\ndef other = 2 ;\n",
         );
         assert_eq!(

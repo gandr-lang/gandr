@@ -16,7 +16,7 @@ import "./syntax-model.gandr";
 /// then its operations and laws in the order `Model(LC)` mints them.
 def lcSyntax : *{
   con : Type,
-  sub : (con, con) -> Type,
+  sub : *{con, con} -> Type,
   tm : con -> Type,
   empty : () -> con,
   subTm : (g : con, d : con, tm(g), sub(d, g)) -> tm(d),
@@ -27,26 +27,26 @@ def lcSyntax : *{
   liftTm : (d : con, g : con, sub(d, g)) -> sub(extendTm(d), extendTm(g)),
   lam : (g : con, tm(extendTm(g))) -> tm(g),
   app : (g : con, tm(g), tm(g)) -> tm(g),
-  law1 : (g : con, b : tm(g)) -> Path[.A = tm(g)](subTm (extendTm g) g (qTm g) (singleTm g b), b),
+  law1 : (g : con, b : tm(g)) -> Path[.A = tm(g)](subTm (extendTm g) (g (qTm g)) (singleTm g b), b),
   law2 : (d : con, g : con, s : sub(d, g)) -> Path[.A = tm(extendTm(d))](
-    subTm (extendTm g) (extendTm d) (qTm g) (liftTm d g s),
+    (((subTm (extendTm g)) (extendTm d)) (qTm g)) (liftTm d g s),
     qTm d
   ),
   law3 : (g : con, d : con, b : tm(g), s : sub(d, g)) -> Path[.A = tm(extendTm(d))](
-    subTm (extendTm g) (extendTm d) (subTm g (extendTm g) b (pTm g)) (liftTm d g s),
-    subTm d (extendTm d) (subTm g d b s) (pTm d)
+    (((subTm (extendTm g)) (extendTm d)) (subTm g (extendTm g) b (pTm g))) (liftTm d g s),
+    subTm ((d (extendTm d)) (subTm g d b s)) (pTm d)
   ),
   law4 : (g : con, b : tm(g), a : tm(g)) -> Path[.A = tm(g)](
-    subTm (extendTm g) g (subTm g (extendTm g) b (pTm g)) (singleTm g a),
+    subTm (extendTm g) (g (subTm g (extendTm g) b (pTm g))) (singleTm g a),
     b
   ),
   law5 : (g : con, d : con, t : tm(extendTm(g)), s : sub(d, g)) -> Path[.A = tm(d)](
     subTm g d (lam g t) s,
-    lam d (subTm (extendTm g) (extendTm d) t (liftTm d g s))
+    lam d ((subTm (extendTm g)) (extendTm d) t (liftTm d g s))
   ),
   law6 : (g : con, d : con, t : tm(g), u : tm(g), s : sub(d, g)) -> Path[.A = tm(d)](
     subTm g d (app g t u) s,
-    app d (subTm g d t s) (subTm g d u s)
+    app (d (subTm g d t s)) (subTm g d u s)
   )
 } = *{
   N,

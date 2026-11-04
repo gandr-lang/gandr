@@ -10,10 +10,10 @@ def grouped : Expr;
 def grouped = (Share (Lit 1)).left;
 
 def both : Expr;
-def both = Add ((Share (Lit 1)).left) ((Share (Lit 1)).right);
+def both = (Add (Share (Lit 1)).left) (Share (Lit 1)).right;
 
 def apart : Path[.A = Expr]((Share (Lit 1)).left, (Share (Lit 1)).right);
-def apart = Path.here ((Share (Lit 1)).left);
+def apart = Path.here (Share (Lit 1)).left;
 
 def whole : *{left : Expr, right : Expr};
 def whole = Share (Lit 1);
@@ -36,8 +36,8 @@ data Tree : Type where {
   | Split : (t : Tree) --> (front : Tree, back : Tree)
   oper prune : (t : Tree) --> Tree;
   rule : prune (Tip n) ==> Tip n;
-  rule : prune ((Split t).front) ==> prune t;
-  rule : prune ((Split t).back) ==> prune t;
+  rule : prune (Split t).front ==> prune t;
+  rule : prune (Split t).back ==> prune t;
 }
 
 data Pair(a : Type) : Type where

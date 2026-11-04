@@ -1592,7 +1592,7 @@ mod tests
             "the second reads nothing of the first"
         );
         let nested = "error[C]: third\n  │\n7 │   def f() -> Integer {\n  │ ┌─┘\n8 │ │   pure \
-                      unit;\n9 │ │ }\n  │ └─┘ checked against `() => Integer`\n";
+                      *{};\n9 │ │ }\n  │ └─┘ checked against `() => Integer`\n";
         let hung = "error[D]: fourth\n   │\n17 │ def m = (f : g);\n   │         ┬───┯━\n   │      \
                     \x20  │   │\n   │         │   its type does not convert\n   │         the type \
                     it synthesises\n";

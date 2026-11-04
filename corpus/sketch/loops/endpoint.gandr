@@ -17,12 +17,11 @@ type Reports = mu open. &{report : ?Integer. open, retire : ?Integer. end};
 /// A desk follows a seat's reports until it retires. Each report is one pass,
 /// and the retirement closes the endpoint and leaves the loop.
 def follow(operator : Reports) -> Unit =
-  loop over (operator : Reports) {
+  loop over (operator : Reports) =
     offer(operator) {
       | report => { recv(operator) as next; continue },
       retire => { recv(operator) as last; close(operator); break }
     }
-  }
 
 /// A desk counts the reports beside the endpoint. The head carries both the
 /// endpoint and the count.

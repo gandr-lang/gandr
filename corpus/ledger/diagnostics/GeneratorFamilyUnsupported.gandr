@@ -13,9 +13,9 @@ def alongPath(A : Type, x : A, y : A, fm : Path(x, y), fp : Path(x, y), fa : Pat
   Path.step (Path.here fm) fa,
   Path.step fa (Path.here fp)
 ) =
-  fill[1, 3] (chain 1) (selfLoop A x y) (fa)
+  ((fill[1, 3] (chain 1)) (selfLoop A x y)) fa
 
 /// The same fill over a flow of paths, whose instance is not built yet.
 @[ refuses("GeneratorFamilyUnsupported") ]
 def alongFlow(A : Type, x : A, y : A, fm : Path(x, y), fp : Path(x, y), fa : Flow[.A = Path(x, y)](fm, fp)) -> Path[.A = Path[.A = A](x, y)](fm, fp) =
-  fill[1, 3] (chain 1) (selfLoop A x y) (fa)
+  ((fill[1, 3] (chain 1)) (selfLoop A x y)) fa

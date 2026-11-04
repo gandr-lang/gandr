@@ -438,7 +438,7 @@ fn funext_lowers_to_its_former()
 #[test]
 fn a_list_moves_along_a_universe_equivalence()
 {
-    let negation = "def not(b: Bool) -> -F Bool {\n  match b {\n    | true => return +{.1 = *{}}\n    | false => return +{.0 = *{}}\n  }\n}\ndef negation : Path[.A = Type](Bool, Bool);\ndef negation = equiv not not;\n";
+    let negation = "def not(b : Bool) -> -F Bool {\n  match b {\n    | true => return +{.1 = *{}}\n    | false => return +{.0 = *{}}\n  }\n}\ndef negation : Path[.A = Type](Bool, Bool);\ndef negation = equiv not not;\n";
     let mut arena = CoreArena::new();
     let source = format!(
         "{negation}def moved(xs : List(Bool)) -> -F List(Bool) {{\n  become Path.walk (fun (X) {{ List X }}) negation xs\n}}\ndef again(xs : List(Bool)) -> -F List(Bool) {{\n  become Path.walk (fun (X) {{ List X }}) negation xs\n}}\ndef both : List(Bool);\ndef both = cons (+{{.0 = *{{}}}}) (cons (+{{.1 = *{{}}}}) nil);\n"
@@ -635,7 +635,7 @@ fn a_computation_endpoint_is_the_value_it_returns()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def dbl(x: Integer) -> -F Integer {\n  become x + x\n}\ndef same(x: Integer, y: Integer) -> -F Path[.A = Integer](dbl (dbl x), dbl (dbl x)) {\n  return Path.here (dbl (dbl x))\n}\n",
+            "def dbl(x : Integer) -> -F Integer {\n  become x + x\n}\ndef same(x : Integer, y : Integer) -> -F Path[.A = Integer](dbl (dbl x), dbl (dbl x)) {\n  return Path.here (dbl (dbl x))\n}\n",
         ),
         &mut arena,
     );
@@ -1140,10 +1140,10 @@ fn back_then_and_cong_unfold_to_transports()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def flip(a: Integer, b: Integer, p: Path[.A = Integer](a, b)) -> -F Path[.A = Integer](b, a) {\n  become Path.back(p)\n}\n",
-            "def join(a: Integer, b: Integer, c: Integer, p: Path[.A = Integer](a, b), q: Path[.A = Integer](b, c)) -> -F(Path[.A = Integer](a, c)) {\n  become Path.step(p, q)\n}\n",
-            "def dbl(x: Integer) -> -F Integer {\n  become x + x\n}\n",
-            "def image(a: Integer, b: Integer, p: Path[.A = Integer](a, b)) -> -F Path[.A = Integer](dbl(a), dbl(b)) {\n  become Path.ap(dbl, p)\n}\n",
+            "def flip(a : Integer, b : Integer, p : Path[.A = Integer](a, b)) -> -F Path[.A = Integer](b, a) {\n  become Path.back p\n}\n",
+            "def join(a : Integer, b : Integer, c : Integer, p : Path[.A = Integer](a, b), q : Path[.A = Integer](b, c)) -> -F(Path[.A = Integer](a, c)) {\n  become Path.step p q\n}\n",
+            "def dbl(x : Integer) -> -F Integer {\n  become x + x\n}\n",
+            "def image(a : Integer, b : Integer, p : Path[.A = Integer](a, b)) -> -F Path[.A = Integer](dbl a, dbl b) {\n  become Path.ap dbl p\n}\n",
         )),
         &mut arena,
     );
@@ -1504,7 +1504,7 @@ fn a_transport_moves_through_a_family_a_parameter_names_3786()
 #[test]
 fn a_parameter_map_under_cong_answers_at_its_bytes_443()
 {
-    let source = "def mapped(f: Integer => Integer, a: Integer, b: Integer, p: Path[.A = Integer](a, b)) -> -F Path[.A = Integer](f(a), f(b)) {\n  become Path.ap(f, p)\n}\n";
+    let source = "def mapped(f : Integer -> Integer, a : Integer, b : Integer, p : Path[.A = Integer](a, b)) -> -F Path[.A = Integer](f a, f b) {\n  become Path.ap f p\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let Some(&Computation::PathTransport { motive, .. }) =
@@ -1549,9 +1549,9 @@ fn a_derived_operation_needs_a_written_path_answer()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def g(p: Path[.A = Integer](1, 1)) -> -F Integer {\n  become Path.back(p)\n}\n",
+            "def g(p : Path[.A = Integer](1, 1)) -> -F Integer {\n  become Path.back p\n}\n",
             "data Triple(a : Type, b : Type, c : Type) : Type where {\n  | Mk : Triple(a, b, c)\n}\n",
-            "def three(p: Path[.A = Integer](1, 1)) -> -F Triple(Integer, Integer, Integer) {\n  become Path.back(p)\n}\n",
+            "def three(p : Path[.A = Integer](1, 1)) -> -F Triple(Integer, Integer, Integer) {\n  become Path.back p\n}\n",
         )),
         &mut arena,
     );
@@ -1582,8 +1582,8 @@ fn a_written_transport_read_as_a_value_is_the_value_it_returns_985()
     let module = lowered(
         SourceText::from(concat!(
             "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n",
-            "def derived : Path[.A = Circle](Base, Base);\ndef derived = Path.step (loop) (loop);\n",
-            "def written : Path[.A = Circle](Base, Base);\ndef written = Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) (loop) (loop);\n",
+            "def derived : Path[.A = Circle](Base, Base);\ndef derived = (Path.step (loop)) (loop);\n",
+            "def written : Path[.A = Circle](Base, Base);\ndef written = ((Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) })) (loop)) (loop);\n",
         )),
         &mut arena,
     );
@@ -1681,8 +1681,8 @@ fn a_derived_operation_synthesises_its_path_at_the_words()
         SourceText::from(concat!(
             "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n",
             "def collapse(x : Circle) -> -F Circle {\n  match x {\n    | Base => Base\n  }\n}\n",
-            "def two : Path[.A = Circle](Base, Base);\ndef two = Path.step (loop) (loop);\n",
-            "def undone : Path[.A = Circle](Base, Base);\ndef undone = Path.back (Path.step (loop) (loop));\n",
+            "def two : Path[.A = Circle](Base, Base);\ndef two = (Path.step (loop)) (loop);\n",
+            "def undone : Path[.A = Circle](Base, Base);\ndef undone = Path.back ((Path.step (loop)) (loop));\n",
             "def collapsed : Path[.A = Path[.A = Circle](Base, Base)](Path.ap collapse (loop), Path.here Base);\n",
             "def unread : Path[.A = Integer](1, 1);\ndef unread = Path.back (Path.here 1);\n",
             "def pointed : Path[.A = Circle](Base, Base);\ndef pointed = Path.ap Base (loop);\n",
@@ -2117,13 +2117,13 @@ fn a_dependent_transport_lowers_to_its_telescope()
 {
     let mut arena = CoreArena::new();
     let source = concat!(
-        "def moved(a: Integer, b: Integer, q: Path[.A = Integer](a, b), z0: Path[.A = Integer](a, a), o: Integer, v: Integer) -> -F Integer {\n",
+        "def moved(a : Integer, b : Integer, q : Path[.A = Integer](a, b), z0 : Path[.A = Integer](a, a), o : Integer, v : Integer) -> -F Integer {\n",
         "  become Path.walk(+U ((y : Integer) -> (z : Path[.A = Integer](a, y)) -> -F Path[.A = Path[.A = Integer](a, y)](z, z)), q, z0, o, v)\n",
         "}\n",
-        "def plain(n: Integer, q: Path[.A = Integer](1, 2), v: Integer) -> -F Integer {\n",
+        "def plain(n : Integer, q : Path[.A = Integer](1, 2), v : Integer) -> -F Integer {\n",
         "  become Path.walk(+U (Integer -> Integer -> -F Path[.A = Integer](n, n)), q, v, v, v)\n",
         "}\n",
-        "def short(q: Path[.A = Integer](1, 2), v: Integer) -> -F Integer {\n",
+        "def short(q : Path[.A = Integer](1, 2), v : Integer) -> -F Integer {\n",
         "  become Path.walk(+U (Integer -> Integer -> -F Integer), q, v, v)\n",
         "}\n",
     );
@@ -2218,7 +2218,7 @@ fn a_dependent_transport_lowers_to_its_telescope()
 #[test]
 fn matching_reflexivity_is_refused_as_k()
 {
-    let source = "def uip(n: Integer, p: Path[.A = Integer](n, n)) -> -F Integer {\n  match p { here => return 0 }\n}\n";
+    let source = "def uip(n : Integer, p : Path[.A = Integer](n, n)) -> -F Integer {\n  match p { | here => return 0 }\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let start = source.find("here =>").unwrap_or_default();
@@ -2361,7 +2361,7 @@ fn a_run_rides_a_flow_between_sessions()
 {
     let mut arena = CoreArena::new();
     let source = format!(
-        "{PROTOCOLS}  def sub : Flow[.A = Type](Old, New);\n  def sub = Flow.sim Old New;\n}}\ndef served : Run(Evolution.Old);\ndef served = recorded (selected report) (sent \"progress\") closed;\ndef forward(receipt: Run(Evolution.Old)) -> -F Run(Evolution.New) {{\n  become Flow.ride (fun (X) {{ Run X }}) Evolution.sub receipt\n}}\n"
+        "{PROTOCOLS}  def sub : Flow[.A = Type](Old, New);\n  def sub = Flow.sim Old New;\n}}\ndef served : Run(Evolution.Old);\ndef served = recorded (selected report) (sent \"progress\") closed;\ndef forward(receipt : Run(Evolution.Old)) -> -F Run(Evolution.New) {{\n  become Flow.ride (fun (X) {{ Run X }}) Evolution.sub receipt\n}}\n"
     );
     let source = crate::fixture::session_listing(source);
     let module = crate::fixture::listed(&source, &mut arena);
@@ -2428,8 +2428,8 @@ fn directed_statements_lower_to_their_formers()
             "  type New = *{Integer, String};\n",
             "  type ReadNew = +U (New -> -F Integer);\n",
             "  type ReadOld = +U (Old -> -F Integer);\n",
-            "  def toNew(old: Old) -> -F New {\n    match old { | *{name, age} => return *{age, name} }\n  }\n",
-            "  def same(n: Integer) -> -F Integer {\n    return n\n  }\n",
+            "  def toNew(old : Old) -> -F New {\n    match old { | *{name, age} => return *{age, name} }\n  }\n",
+            "  def same(n : Integer) -> -F Integer {\n    return n\n  }\n",
             "  def upgrade : Flow[.A = Type](Old, New);\n",
             "  def upgrade = Flow.into toNew;\n",
             "  def kept : Flow[.A = Type](Integer, Integer);\n",
@@ -2643,7 +2643,7 @@ fn a_relation_lowers_to_the_type_it_abbreviates()
             "def isoRecord : *{into : +U (Bool -> -F Integer), from : +U (Integer -> -F Bool), sect : (a : Bool) -> Path[.A = Bool](from (into a), a), retr : (b : Integer) -> Path[.A = Integer](into (from b), b)};\n",
             "def equivGlyph : Bool ≃ Integer;\n",
             "def equivAlias : Bool <~> Integer;\n",
-            "def equivRecord : #{into : +U (Bool -> -F Integer), linv : #{from : +U (Integer -> -F Bool), sect : (a : Bool) => Path[.A = Bool](from(into(a)), a)}, rinv : #{from : +U (Integer -> -F Bool), retr : (b : Integer) => Path[.A = Integer](into(from(b)), b)}};\n",
+            "def equivRecord : *{into : +U (Bool -> -F Integer), linv : *{from : +U (Integer -> -F Bool), sect : (a : Bool) => Path[.A = Bool](from(into(a)), a)}, rinv : *{from : +U (Integer -> -F Bool), retr : (b : Integer) => Path[.A = Integer](into(from(b)), b)}};\n",
             "def flowGlyph : Bool ⇝ Integer;\n",
             "def flowAlias : Bool ~~> Integer;\n",
             "def flowRecord : Flow[.A = Type](Bool, Integer);\n",
@@ -2724,9 +2724,9 @@ fn a_pattern_at_a_relation_splits_its_record()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { match i { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
-            "def forwardOf(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { match e { #{t, #{g, s}, #{h, r}} => return t } }\n",
-            "def leftOf(e : Bool <~> Integer) -> -F +U (Integer -> -F Bool) { match e { #{.linv = #{.from = g, .sect = s}} => return g } }\n",
+            "def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { match i { *{t, k, s, r} => return *{t, *{*{k, s}, *{k, r}}} } }\n",
+            "def forwardOf(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { match e { *{t, *{g, s}, *{h, r}} => return t } }\n",
+            "def leftOf(e : Bool <~> Integer) -> -F +U (Integer -> -F Bool) { match e { *{.linv = *{.from = g, .sect = s}} => return g } }\n",
             "def backOf(i : Iso(Bool, Integer)) -> -F +U (Integer -> -F Bool) { match i { | *{.from = k} => return k } }\n",
         )),
         &mut arena,
@@ -2780,9 +2780,9 @@ fn a_let_binder_splits_the_relation_its_call_returns_656()
     let module = lowered(
         SourceText::from(concat!(
             "def kept(i : Bool ≅ Integer) -> -F (Bool ≅ Integer) { return i }\n",
-            "def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { match i { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
-            "def split(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { let j = kept(i); match j { #{t, k, s, r} => return #{t, #{#{k, s}, #{k, r}}} } }\n",
-            "def forwardOf(i : Bool ≅ Integer) -> -F +U (Bool -> -F Integer) { let e = made(i); match e { #{t, #{g, s}, #{h, r}} => return t } }\n",
+            "def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { match i { *{t, k, s, r} => return *{t, *{*{k, s}, *{k, r}}} } }\n",
+            "def split(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) { let j = kept(i); match j { *{t, k, s, r} => return *{t, *{*{k, s}, *{k, r}}} } }\n",
+            "def forwardOf(i : Bool ≅ Integer) -> -F +U (Bool -> -F Integer) { let e = made(i); match e { *{t, *{g, s}, *{h, r}} => return t } }\n",
             "def backOf(i : Bool ≅ Integer) -> -F +U (Integer -> -F Bool) { let j = kept i; match j { | *{.from = k} => return k } }\n",
         )),
         &mut arena,
@@ -2800,8 +2800,8 @@ fn a_let_binder_splits_the_relation_a_bare_result_returns_2255()
     let module = lowered(
         SourceText::from(concat!(
             "def kept(i : Bool ≅ Integer) -> Bool ≅ Integer { i }\n",
-            "def made(i : Bool ≅ Integer) -> Bool ≃ Integer { match i { #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}} } }\n",
-            "def forwardOf(i : Bool ≅ Integer) -> +U (Bool -> -F Integer) { let e = made(i); match e { #{t, #{g, s}, #{h, r}} => t } }\n",
+            "def made(i : Bool ≅ Integer) -> Bool ≃ Integer { match i { *{t, k, s, r} => *{t, *{*{k, s}, *{k, r}}} } }\n",
+            "def forwardOf(i : Bool ≅ Integer) -> +U (Bool -> -F Integer) { let e = made(i); match e { *{t, *{g, s}, *{h, r}} => t } }\n",
             "def backOf(i : Bool ≅ Integer) -> +U (Integer -> -F Bool) { let j = kept i; match j { | *{.from = k} => k } }\n",
         )),
         &mut arena,

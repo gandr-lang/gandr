@@ -25,7 +25,7 @@ pub def versionToml : Codec(Toml, Version) = *{
   decode = fun (doc) {
     match doc
       | Value.string(s) => match split s "."
-        | #[a, b, c] => (zip3 (parseNat a) (parseNat b) (parseNat c)).map (fun (*{x, y, z}) { *{ major = x, minor = y, patch = z } })
+        | #[a, b, c] => (((zip3 (parseNat a)) (parseNat b)) (parseNat c)).map (fun (*{x, y, z}) { *{ major = x, minor = y, patch = z } })
         | _ => none
       | _ => none
   },

@@ -3605,8 +3605,8 @@ fn a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102()
             in_thunk,
             "Path[.A = Unit * Integer => Unit * Integer](fun (a) { pick(type(Unit * Integer), a) }, fun \
              (a) { pick(type(Unit * Integer), a) })",
-            "Path[.A = +U (#{Unit, Integer} -> -F #{Unit, Integer})](fun (a) { pick(#{Unit, Integer}, \
-             a) }, fun (a) { pick(#{Unit, Integer}, a) })",
+            "Path[.A = +U (*{Unit, Integer} -> -F *{Unit, Integer})](fun (a) { pick(*{Unit, Integer}, \
+             a) }, fun (a) { pick(*{Unit, Integer}, a) })",
         ),
         (
             at_endpoint,

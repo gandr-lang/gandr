@@ -1,6 +1,6 @@
 /// `WithoutK`: a path matched against reflexivity, `here`.
 @[ refuses("WithoutK") ]
-def uip(n: Integer, p: Path(n, n), q: Path(n, n)) -> -F(Path[.A = Path[.A = Integer](n, n)](
+def uip(n : Integer, p : Path(n, n), q : Path(n, n)) -> -F(Path[.A = Path[.A = Integer](n, n)](
   p,
   q
 )) =

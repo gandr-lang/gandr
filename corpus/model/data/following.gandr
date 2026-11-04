@@ -48,7 +48,7 @@ def difference : () -> Nat = minus three (Succ Zero);
 
 /// Four divided by two: two.
 @[ runs("Succ (Succ Zero)") ]
-def quotient : () -> Nat = divided (Succ three) (Succ Zero);
+def quotient : () -> Nat = (divided (Succ three)) (Succ Zero);
 
 /// Half of three, rounded up: two.
 @[ runs("Succ (Succ Zero)") ]

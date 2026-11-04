@@ -59,12 +59,8 @@ def originOther : Path(Point.origin, Point.other) = *{} ;
 /// returns the element given.
 @[ checks ]
 def carriedAlong : Path(
-  Path.walk
-    ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Unit)
-    originOther
-    (Path.here Point.origin)
-    (Path.here originOther)
-    (*{}),
+  Path.walk ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Unit)
+    ((originOther (Path.here Point.origin)) (Path.here originOther)) (*{}),
   *{}
 ) = Path.here (*{}) ;
 
@@ -76,24 +72,16 @@ def backToOrigin(
   b : Point.T,
   q : Path(Point.origin, b)
 ) -> Path(b, Point.origin) =
-  Path.walk
-    ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Path[.A = Point.T](y, Point.origin))
-    q
-    (Path.here Point.origin)
-    (Path.here q)
-    (Path.here Point.origin)
+  Path.walk ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Path[.A = Point.T](y, Point.origin))
+    ((q (Path.here Point.origin)) (Path.here q)) (Path.here Point.origin)
 
 /// Based path induction in the family of paths back to `origin`, along the
 /// relation's evidence: each fibre of the family is the relation's, the unit
 /// type, so the transport is that type's one inhabitant.
 @[ checks ]
 def backAlong : Path[.A = Path[.A = Point.T](Point.other, Point.origin)](
-  Path.walk
-    ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Path[.A = Point.T](y, Point.origin))
-    originOther
-    (Path.here Point.origin)
-    (Path.here originOther)
-    (Path.here Point.origin),
+  Path.walk ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Path[.A = Point.T](y, Point.origin))
+    ((originOther (Path.here Point.origin)) (Path.here originOther)) (Path.here Point.origin),
   *{}
 ) = Path.here (*{}) ;
 
@@ -102,15 +90,11 @@ def backAlong : Path[.A = Path[.A = Point.T](Point.other, Point.origin)](
 /// the unit type, and so the unit type too.
 @[ checks ]
 def overAlong : Path[.A = Path[.A = Path[.A = Point.T](Point.origin, Point.other)](originOther, originOther)](
-  Path.walk
-    ((y : Point.T, z : Path[.A = Point.T](Point.origin, y)) -> Path[.A = Path[.A = Point.T](Point.origin, y)](
+  Path.walk ((y : Point.T, z : Path[.A = Point.T](Point.origin, y)) -> Path[.A = Path[.A = Point.T](Point.origin, y)](
       z,
       z
     ))
-    originOther
-    (Path.here Point.origin)
-    (Path.here originOther)
-    (Path.here (Path.here Point.origin)),
+    ((originOther (Path.here Point.origin)) (Path.here originOther)) (Path.here (Path.here Point.origin)),
   *{}
 ) = Path.here (*{}) ;
 
@@ -158,14 +142,10 @@ def pathOriginOther : Path(PathPoint.origin, PathPoint.other) = *{} ;
 /// the transport is the unit.
 @[ checks ]
 def pathBack : Path[.A = Path[.A = PathPoint.T](PathPoint.other, PathPoint.origin)](
-  Path.walk
-    ((y : PathPoint.T, Path[.A = PathPoint.T](PathPoint.origin, y)) -> Path[.A = PathPoint.T](
+  Path.walk ((y : PathPoint.T, Path[.A = PathPoint.T](PathPoint.origin, y)) -> Path[.A = PathPoint.T](
       y,
       PathPoint.origin
     ))
-    pathOriginOther
-    (Path.here PathPoint.origin)
-    (Path.here pathOriginOther)
-    (Path.here PathPoint.origin),
+    ((pathOriginOther (Path.here PathPoint.origin)) (Path.here pathOriginOther)) (Path.here PathPoint.origin),
   *{}
 ) = Path.here (*{}) ;

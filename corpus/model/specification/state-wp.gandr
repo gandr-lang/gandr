@@ -22,7 +22,7 @@ import "../effects/state.gandr";
 
 /// The increment observed: read the counter, store one more, and answer the
 /// unit. The scope answers the increment's predicate transformer.
-def incrObserved() -> ((Unit, Integer) -> Type, Integer) -> Type =
+def incrObserved() -> *{*{Unit, Integer} -> Type, Integer} -> Type =
   handle st : StateLaws with sort S = Integer {
     let n = st.get ();
     st.put (n + 1);

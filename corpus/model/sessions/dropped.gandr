@@ -9,9 +9,7 @@
 /// the desk's offer and drop.
 @[
   runs("unit"),
-  traces(decomposes seat (series
-    (event left 0)
-    (parallel (event left 1) (series (event right 0) (event right 1)))))
+  traces(decomposes seat ((series (event left 0)) ((parallel (event left 1)) ((series (event right 0)) (event right 1)))))
 ]
 def finished() -> Unit =
   let desk = fork (seat : +{done : end}) { select(seat, done); drop(seat) };
@@ -19,7 +17,7 @@ def finished() -> Unit =
 
 /// A drop at one end of a fork and a close at the other, each ending its end
 /// beside the other.
-@[ runs("unit"), traces(decomposes seat (parallel (event left 0) (event right 0))) ]
+@[ runs("unit"), traces(decomposes seat ((parallel (event left 0)) (event right 0))) ]
 def mixed() -> Unit =
   let desk = fork (seat : end) { close(seat) };
   drop(desk)

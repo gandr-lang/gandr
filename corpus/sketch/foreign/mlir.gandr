@@ -30,4 +30,4 @@ def wpOp(op : Op) -> Spec(Places, Mlir.Value) =
   }
 
 /// The module's function `alloc`, which the fold reads op by op.
-def allocWp : Spec(Places, Mlir.Value) = Spec.sequence (map ((allocModule.function "alloc").body) wpOp);
+def allocWp : Spec(Places, Mlir.Value) = Spec.sequence (map (allocModule.function "alloc").body wpOp);

@@ -31,13 +31,12 @@ pub def lookupSpec[k : Type, v : Type](s : Store(k, v), key : k) -> Spec(State(H
 /// What splitting the first element off a nonempty list must do, its result
 /// named by a pattern.
 pub def unconsSpec[a : Type](xs : List(a)) -> Spec(Pure, *{a, List(a)}) =
-  #spec{
+  #spec=
     requires { length xs > 0 }
     ensures x rest {
       | Cons(x, rest) == xs
       | length(rest) == length xs - 1
     }
-  }
 
 /// A lookup in a hash table, which meets the store's specification.
 pub def tableLookup[k : Type, v : Type](t : Table(k, v), key : k) -> lookupSpec(t.store, key) =

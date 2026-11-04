@@ -66,5 +66,5 @@ pub module Shapes where {
     Flow.ride (fun (X) { List X }) redrawn shapes
   /// Two shapes migrated by a run.
   @[ runs("cons (Round 1) (cons (Box 3 2) nil)") ]
-  def two : () -> List(Figure) = all (cons (Circle 1) (cons (Rect 2 3) nil));
+  def two : () -> List(Figure) = all ((cons (Circle 1)) (cons (Rect 2 3) nil));
 }

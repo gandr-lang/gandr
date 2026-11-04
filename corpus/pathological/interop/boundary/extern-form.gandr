@@ -29,7 +29,7 @@ extern "rust" from "wide" as Wide {
 }
 
 /// `add`'s row: two `u32` to a `u32`.
-def addRow : Row = Row (Arg (Plain U32) (Arg (Plain U32) NoCode)) (Plain U32);
+def addRow : Row = (Row ((Arg (Plain U32)) (Arg (Plain U32) NoCode))) (Plain U32);
 
 /// The adder declared with a count twice its row's width: rustc lays a `u64`
 /// out in eight bytes, the row's `u32` in four.

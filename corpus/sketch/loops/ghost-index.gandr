@@ -29,12 +29,11 @@ def cursor(grow : () -> Bool, done : () -> Bool) -> [Partial] Nat =
 /// A shared cell holds the same cursor and packs its index with it. Each write
 /// stores a new pair, and the cell's type never changes.
 def sharedCursor(cell : Ref(Σ (m : Nat @0), Fin(m)), grow : () -> Bool, done : () -> Bool) -> [Partial] Unit =
-  loop {
-    let *{m, k} = cell.get ();
+  loop =
+    let *{m, k} = cell.get ()
     if grow () {
-      cell.set (m + 2, Fin.shift 2 k)
+      cell.set (m + 2) (Fin.shift 2 k)
     } else {
-      cell.set (m, Fin.last m)
+      cell.set m (Fin.last m)
     }
     if done () { break }
-  }

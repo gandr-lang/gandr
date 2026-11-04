@@ -25,7 +25,7 @@ def rightNested(
   h : Path[.A = A](z, w)
 ) -> Path[.A = Path[.A = A](x, w)](
   Path.step f (Path.step g h),
-  compose[5, 7] (chain 3) (*{f, g, h})
+  (compose[5, 7] (chain 3)) (*{f, g, h})
 ) =
   Path.here (Path.step f (Path.step g h))
 
@@ -60,10 +60,10 @@ def pairs(
   g : Path[.A = A](z, w),
   h : Path[.A = A](w, u)
 ) -> Path[.A = Path[.A = A](x, u)](
-  Path.step (Path.step k f) (Path.step g h),
+  (Path.step (Path.step k f)) (Path.step g h),
   Path.step k (Path.step f (Path.step g h))
 ) =
-  Path.here (Path.step (Path.step k f) (Path.step g h))
+  Path.here ((Path.step (Path.step k f)) (Path.step g h))
 
 /// Two paths composed by a definition.
 def tailComposite(
@@ -108,10 +108,10 @@ def transported(
   h : Path[.A = A](z, w),
   v : M(x)
 ) -> Path[.A = M(w)](
-  Path.walk (fun (a) { M a }) (Path.step f (Path.step g h)) v,
+  (Path.walk (fun (a) { M a })) (Path.step f (Path.step g h)) v,
   Path.walk (fun (a) { M a }) h (Path.walk (fun (a) { M a }) g (Path.walk (fun (a) { M a }) f v))
 ) =
-  Path.here (Path.walk (fun (a) { M a }) (Path.step f (Path.step g h)) v)
+  Path.here ((Path.walk (fun (a) { M a })) (Path.step f (Path.step g h)) v)
 
 /// A loop between two paths at the circle's point nests as any path does.
 def aroundTheLoop(

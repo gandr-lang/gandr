@@ -31,10 +31,9 @@ def nested(n : Nat) -> -F Nat =
   match n
     | Zero => return n
     | Succ(p) => {
-      let q = match p {
+      let q = match p
         | Zero => return p
         | Succ(r) => pure r
-      };
       pure q
     }
 

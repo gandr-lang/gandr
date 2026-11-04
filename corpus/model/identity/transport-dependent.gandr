@@ -13,12 +13,7 @@ import "./circle-base.gandr";
 
 /// Transport along reflexivity at zero returns the element given.
 def reduced : Path[.A = Nat](
-  Path.walk
-    ((y : Nat, Path[.A = Nat](Zero, y)) -> Nat)
-    (Path.here Zero)
-    (Path.here Zero)
-    (Path.here (Path.here Zero))
-    (Succ Zero),
+  ((((Path.walk ((y : Nat, Path[.A = Nat](Zero, y)) -> Nat)) (Path.here Zero)) (Path.here Zero)) (Path.here (Path.here Zero))) (Succ Zero),
   Succ Zero
 ) = Path.here (Succ Zero);
 
@@ -29,41 +24,29 @@ def unitPath : Path[.A = Unit](*{}, *{}) = *{};
 /// Transport along that evidence, in a family that reads neither the point
 /// nor the path, returns the element given.
 def carriedUnit : Path[.A = Nat](
-  Path.walk
-    ((y : Unit, Path[.A = Unit](*{}, y)) -> Nat)
-    unitPath
-    (Path.here (*{}))
-    (Path.here unitPath)
-    (Succ Zero),
+  Path.walk ((y : Unit, Path[.A = Unit](*{}, y)) -> Nat)
+    ((unitPath (Path.here (*{}))) (Path.here unitPath)) (Succ Zero),
   Succ Zero
 ) = Path.here (Succ Zero);
 
 /// Transport along that evidence in the family of paths back to the point
 /// returns the unit, the one inhabitant of the unit fibre.
 def backUnit : Path[.A = Path[.A = Unit](*{}, *{})](
-  Path.walk
-    ((y : Unit, Path[.A = Unit](*{}, y)) -> Path[.A = Unit](y, *{}))
-    unitPath
-    (Path.here (*{}))
-    (Path.here unitPath)
-    (Path.here (*{})),
+  Path.walk ((y : Unit, Path[.A = Unit](*{}, y)) -> Path[.A = Unit](y, *{}))
+    ((unitPath (Path.here (*{}))) (Path.here unitPath)) (Path.here (*{})),
   *{}
 ) = Path.here (*{});
 
 /// A path reversed by transport in the family of paths back to its start,
 /// reflexivity at the start carried to the end.
 def reversed(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) =
-  Path.walk
-    ((y : Nat, Path[.A = Nat](a, y)) -> Path[.A = Nat](y, a))
-    q
-    (Path.here a)
-    (Path.here q)
-    (Path.here a)
+  Path.walk ((y : Nat, Path[.A = Nat](a, y)) -> Path[.A = Nat](y, a))
+    ((q (Path.here a)) (Path.here q)) (Path.here a)
 
 /// A lift whose path is not over `q` is refused.
 @[ refuses("NotOver") ]
 def astray(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> Nat =
-  Path.walk ((y : Nat, Path[.A = Nat](a, y)) -> Nat) q (Path.here a) (Path.here (Path.here a)) v
+  Path.walk ((y : Nat, Path[.A = Nat](a, y)) -> Nat) (q (Path.here a)) (Path.here (Path.here a)) v
 
 /// A family that reads no path is the wrong shape for a dependent transport.
 @[ refuses("ShapeMismatch") ]

@@ -19,15 +19,14 @@ import "../../model/identity/circle-base.gandr" ;
 /// Transport along reflexivity at zero returns the element given.
 @[ checks ]
 def reduced : Path[.A = Nat](
-  Path.walk(
-    (y : Nat, Path[.A = Nat](Zero, y)) -> Nat,
-    Path.here(Zero),
-    Path.here(Zero),
-    Path.here(Path.here(Zero)),
-    Succ(Zero)
-  ),
-  Succ(Zero)
-) = Path.here(Succ(Zero));
+  Path.walk
+    ((y : Nat, Path[.A = Nat](Zero, y)) -> Nat)
+    (Path.here Zero)
+    (Path.here Zero)
+    (Path.here (Path.here Zero))
+    (Succ Zero),
+  Succ Zero
+) = Path.here (Succ Zero);
 
 /// The unit type's evidence between its point and itself, a closed path
 /// that is no reflexivity.
@@ -38,38 +37,35 @@ def unitPath : Path[.A = Unit](*{}, *{}) = *{};
 /// nor the path, returns the element given.
 @[ checks ]
 def carriedUnit : Path[.A = Nat](
-  Path.walk(
-    (y : Unit, Path[.A = Unit](*{}, y)) -> Nat,
-    unitPath,
-    Path.here(*{}),
-    Path.here(unitPath),
-    Succ(Zero)
-  ),
-  Succ(Zero)
-) = Path.here(Succ(Zero));
+  Path.walk
+    ((y : Unit, Path[.A = Unit](*{}, y)) -> Nat)
+    unitPath
+    (Path.here (*{}))
+    (Path.here unitPath)
+    (Succ Zero),
+  Succ Zero
+) = Path.here (Succ Zero);
 
 /// Transport along that evidence in the family of paths back to the point
 /// returns the unit, the one inhabitant of the unit fibre.
 @[ checks ]
 def backUnit : Path[.A = Path[.A = Unit](*{}, *{})](
-  Path.walk(
-    (y : Unit, Path[.A = Unit](*{}, y)) -> Path[.A = Unit](y, *{}),
-    unitPath,
-    Path.here(*{}),
-    Path.here(unitPath),
-    Path.here(*{})
-  ),
+  Path.walk
+    ((y : Unit, Path[.A = Unit](*{}, y)) -> Path[.A = Unit](y, *{}))
+    unitPath
+    (Path.here (*{}))
+    (Path.here unitPath)
+    (Path.here (*{})),
   *{}
-) = Path.here(*{});
+) = Path.here (*{});
 
 /// A path reversed by transport in the family of paths back to its start,
 /// reflexivity at the start carried to the end.
 @[ checks ]
-def reversed(a: Nat, b: Nat, q: Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) =
-  Path.walk(
-    (y : Nat, Path[.A = Nat](a, y)) -> Path[.A = Nat](y, a),
-    q,
-    Path.here(a),
-    Path.here(q),
-    Path.here(a)
-  )
+def reversed(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) =
+  Path.walk
+    ((y : Nat, Path[.A = Nat](a, y)) -> Path[.A = Nat](y, a))
+    q
+    (Path.here a)
+    (Path.here q)
+    (Path.here a)

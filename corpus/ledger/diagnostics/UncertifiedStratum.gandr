@@ -26,7 +26,7 @@ def negation = equiv not not ;
 @[ runs("cons +{.0 = *{}} (cons +{.1 = *{}} nil)") ]
 def both : List(Bool) ;
 
-def both = cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil) ;
+def both = (cons (+{.0 = *{}})) (cons (+{.1 = *{}}) nil) ;
 
 @[ checks ]
 def keep(xs : List(Bool)) -> -F List(Bool) =

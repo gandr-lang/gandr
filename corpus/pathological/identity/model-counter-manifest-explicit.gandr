@@ -28,8 +28,7 @@ def strangeSort() -> -F Integer =
 /// The counter's carrier written twice in one map.
 @[ refuses("MalformedForm"), form(explicit) ]
 def twiceWritten() -> -F Integer =
-  become observe
-    (forget[
+  become observe (forget[
       sort C = Unit + (Unit + Unit),
       sort C = Unit + (Unit + Unit)
     ](upManifest) at Model(Counter))

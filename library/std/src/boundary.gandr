@@ -186,13 +186,13 @@ pub def printed(c : Code) -> Printed =
 def rec printedParams(cs : Coded) -> Params =
   match cs
     | NoCoded => NoParam
-    | Coded(n, c, rest) => Param n (printed c) (printedParams[<] rest)
+    | Coded(n, c, rest) => Param (n (printed c)) (printedParams[<] rest)
 
 /// A signature against a row: Rust's default layout prints the type of each
 /// declaration, and admission compares it with the row.
 pub def admitSignature(s : Signature, r : Row) -> Admission =
   match s
-    | Signature(ps, res) => admit (Declared (printedParams ps) (printed res)) r
+    | Signature(ps, res) => admit ((Declared (printedParams ps)) (printed res)) r
 
 /// An `extern "rust"` block's members' signatures, in written order.
 pub data Signatures : Type where

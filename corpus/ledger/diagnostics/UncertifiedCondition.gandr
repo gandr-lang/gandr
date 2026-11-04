@@ -18,10 +18,10 @@ def keep(e : +{Unit}) -> -F +{Unit} =
 def raised = ua[
   2,
   4
-] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep}) ;
+] Magma (Magma (*{.mul = exchange, .one = keep})) (*{.mul = exchange, .one = keep}) ;
 
 @[ refuses("UncertifiedCondition") ]
 def empty = ua[
   1,
   0
-] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep}) ;
+] Magma (Magma (*{.mul = exchange, .one = keep})) (*{.mul = exchange, .one = keep}) ;

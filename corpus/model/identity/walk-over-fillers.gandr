@@ -29,7 +29,7 @@ def generatedIsHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = Path[.A = 
   Path.here (Path.here x),
   Path.here (Path.here x)
 )](
-  fill[1, 3] (chain 1) (selfLoop A x x) (Path.here (Path.here x)),
+  ((fill[1, 3] (chain 1)) (selfLoop A x x)) (Path.here (Path.here x)),
   Path.here (Path.here (Path.here x))
 ) =
   Path.here (Path.here (Path.here (Path.here x)))
@@ -47,9 +47,7 @@ def overGenerated(
   Path.here (Path.here x),
   Path.here (Path.here x)
 )](
-  Path.walk
-    (fun (s) { type(Path[.A = Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x)](s, s)) })
-    (fill[1, 3] (chain 1) (selfLoop A x x) (Path.here (Path.here x)))
+  (Path.walk (fun (s) { type(Path[.A = Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x)](s, s)) })) (((fill[1, 3] (chain 1)) (selfLoop A x x)) (Path.here (Path.here x)))
     v,
   v
 ) =
@@ -57,7 +55,7 @@ def overGenerated(
 
 /// A composite of `Path.here` cells: `Path.walk` over it reduces to its base.
 def overComposite(A : Type, M : A -> Type, x : A, v : M(x)) -> Path[.A = M(x)](
-  Path.walk (fun (a) { M a }) (compose[3, 5] (chain 2) (*{Path.here x, Path.here x})) v,
+  (Path.walk (fun (a) { M a })) ((compose[3, 5] (chain 2)) (*{Path.here x, Path.here x})) v,
   v
 ) =
   Path.here v
@@ -67,5 +65,5 @@ def overComposite(A : Type, M : A -> Type, x : A, v : M(x)) -> Path[.A = M(x)](
 def overCarried(
   M : Circle -> Type,
   v : M(Base)
-) -> Path[.A = M(Base)](Path.walk (fun (c) { M c }) (loop) v, v) =
+) -> Path[.A = M(Base)]((Path.walk (fun (c) { M c })) (loop) v, v) =
   Path.here v

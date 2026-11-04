@@ -51,7 +51,7 @@ rec {
   pub def rec fresh(x : Nat, xs : Fresh) -> -F Type =
     match xs
       | FNil => return Unit
-      | FCons(y, ys, q) => return (Both (apart x y) (fresh[<] x ys))
+      | FCons(y, ys, q) => return ((Both (apart x y)) (fresh[<] x ys))
 }
 
 /// The fresh list of one. Each natural is fresh for the empty list.

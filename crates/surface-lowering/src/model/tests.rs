@@ -591,9 +591,9 @@ fn a_term_at_another_sort_or_inside_its_own_index_is_ill_sorted()
   oper diag : (f : Hom(c, d)) --> Hom(d, d);
   oper down : (x : Ob) --> Hom(x, pred(x));
   oper back : (f : Hom(a, succ(a))) --> (z : Ob);
-  rule mixed : flip(flip(x)) ==> flip(x);
-  rule cyc : back(diag(h)) ==> back(diag(h));
-  rule skew : back(down(o)) ==> o;
+  rule mixed : flip (flip x) ==> flip x;
+  rule cyc : back (diag h) ==> back (diag h);
+  rule skew : back (down o) ==> o;
 }",
     );
 
@@ -623,7 +623,7 @@ fn a_result_sort_indexed_by_an_operation_instantiates_at_each_use()
   sort Hom(dom : Ob, cod : Ob) : Type;
   oper next : (a : Ob) --> Ob;
   oper step : (a : Ob) --> Hom(a, next(a));
-  rule again : step(a) ==> step(a);
+  rule again : step a ==> step a;
 }",
     );
     assert_eq!(

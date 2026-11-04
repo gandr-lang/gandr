@@ -26,7 +26,7 @@ def rec size(t : Tree) -> Nat =
     | Node(f) => {
       let l = f L;
       let r = f R;
-      plus (size[<] l) (size[<] r)
+      (plus (size[<] l)) (size[<] r)
     }
 
 /// Every branch a leaf.

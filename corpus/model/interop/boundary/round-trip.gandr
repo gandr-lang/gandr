@@ -29,7 +29,7 @@ import std.boundary (Arg, NoCode, Plain, Row);
 import std.layout (U32);
 
 /// `add`'s row: two `u32` to a `u32`.
-pub def addRow : Row = Row (Arg (Plain U32) (Arg (Plain U32) NoCode)) (Plain U32);
+pub def addRow : Row = (Row ((Arg (Plain U32)) (Arg (Plain U32) NoCode))) (Plain U32);
 
 /// The Rust caller's adder, `add(x: u32, n: u32) -> u32`. Its check admits it
 /// against `addRow`.

@@ -21,11 +21,7 @@ module Evolution where {
   def keep : Flow[.A = Type](SeatEnd, Kept) = Flow.sim SeatEnd Kept;
 }
 
-def served : Run(Evolution.SeatEnd) = recorded
-  (received "task")
-  (selected report)
-  (sent "progress")
-  (offered retire)
+def served : Run(Evolution.SeatEnd) = (((recorded (received "task")) (selected report)) (sent "progress")) (offered retire)
   closed;
 
 @[ refuses("RunNotAdmitted") ]

@@ -45,5 +45,5 @@ rec {
   @[ refuses("StageNotBelow") ]
   def rec decodeMu(d : Type, c : IR(d), m : Mu(d, c)) -> d =
     match m
-      | In(v) => decodeArgs d c (Mu d c) (thunk { fun (n) { decodeMu[<] d c n } }) v
+      | In(v) => decodeArgs d (c (Mu d c)) (thunk { fun (n) { decodeMu[<] d c n } }) v
 }

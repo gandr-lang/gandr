@@ -122,7 +122,7 @@ def appliedAt[j : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> Nat =
 /// A function and a number below a stage `j`, handed to a third function
 /// that applies the one to the other.
 def handedAt[j : Size](
-  g : (Nat[< j] -> Nat, Nat[< j]) -> Nat,
+  g : *{Nat[< j] -> Nat, Nat[< j]} -> Nat,
   f : Nat[< j] -> Nat,
   x : Nat[< j]
 ) -> Nat =

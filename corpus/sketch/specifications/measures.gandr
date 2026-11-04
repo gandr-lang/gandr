@@ -54,17 +54,15 @@ pub def pop[a : Type](q : Banker(a)) -> [State(Banker a)] Maybe(a) #spec{
   }
 } {
   match q.front
-    | Cons(x, rest) => {
+    | Cons(x, rest) =>
       q.front := rest;
       some x
-    }
     | Nil => match reverse q.back
       | Nil => none
-      | Cons(x, rest) => {
+      | Cons(x, rest) =>
         q.front := rest;
         q.back := Nil;
         some x
-      }
 }
 
 /// The shortest distance to every node, its bound in the tropical semiring.

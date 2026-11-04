@@ -21,7 +21,7 @@ pub module AtStratum where
   def opposite : Path[.A = Type](Tel, Tel) = ua[
     1,
     4
-  ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+  ] Magma (Magma (*{.mul = exchange, .one = keep})) (*{.mul = exchange, .one = keep});
 
   /// The statement over the user universe, at the stratum code.
   def atTel() -> Path[.A = Type](Tel, Tel) ≃ (Tel ≃ Tel) =

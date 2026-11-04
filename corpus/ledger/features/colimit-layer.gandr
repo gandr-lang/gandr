@@ -30,15 +30,15 @@ def moved_list(xs : List(Bool)) -> List(Bool) =
 
 /// Truth then falsity.
 @[ runs("cons +{.0 = *{}} (cons +{.1 = *{}} nil)") ]
-def both : List(Bool) = cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil) ;
+def both : List(Bool) = (cons (+{.0 = *{}})) (cons (+{.1 = *{}}) nil) ;
 
 /// Truth then falsity transported along negation is falsity then truth, by
 /// conversion.
 @[ checks ]
 def flipped_beta : Path(
-  Path.walk (fun (X) { List X }) negation (cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil)),
-  cons (+{.1 = *{}}) (cons (+{.0 = *{}}) nil)
-) = Path.here (cons (+{.1 = *{}}) (cons (+{.0 = *{}}) nil)) ;
+  Path.walk (fun (X) { List X }) negation ((cons (+{.0 = *{}})) (cons (+{.1 = *{}}) nil)),
+  (cons (+{.1 = *{}})) (cons (+{.0 = *{}}) nil)
+) = Path.here ((cons (+{.1 = *{}})) (cons (+{.0 = *{}}) nil)) ;
 
 /// `both` transported along negation by a run, which negates every element.
 @[ runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)") ]
@@ -55,7 +55,7 @@ def flipped_value : List(Bool) = Path.walk (fun (X) { List X }) negation both ;
 /// `Path_U(Bool, Bool)`, as no path and refused the transport by shape.
 @[ checks ]
 def moved_inline(xs : List(Bool)) -> List(Bool) =
-  Path.walk (fun (X) { List X }) (equiv not not) xs
+  (Path.walk (fun (X) { List X })) (equiv not not) xs
 
 /// `both` transported along negation written in place, by a run.
 @[ runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)") ]

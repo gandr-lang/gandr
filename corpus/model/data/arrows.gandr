@@ -48,7 +48,7 @@ data Circle : Type where
 /// `Path.step(loop, Path.back(loop))` is the empty word by the rules the cell mints on
 /// its words.
 def cancelled : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step (loop) (Path.back (loop)),
+  (Path.step (loop)) (Path.back (loop)),
   Path.here Base
 ) = Path.here (Path.here Base);
 

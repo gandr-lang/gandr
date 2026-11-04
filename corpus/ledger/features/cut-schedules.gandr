@@ -32,7 +32,7 @@ data Tree : Type where
 def rec full(d : Depth) -> Tree =
   match d
     | Zero => Leaf 1
-    | Succ(p) => Node (full[<] p) (full[<] p)
+    | Succ(p) => (Node (full[<] p)) (full[<] p)
 
 /// The sum of the leaves of `t`, each half summed under its own cut.
 def rec sum(t : Tree) -> Integer =

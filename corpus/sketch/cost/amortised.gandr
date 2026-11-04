@@ -39,18 +39,16 @@ pub def pop[a : Type](q : Batched(a)) -> [Cost] Maybe(*{a, Batched(a)}) #spec{
   }
 } {
   match q.front
-    | Cons(x, rest) => {
+    | Cons(x, rest) =>
       charge 1;
-      some (x, Lists rest q.back)
-    }
+      some x (Lists rest q.back)
     | Nil => {
       charge (length q.back);
       match reverse q.back
         | Nil => none
-        | Cons(x, rest) => {
+        | Cons(x, rest) =>
           charge 1;
-          some (x, Lists rest Nil)
-        }
+          some x (Lists rest Nil)
     }
 }
 
@@ -64,7 +62,7 @@ pub def pushBanked[a : Type](q : Banked(a), x : a) -> [Cost] Banked(a) #spec{
   measure { cost 2 }
 } {
   charge 1;
-  Lists q.front (Cons x q.back) (save 1 q.paid)
+  Lists (q.front (Cons x q.back)) (save 1 q.paid)
 }
 
 /// Takes the front element, and pays a reversal from the back's credit.
@@ -72,14 +70,12 @@ pub def popBanked[a : Type](q : Banked(a)) -> [Cost] Maybe(*{a, Banked(a)}) #spe
   measure { cost 1 }
 } {
   match q.front
-    | Cons(x, rest) => {
+    | Cons(x, rest) =>
       charge 1;
-      some (x, Lists rest q.back q.paid)
-    }
+      some x (Lists rest q.back q.paid)
     | Nil => match spend q.paid (fun () { reverse q.back })
       | Nil => none
-      | Cons(x, rest) => {
+      | Cons(x, rest) =>
         charge 1;
-        some (x, Lists rest Nil Credit.none)
-      }
+        some x (Lists rest Nil Credit.none)
 }

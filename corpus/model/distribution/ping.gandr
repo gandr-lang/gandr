@@ -47,7 +47,7 @@ def pingAnswered() -> String =
   } with {
     | pure(x) => pure x
     | oper connect(peer, k) => k 0
-    | oper accept(k) => k ("peer", 0)
+    | oper accept(k) => k "peer" 0
     | oper transmit(sent, k) => k *{}
     | oper receive(stream, k) => k "pong"
     | oper disconnect(stream, k) => k *{}

@@ -50,5 +50,5 @@ pub def rec plusZ(b : Int) -> Path(plus Z b, b) =
 pub def rec plusComm(a : Int, b : Int) -> Path(plus a b, plus b a) =
   match b
     | Z => Path.back (plusZ a)
-    | S(x) => Path.step (Path.ap up (plusComm[<] a x)) (Path.back (plusS x a))
-    | P(x) => Path.step (Path.ap down (plusComm[<] a x)) (Path.back (plusP x a))
+    | S(x) => (Path.step (Path.ap up (plusComm[<] a x))) (Path.back (plusS x a))
+    | P(x) => (Path.step (Path.ap down (plusComm[<] a x))) (Path.back (plusP x a))

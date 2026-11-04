@@ -16,4 +16,4 @@ def opaque : Bool -> Bool ;
 def postulated = ua[
   1,
   4
-] Magma Magma (*{.mul = opaque, .one = keep}) (*{.mul = opaque, .one = keep}) ;
+] Magma (Magma (*{.mul = opaque, .one = keep})) (*{.mul = opaque, .one = keep}) ;

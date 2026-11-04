@@ -18,7 +18,7 @@ def rec fib(n : Nat) -> Nat =
     | Zero => Zero
     | Succ(m) => match m
       | Zero => Succ Zero
-      | Succ(k) => plus (fib[<] m) (fib[<] k)
+      | Succ(k) => (plus (fib[<] m)) (fib[<] k)
 
 /// Fibonacci by iteration over a pair of accumulators.
 def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat =
@@ -28,7 +28,7 @@ def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat =
 
 /// Nineteen: one more than three sixes.
 def nineteen() -> Nat =
-  Succ (plus (plus three three) (plus (plus three three) (plus three three)))
+  Succ ((plus (plus three three)) ((plus (plus three three)) (plus three three)))
 
 /// The two definitions agree at nineteen, but the conversion spends its
 /// step budget before it shows it.

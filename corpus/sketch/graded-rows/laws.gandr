@@ -22,7 +22,7 @@ theory Choice where
   rule cuts : or x y <=> x where { x : [Choice <= 1] };
   /// Choice reassociates when its left branch is deterministic and its middle
   /// allocates nothing.
-  rule assoc : or(or(x, y), z) <=> or x (or y z) where {
+  rule assoc : or (or x y) z <=> or x (or y z) where {
     | x : [Choice = 1]
     | y : [Alloc <= 0]
   };

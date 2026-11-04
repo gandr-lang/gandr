@@ -39,7 +39,7 @@ def unwound : Path[.A = Path[.A = Circle](Base, Base)](
 /// The loop then its inverse is the empty word: the minted cancellation, read
 /// by conversion.
 def cancelled : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step (loop) (Path.back (loop)),
+  (Path.step (loop)) (Path.back (loop)),
   Path.here Base
 ) = Path.here (Path.here Base);
 
@@ -62,13 +62,13 @@ def tell(p : Path[.A = Circle](Base, Base)) -> Integer =
 /// Winding twice around and spinning the count back gives the word the
 /// composite is, by conversion.
 def round : Path[.A = Path[.A = Circle](Base, Base)](
-  spin (wind (Path.step (loop) (loop))),
+  spin (wind ((Path.step (loop)) (loop))),
   loop ∷ loop ∷ Path.here Base
 ) = Path.here (loop ∷ loop ∷ Path.here Base);
 
 /// The composite the round trip gives: the loop twice, by conversion.
 def twice : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step (loop) (loop),
+  (Path.step (loop)) (loop),
   loop ∷ loop ∷ Path.here Base
 ) = Path.here (loop ∷ loop ∷ Path.here Base);
 

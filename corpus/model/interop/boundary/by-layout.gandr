@@ -36,10 +36,10 @@ import "../../data/data-maybe.gandr";
 import "../../layouts/ribbit-list.gandr";
 
 /// `word`'s row: a `u64` address to the `u64` stored there.
-pub def wordRow : Row = Row (Arg (Plain U64) NoCode) (Plain U64);
+pub def wordRow : Row = (Row (Arg (Plain U64) NoCode)) (Plain U64);
 
 /// `half`'s row: a `u64` address to the `u32` stored there.
-pub def halfRow : Row = Row (Arg (Plain U64) NoCode) (Plain U32);
+pub def halfRow : Row = (Row (Arg (Plain U64) NoCode)) (Plain U32);
 
 /// Reads of the Rust caller's memory at the addresses it lends. Its check
 /// admits each read against its row.

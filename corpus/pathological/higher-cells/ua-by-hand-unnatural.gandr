@@ -20,10 +20,8 @@ module Unnatural where {
       | +{.3 = u} => +{.3 = u}
 
   @[ checks ]
-  def crossed_by_hand : Path[.A = Type](Tel, Tel) = Path.product
-    (Path.here (Unit))
-    (equiv cross cross);
+  def crossed_by_hand : Path[.A = Type](Tel, Tel) = (Path.product (Path.here (Unit))) (equiv cross cross);
 
   @[ refuses("NotNatural") ]
-  def crossed = ua[1, 4] Rig Rig (*{.plus = cross}) (*{.plus = cross});
+  def crossed = ua[1, 4] Rig (Rig (*{.plus = cross})) (*{.plus = cross});
 }

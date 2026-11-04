@@ -8,5 +8,5 @@ import "../model-in-source.gandr";
 import "./syntax.gandr";
 
 /// Substituting `b` for the newest variable at that variable is `b`.
-pub def subQSingle(b : Term) -> Path(subst (Ix Z) (Cons b (Shift Z)), b) =
+pub def subQSingle(b : Term) -> Path((subst (Ix Z)) (Cons b (Shift Z)), b) =
   Path.here b

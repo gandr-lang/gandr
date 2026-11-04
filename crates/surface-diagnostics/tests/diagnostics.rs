@@ -3568,7 +3568,7 @@ fn a_mistake_is_reported_before_what_it_causes_2048()
 {
     let text = "import std.list (List) ;\ndat Circle : Type {\n  Base : Circle;\n}\ndef twice : \
                 Path[.A = Circle](Base, Base) ;\ndef twice = refl(Base) ;\ndef none(xs : List()) -> -F \
-                Unit { pure unit }\n";
+                Unit { pure *{} }\n";
     // The source lists `List` from `std.list`, so it is walked from a file,
     // which lays it after the module it imports (#4520).
     let scratch = Scratch::new(Path::new("strayed"));

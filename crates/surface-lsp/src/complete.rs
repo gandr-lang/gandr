@@ -1578,8 +1578,8 @@ mod tests
     #[test]
     fn a_binder_never_takes_the_type_of_a_term_at_its_name()
     {
-        let before = "@[ checks ]\ndef dbl(x: Integer) -> -F Integer {\n  become x + x\n}\n\n@[ \
-                      refuses(\"TypeMismatch\") ]\ndef refuted(x: Integer) -> -F Path[.A = Integer](\
+        let before = "@[ checks ]\ndef dbl(x : Integer) -> -F Integer {\n  become x + x\n}\n\n@[ \
+                      refuses(\"TypeMismatch\") ]\ndef refuted(x : Integer) -> -F Path[.A = Integer](\
                       dbl(x), x) {\n  ";
         let items = listed(
             SourceText::from(before),

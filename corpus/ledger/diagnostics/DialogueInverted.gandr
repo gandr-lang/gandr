@@ -10,8 +10,4 @@ module Ask where
 @[ refuses("DialogueInverted") ]
 def foretold : Dialogue(Ask.Asking) ;
 
-def foretold = dialogue
-  (right (received "yes"))
-  (left (sent "yes"))
-  (left closed)
-  (right closed) ;
+def foretold = (((dialogue (right (received "yes"))) (left (sent "yes"))) (left closed)) (right closed) ;

@@ -33,3 +33,4 @@ def head[a : Type, n : Nat](v : Vec(a, Succ(n))) -> a =
 @[ refuses("TypeMismatch") ]
 def firstOfPair() -> Integer { head (pair ()) }
 
+

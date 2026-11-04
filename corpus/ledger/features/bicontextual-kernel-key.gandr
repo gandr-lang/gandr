@@ -38,4 +38,4 @@ def side(n : Nat, e : Either) -> -F Nat =
 /// The flag side answers the natural `side` takes first.
 @[ runs("Succ Zero") ]
 def marked() -> -F Nat =
-  side (Succ Zero) (Mark On)
+  (side (Succ Zero)) (Mark On)

@@ -583,9 +583,9 @@ fn a_nested_record_s_key_is_no_mention_of_an_outer_label_3010()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def keyed : #{d : Integer, s : #{d : String, t : String}} ; def hidden : #{d : \
-         Integer, s : #{d : String, t : Path[.A = String](d, d)}} ; def domain : #{d : Integer, f : \
-         (d : Integer) => Integer} ; def seen : #{d : Integer, s : #{e : Path[.A = Integer](d, d), d : \
+        "def keyed : *{d : Integer, s : *{d : String, t : String}} ; def hidden : *{d : \
+         Integer, s : *{d : String, t : Path[.A = String](d, d)}} ; def domain : *{d : Integer, f : \
+         (d : Integer) => Integer} ; def seen : *{d : Integer, s : *{e : Path[.A = Integer](d, d), d : \
          String}} ;",
         &mut arena,
     );

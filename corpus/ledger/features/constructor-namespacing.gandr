@@ -36,7 +36,7 @@ def rec size(e : Expr) -> -F Integer =
 
 /// A port built by its qualified name.
 @[ runs("1") ]
-def shared() -> -F Integer { size ((Expr.Share (Expr.Lit 7)).right) }
+def shared() -> -F Integer { size (Expr.Share (Expr.Lit 7)).right }
 
 /// The record of both ports, built by the qualified name.
 @[ checks ]

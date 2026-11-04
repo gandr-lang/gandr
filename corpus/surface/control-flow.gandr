@@ -138,7 +138,7 @@ def find_one() -> Nat { become find_succ (cons Zero (cons (Succ (Succ Zero)) nil
 /// The search reaches the empty list, which leaves the loop with unit, and
 /// returns what it was given.
 @[ runs("Succ Zero") ]
-def find_none() -> Nat { become find_succ (cons Zero nil) (Succ Zero) }
+def find_none() -> Nat { become (find_succ (cons Zero nil)) (Succ Zero) }
 
 /// A `for` ending a body runs it on every cell and returns unit.
 def for_each(xs : List(Nat)) -> Unit =

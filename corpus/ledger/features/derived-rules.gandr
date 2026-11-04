@@ -21,7 +21,7 @@ import "../../model/identity/group-laws.gandr";
 
 /// The inverse of a product, in every group.
 @[ checks ]
-rule Group.invMul : inv (mul x y) <=> mul (inv y) (inv x);
+rule Group.invMul : inv (mul x y) <=> (mul (inv y)) (inv x);
 
 /// A bit.
 @[ checks ]

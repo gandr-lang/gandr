@@ -6,7 +6,7 @@
 
 /// Each element doubled.
 @[ refuses("OutOfFragment.projection_expression") ]
-def doubled = list.each (thunk { fun (x) { return x * 2 } }) (#[1, 2, 3]);
+def doubled = (list.each (thunk { fun (x) { return x * 2 } })) (#[1, 2, 3]);
 
 /// The doubled elements over two.
 @[ refuses("OutOfFragment.projection_expression") ]

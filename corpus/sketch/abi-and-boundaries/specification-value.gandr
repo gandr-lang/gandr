@@ -47,13 +47,12 @@ extern C from "lib:demo" {
 
 /// A value held between two bounds.
 pub def clamped(x : i32, lo : i32, hi : i32) -> Spec(Pure, i32) =
-  #spec{
+  #spec=
     requires { lo <= hi }
     ensures r {
       | lo <= r
       | r <= hi
     }
-  }
 
 /// A Rust crate's clamp, until the gandr one below replaces it.
 @[realizes(clamped)]

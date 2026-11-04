@@ -22,7 +22,7 @@ import "./conversion-base.gandr";
 def rec fact(n : Nat) -> Nat =
   match n
     | Zero => Succ Zero
-    | Succ(m) => times (Succ m) (fact[<] m)
+    | Succ(m) => (times (Succ m)) (fact[<] m)
 
 /// Factorial by iteration, the product carried in an accumulator.
 def rec factFrom(n : Nat, acc : Nat) -> Nat =
@@ -39,7 +39,7 @@ def rec even(n : Nat) -> Bool =
       | false => true
 
 /// The two definitions agree at six.
-def factAgrees() -> Path(fact (Succ (Succ four)), factFrom (Succ (Succ four)) (Succ Zero)) =
+def factAgrees() -> Path(fact (Succ (Succ four)), (factFrom (Succ (Succ four))) (Succ Zero)) =
   Path.here (fact (Succ (Succ four)))
 
 /// The factorial of five is even.

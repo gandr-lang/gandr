@@ -57,7 +57,7 @@ pub def push[a : Type](q : Queue(a), x : a) -> [State(Heap)] Bool #spec{
   if q.count == capacity q {
     false
   } else {
-    write q.cells ((q.front + q.count) % capacity q) (some x);
+    write (q.cells ((q.front + q.count) % capacity q)) (some x);
     q.count := q.count + 1;
     true
   }

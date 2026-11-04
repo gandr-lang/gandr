@@ -40,7 +40,7 @@ def eqBox = Eq.generic Box;
 
 /// The derivation applied inside a larger body.
 @[ refuses("GenericMisplaced") ]
-def inside() -> Bool { (Eq.generic Point) (Point 1 2) (Point 1 2) }
+def inside() -> Bool { ((Eq.generic Point) (Point 1 2)) (Point 1 2) }
 
 /// The derivation over a type that is no data declaration.
 @[ refuses("GenericMisplaced") ]
@@ -52,7 +52,7 @@ def bare = Eq.generic;
 
 /// A stated type the derived equality does not meet.
 @[ refuses("TypeMismatch") ]
-def eqWrong : (Point, Point) -> Integer = Eq.generic Point;
+def eqWrong : *{Point, Point} -> Integer = Eq.generic Point;
 
 /// No reflexivity over a flag: its proof cases on the flag.
 @[ refuses("GenericUncovered.Dependent") ]

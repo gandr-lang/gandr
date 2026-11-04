@@ -29,7 +29,7 @@ def sum(p : apply(twice, Integer)) -> Integer =
 
 /// `sum` at a pair of integers runs as at `Integer * Integer`.
 @[ runs("3") ]
-def sumRun() -> Integer { sum (1, 2) }
+def sumRun() -> Integer { sum 1 2 }
 
 /// A pair returned at an operator's type.
 @[ checks ]

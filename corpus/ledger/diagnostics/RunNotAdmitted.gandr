@@ -19,11 +19,7 @@ module Evolution where {
 @[ checks ]
 def served : Run(Evolution.SeatEnd) ;
 
-def served = recorded
-  (received "task")
-  (selected report)
-  (sent "progress")
-  (offered retire)
+def served = (((recorded (received "task")) (selected report)) (sent "progress")) (offered retire)
   closed ;
 
 @[ refuses("RunNotAdmitted") ]

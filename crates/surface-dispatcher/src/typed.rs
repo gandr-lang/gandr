@@ -8339,7 +8339,7 @@ mod tests
     fn a_term_re_formed_under_a_case_answers_at_its_own_type_551()
     {
         let source = SourceText::from(concat!(
-            "def made(a : Type, b : Type, i : #{to : +U (a -> -F b), back : +U (b -> -F a), ",
+            "def made(a : Type, b : Type, i : *{to : +U (a -> -F b), back : +U (b -> -F a), ",
             "sect : (x : a) => Path[.A = a](back(to(x)), x), retr : (y : b) => Path[.A = b](to(back(y)), y)}) ",
             "-> -F #{to : +U (a -> -F b), linv : #{g : +U (b -> -F a), sect : (x : a) => Path[.A = a](g(to(x)), x)}, ",
             "rinv : #{h : +U (b -> -F a), retr : (y : b) => Path[.A = b](to(h(y)), y)}} {\n",
@@ -8362,9 +8362,9 @@ mod tests
     fn a_pattern_inside_a_dependent_pair_s_second_component_answers_558()
     {
         let source = SourceText::from(concat!(
-            "def nested(p : #{x : Integer, inner : #{y : Integer, q : Path[.A = Integer](x, y)}}) ",
+            "def nested(p : *{x : Integer, inner : *{y : Integer, q : Path[.A = Integer](x, y)}}) ",
             "-> -F Integer {\n  match p {\n    #{x, #{y, q}} => y\n  }\n}\n",
-            "def flat(p : #{x : Integer, y : Integer, q : Path[.A = Integer](x, y)}) ",
+            "def flat(p : *{x : Integer, y : Integer, q : Path[.A = Integer](x, y)}) ",
             "-> -F Integer {\n  match p {\n    #{x, y, q} => y\n  }\n}\n",
         ));
         let table = table(source);
@@ -9200,7 +9200,7 @@ mod tests
         let source = SourceText::from(
             "def same(x : Type) -> -F Type {\n  return x\n}\n\ndef sameTwice(x : Type) -> -F \
              Path[.A = Type](same(same(x)), x) {\n  return Path.here(x)\n}\n\ndef typeSelf : Type ≃ Type \
-             ;\ndef typeSelf = #{same, #{#{same, sameTwice}, #{same, sameTwice}}} ;\n",
+             ;\ndef typeSelf = *{same, *{*{same, sameTwice}, *{same, sameTwice}}} ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let trips: Vec<(String, RoundTrip)> = table(source)

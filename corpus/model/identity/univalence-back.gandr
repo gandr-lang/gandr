@@ -33,7 +33,7 @@ def loopsBack(
   p : Path[.A = Type](Path[.A = Circle](Base, Base), Int),
   y : Int
 ) -> Path[.A = Circle](Base, Base) =
-  Path.walk (fun (X) { X }) (Path.back p) y
+  (Path.walk (fun (X) { X })) (Path.back p) y
 
 /// Two carried back along the loops' path is the word of two loops, by a run.
 @[ runs("loop ∷ loop ∷ Path.here(Base)") ]

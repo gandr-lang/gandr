@@ -36,10 +36,9 @@ def rec total(xs : List(Nat)) -> [Cost] Nat #spec{
 } {
   match xs
     | Nil => 0
-    | Cons(x, rest) => {
+    | Cons(x, rest) =>
       charge 1;
       x + total rest
-    }
 }
 
 /// Merges two sorted lists at one step for each element taken. The solver in
@@ -50,10 +49,9 @@ def rec merge(xs : List(Integer), ys : List(Integer)) -> [Cost] List(Integer) #s
   match *{xs, ys}
     | *{Nil, _} => ys
     | *{_, Nil} => xs
-    | *{Cons(x, xr), Cons(y, yr)} => {
+    | *{Cons(x, xr), Cons(y, yr)} =>
       charge 1;
       if x <= y { Cons x (merge xr ys) } else { Cons y (merge xs yr) }
-    }
 }
 
 /// A grade on the effect row states the bound of `threeSteps` in the form

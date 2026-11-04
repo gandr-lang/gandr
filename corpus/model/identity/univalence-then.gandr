@@ -27,9 +27,9 @@ def thenBeta(
   x : a
 ) -> Path[.A = c](
   fwdAlong a c (Path.step p (ua e)) x,
-  fwdAlong b c (ua e) (fwdAlong a b p x)
+  fwdAlong b (c (ua e)) (fwdAlong a b p x)
 ) =
-  Path.here (fwdAlong b c (ua e) (fwdAlong a b p x))
+  Path.here (fwdAlong b (c (ua e)) (fwdAlong a b p x))
 
 /// Transport along a path from the loops at the point to the integers, then
 /// back along it.
@@ -37,7 +37,7 @@ def loopsRound(
   p : Path[.A = Type](Path[.A = Circle](Base, Base), Int),
   x : Path[.A = Circle](Base, Base)
 ) -> Path[.A = Circle](Base, Base) =
-  Path.walk (fun (X) { X }) (Path.step p (Path.back p)) x
+  (Path.walk (fun (X) { X })) (Path.step p (Path.back p)) x
 
 /// A loop carried to the integers and back again is the loop, by a run.
 @[ runs("loop ∷ Path.here(Base)") ]

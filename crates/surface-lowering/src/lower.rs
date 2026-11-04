@@ -29329,7 +29329,7 @@ def ended() -> -F [Partial] Unit {
             "a product is a value type, not a computation type"
         );
         assert_eq!(
-            refusal(SourceText::from("def u = thunk { (1, 2) ; return 0 } ;")),
+            refusal(SourceText::from("def u = thunk { *{1, 2} ; return 0 } ;")),
             LoweringRefusal::OutOfFragment {
                 span: at(16_usize, 22_usize),
                 form: FormName::TUPLE,

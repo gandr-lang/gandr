@@ -74,7 +74,7 @@ def rec sums(s : +U Stream, t : +U Stream) -> Stream =
 def rec fibs(n : Integer) -> Stream =
   &{
     .head => return n,
-    .tail => sums (thunk { fibs[>] n }) (thunk { fibs[>] n })
+    .tail => (sums (thunk { fibs[>] n })) (thunk { fibs[>] n })
   }
 
 /// A productive call under `become` is not the arm itself.

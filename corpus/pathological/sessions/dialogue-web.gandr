@@ -32,24 +32,12 @@ def apartWebs : Path(
 
 /// A receipt that hears other than was sent has no send to match it.
 @[ refuses("DialogueUnmatched") ]
-def misheard : Dialogue(Ask.Asking) = dialogue
-  (left (sent "yes"))
-  (right (received "no"))
-  (left closed)
-  (right closed);
+def misheard : Dialogue(Ask.Asking) = (((dialogue (left (sent "yes"))) (right (received "no"))) (left closed)) (right closed);
 
 /// A receipt logged before its send is no order a recorder saw.
 @[ refuses("DialogueInverted") ]
-def foretold : Dialogue(Ask.Asking) = dialogue
-  (right (received "yes"))
-  (left (sent "yes"))
-  (left closed)
-  (right closed);
+def foretold : Dialogue(Ask.Asking) = (((dialogue (right (received "yes"))) (left (sent "yes"))) (left closed)) (right closed);
 
 /// The left endpoint receiving where its protocol sends is off the protocol.
 @[ refuses("RunNotAdmitted") ]
-def answered : Dialogue(Ask.Asking) = dialogue
-  (left (received "yes"))
-  (right (sent "yes"))
-  (left closed)
-  (right closed);
+def answered : Dialogue(Ask.Asking) = (((dialogue (left (received "yes"))) (right (sent "yes"))) (left closed)) (right closed);

@@ -31,11 +31,10 @@ def rec cView(bs : List(Integer)) -> CView =
       let left = count rest;
       let last = left == 0;
       match last
-        | true => {
+        | true =>
           match zero
             | true => Borrowed bs
             | false => Interior
-        }
         | false => {
           match zero
             | true => Interior

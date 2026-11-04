@@ -24,7 +24,7 @@ def flip(b : Bool) -> Bool =
 def opposite = ua[
   1,
   4
-] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+] Magma (Magma (*{.mul = exchange, .one = keep})) (*{.mul = exchange, .one = keep});
 
 /// Transport along it swaps the binary corolla's boolean.
 def moves : Path[.A = Unit * (+{Unit} * Bool)](
@@ -40,7 +40,7 @@ def stays : Path[.A = Unit * (+{Unit} * Bool)](
 ) = Path.here (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}});
 
 /// The magma to itself by the swap written three times.
-def reopposite = ua[1, 4] Magma Magma (*{.mul = flip, .one = keep}) (*{.mul = flip, .one = keep});
+def reopposite = ua[1, 4] Magma (Magma (*{.mul = flip, .one = keep})) (*{.mul = flip, .one = keep});
 
 /// The swap and the swap three times agree at every boolean.
 def agree : Path[.A = Bool -> Bool](exchange, flip) = Path.funext exchange flip;

@@ -23,4 +23,4 @@ def pick(t : Type, x : t) -> t =
 
 /// A path type written as `pick`'s type argument is the code of the type it
 /// spells, not a constructor.
-def picked() -> Path(4, 4) { pick (Path 4 4) (Path.here 4) }
+def picked() -> Path(4, 4) { (pick (Path 4 4)) (Path.here 4) }

@@ -42,7 +42,7 @@ rec {
     match t
       | NNe(h, n) => { let n2 = renNe[<] h Base n d r; NNe d n2 }
       | NLam(h, b, c, body) => {
-        let body2 = renNf[<] (Extend h b) c body (Extend d b) (lift d h b r);
+        let body2 = renNf[<] (Extend h b) c (body (Extend d b)) (lift d h b r);
         NLam d b c body2
       }
 }

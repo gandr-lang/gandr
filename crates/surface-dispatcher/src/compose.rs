@@ -4987,7 +4987,7 @@ mod tests
             assert_eq!(
                 module(resumed_lowering),
                 module(whole),
-                "the module and arena the whole unit lowers to"
+                "the module and arena the whole *{} lowers to"
             );
             assert_eq!(
                 lowerings,
@@ -6650,9 +6650,9 @@ def delivered() -> -F Unit {
         let mut lowerings = LoweringCount::default();
         let sealed = |name: &str, identity: &str| {
             format!(
-                "module {name} :> #{{ type T, origin : T, other : T }} where {{ {identity} type T = \
-                 Unit ; def origin = unit ; def other = unit ; }}\ndef evidence{name} : \
-                 Path[.A = {name}.T]({name}.origin, {name}.other) ;\ndef evidence{name} = unit ;\n"
+                "module {name} :> *{{ type T, origin : T, other : T }} where {{ {identity} type T = \
+                 Unit ; def origin = *{{}} ; def other = *{{}} ; }}\ndef evidence{name} : \
+                 Path[.A = {name}.T]({name}.origin, {name}.other) ;\ndef evidence{name} = *{{}} ;\n"
             )
         };
         let source = [
