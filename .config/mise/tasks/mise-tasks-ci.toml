@@ -1384,11 +1384,15 @@ done < "$scratch/actions"
 # snapshot (#2299): judged across two reads, a branch whose first commit fell
 # between them read integrated at main's tip and off the line at its commit,
 # and its live worktree went. Worktrunk misses a branch the queue landed
-# through a rebase that resolved a conflict, since its patches changed. Such
-# a branch has landed when each commit `git cherry` lists has its subject on
-# origin/main, or when one merged pull request of the branch holds each
-# subject main lacks; its worktree goes by `wt remove -D` (#4227). A
-# worktree whose head is no longer the judged
+# through a rebase that resolved a conflict. The patches changed. Such a
+# branch has landed when each commit `git cherry` lists has its subject on
+# origin/main. It has also landed when one merged pull request of the branch
+# holds each subject main lacks. The worktree goes by `wt remove -D` (#4227).
+# A fast-forward of main can carry an equal patch of each commit under a new
+# hash (#5030). `git cherry` then lists no `+` line. The branch has landed
+# when `git rev-list origin/main..<head>` counts above zero. That worktree
+# goes by `wt remove -D` too.
+# A worktree whose head is no longer the judged
 # one is kept, and the head is read once more just before `wt remove`. A
 # landed branch's worktree goes by `wt remove --foreground`, which deletes the
 # branch as merged and refuses a dirty or otherwise unsafe tree; the sweep
@@ -1472,7 +1476,7 @@ facts=()
 kept=()
 pruned=()
 tree() {
-  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null commits=null pulls=null idle=false gitdir key mark
+  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null commits=null pulls=null idle=false ahead=null gitdir key mark
   local -a listed=()
   [[ -n "$path" ]] || return 0
   if [[ "$flag" == prunable ]]; then pruned+=("pruned $path${branch:+ ($branch)}: its directory is gone"); return 0; fi
@@ -1480,12 +1484,14 @@ tree() {
   key=$(realpath "$path")
   if [[ -n "$branch" && -n "${integrated[$key]:-}" && -z "${first_parent[${judged[$key]:-none}]:-}" ]]; then merged=true; fi
   if [[ -n "${judged[$key]:-}" && "$head" != "${judged[$key]}" ]]; then moved=true; fi
-  # A branch Worktrunk reads unmerged: the commits `git cherry` lists, by
-  # subject, and the merged pull requests of the branch when main lacks one.
+  # A branch Worktrunk reads unmerged. The `+` lines of `git cherry` are
+  # read by subject. `ahead` counts commits not on origin/main (#5030).
+  # Merged pull requests are read when main lacks one subject.
   if [[ -n "$branch" && $merged == false && $primary == false && $branch != wip/* ]]; then
     mapfile -t listed < <(git cherry "$trunk_ref" "$head" | awk '/^\+/ { print $2 }')
     commits=$(if ((${#listed[@]} > 0)); then git log --no-walk=unsorted --format=%s "${listed[@]}"; fi \
       | jq -R . | jq -sc --slurpfile main "$subjects" 'map({subject: ., on_main: ($main[0][.] // false)})')
+    ahead=$(git rev-list --count "$trunk_ref..$head")
     if jq -e 'any(.[]; .on_main | not)' <<< "$commits" > /dev/null \
       && $remote_read && [[ -z ${on_remote[$branch]:-} ]] && git config --get "branch.$branch.remote" > /dev/null; then
       # The headlines alone, 1 GraphQL point: `gh pr list --json commits`
@@ -1527,8 +1533,8 @@ tree() {
   facts+=("$(jq -nc --arg path "$path" --arg branch "$branch" --argjson primary "$primary" \
     --argjson cwd "$([[ $key == "$here" ]] && echo true || echo false)" \
     --argjson merged "$merged" --argjson moved "$moved" --argjson scratch "$scratch" --argjson watched "$watched" \
-    --argjson commits "$commits" --argjson pulls "${pulls:-null}" --argjson idle "$idle" \
-    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, commits: $commits, pulls: $pulls, idle: $idle}')")
+    --argjson commits "$commits" --argjson ahead "$ahead" --argjson pulls "${pulls:-null}" --argjson idle "$idle" \
+    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, commits: $commits, ahead: $ahead, pulls: $pulls, idle: $idle}')")
 }
 # Delete an idle worktree's `incremental` caches, its `target/` measured
 # before and after. A clone shares its blocks with the primary worktree's
