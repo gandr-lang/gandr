@@ -13,7 +13,8 @@ error[ViewNotPlace]: a method whose receiver's mode is a variable answers a plac
 18 │   def valued[m : Mode](self : m List(Integer)) -> -F Integer { self.#[0] }
    │                                                   ━━━━━━━━━━ no place of the receiver
    │
-   ╰ note: `valued` is refused with ViewNotPlace, as its expectation states
+   ├ note: `valued` is refused with ViewNotPlace, as its expectation states
+   ╰ help: return a place of `self` with type `View[m](a)`
 
 error[ViewNotPlace]: a method whose receiver's mode is a variable answers a place of its receiver: write its result `-F View[m](a)` at that mode and its body as the place, `{ self.#[i] }`
    ╭▸ corpus/pathological/control/accessor-method.gandr:22:75
@@ -21,7 +22,8 @@ error[ViewNotPlace]: a method whose receiver's mode is a variable answers a plac
 22 │   def computed[m : Mode](self : m List(Integer)) -> -F View[m](Integer) { pure 0 }
    │                                                                           ━━━━━━ no place of the receiver
    │
-   ╰ note: `computed` is refused with ViewNotPlace, as its expectation states
+   ├ note: `computed` is refused with ViewNotPlace, as its expectation states
+   ╰ help: return a place of `self` with type `View[m](a)`
 
 error[ViewNotPlace]: a method whose receiver's mode is a variable answers a place of its receiver: write its result `-F View[m](a)` at that mode and its body as the place, `{ self.#[i] }`
    ╭▸ corpus/pathological/control/accessor-method.gandr:25:70
@@ -29,7 +31,8 @@ error[ViewNotPlace]: a method whose receiver's mode is a variable answers a plac
 25 │   def crossed[m : Mode, n : Mode](self : m List(Integer)) -> -F View[n](Integer) { self.#[0] }
    │                                                                      ━ no place of the receiver
    │
-   ╰ note: `crossed` is refused with ViewNotPlace, as its expectation states
+   ├ note: `crossed` is refused with ViewNotPlace, as its expectation states
+   ╰ help: return a place of `self` with type `View[m](a)`
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/control/accessor-method.gandr:28:74
@@ -94,7 +97,8 @@ error[ViewNotPlace]: a method whose receiver's mode is a variable answers a plac
 73 │ def stray(v : View[m](Integer)) -> -F Integer {
    │               ━━━━━━━━━━━━━━━━ no place of the receiver
    │
-   ╰ note: `stray` is refused with ViewNotPlace, as its expectation states
+   ├ note: `stray` is refused with ViewNotPlace, as its expectation states
+   ╰ help: return a place of `self` with type `View[m](a)`
 
 error[StrayReceiverMode]: `m` is a receiver's mode: only a module member's first parameter is written with it, `self : m T`
    ╭▸ corpus/pathological/control/accessor-method.gandr:79:25

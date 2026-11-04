@@ -4,4 +4,5 @@ error[RulesUnoriented]: this rule may rewrite forever: its right side is not sma
 6 │   rule : Aye <=> Nay;
   │   ━━━━━━━━━━━━━━━━━━ a rule that may not end
   │
-  ╰ note: `Marks` is refused with RulesUnoriented, as its expectation states
+  ├ note: `Marks` is refused with RulesUnoriented, as its expectation states
+  ╰ help: make the rule's right side smaller than its left in the path order

@@ -4,7 +4,8 @@ error[RuleNotPresentable]: these rules do not present the datatype
 35 │ def neutral : Terms(Mon) = Mon.one;
    │               ━━━━━━━━━━ rules that do not present the datatype
    │
-   ╰ note: `Terms(Mon)` is refused with RuleNotPresentable, as its expectation states
+   ├ note: `Terms(Mon)` is refused with RuleNotPresentable, as its expectation states
+   ╰ help: write each rule with a declared constructor at its head and its declared field count
 
 error[RuleNotPresentable]: these rules do not present the datatype
    ╭▸ corpus/pathological/desc/theory-terms.gandr:35:15
@@ -12,7 +13,8 @@ error[RuleNotPresentable]: these rules do not present the datatype
 35 │ def neutral : Terms(Mon) = Mon.one;
    │               ━━━━━━━━━━ rules that do not present the datatype
    │
-   ╰ note: `neutral` is refused with RuleNotPresentable, as its expectation states
+   ├ note: `neutral` is refused with RuleNotPresentable, as its expectation states
+   ╰ help: write each rule with a declared constructor at its head and its declared field count
 
 error[RuleNotPresentable]: these rules do not present the datatype
    ╭▸ corpus/pathological/desc/theory-terms.gandr:35:15
@@ -20,7 +22,8 @@ error[RuleNotPresentable]: these rules do not present the datatype
 35 │ def neutral : Terms(Mon) = Mon.one;
    │               ━━━━━━━━━━ rules that do not present the datatype
    │
-   ╰ note: `product` is refused with RuleNotPresentable, as its expectation states
+   ├ note: `product` is refused with RuleNotPresentable, as its expectation states
+   ╰ help: write each rule with a declared constructor at its head and its declared field count
 
 error[OutOfFragment.terms_type.sorted]: the type application is not supported yet
    ╭▸ corpus/pathological/desc/theory-terms.gandr:55:14

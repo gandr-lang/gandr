@@ -8,7 +8,8 @@ error[NonCovariantMotive]: a flow runs one way: `Flow.ride` may use the moving e
 16 │ │   }
    │ └───┘ checked against `() => Flow(Type, Integer * String, String * Integer)`; while checking the body of this thunk
    │
-   ╰ note: `reversed` is refused with NonCovariantMotive, as its expectation states
+   ├ note: `reversed` is refused with NonCovariantMotive, as its expectation states
+   ╰ help: use the moving endpoint only where a run of it is produced
 
 error[NonCovariantMotive]: a flow runs one way: `Flow.ride` may use the moving endpoint only where a run of it would be produced
    ╭▸ corpus/pathological/identity/flow-symmetry.gandr:25:5
@@ -20,4 +21,5 @@ error[NonCovariantMotive]: a flow runs one way: `Flow.ride` may use the moving e
 26 │ │   }
    │ └───┘ checked against `() => Integer * String => Integer`; while checking the body of this thunk
    │
-   ╰ note: `reader` is refused with NonCovariantMotive, as its expectation states
+   ├ note: `reader` is refused with NonCovariantMotive, as its expectation states
+   ╰ help: use the moving endpoint only where a run of it is produced

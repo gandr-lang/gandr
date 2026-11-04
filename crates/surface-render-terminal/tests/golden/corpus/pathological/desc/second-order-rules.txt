@@ -4,7 +4,8 @@ error[RulesUnoriented]: this rule may rewrite forever: its right side is not sma
 19 │   rule beta : app(lam(t), u) <=> t(u);
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a rule that may not end
    │
-   ╰ note: `Beta` is refused with RulesUnoriented, as its expectation states
+   ├ note: `Beta` is refused with RulesUnoriented, as its expectation states
+   ╰ help: make the rule's right side smaller than its left in the path order
 
 error[IllFormedDescription]: a rule uses `t` where no port binds it over the same sorts
    ╭▸ corpus/pathological/desc/second-order-rules.gandr:30:3

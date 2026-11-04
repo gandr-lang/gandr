@@ -4,7 +4,8 @@ error[RulesUnoriented]: this rule may rewrite forever: its right side is not sma
 15 │   rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a rule that may not end
    │
-   ╰ note: `StateObserved` is refused with RulesUnoriented, as its expectation states
+   ├ note: `StateObserved` is refused with RulesUnoriented, as its expectation states
+   ╰ help: make the rule's right side smaller than its left in the path order
 
 error[RulesOverlapSecondOrder]: this rule and an earlier one rewrite overlapping terms, one of them applies a variable a binding port binds, and the overlap rewrites to two different normal forms, so the block's rules are refused
    ╭▸ corpus/pathological/effects/state.gandr:28:3
@@ -25,4 +26,5 @@ error[RulesOverlapCondition]: this rule and an earlier one rewrite overlapping t
 42 │   rule getPut : get(bind s. put(s, k)) <=> k;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
    │
-   ╰ note: `StateAllLaws` is refused with RulesOverlapCondition, as its expectation states
+   ├ note: `StateAllLaws` is refused with RulesOverlapCondition, as its expectation states
+   ╰ help: add a rule that joins the overlap under its condition

@@ -15,7 +15,8 @@ error[RulesOverlapCondition]: this rule and an earlier one rewrite overlapping t
 39 │   rule vacant : nu(bind a. nil()) <=> nil();
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
    │
-   ╰ note: `Vacant` is refused with RulesOverlapCondition, as its expectation states
+   ├ note: `Vacant` is refused with RulesOverlapCondition, as its expectation states
+   ╰ help: add a rule that joins the overlap under its condition
 
 error[IllFormedDescription]: the rule holds only of an instance of `p` that does not name the atom it crosses, and the operation `out` takes an atom, so a term can name one: no rewriting step decides that condition yet
    ╭▸ corpus/pathological/desc/atom-occurrence.gandr:53:3

@@ -4,7 +4,8 @@ error[ModelAmbiguous]: more than one module in scope answers the model implicit 
 20 │ def looselyEqual() -> Bool { 3 == 3 }
    │                              ━━━━━━ a model implicit more than one module answers
    │
-   ╰ note: `looselyEqual` is refused with ModelAmbiguous, as its expectation states
+   ├ note: `looselyEqual` is refused with ModelAmbiguous, as its expectation states
+   ╰ help: supply the intended model by name in brackets before the parentheses
 
 error[UnresolvedName]: `Nowhere` is not defined
    ╭▸ corpus/pathological/modules/model-include.gandr:25:11

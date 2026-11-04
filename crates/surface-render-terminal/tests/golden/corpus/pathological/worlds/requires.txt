@@ -22,7 +22,8 @@ error[UninterfacedMember]: the theory cannot stand as the interface its handler 
 48 │ pub world modelled requires [m : Magma];
    │                                  ━━━━━ a member the handler cannot read as an operation
    │
-   ╰ note: `modelled` is refused with UninterfacedMember, as its expectation states
+   ├ note: `modelled` is refused with UninterfacedMember, as its expectation states
+   ╰ help: give the theory an unfixed carrier sort and operations that return it
 
 error[UninterfacedMember]: the theory cannot stand as the interface its handler reads at `V`, which is a sort the operations do not return, which the manifest leaves unfixed
    ╭▸ corpus/pathological/worlds/requires.gandr:52:37
@@ -30,7 +31,8 @@ error[UninterfacedMember]: the theory cannot stand as the interface its handler 
 52 │ pub world unfixed requires [store : Store];
    │                                     ━━━━━ a member the handler cannot read as an operation
    │
-   ╰ note: `unfixed` is refused with UninterfacedMember, as its expectation states
+   ├ note: `unfixed` is refused with UninterfacedMember, as its expectation states
+   ╰ help: give the theory an unfixed carrier sort and operations that return it
 
 error[DuplicateDefinition]: `store` is defined twice
    ╭▸ corpus/pathological/worlds/requires.gandr:56:63

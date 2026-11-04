@@ -7,4 +7,5 @@ error[RulesNonLinear]: this rule's left side names one variable twice: a rule ma
 8 │ ┃   };
   │ ┗━━━┛ a rule matching one variable twice
   │
-  ╰ note: `Copy` is refused with RulesNonLinear, as its expectation states
+  ├ note: `Copy` is refused with RulesNonLinear, as its expectation states
+  ╰ help: use each variable once on the rule's left side

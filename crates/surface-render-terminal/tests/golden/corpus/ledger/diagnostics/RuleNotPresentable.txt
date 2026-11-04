@@ -4,4 +4,5 @@ error[RuleNotPresentable]: these rules do not present the datatype
 3 │ data Tally : Type where {
   │              ━━━━ rules that do not present the datatype
   │
-  ╰ note: `Tally` is refused with RuleNotPresentable, as its expectation states
+  ├ note: `Tally` is refused with RuleNotPresentable, as its expectation states
+  ╰ help: write each rule with a declared constructor at its head and its declared field count
