@@ -1836,13 +1836,6 @@ corpus/model/desc/binding-field.gandr STE-8.1 411c912b1e70465f
 corpus/model/desc/binding-field.gandr STE-6.6 0c4541a15f802f8d
 corpus/model/desc/binding-field.gandr STE-6.4 7ffeb0f63edb2700
 corpus/model/desc/binding-field.gandr STE-6.5 7a921b74981f7f9a
-corpus/model/desc/cwf.gandr STE-3.2 1d69b1918919ced8
-corpus/model/desc/cwf.gandr STE-3.2 8cb858773b867ead
-corpus/model/desc/cwf.gandr STE-3.2 e2287d09c4929e4f
-corpus/model/desc/cwf.gandr STE-3.2 f738d8378b5c2bb5
-corpus/model/desc/cwf.gandr STE-2.1 5212441ab8352fa4
-corpus/model/desc/cwf.gandr STE-3.5 cdff86d36ca9a426
-corpus/model/desc/cwf.gandr STE-6.3 d8ce4e6e060a263a
 corpus/model/desc/derive-eq-serialize.gandr STE-3.2 75bd034e69da189f
 corpus/model/desc/derive-eq-serialize.gandr STE-6.3 75bd034e69da189f
 corpus/model/desc/derive-eq-serialize.gandr STE-6.4 7ffeb0f63edb2700
@@ -4575,12 +4568,6 @@ corpus/pathological/desc/binding-field.gandr STE-6.3 ed75d2415a756466
 corpus/pathological/desc/binding-field.gandr STE-4.3 f13b732f5bff2654
 corpus/pathological/desc/binding-field.gandr STE-6.6 30f20ca00478d78c
 corpus/pathological/desc/binding-field.gandr STE-6.4 7ffeb0f63edb2700
-corpus/pathological/desc/cwf.gandr STE-3.2 6f0714047ac30116
-corpus/pathological/desc/cwf.gandr STE-3.2 b7374c864267fdf8
-corpus/pathological/desc/cwf.gandr STE-3.2 d9bc1996b108ae0e
-corpus/pathological/desc/cwf.gandr STE-3.2 e43881a563a50970
-corpus/pathological/desc/cwf.gandr STE-2.1 5212441ab8352fa4
-corpus/pathological/desc/cwf.gandr STE-6.5 6f0714047ac30116
 corpus/pathological/desc/freshness.gandr STE-3.6 2ea5bc8addaa7e9a
 corpus/pathological/desc/freshness.gandr STE-3.4 2ea5bc8addaa7e9a
 corpus/pathological/desc/freshness.gandr STE-3.5 2ea5bc8addaa7e9a

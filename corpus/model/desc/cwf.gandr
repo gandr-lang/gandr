@@ -44,7 +44,7 @@ pub theory CwF where {
   oper subTy : (a : Ty(g), s : Sub(d, g)) --> Ty(d);
   /// Substitution in a term: it moves the term along `s`, to its moved type.
   oper subTm : (t : Tm(g, a), s : Sub(d, g)) --> Tm(d, subTy(a, s));
-  /// Weakening: it forgets the newest type.
+  /// The projection that forgets the newest type.
   oper p : (a : Ty(g)) --> Sub(ext(g, a), g);
   /// The newest variable.
   oper q : (a : Ty(g)) --> Tm(ext(g, a), subTy(a, p(a)));
@@ -104,7 +104,8 @@ pub module Standard : Model(CwF) where {
     return fun (z) { z.1 }
   }
 
-  /// Pairing: each point goes to its image and the section's value there.
+  /// The pair of a function and a section: each point goes to its image and
+  /// to the section's value there.
   def pair(
     d : Type,
     g : Type,

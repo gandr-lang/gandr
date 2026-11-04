@@ -1,5 +1,5 @@
-// The rule reading refuses the laws of a category with families for now.
-// It carries no index at a sort that the laws rewrite (Huang and Angiuli,
+// The checker refuses the laws of a category with families for now. The cell
+// layer carries no index at a sort that the laws rewrite (Huang and Angiuli,
 // _Fat cell structures and generalized algebraic theories_,
 // doi:10.4230/LIPIcs.LICS.2026.58, § 1.1).
 //
