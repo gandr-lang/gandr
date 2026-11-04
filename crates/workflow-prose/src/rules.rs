@@ -408,12 +408,14 @@ fn words(
 /// # Specification
 /// - requires: `sentence` is a sentence of the passage `readings` was taken
 ///   from.
-/// - ensures: in the order of [`RULES`], [`Rule::Length`] when the sentence
-///   holds more than 25 words, a word being a token in prose or quotation that
-///   is not punctuation, a space or a symbol, and each code span counting as
-///   one; [`Rule::Semicolon`] when a `;` in prose has a word after it;
-///   [`Rule::Dash`] when an em or en dash in prose has a verb or an auxiliary
-///   in prose after it.
+/// - ensures: in the order of [`RULES`], [`Rule::ProcedureLength`] when the
+///   root is `VB` and has no `nsubj` or `nsubjpass` child and the sentence
+///   holds more than [`PROCEDURE_WORDS`] words. [`Rule::Length`] when that root
+///   test fails and the sentence holds more than [`WORDS`] words. A word is a
+///   token in prose or quotation that is not punctuation, a space or a symbol,
+///   and each code span counts as one. [`Rule::Semicolon`] when a `;` in prose
+///   has a word after it. [`Rule::Dash`] when an em or en dash in prose has a
+///   verb or an auxiliary in prose after it.
 /// - provides: the verdict a body or a comment adds to a sentence.
 /// - fails: never.
 /// - panics: none.
@@ -477,15 +479,17 @@ fn clauses(
 /// - requires: `sentence` is a sentence of the passage `readings` was taken
 ///   from.
 /// - ensures: in the order of [`RULES`], [`Rule::Passive`] when a token in
-///   prose is `auxpass` and its head's lemma is not on the passive list;
-///   [`Rule::Tense`] when the root, in prose, is tagged `VBD`, or `VBN` with no
-///   present-tense `auxpass` child. A `source` of [`Source::Body`] adds the
-///   rules [`clauses`] states. Every other source adds [`Rule::NounStack`] when
-///   more than three consecutive tokens in prose are `NOUN` or `PROPN`;
-///   [`Rule::IngMain`] when the root, in prose, is tagged `VBG`;
-///   [`Rule::Glossary`] when a token in prose has a lemma the glossary holds
-///   and a coarse tag its part of speech does not admit. A `source` of
-///   [`Source::Comment`] adds the rules [`clauses`] states after these.
+///   prose is `auxpass` and its head's lemma is not on the passive list.
+///   [`Rule::Tense`] when a token in prose is `aux` and its lemma is `will`,
+///   `shall`, `have` or `has`, or the root, in prose, is tagged `VBD`, or `VBN`
+///   with no present-tense `auxpass` child. A `source` of [`Source::Body`] adds
+///   the rules [`clauses`] states. Every other source adds [`Rule::NounStack`]
+///   when more than three consecutive tokens in prose are `NOUN` or `PROPN`.
+///   [`Rule::IngMain`] when the root, in prose, is tagged `VBG`, or a token in
+///   prose is tagged `VBG` and its dependency is `amod`. [`Rule::Glossary`]
+///   when a token in prose has a lemma the glossary holds and a coarse tag its
+///   part of speech does not admit. A `source` of [`Source::Comment`] adds the
+///   rules [`clauses`] states after these.
 /// - provides: the verdict of one sentence.
 /// - fails: never.
 /// - panics: none.
