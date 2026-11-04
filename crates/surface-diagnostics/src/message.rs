@@ -1780,6 +1780,18 @@ pub mod tests
                 sort: FragmentSort::Value,
                 boundary: FragmentBoundary::Arity(OperandCount::from(0_usize)),
             },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Held,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Unannotated,
+            },
             LoweringRefusal::BareFeedback { span, rule: span },
             LoweringRefusal::IllFormedDescription {
                 span,

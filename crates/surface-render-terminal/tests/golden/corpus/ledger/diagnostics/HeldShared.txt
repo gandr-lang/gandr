@@ -11,4 +11,5 @@ error[HeldShared]: `var[1]` enters a value made in place — a constructor, a li
 6 │ │ }
   │ └─┘ checked against `Integer => Unit`; while checking the body of this thunk
   │
-  ╰ note: `entered` is refused with HeldShared, as its expectation states
+  ├ note: `entered` is refused with HeldShared, as its expectation states
+  ╰ help: assign an in-place value to the `var[1]` hold

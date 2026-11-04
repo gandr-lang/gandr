@@ -135,4 +135,5 @@ error[Elsewhere]: this value lives at another world; open it there with `let x a
 105 │ │ }
     │ └─┘ checked against `Integer => () => Integer`; while checking the body of this thunk
     │
-    ╰ note: `located` is refused with Elsewhere, as its expectation states
+    ├ note: `located` is refused with Elsewhere, as its expectation states
+    ╰ help: open the value at its binder with `let x at w`

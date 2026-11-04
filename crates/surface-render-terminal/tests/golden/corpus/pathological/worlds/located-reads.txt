@@ -15,7 +15,8 @@ error[Elsewhere]: this value lives at another world; open it there with `let x a
 16 │ │ }
    │ └─┘ checked against `Seat.Report at seat => Seat.Report`; while checking the body of this thunk
    │
-   ╰ note: `readHere` is refused with Elsewhere, as its expectation states
+   ├ note: `readHere` is refused with Elsewhere, as its expectation states
+   ╰ help: open the value at its binder with `let x at w`
 
 error[OpenedElsewhere]: `let x at w` opens a handle at the world it stands at; write that world after `at`
    ╭▸ corpus/pathological/worlds/located-reads.gandr:23:3

@@ -12,4 +12,5 @@ error[HeldShared]: `var[1]` enters a value made in place — a constructor, a li
 22 │ │ }
    │ └─┘ checked against `+U (-F [Partial] Integer)`; while checking the body of this thunk
    │
-   ╰ note: `heldCopy` is refused with HeldShared, as its expectation states
+   ├ note: `heldCopy` is refused with HeldShared, as its expectation states
+   ╰ help: assign an in-place value to the `var[1]` hold

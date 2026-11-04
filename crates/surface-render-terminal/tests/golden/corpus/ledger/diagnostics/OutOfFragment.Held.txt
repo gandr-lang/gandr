@@ -4,4 +4,5 @@ error[OutOfFragment.Held]: an `access` lends, and an assignment writes, a held v
 12 │   n.bump()
    │   ━ not a value a hold holds
    │
-   ╰ note: `unheld` is refused with OutOfFragment.Held, as its expectation states
+   ├ note: `unheld` is refused with OutOfFragment.Held, as its expectation states
+   ╰ help: write a value held by a `var` statement

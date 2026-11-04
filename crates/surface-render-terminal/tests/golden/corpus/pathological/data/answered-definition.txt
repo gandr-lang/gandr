@@ -4,4 +4,5 @@ error[OutOfFragment.Unannotated]: the call expression needs a type annotation
 13 │ def bound(T : Type -> Type[-]) -> T(Integer) { return Some(1) }
    │                                                       ━━━━━━━ needs a stated type
    │
-   ╰ note: `bound` is refused with OutOfFragment.Unannotated, as its expectation states
+   ├ note: `bound` is refused with OutOfFragment.Unannotated, as its expectation states
+   ╰ help: write a type annotation for the form

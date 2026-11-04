@@ -63,7 +63,8 @@ error[OutOfFragment.Held]: an `access` lends, and an assignment writes, a held v
 45 │   ys.first() as w { pure w }
    │   ━━ not a value a hold holds
    │
-   ╰ note: `unheld` is refused with OutOfFragment.Held, as its expectation states
+   ├ note: `unheld` is refused with OutOfFragment.Held, as its expectation states
+   ╰ help: write a value held by a `var` statement
 
 error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
    ╭▸ corpus/pathological/control/accessor-method.gandr:52:27
