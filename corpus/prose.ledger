@@ -5986,6 +5986,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/desc/rules-diver
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/rules-diverge.txt STE-5.3 cc177a90de9170b3
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/rules-never-complete.txt STE-5.3 b403161dcd34cb87
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/second-order-signatures.txt STE-5.3 a0cb84b173472244
+crates/surface-render-terminal/tests/golden/corpus/pathological/desc/stlc.txt STE-5.3 66f046af38530338
 crates/surface-render-terminal/tests/golden/corpus/pathological/higher-cells/ua-by-hand-unnatural.txt STE-5.3 4797678d36947fb9
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/atom-identity.txt STE-5.3 02a6dd8aa9cfc435
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/cell-not-a-loop.txt STE-5.3 8177cf64e07d14fb

@@ -1,24 +1,23 @@
-// Normalisation by evaluation of the simply typed lambda calculus stops at
-// five refusals. Each declaration here is the smallest step of the evaluator
-// that meets one of them, and each names the unit that removes it.
+// The steps of normalisation by evaluation for the simply typed lambda
+// calculus that the checker refuses today.
 //
-// | Step | Refusal | Unit |
-// | --- | --- | --- |
-// | a renaming past one more entry | `OutOfFragment.Unannotated` | #5035 |
-// | a renaming lifted under one more entry | `TypeMismatch` | #3403 |
-// | the renaming of neutrals and normal forms | `OutOfFragment.instantiation_expression.computation` | #5036 |
-// | an environment as a pair type | `ShapeMismatch` | #5034 |
-// | a lookup in an environment | `NonExhaustiveMatch` | #3402 |
-// | reflection beside reification | `ShapeMismatch` | #5036 |
+// The evaluator, `nf` and the evaluation model need every step. Each refusal
+// names the unit that removes it, so the rung waits on those units only.
 //
-// The evaluator, `nf` and the evaluation model need every step.
+// Each declaration is the smallest step of the evaluator that meets one
+// refusal. The model source declares the syntax and the semantic types.
 //
 // - see: #5032
+// - see: #5035
+// - see: #3403
+// - see: #5036
+// - see: #5034
+// - see: #3402
 
 /// The syntax and the semantic types that the model source declares.
 import "../../model/desc/stlc.gandr";
 
-/// A renaming past one more entry. The constructor `There` is the body of a
+/// The renamer past one more entry. The constructor `There` is the body of a
 /// lambda, where it reads no stated type.
 @[ refuses("OutOfFragment.Unannotated") ]
 def wk(d : Ctx, g : Ctx, b : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, b), g) {
@@ -38,7 +37,7 @@ def liftAt(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g), b : ObjTy, x : Var(Extend
   }
 }
 
-/// A renaming lifted under one more entry. It calls `liftAt` and checks.
+/// The renamer under one more entry. It calls `liftAt` and checks.
 def lift(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, a), Extend(g, a)) {
   return fun (b) { return fun (x) { liftAt(d, g, a, r, b, x) } }
 }
@@ -46,7 +45,7 @@ def lift(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, a), Extend
 /// The renaming of neutrals and normal forms. Each descends on its third
 /// parameter, whose type reads the two before it.
 rec {
-  /// Renaming in a neutral.
+  /// The renamer of a neutral.
   @[ refuses("OutOfFragment.instantiation_expression.computation") ]
   def rec renNe(g : Ctx, a : ObjTy, t : Ne(g, a), d : Ctx, r : Ren(d, g)) -> Ne(d, a) {
     match t {
@@ -58,7 +57,7 @@ rec {
       }
     }
   }
-  /// Renaming in a normal form.
+  /// The renamer of a normal form.
   @[ refuses("OutOfFragment.instantiation_expression.computation") ]
   def rec renNf(g : Ctx, a : ObjTy, t : Nf(g, a), d : Ctx, r : Ren(d, g)) -> Nf(d, a) {
     match t {
@@ -87,10 +86,10 @@ def extendEnv(g : Ctx, a : ObjTy, d : Ctx, rho : envs(g, d), v : sem(a, d)) -> e
   d
 ) { (rho, v) }
 
-/// A variable looked up in an environment. The inner case does not prune
+/// The lookup of a variable in an environment. The inner case does not prune
 /// `ENil`, whose index `Empty` is apart from `Extend(h, b)`.
 @[ refuses("NonExhaustiveMatch") ]
-def rec look(g : Ctx, a : ObjTy, x : Var(g, a), d : Ctx, rho : Env(g, d)) -> sem(a, d) {
+def rec look(g : Ctx, a : ObjTy, x : Var(g, a), d : Ctx, rho : SemEnv(g, d)) -> sem(a, d) {
   match x {
     Here(_h, _b) => match rho {
       ECons(_h, _b, _d, _rest, v) => v
