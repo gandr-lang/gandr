@@ -2994,6 +2994,25 @@ struct InPayload(bool);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct StatedApart(bool);
 
+/// Whether a binder's written type holds a function: a thunk type or the
+/// bridge, read through each type family it names.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: carries only the flag.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — the flag holds no node; `holds_function` sets it and
+///   `static_application` reads it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a binder at a type member standing for the bridge is
+///   called where a type is read.
+/// - witness: `lower::tests::a_binder_at_a_family_standing_for_a_function_unquotes_its_call_522`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct HoldsFunction(bool);
+
 /// One form being classified: where it stands, what it is called, and how
 /// its position reads it.
 ///
@@ -15200,7 +15219,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Resolved::Binder(_) => {
                 called
                     && match declared {
-                        Maybe::Present(written) => self.holds_function(written)?,
+                        Maybe::Present(written) => self.holds_function(written)?.0,
                         Maybe::Absent(binder_type::Absent::Untyped) => true,
                         Maybe::Absent(
                             binder_type::Absent::Operand | binder_type::Absent::Instance,
@@ -15300,6 +15319,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
     ///   allowance.
     /// - panics: none.
+    /// - executable: none — the answer is a walk of the plans and the tree,
+    ///   which a predicate could check only by repeating the walk.
     ///
     /// # Errors
     /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
@@ -15316,7 +15337,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn holds_function(
         &mut self,
         written: NodeIndex,
-    ) -> Result<bool, LoweringRefusal<'source>>
+    ) -> Result<HoldsFunction, LoweringRefusal<'source>>
     {
         let mut position = written;
         loop {
@@ -15324,22 +15345,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let Some(&Plan::Expansion(family, _)) = self.plans.get(position) {
                 let Some(member) = self.collected.families.get(family.0)
                 else {
-                    return Ok(false);
+                    return Ok(HoldsFunction(false));
                 };
                 position = member.defined.node;
                 continue;
             }
             let Some(node) = self.tree.node(position)
             else {
-                return Ok(false);
+                return Ok(HoldsFunction(false));
             };
-            return Ok(matches!(
+            return Ok(HoldsFunction(matches!(
                 shape_of(self.pbg, node),
                 Ok(Shape::Form {
                     former: Former::ThunkType | Former::ValueFunctionType,
                     ..
                 })
-            ));
+            )));
         }
     }
 
