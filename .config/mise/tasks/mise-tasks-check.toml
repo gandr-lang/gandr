@@ -2063,10 +2063,12 @@ fi
 {% endraw %}'''
 
 # The issue automations' decisions. An epic closes itself when every issue
-# it is blocked by is closed, never with none (#3398): `.config/epics/close.jq`
-# decides what an epic the closed issue blocked gets, each case in
-# `.config/epics/cases.json` an epic, the issues it is blocked by and the
-# decision it must give; `link.jq` decides each open epic's members by body
+# it is blocked by and every sub-issue it holds is closed, never with none
+# (#3398, #4972): `.config/epics/close.jq` decides what an epic the closed
+# issue blocked or sat under gets, and which open sub-issues it links as
+# blocked-by issues, each case in `.config/epics/cases.json` an epic, the
+# issues it is blocked by, its sub-issues and the decision it must give;
+# `link.jq` decides each open epic's members by body
 # reference for `epics:link`, each case in `.config/epics/link.json` the
 # issues and the members. An issue is filed with a `kind:`
 # and an `area:` label (#2538): `.config/triage/triage.jq` decides whether

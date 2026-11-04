@@ -132,7 +132,7 @@ deps_set_block() {
 
 # Make $3 a sub-issue of the epic $2 unless it is, and the epic blocked by it
 # (#2902, #3398): the epic's page shows its work, and the epic closes once
-# every issue it is blocked by is closed.
+# every issue it is blocked by and every sub-issue it holds is closed.
 deps_link() {
   local repo=$1 epic=$2 child=$3 parent
   parent=$(gh api "repos/$repo/issues/$child" --jq '.parent_issue_url // "" | sub(".*/"; "")')

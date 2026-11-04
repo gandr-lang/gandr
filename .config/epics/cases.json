@@ -23,7 +23,7 @@
         }
       ]
     },
-    "output": "close\tEvery issue this epic is blocked by is closed, the last #12: #11, #12. Reopen it to add a unit."
+    "output": "close\tEvery issue this epic is blocked by or holds as a sub-issue is closed, the last #12: #11, #12. Reopen it to add a unit.\t"
   },
   {
     "name": "#3398: an open issue the epic is blocked by keeps it open, named, in this repository or another",
@@ -54,10 +54,10 @@
         }
       ]
     },
-    "output": "keep\t#10: #11, gandr-lang/domhringr#5 still open"
+    "output": "keep\t#10: #11, gandr-lang/domhringr#5 still open\t"
   },
   {
-    "name": "#3398: an epic blocked by nothing is never closed: its units are not linked yet",
+    "name": "#3398: an epic blocked by nothing and holding no sub-issue is never closed: its units are not linked yet",
     "input": {
       "repo": "gandr-lang/gandr",
       "closed": 12,
@@ -67,9 +67,10 @@
         "state": "open",
         "labels": ["kind:epic", "area:workflow"]
       },
-      "blocked_by": []
+      "blocked_by": [],
+      "sub_issues": []
     },
-    "output": "keep\t#10 is blocked by nothing: an epic closes only once its units are linked"
+    "output": "keep\t#10 is blocked by nothing and holds no sub-issue: an epic closes only once its units are linked\t"
   },
   {
     "name": "#3398: an issue blocked that is not an epic is kept",
@@ -90,7 +91,7 @@
         }
       ]
     },
-    "output": "keep\t#10 is not an epic"
+    "output": "keep\t#10 is not an epic\t"
   },
   {
     "name": "#3398: an epic already closed is kept, as a sibling closing in the same seconds leaves it",
@@ -116,7 +117,7 @@
         }
       ]
     },
-    "output": "keep\t#10 is closed"
+    "output": "keep\t#10 is closed\t"
   },
   {
     "name": "#3398: an epic in another repository is listed, not closed",
@@ -137,7 +138,7 @@
         }
       ]
     },
-    "output": "list\texample-org/plans#400 is in another repository"
+    "output": "list\texample-org/plans#400 is in another repository\t"
   },
   {
     "name": "#3398: #2765's case, an epic whose units are open by body reference, stays open once they block it",
@@ -168,6 +169,160 @@
         }
       ]
     },
-    "output": "keep\t#2765: #2763, #533 still open"
+    "output": "keep\t#2765: #2763, #533 still open\t"
+  },
+  {
+    "name": "#4972: #4306's case, an epic whose blocked-by issues are closed and whose sub-issues are open stays open, and each unlinked sub-issue is linked",
+    "input": {
+      "repo": "gandr-lang/gandr",
+      "closed": 4382,
+      "epic": {
+        "number": 4306,
+        "repository": "gandr-lang/gandr",
+        "state": "open",
+        "labels": ["area:surface", "kind:epic"]
+      },
+      "blocked_by": [
+        {
+          "number": 4382,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        }
+      ],
+      "sub_issues": [
+        {
+          "number": 4382,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        },
+        {
+          "number": 4573,
+          "repository": "gandr-lang/gandr",
+          "state": "open"
+        },
+        {
+          "number": 4574,
+          "repository": "gandr-lang/gandr",
+          "state": "open"
+        }
+      ]
+    },
+    "output": "keep\t#4306: #4573, #4574 still open\t4573 4574"
+  },
+  {
+    "name": "#4972: #3955's case, an open epic under an epic keeps it open and is linked",
+    "input": {
+      "repo": "gandr-lang/gandr",
+      "closed": 3960,
+      "epic": {
+        "number": 3955,
+        "repository": "gandr-lang/gandr",
+        "state": "open",
+        "labels": ["kind:epic", "area:workflow"]
+      },
+      "blocked_by": [
+        {
+          "number": 3960,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        }
+      ],
+      "sub_issues": [
+        {
+          "number": 4013,
+          "repository": "gandr-lang/gandr",
+          "state": "open"
+        }
+      ]
+    },
+    "output": "keep\t#3955: #4013 still open\t4013"
+  },
+  {
+    "name": "#4972: an open sub-issue the epic is already blocked by keeps it open and is not linked again",
+    "input": {
+      "repo": "gandr-lang/gandr",
+      "closed": 12,
+      "epic": {
+        "number": 10,
+        "repository": "gandr-lang/gandr",
+        "state": "open",
+        "labels": ["kind:epic", "area:workflow"]
+      },
+      "blocked_by": [
+        {
+          "number": 11,
+          "repository": "gandr-lang/gandr",
+          "state": "open"
+        },
+        {
+          "number": 12,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        }
+      ],
+      "sub_issues": [
+        {
+          "number": 11,
+          "repository": "gandr-lang/gandr",
+          "state": "open"
+        }
+      ]
+    },
+    "output": "keep\t#10: #11 still open\t"
+  },
+  {
+    "name": "#4972: an epic blocked by nothing whose sub-issues are all closed closes, naming them",
+    "input": {
+      "repo": "gandr-lang/gandr",
+      "closed": 12,
+      "epic": {
+        "number": 10,
+        "repository": "gandr-lang/gandr",
+        "state": "open",
+        "labels": ["kind:epic", "area:workflow"]
+      },
+      "blocked_by": [],
+      "sub_issues": [
+        {
+          "number": 11,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        },
+        {
+          "number": 12,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        }
+      ]
+    },
+    "output": "close\tEvery issue this epic is blocked by or holds as a sub-issue is closed, the last #12: #11, #12. Reopen it to add a unit.\t"
+  },
+  {
+    "name": "#4972: an open sub-issue in another repository keeps the epic open and is not linked, as this repository's token cannot link it",
+    "input": {
+      "repo": "gandr-lang/gandr",
+      "closed": 12,
+      "epic": {
+        "number": 10,
+        "repository": "gandr-lang/gandr",
+        "state": "open",
+        "labels": ["kind:epic", "area:workflow"]
+      },
+      "blocked_by": [
+        {
+          "number": 12,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        }
+      ],
+      "sub_issues": [
+        {
+          "number": 5,
+          "repository": "gandr-lang/domhringr",
+          "state": "open"
+        }
+      ]
+    },
+    "output": "keep\t#10: gandr-lang/domhringr#5 still open\t"
   }
 ]
