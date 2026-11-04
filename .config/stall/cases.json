@@ -1989,6 +1989,135 @@
     "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":106,\"line\":\"STALL seat-idle triage 106m: no open pull request and no claim it holds; run `mise run claim:next triage`\"}],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"triage:seat-idle\":1793263620},\"paged\":{\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
   },
   {
+    "name": "#5122: a hold on the stack top standing the claim window pages the holder's lane once, with no pull request",
+    "program": "detect.jq",
+    "input": {
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "unfiled": 10,
+        "idle": 20,
+        "held": 240,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [],
+      "claimed": [
+        {
+          "lane": "toolchain",
+          "areas": ["area:toolchain"]
+        }
+      ],
+      "seats": ["toolchain"],
+      "areas": {
+        "toolchain": ["toolchain"]
+      },
+      "now": 1793274400,
+      "hold": {
+        "holder": "toolchain-5122-top-hold",
+        "head": "0123456789abcdef0123",
+        "began": 1793260000,
+        "deadline": 1793263600
+      }
+    },
+    "output": "{\"findings\":[{\"kind\":\"top-held\",\"number\":null,\"lane\":\"toolchain\",\"placed\":true,\"age\":240,\"line\":\"STALL top-held toolchain 240m: `toolchain-5122-top-hold` holds the stack top at 0123456789ab since 2026-10-29T07:46:40Z, and every other `pr:open` waits on it\"}],\"pages\":[{\"kind\":\"top-held\",\"number\":null,\"lane\":\"toolchain\",\"placed\":true,\"age\":240,\"line\":\"STALL top-held toolchain 240m: `toolchain-5122-top-hold` holds the stack top at 0123456789ab since 2026-10-29T07:46:40Z, and every other `pr:open` waits on it\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"toolchain:top-held\":{\"first\":1793274400,\"last\":1793274400}},\"stalled\":{}}"
+  },
+  {
+    "name": "#5122: a hold on the stack top inside the claim window is no finding",
+    "program": "detect.jq",
+    "input": {
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "unfiled": 10,
+        "idle": 20,
+        "held": 240,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [],
+      "claimed": [
+        {
+          "lane": "toolchain",
+          "areas": ["area:toolchain"]
+        }
+      ],
+      "seats": ["toolchain"],
+      "areas": {
+        "toolchain": ["toolchain"]
+      },
+      "now": 1793274399,
+      "hold": {
+        "holder": "toolchain-5122-top-hold",
+        "head": "0123456789abcdef0123",
+        "began": 1793260000,
+        "deadline": 1793263600
+      }
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{},\"stalled\":{}}"
+  },
+  {
+    "name": "#5122: a top-held finding paged long ago is never paged again and stalls nothing",
+    "program": "detect.jq",
+    "input": {
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "unfiled": 10,
+        "idle": 20,
+        "held": 240,
+        "escalate": 10,
+        "repage": 10
+      },
+      "prs": [],
+      "claimed": [
+        {
+          "lane": "toolchain",
+          "areas": ["area:toolchain"]
+        }
+      ],
+      "seats": ["toolchain"],
+      "areas": {
+        "toolchain": ["toolchain"]
+      },
+      "now": 1793278000,
+      "hold": {
+        "holder": "toolchain-5122-top-hold",
+        "head": "0123456789abcdef0123",
+        "began": 1793260000,
+        "deadline": 1793263600
+      },
+      "paged": {
+        "toolchain:top-held": {
+          "first": 1793274400,
+          "last": 1793274400
+        }
+      }
+    },
+    "output": "{\"findings\":[{\"kind\":\"top-held\",\"number\":null,\"lane\":\"toolchain\",\"placed\":true,\"age\":300,\"line\":\"STALL top-held toolchain 300m: `toolchain-5122-top-hold` holds the stack top at 0123456789ab since 2026-10-29T07:46:40Z, and every other `pr:open` waits on it\"}],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"toolchain:top-held\":{\"first\":1793274400,\"last\":1793274400}},\"stalled\":{}}"
+  },
+  {
     "name": "#3959: a seated lane idle while the focus holds no unowned member names the focus, and the coordinator assigns it",
     "program": "detect.jq",
     "input": {
@@ -2483,6 +2612,19 @@
       "line": "STALL seat-idle theory 20m: no open pull request and no claim it holds; run `mise run claim:next theory`"
     },
     "output": "STALL seat-idle theory 20m: no open pull request and no claim it holds; run `mise run claim:next theory`. Decide: page the seat to claim; assign its next work"
+  },
+  {
+    "name": "#5122: a hold on the stack top past the claim window pages the coordinator to page its seat or delete it",
+    "program": "decide.jq",
+    "input": {
+      "kind": "top-held",
+      "number": null,
+      "lane": "toolchain",
+      "placed": true,
+      "age": 240,
+      "line": "STALL top-held toolchain 240m: `toolchain-5122-top-hold` holds the stack top at 0123456789ab since 2026-10-29T07:46:40Z, and every other `pr:open` waits on it"
+    },
+    "output": "STALL top-held toolchain 240m: `toolchain-5122-top-hold` holds the stack top at 0123456789ab since 2026-10-29T07:46:40Z, and every other `pr:open` waits on it. Decide: page the seat to open or release it; delete the hold: `git push origin :refs/pr-stack/hold`"
   },
   {
     "name": "#5116: a cancelled check on a head the CI depth gate stopped reads pending, a failure on it still fails, and a mark naming another head leaves its cancelled check failed (#5074)",

@@ -21,6 +21,8 @@ stall_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/stall.json"
 stall_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/stall.json"
 source "$stall_dir/../claims/deps.bash"
 source "$stall_dir/../service/service.bash"
+# shellcheck source=../pr-stack/hold.bash
+source "$stall_dir/../pr-stack/hold.bash"
 
 # The configuration, `{}` when there is none.
 stall_configuration() {
@@ -36,10 +38,11 @@ stall_thresholds() {
 # the memory `$3` (`{seen, paged}`): `detect.jq`'s answer. The lanes a seat
 # holds are the configuration's `page.seats`, each lane's areas
 # `.config/issues/lanes.toml`'s (#3822). The programme focus is `deps_focus`'s,
-# its open members no seat owns (#3959). Fails, printing nothing on stdout,
-# when a read fails.
+# its open members no seat owns (#3959). The stack top's hold is
+# `top_hold_reading`'s (#5122). Fails, printing nothing on stdout, when a read
+# fails.
 stall_reading() {
-  local repo=$1 trunk=$2 memory=$3 required raw areas focus
+  local repo=$1 trunk=$2 memory=$3 required raw areas focus hold
   required=$(gh api "repos/$repo/rules/branches/$trunk" \
     --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique') || return 1
   raw=$(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F query=@"$stall_dir/query.graphql") || return 1
@@ -47,11 +50,12 @@ stall_reading() {
   focus=$(deps_focus "$repo" | jq -c 'if . == null then null else {epics, open: [.members[]
     | select(.state == "open" and any(.labels[]; IN("kind:epic", "status:claimed", "status:deferred", "status:discarded")) == false)
     | .number]} end') || return 1
+  hold=$(top_hold_reading) || return 1
   jq -c '.data.repository' <<< "$raw" | jq -c -L "$stall_dir/../claims" -f "$stall_dir/facts.jq" \
     | jq -c --argjson now "$(date +%s)" --arg trunk "$trunk" --argjson required "$required" \
       --argjson thresholds "$(stall_thresholds)" --argjson config "$(stall_configuration)" --argjson memory "$memory" \
-      --argjson areas "$areas" --argjson focus "$focus" \
-      '{now: $now, trunk: $trunk, required: $required, thresholds: $thresholds, lanes: $config.lanes, prs: .prs, merged: .merged, filed: .filed, claimed: .claimed, seats: ($config.page.seats // {} | keys), areas: $areas, focus: $focus, seen: $memory.seen, paged: $memory.paged, stalled: $memory.stalled}' \
+      --argjson areas "$areas" --argjson focus "$focus" --argjson hold "$hold" \
+      '{now: $now, trunk: $trunk, required: $required, thresholds: $thresholds, lanes: $config.lanes, prs: .prs, merged: .merged, filed: .filed, claimed: .claimed, seats: ($config.page.seats // {} | keys), areas: $areas, focus: $focus, hold: $hold, seen: $memory.seen, paged: $memory.paged, stalled: $memory.stalled}' \
     | jq -c -f "$stall_dir/detect.jq"
 }
 

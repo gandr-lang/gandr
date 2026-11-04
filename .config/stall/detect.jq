@@ -53,6 +53,12 @@
 #                  stalled or paged again. With a programme focus set and no
 #                  open member unowned (#3959), the line names the focus: no
 #                  claim serves the lane, so the coordinator assigns it.
+#   top-held       the stack top's hold (#5122, `.config/pr-stack/hold.bash`)
+#                  standing `held` minutes since it began: its holder renews
+#                  it at each `pr:open` and does not push, and every other
+#                  `pr:open` waits on it. It has no pull request, so it is
+#                  keyed by the holder's lane, paged once while it lasts and
+#                  never stalled or paged again.
 # A pull request's lane is the lane its first closing issue's claim marker
 # names (#4524): the lane that claimed the unit holds what lands it, whatever
 # the branch is called. With no claimed closing issue, it is the longest lane
@@ -62,7 +68,8 @@
 # `stall:watch` pages each new finding to its lane's seat and to the
 # coordinator at once (#2972). A lane outside `lanes`, when given, is one no
 # seat holds: its finding is unplaced, and `stall:watch` files it as an issue.
-# A `seat-idle` lane is a seat's by its reading, so always placed.
+# A `seat-idle` lane is a seat's by its reading, and a `top-held` lane is a
+# working seat's, so both are always placed.
 #
 # A finding standing `escalate` minutes after it was first paged stalls its
 # pull request: `stall:watch` writes the `stall` comment and adds the
@@ -78,8 +85,8 @@
 #   trunk       the default branch;
 #   required    the trunk's required contexts;
 #   thresholds  `{root_unqueued, ejections, ejection_window, depth, red,
-#               conflicting, base_blocked, unfiled, idle, escalate, repage}`,
-#               the minutes, counts and depth above;
+#               conflicting, base_blocked, unfiled, idle, held, escalate,
+#               repage}`, the minutes, counts and depth above;
 #   lanes       the lanes a finding can be placed in; absent places every
 #               lane;
 #   prs         `facts.jq`'s pull requests;
@@ -93,6 +100,8 @@
 #   focus       the programme focus, `{epics, open}`, `open` its open members
 #               no seat owns, not epics, not deferred or discarded; absent or
 #               null reads as none;
+#   hold        the stack top's hold, `{holder, head, began, deadline}`, the
+#               times in epoch seconds; absent or null reads as none;
 #   seen        when each `<number>:conflicting:<head>`,
 #               `<number>:base-blocked:<head>`,
 #               `<number>:queued-off-trunk:<queue>` and `<lane>:seat-idle` was
@@ -106,7 +115,7 @@
 #   findings    every stall now, ordered by pull request and kind, each
 #               `{kind, number, lane, placed, age, line}`, the age in minutes
 #               and the line `STALL <kind> #<number> <lane> <age>m: <what>`,
-#               `STALL seat-idle <lane> <age>m: <what>` with no pull request;
+#               `STALL <kind> <lane> <age>m: <what>` with no pull request;
 #   pages       the findings not paged yet, for the seat and the coordinator:
 #               a stall is paged once while it lasts, and again only after it
 #               cleared;
@@ -221,13 +230,19 @@
          then "no open pull request and no claim it holds, and the focus \($in.focus.epics | map("#\(.)") | join(" ")) holds no unowned member; the coordinator assigns its next work"
          else "no open pull request and no claim it holds; run `mise run claim:next \($lane)`" end) as $what
       | {kind: "seat-idle", number: null, lane: $lane, placed: true, age: $age,
-         line: "STALL seat-idle \($lane) \($age)m: \($what)"})
+         line: "STALL seat-idle \($lane) \($age)m: \($what)"}),
+    (($in.hold // empty)
+      | select($in.now - .began >= $t.held * 60)
+      | ({head: .holder} | lane) as $lane
+      | ($in.now - .began | minutes) as $age
+      | {kind: "top-held", number: null, lane: $lane, placed: true, age: $age,
+         line: "STALL top-held \($lane) \($age)m: `\(.holder)` holds the stack top at \(.head[:12]) since \(.began | todate), and every other `pr:open` waits on it"})
   ]
 | sort_by(.number, .kind, .lane) as $findings
 | def key: "\(.number // .lane):\(.kind)";
   def escalated: $paged[key] as $p | $p != null and $in.now - $p.first >= $t.escalate * 60;
-  [$findings[] | select(.kind != "seat-idle" and escalated and $in.now - $paged[key].last >= $t.repage * 60)] as $repages
-| [$findings[] | select((.kind | IN("verdict-unfiled", "seat-idle") | not) and escalated and $stalled["\(.number)"] == null)] as $stalling
+  [$findings[] | select((.kind | IN("seat-idle", "top-held") | not) and escalated and $in.now - $paged[key].last >= $t.repage * 60)] as $repages
+| [$findings[] | select((.kind | IN("verdict-unfiled", "seat-idle", "top-held") | not) and escalated and $stalled["\(.number)"] == null)] as $stalling
 | [$stalled | keys[] | tonumber as $n
     | ([$in.prs[] | select(.number == $n)] | first) as $pr
     | select($pr == null or ($pr.queued and ($pr | off_trunk | not)) or $pr.draft)

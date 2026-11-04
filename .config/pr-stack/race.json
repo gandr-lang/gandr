@@ -1,0 +1,35 @@
+[
+  {
+    "name": "#5122: a second `pr:open` waits while the first holds the top and opens on the first's head after one gate, and a third waits through that gate",
+    "seats": ["a", "b", "c"],
+    "steps": [
+      "a gate",
+      "b gate",
+      "c gate",
+      "a open",
+      "b open",
+      "a gate",
+      "a open",
+      "b open",
+      "c open",
+      "b gate",
+      "b open",
+      "c open",
+      "c gate",
+      "c open"
+    ],
+    "output": "a gates; b gates; c gates; a refused for a gate, stacked on lower and holding the top; b waits on upper-a; a gates; a opened #2 on lower; b refused for a gate, stacked on upper-a and holding the top; c waits on upper-b; b gates; b opened #3 on upper-a; c refused for a gate, stacked on upper-b and holding the top; c gates; c opened #4 on upper-b"
+  },
+  {
+    "name": "#5122: a hold past its deadline is taken over, and the release its old holder leaves keeps the new hold",
+    "seats": ["a", "b"],
+    "steps": ["a gate", "a open", "a lapse", "b gate", "b open", "a drop", "a open"],
+    "output": "a gates; a refused for a gate, stacked on lower and holding the top; a's hold lapses; b gates; b takes the hold over from upper-a; b refused for a gate, stacked on lower and holding the top; a drops the hold it wrote; a waits on upper-b"
+  },
+  {
+    "name": "#5122: of two seats that read no hold and write at once, one holds the top and the other waits",
+    "seats": ["a", "b"],
+    "steps": ["a race", "b race", "b open"],
+    "output": "a writes the hold; b's write loses; b waits on upper-a"
+  }
+]
