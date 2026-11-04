@@ -2355,6 +2355,7 @@ fn solved_failure(
     let solved = crate::refusal::Compared {
         expected: read(compared.expected),
         found: read(compared.found),
+        unfolded: read(compared.unfolded),
     };
     if solved == compared {
         failure

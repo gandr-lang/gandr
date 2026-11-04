@@ -2199,6 +2199,7 @@ pub mod tests
                 at: TermNode::Value(value),
                 wanted: ExpectedShape::Thunk,
                 found: TypeNode::Value(value_type),
+                unfolded: TypeNode::Value(value_type),
             },
             CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Thunk(value),

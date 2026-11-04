@@ -150,6 +150,7 @@ impl Machine<'_, '_>
                 at: TermNode::Value(term),
                 wanted: ExpectedShape::Data,
                 found: TypeNode::Value(datatype),
+                unfolded: TypeNode::Value(head),
             });
         }
         let signature = former::signature(self.context, head)?;
@@ -684,6 +685,7 @@ impl Machine<'_, '_>
                 at: TermNode::Value(term),
                 wanted: ExpectedShape::Record,
                 found: TypeNode::Value(expected),
+                unfolded: TypeNode::Value(head),
             });
         };
         let ValueType::Record(ref wanted) = *matched_native_node
@@ -692,6 +694,7 @@ impl Machine<'_, '_>
                 at: TermNode::Value(term),
                 wanted: ExpectedShape::Record,
                 found: TypeNode::Value(expected),
+                unfolded: TypeNode::Value(head),
             });
         };
         let Some(matched_native_node) = self.context.arena().value(term)
@@ -807,6 +810,7 @@ impl Machine<'_, '_>
                 at: TermNode::Computation(term),
                 wanted: ExpectedShape::Data,
                 found: TypeNode::Value(datatype),
+                unfolded: TypeNode::Value(datatype),
             });
         }
         let signature = former::signature(self.context, datatype)?;
@@ -1345,6 +1349,7 @@ impl Machine<'_, '_>
             at: TermNode::Computation(term),
             wanted,
             found: TypeNode::Value(projected),
+            unfolded: TypeNode::Value(head),
         };
         let part = match (arena.computation(term), arena.value_type(head)) {
             (
@@ -1494,7 +1499,7 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::native_update`].
     /// - witness: `judgement::tests::a_record_update_extends_retypes_and_refuses_a_non_record_base`
-    #[spec(ensures: |ret| match ret { Err(CheckRefusal::ShapeMismatch { at, wanted, found }) => at == TermNode::Value(operand) && wanted == ExpectedShape::Record && found == TypeNode::Value(classifier), Ok(_) | Err(_) => true })]
+    #[spec(ensures: |ret| match ret { Err(CheckRefusal::ShapeMismatch { at, wanted, found, .. }) => at == TermNode::Value(operand) && wanted == ExpectedShape::Record && found == TypeNode::Value(classifier), Ok(_) | Err(_) => true })]
     fn record_fields(
         &mut self,
         operand: ValueId,
@@ -1513,6 +1518,7 @@ impl Machine<'_, '_>
                 at: TermNode::Value(operand),
                 wanted: ExpectedShape::Record,
                 found: TypeNode::Value(classifier),
+                unfolded: TypeNode::Value(head),
             })
         }
     }
@@ -1564,6 +1570,7 @@ impl Machine<'_, '_>
                 at: TermNode::Value(scrutinee),
                 wanted: ExpectedShape::Sigma,
                 found: TypeNode::Value(classifier),
+                unfolded: TypeNode::Value(sigma),
             });
         }
         self.wait(Frame::SigmaSplitMotive { term, sigma });

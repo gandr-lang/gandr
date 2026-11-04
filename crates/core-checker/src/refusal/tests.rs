@@ -35,6 +35,7 @@ fn a_refusal_compares_the_types_it_names()
         Compared {
             expected: Maybe::Present(TypeNode::Value(unit)),
             found: Maybe::Present(TypeNode::Value(list)),
+            unfolded: unnamed,
         },
         "a value mismatch expects the checked type and found the synthesised one"
     );
@@ -48,6 +49,7 @@ fn a_refusal_compares_the_types_it_names()
         Compared {
             expected: Maybe::Present(TypeNode::Computation(returns_unit)),
             found: Maybe::Present(TypeNode::Computation(returns_list)),
+            unfolded: unnamed,
         },
         "a computation mismatch compares computation types"
     );
@@ -56,13 +58,30 @@ fn a_refusal_compares_the_types_it_names()
             at: TermNode::Value(term),
             wanted: ExpectedShape::Thunk,
             found: TypeNode::Value(unit),
+            unfolded: TypeNode::Value(unit),
         }
         .compared(),
         Compared {
             expected: unnamed,
             found: Maybe::Present(TypeNode::Value(unit)),
+            unfolded: Maybe::Absent(compared::Absent::InWeakHead),
         },
         "a shape mismatch expects a former, not a type"
+    );
+    assert_eq!(
+        CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(term),
+            wanted: ExpectedShape::Product,
+            found: TypeNode::Value(list),
+            unfolded: TypeNode::Value(unit),
+        }
+        .compared(),
+        Compared {
+            expected: unnamed,
+            found: Maybe::Present(TypeNode::Value(list)),
+            unfolded: Maybe::Present(TypeNode::Value(unit)),
+        },
+        "a shape mismatch whose found type unfolds names the type it unfolds to"
     );
     assert_eq!(
         CheckRefusal::NotSynthesisable {
@@ -72,6 +91,7 @@ fn a_refusal_compares_the_types_it_names()
         Compared {
             expected: unnamed,
             found: unnamed,
+            unfolded: unnamed,
         },
         "a checking-only form compares nothing"
     );
@@ -86,6 +106,7 @@ fn a_refusal_compares_the_types_it_names()
         Compared {
             expected: unnamed,
             found: unnamed,
+            unfolded: unnamed,
         },
         "an endpoint mismatch names terms, not types"
     );
@@ -117,14 +138,17 @@ fn each_refusal_naming_types_reports_them_on_its_own_sides()
     let both = Compared {
         expected: Maybe::Present(TypeNode::Value(unit)),
         found: Maybe::Present(TypeNode::Value(list)),
+        unfolded: unnamed,
     };
     let found_list = Compared {
         expected: unnamed,
         found: Maybe::Present(TypeNode::Value(list)),
+        unfolded: unnamed,
     };
     let found_body = Compared {
         expected: unnamed,
         found: Maybe::Present(TypeNode::Computation(returns_list)),
+        unfolded: unnamed,
     };
     let rows = [
         (
@@ -177,6 +201,7 @@ fn each_refusal_naming_types_reports_them_on_its_own_sides()
             Compared {
                 expected: Maybe::Present(TypeNode::Computation(returns_unit)),
                 found: Maybe::Present(TypeNode::Computation(returns_list)),
+                unfolded: unnamed,
             },
         ),
         (
@@ -187,6 +212,7 @@ fn each_refusal_naming_types_reports_them_on_its_own_sides()
             Compared {
                 expected: Maybe::Present(TypeNode::Value(unit)),
                 found: unnamed,
+                unfolded: unnamed,
             },
         ),
         (
@@ -296,6 +322,7 @@ fn each_refusal_naming_types_reports_them_on_its_own_sides()
             Compared {
                 expected: unnamed,
                 found: unnamed,
+                unfolded: unnamed,
             },
         ),
     ];

@@ -847,6 +847,7 @@ fn column_sides(
                 at: TermNode::Value(at),
                 wanted: ExpectedShape::Path,
                 found: TypeNode::Value(head),
+                unfolded: TypeNode::Value(head),
             });
         };
         outer.get_or_insert(carrier);
@@ -933,6 +934,7 @@ fn curried(
             at: TermNode::Value(at),
             wanted: ExpectedShape::Arrow,
             found: TypeNode::Value(head),
+            unfolded: TypeNode::Value(head),
         };
         let ValueTypeView::Thunk(arrow) = value_type_view(context.arena(), head)?
         else {
@@ -980,6 +982,7 @@ fn curried(
             at: TermNode::Value(at),
             wanted: ExpectedShape::Path,
             found: TypeNode::Value(head),
+            unfolded: TypeNode::Value(head),
         });
     };
     let result = layers(context, head)?;
@@ -1058,6 +1061,7 @@ fn classify(
         at: TermNode::Value(cell),
         wanted: ExpectedShape::Path,
         found: TypeNode::Value(found),
+        unfolded: TypeNode::Value(found),
     };
     let depth = layers(context, found)?;
     let head = context.whnf_value_type(found)?;
@@ -1127,6 +1131,7 @@ fn classify_vertex(
             at: TermNode::Value(vertex),
             wanted: ExpectedShape::Path,
             found: TypeNode::Value(head),
+            unfolded: TypeNode::Value(head),
         });
     }
     let (inner, lo, hi) = lifted_path(context, at, vertex, head)?;
@@ -1189,6 +1194,7 @@ fn lifted_path(
             at: TermNode::Value(entry),
             wanted: ExpectedShape::Path,
             found: TypeNode::Value(head),
+            unfolded: TypeNode::Value(head),
         });
     };
     Ok((carrier, left, right))

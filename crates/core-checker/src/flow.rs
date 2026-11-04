@@ -846,6 +846,7 @@ pub fn elaborate(
                     at: TermNode::Value(payloads),
                     wanted: ExpectedShape::Product,
                     found: TypeNode::Value(found),
+                    unfolded: TypeNode::Value(found),
                 });
             };
             let components = components.to_vec();
@@ -999,7 +1000,7 @@ pub fn record_simulation(
 /// - hypothesis: L3 — a ride along a path is refused by its shape.
 /// - witness: `flow::tests::each_refusal_is_named`
 #[spec(ensures: |ret| match ret {
-    | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == at && wanted == ExpectedShape::Flow && found == TypeNode::Value(classifier),
+    | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == at && wanted == ExpectedShape::Flow && found == TypeNode::Value(classifier),
     | Ok(_) | Err(_) => true,
 })]
 pub fn endpoints(
@@ -1053,6 +1054,7 @@ pub fn endpoints(
             at,
             wanted: ExpectedShape::Flow,
             found: TypeNode::Value(classifier),
+            unfolded: TypeNode::Value(head),
         }),
     }
 }
@@ -1744,6 +1746,7 @@ pub fn run_premises(
                 at: TermNode::Value(at),
                 wanted: ExpectedShape::Run,
                 found: TypeNode::Value(expected),
+                unfolded: TypeNode::Value(head),
             });
         },
     };
@@ -1864,6 +1867,7 @@ pub fn dialogue_premises(
                 at: TermNode::Value(at),
                 wanted: ExpectedShape::Dialogue,
                 found: TypeNode::Value(expected),
+                unfolded: TypeNode::Value(head),
             });
         },
     };

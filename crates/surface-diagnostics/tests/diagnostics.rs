@@ -646,6 +646,79 @@ fn a_mismatch_label_spells_both_types()
     );
 }
 
+/// A shape refusal at a type a definition computes names the type as written
+/// and the type it unfolds to, and keeps the written type's own label: a
+/// tuple at `pairOf(Integer, Bool)`, which unfolds to a record type. A tuple
+/// and a projection at a product a definition computes check: `prodOf`, the
+/// recursive `tower`, and an evaluator's environment `env`.
+#[test]
+fn a_shape_mismatch_names_the_type_its_found_type_unfolds_to_5034()
+{
+    let refused = only(
+        Path::new("unfolded.gandr"),
+        SourceText::from(
+            "def pairOf(a : Type, b : Type) -> Type { return type(#{x : a, y : b}) }\n\ndef \
+             h1(u : Integer, s : Bool) -> pairOf(Integer, Bool) { (u, s) }\n",
+        ),
+    );
+    assert_eq!(
+        (
+            refused.detail.compared.found.clone(),
+            refused.detail.compared.unfolded.clone()
+        ),
+        (
+            Maybe::Present(String::from("pairOf(Integer, Bool)")),
+            Maybe::Present(String::from("#{x : Integer, y : Bool}"))
+        ),
+        "the refusal compares the written type and the type it unfolds to"
+    );
+    let Maybe::Present(primary) = refused.primary()
+    else {
+        panic!("a located refusal carries a label: {refused:?}");
+    };
+    assert_eq!(
+        primary.label,
+        "its type is not of the required shape: found `pairOf(Integer, Bool)`, which unfolds to \
+         `#{x : Integer, y : Bool}`"
+    );
+    assert!(
+        refused
+            .annotations
+            .iter()
+            .any(|annotation| annotation.label.starts_with("the type met")),
+        "the written type keeps its own label: {refused:?}"
+    );
+    let computed = printed(
+        Path::new("computed.gandr"),
+        SourceRoot::Strict,
+        SourceText::from(
+            "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndata Ty : \
+             Type where {\n  | Base : Ty\n  | Arr : (dom : Ty, cod : Ty) --> Ty\n}\n\ndata Ctx : \
+             Type where {\n  | Empty : Ctx\n  | Extend : (g : Ctx, a : Ty) --> Ctx\n}\n\ndef \
+             prodOf(a : Type, b : Type) -> Type { return type(a * b) }\n\ndef paired(u : \
+             Integer, s : Bool) -> prodOf(Integer, Bool) { (u, s) }\n\ndef first(v : \
+             prodOf(Integer, Bool)) -> Integer { v.0 }\n\ndef second(v : prodOf(Integer, \
+             Bool)) -> Bool { v.1 }\n\ndef pairOf(a : Type, b : Type) -> Type { return \
+             type(#{x : a, y : b}) }\n\ndef literal(u : Integer, s : Bool) -> pairOf(Integer, \
+             Bool) { #{x = u, y = s} }\n\ndef rec tower(n : Nat) -> Type {\n  match n {\n    \
+             Zero => return Integer,\n    Succ(m) => return type(Integer * tower[<](m))\n  \
+             }\n}\n\ndef towered(u : Integer, w : Integer) -> tower(Succ(Zero)) { (u, w) }\n\ndef \
+             towerFirst(v : tower(Succ(Zero))) -> Integer { v.0 }\n\ndef sem(a : Ty, _d : Ctx) \
+             -> Type {\n  match a {\n    Base => return Integer,\n    Arr(_x, _y) => return \
+             Unit\n  }\n}\n\ndef rec env(g : Ctx, d : Ctx) -> Type {\n  match g {\n    Empty => \
+             return Unit,\n    Extend(h, a) => return type(env[<](h, d) * sem(a, d))\n  \
+             }\n}\n\ndef lookup(d : Ctx, v : env(Extend(Empty, Base), d)) -> Integer { v.1 \
+             }\n\ndef single(d : Ctx, n : Integer) -> env(Extend(Empty, Base), d) { (#{}, n) \
+             }\n",
+        ),
+        Verb::Check(Goals::Gated),
+    );
+    assert!(
+        computed.is_empty(),
+        "a tuple and a projection at a computed product check: {computed:?}"
+    );
+}
+
 #[test]
 fn a_mismatch_spells_the_constructors_its_type_mentions()
 {

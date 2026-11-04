@@ -1042,8 +1042,11 @@ pub enum CheckRefusal
         at: TermNode,
         /// The former the rule required.
         wanted: ExpectedShape,
-        /// The type met instead.
+        /// The type met instead, as written.
         found: TypeNode,
+        /// The type met at its weak head: `found` itself when it is already
+        /// in weak head, the type its definitions unfold to otherwise.
+        unfolded: TypeNode,
     },
     /// A checking-only form stands where a type must be synthesised.
     NotSynthesisable
@@ -1761,10 +1764,13 @@ impl CheckRefusal
     ///   former that does not cross, and an unanswered model slot the type its
     ///   call's arguments force, each expecting a former the refusal names
     ///   rather than a type; a forged capability expects the capability type it
-    ///   stood at and found nothing; every other refusal compares no types.
+    ///   stood at and found nothing; every other refusal compares no types. A
+    ///   shape mismatch whose found type is not in weak head also names the
+    ///   type it unfolds to; every other refusal names no unfolded type.
     /// - provides: the type nodes a face spells beside the refusal's locus.
     /// - fails: never; a side the refusal sets no type on is the
-    ///   [`compared::Absent::Unnamed`] absence.
+    ///   [`compared::Absent::Unnamed`] absence, and an unfolded type equal to
+    ///   the found one is the [`compared::Absent::InWeakHead`] absence.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1780,11 +1786,13 @@ impl CheckRefusal
         | Self::LevelMismatch { synthesised, expected, .. }
         | Self::FamilyArgumentClassifier { synthesised, expected, .. }
         | Self::NotOver { synthesised, expected, .. } =>
-            ret == Compared { expected: Maybe::Present(TypeNode::Value(expected)), found: Maybe::Present(TypeNode::Value(synthesised)) },
+            ret == Compared { expected: Maybe::Present(TypeNode::Value(expected)), found: Maybe::Present(TypeNode::Value(synthesised)), unfolded: UNNAMED },
         | Self::TypeMismatch(Mismatch::Computation { synthesised, expected, .. })
         | Self::CapabilityAmplified(Mismatch::Computation { synthesised, expected, .. }) =>
-            ret == Compared { expected: Maybe::Present(TypeNode::Computation(expected)), found: Maybe::Present(TypeNode::Computation(synthesised)) },
-        | Self::ShapeMismatch { found, .. } | Self::CapabilityEscaped { found, .. } => ret.found == Maybe::Present(found) && ret.expected == UNNAMED,
+            ret == Compared { expected: Maybe::Present(TypeNode::Computation(expected)), found: Maybe::Present(TypeNode::Computation(synthesised)), unfolded: UNNAMED },
+        | Self::ShapeMismatch { found, unfolded, .. } => ret.found == Maybe::Present(found) && ret.expected == UNNAMED
+            && ret.unfolded == if unfolded == found { Maybe::Absent(compared::Absent::InWeakHead) } else { Maybe::Present(unfolded) },
+        | Self::CapabilityEscaped { found, .. } => ret.found == Maybe::Present(found) && ret.expected == UNNAMED,
         | Self::CapabilityForged { expected, .. } | Self::LiteralAmbiguous { expected, .. } => ret.expected == Maybe::Present(TypeNode::Value(expected)) && ret.found == UNNAMED,
         | Self::DependentBind { synthesised, .. } | Self::DependentStack { synthesised, .. } | Self::CompoundEndpoint { synthesised, .. } =>
             ret.found == Maybe::Present(TypeNode::Computation(synthesised)) && ret.expected == UNNAMED,
@@ -1796,7 +1804,7 @@ impl CheckRefusal
         | Self::Located { defect: crate::worlds::LocatedDefect::Immobile { former: found, .. }, .. }
         | Self::ModelUnanswered { forced: Forced::Type(found), .. } =>
             ret.found == Maybe::Present(TypeNode::Value(found)) && ret.expected == UNNAMED,
-        | _ => ret == Compared { expected: UNNAMED, found: UNNAMED },
+        | _ => ret == Compared { expected: UNNAMED, found: UNNAMED, unfolded: UNNAMED },
     })]
     #[inline]
     #[must_use]
@@ -1971,7 +1979,25 @@ impl CheckRefusal
             | Self::NoFiller { .. }
             | Self::GeneratorFamilyUnsupported { .. } => (UNNAMED, UNNAMED),
         };
-        Compared { expected, found }
+        let unfolded = if let Self::ShapeMismatch {
+            found, unfolded, ..
+        } = *self
+        {
+            if unfolded == found {
+                Maybe::Absent(compared::Absent::InWeakHead)
+            }
+            else {
+                Maybe::Present(unfolded)
+            }
+        }
+        else {
+            UNNAMED
+        };
+        Compared {
+            expected,
+            found,
+            unfolded,
+        }
     }
 }
 
@@ -1997,6 +2023,9 @@ quenchant_shape::reason_enum! {
             /// The refusal sets no type on this side: it names a former, or
             /// nothing to compare.
             Unnamed,
+            /// The found type is in weak head already, so it unfolds to
+            /// itself.
+            InWeakHead,
         }
     }
 }
@@ -2004,15 +2033,18 @@ quenchant_shape::reason_enum! {
 /// No type on a side of a comparison.
 const UNNAMED: Maybe<TypeNode, compared::Absent> = Maybe::Absent(compared::Absent::Unnamed);
 
-/// The types a refusal sets against each other: the one its rule expected and
-/// the one it found.
+/// The types a refusal sets against each other: the one its rule expected,
+/// the one it found, and the one the found type unfolds to.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Compared
 {
     /// The type the rule required.
     pub expected: Maybe<TypeNode, compared::Absent>,
-    /// The type the rule met.
+    /// The type the rule met, as written.
     pub found: Maybe<TypeNode, compared::Absent>,
+    /// The type the rule met at its weak head, where that differs from
+    /// `found`.
+    pub unfolded: Maybe<TypeNode, compared::Absent>,
 }
 
 #[cfg(test)]

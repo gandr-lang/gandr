@@ -45,13 +45,13 @@ use crate::retire::Retirement;
 
 /// Whether two runs of the judgement over one term refused it alike. A rule
 /// that mints a type as it judges mints it again in the second run, so a
-/// shape mismatch's found type is compared by its syntax, and every other
-/// refusal exactly.
+/// shape mismatch's found type and its weak head are compared by their
+/// syntax, and every other refusal exactly.
 ///
 /// # Specification
 /// - ensures: equal refusals answer `Equal`; shape mismatches at one term
-///   wanting one shape answer `Equal` exactly when their found types are
-///   syntactically equal; anything else answers `Different`.
+///   wanting one shape answer `Equal` exactly when their found types and their
+///   weak heads are syntactically equal; anything else answers `Different`.
 /// - executable: none — a test oracle's comparison.
 ///
 /// # Adequacy
@@ -67,11 +67,17 @@ pub fn same_refusal(
 ) -> CertificateEquality
 {
     let (
-        CheckRefusal::ShapeMismatch { at, wanted, found },
+        CheckRefusal::ShapeMismatch {
+            at,
+            wanted,
+            found,
+            unfolded,
+        },
         CheckRefusal::ShapeMismatch {
             at: right_at,
             wanted: right_wanted,
             found: right_found,
+            unfolded: right_unfolded,
         },
     ) = (left, right)
     else {
@@ -85,7 +91,33 @@ pub fn same_refusal(
     if at != right_at || wanted != right_wanted {
         return CertificateEquality::Different;
     }
-    match (found, right_found) {
+    match same_type_syntax(arena, found, right_found) {
+        CertificateEquality::Equal => same_type_syntax(arena, unfolded, right_unfolded),
+        CertificateEquality::Different => CertificateEquality::Different,
+    }
+}
+
+/// Whether two type nodes are syntactically equal: both value types or both
+/// computation types, of one syntax.
+///
+/// # Specification
+/// - ensures: `Equal` exactly when the two nodes are of one sort and their
+///   syntax is equal.
+/// - executable: none — a test oracle's comparison.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the oracles compare a shape refusal's written type and
+///   its weak head through this comparison, so a refusal of another type or of
+///   another sort fails them.
+/// - witness: `judgement::elaboration::tests::the_strict_judgement_is_the_total_runs_oracle`
+/// - witness: `judgement::tests::the_faces_agree_on_free_terms`
+fn same_type_syntax(
+    arena: &CoreArena,
+    left: TypeNode,
+    right: TypeNode,
+) -> CertificateEquality
+{
+    match (left, right) {
         (TypeNode::Computation(left), TypeNode::Computation(right)) => {
             equal_comp_type_syntax(arena, left, right)
         },

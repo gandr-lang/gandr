@@ -1097,6 +1097,7 @@ fn session_refusals_round_trip_with_their_endpoints()
             at,
             wanted: super::ExpectedShape::Session,
             found: state(),
+            unfolded: state(),
         },
     ];
     for defect in [
@@ -1729,7 +1730,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
 {
     let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
     let expected = [
-        b'G', b'C', b'K', b'P', b'T', 0, 0, 16, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        b'G', b'C', b'K', b'P', b'T', 0, 0, 17, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     assert_eq!(
         encode_checkpoints(&checkpoints)
@@ -1739,7 +1740,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
     );
     assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
     let mut wrong_version = expected;
-    *wrong_version.get_mut(7).expect("version byte") = 15;
+    *wrong_version.get_mut(7).expect("version byte") = 16;
     assert_eq!(
         decode_checkpoints(Bytes(&wrong_version)),
         Err(CodecError::Corrupt)
@@ -2093,6 +2094,7 @@ fn encoding_bounds_levels_in_every_auxiliary_type_table()
                 at,
                 wanted: super::ExpectedShape::Product,
                 found: capped(),
+                unfolded: capped(),
             }),
         ),
         (
@@ -2795,6 +2797,7 @@ fn every_refusal() -> Vec<Refusal>
             at,
             wanted: super::SHAPES[2],
             found: ty(),
+            unfolded: ty(),
         },
         Refusal::UnknownConstant {
             at,

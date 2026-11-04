@@ -232,14 +232,18 @@ pub struct Comparison<'step>
 {
     /// The type the rule required.
     pub expected: Maybe<&'step str, spelling::Absent>,
-    /// The type the rule met.
+    /// The type the rule met, as written.
     pub found: Maybe<&'step str, spelling::Absent>,
+    /// The type the rule met at its weak head, where that differs from
+    /// `found`.
+    pub unfolded: Maybe<&'step str, spelling::Absent>,
 }
 
 /// A comparison of no types.
 const UNCOMPARED: Comparison<'static> = Comparison {
     expected: Maybe::Absent(spelling::Absent::Unspelled),
     found: Maybe::Absent(spelling::Absent::Unspelled),
+    unfolded: Maybe::Absent(spelling::Absent::Unspelled),
 };
 
 impl<'step> Comparison<'step>
@@ -248,10 +252,10 @@ impl<'step> Comparison<'step>
     ///
     /// # Specification
     /// - requires: `spellings` was spelled over the arena `refusal` names.
-    /// - ensures: a checker refusal's expected and found sides are the
-    ///   spellings of the nodes [`CheckRefusal::compared`] names, each absent
-    ///   where it names none or the spellings hold none; a lowering or corpus
-    ///   refusal compares no types.
+    /// - ensures: a checker refusal's expected, found and unfolded sides are
+    ///   the spellings of the nodes [`CheckRefusal::compared`] names, each
+    ///   absent where it names none or the spellings hold none; a lowering or
+    ///   corpus refusal compares no types.
     /// - provides: the comparison a primary label carries.
     /// - fails: never.
     /// - panics: none.
@@ -267,7 +271,7 @@ impl<'step> Comparison<'step>
                 Maybe::Present(node) => spellings.get(node).map(AsRef::as_ref),
                 Maybe::Absent(_) => Maybe::Absent(spelling::Absent::Unspelled),
             };
-            ret.expected == side(checked.compared().expected) && ret.found == side(checked.compared().found)
+            ret.expected == side(checked.compared().expected) && ret.found == side(checked.compared().found) && ret.unfolded == side(checked.compared().unfolded)
         },
         Refusal::Lowering(_) | Refusal::Corpus(_) => ret == UNCOMPARED,
     })]
@@ -288,6 +292,7 @@ impl<'step> Comparison<'step>
         Self {
             expected: side(compared.expected),
             found: side(compared.found),
+            unfolded: side(compared.unfolded),
         }
     }
 
@@ -305,13 +310,14 @@ impl<'step> Comparison<'step>
 impl fmt::Display for Comparison<'_>
 {
     /// Writes the types compared: `expected` and `found`, either alone, or
-    /// nothing.
+    /// nothing, and the type `found` unfolds to after it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: writes ``expected `E`, found `F` `` for both sides, the one
-    ///   side alone when only it is spelled, and nothing when neither is;
-    ///   propagates a destination failure.
+    ///   side alone when only it is spelled, and nothing when neither is; a
+    ///   spelled found side whose unfolded side is spelled too is followed by
+    ///   ``, which unfolds to `U` ``; propagates a destination failure.
     /// - provides: the comparison clause of a primary label.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
@@ -319,9 +325,11 @@ impl fmt::Display for Comparison<'_>
     ///   independent observation of the destination's failure.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a value mismatch shows both sides in their roles and
-    ///   a shape mismatch the found side alone.
+    /// - hypothesis: L3 — a value mismatch shows both sides in their roles, a
+    ///   shape mismatch the found side alone, and a shape mismatch whose found
+    ///   type unfolds the type it unfolds to after it.
     /// - witness: `tests::diagnostics::a_mismatch_label_spells_both_types`
+    /// - witness: `tests::diagnostics::a_shape_mismatch_names_the_type_its_found_type_unfolds_to_5034`
     #[inline]
     fn fmt(
         &self,
@@ -330,11 +338,18 @@ impl fmt::Display for Comparison<'_>
     {
         match (self.expected, self.found) {
             (Maybe::Present(expected), Maybe::Present(found)) => {
-                write!(f, "expected `{expected}`, found `{found}`")
+                write!(f, "expected `{expected}`, found `{found}`")?;
             },
-            (Maybe::Present(expected), Maybe::Absent(_)) => write!(f, "expected `{expected}`"),
-            (Maybe::Absent(_), Maybe::Present(found)) => write!(f, "found `{found}`"),
-            (Maybe::Absent(_), Maybe::Absent(_)) => Ok(()),
+            (Maybe::Present(expected), Maybe::Absent(_)) => write!(f, "expected `{expected}`")?,
+            (Maybe::Absent(_), Maybe::Present(found)) => write!(f, "found `{found}`")?,
+            (Maybe::Absent(_), Maybe::Absent(_)) => {},
+        }
+        match (self.found, self.unfolded) {
+            (Maybe::Present(_), Maybe::Present(unfolded)) => {
+                write!(f, ", which unfolds to `{unfolded}`")
+            },
+            (Maybe::Present(_) | Maybe::Absent(_), Maybe::Absent(_))
+            | (Maybe::Absent(_), Maybe::Present(_)) => Ok(()),
         }
     }
 }
@@ -981,7 +996,9 @@ fn checked(
             annotated(spanned(origins.comp_type(synthesised)), Label::Synthesised),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
-        CheckRefusal::ShapeMismatch { at, wanted, found } => (node(origins, CoreNode::Term(at)), [
+        CheckRefusal::ShapeMismatch {
+            at, wanted, found, ..
+        } => (node(origins, CoreNode::Term(at)), [
             annotated(node(origins, CoreNode::Type(found)), Label::Met(wanted)),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
@@ -2478,6 +2495,7 @@ mod tests
                 at: TermNode::Computation(computation),
                 wanted: ExpectedShape::Arrow,
                 found: TypeNode::Computation(synthesised),
+                unfolded: TypeNode::Computation(synthesised),
             }),
             spans[3_usize],
             &origins,
@@ -3046,6 +3064,7 @@ mod tests
                 at: TermNode::Computation(computation),
                 wanted: ExpectedShape::Arrow,
                 found: TypeNode::Computation(comp_type),
+                unfolded: TypeNode::Computation(comp_type),
             },
             CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Reify(value),
@@ -3987,6 +4006,7 @@ mod tests
                 at: TermNode::Computation(computation),
                 wanted: ExpectedShape::Arrow,
                 found: TypeNode::Computation(comp_type),
+                unfolded: TypeNode::Computation(comp_type),
             }),
             [
                 Maybe::Present(Annotation {
@@ -4676,6 +4696,7 @@ mod tests
                 at: TermNode::Computation(computation),
                 wanted,
                 found: TypeNode::Computation(comp_type),
+                unfolded: TypeNode::Computation(comp_type),
             })
         })
         .collect::<Vec<_>>();
@@ -4860,18 +4881,30 @@ mod tests
         let both = Comparison {
             expected: Maybe::Present("Integer"),
             found: Maybe::Present("String"),
+            unfolded: Maybe::Absent(Absent::Unspelled),
         };
         assert_eq!(both.to_string(), "expected `Integer`, found `String`");
         let expected_alone = Comparison {
             expected: Maybe::Present("Integer"),
             found: Maybe::Absent(Absent::Unspelled),
+            unfolded: Maybe::Absent(Absent::Unspelled),
         };
         assert_eq!(expected_alone.to_string(), "expected `Integer`");
         let found_alone = Comparison {
             expected: Maybe::Absent(Absent::Unspelled),
             found: Maybe::Present("String"),
+            unfolded: Maybe::Absent(Absent::Unspelled),
         };
         assert_eq!(found_alone.to_string(), "found `String`");
+        let unfolded = Comparison {
+            expected: Maybe::Absent(Absent::Unspelled),
+            found: Maybe::Present("pairOf(Integer, Bool)"),
+            unfolded: Maybe::Present("#{x : Integer, y : Bool}"),
+        };
+        assert_eq!(
+            unfolded.to_string(),
+            "found `pairOf(Integer, Bool)`, which unfolds to `#{x : Integer, y : Bool}`"
+        );
         assert_eq!(UNCOMPARED.to_string(), "");
     }
 }

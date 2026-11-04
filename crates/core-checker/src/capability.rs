@@ -471,6 +471,7 @@ pub fn authorise(
             at: TermNode::Value(capability),
             wanted: ExpectedShape::Capability,
             found: TypeNode::Value(classifier),
+            unfolded: TypeNode::Value(classifier),
         }),
     }
 }

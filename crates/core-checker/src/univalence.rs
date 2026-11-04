@@ -302,6 +302,7 @@ pub fn premises(
             at: TermNode::Value(at),
             wanted: ExpectedShape::Sigma,
             found: TypeNode::Value(classifier),
+            unfolded: TypeNode::Value(head),
         });
     };
     let (from, to) = crate::equiv::codes(context, at, first).map_err(|refusal| {
@@ -310,6 +311,7 @@ pub fn premises(
                 at: TermNode::Value(at),
                 wanted: ExpectedShape::Thunk,
                 found: TypeNode::Value(first),
+                unfolded: TypeNode::Value(first),
             }
         }
         else {

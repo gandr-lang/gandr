@@ -400,11 +400,13 @@ fn refusal_payloads_use_item_coordinates_and_type_content()
                 at: super::TermNode::Computation(returned),
                 wanted: gandr_core_checker::ExpectedShape::Arrow,
                 found: super::TypeNode::Computation(returner),
+                unfolded: super::TypeNode::Computation(returner),
             },
             Refusal::ShapeMismatch {
                 at: computation_site,
                 wanted: gandr_core_checker::ExpectedShape::Arrow,
                 found: returner_content(),
+                unfolded: returner_content(),
             },
         ),
         (

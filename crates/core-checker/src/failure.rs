@@ -888,16 +888,18 @@ impl Failure
         &self.endpoints
     }
 
-    /// Every type node the failure names: the types its refusal compares,
-    /// each obligation's expected type and binders, the pursuit's expected
-    /// type, the hypotheses and the endpoints' session types.
+    /// Every type node the failure names: the types its refusal compares and
+    /// the type its found type unfolds to, each obligation's expected type and
+    /// binders, the pursuit's expected type, the hypotheses and the endpoints'
+    /// session types.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each type node the refusal compares, then the pursuit's
-    ///   expected type, then each obligation's expected type and binders in
-    ///   order, then the hypotheses, then the endpoints' session types, each
-    ///   when present; a node named twice is yielded twice.
+    /// - ensures: each type node the refusal compares, then the type its found
+    ///   type unfolds to, then the pursuit's expected type, then each
+    ///   obligation's expected type and binders in order, then the hypotheses,
+    ///   then the endpoints' session types, each when present; a node named
+    ///   twice is yielded twice.
     /// - provides: the nodes a face spells while the arena is at hand.
     /// - fails: never.
     /// - panics: none.
@@ -917,7 +919,7 @@ impl Failure
             Maybe::Present(node) => Some(node),
             Maybe::Absent(_) => None,
         };
-        let mut types: Vec<TypeNode> = [compared.expected, compared.found]
+        let mut types: Vec<TypeNode> = [compared.expected, compared.found, compared.unfolded]
             .into_iter()
             .filter_map(|side| match side {
                 Maybe::Present(node) => Some(node),
