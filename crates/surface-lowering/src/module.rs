@@ -7151,7 +7151,7 @@ impl<'source> Collector<'_, 'source>
 
     /// The documentation the parser left among `holder`'s children rather
     /// than grouping it under a form: what is written before a `pub` mark.
-    /// A `//!` run there is the source's own, so it is left out.
+    /// A `//!` run there documents the source. This function leaves it out.
     ///
     /// # Specification
     /// trivial.

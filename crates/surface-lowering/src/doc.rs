@@ -47,6 +47,13 @@
 //! broken link in its documentation refuses its first member, as a module's
 //! refused attribute does; a module with no member has none to refuse.
 //!
+//! A reference leaves the prose for the footer of its run. The footer is the
+//! run of lines `[label]: target` that ends a `///` run, a `//!` run or the
+//! string of a `doc("…")` entry. A link to a label the footer defines
+//! resolves to that line, and the lowering looks for no declaration. A
+//! reference line with prose after it is no footer. A link to its label
+//! resolves as any other link does.
+//!
 //! A source documents itself with `//!` lines, which the parser groups as it
 //! groups `///` lines and leaves with the node they stand in. A run standing
 //! at a root is the source's own: it reads as a `///` run does and is filed
@@ -70,6 +77,7 @@
 //! the lowering has no warning severity; reversal: when diagnostics carry a
 //! severity, a broken link is a warning and the declaration lowers.
 
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -219,8 +227,9 @@ impl<'source> Documentation<'source>
 ///   contributes the string's decoded content; any other contributes each of
 ///   its `///` or `//!` lines, the text after the opening less one leading
 ///   space, one line break between lines. The piece follows `into`'s text after
-///   one line break when that text is not empty, and every link the piece
-///   writes is appended to `into`'s links with its source span.
+///   one line break when that text is not empty. Every link the piece writes
+///   joins `into`'s links with its source span, except a link to a label the
+///   piece's own footer defines ([`footer_labels`]).
 /// - provides: the one reading both documentation spellings share.
 /// - fails: [`LoweringRefusal::MalformedLiteral`] for an entry whose string
 ///   does not decode; [`LoweringRefusal::UnknownMold`] for a mold `pbg` does
@@ -240,6 +249,7 @@ impl<'source> Documentation<'source>
 ///   text.
 /// - witness: `doc::tests::both_spellings_read_to_one_text`
 /// - witness: `doc::tests::links_are_found_where_they_are_written`
+/// - witness: `doc::tests::a_footer_line_answers_its_label`
 #[spec(
     captures: before = (into.text.0.len(), into.links.len()),
     ensures: |ret| match ret {
@@ -300,16 +310,64 @@ pub fn read_doc<'source>(
         let start = ByteOffset::from(usize::from(span.start()).saturating_add(skipped));
         scan_links(SourceFragment::from(line), start, &mut links);
     }
+    let text = DocumentationText(match entry {
+        Maybe::Present(content) => content,
+        Maybe::Absent(_) => lines.join("\n"),
+    });
+    let footer = footer_labels(&text);
+    links.retain(|link| !footer.contains(&link.name));
     if !into.text.0.is_empty() {
         into.text.0.push('\n');
     }
-    match entry {
-        Maybe::Present(content) => into.text.0.push_str(&content),
-        Maybe::Absent(_) => into.text.0.push_str(&lines.join("\n")),
-    }
+    into.text.0.push_str(&text.0);
     into.links.append(&mut links);
 
     Ok(())
+}
+
+/// The labels the footer of `text` defines. The footer is the run of lines
+/// that ends `text`, each a reference line `[label]: target`. Blank lines
+/// between and after the reference lines belong to the footer too.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each label of a reference line in the footer, its backticks
+///   removed; nothing for a reference line that prose follows.
+/// - provides: the names a link resolves to without a declaration.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a footer after a blank line, a backticked label, a
+///   reference line with prose after it and a run with no footer each read to
+///   their exact labels.
+/// - witness: `doc::tests::a_footer_line_answers_its_label`
+#[spec(ensures: |ret| ret.iter().all(|label| !label.as_ref().is_empty()))]
+fn footer_labels(text: &DocumentationText) -> BTreeSet<SurfaceName<'_>>
+{
+    let mut labels = BTreeSet::new();
+    for line in text.0.lines().rev() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some(label) = line
+            .strip_prefix('[')
+            .and_then(|rest| rest.split_once("]:"))
+            .map(|(label, _)| label)
+        else {
+            break;
+        };
+        let label = label
+            .strip_prefix('`')
+            .and_then(|quoted| quoted.strip_suffix('`'))
+            .unwrap_or(label);
+        if label.is_empty() {
+            break;
+        }
+        let _fresh = labels.insert(SurfaceName::from(label));
+    }
+    labels
 }
 
 /// Push every link `written` holds onto `links`, `written` standing at `start`
@@ -529,6 +587,34 @@ mod tests
             mixed,
             ["snake_case=snake_case"],
             "an underscore continues a name and a hyphen ends one"
+        );
+    }
+
+    #[test]
+    fn a_footer_line_answers_its_label()
+    {
+        let (_, footed) = read(SourceText::from(
+            "/// See [guide], [`spec`] and [other].\n///\n/// [guide]: https://example.org\n/// [`spec`]: ../spec.md\ndef x = 1 ;",
+        ));
+        assert_eq!(
+            footed,
+            ["other=other"],
+            "a label the footer defines needs no declaration, and another link still does"
+        );
+        let (_, early) = read(SourceText::from(
+            "/// [guide]: https://example.org\n/// See [guide].\ndef x = 1 ;",
+        ));
+        assert_eq!(
+            early,
+            ["guide=guide"],
+            "a reference line with prose after it is no footer"
+        );
+        let (_, entry) = read(SourceText::from(
+            "@[ doc(\"See [guide].\\n\\n[guide]: https://example.org\") ] def x = 1 ;",
+        ));
+        assert!(
+            entry.is_empty(),
+            "an entry's string has a footer too: {entry:?}"
         );
     }
 }
