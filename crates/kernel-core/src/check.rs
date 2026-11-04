@@ -284,6 +284,7 @@ use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LooseDepth;
 use gandr_kernel_term::Reads;
 use gandr_kernel_term::RelatedEndpoints;
+use gandr_kernel_term::Summand;
 use gandr_kernel_term::TableEntryCount;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -318,6 +319,7 @@ use crate::replay::ReplayBudget;
 use crate::replay::StuckEndpoints;
 use crate::replay::Unfoldable;
 use crate::replay::Unfoldings;
+use crate::replay::read_comp_decode;
 use crate::replay::read_decode;
 use crate::replay::read_endpoints;
 use crate::rewrite::BinderDepth;
@@ -686,6 +688,49 @@ fn read_returned_decode(
     }
     let unfoldings = entry_unfoldings(judgement);
     read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(ty)
+}
+
+/// `ty`, or the computation type its code quotes when `ty` decodes a returned
+/// code that normalizes to a computation quote at the judgement's unfoldings.
+///
+/// # Specification
+/// - requires: `ty`, and the body of every definition among the judgement's
+///   entries, live in `arena`.
+/// - ensures: what [`read_comp_decode`] reads the code to when `ty` is a decode
+///   of a returned code it reads to a computation type; `ty` otherwise, with
+///   `arena` unchanged.
+/// - provides: the head of a computation type a rule reads, when that type is a
+///   joint fixpoint's goal at a summand: `El(⟨case (injᵢ x) { … }⟩)` reads as
+///   the arm's quoted type (#5036).
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda checks at a decode whose code is a case on an
+///   injection returning an arrow's quote, and a call at such a decode converts
+///   with the arrow; a decode whose code returns no quote stays.
+/// - witness: `check::tests::a_lambda_checks_at_a_decode_of_a_case_on_an_injection_5036`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| (ret == ty && arena.watermark() == before)
+        || (arena.comp_type(ret).is_some()
+            && matches!(arena.comp_type(ty), Some(&CompType::Element { code, .. })
+                if matches!(arena.value(code), Some(Value::Returned(_))))),
+)]
+fn read_returned_comp_decode(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    ty: CompTypeId,
+) -> CompTypeId
+{
+    let Some(&CompType::Element { code, .. }) = arena.comp_type(ty)
+    else {
+        return ty;
+    };
+    if !matches!(arena.value(code), Some(Value::Returned(_))) {
+        return ty;
+    }
+    let unfoldings = entry_unfoldings(judgement);
+    read_comp_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(ty)
 }
 
 /// The shape an introduction form needs of the type it checks at, for the
@@ -2688,6 +2733,9 @@ enum Frame
         /// The expected type every branch checks against, written outside
         /// their binders.
         expected: CompTypeId,
+        /// The expected type, when the scrutinee is the innermost binder and
+        /// the type reads it: each branch reads it at its own injection.
+        refining: Maybe<CompTypeId, refining::Absent>,
     },
     /// A case check: the branches still to check, each under its summand.
     CheckCaseBranch
@@ -2697,6 +2745,13 @@ enum Frame
         /// The expected type every branch checks against, already read from
         /// under its binder.
         expected: CompTypeId,
+        /// The expected type written outside the binders, when it reads the
+        /// scrutinee, the innermost binder: each branch reads it at its own
+        /// injection.
+        refining: Maybe<CompTypeId, refining::Absent>,
+        /// The summand of the next branch, which `remaining` yields first to
+        /// last.
+        next: Summand,
     },
     /// A binder scope closes: pop the innermost context slot.
     ScopeExit,
@@ -2713,6 +2768,20 @@ enum Frame
     /// them — which is exactly when the produced register holds that goal's
     /// final answer, by the machine's own unwinding invariant.
     Memoize(Question, Opened),
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a case on a sum checks every branch against one goal.
+    mod refining {
+        /// The goal is not read at each branch's injection.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The scrutinee is not the innermost binder.
+            Scrutinee,
+            /// The goal does not read the scrutinee.
+            Unread,
+        }
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -2951,6 +3020,95 @@ fn weakened(
         rewrites,
         subject,
         BinderDepth::NONE,
+        BinderDepth::from(1_u32),
+    )
+}
+
+/// The goal a case on `scrutinee` reads at each branch's injection: `expected`
+/// when the scrutinee is the innermost binder and `expected` reads it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `expected` present exactly when `scrutinee` is the variable of
+///   index zero and the support of `expected` holds index zero.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a case on the innermost binder at a goal reading it
+///   refines; one at a closed goal, and one on another binder, do not.
+/// - witness: `check::tests::a_case_on_the_innermost_binder_reads_its_goal_at_each_injection_5036`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(found) => found == expected,
+    Maybe::Absent(_) => true,
+})]
+fn refining_goal(
+    arena: &TermArena,
+    scrutinee: ValueId,
+    expected: CompTypeId,
+) -> Maybe<CompTypeId, refining::Absent>
+{
+    if arena.value(scrutinee) != Some(&Value::Variable(DeBruijnIndex::from(0_u32))) {
+        return Maybe::Absent(refining::Absent::Scrutinee);
+    }
+    let reads_innermost = match arena.comp_type_support(expected).indices() {
+        Maybe::Present(mut indices) => indices.next() == Some(DeBruijnIndex::from(0_u32)),
+        Maybe::Absent(_) => true,
+    };
+    if reads_innermost {
+        Maybe::Present(expected)
+    }
+    else {
+        Maybe::Absent(refining::Absent::Unread)
+    }
+}
+
+/// `outside`, written outside a case on the innermost binder `y`, read under
+/// the branch at `summand` with `y` read as that branch's injection of its
+/// binder: `outside[y := injᵢ x]`, `x` the branch's binder and `y` still bound
+/// outside it.
+///
+/// # Specification
+/// - requires: `outside` is scoped with `y` its innermost binder.
+/// - ensures: the goal scoped under the branch's binder: `y` at index one, read
+///   nowhere, its occurrences in `outside` the injection of index zero, and
+///   every index past `y` raised by one.
+/// - provides: the dependent elimination of a sum the joint of a mutual block
+///   reads its members' types through.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`refining_goal`].
+/// - witness: `check::tests::a_case_on_the_innermost_binder_reads_its_goal_at_each_injection_5036`
+#[spec(ensures: |ret| arena.comp_type(ret).is_some())]
+fn arm_goal(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    outside: CompTypeId,
+    summand: Summand,
+) -> CompTypeId
+{
+    let (table, rewrites) = session.rewrite_parts();
+    // A slot for the branch's binder opens past `y`; `y` is read as its
+    // injection and leaves; `y` is bound again outside the branch's binder.
+    let opened = shift_comp_type(
+        arena,
+        table,
+        rewrites,
+        outside,
+        BinderDepth::from(1_u32),
+        BinderDepth::from(1_u32),
+    );
+    let own = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let injected = arena.value_injection(summand, own);
+    let read = substitute_comp_type(arena, table, rewrites, opened, injected);
+    shift_comp_type(
+        arena,
+        table,
+        rewrites,
+        read,
+        BinderDepth::from(1_u32),
         BinderDepth::from(1_u32),
     )
 }
@@ -4551,9 +4709,11 @@ where
                         scrutinee,
                         ref branches,
                     } => {
+                        let refining = refining_goal(arena, scrutinee, expected);
                         frames.push(Frame::CheckCaseScrutinee {
                             branches: branches.clone(),
                             expected,
+                            refining,
                         });
                         goal = Goal::SynthValue(scrutinee);
                         continue 'expand;
@@ -6229,11 +6389,13 @@ where
                         if let KernelError::StageNotBelow { found, bound } = unsubsumed {
                             return Err(KernelError::StageNotBelow { found, bound });
                         }
-                        let reading = read_returned(
-                            arena,
-                            judgement,
-                            ConversionGoal::CompType(expected, synthesized),
-                        )?;
+                        // A side decoding a returned code, as a joint's goal at
+                        // a summand does, is read to the type its code quotes.
+                        let read = ConversionGoal::CompType(
+                            read_returned_comp_decode(arena, judgement, expected),
+                            read_returned_comp_decode(arena, judgement, synthesized),
+                        );
+                        let reading = read_returned(arena, judgement, read)?;
                         if reading != EndpointReading::Converts {
                             return Err(mismatch);
                         }
@@ -6263,7 +6425,11 @@ where
                 // Each branch checks, under its summand's binder, against the
                 // expected type read from under that binder. A case of no
                 // branches over the empty sum checks at once.
-                Frame::CheckCaseScrutinee { branches, expected } => {
+                Frame::CheckCaseScrutinee {
+                    branches,
+                    expected,
+                    refining,
+                } => {
                     // A decode of a returned code is read to the type the code
                     // quotes: a binder a case refined to a call returning a sum
                     // is cased on at that sum, the empty one among them.
@@ -6274,21 +6440,31 @@ where
                     frames.push(Frame::CheckCaseBranch {
                         remaining,
                         expected: scoped,
+                        refining,
+                        next: Summand::from(0_usize),
                     });
                     produced = Produced::Checked;
                 },
                 Frame::CheckCaseBranch {
                     mut remaining,
                     expected,
+                    refining,
+                    next,
                 } => {
                     if let Some((branch, summand)) = remaining.pop() {
+                        let goal_here = match refining {
+                            Maybe::Present(outside) => arm_goal(arena, session, outside, next),
+                            Maybe::Absent(_) => expected,
+                        };
                         context.push(summand);
                         frames.push(Frame::CheckCaseBranch {
                             remaining,
                             expected,
+                            refining,
+                            next: Summand::from(usize::from(next).saturating_add(1)),
                         });
                         frames.push(Frame::ScopeExit);
-                        goal = Goal::CheckComp(branch, expected);
+                        goal = Goal::CheckComp(branch, goal_here);
                         continue 'expand;
                     }
                     produced = Produced::Checked;
@@ -9052,6 +9228,160 @@ mod tests
         assert!(
             matches!(refused, Err(KernelError::ValueTypeMismatch(_))),
             "an arm run to the integers stays apart: {refused:?}"
+        );
+    }
+
+    /// Admit `pick = thunk λy. case y { λu. return u | return u }` at `U(Π (y
+    /// : Unit + Unit). El(⟨case y { return ⌜Unit → F Unit⌝ | return ⌜F
+    /// Unit⌝ }⟩))`, a joint's goal, then `thunk λx. (force pick) (inj₀ x)` at
+    /// `U(Unit → member)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_joint_member(
+        member: impl FnOnce(&mut TermArena) -> CompTypeId
+    ) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let zero = level(LevelConstant::from(0));
+        let pick = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let sum = mint.value_type_sum(&[unit, unit]);
+            let returns_unit = mint.comp_type_returner(unit);
+            let takes_unit = mint.comp_type_arrow(unit, returns_unit);
+            let first = mint.value_quote_computation(takes_unit);
+            let first = mint.computation_return(first);
+            let second = mint.value_quote_computation(returns_unit);
+            let second = mint.computation_return(second);
+            let y = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let motive = mint.computation_case(y, &[first, second]);
+            let motive = mint.value_returned(motive);
+            let goal = mint.comp_type_element(motive, zero);
+            let family = mint.comp_type_pi(sum, goal);
+            let declared = mint.value_type_thunk(family);
+            let u = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let returned = mint.computation_return(u);
+            let first_arm = mint.computation_lambda(returned);
+            let case = mint.computation_case(y, &[first_arm, returned]);
+            let body = mint.computation_lambda(case);
+            let body = mint.value_thunk(body);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(declaration)?.position()
+        };
+        let definition = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let result = member(mint);
+            let arrow = mint.comp_type_arrow(unit, result);
+            let declared = mint.value_type_thunk(arrow);
+            let head = mint.value_constant(pick);
+            let forced = mint.computation_force(head);
+            let x = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let injected = mint.value_injection(Summand::from(0_usize), x);
+            let call = mint.computation_application(forced, injected);
+            let body = mint.computation_lambda(call);
+            let body = mint.value_thunk(body);
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        environment.add_decl(definition).map(|_admitted| ())
+    }
+
+    /// A lambda checks at a decode whose code is a case on an injection
+    /// returning an arrow's quote, and a call at such a decode converts with
+    /// the arrow: each member of a joint fixpoint reads its own goal (#5036).
+    /// A member declared at the other summand's type stays apart, so the
+    /// reading is the one that separates the two.
+    #[test]
+    fn a_lambda_checks_at_a_decode_of_a_case_on_an_injection_5036()
+    {
+        let arrow = |mint: &mut TermArena| {
+            let unit = mint.value_type_unit();
+            let returns_unit = mint.comp_type_returner(unit);
+            mint.comp_type_arrow(unit, returns_unit)
+        };
+        assert_eq!(
+            Ok(()),
+            admit_joint_member(arrow),
+            "the first member reads the arrow its summand's arm quotes"
+        );
+        let refused = admit_joint_member(|mint| {
+            let unit = mint.value_type_unit();
+            mint.comp_type_returner(unit)
+        });
+        assert!(
+            refused.is_err(),
+            "a member at the other summand's type stays apart: {refused:?}"
+        );
+    }
+
+    /// Admit `Tag(s : Unit + Unit) : Type { Mk }`, then `thunk λy. case y {
+    /// return Mk : Tag(inj₀ x) | return Mk : Tag(inj₁ x) }` at the type `U(Π
+    /// (y : Unit + Unit). F Tag(y))`, its arms in the order `arms` gives.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_tag_case(arms: [Summand; 2]) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let zero = level(LevelConstant::from(0));
+        let tags = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let sum = mint.value_type_sum(&[unit, unit]);
+            let kind = mint.value_type_universe(GroundSort::Value, zero);
+            let declaration =
+                staging.data(LevelSignature::monomorphic(), vec![sum], vec![vec![]], kind);
+            environment.add_decl(declaration)?.position()
+        };
+        let definition = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let sum = mint.value_type_sum(&[unit, unit]);
+            let y = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let tag_at_y = mint.value_type_data(tags, vec![y]);
+            let answers = mint.comp_type_returner(tag_at_y);
+            let family = mint.comp_type_pi(sum, answers);
+            let declared = mint.value_type_thunk(family);
+            let branches = arms.map(|summand| {
+                let own = mint.value_variable(DeBruijnIndex::from(0_u32));
+                let injected = mint.value_injection(summand, own);
+                let tag = mint.value_type_data(tags, vec![injected]);
+                let made = mint.value_constructor(
+                    tag,
+                    gandr_kernel_term::ConstructorTag::from(0_usize),
+                    vec![],
+                );
+                mint.computation_return(made)
+            });
+            let case = mint.computation_case(y, &branches);
+            let body = mint.computation_lambda(case);
+            let body = mint.value_thunk(body);
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        environment.add_decl(definition).map(|_admitted| ())
+    }
+
+    /// A case on the innermost binder checks each arm against its goal with
+    /// the binder read as that arm's injection (#5036): each arm returns the
+    /// tag of its own injection. Arms returning each other's tag are refused,
+    /// so each arm reads its own summand rather than the next one.
+    #[test]
+    fn a_case_on_the_innermost_binder_reads_its_goal_at_each_injection_5036()
+    {
+        assert_eq!(
+            Ok(()),
+            admit_tag_case([0_usize, 1].map(Summand::from)),
+            "each arm checks at the tag of its own injection"
+        );
+        let refused = admit_tag_case([1_usize, 0].map(Summand::from));
+        assert!(
+            refused.is_err(),
+            "arms returning each other's tag are refused: {refused:?}"
         );
     }
 

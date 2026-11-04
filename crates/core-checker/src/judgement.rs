@@ -9805,20 +9805,28 @@ impl<'context, 'arena> Machine<'context, 'arena>
             ) => {
                 let classifier = self.context.settle_value_type(classifier);
                 let summands = self.sum_expected(scrutinee, classifier)?;
+                let outside = expected;
                 let expected =
                     shift_comp_type(self.context.arena_mut(), expected, Binders::from(1_u32))
                         .settle(self.context.arena_mut());
                 let joining = self.arms_opened();
-                let Some(case) = self.context.arena().computation(at)
-                else {
-                    return Err(CheckRefusal::MachineInvariant);
-                };
-                let Computation::Case { ref branches, .. } = *case
-                else {
-                    return Err(CheckRefusal::MachineInvariant);
-                };
-                if matches!(summands, Components::Known(ref parts) if parts.len() != branches.len())
+                // The arms are read by position, so the arena stays free for
+                // the goal each arm reads at its injection.
+                let arm_at = |arena: &gandr_core_term::CoreArena, position: usize| match arena
+                    .computation(at)
                 {
+                    Some(&Computation::Case { ref branches, .. }) => {
+                        branches.get(position).copied()
+                    },
+                    _ => None,
+                };
+                let Some(&Computation::Case { ref branches, .. }) =
+                    self.context.arena().computation(at)
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let count = branches.len();
+                if matches!(summands, Components::Known(ref parts) if parts.len() != count) {
                     return Err(CheckRefusal::ShapeMismatch {
                         at: TermNode::Value(scrutinee),
                         wanted: ExpectedShape::Sum,
@@ -9826,23 +9834,40 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     });
                 }
                 let owner = self.owner;
+                let first = arm_at(self.context.arena(), 0);
                 if let session::Joining::Joined(zones) = joining {
                     // An empty case checks no arm, so no arm can disagree: the
                     // join names the case itself.
-                    let arm = branches.last().copied().unwrap_or(at);
-                    let first = branches.first().copied().unwrap_or(at);
+                    let arm = count
+                        .checked_sub(1)
+                        .and_then(|last| arm_at(self.context.arena(), last))
+                        .unwrap_or(at);
                     self.frames.push(Waiting {
-                        frame: Frame::ArmsJoined { zones, first, arm },
+                        frame: Frame::ArmsJoined {
+                            zones,
+                            first: first.unwrap_or(at),
+                            arm,
+                        },
                         owner,
                     });
                 }
-                for (index, &branch) in branches.iter().enumerate().rev() {
+                for index in (0 .. count).rev() {
+                    let branch = arm_at(self.context.arena(), index)
+                        .ok_or(CheckRefusal::MachineInvariant)?;
                     let summand = match summands {
                         Components::Known(ref parts) => {
                             *parts.get(index).ok_or(CheckRefusal::MachineInvariant)?
                         },
                         Components::Unknown(unknown) => unknown,
                     };
+                    // An arm reads the scrutinee as its own injection, so a
+                    // goal that names the scrutinee is refined arm by arm.
+                    let expected = crate::solution::sum_arm_goal(
+                        self.context,
+                        scrutinee,
+                        gandr_core_term::Summand::from(index),
+                        (outside, expected),
+                    )?;
                     self.frames.push(Waiting {
                         frame: Frame::CaseBranch {
                             branch,
@@ -9852,9 +9877,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         owner,
                     });
                     if let session::Joining::Joined(zones) = joining
-                        && let Some(&arm) =
-                            index.checked_sub(1).and_then(|before| branches.get(before))
-                        && let Some(&first) = branches.first()
+                        && let Some(arm) = index
+                            .checked_sub(1)
+                            .and_then(|before| arm_at(self.context.arena(), before))
+                        && let Some(first) = first
                     {
                         self.frames.push(Waiting {
                             frame: Frame::ArmEnded { zones, first, arm },

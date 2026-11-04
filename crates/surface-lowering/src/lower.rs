@@ -3747,6 +3747,10 @@ struct Lowerer<'run, 'source>
     /// Each recursive call through a joint fixpoint, by its head: the summand
     /// of the member it calls, which injects its argument.
     injected: BTreeMap<NodeIndex, Summand>,
+    /// Each recursive call through a joint fixpoint to a sibling member: the
+    /// call, the members it stands in and calls, and the arguments it passes,
+    /// held until every member's parameters are read.
+    sibling_calls: Vec<native::SiblingCall>,
     /// The reading of the form being classified, or unread between forms: a
     /// value a type reads is filed in [`Self::type_read`].
     reader: Reading,
@@ -4727,6 +4731,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         while self.refuse_unrepresented().0 {
             self.propagate_manifests();
         }
+        self.refuse_sibling_arities();
         self.unjoin_refused();
         self.mint_foreign(sink);
         self.mint(sink)?;
@@ -4816,6 +4821,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         && self.scrutinised.is_empty()
         && self.descents.is_empty()
         && self.injected.is_empty()
+        && self.sibling_calls.is_empty()
         && self.type_read.is_empty()
         && self.nullary.is_empty()
         && self.typed_heads.is_empty()
@@ -4864,6 +4870,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.scrutinised.clear();
         self.descents.clear();
         self.injected.clear();
+        self.sibling_calls.clear();
         self.type_read.clear();
         self.nullary.clear();
         self.typed_heads.clear();
@@ -5586,6 +5593,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             scrutinised: BTreeMap::new(),
             descents: BTreeMap::new(),
             injected: BTreeMap::new(),
+            sibling_calls: Vec::new(),
             reader: Reading::Unread,
             type_read: BTreeSet::new(),
             nullary: BTreeMap::new(),

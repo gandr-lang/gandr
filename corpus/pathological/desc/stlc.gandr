@@ -9,8 +9,8 @@
 //
 // - see: #5032
 // - see: #5035
+// - see: #5065
 // - see: #3403
-// - see: #5036
 // - see: #5034
 // - see: #3402
 
@@ -46,7 +46,7 @@ def lift(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, a), Extend
 /// parameter, whose type reads the two before it.
 rec {
   /// The renamer of a neutral.
-  @[ refuses("OutOfFragment.instantiation_expression.computation") ]
+  @[ refuses("OutOfFragment.mutual_block.staged_after_first") ]
   def rec renNe(g : Ctx, a : ObjTy, t : Ne(g, a), d : Ctx, r : Ren(d, g)) -> Ne(d, a) {
     match t {
       NVar(_h, b, x) => NVar(d, b, r(b)(x)),
@@ -58,7 +58,7 @@ rec {
     }
   }
   /// The renamer of a normal form.
-  @[ refuses("OutOfFragment.instantiation_expression.computation") ]
+  @[ refuses("OutOfFragment.mutual_block.staged_after_first") ]
   def rec renNf(g : Ctx, a : ObjTy, t : Nf(g, a), d : Ctx, r : Ren(d, g)) -> Nf(d, a) {
     match t {
       NNe(h, n) => { let n2 = renNe[<](h, Base, n, d, r); NNe(d, n2) },
@@ -96,27 +96,6 @@ def rec look(g : Ctx, a : ObjTy, x : Var(g, a), d : Ctx, rho : SemEnv(g, d)) -> 
     },
     There(h, b, _c, y) => match rho {
       ECons(_h, _c, _d, rest, _v) => look[<](h, b, y, d, rest)
-    }
-  }
-}
-
-/// The shape of reflection beside reification: two members over a type,
-/// whose later parameters differ.
-rec {
-  /// The depth of a semantic value's type.
-  @[ refuses("ShapeMismatch") ]
-  def rec reflectDepth(a : ObjTy, _v : sem(a, Empty)) -> Integer {
-    match a {
-      Base => 0,
-      Arr(dom, _cod) => { let n = reifyDepth[<](dom, Empty); n + 1 }
-    }
-  }
-  /// The depth of a type at a context.
-  @[ refuses("ShapeMismatch") ]
-  def rec reifyDepth(a : ObjTy, g : Ctx) -> Integer {
-    match a {
-      Base => 0,
-      Arr(_dom, cod) => { let n = reifyDepth[<](cod, g); n + 1 }
     }
   }
 }

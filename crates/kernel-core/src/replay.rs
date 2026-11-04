@@ -379,6 +379,7 @@ use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::ConversionSide;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::CompType;
+use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
@@ -1912,6 +1913,82 @@ pub(crate) fn read_decode(
     budget: ReplayBudget,
 ) -> Option<ValueTypeId>
 {
+    read_quoted(arena, unfoldings, code, budget, |normal| {
+        if let Value::Quote(quoted) = *normal {
+            Some(quoted)
+        }
+        else {
+            None
+        }
+    })
+}
+
+/// The computation type the decode of `code` denotes, read as [`read_decode`]
+/// reads a value decode: `code` normalized, and the computation type its
+/// normal form quotes.
+///
+/// # Specification
+/// - requires: `code`, and every body in `unfoldings`, live in `arena`.
+/// - ensures: `Some(quoted)` exactly when `code` normalizes within `budget` to
+///   a computation quote of `quoted`, which then lives in `arena` with every
+///   node the reading minted for it; `None` otherwise, with `arena` holding
+///   what it held on entry.
+/// - provides: the head of a computation type that decodes a returned code, as
+///   a joint fixpoint's goal does at each summand (#5036).
+/// - fails: never — a normalization that stops reads to no type.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda checks at a decode whose code is a case on an
+///   injection returning an arrow's quote, and a call of a function at such a
+///   decode converts with the arrow.
+/// - witness: `check::tests::a_lambda_checks_at_a_decode_of_a_case_on_an_injection_5036`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| ret.map_or_else(|| arena.watermark() == before, |quoted| arena.comp_type(quoted).is_some()),
+)]
+#[must_use]
+pub(crate) fn read_comp_decode(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    code: ValueId,
+    budget: ReplayBudget,
+) -> Option<CompTypeId>
+{
+    read_quoted(arena, unfoldings, code, budget, |normal| {
+        if let Value::QuoteComputation(quoted) = *normal {
+            Some(quoted)
+        }
+        else {
+            None
+        }
+    })
+}
+
+/// What `quoted` reads from the normal form of `code`, normalized as
+/// [`Replay::normalize_returned`] gives it.
+///
+/// # Specification
+/// - requires: `code`, and every body in `unfoldings`, live in `arena`.
+/// - ensures: `quoted` of the normal form when `code` normalizes within
+///   `budget` and `quoted` reads it; `None` otherwise, with `arena` holding
+///   what it held on entry.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`read_decode`] and [`read_comp_decode`].
+/// - witness: `check::tests::a_data_case_reads_a_decode_of_a_call_to_its_data_type_2872`
+/// - witness: `check::tests::a_lambda_checks_at_a_decode_of_a_case_on_an_injection_5036`
+#[spec(captures: before = arena.watermark(), ensures: |ret| ret.is_some() || arena.watermark() == before)]
+fn read_quoted<Quoted>(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    code: ValueId,
+    budget: ReplayBudget,
+    quoted: impl Fn(&Value) -> Option<Quoted>,
+) -> Option<Quoted>
+{
     let watermark = arena.watermark();
     let mut run = Replay {
         arena,
@@ -1927,9 +2004,9 @@ pub(crate) fn read_decode(
         owed: Vec::new(),
     };
     if let Ok(normal) = run.normalize_returned(code, Reduction::Endpoint, DefinedHead::Unfold)
-        && let Some(&Value::Quote(quoted)) = run.arena.value(normal)
+        && let Some(read) = run.arena.value(normal).and_then(&quoted)
     {
-        return Some(quoted);
+        return Some(read);
     }
     run.arena.truncate_to(watermark);
     None

@@ -948,8 +948,38 @@ pub(super) struct Joint
     pub own: Maybe<(SlotIndex, Summand), joint::Absent>,
 }
 
+/// A recursive call through a joint fixpoint to a sibling member, held until
+/// every member's parameters are read.
+///
+/// # Specification
+/// - requires: built by [`Lowerer::instantiation`] for a call whose summand is
+///   not its caller's own.
+/// - ensures: the call, the member it stands in, the member it calls and the
+///   count of arguments it passes, together.
+/// - provides: what [`Lowerer::refuse_sibling_arities`] holds to the called
+///   member's parameters.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — the record has no call boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::refuse_sibling_arities`].
+/// - witness: `lower::native::tests::a_mutual_block_member_takes_later_parameters_its_sibling_does_not_5036`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct SiblingCall
+{
+    /// The descent call.
+    call: Site,
+    /// The member the call stands in.
+    caller: SlotIndex,
+    /// The member it calls.
+    called: SlotIndex,
+    /// The arguments it passes.
+    arguments: OperandCount,
+}
+
 /// A member of a joint fixpoint as its own lowering left it: `thunk (fix. λ.
-/// branch)` at `+U (domain -> codomain)`.
+/// branch)` at `+U (domain -> codomain)` or `+U ((x : domain) -> codomain)`.
 ///
 /// # Specification
 /// - requires: the ids are live in the arena the member was minted into.
@@ -970,11 +1000,13 @@ struct Joinable
 {
     /// The declaration form, where its function lowered.
     declaration: NodeIndex,
-    /// Its declared type, `+U (domain -> codomain)`.
+    /// Its declared type, `+U arrow`.
     signature: ValueTypeId,
+    /// The arrow, plain or dependent on the parameter.
+    arrow: CompTypeId,
     /// The parameter's type.
     domain: ValueTypeId,
-    /// The result type.
+    /// The result type, under the parameter when `arrow` is dependent.
     codomain: CompTypeId,
     /// The body, under the fixpoint binder and the parameter.
     branch: ComputationId,
@@ -13762,17 +13794,19 @@ impl<'source> Lowerer<'_, 'source>
     ///   `>` call that is not the whole arm of a copattern block; the
     ///   foreign-claim refusal for an instantiation whose head names a function
     ///   other than a recursive one in scope; the unresolved-name refusal, at
-    ///   the head, for a head that names nothing; the unadmitted refusal for a
-    ///   call through a joint member that stages a parameter after its first,
-    ///   for a joint member's claim standing unapplied, whose thunk is the
-    ///   joint's at the sum of the block's domains, and for a `>` claim
+    ///   the head, for a head that names nothing; the joint-telescope refusal,
+    ///   at the call, for a call through a joint member that stages a parameter
+    ///   after its first or passes a leading one (#5065); the unadmitted
+    ///   refusal for a joint member's claim standing unapplied, whose thunk is
+    ///   the joint's at the sum of the block's domains, and for a `>` claim
     ///   standing unapplied or naming a joint member; the arity refusal, at the
-    ///   call, for a call passing other than one argument per parameter; the
-    ///   non-uniform refusal, at the argument, for a parameter before the
-    ///   staged one passed as anything but itself, and at the call for a joint
-    ///   member over leading parameters; the several-parameters refusal
-    ///   [`Self::claim`] raises; the wrong-sort refusal outside a head or value
-    ///   position; and the allowance refusal from the binder walk.
+    ///   call, for a call on the function itself passing other than one
+    ///   argument per parameter, a call through a sibling held for
+    ///   [`Self::refuse_sibling_arities`]; the non-uniform refusal, at the
+    ///   argument, for a parameter before the staged one passed as anything but
+    ///   itself; the several-parameters refusal [`Self::claim`] raises; the
+    ///   wrong-sort refusal outside a head or value position; and the allowance
+    ///   refusal from the binder walk.
     /// - panics: none.
     ///
     /// # Errors
@@ -13942,18 +13976,39 @@ impl<'source> Lowerer<'_, 'source>
         match (descent, summand) {
             (Some(descent), Maybe::Present(summand)) => {
                 // The joint fixpoint takes the injection of the descended value
-                // first, then the parameters after it: no member passes a
-                // leading parameter, so each stages its first.
-                if !stretch(&self.parameters, recursion.uniform).is_empty() {
-                    return Err(descent.call.out(FragmentBoundary::NonUniform));
-                }
-                if recursion.staged != ParameterAt(0) {
+                // first, then the parameters after it: a member that passes a
+                // leading parameter, or stages a later one, needs a joint over
+                // a telescope (#5065).
+                if !stretch(&self.parameters, recursion.uniform).is_empty()
+                    || recursion.staged != ParameterAt(0)
+                {
                     return Err(descent
                         .call
-                        .out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
+                        .out(FragmentBoundary::Unadmitted(Unbuilt::JointTelescope)));
                 }
                 let _previous = self.injected.insert(site.at.node, summand);
-                self.uniform_descent(frame, recursion, descent.call, descent.arguments)?;
+                // A call through a sibling passes the sibling's parameters,
+                // which a sibling later in the block has not read yet: its
+                // count is held to them once every member is read.
+                if let (Maybe::Present((caller, own)), Some(&called)) =
+                    (joint.own, joint.members.get(usize::from(summand)))
+                    && own != summand
+                {
+                    self.sibling_calls.push(SiblingCall {
+                        call: descent.call,
+                        caller,
+                        called,
+                        arguments: OperandCount::from(
+                            descent
+                                .arguments
+                                .end
+                                .saturating_sub(descent.arguments.start),
+                        ),
+                    });
+                }
+                else {
+                    self.uniform_descent(frame, recursion, descent.call, descent.arguments)?;
+                }
             },
             (Some(descent), Maybe::Absent(_)) => {
                 self.uniform_descent(frame, recursion, descent.call, descent.arguments)?;
@@ -15216,23 +15271,28 @@ impl<'source> Lowerer<'_, 'source>
     /// `A₀ + … + Aₙ`, a member `λ x. f (injᵢ x)` and a descent through a
     /// sibling `f (inj_j v) c₁ … cₘ`. A member's parameters after its staged
     /// one stay the lambdas of its branch, so the case stands directly under
-    /// the staged lambda and no branch is re-indexed past them.
+    /// the staged lambda and no branch is re-indexed past them. Members whose
+    /// results differ, or whose types read the staged parameter, share the
+    /// joint at a goal a case over the sum computes ([`joint_goal`]), which
+    /// each arm and each member reads at its own summand (#5036).
     /// **Alternatives.** A mutual fixpoint former, a new kernel node the
     /// record declines; a tuple of fixpoints, which no stage relates.
-    /// **Reversal.** A member over leading parameters, or at a dependent
-    /// type, joins once the joint reads a telescope rather than one domain.
+    /// **Reversal.** A member over leading parameters joins once the joint
+    /// reads a telescope rather than one domain (#5065).
     ///
     /// # Specification
     /// - requires: the mint sweep has run.
     /// - ensures: in a mutual block of at least two `def rec` declarations,
     ///   each staging its first parameter and lowered to `thunk (fix. λ. bᵢ)`
-    ///   at `+U (Aᵢ -> C)`, `bᵢ` the lambdas of the later parameters over the
-    ///   body and `C` the arrow over their types, every member's body is `thunk
-    ///   (λ x. ((fix. λ y. case y { b₀↑ | … | bₙ↑ }) : Σᵢ Aᵢ -> C) (injᵢ x))`,
-    ///   each `bᵢ` raised past the case's binder and its copies at the origins
-    ///   of what they copy, every other node the fixpoint's insertion; the
-    ///   fixpoint claims descent when a member's did. A block with a member
-    ///   that did not lower so is unchanged.
+    ///   at `+U (Aᵢ -> Cᵢ)` or `+U ((x : Aᵢ) -> Cᵢ)`, `bᵢ` the lambdas of the
+    ///   later parameters over the body and `Cᵢ` the arrow over their types,
+    ///   every member's body is `thunk (λ x. ((fix. λ y. case y { b₀↑ | … | bₙ↑
+    ///   }) : G) (injᵢ x))`, each `bᵢ` raised past the case's binder and its
+    ///   copies at the origins of what they copy, every other node the
+    ///   fixpoint's insertion; `G` is `Σᵢ Aᵢ -> C` when every member is a plain
+    ///   arrow to one `C`, and [`joint_goal`] otherwise; the fixpoint claims
+    ///   descent when a member's did. A block with a member that did not lower
+    ///   so is unchanged.
     /// - provides: mutual recursion between a block's functions as the one
     ///   fixpoint the core has.
     /// - fails: never.
@@ -15244,6 +15304,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Joint`].
     /// - witness: `lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722`
+    /// - witness: `lower::native::tests::a_mutual_block_member_takes_later_parameters_its_sibling_does_not_5036`
     /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
     pub(super) fn mint_joints(
         &mut self,
@@ -15270,6 +15331,54 @@ impl<'source> Lowerer<'_, 'source>
             }
             if joined.len() == count {
                 self.join(&joined, sink);
+            }
+        }
+    }
+
+    /// Refuse each member of a mutual block whose call through a sibling
+    /// passes other than one argument per parameter of that sibling.
+    ///
+    /// **Choice.** A member classifies before its later siblings read their
+    /// parameters, so [`Self::instantiation`] holds each call through a sibling
+    /// and this pass counts it once every member is read. Members may take
+    /// different parameters after the first (#5036), so the count is the
+    /// called member's, not the caller's.
+    ///
+    /// # Specification
+    /// - requires: the source is classified and not yet minted.
+    /// - ensures: each held call whose count differs from its called member's
+    ///   parameters refuses its caller with the arity refusal at the call,
+    ///   unless the caller holds a refusal already; the held calls are spent.
+    /// - provides: the arity refusal of a call through a sibling.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause would recount every member's parameters;
+    ///   the witness reads the refusal back.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call passing its sibling's parameters lowers, and
+    ///   one passing its caller's count to a sibling of another count refuses.
+    /// - witness: `lower::native::tests::a_mutual_block_member_takes_later_parameters_its_sibling_does_not_5036`
+    pub(super) fn refuse_sibling_arities(&mut self)
+    {
+        for held in core::mem::take(&mut self.sibling_calls) {
+            let Some(&Maybe::Present(Half { declaration, .. })) = self
+                .collected
+                .slots
+                .get(usize::from(held.called))
+                .map(|slot| &slot.definition)
+            else {
+                continue;
+            };
+            let parameters = self.recursions.iter().find_map(|(&binder, recursion)| {
+                (self.scope.declared(binder) == Maybe::Present(declaration.node))
+                    .then(|| stretch(&self.parameters, recursion.parameters).len())
+            });
+            if parameters.is_some_and(|count| OperandCount::from(count) != held.arguments) {
+                let _held = self
+                    .faults
+                    .entry(held.caller)
+                    .or_insert_with(|| held.call.out(FragmentBoundary::Arity(held.arguments)));
             }
         }
     }
@@ -15355,9 +15464,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the mint sweep has run.
     /// - ensures: a function tail staging its first parameter, lowered to
-    ///   `thunk (fix. λ. b)` at `+U (A -> C)`, reads as its declaration, `A`,
-    ///   `C`, `b` and the fixpoint's claim; `b` holds the lambdas of the
-    ///   parameters after the first, and `C` the arrow over their types.
+    ///   `thunk (fix. λ. b)` at `+U (A -> C)` or `+U ((x : A) -> C)`, reads as
+    ///   its declaration, its arrow, `A`, `C`, `b` and the fixpoint's claim;
+    ///   `b` holds the lambdas of the parameters after the first, and `C` the
+    ///   arrow over their types, under `x` when the arrow is dependent.
     /// - fails: [`joint::Absent::Unjoined`] for anything else.
     /// - panics: none.
     ///
@@ -15376,6 +15486,9 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Joinable, joint::Absent>
     {
         let unjoined = Maybe::Absent(joint::Absent::Unjoined);
+        if self.faults.contains_key(&member) {
+            return unjoined;
+        }
         let Some(&Maybe::Present(Half {
             operand: Operand::Function,
             declaration,
@@ -15412,7 +15525,8 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return unjoined;
         };
-        let Some(&CompType::Arrow { domain, codomain }) = arena.comp_type(arrow)
+        let Some(&(CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain })) =
+            arena.comp_type(arrow)
         else {
             return unjoined;
         };
@@ -15434,6 +15548,7 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(Joinable {
             declaration: declaration.node,
             signature,
+            arrow,
             domain,
             codomain,
             branch,
@@ -15470,7 +15585,22 @@ impl<'source> Lowerer<'_, 'source>
         let mut carried = Vec::new();
         let domains: Vec<ValueTypeId> = joined.iter().map(|member| member.domain).collect();
         let sum = sink.arena.value_type_sum(&domains);
-        let ascribed = sink.arena.comp_type_arrow(sum, first.codomain);
+        let shared = joined.iter().all(|member| {
+            matches!(
+                sink.arena.comp_type(member.arrow),
+                Some(&CompType::Arrow { .. })
+            ) && gandr_core_term::equal_comp_type_syntax(
+                sink.arena,
+                member.codomain,
+                first.codomain,
+            ) == gandr_core_term::CertificateEquality::Equal
+        });
+        let ascribed = if shared {
+            sink.arena.comp_type_arrow(sum, first.codomain)
+        }
+        else {
+            joint_goal(sink, joined, sum, &mut carried)
+        };
         // Each member's body stands under its own fixpoint binder and its
         // parameter; in the joint it stands under the fixpoint binder, the
         // case's scrutinee and the summand the case binds.
@@ -15532,6 +15662,70 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
     }
+}
+
+/// The goal of a joint whose members' results differ: `Π (y : sum).
+/// El(⟨case y { return ⌜C₀⌝ | … | return ⌜Cₙ⌝ }⟩)`, each `Cᵢ` member `i`'s
+/// result with its parameter read as the summand the case binds.
+///
+/// **Choice.** The decode reads at each summand to that member's own result,
+/// in the checker and in the kernel, since a case on the joint's binder reads
+/// its goal at each injection (#5036). The motive is a case returning codes,
+/// so no declaration is minted for it.
+/// **Alternative.** A motive minted as a declaration of its own, which needs a
+/// constant and a slot the block does not have.
+///
+/// # Specification
+/// - requires: `joined` is one block's members, each read by
+///   [`Lowerer::joinable`], and `sum` the sum of their domains.
+/// - ensures: the dependent arrow above, its case ascribed at `F U_c 0`; a
+///   dependent member's result is raised past the case's scrutinee, and a plain
+///   one's past the scrutinee and the summand. The copies are traced into
+///   `carried`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Joint`].
+/// - witness: `lower::native::tests::a_mutual_block_member_takes_later_parameters_its_sibling_does_not_5036`
+#[spec(ensures: |ret| matches!(sink.arena.comp_type(ret), Some(&CompType::Pi { domain, .. }) if domain == sum))]
+fn joint_goal(
+    sink: &mut Sink<'_>,
+    joined: &[Joinable],
+    sum: ValueTypeId,
+    carried: &mut Vec<Carried>,
+) -> CompTypeId
+{
+    let mut arms = Vec::with_capacity(joined.len());
+    for member in joined {
+        let (under, amount) = if matches!(
+            sink.arena.comp_type(member.arrow),
+            Some(&CompType::Pi { .. })
+        ) {
+            (Binders::ONE, Binders::ONE)
+        }
+        else {
+            (Binders::NONE, Binders::from(2_u32))
+        };
+        let result =
+            gandr_core_term::shift_comp_type_under(sink.arena, member.codomain, under, amount)
+                .settle_traced(sink.arena, carried);
+        let code = sink.arena.value_quote_computation(result);
+        arms.push(sink.arena.computation_return(code));
+    }
+    let scrutinee = sink
+        .arena
+        .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let motive = sink.arena.computation_case(scrutinee, &arms);
+    let codes = sink.arena.value_type_universe(
+        gandr_core_term::Sort::Ground(GroundSort::Computation),
+        Level::zero(),
+    );
+    let codes = sink.arena.comp_type_returner(codes);
+    let motive = sink.arena.computation_ascribe(motive, codes);
+    let code = sink.arena.value_returned(motive);
+    let goal = sink.arena.comp_type_element(code, Level::zero());
+    sink.arena.comp_type_pi(sum, goal)
 }
 
 /// Whether a rule side binds its variables or reads the left side's.
