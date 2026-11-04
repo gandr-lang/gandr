@@ -4,4 +4,5 @@ error[OutOfFragment.NotAtResult]: a row written before a type belongs to the ret
 3 │ def rowed(k : +U ([Partial] Unit)) -> Unit {
   │                   ━━━━━━━━━━━━━━ a row admitted only at a definition's result
   │
-  ╰ note: `rowed` is refused with OutOfFragment.NotAtResult, as its expectation states
+  ├ note: `rowed` is refused with OutOfFragment.NotAtResult, as its expectation states
+  ╰ help: write the row only before a definition's result type

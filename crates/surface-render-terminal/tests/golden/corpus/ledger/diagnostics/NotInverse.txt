@@ -8,4 +8,5 @@ error[NotInverse]: the `ua` translators are not inverse to each other
 36 │ ┃ ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = boolId, .one = keep}) ;
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ translators that are not inverse
    │
-   ╰ note: `lopsided` is refused with NotInverse, as its expectation states
+   ├ note: `lopsided` is refused with NotInverse, as its expectation states
+   ╰ help: make the `ua` translators inverse

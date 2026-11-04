@@ -4,4 +4,5 @@ error[OutOfFragment.NonUniform]: a recursive call must pass the parameters befor
 14 │     Succ(n) => shadowed[<](n, n)
    │                            ━ not the parameter itself
    │
-   ╰ note: `shadowed` is refused with OutOfFragment.NonUniform, as its expectation states
+   ├ note: `shadowed` is refused with OutOfFragment.NonUniform, as its expectation states
+   ╰ help: pass the recursive call's parameters unchanged

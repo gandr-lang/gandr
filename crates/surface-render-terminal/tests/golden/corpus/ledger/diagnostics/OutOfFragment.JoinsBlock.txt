@@ -4,4 +4,5 @@ error[OutOfFragment.JoinsBlock]: an arm of this match exits, so its other arms c
 10 │   let m = match n -> -F Nat {
    │                      ━━━━━━ an answer the arms do not give
    │
-   ╰ note: `joined` is refused with OutOfFragment.JoinsBlock, as its expectation states
+   ├ note: `joined` is refused with OutOfFragment.JoinsBlock, as its expectation states
+   ╰ help: remove the match result annotation

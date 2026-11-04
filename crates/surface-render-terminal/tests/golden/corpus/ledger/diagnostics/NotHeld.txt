@@ -12,4 +12,5 @@ error[NotHeld]: `access` needs a value opened by `var`; this names something els
 6 │ │ }
   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `nested` is refused with NotHeld, as its expectation states
+  ├ note: `nested` is refused with NotHeld, as its expectation states
+  ╰ help: open a value with `var` before accessing it

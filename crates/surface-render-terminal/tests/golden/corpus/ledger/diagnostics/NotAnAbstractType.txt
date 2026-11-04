@@ -14,4 +14,5 @@ error[NotAnAbstractType]: this names an abstract type that was not admitted
 9 │ ┃   def progress = thunk { fun (x) { return x } };
   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ not an abstract type
   │
-  ╰ note: `progress` is refused with NotAnAbstractType, as its expectation states
+  ├ note: `progress` is refused with NotAnAbstractType, as its expectation states
+  ╰ help: admit the abstract type before using it

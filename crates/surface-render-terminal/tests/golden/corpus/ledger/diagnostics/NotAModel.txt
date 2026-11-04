@@ -4,4 +4,5 @@ error[NotAModel]: `n` is no binder or definition declared at a model type, so it
 4 │   module m = n;
   │              ━ not a model
   │
-  ╰ note: `opened` is refused with NotAModel, as its expectation states
+  ├ note: `opened` is refused with NotAModel, as its expectation states
+  ╰ help: declare `n` as a model before opening it
