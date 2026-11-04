@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # `pr:await`'s poll over a stubbed `gh` (#4803), run by `check:pr-stack` once
 # per case in `await.json`: the repository is `case/case`, the awaited number
-# 7, and the issue read answers the case's `issue`, or fails when it is
+# 7, the host's reading of the open pull requests holds none (#5061), and
+# the issue read answers the case's `issue`, or fails when it is
 # `fail`. The wait runs with `--timeout 0`, so it reads once and ends on that
 # reading's event or at the deadline. The result is the wait's stdout and exit
 # status, compared with the case's `output` and `status`.
@@ -18,6 +19,7 @@ cat > "$work/bin/gh" << 'EOF'
 case "$*" in
   "repo view --json nameWithOwner --jq .nameWithOwner") echo case/case ;;
   "repo view case/case --json defaultBranchRef --jq .defaultBranchRef.name") echo main ;;
+  "api graphql --paginate "*) ;;
   "api repos/case/case/issues/7")
     [[ $AWAIT_ISSUE != fail ]] || { echo 'gh: HTTP 502' >&2; exit 1; }
     printf '%s\n' "$AWAIT_ISSUE"

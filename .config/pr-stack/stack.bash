@@ -30,9 +30,11 @@ stacking_current() {
 # What every reading of a pull request takes, one GraphQL selection: its
 # place in a stack, its holds, its merge and queue state, and its head's
 # check rollup in the shape `gh pr view --json statusCheckRollup` gives.
+# `pr:land` and `pr:await` poll through it (#5061), so it holds what their
+# polls read: the merge commit and the queue position among them.
 pr_fields='number state headRefName baseRefName isDraft createdAt isInMergeQueue mergeStateStatus mergeable headRefOid
   autoMergeRequest { enabledAt } labels(first: 50) { nodes { name } } stack { number } author { __typename }
-  mergeQueueEntry { state headCommit { oid } }
+  mergeCommit { oid } mergeQueueEntry { state position headCommit { oid } }
   timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) { nodes { ... on RemovedFromMergeQueueEvent { reason } } }
   commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state contexts(first: 100) { nodes {
     __typename
@@ -40,12 +42,14 @@ pr_fields='number state headRefName baseRefName isDraft createdAt isInMergeQueue
     ... on StatusContext { context state startedAt: createdAt targetUrl } } } } } } }'
 
 # Every open pull request, as a JSON array of `pr_fields`: one paginated
-# query, about four points, that every pull request reading on the host
-# shares through the budget's cache (`budget.bash`), so a watch, a landing
-# and a stacking asking at once cost one query between them.
+# query that every pull request reading on the host shares through the
+# budget's cache (`budget.bash`), so a watch, a landing and a stacking
+# asking at once cost one query between them. A page is 25 pull requests,
+# 1 point (#5061): GitHub prices a page by the nodes it asks for, so a
+# page of 100 costs 4 points whatever the number open.
 pulls_reading() {
   gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" \
-    -f query="query(\$owner: String!, \$name: String!, \$endCursor: String) { repository(owner: \$owner, name: \$name) { pullRequests(states: OPEN, first: 100, after: \$endCursor) { pageInfo { hasNextPage endCursor } nodes { $pr_fields } } } }" \
+    -f query="query(\$owner: String!, \$name: String!, \$endCursor: String) { repository(owner: \$owner, name: \$name) { pullRequests(states: OPEN, first: 25, after: \$endCursor) { pageInfo { hasNextPage endCursor } nodes { $pr_fields } } } }" \
     --jq '.data.repository.pullRequests.nodes[]' \
     | jq -cs .
 }

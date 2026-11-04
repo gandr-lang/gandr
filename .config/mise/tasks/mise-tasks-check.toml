@@ -1624,6 +1624,34 @@ fi
 echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a red member is cut out of its stack; a heal reports its restack; a change is measured from a fetched trunk; a top behind the trunk arms pr:await, is stacked past or is refused; a rebase's empty replays are read; a member above a queued one merges only once linked; pr:await outlasts a failed read"
 '''
 
+# Every `gh` call site has a measured price, and each identity's hour of
+# calls stays within its ceiling (#5061). `.config/gh/sites.awk` lists the
+# calls in the workflow's shell, tasks and workflows. `.config/gh/budget.jq`
+# reads them against `.config/gh/calls.toml`, and `.config/gh/cases.json`
+# holds its cases. A new call site, a changed one or a price over a ceiling
+# fails here, before it spends the shared limit.
+["check:gh-budget"]
+description = "Every gh call site has a measured price in .config/gh/calls.toml, and each identity's hour of calls stays within its ceiling"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+failed=0
+.config/cases/run.bash gh-budget .config/gh/cases.json --program .config/gh/budget.jq || failed=1
+sites=$(git ls-files -z -- '.config/*.sh' '.config/*.bash' '.config/*.toml' '.github/*.yml' '.github/*.yaml' \
+  | xargs -0 awk -f .config/gh/sites.awk \
+  | jq -R -s -c 'split("\n") | map(select(. != "") | split("\t") | {file: .[0], scope: .[1], verb: .[2]})')
+table=$(yq -p toml -o json -I 0 .config/gh/calls.toml)
+findings=$(jq -n -c --argjson sites "$sites" --argjson table "$table" '{$sites, $table}' | jq -r -L .config/gh -f .config/gh/budget.jq)
+if [[ -n $findings ]]; then
+  printf '%s\n' "$findings" >&2
+  failed=1
+fi
+(( failed == 0 )) || exit 1
+echo "gh-budget check OK: $(jq length <<< "$sites") calls in $(jq '[.[] | [.file, .scope]] | unique | length' <<< "$sites") sites priced, each identity within its ceiling"
+'''
+
 # The host lock the gate slots, the mutation run and `ci:act` take (#3105):
 # `.config/mise/host-lock-cases.bash` holds a scratch lock's slots and reads
 # the refusal, a waiter, a killed holder, a killed holder's running child, and
