@@ -4346,7 +4346,8 @@ where
     ///   projection frames, forces `constant`, whose body is a suspended
     ///   fixpoint, the fixpoint refolded — its body opened at the constant and
     ///   weakened past the binder it does not read, its evidence kept — under
-    ///   those frames; otherwise [`Self::unfold_term`]'s reduct.
+    ///   those frames; otherwise, a bind of several values among them included,
+    ///   [`Self::unfold_term`]'s reduct.
     /// - provides: the δ-step of [`Self::normalize_returned`] and of a held
     ///   operand's run in [`Self::reduce`].
     /// - fails: as [`Self::unfold_term`].
