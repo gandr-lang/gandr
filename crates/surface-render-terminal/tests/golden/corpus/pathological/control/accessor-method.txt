@@ -55,7 +55,8 @@ error[ViewOfNoPlace]: `as w { … }` lends a view only after a call of a method 
 38 │   xs.size() as w { pure w }
    │      ━━━━ a call answering no place
    │
-   ╰ note: `sized` is refused with ViewOfNoPlace, as its expectation states
+   ├ note: `sized` is refused with ViewOfNoPlace, as its expectation states
+   ╰ help: call a method that returns a place before the view block
 
 error[OutOfFragment.Held]: an `access` lends, and an assignment writes, a held value: a name a `var` statement holds
    ╭▸ corpus/pathological/control/accessor-method.gandr:45:3

@@ -4,4 +4,5 @@ error[AbstractKindNotUniverse]: an abstract type's kind must be a universe
 2 │ module Kinded :> #{ type T : Integer } where {
   │                              ━━━━━━━ not a value universe
   │
-  ╰ note: `T` is refused with AbstractKindNotUniverse, as its expectation states
+  ├ note: `T` is refused with AbstractKindNotUniverse, as its expectation states
+  ╰ help: give the abstract type a universe as its kind

@@ -121,6 +121,30 @@ pub fn advice(refusal: Refusal<'_>) -> Maybe<String, help::Absent>
         }) => Maybe::Present(String::from(
             "make each member type have the size its boundary row states",
         )),
+        Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+            clause: BoundaryClause::Align,
+            ..
+        }) => Maybe::Present(String::from(
+            "make each member type align with its boundary row",
+        )),
+        Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+            clause: BoundaryClause::Arity,
+            ..
+        }) => Maybe::Present(String::from(
+            "give each member the number of arguments its boundary row states",
+        )),
+        Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+            clause: BoundaryClause::Members,
+            ..
+        }) => Maybe::Present(String::from(
+            "declare the number of members the boundary attribute names",
+        )),
+        Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+            clause: BoundaryClause::Niche,
+            ..
+        }) => Maybe::Present(String::from(
+            "make each member type use the niche its boundary row states",
+        )),
         Refusal::Corpus(_) => Maybe::Absent(help::Absent::Unworded),
     }
 }
@@ -370,6 +394,12 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::UnknownTactic { .. } => {
             String::from("replace the tactic with a supported tactic")
         },
+        LoweringRefusal::ViewOfNoPlace { .. } => {
+            String::from("call a method that returns a place before the view block")
+        },
+        LoweringRefusal::WithoutK { .. } => {
+            String::from("use the path through `Path.walk`, `Path.back`, `Path.step` or `Path.ap`")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::DuplicateSignature { .. }
@@ -390,11 +420,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::UndescribedMember { .. }
         | LoweringRefusal::ImplicitTelescope { .. }
         | LoweringRefusal::EntryType { .. }
-        | LoweringRefusal::ViewOfNoPlace { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
         | LoweringRefusal::Unreachable { .. }
         | LoweringRefusal::OutsideLoop { .. }
-        | LoweringRefusal::WithoutK { .. }
         | LoweringRefusal::RulesUndecided { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
@@ -998,11 +1026,23 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             defect: AccessDefect::Moved,
             ..
         } => String::from("end the view with `resume` after reading its value"),
+        CheckRefusal::AbsentTupleComponent(_) => {
+            String::from("select a component that the tuple has")
+        },
+        CheckRefusal::AbstractKindNotUniverse(_) => {
+            String::from("give the abstract type a universe as its kind")
+        },
+        CheckRefusal::CapabilityOutsideAuthority { .. } => {
+            String::from("use an operation the capability grants")
+        },
+        CheckRefusal::Codata {
+            fault: CodataFault::ObservationLevel,
+            ..
+        } => String::from("lower each observation type to the codata declaration's universe"),
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::Access { .. }
         | CheckRefusal::NotADataType(_)
         | CheckRefusal::LoopUndecided { .. }
-        | CheckRefusal::AbstractKindNotUniverse(_)
         | CheckRefusal::RepresentationAboveKind { .. }
         | CheckRefusal::NotAnAbstractType(_)
         | CheckRefusal::SealSiteRepeated(_)
@@ -1010,7 +1050,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::UnknownConstructor { .. }
         | CheckRefusal::ConstructorArity(_)
         | CheckRefusal::NonExhaustiveDataCase(_)
-        | CheckRefusal::AbsentTupleComponent(_)
         | CheckRefusal::UnknownOperation { .. }
         | CheckRefusal::HandlerCoverage { .. }
         | CheckRefusal::ShiftWithoutReset { .. }
@@ -1046,7 +1085,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::Codata { .. }
         | CheckRefusal::Located { .. }
         | CheckRefusal::LiteralAmbiguous { .. }
-        | CheckRefusal::CapabilityOutsideAuthority { .. }
         | CheckRefusal::CapabilityUngranted { .. }
         | CheckRefusal::FootprintsOverlap { .. }
         | CheckRefusal::SessionCodeExpected { .. }
@@ -1067,7 +1105,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 166] = [
+    const WORDED: [&str; 176] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1235,6 +1273,16 @@ mod tests
         "UnrestrictedEndpoint",
         "UnstatedComponent.Unbound",
         "ViewMoved",
+        "ViewOfNoPlace",
+        "WithoutK",
+        "AbsentTupleComponent",
+        "AbstractKindNotUniverse",
+        "BoundaryUnrealised.Align",
+        "BoundaryUnrealised.Arity",
+        "BoundaryUnrealised.Members",
+        "BoundaryUnrealised.Niche",
+        "CapabilityOutsideAuthority",
+        "CodataObservationLevel",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

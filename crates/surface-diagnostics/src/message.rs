@@ -2794,6 +2794,22 @@ pub mod tests
                 clause: BoundaryClause::Size,
                 span,
             }),
+            Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+                clause: BoundaryClause::Align,
+                span,
+            }),
+            Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+                clause: BoundaryClause::Arity,
+                span,
+            }),
+            Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+                clause: BoundaryClause::Members,
+                span,
+            }),
+            Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+                clause: BoundaryClause::Niche,
+                span,
+            }),
         ];
         let refusals: Vec<Refusal<'_>> =
             lowering.into_iter().chain(checking).chain(corpus).collect();

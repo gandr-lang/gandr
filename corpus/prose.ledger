@@ -5570,13 +5570,6 @@ crates/surface-pretty/README.md STE-9.3 3fe110b66e5a6f0b
 crates/surface-render-remote/README.md STE-3.2 b3edb6bbf03ae40c
 crates/surface-render-terminal/README.md STE-3.2 2d189abd047437c9
 crates/surface-render-terminal/README.md STE-9.3 2d189abd047437c9
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/AbsentTupleComponent.txt STE-5.3 f5ff5a2587312850
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/AbstractKindNotUniverse.txt STE-5.3 85823dcc5b2a9f89
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BoundaryUnrealised.Align.txt STE-5.3 f3c9181fdda6032c
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BoundaryUnrealised.Arity.txt STE-5.3 ef18c94a8f00253c
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BoundaryUnrealised.Members.txt STE-5.3 e040c5caff4cb97f
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/BoundaryUnrealised.Niche.txt STE-5.3 2f82c38bff5d28c5
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/CapabilityOutsideAuthority.txt STE-5.3 6907c55dd31607f8
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/CodataObservationLevel.txt STE-5.3 57fd1c28fe433ebb
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/CodataUndeclared.txt STE-5.3 cd4a09faaa5f1af6
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/CodataWithoutObservations.txt STE-5.3 bf95d55255fef0b4
@@ -5647,14 +5640,11 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedCo
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedComponent.Unbound.txt STE-5.3 6e2efb42d3e3cee3
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedComponent.UnknownHead.txt STE-5.3 29eb10348855398a
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedComponent.Unsorted.txt STE-5.3 913d618e84e71673
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ViewOfNoPlace.txt STE-5.3 99cbeb6bf8011644
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/WithoutK.txt STE-5.3 78f28a7d97279c27
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/ill-typed-deprecation.txt STE-5.3 d0c11940f1f75c24
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/ill-typed-deprecation.txt STE-5.3 d6565ea6daeaf10f
 crates/surface-render-terminal/tests/golden/corpus/pathological/basics/kernel-admission-boundary.txt STE-5.3 1dbe5724dc7f0628
 crates/surface-render-terminal/tests/golden/corpus/pathological/builtins/list-patterns.txt STE-5.3 9861b85a5613cd7c
 crates/surface-render-terminal/tests/golden/corpus/pathological/classifier/implicit-telescope.txt STE-5.3 761ce136eef636cd
-crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor-method.txt STE-5.3 99cbeb6bf8011644
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/held-unique.txt STE-5.2 9ca76855ff60440b
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/kept-view.txt STE-5.3 5388aacc3a654ccf
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/descent.txt STE-5.3 82cfda2e0c36480c
@@ -5664,7 +5654,6 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/desc/bind-term.t
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/binding-field.txt STE-5.3 3ebbbbdd851df500
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/freshness.txt STE-5.3 4e66202e37c5fd67
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/derived-associator.txt STE-5.3 73c9fbfb11722aa3
-crates/surface-render-terminal/tests/golden/corpus/pathological/identity/k-derivation.txt STE-5.3 78f28a7d97279c27
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/univalence.txt STE-5.3 4243b91b89fd9499
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/import-shadows.txt STE-5.3 6a4908f05d33503b
 crates/surface-render-terminal/tests/golden/corpus/pathological/self-reference/written-while-kept.txt STE-5.3 5388aacc3a654ccf

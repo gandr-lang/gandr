@@ -4,4 +4,5 @@ error[ViewOfNoPlace]: `as w { … }` lends a view only after a call of a method 
 13 │   n.size() as w { pure w }
    │     ━━━━ a call answering no place
    │
-   ╰ note: `sized` is refused with ViewOfNoPlace, as its expectation states
+   ├ note: `sized` is refused with ViewOfNoPlace, as its expectation states
+   ╰ help: call a method that returns a place before the view block
