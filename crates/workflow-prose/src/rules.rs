@@ -5,6 +5,9 @@
 //! names its rule, and the rule's fix is the line
 //! `crates/workflow-prose/README.md` § Rules states.
 
+extern crate alloc;
+
+use alloc::collections::BTreeMap;
 use core::fmt;
 use core::str::FromStr;
 
@@ -16,12 +19,16 @@ use crate::glossary::Tag;
 use crate::parse::Sentence;
 use crate::parse::Token;
 use crate::passage::Advice;
+use crate::passage::CommentShape;
 use crate::passage::Golden;
 use crate::passage::Line;
+use crate::passage::Opened;
 use crate::passage::Passage;
 use crate::passage::Placed;
+use crate::passage::References;
 use crate::passage::Source;
 use crate::passage::Text;
+use crate::passage::WhatLine;
 
 /// The lemmas whose passive the corpus states: `is refused`, `is admitted`,
 /// `is replayed`, `is checked`, `is normalised`.
@@ -43,6 +50,15 @@ const WORDS: usize = 25;
 
 /// The most sentences a comment paragraph may hold.
 const WALL: usize = 5;
+
+/// The words the head's first sentence may hold.
+const WHAT_WORDS: usize = 20;
+
+/// The sentences an item comment may hold.
+const ITEM_SENTENCES: usize = 2;
+
+/// The paragraphs a head holds: what, why, how, references.
+const HEAD_PARAGRAPHS: usize = 4;
 
 /// The coarse tags of a token that is not a word.
 const UNWORDED: [&str; 3] = ["PUNCT", "SPACE", "SYM"];
@@ -88,12 +104,19 @@ pub enum Rule
     InlineReference,
     /// A comment paragraph of more than five sentences.
     Wall,
+    /// A corpus source's head is not four paragraphs, or a references line
+    /// opens with neither `- see:` nor `- owes:`.
+    Head,
+    /// The head's first sentence runs past twenty words.
+    What,
+    /// An item comment runs past two sentences.
+    Item,
     /// A diagnostic without its what, its where or its what-to-do.
     Procedure,
 }
 
 /// Every rule, in the order they are stated.
-const RULES: [Rule; 11] = [
+const RULES: [Rule; 14] = [
     Rule::Passive,
     Rule::Tense,
     Rule::NounStack,
@@ -104,6 +127,9 @@ const RULES: [Rule; 11] = [
     Rule::Dash,
     Rule::InlineReference,
     Rule::Wall,
+    Rule::Head,
+    Rule::What,
+    Rule::Item,
     Rule::Procedure,
 ];
 
@@ -135,6 +161,9 @@ impl fmt::Display for Rule
             Self::Dash => "Dash",
             Self::InlineReference => "InlineReference",
             Self::Wall => "Wall",
+            Self::Head => "Head",
+            Self::What => "What",
+            Self::Item => "Item",
             Self::Procedure => "Procedure",
         })
     }
@@ -218,6 +247,9 @@ impl fmt::Display for Fix
             Rule::Wall => {
                 "split the paragraph into paragraphs of at most five sentences, one idea each"
             },
+            Rule::Head => "open the source on four paragraphs: what, why, how and references",
+            Rule::What => "cut the first sentence to at most twenty words",
+            Rule::Item => "cut the item comment to at most two sentences",
             Rule::Procedure => {
                 "state what is wrong in the headline, label the span, and end with an \
                  imperative `help:` or the issue that tracks it"
@@ -337,6 +369,32 @@ fn spoken(
         .collect()
 }
 
+/// A count of words. A code span counts as one word.
+#[repr(transparent)]
+struct Words(usize);
+
+/// The words of `sentence`, a code span counted as one.
+///
+/// # Specification
+/// trivial.
+fn words(
+    readings: &[Reading],
+    sentence: &Sentence,
+) -> Words
+{
+    let worded = |token: &Token| !UNWORDED.contains(&token.pos.as_str());
+    let mut count = 0_usize;
+    let mut coded = false;
+    for token in &sentence.tokens {
+        let code = read(readings, token) == Reading::Code;
+        if (code && !coded) || (!code && worded(token)) {
+            count = count.saturating_add(1);
+        }
+        coded = code;
+    }
+    Words(count)
+}
+
 /// The body rules `sentence` breaks, each at most once: a body's and a
 /// comment's.
 ///
@@ -369,16 +427,7 @@ fn clauses(
     let prose = |token: &Token| read(readings, token) == Reading::Prose;
     let worded = |token: &Token| !UNWORDED.contains(&token.pos.as_str());
     let mut rules = Vec::new();
-    let mut words = 0_usize;
-    let mut coded = false;
-    for token in &sentence.tokens {
-        let code = read(readings, token) == Reading::Code;
-        if (code && !coded) || (!code && worded(token)) {
-            words = words.saturating_add(1);
-        }
-        coded = code;
-    }
-    if words > WORDS {
+    if words(readings, sentence).0 > WORDS {
         rules.push(Rule::Length);
     }
     let after = |mark: &dyn Fn(&Token) -> bool, follows: &dyn Fn(&Token) -> bool| {
@@ -623,6 +672,88 @@ pub fn sentences(
     findings
 }
 
+/// The head and item findings of `shapes`, read over the parsed `passages`.
+///
+/// # Specification
+/// - requires: `parsed` is the parse of `passages`, in the same order.
+/// - ensures: one [`Rule::Head`] when a corpus head is not four paragraphs or a
+///   references line opens with neither `- see:` nor `- owes:`. One
+///   [`Rule::What`] when that head's first sentence holds more than twenty
+///   words. One [`Rule::Item`] when an item comment holds more than two
+///   sentences. The word count is the one [`words`] states.
+/// - provides: the shape rules over the spaCy sentences.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the walk is the clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a head of three paragraphs, a first sentence of
+///   twenty-one words and an item of three sentences, each beside a twin that
+///   holds. An off-by-one limit changes a verdict.
+/// - witness: `rules::tests::a_head_and_an_item_hold_their_sentence_counts`
+#[inline]
+#[must_use]
+pub fn shaped(
+    shapes: &[CommentShape],
+    passages: &[Passage],
+    parsed: &[&[Sentence]],
+) -> Vec<Finding>
+{
+    let mut by_line = BTreeMap::new();
+    for (passage, sentences) in passages.iter().zip(parsed) {
+        by_line.insert((passage.path.as_str(), passage.line), (passage, *sentences));
+    }
+    let mut findings = Vec::new();
+    for shape in shapes {
+        if let Opened::Run(head) = shape.opened {
+            if head.paragraphs != HEAD_PARAGRAPHS || head.references == References::Broken {
+                findings.push(Finding {
+                    path: shape.path.clone(),
+                    line: head.line,
+                    rule: Rule::Head,
+                    sentence: "the head is not four paragraphs".to_owned(),
+                });
+            }
+            if let WhatLine::At(line) = head.what
+                && let Some(&(passage, sentences)) = by_line.get(&(shape.path.as_str(), line))
+                && let Some(first) = sentences.first()
+                && words(&readings(Text(&passage.text)), first).0 > WHAT_WORDS
+            {
+                findings.push(Finding {
+                    path: shape.path.clone(),
+                    line,
+                    rule: Rule::What,
+                    sentence: spoken(passage, first),
+                });
+            }
+        }
+        for item in &shape.items {
+            let mut count = 0_usize;
+            let mut said = String::new();
+            for line in &item.prose {
+                let Some(&(passage, sentences)) = by_line.get(&(shape.path.as_str(), *line))
+                else {
+                    continue;
+                };
+                count = count.saturating_add(sentences.len());
+                if !said.is_empty() {
+                    said.push(' ');
+                }
+                said.push_str(&passage.text);
+            }
+            if count > ITEM_SENTENCES {
+                findings.push(Finding {
+                    path: shape.path.clone(),
+                    line: item.line,
+                    rule: Rule::Item,
+                    sentence: said,
+                });
+            }
+        }
+    }
+    findings
+}
+
 /// Whether `sentence` is an imperative: its root is a bare verb with no
 /// subject.
 ///
@@ -700,15 +831,22 @@ mod tests
     use super::Rule;
     use super::procedure;
     use super::sentences;
+    use super::shaped;
     use crate::glossary::Glossary;
     use crate::parse::Sentence;
     use crate::parse::Token;
     use crate::passage;
     use crate::passage::Advice;
+    use crate::passage::CommentShape;
     use crate::passage::Golden;
+    use crate::passage::Head;
+    use crate::passage::Item;
+    use crate::passage::Opened;
     use crate::passage::Placed;
+    use crate::passage::References;
     use crate::passage::Source;
     use crate::passage::Text;
+    use crate::passage::WhatLine;
 
     /// A passage of `$text` and its one sentence, each token
     /// `(word, lemma, pos, tag, dep, head)`, offsets found in the text.
@@ -1195,6 +1333,123 @@ mod tests
                 "{placed:?} {advice:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_head_and_an_item_hold_their_sentence_counts()
+    {
+        let tokens = |count: usize| {
+            (0 .. count)
+                .map(|at| Token {
+                    text: "term".to_owned(),
+                    lemma: "term".to_owned(),
+                    pos: "NOUN".to_owned(),
+                    tag: "NN".to_owned(),
+                    dep: if at == 0 { "ROOT" } else { "dobj" }.to_owned(),
+                    head: 0,
+                    offset: 0,
+                })
+                .collect()
+        };
+        let passage = |text: &str| {
+            passage::comments(Text("corpus/a.gandr"), Text(text))
+                .into_iter()
+                .next()
+                .unwrap()
+        };
+        let shape =
+            |paragraphs: usize, references: References, what: WhatLine, items: Vec<Item>| {
+                CommentShape {
+                    path: "corpus/a.gandr".to_owned(),
+                    opened: Opened::Run(Head {
+                        line: passage("/// term\n").line,
+                        paragraphs,
+                        references,
+                        what,
+                    }),
+                    items,
+                }
+            };
+        let rules_of =
+            |shape: CommentShape, passages: Vec<passage::Passage>, parsed: Vec<Vec<Sentence>>| {
+                let borrowed: Vec<&[Sentence]> = parsed.iter().map(Vec::as_slice).collect();
+                shaped(core::slice::from_ref(&shape), &passages, &borrowed)
+                    .into_iter()
+                    .map(|finding| finding.rule)
+                    .collect::<Vec<_>>()
+            };
+        let long = passage("/// term\n");
+        let long_line = long.line;
+        let long_parse = vec![Sentence { tokens: tokens(21) }];
+        assert_eq!(
+            rules_of(
+                shape(4, References::Shaped, WhatLine::At(long_line), Vec::new()),
+                vec![long],
+                vec![long_parse]
+            ),
+            [Rule::What]
+        );
+        let short = passage("/// term\n");
+        let short_line = short.line;
+        let short_parse = vec![Sentence { tokens: tokens(20) }];
+        assert_eq!(
+            rules_of(
+                shape(4, References::Shaped, WhatLine::At(short_line), Vec::new()),
+                vec![short],
+                vec![short_parse]
+            ),
+            []
+        );
+        assert_eq!(
+            rules_of(
+                shape(3, References::Shaped, WhatLine::None, Vec::new()),
+                Vec::new(),
+                Vec::new()
+            ),
+            [Rule::Head]
+        );
+        assert_eq!(
+            rules_of(
+                shape(4, References::Broken, WhatLine::None, Vec::new()),
+                Vec::new(),
+                Vec::new()
+            ),
+            [Rule::Head]
+        );
+        let item = passage("/// One. Two. Three.\n");
+        let item_line = item.line;
+        let item_parse = vec![
+            Sentence { tokens: tokens(1) },
+            Sentence { tokens: tokens(1) },
+            Sentence { tokens: tokens(1) },
+        ];
+        assert_eq!(
+            rules_of(
+                shape(4, References::Shaped, WhatLine::None, vec![Item {
+                    line: item_line,
+                    prose: vec![item_line],
+                }]),
+                vec![item],
+                vec![item_parse]
+            ),
+            [Rule::Item]
+        );
+        let held = passage("/// One. Two.\n");
+        let held_line = held.line;
+        let held_parse = vec![Sentence { tokens: tokens(1) }, Sentence {
+            tokens: tokens(1),
+        }];
+        assert_eq!(
+            rules_of(
+                shape(4, References::Shaped, WhatLine::None, vec![Item {
+                    line: held_line,
+                    prose: vec![held_line],
+                }]),
+                vec![held],
+                vec![held_parse]
+            ),
+            []
+        );
     }
 
     #[test]

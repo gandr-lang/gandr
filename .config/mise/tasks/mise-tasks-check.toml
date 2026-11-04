@@ -2350,8 +2350,11 @@ run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --t
 # glossary word in another part of speech, over the comments of every tracked
 # `.gandr` source and the crate READMEs. A comment also keeps a body's length,
 # semicolon and dash rules, a paragraph of at most five sentences, and no
-# path, issue or URL outside its `- see:` and `- owes:` lines (#4900). The
-# procedural form binds the rendered diagnostics
+# path, issue or URL outside its `- see:` and `- owes:` lines (#4900).
+# A corpus source outside the features ledger holds a head of four paragraphs.
+# Its first sentence holds at most twenty words.
+# An item comment holds at most two sentences.
+# The procedural form binds the rendered diagnostics
 # (crates/workflow-prose/README.md). spaCy parses under the venv these
 # tools pin; the crate decides. The debt is `corpus/prose.ledger`: a new
 # finding refuses, a fixed one leaves a stale line, and `--write` rewrites

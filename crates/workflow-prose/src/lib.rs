@@ -8,10 +8,13 @@
 //!   a body's paragraphs and list items.
 //! - [`parse`] runs the parse script under the pinned spaCy venv's interpreter
 //!   and reads back each passage's sentences and tokens.
-//! - [`rules`] judges each sentence: a passive outside the stated list, a past
-//!   tense, a stack of four nouns, an `-ing` main verb, a glossary word in the
-//!   wrong part of speech; a body's sentence past 25 words, or joined to the
-//!   next by a semicolon or a dash; and each diagnostic's procedural form.
+//! - [`rules`] judges each sentence. A passive outside the stated list, a past
+//!   tense, a stack of four nouns, an `-ing` main verb and a glossary word in
+//!   the wrong part of speech are findings. A body's sentence past 25 words is
+//!   a finding. So is one joined to the next by a semicolon or a dash. Each
+//!   diagnostic keeps the procedural form. A corpus source's head holds four
+//!   paragraphs. Its first sentence holds at most twenty words. An item comment
+//!   holds at most two sentences.
 //! - [`glossary`] reads `corpus/glossary.toml`.
 //! - [`ledger`] keys each finding by file, rule and sentence digest.
 //!

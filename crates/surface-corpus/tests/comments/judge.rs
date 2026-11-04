@@ -34,13 +34,12 @@ const ITEM_BLOCKS: [&str; 2] = ["module", "rec"];
 /// ended by `;`.
 const TILE_BLOCKS: [&str; 3] = ["data", "codata", "theory"];
 
-/// One finding, as the ledger and the gate name it: an uncommented item, or
-/// a comment outside the shape (`prose.rs`).
+/// One finding, as the ledger and the gate name it: an uncommented item.
 ///
 /// # Specification
 /// - provides: the ledger line `key kind`, the key `file:name:digest` (or
-///   `file:<file>`), the kind `uncommented` or `unshaped:<rule>`, and the
-///   sentence that names the file and the item.
+///   `file:<file>`), the kind `uncommented`, and the sentence that names the
+///   file and the item.
 /// - executable: none — the line is the field the witnesses compare.
 ///
 /// # Adequacy
@@ -77,25 +76,6 @@ impl Finding
     pub fn detail(&self) -> Line<'_>
     {
         Line(&self.detail)
-    }
-
-    /// The finding that the comment keyed `key` breaks the shape's `rule`,
-    /// the gate printing the key and `told`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[must_use]
-    pub(crate) fn unshaped(
-        key: String,
-        rule: Text<'_>,
-        told: Text<'_>,
-    ) -> Self
-    {
-        let detail = format!("{key}: {told}", told = told.0);
-        let mut line = key;
-        line.push_str(" unshaped:");
-        line.push_str(rule.0);
-        Self { line, detail }
     }
 }
 

@@ -40,9 +40,12 @@ Each finding prints its file, the line its passage starts on, the rule, the sent
 | `Dash` | an em or en dash in a body's or a comment's sentence has a verb after it | end the first clause with a full stop, or make the text after the dash a phrase with no verb |
 | `InlineReference` | a comment's sentence holds a word that names a URL (`://`), an issue (`#` and digits) or a path (a `/` and a tree directory or a file extension), its brackets, quotes and closing punctuation left out | move the path, the issue or the URL to a `- see:` line after the paragraph |
 | `Wall` | a comment paragraph holds more than five sentences, a sentence ending on a full stop, a question mark or an exclamation mark outside a code span | split the paragraph into paragraphs of at most five sentences, one idea each |
+| `Head` | a corpus source's opening comment run is not four paragraphs, or a references line opens with neither `- see:` nor `- owes:` | open the source on four paragraphs: what, why, how and references |
+| `What` | the first sentence of that head's first prose paragraph holds more than twenty words, each code span one word | cut the first sentence to at most twenty words |
+| `Item` | an item `///` comment holds more than two sentences | cut the item comment to at most two sentences |
 | `Procedure` | a rendered diagnostic labels no span, or ends with no `help:` line and no note naming an issue, or its `help:` line does not start with an imperative | state what is wrong in the headline, label the span, and end with an imperative `help:` or the issue that tracks it |
 
-A body keeps `Passive`, `Tense`, `Length`, `Semicolon` and `Dash`. A README and a diagnostic keep `Passive`, `Tense`, `NounStack`, `IngMain` and `Glossary`, and `Procedure` binds a diagnostic. A comment keeps every rule but `Procedure`.
+A comment keeps every rule but `Procedure`. `Head`, `What` and `Item` bind a corpus source outside the features ledger. A library source and a fixture keep the other comment rules. A README and a diagnostic keep `Passive`, `Tense`, `NounStack`, `IngMain` and `Glossary`. `Procedure` binds a diagnostic.
 
 The small English model misreads some technical sentences. A misreading is debt like any other finding: reword the sentence so the parse reads it, or leave the line in the ledger.
 

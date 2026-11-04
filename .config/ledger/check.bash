@@ -15,7 +15,7 @@
 # `corpus/ledger/features/<id>.gandr` (#2635), opening with a head of `///`
 # lines: the row's `id`, a `/// Implemented:` line, a `/// Not implemented:`
 # line stating the rest, and a `/// - owes: #n` references line naming an
-# open issue that owes it (crates/surface-corpus/tests/comments/prose.rs,
+# open issue that owes it (crates/surface-corpus/README.md § Comments,
 # #4900).
 # The shared sources it was drawn from stay in `corpus`. Every finding is
 # printed before the gate fails.
