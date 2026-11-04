@@ -51,7 +51,7 @@ module Versions where {
     let along = both () 
     Flow.ride (fun (X) { X }) along record
   /// A first-version record migrated to the third by a run.
-  @[ runs("(+{.1 = unit}, 30, \"ada\")") ]
+  @[ runs("*{+{.1 = *{}}, 30, \"ada\"}") ]
   def latest : () -> V3 = moved (*{"ada", 30}) ;
   /// Four flows to itself. The endpoints fix the carrier the source omits.
   @[ checks ]

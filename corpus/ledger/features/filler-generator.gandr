@@ -147,22 +147,11 @@ def associatorNatural(
   hp : Path(z, w),
   ha : Path[.A = Path[.A = A](z, w)](hm, hp)
 ) -> Path[.A = Path[.A = Path[.A = A](x, w)](Path.step (Path.step fm gm) hm, Path.step fp (Path.step gp hp))](
-  Path.step (assoc A x y z w fm gm hm) (horizontal
-    A
-    x
-    y
-    w
-    fm
-    fp
-    (fa (Path.step gm hm) (Path.step gp hp)) (horizontal A y z w gm gp ga hm hp ha)),
-  Path.step (horizontal
-    A
-    x
-    z
-    (w (Path.step fm gm) (Path.step fp gp)) (horizontal A x y z fm fp fa gm gp ga)
-    hm
-    hp
-    ha) (assoc A x y z w fp gp hp)
+  Path.step (assoc A x y z w fm gm hm)
+    (horizontal A x y w fm fp fa (Path.step gm hm) (Path.step gp hp) (horizontal A y z w gm gp ga hm hp ha)),
+  Path.step
+    (horizontal A x z w (Path.step fm gm) (Path.step fp gp) (horizontal A x y z fm fp fa gm gp ga) hm hp ha)
+    (assoc A x y z w fp gp hp)
 ) =
   fill[5, 7] (chain 3) (associated A x y z w) (fa, ga, ha)
 

@@ -16,7 +16,7 @@ import std.cost (Cost, Counting, costs, counted, countOf);
 import std.grade (Count);
 
 /// Three steps: a charge of one, a charge of two, then seven.
-def threeSteps() -> [cost : Cost.Eff with sort N = Nat -> Nat] Integer =
+def threeSteps() -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
   let _a = cost.charge (costs (1 : Nat))
   let _b = cost.charge (costs (2 : Nat))
   pure 7

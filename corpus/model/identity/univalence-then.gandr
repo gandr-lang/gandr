@@ -27,9 +27,9 @@ def thenBeta(
   x : a
 ) -> Path[.A = c](
   fwdAlong a c (Path.step p (ua e)) x,
-  fwdAlong b (c (ua e)) (fwdAlong a b p x)
+  fwdAlong b c (ua e) (fwdAlong a b p x)
 ) =
-  Path.here (fwdAlong b (c (ua e)) (fwdAlong a b p x))
+  Path.here (fwdAlong b c (ua e) (fwdAlong a b p x))
 
 /// Transport along a path from the loops at the point to the integers, then
 /// back along it.

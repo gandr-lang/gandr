@@ -105,7 +105,7 @@ def rec disagreeing(n : Nat) -> Nat =
 /// A stage supplied apart from the one the arguments show: they show `i` at
 /// `j`, and the supply states `k`.
 @[ refuses("StagesDisagree") ]
-def suppliedApart[j : Size, k : Size](f : Nat[<j] -> Nat, x : Nat[<j]) -> Nat =
+def suppliedApart[j : Size, k : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> Nat =
   applyAt[.i = k] f x
 
 /// A stage supplied for a binder no argument shows: `n` stands at no stage,

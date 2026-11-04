@@ -37,5 +37,5 @@ def doubled(n : Integer) -> twice(Integer) =
   *{n, n}
 
 /// `doubled` runs to the pair the operator's reduct types.
-@[ runs("(4, 4)") ]
+@[ runs("*{4, 4}") ]
 def doubledRun() -> twice(Integer) { doubled 4 }

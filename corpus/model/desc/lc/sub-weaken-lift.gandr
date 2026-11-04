@@ -36,4 +36,4 @@ pub def subWeakenLift(
   b : Term,
   s : Env
 ) -> Path(subst (subst b (Shift (S Z))) (Lift s), subst (subst b s) (Shift (S Z))) =
-  substSquare (b (Shift (S Z))) (Lift s) (s (Shift (S Z))) (fun (n) { weakenLiftAgree s n })
+  substSquare b (Shift (S Z)) (Lift s) s (Shift (S Z)) (fun (n) { weakenLiftAgree s n })
