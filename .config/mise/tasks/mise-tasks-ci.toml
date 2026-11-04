@@ -3359,7 +3359,9 @@ fi
 # A head opens only on a tree a gate passed on, with every check its change
 # selects (#5076, `.config/gate-scope/passed.bash`): CI otherwise finds what
 # the gate finds. A reworded commit or a rebase that changes nothing keeps
-# its tree, so its gate counts.
+# its tree, so its gate counts. This first read refuses before any GitHub
+# call. The stack below can rebase the branch onto its top, so the gate is
+# read again on the head that is pushed (#5091).
 "$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" require pr:open HEAD || exit 2
 claims=$(git rev-parse --show-toplevel)/.config/claims
 issues=$(jq -Rrs -L "$claims" 'include "targets"; targets(working) | unique[]' "$body" \
@@ -3551,6 +3553,11 @@ fi
 # (`body:check`, #2530) and keep the body rules (`body:prose`, #3591).
 mise run --quiet body:check --title "${usage_title:?}" "$body"
 mise run --quiet body:prose "$body"
+# The head that is pushed is the head the gate passed on (#5091): a stack or
+# a restack above rebases the branch onto the top and changes its tree. A
+# refusal here leaves the branch stacked and unpushed, and a rerun on an
+# unchanged top keeps the tree, so a gate run on the stacked head counts.
+"$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" require pr:open HEAD || exit 2
 git push --quiet --force-with-lease -u origin HEAD
 hold=${usage_hold:-}
 url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body" ${hold:+--draft})

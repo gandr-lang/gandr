@@ -1668,7 +1668,8 @@ run = ".config/mise/host-lock-cases.bash"
 # `packages.jq` (#5014), #5007's diff scoping its one package, a `Cargo.lock`
 # change the whole workspace and a change growing by its dependents, and
 # `passed.jq` (#5076), a gated tree accepted, a changed tree refused, a
-# reworded commit accepted and a gate that skipped a selected check refused.
+# reworded commit accepted, a gate that skipped a selected check refused,
+# and a head stacked on the top refused for the gate before the stack (#5091).
 # Then `unmapped.jq` reads the live tasks: a check that builds or runs the
 # toolchain outside every group of the table, or a group naming no check,
 # fails it.

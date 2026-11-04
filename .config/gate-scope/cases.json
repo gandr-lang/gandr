@@ -382,5 +382,22 @@
       ]
     },
     "output": { "accepted": true, "missing": [] }
+  },
+  {
+    "name": "#5091: a head that pr:open stacks on the top has a new tree, so the gate before the stack does not count",
+    "program": "passed.jq",
+    "input": {
+      "tree": "6eabb84fc6b88fa3285769e045d59bbe3a5d7f55",
+      "selected": ["check:claims", "check:prose", "check:tests"],
+      "records": [
+        {
+          "tree": "2bbc91270e3f5abb48364d069eb7a5fe7eac4cd0",
+          "commit": "7134e2eae0000000000000000000000000000000",
+          "gate": "check",
+          "checks": ["check:claims", "check:prose", "check:tests"]
+        }
+      ]
+    },
+    "output": { "accepted": false, "missing": ["check:claims", "check:prose", "check:tests"] }
   }
 ]
