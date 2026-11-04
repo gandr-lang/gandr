@@ -6,9 +6,12 @@
 # run again; work found while a pull request waits goes in the next pull
 # request on top. prek runs it at `pre-push` with the pushed branch in
 # `PRE_COMMIT_REMOTE_BRANCH`. A reading that fails refuses too, naming the
-# failure. `git push --no-verify` stays the owner's.
+# failure. The stack top's hold (`refs/pr-stack/*`, #5122, `hold.bash`) is no
+# pull request's branch, so its push reads nothing. `git push --no-verify`
+# stays the owner's.
 set -euo pipefail
 branch=${PRE_COMMIT_REMOTE_BRANCH:-}
+[[ $branch != refs/pr-stack/* ]] || exit 0
 branch=${branch#refs/heads/}
 [[ -n "$branch" ]] || exit 0
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)

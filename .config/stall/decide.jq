@@ -11,6 +11,9 @@
 #                                order the rebase, hold it, reassign it
 #   verdict-unfiled              file it, by the command its line names
 #   seat-idle                    page the seat to claim, or assign its work
+#   top-held                     page the holder's seat to open or release,
+#                                or delete the hold, which its next
+#                                `pr:open` takes again
 #
 # Input: one finding of `detect.jq`, `{kind, number, lane, line, ...}`.
 # Output: the coordinator's line, raw.
@@ -23,6 +26,7 @@
    elif (.kind | IN("conflicting", "base-blocked", "queued-off-trunk")) then ["order the rebase", $hold, $reassign]
    elif .kind == "verdict-unfiled" then ["file it: `mise run refactor:file \($finding.number)`"]
    elif .kind == "seat-idle" then ["page the seat to claim", "assign its next work"]
+   elif .kind == "top-held" then ["page the seat to open or release it", "delete the hold: `git push origin :refs/pr-stack/hold`"]
    else error("decide.jq: no decisions for the kind `\(.kind)`")
    end) as $decisions
 | "\(.line). Decide: \($decisions | join("; "))"

@@ -3694,6 +3694,93 @@
     "output": "{\"event\":\"top-stale\",\"exit\":0}"
   },
   {
+    "name": "#5122: with no hold on the stack top, `pr:open` takes it",
+    "program": "hold.jq",
+    "input": { "hold": null, "own": "toolchain-5122-top-hold", "now": 1793261000 },
+    "output": "{\"act\":\"take\"}"
+  },
+  {
+    "name": "#5122: the holder's next `pr:open`, after its gate, renews the hold and keeps its start",
+    "program": "hold.jq",
+    "input": {
+      "hold": {
+        "holder": "core-4954-x",
+        "head": "0123456789abcdef0123",
+        "began": 1793260000,
+        "deadline": 1793263600
+      },
+      "own": "core-4954-x",
+      "now": 1793261000
+    },
+    "output": "{\"act\":\"renew\",\"began\":1793260000}"
+  },
+  {
+    "name": "#5122: a hold at its deadline is taken over, naming its holder",
+    "program": "hold.jq",
+    "input": {
+      "hold": {
+        "holder": "core-4954-x",
+        "head": "0123456789abcdef0123",
+        "began": 1793260000,
+        "deadline": 1793263600
+      },
+      "own": "toolchain-5122-top-hold",
+      "now": 1793263600
+    },
+    "output": "{\"act\":\"take\",\"over\":\"core-4954-x\"}"
+  },
+  {
+    "name": "#5122: a hold another branch keeps before its deadline is waited on, naming its holder, head, start and deadline",
+    "program": "hold.jq",
+    "input": {
+      "hold": {
+        "holder": "core-4954-x",
+        "head": "0123456789abcdef0123",
+        "began": 1793260000,
+        "deadline": 1793263600
+      },
+      "own": "toolchain-5122-top-hold",
+      "now": 1793263599
+    },
+    "output": "{\"act\":\"wait\",\"why\":\"the stack top is held by `core-4954-x` at 0123456789ab since 2026-10-29T07:46:40Z, until 2026-10-29T08:46:40Z at the latest\"}"
+  },
+  {
+    "name": "#5122: a released hold wakes the waiting seat",
+    "program": "awaited.jq",
+    "input": { "kind": "hold", "hold": null, "now": 1793261000 },
+    "output": "{\"event\":\"hold-released\",\"exit\":0}"
+  },
+  {
+    "name": "#5122: a hold at its deadline wakes the waiting seat to take it over",
+    "program": "awaited.jq",
+    "input": {
+      "kind": "hold",
+      "hold": {
+        "holder": "core-4954-x",
+        "head": "0123456789abcdef0123",
+        "began": 1793260000,
+        "deadline": 1793263600
+      },
+      "now": 1793263600
+    },
+    "output": "{\"event\":\"hold-expired\",\"exit\":0}"
+  },
+  {
+    "name": "#5122: a hold before its deadline is waited on",
+    "program": "awaited.jq",
+    "input": {
+      "kind": "hold",
+      "hold": {
+        "holder": "core-4954-x",
+        "head": "0123456789abcdef0123",
+        "began": 1793260000,
+        "deadline": 1793263600
+      },
+      "now": 1793263599
+    },
+    "output": "null"
+  },
+  {
     "name": "a bottom queued on a merged branch no open pull request heads stands off the trunk, and the landing retargets it (#4168)",
     "program": "bottom.jq",
     "args": { "n": 4158, "trunk": "main" },
