@@ -2,7 +2,8 @@
 # fetches `origin main` into the main checkout, fast-forwards it, builds the
 # driver there and deploys the build as the default toolchain, so every relay
 # and every `gandr` the proxy runs follows `main`. It then syncs the
-# checkout's code index, which every new worktree copies (#4866).
+# checkout's code index and warms the builds a gate and `pr:open` make, which
+# every new worktree copies (#4866, `follow_warm`).
 #
 # The configuration and the follower's memory live outside the tree, under
 # the XDG directories:
@@ -10,9 +11,10 @@
 #       main checkout it builds in, the seconds between readings, and the
 #       page command's argument vector before the line;
 #   $XDG_STATE_HOME/gandr/follow.json    `{deployed, previous, failed,
-#       indexed, paged}`: the commit deployed, the one deployed before it,
-#       the last commit whose build failed, the commit the code index was
-#       last synced to, and the keys of the pages already sent.
+#       indexed, warmed, paged}`: the commit deployed, the one deployed
+#       before it, the last commit whose build failed, the commits the code
+#       index was last synced to and the gates' builds last warmed at, and
+#       the keys of the pages already sent.
 # The builds live in `$XDG_DATA_HOME/gandr/builds/<commit>/gandr`. The
 # toolchain `main` names the deployed build and is the default, and the
 # toolchain `previous` names the build before it, for a rollback by
@@ -138,11 +140,44 @@ follow_index() {
   echo "toolchain:follow: synced the code index to $head"
 }
 
-# One reading in the checkout `$1`: fetch, fast-forward, build, deploy and
-# sync the code index. A fetch that fails, or a checkout off `main`, dirty, or
-# past `origin/main`, is left as it is and paged once per commit of
-# `origin/main`, the one last fetched for a failed fetch (#4866). A failed
-# build deploys nothing and is paged once per commit.
+# Build at `HEAD` `$1`, in the main checkout, what a gate and `pr:open` build:
+# the plain and enforcing test targets, both Clippy walls, the Dylint wall,
+# the rustdoc evidence and the workflow tools. `wt:warm` copies the
+# checkout's `target/` into every new worktree; the release build alone left
+# those cold, so each worktree's first gate built them whole. The builds run
+# in the background, one at a time, at the lowest CPU priority and outside
+# every gate slot (`GANDR_GATE_SLOT`), so no reading or deploy waits on them.
+# A reading that finds them running leaves its head to the reading after
+# they end; a lock whose builder has exited is taken again. A failed step is
+# printed and the next one runs: the warm state is a cache, never a verdict.
+follow_warm() {
+  local head=$1 lock="$follow_state.warming" builder
+  [[ "$head" != $(jq -r '.warmed // empty' <<< "$(follow_memory)") ]] || return 0
+  mkdir -p "$(dirname "$follow_state")"
+  if ! mkdir "$lock" 2> /dev/null; then
+    builder=$(< "$lock/pid") 2> /dev/null || builder=
+    if [[ -n $builder ]] && kill -0 "$builder" 2> /dev/null; then return 0; fi
+    rm -rf -- "$lock"
+    mkdir "$lock" 2> /dev/null || return 0
+  fi
+  (
+    trap 'rm -rf -- "$lock"' EXIT
+    echo "$BASHPID" > "$lock/pid"
+    export GANDR_GATE_SLOT=follow
+    echo "toolchain:follow: warming the gates' builds at ${head:0:9}"
+    for task in build:tests build:tests-enforcing check:clippy check:clippy-enforcing check:dylint evidence:rustdoc workflow:install; do
+      nice -n 19 mise run --quiet "$task" > /dev/null 2>&1 || echo "toolchain:follow: warming $task at ${head:0:9} failed"
+    done
+    follow_remember "$(jq -c --arg head "$head" '.warmed = $head' <<< "$(follow_memory)")"
+    echo "toolchain:follow: warmed the gates' builds at ${head:0:9}"
+  ) &
+}
+
+# One reading in the checkout `$1`: fetch, fast-forward, build, deploy, sync
+# the code index and warm the gates' builds. A fetch that fails, or a
+# checkout off `main`, dirty, or past `origin/main`, is left as it is and
+# paged once per commit of `origin/main`, the one last fetched for a failed
+# fetch (#4866). A failed build deploys nothing and is paged once per commit.
 follow_once() {
   local checkout=$1 upstream branch head memory error
   cd "$checkout" || { follow_page "missing:$checkout" "FOLLOW checkout-missing: $checkout is no directory; nothing deployed"; return; }
@@ -178,4 +213,5 @@ follow_once() {
     fi
   fi
   follow_index "$head"
+  follow_warm "$head"
 }

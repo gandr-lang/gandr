@@ -4,10 +4,12 @@
 # taker with `--no-wait` refuses, naming both; another lock name is
 # unaffected; a holder killed outright frees its slot; a waiter takes the
 # slot a holder leaves; and a slot stays held while a child of a killed
-# holder still runs, as `act` does when `ci:act` is killed. A gate releases
-# its slot as it exits, whether it ends or is stopped by `TERM`, while a daemon
-# one of its steps started keeps the descriptor open (#4421). A lane holds one
-# slot, and a heavy check run alone takes one (#4911).
+# holder still runs in its process group, as `act` does when `ci:act` is
+# killed, but not while only a daemon in a group of its own holds it, as `op
+# daemon` does. A gate releases its slot as it exits, whether it ends or is
+# stopped by `TERM`, while a daemon one of its steps started keeps the
+# descriptor open (#4421). A lane holds one slot, and a heavy check run alone
+# takes one (#4911).
 set -euo pipefail
 helper=$(cd "${BASH_SOURCE[0]%/*}" && pwd)/host-lock.bash
 scratch=$(mktemp -d)
@@ -104,6 +106,27 @@ sleep 0.2
 status=0
 take > /dev/null || status=$?
 [[ $status == 0 ]] || fail "the slot stayed held after the holder's child exited"
+
+# A holder starts a daemon that detaches into a process group of its own,
+# keeping descriptor 9, and is killed outright, so no trap releases the slot.
+# The next taker takes the slot at once, while the daemon still runs.
+hold g 'perl -MPOSIX -e '\''exit if fork; POSIX::setsid(); open(my $f, ">", "$ARGV[0].part") or die; print $f $$; close $f; rename("$ARGV[0].part", $ARGV[0]); exec "sleep", "300"'\'' "$3/g.daemon"; exec sleep 300'
+g=$holder
+tries=0
+until [[ -e $scratch/g.daemon ]]; do
+  (( ++tries < 100 )) || { fail "g's daemon never started"; break; }
+  sleep 0.1
+done
+daemon=$(< "$scratch/g.daemon")
+pids+=("$daemon")
+kill -KILL "$g"
+wait "$g" 2> /dev/null || true
+kill -0 "$daemon" 2> /dev/null || fail "g's daemon ended with its holder"
+status=0
+reclaim=$(take 2>&1) || status=$?
+[[ $status == 0 ]] || fail "a killed holder's detached daemon kept its slot: $reclaim"
+[[ $reclaim == *"its holder, pid $g, has exited"* ]] || fail "the reclaim named no holder: $reclaim"
+kill -KILL "$daemon" 2> /dev/null || true
 
 # A gate of one slot starts a detached daemon that keeps descriptor 9, then
 # ends normally or is stopped by `TERM`; the next gate takes the slot at once.
@@ -203,4 +226,4 @@ status=0
 [[ $status == 0 ]] || fail "#4911: a heavy check inside a gate took a slot of its own"
 
 (( failed == 0 )) || exit 1
-echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot; a heavy check run alone held a slot"
+echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot; a heavy check run alone held a slot"

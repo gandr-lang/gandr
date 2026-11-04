@@ -3502,8 +3502,9 @@ if (( status == 2 )); then
 fi
 (( status == 0 )) || exit "$status"
 # Every `Where` of the body's `## Refactoring` names an item of the
-# workspace's rustdoc JSON, which `evidence:obligations` has just built
-# through `evidence:rustdoc`, or a tracked path (#2884, `check:refactoring`).
+# workspace's rustdoc JSON, built by `evidence:obligations` for a Rust change
+# and by `check:refactoring` when a `Where` needs it, or a tracked path
+# (#2884, `check:refactoring`).
 mise run --quiet check:refactoring "$body" \
   || { echo "name each \`## Refactoring\` \`Where\` as the workspace carries it, then run \`pr:open\` again" >&2; exit 2; }
 # A change that reaches the recovery records, as prepare's `parser` filter

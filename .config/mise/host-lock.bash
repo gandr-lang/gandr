@@ -9,14 +9,19 @@
 # and everything it started.
 # A killed holder never leaves a slot held: the kernel drops the lock once the
 # last process holding the descriptor exits. The file names its holder (the
-# holder words, the pid, the worktree and the start).
+# holder words, the pid, its process group, the worktree and the start).
 #
 # A daemon a holder's child starts inherits descriptor 9 and outlives the
 # holder: `op daemon`, which a signing or `gh` call starts, kept every gate
 # slot on a host held for hours (#4421). `host_unlock` releases the lock for
 # every process that shares the descriptor, so a holder calls it as it exits,
-# from its `EXIT` trap. A holder killed outright runs no trap, and its running
-# children keep the slot until they exit.
+# from its `EXIT` trap. A holder killed outright runs no trap, so a waiter
+# reclaims its slot (`host_reclaim`) when the holder the record names has
+# exited and every process still holding the file is in another process
+# group: a daemon detaches into a group of its own, while a child still doing
+# the holder's work, such as `act` under a killed `ci:act`, stays in the
+# holder's group and keeps the slot. The waiter removes the file and locks a
+# new one, which no daemon holds.
 #
 # With every slot held, `host_lock` prints `<name>: waiting on <holders>` once
 # and tries again every 5 seconds; with `--no-wait` it refuses at once with
@@ -50,11 +55,13 @@ host_lock() {
     for (( n = 1; n <= slots; n++ )); do
       eval "exec $fd<> \"\$dir/\$name.\$n.lock\""
       if host_flock "$fd"; then
-        printf '%s (pid %s, in %s, since %s)\n' "$*" "$$" "$PWD" "$(date -u +%FT%TZ)" > "$dir/$name.$n.lock"
+        printf '%s (pid %s, group %s, in %s, since %s)\n' "$*" "$$" "$(host_group "$$")" "$PWD" "$(date -u +%FT%TZ)" > "$dir/$name.$n.lock"
         host_slot=$n
         return 0
       fi
       eval "exec $fd<&-"
+      # A slot only detached processes hold, its holder gone, is taken again.
+      if host_reclaim "$dir/$name.$n.lock"; then n=$(( n - 1 )); fi
     done
     holders=$(for (( n = 1; n <= slots; n++ )); do printf '%s; ' "$(< "$dir/$name.$n.lock")"; done)
     holders=${holders%; }
@@ -82,6 +89,59 @@ host_lock_dir() {
   elif ! getconf DARWIN_USER_TEMP_DIR 2> /dev/null; then
     printf '/tmp\n'
   fi
+}
+
+# The process group of process `$1`.
+host_group() {
+  ps -o pgid= -p "$1" 2> /dev/null | tr -d ' '
+}
+
+# The holder pid and its process group that lock file `$1`'s record names,
+# as `<pid> <group>`, or nothing.
+host_holder() {
+  sed -n 's/.*(pid \([0-9][0-9]*\), group \([0-9][0-9]*\), in .*/\1 \2/p' "$1" 2> /dev/null | sed -n 1p
+}
+
+# The pids that hold file `$1` open: `lsof` where the host has it, else
+# `/proc`.
+host_file_holders() {
+  local fd
+  if command -v lsof > /dev/null; then
+    lsof -t -- "$1" 2> /dev/null || :
+    return 0
+  fi
+  for fd in /proc/[0-9]*/fd/*; do
+    if [[ $(readlink "$fd" 2> /dev/null) == "$1" ]]; then
+      fd=${fd#/proc/}
+      echo "${fd%%/*}"
+    fi
+  done
+}
+
+# Removes lock file `$1` and succeeds when the holder its record names has
+# exited and every process that still holds the file is in another process
+# group than that holder's; fails, leaving it, otherwise. The record is read
+# again inside a guard directory, so a waiter never removes a file that
+# another waiter has already replaced: a new file is empty until its holder
+# writes its own record.
+host_reclaim() {
+  local file=$1 record pid group holder status=1
+  record=$(host_holder "$file")
+  [[ -n $record ]] || return 1
+  pid=${record% *}
+  group=${record#* }
+  ! kill -0 "$pid" 2> /dev/null || return 1
+  for holder in $(host_file_holders "$file"); do
+    [[ $(host_group "$holder") != "$group" ]] || return 1
+  done
+  mkdir "$file.reclaim" 2> /dev/null || return 1
+  if [[ $(host_holder "$file") == "$record" ]]; then
+    rm -f -- "$file"
+    echo "${file##*/}: its holder, pid $pid, has exited, and only processes outside its process group hold it; the slot is taken again" >&2
+    status=0
+  fi
+  rmdir "$file.reclaim"
+  return "$status"
 }
 
 # Releases the lock on file descriptor `$1` (default 9) for every process

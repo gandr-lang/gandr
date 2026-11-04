@@ -14,7 +14,10 @@
 # its whole run, so at most `GANDR_GATE_SLOTS` (default 2) gates share a host,
 # one per lane, and its test runner takes the cores divided by the slots
 # (`.config/mise/gate.bash`, #3057, #4911). A lane's second gate, or a third
-# gate, waits, naming the holders, or with `--no-wait` refuses at once.
+# gate, waits, naming the holders, or with `--no-wait` refuses at once. A
+# change that selects no check of the table's groups (Rust, corpus,
+# extension) runs only light checks and takes no lock and no slot: it never
+# waits behind a gate that builds the workspace.
 #
 # It runs the checks the change selects (`.config/gate-scope/select.jq`,
 # #4911): the paths the branch changes against its fork from `origin/main`,
@@ -42,12 +45,17 @@ run = '''
 set -euo pipefail
 source .config/mise/gate.bash
 if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
-hold_gate_slot "mise run check"
-NEXTEST_TEST_THREADS=$(gate_threads)
-export NEXTEST_TEST_THREADS
-echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads" >&2
 tree=$(.config/gate-scope/passed.bash tree)
 selected=$(.config/gate-scope/select.bash)
+heavy=$(jq -r --arg selected "$selected" '[.groups[][]] as $heavy | [$selected | split("\n")[] | select(IN($heavy[]))] | length' .config/gate-scope/table.json)
+if (( heavy > 0 )); then
+  hold_gate_slot "mise run check"
+  NEXTEST_TEST_THREADS=$(gate_threads)
+  export NEXTEST_TEST_THREADS
+  echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads" >&2
+else
+  echo "check: the change selects no Rust, corpus or extension check, so it takes no gate slot" >&2
+fi
 mapfile -t checks <<< "$selected"
 echo "check: the change selects ${#checks[@]} of $(mise tasks ls --json | jq '[.[] | select(.name | startswith("check:"))] | length') checks (.config/gate-scope/table.json); \`mise run gate:all\` runs every one over the workspace" >&2
 GATE_SCOPE=$(.config/gate-scope/scope.bash)
@@ -569,7 +577,6 @@ printf '%s\n' "$base"
 # reads it again before the queue.
 ["evidence:obligations"]
 description = "List the specifications a change obliges to re-verify"
-depends = ["check:dylint", "evidence:rustdoc", "workflow:install"]
 tools.jq = "1.8.1"
 usage = '''
 arg "[base]" help="the revision the change is measured against; defaults to evidence:base"
@@ -583,6 +590,18 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 base=${usage_base:-$(mise run --quiet evidence:base)}
+# The specification obligations come from the Rust evidence: the Dylint
+# records and the rustdoc JSON. A change the gate's selection gives no Rust
+# check (`.config/gate-scope/select.bash`) changes no Rust item, so it owes no
+# specification obligation and builds neither.
+rust=false
+selected=$(.config/gate-scope/select.bash)
+if [[ $'\n'$selected$'\n' == *$'\n'check:dylint$'\n'* ]]; then rust=true; fi
+if [[ $rust == true ]]; then
+  mise run check:dylint ::: evidence:rustdoc ::: workflow:install
+else
+  echo "evidence: the change touches no Rust path (.config/gate-scope/select.bash), so it owes no specification obligation; no Rust evidence is built" >&2
+fi
 extra=()
 if [[ -n ${usage_previous:-} ]]; then extra+=(--previous "$usage_previous"); fi
 if [[ -n ${usage_body:-} ]]; then extra+=(--body "$usage_body"); fi
@@ -606,29 +625,31 @@ if [[ -n ${usage_pr:-} ]]; then
     | jq -s -f .config/hotpath/report.jq > target/evidence/hotpath.json
   extra+=(--hotpath target/evidence/hotpath.json)
 fi
-# The policy state is restored from main's cache and saved again, so a
-# target removed or renamed since leaves its records and rustdoc JSON behind,
-# and the report reads every file in both directories (#2479). A record is
-# kept while a workspace target's root source, `/` and `.` written as `_`,
-# names it; a rustdoc file while a target's crate name does.
-metadata=$(cargo metadata --no-deps --format-version 1 --locked)
-declare -A written=()
-while IFS= read -r kept; do written[$kept]=1; done < <(jq -r '
-  (.workspace_root + "/") as $root
-  | .packages[].targets[]
-  | "records/" + (.src_path | ltrimstr($root) | gsub("[/.]"; "_")),
-    "doc/" + (.name | gsub("-"; "_"))' <<< "$metadata")
-for left in target/evidence/records/*.jsonl target/evidence/doc/*.json; do
-  [[ -e $left ]] || continue
-  file=${left#target/evidence/}
-  directory=${file%%/*}
-  name=${file#*/}
-  [[ -n ${written[$directory/${name%%.*}]:-} ]] || rm -- "$left"
-done
 status=0
-quenchant-gates obligations --manifest-path Cargo.toml --base "$base" \
-  --records target/evidence/records --rustdoc target/evidence/doc "${extra[@]}" \
-  --comment target/evidence/comment.md --selection target/evidence/selection || status=$?
+if [[ $rust == true ]]; then
+  # The policy state is restored from main's cache and saved again, so a
+  # target removed or renamed since leaves its records and rustdoc JSON
+  # behind, and the report reads every file in both directories (#2479). A
+  # record is kept while a workspace target's root source, `/` and `.`
+  # written as `_`, names it; a rustdoc file while a target's crate name does.
+  metadata=$(cargo metadata --no-deps --format-version 1 --locked)
+  declare -A written=()
+  while IFS= read -r kept; do written[$kept]=1; done < <(jq -r '
+    (.workspace_root + "/") as $root
+    | .packages[].targets[]
+    | "records/" + (.src_path | ltrimstr($root) | gsub("[/.]"; "_")),
+      "doc/" + (.name | gsub("-"; "_"))' <<< "$metadata")
+  for left in target/evidence/records/*.jsonl target/evidence/doc/*.json; do
+    [[ -e $left ]] || continue
+    file=${left#target/evidence/}
+    directory=${file%%/*}
+    name=${file#*/}
+    [[ -n ${written[$directory/${name%%.*}]:-} ]] || rm -- "$left"
+  done
+  quenchant-gates obligations --manifest-path Cargo.toml --base "$base" \
+    --records target/evidence/records --rustdoc target/evidence/doc "${extra[@]}" \
+    --comment target/evidence/comment.md --selection target/evidence/selection || status=$?
+fi
 if [[ -n $text ]]; then
   defect=false
   for set in "${labels[@]}"; do
@@ -2075,13 +2096,15 @@ echo "debug check OK: $(jq length .config/debug/variants.json) enums their varia
 '''
 
 # Every `Where` of a body's `## Refactoring` names something the workspace
-# carries (#2884). With a body, the task reads the rustdoc JSON
-# `evidence:rustdoc` wrote under `target/evidence/doc/` and the tracked files,
-# and prints one refusal per `Where` neither holds, exiting 1 on any;
-# `pr:open` runs it after `evidence:obligations` has built that JSON, so no
-# network is read. Without one, as in the gate, it runs the cases of
-# `.config/claims/refactoring.json` through `.config/claims/refactoring.jq`,
-# each a body, the paths, names and tracked files, and the lines it prints.
+# carries (#2884). With a body, the task reads the tracked files and the
+# rustdoc JSON `evidence:rustdoc` wrote under `target/evidence/doc/`, and
+# prints one refusal per `Where` neither holds, exiting 1 on any. A body whose
+# every `Where` is a tracked path, or that has none, needs no rustdoc: the JSON
+# is built only when a `Where` stays unresolved without it, so a change with
+# no Rust path builds no Rust (`evidence:obligations`). Without a body, as in
+# the gate, it runs the cases of `.config/claims/refactoring.json` through
+# `.config/claims/refactoring.jq`, each a body, the paths, names and tracked
+# files, and the lines it prints.
 ["check:refactoring"]
 description = "Every Where of a body's Refactoring table names an item of the workspace's rustdoc or a tracked path; without a body, the recorded cases"
 tools.jq = "1.8.1"
@@ -2097,21 +2120,30 @@ if [[ -z "${usage_body:-}" ]]; then
   echo "refactoring check OK: $(jq length "$claims/refactoring.json") bodies their resolutions"
   exit 0
 fi
-docs=(target/evidence/doc/*.json)
-[[ -f "${docs[0]}" ]] || { echo "no rustdoc JSON under target/evidence/doc; run \`mise run evidence:rustdoc\` first" >&2; exit 2; }
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
+git ls-files | jq -R . | jq -s . > "$scratch/tree.json"
+# The findings against the workspace `$scratch/workspace.json` names.
+findings() {
+  jq -n --rawfile body "$usage_body" --slurpfile workspace "$scratch/workspace.json" --slurpfile tree "$scratch/tree.json" \
+    '{body: $body, paths: $workspace[0].paths, names: $workspace[0].names, tree: $tree[0]}' \
+    | jq -r -L "$claims" -f "$claims/refactoring.jq"
+}
+docs=(target/evidence/doc/*.json)
+if [[ ! -f "${docs[0]}" ]]; then
+  echo '{"paths": [], "names": []}' > "$scratch/workspace.json"
+  [[ -n $(findings) ]] || exit 0
+  mise run evidence:rustdoc
+  docs=(target/evidence/doc/*.json)
+fi
 for doc in "${docs[@]}"; do
   jq -c '[.paths[] | select(.crate_id == 0) | .path] as $own
     | ($own[0][0] // empty) as $crate
     | {paths: [$own[] | join("::")], names: [.index[] | select(.crate_id == 0) | .name | values | "\($crate)#\(.)"]}' "$doc"
 done | jq -s '{paths: (map(.paths[]) | unique), names: (map(.names[]) | unique)}' > "$scratch/workspace.json"
-git ls-files | jq -R . | jq -s . > "$scratch/tree.json"
-findings=$(jq -n --rawfile body "$usage_body" --slurpfile workspace "$scratch/workspace.json" --slurpfile tree "$scratch/tree.json" \
-  '{body: $body, paths: $workspace[0].paths, names: $workspace[0].names, tree: $tree[0]}' \
-  | jq -r -L "$claims" -f "$claims/refactoring.jq")
-if [[ -n "$findings" ]]; then
-  echo "$findings" >&2
+found=$(findings)
+if [[ -n "$found" ]]; then
+  echo "$found" >&2
   exit 1
 fi
 {% endraw %}'''
