@@ -13,7 +13,7 @@ import "./file-base.gandr";
 /// end, so the mover has nothing left to close. The handle's two closes sit
 /// side by side, and the closer receives it only after the mover's send.
 @[
-  runs("unit"),
+  runs("*{}"),
   traces(decomposes owner (parallel (event left 0) (event right 0))),
   traces(decomposes closer (series (event right 0) (parallel (series (event left 0) (event left 1)) (event right 1))))
 ]

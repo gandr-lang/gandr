@@ -26,7 +26,7 @@ import "./circle-base.gandr";
 import "./equivalence.gandr";
 
 /// The loop's word: one letter before the empty word.
-@[ runs("loop ∷ Path.here(Base)") ]
+@[ runs("loop ∷ Path.here Base") ]
 def once() -> Path[.A = Circle](Base, Base) { loop }
 
 /// The inverse of the loop is the letter `back(loop)`, by conversion, which

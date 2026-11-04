@@ -16,5 +16,5 @@ def middle() -> String { triple.1 }
 def last() -> Integer { triple.2 }
 
 /// The pair, named again.
-@[ runs("(1, 2)") ]
+@[ runs("*{1, 2}") ]
 def point_again = point;

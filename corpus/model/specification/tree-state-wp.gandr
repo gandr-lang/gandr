@@ -31,7 +31,7 @@ pub def incrTree : Prog(Either(StateOp, Void), Unit) = Op (Left Get) (fun (n) {
 /// value.
 pub def rec wp(
   p : Prog(Either(StateOp, Void), Unit),
-  post : *{Unit, Integer} -> Type,
+  post : (Unit, Integer) -> Type,
   s : Integer
 ) -> Type =
   match p
@@ -62,13 +62,13 @@ def incrSpecified : *{
 /// the two read as one call.
 def incrSpecifiedEverywhere : *{
   m : Prog(Either(StateOp, Void), Unit),
-  meets : (post : *{Unit, Integer} -> Type, s : Integer, incrSpec(post, s)) -> wp(m, post, s)
+  meets : (post : (Unit, Integer) -> Type, s : Integer, incrSpec(post, s)) -> wp(m, post, s)
 } = *{incrTree, fun (post) { fun (s) { fun (h) { h } } }};
 
 /// The same evidence unpaired: the specification's run and the fold's both
 /// read as `post`'s call over the successor held.
 def incrSpecBare(
-  post : *{Unit, Integer} -> Type,
+  post : (Unit, Integer) -> Type,
   s : Integer,
   h : incrSpec(post, s)
 ) -> wp(incrTree, post, s) { h }

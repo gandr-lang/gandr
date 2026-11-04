@@ -27,7 +27,7 @@ def tailed(n : Integer) -> Integer =
 
 /// A pair whose first component alone is annotated: the component is
 /// ascribed `Integer` inside the pair.
-@[ runs("(3, 1)") ]
+@[ runs("*{3, 1}") ]
 def pair = *{(3 : Integer), 1};
 
 /// An annotation beside the signature it agrees with.

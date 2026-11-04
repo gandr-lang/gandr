@@ -33,7 +33,7 @@ def eqPoint = Eq.generic Point;
 def reflPoint = Eq.generic.refl Point;
 
 /// Naturals compared structurally, at the type the derivation states.
-def eqPeano : *{Peano, Peano} -> Bool = Eq.generic Peano;
+def eqPeano : (Peano, Peano) -> Bool = Eq.generic Peano;
 
 /// Marks compared field by field, the count and the point by their own
 /// equality.
@@ -71,22 +71,30 @@ def shorterPeano() -> Bool { eqPeano (Next Nought) (Next (Next Nought)) }
 /// Two marks alike in every field.
 @[ runs("+{.0 = *{}}") ]
 def sameMark() -> Bool =
-  eqMark (Mark (Next Nought) (Point 3 4) true "here") (Mark (Next Nought) (Point 3 4) true "here")
+  eqMark
+    (Mark (Next Nought) (Point 3 4) true "here")
+    (Mark (Next Nought) (Point 3 4) true "here")
 
 /// Two marks apart in their point alone.
 @[ runs("+{.1 = *{}}") ]
 def movedMark() -> Bool =
-  eqMark (Mark (Next Nought) (Point 3 4) true "here") (Mark (Next Nought) (Point 3 5) true "here")
+  eqMark
+    (Mark (Next Nought) (Point 3 4) true "here")
+    (Mark (Next Nought) (Point 3 5) true "here")
 
 /// Two marks apart in their flag alone.
 @[ runs("+{.1 = *{}}") ]
 def hiddenMark() -> Bool =
-  eqMark (Mark (Next Nought) (Point 3 4) true "here") (Mark (Next Nought) (Point 3 4) false "here")
+  eqMark
+    (Mark (Next Nought) (Point 3 4) true "here")
+    (Mark (Next Nought) (Point 3 4) false "here")
 
 /// Two marks apart in their label alone.
 @[ runs("+{.1 = *{}}") ]
 def relabelledMark() -> Bool =
-  eqMark (Mark (Next Nought) (Point 3 4) true "here") (Mark (Next Nought) (Point 3 4) true "there")
+  eqMark
+    (Mark (Next Nought) (Point 3 4) true "here")
+    (Mark (Next Nought) (Point 3 4) true "there")
 
 /// One point is itself under `==`.
 @[ runs("+{.0 = *{}}") ]

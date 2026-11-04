@@ -10,7 +10,7 @@ import "./file-base.gandr";
 /// writer's channel plays each move in turn, its close beside the parent's
 /// last two.
 @[
-  runs("unit"),
+  runs("*{}"),
   traces(decomposes owner (parallel (event left 0) (event right 0))),
   traces(decomposes writer (series (event right 0) (event left 0) (event left 1) (parallel (event left 2) (series (event right 1) (event right 2)))))
 ]

@@ -34,6 +34,6 @@ module Roster where {
   def moved(old : Old) -> New =
     Flow.ride (fun (X) { X }) upgrade old
   /// A record of two scores migrated by a run.
-  @[ runs("(cons(90, cons(85, nil)), \"ada\")") ]
+  @[ runs("*{cons 90 (cons 85 nil), \"ada\"}") ]
   def one : () -> New = moved (*{"ada", cons 90 (cons 85 nil)});
 }

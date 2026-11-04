@@ -37,6 +37,6 @@ module Cells where {
   def moved(olds : List(Old)) -> List(New) =
     Flow.ride (fun (X) { X }) everyone olds
   /// Two records migrated by a run.
-  @[ runs("cons((36, \"ada\"), cons((41, \"alan\"), nil))") ]
+  @[ runs("cons *{36, \"ada\"} (cons *{41, \"alan\"} nil)") ]
   def two : () -> List(New) = moved (cons (*{"ada", 36}) (cons (*{"alan", 41}) nil));
 }

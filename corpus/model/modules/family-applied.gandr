@@ -34,7 +34,7 @@ module Shapes where
 def opts() -> Shapes.Opt(Integer) { Just 1 }
 
 /// The pair family takes both of its types.
-@[ runs("(1, +{.0 = *{}})") ]
+@[ runs("*{1, +{.0 = *{}}}") ]
 def paired() -> Shapes.Pair(Integer, Bool) { *{1, true} }
 
 /// The data family at `Integer`, built by its constructor.

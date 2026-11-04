@@ -26,7 +26,7 @@ def pairBeta : Path[.A = Int * Int](
 ) = Path.here (*{S Z, S Z});
 
 /// A pair carried along the loops' path carries each component, by a run.
-@[ runs("(S(Z), S(Z))") ]
+@[ runs("*{S Z, S Z}") ]
 def pairRun() -> Int * Int { Path.walk (fun (X) { type(X * X) }) (ua winding) (*{loop, loop}) }
 
 /// An injection carried along the loops' path carries its payload in its own

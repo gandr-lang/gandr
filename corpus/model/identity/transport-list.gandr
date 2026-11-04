@@ -79,5 +79,5 @@ def flagged : Path[.A = Type](Bool * List(Bool), Bool * List(Bool)) = equiv flip
 
 /// Truth beside `both`, transported along the flag's path by a run: the flag
 /// negates and the list stays.
-@[ runs("(+{.1 = unit}, cons(+{.0 = unit}, cons(+{.1 = unit}, nil)))") ]
+@[ runs("*{+{.1 = *{}}, cons +{.0 = *{}} (cons +{.1 = *{}} nil)}") ]
 def flagged_run() -> Bool * List(Bool) { Path.walk (fun (X) { X }) flagged (*{+{.0 = *{}}, both}) }

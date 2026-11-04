@@ -18,13 +18,13 @@ def incrMissesOne : *{
 } = *{incrTree, fun (s) { fun (h) { h } }};
 
 /// A specification asking two more than the increment stores.
-def incrByTwoSpec(post : *{Unit, Integer} -> Type, s : Integer) -> Type { post (*{}) (s + 2) }
+def incrByTwoSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post *{} (s + 2) }
 
 /// The increment against two more: both sides read as `post`'s call over a
 /// held sum, and the sums differ.
 @[ refuses("TypeMismatch") ]
 def incrMissesTwo(
-  post : *{Unit, Integer} -> Type,
+  post : (Unit, Integer) -> Type,
   s : Integer,
   h : incrByTwoSpec(post, s)
 ) -> wp(incrTree, post, s) { h }

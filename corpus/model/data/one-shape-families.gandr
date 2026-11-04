@@ -46,7 +46,7 @@ def relabelled() -> Fahrenheit { Path.walk (fun (X) { X }) (ua relabel) (Cel 20)
 
 /// The transport written as a tuple's component runs first, and the
 /// other component keeps its place.
-@[ runs("(Fah 20, 1)") ]
+@[ runs("*{Fah 20, 1}") ]
 def carriedInTuple() -> Fahrenheit * Integer { *{ Path.walk (fun (X) { X }) (ua relabel) (Cel 20), 1} }
 
 /// A thermometer reading one Fahrenheit temperature.

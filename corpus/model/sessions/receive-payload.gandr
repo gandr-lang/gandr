@@ -10,7 +10,7 @@
 /// desk sends the order before the seat receives it, and the seat closes
 /// only after its receipt.
 @[
-  runs("unit"),
+  runs("*{}"),
   traces(decomposes seat (series (event right 0) (parallel (series (event left 0) (event left 1)) (event right 1))))
 ]
 def receivesAnOrder() -> Unit =
