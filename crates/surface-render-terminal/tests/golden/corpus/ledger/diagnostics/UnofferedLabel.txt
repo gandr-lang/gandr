@@ -13,4 +13,5 @@ error[UnofferedLabel]: the endpoint's protocol offers no such label here
 7 │ │ }
   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `desk_selects_no_offered_label` is refused with UnofferedLabel, as its expectation states
+  ├ note: `desk_selects_no_offered_label` is refused with UnofferedLabel, as its expectation states
+  ╰ help: select a label the endpoint's protocol offers

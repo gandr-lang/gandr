@@ -4,4 +4,5 @@ error[UnknownTactic]: a splice runs a tactic: `assumption`, or `intro(t)` of a t
 3 │ def named(x : Integer) -> Integer { ~x }
   │                                      ━ a splice of no tactic
   │
-  ╰ note: `named` is refused with UnknownTactic, as its expectation states
+  ├ note: `named` is refused with UnknownTactic, as its expectation states
+  ╰ help: replace the tactic with a supported tactic

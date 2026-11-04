@@ -18,4 +18,5 @@ error[ProjectionFromApplication]: an application of `MkCounter` is read before i
 27 │ def projected = MkCounter(Seed).seed;
    │                 ━━━━━━━━━━━━━━━ an application read before it is bound
    │
-   ╰ note: `projected` is refused with ProjectionFromApplication, as its expectation states
+   ├ note: `projected` is refused with ProjectionFromApplication, as its expectation states
+   ╰ help: bind the application to a module before selecting its member

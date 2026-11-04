@@ -13,7 +13,8 @@ error[OutOfFragment.TopLevel]: a binary expression cannot stand at a source's to
 19 │ 1 + 2
    │ ━━━━━ an expression where only declarations stand
    │
-   ╰ note: `1` is refused with OutOfFragment.TopLevel, as its expectation states
+   ├ note: `1` is refused with OutOfFragment.TopLevel, as its expectation states
+   ╰ help: write the expression in a declaration
 
 error[MalformedForm]: `mu` is a keyword and cannot stand here in this def value
    ╭▸ corpus/pathological/modules/stray-root-child.gandr:23:5

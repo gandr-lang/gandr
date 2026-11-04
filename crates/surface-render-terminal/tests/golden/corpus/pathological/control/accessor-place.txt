@@ -18,7 +18,8 @@ error[PlaceUnindexed]: an access at a place reads an element at an index; the he
 13 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `unindexed` is refused with PlaceUnindexed, as its expectation states
+   ├ note: `unindexed` is refused with PlaceUnindexed, as its expectation states
+   ╰ help: access a list before indexing it
 
 error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
    ╭▸ corpus/pathological/control/accessor-place.gandr:21:32

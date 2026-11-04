@@ -8,4 +8,5 @@ error[Undecided]: the checker could not decide what this code unfolds to
 39 │ │ ](Magma, Magma, #{.mul = measured, .one = keep}, #{.mul = measured, .one = keep}) ;
    │ └─────────────────────────────────────────────────────────────────────────────────┘ synthesised; while checking the translators of this univalence against their corollas
    │
-   ╰ note: `compared` is refused with Undecided, as its expectation states
+   ├ note: `compared` is refused with Undecided, as its expectation states
+   ╰ help: write code whose unfolding the checker can decide

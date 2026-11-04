@@ -1820,6 +1820,18 @@ pub mod tests
                 sort: FragmentSort::Value,
                 boundary: FragmentBoundary::NonContractive,
             },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::NotAFunction,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::TopLevel,
+            },
             LoweringRefusal::BareFeedback { span, rule: span },
             LoweringRefusal::IllFormedDescription {
                 span,
@@ -1913,7 +1925,7 @@ pub mod tests
             LoweringRefusal::UnstatedComponent {
                 span,
                 name,
-                fault: ModelFault::Inherited,
+                fault: ModelFault::Unbound,
             },
             LoweringRefusal::FamilyTelescope {
                 span,
