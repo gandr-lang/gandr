@@ -1174,7 +1174,7 @@ mod tests
         for source in [
             "",
             "def x = 1;",
-            "def a = ( ; ¤ def b = #[ ;",
+            "def a = ( ; \u{1} def b = #[ ;",
             "def = ; ? ?",
         ] {
             let parsed = parse(&pbg, SourceText::from(source)).unwrap();

@@ -523,8 +523,9 @@ impl SourceSpan
 /// A tile the source left out, written into a copy of the source so the copy
 /// molds without a repair, and read back as the close the melder mints.
 ///
-/// The copy holds the tile's bytes over `at .. after`; every other byte of the
-/// copy is the source's, those past the tile shifted by its width.
+/// The copy holds the tile's bytes over `at .. after`, with the space it is
+/// written with to stand as a token of its own; every other byte of the copy
+/// is the source's, those past the tile shifted by its width.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Splice
 {
@@ -604,8 +605,8 @@ impl Splice
     }
 
     /// The source leaf the copy's leaf `label` over `span` reads as: the tile
-    /// the splice begins with is the minted tile, empty at `at`; any other leaf
-    /// is itself, shifted.
+    /// the splice writes is the minted tile, empty at `at`; any other leaf is
+    /// itself, shifted.
     ///
     /// # Specification
     /// trivial.
@@ -615,7 +616,7 @@ impl Splice
         span: SourceSpan,
     ) -> (NodeLabel, SourceSpan)
     {
-        if span.start.0 == self.at.0
+        if self.at.0 <= span.start.0
             && span.end.0 <= self.after.0
             && matches!(label, NodeLabel::Tile(_))
         {
@@ -627,7 +628,7 @@ impl Splice
     }
 
     /// Whether the copy's leaf `label` over `span` is layout the copy wrote
-    /// with its tile — the space after a keyword — which the source never had.
+    /// with its tile — the space around it — which the source never had.
     ///
     /// # Specification
     /// trivial.
@@ -639,7 +640,7 @@ impl Splice
     {
         WrittenLayout(
             matches!(label, NodeLabel::Space)
-                && self.at.0 < span.start.0
+                && self.at.0 <= span.start.0
                 && span.start.0 < span.end.0
                 && span.end.0 <= self.after.0,
         )

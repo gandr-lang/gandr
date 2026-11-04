@@ -265,7 +265,7 @@ fn core_forms_are_clean() -> Result<(), Box<dyn Error>>
         "def answer = 42;",
         "1 + 2 * 3",
         "- x",
-        "pure -y",
+        "pure - y",
         "def id = x;",
         "def nested = comp(id(a), f);",
     ];
@@ -624,7 +624,7 @@ fn theory_data_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn
 /// `=>`, a `let` statement's `=`, and the `<=` / `==` comparisons all still
 /// mold exactly as before. This is the parser half of the lexical check; the
 /// labeler half is
-/// `label::tests::circuit_arrows_munch_past_the_shorter_tiles_they_extend`.
+/// `label::tests::a_run_is_one_token_cut_only_at_whitespace_and_delimiters`.
 #[test]
 fn circuit_arrows_leave_the_shorter_tiles_alone() -> Result<(), Box<dyn Error>>
 {
@@ -754,7 +754,7 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Box<dyn Error
         "def node = 1;",
         "def feed = 1;",
         "def use() -> -F Integer { let node = 1; pure node }",
-        "def project(sort: Integer) -> -F Integer { return sort }",
+        "def project(sort : Integer) -> -F Integer { return sort }",
         "def record = #{ node = 1, feed = 2 };",
     ];
     for &src in binding {
@@ -1173,8 +1173,8 @@ fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
         // the `;` instead, flagging a `MissingTile`; the operator-completion
         // path is exercised directly here, where it is the sole repair.)
         ("pure 1 +", Oblig::MissingMeld),
-        // A stray byte the grammar has no tile for.
-        ("def x = 1 ^ 2;", Oblig::UnmoldedTok),
+        // A stray run the grammar has no tile for.
+        ("def x = 1 ′ 2;", Oblig::UnmoldedTok),
         // An unterminated string force-closes.
         ("def x = \"open", Oblig::MissingTile),
         // A tile standing where its form's earlier tiles are absent: an `=`
@@ -1497,7 +1497,7 @@ fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<
 #[test]
 fn malformed_input_continues_into_a_later_definition() -> Result<(), Box<dyn Error>>
 {
-    let source = "def bad = 1 ^ 2;\ndef good = 2;";
+    let source = "def bad = 1 ′ 2;\ndef good = 2;";
     let first = parse(built(), SourceText::from(source))?;
     assert!(
         first
@@ -1860,10 +1860,11 @@ fn remolding_makes_dash_prefix_or_infix_by_context() -> Result<(), Box<dyn Error
         "infix `-` melds two operands and the operator"
     );
 
-    // At expression start (`ret -y`, `-y`), `-` molds prefix (unary): the
+    // At expression start (`pure - y`, `- y`), `-` molds prefix (unary): the
     // meld carries the operator and its single right operand (two children),
-    // and the parse is clean — no missing-left obligation.
-    for src in ["pure -y", "-y"] {
+    // and the parse is clean — no missing-left obligation. The operator is
+    // spaced from its operand, which `-y` would read as one name.
+    for src in ["pure - y", "- y"] {
         let prefix = parse(pbg, SourceText::from(src))?;
         let prefix_meld =
             find_meld_with_tile(prefix.tree(), prefix.tree().root(), TileText::from("-"))

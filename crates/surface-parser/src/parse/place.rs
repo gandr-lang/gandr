@@ -74,6 +74,7 @@ use crate::TokenRun;
 use crate::closing::LeadingSlot;
 use crate::closing::push_closing;
 use crate::label::Token;
+use crate::label::cut_in;
 use crate::label::label;
 use crate::meld::BOUNDARY_SORT;
 use crate::meld::Expected;
@@ -758,13 +759,16 @@ fn settled<'source>(
         )
         .take(target.class.map_or(COPIES, |_| PLACES.saturating_add(1)))
         .find(|&(place, closer)| {
+            let spelled = cut_in(text, usize::from(place), <&str>::from(closer));
+            let pad = spelled.find(<&str>::from(closer)).unwrap_or(0_usize);
             let tile = shifted(place).and_then(|at| {
+                let at = usize::from(at).checked_add(pad)?;
                 Some((
-                    at,
-                    ByteOffset::from(usize::from(at).checked_add(<&str>::from(closer).len())?),
+                    ByteOffset::from(at),
+                    ByteOffset::from(at.checked_add(<&str>::from(closer).len())?),
                 ))
             });
-            written(source, top, place, closer).is_some_and(|copy| {
+            written(source, top, place, SourceText::from(spelled.as_str())).is_some_and(|copy| {
                 let copy = SourceText::from(copy.as_str());
                 shared.copy(copy).is_some_and(|copied| {
                     tile.is_some_and(|(at, end)| bool::from(tiled(&copied, at, end)))
@@ -779,8 +783,10 @@ fn settled<'source>(
             })
         })?;
     let place = past(source, place, closer);
+    let spelled = cut_in(text, usize::from(place), <&str>::from(closer));
+    let spelled = SourceText::from(spelled.as_str());
     let whole = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(text.len())).ok()?;
-    let copy = written(source, whole, place, closer)?;
+    let copy = written(source, whole, place, spelled)?;
     let leaf = target.class.map_or(
         NodeLabel::Grout {
             sort: target.sort,
@@ -791,7 +797,7 @@ fn settled<'source>(
             class,
         },
     );
-    let splice = Splice::new(place, closer, leaf)?;
+    let splice = Splice::new(place, spelled, leaf)?;
     let (tree, copied) = molded(pbg, SourceText::from(copy.as_str()))
         .commit_spliced(source, splice)
         .ok()?;

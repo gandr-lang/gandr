@@ -4815,7 +4815,7 @@ mod tests
                 .copied()
                 .eq(expected.iter().copied())
         );
-        for source in [" ", "^"] {
+        for source in [" ", "\u{1}"] {
             let token = *label(SourceFragment::from(source)).first().unwrap();
             assert_eq!(
                 molder.candidate_count(token, SourceText::from(source)),
@@ -4993,7 +4993,7 @@ mod tests
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
-        let source = SourceFragment::from("^ 1 2");
+        let source = SourceFragment::from("\u{1} 1 2");
         let tokens = label(source);
         let unmolded_tokens = |count: usize| {
             let mut delta = crate::Delta::empty();
@@ -5094,7 +5094,7 @@ mod tests
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
         let mut state = MeldState::new(&pbg);
-        let src = "^";
+        let src = "\u{1}";
         for token in label(SourceFragment::from(src)) {
             molder.mold(&mut state, token, SourceText::from(src));
         }
