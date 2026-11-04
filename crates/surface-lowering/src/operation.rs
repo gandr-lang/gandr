@@ -2,10 +2,11 @@
 //!
 //! `oper divmod : (m : N, n : N) --> (q : N, r : N)` with its rules is, besides
 //! the frame and the cells [`crate::desc_cells`] admits, a function of the
-//! module: `divmod : +U (N -> N -> -F (N * N))`, called as `divmod(m, n)` from
-//! any later declaration and bound with `let (q, r) = divmod(m, n);`. The
-//! collection pass plans each operation once its family is read; the mint pass
-//! writes the plan into the core arena after the module's other declarations.
+//! module: `divmod : +U (N -> N -> -F (q : N, r : N))`, called as `divmod(m,
+//! n)` from any later declaration and bound with `let (q, r) = divmod(m, n);`.
+//! The collection pass plans each operation once its family is read; the mint
+//! pass writes the plan into the core arena after the module's other
+//! declarations.
 //!
 //! # Decisions
 //!
@@ -17,14 +18,16 @@
 //! run the cells themselves by rewriting at run time; the L machine runs core
 //! terms, and a tree over core cases is what the checker already judges.
 //!
-//! **A many-out operation returns one tuple.** The results come back as one
-//! positive tuple in output-port order, and a caller splits it with a tuple
-//! binder. The record prefers a consumer frame with one continuation per output
-//! (the cell store's own shape, Spivak, Garner and Fairbanks, *Functorial
-//! aggregation*, JPAA 229, 2025), which the command intermediate language could
-//! carry but no machine step runs today. Reversal: when the intermediate
-//! language gains a many-consumer head and its machine step, a call delivers to
-//! one continuation per output instead.
+//! **A many-out operation returns its outputs at once.** Its type is the
+//! many-value returner (#4954). A leaf returns every result in output-port
+//! order and builds no product. A caller binds the results with one bind of
+//! several values, as it binds the outputs of a function. The kernel's link
+//! mints the same return, so the body and the rules' leaves convert. The
+//! alternative was one positive tuple that the caller splits, which builds a
+//! product at every call (#4855). The many-value return is the consumer frame
+//! with one continuation per output (Spivak, Garner and Fairbanks, *Functorial
+//! aggregation*, JPAA 229, 2025). Reversal: none planned. A type that states a
+//! product still builds one.
 //!
 //! **An operation runs only when every rule is admissible as code.** A route is
 //! planned when the family is an unparameterised `data` family, every port is
@@ -218,7 +221,7 @@ enum Step
     },
     /// Return the last value.
     Return,
-    /// Return the last values as one tuple.
+    /// Return the last values at once, one at each output.
     Deliver(Width),
 }
 
@@ -281,6 +284,17 @@ impl OperationPlan
     pub const fn rules(&self) -> &gandr_kernel_term::OperationRules
     {
         &self.rules
+    }
+
+    /// How many outputs the operation returns, one value at each.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn output_count(&self) -> gandr_core_term::ComponentCount
+    {
+        gandr_core_term::ComponentCount::from(self.outputs.len())
     }
 }
 
@@ -1055,17 +1069,17 @@ impl Mint<'_>
 /// # Specification
 /// - requires: `plan` came from [`plan_operation`]; every constant it names is
 ///   declared before the declaration it mints.
-/// - ensures: `U (D₁ → … → Dₙ → F R)` with `R` the output family or the product
-///   of the output families, and a thunk of one partial fixpoint over `n`
-///   lambdas around the tree; every minted node records `origin`, and each case
-///   the family it switches on.
+/// - ensures: `U (D₁ → … → Dₙ → F (R₁, …))` with `R₁, …` the output families,
+///   one returner for one output and the many-value returner for several, and a
+///   thunk of one partial fixpoint over `n` lambdas around the tree; every
+///   minted node records `origin`, and each case the family it switches on.
 /// - panics: none.
 /// - executable: none — the minted terms' meaning is the checker's and the
 ///   machine's, which the witnesses run.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the function checks, and a leaf returns its results in
-///   port order, which a swapped tuple or a dropped result would not.
+///   port order, which swapped or dropped results would not.
 /// - witness: `operation::tests::a_many_out_operation_lowers_to_a_function_the_checker_accepts`
 /// - witness: `operation::tests::a_call_reaches_the_operation_before_a_builtin_of_its_name`
 /// - witness: `operation::tests::a_leaf_delivers_its_results_in_port_order`
@@ -1086,14 +1100,9 @@ pub fn mint_operation(
         .iter()
         .map(|&family| mint.family(family))
         .collect();
-    let result = match *outputs.as_slice() {
-        [single] => single,
-        ref several => {
-            let minted = mint.arena.value_type_product(several);
-            mint.value_type(minted)
-        },
-    };
-    let returner = mint.arena.comp_type_returner(result);
+    let returner = mint
+        .arena
+        .comp_type_returns_with_effects(&outputs, gandr_core_term::effect::EffectRow::EMPTY);
     let motive = mint.comp_type(returner);
     let mut signature = motive;
     for &family in plan.inputs.iter().rev() {
@@ -1187,7 +1196,7 @@ enum Ending
 {
     /// Return the value at a position.
     Return(BuiltAt),
-    /// Return the values at these positions as one tuple.
+    /// Return the values at these positions at once, one at each output.
     Deliver(Vec<BuiltAt>),
     /// Call a function on the values at these positions.
     Tail(Callee, Vec<BuiltAt>),
@@ -1267,9 +1276,7 @@ fn leaf_body(
                 .iter()
                 .map(|&position| built_value(mint, &built, position, at))
                 .collect();
-            let tuple = mint.arena.value_tuple(&components);
-            let tuple = mint.value(tuple);
-            let returned = mint.arena.computation_return(tuple);
+            let returned = mint.arena.computation_return_all(&components);
             mint.computation(returned)
         },
         Ending::Tail(callee, arguments) => call(mint, &built, callee, &arguments, at),

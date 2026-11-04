@@ -10,6 +10,7 @@
 //! | `component floor` | `gandr check` of a directory of sixty-four components of one definition each, every one laid after the prelude | what each component pays to reuse the prelude's judgement: its lowering resumed onto the prelude's (`lower_onto_closure`), its program continued from the prelude's (`Program::after`) and its readmission resumed from the prelude's record (`Crossed::resume`) |
 //! | `prelude resolve` | `gandr check` of one component whose `==` and `<` resolve at the integers, the strings and a point whose `Eq` member is derived | the prelude's lowering and judgement (`lower_closure`, `judge_closure`), the candidates a model slot collects (`Lowerer::model_candidates`), each candidate's packing, an include's among them (`Lowerer::packed_structure`), the include's reduct maps (`Lowerer::mint_reducts`), the checker's trial of each candidate (`Deferrals::resolve`) and the derived equality (`Lowerer::mint_generics`) |
 //! | `many candidates` | `gandr check` of one body calling a function sixteen times, each call leaving out a model implicit sixteen modules in scope answer | each candidate's trial against the one solver store all sixteen slots share (`tried`), and the slots' resolution (`Deferrals::resolve`) |
+//! | `many outputs` | `gandr check` of an operation of two outputs defined by rules, and of a definition that binds both outputs of its call and runs | the operation's lowering, the kernel's link of its rules to its body, and the run of the call, which return both outputs with no product |
 //! | `lsp first keystroke` | a language-server session that opens the same source, waits for the open's judgement, then erases one line; only the change is timed | the server's first recheck, which also builds the closure's lowering and judgement once |
 //! | `lsp keystroke` | the same session after its first keystroke, erasing the next line; only this change is timed | the server's recheck with the closure warm, the cost each later keystroke pays |
 //! | `lsp burst` | a session that opens the same source, waits for the open's judgement, then erases the end of its middle line one character per content change, every change carried by one notification; only the burst is timed | the server's recheck, once per burst |
@@ -97,6 +98,10 @@ const RESOLVE: &str = "../../corpus/model/modules/prelude-resolve.gandr";
 /// forced at one of sixteen calls in one body.
 const MANY: &str = "../../corpus/model/modules/model-resolution-many.gandr";
 
+/// The source the many outputs check: division with remainder, an operation
+/// of two outputs, and a run that binds both outputs of its call.
+const MANY_OUTPUTS: &str = "../../corpus/model/desc/many-out-op.gandr";
+
 /// How many one-definition components the component floor checks.
 const FLOOR: usize = 64;
 
@@ -152,6 +157,16 @@ fn prelude_resolve()
 fn many_candidates()
 {
     check(vec![corpus(MANY)]);
+}
+
+/// Check [`MANY_OUTPUTS`]: its operation of two outputs, its rules and its
+/// run.
+///
+/// # Specification
+/// trivial.
+fn many_outputs()
+{
+    check(vec![corpus(MANY_OUTPUTS)]);
 }
 
 /// Check [`FLOOR`] components of one definition each, written under a
@@ -302,6 +317,7 @@ fn main()
     hotpath::measure_block!("component floor", component_floor());
     hotpath::measure_block!("prelude resolve", prelude_resolve());
     hotpath::measure_block!("many candidates", many_candidates());
+    hotpath::measure_block!("many outputs", many_outputs());
     lsp_keystrokes();
     lsp_burst();
     lsp_comment_edit();

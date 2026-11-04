@@ -173,19 +173,11 @@ fn a_many_out_operation_lowers_to_a_function_the_checker_accepts()
     else {
         panic!("over its second input");
     };
-    let Some(&CompType::Returner { result, .. }) = arena.comp_type(after_n)
+    let Some(&CompType::Returns { ref results, .. }) = arena.comp_type(after_n)
     else {
-        panic!("returning after its two inputs");
+        panic!("returning both outputs at once after its two inputs, with no product");
     };
-    let Some(result) = arena.value_type(result)
-    else {
-        panic!("the result type is minted");
-    };
-    let ValueType::Product(ref components) = *result
-    else {
-        panic!("a two-output operation returns one tuple");
-    };
-    assert_eq!(components.len(), 2_usize, "one component per output port");
+    assert_eq!(results.len(), 2_usize, "one result per output port");
 
     let report = judged(&module, &mut arena);
     let verdicts: Vec<_> = report
@@ -343,17 +335,9 @@ fn a_leaf_delivers_its_results_in_port_order()
     else {
         panic!("over its second input");
     };
-    let Some(&Computation::Return(returned)) = arena.computation(leaf)
+    let Some(&Computation::ReturnAll(ref components)) = arena.computation(leaf)
     else {
-        panic!("a rule of variables only is the tree's one leaf");
-    };
-    let Some(returned) = arena.value(returned)
-    else {
-        panic!("the returned value is minted");
-    };
-    let Value::Tuple(ref components) = *returned
-    else {
-        panic!("two outputs return one tuple");
+        panic!("two outputs return both values at once, with no tuple");
     };
     assert_eq!(
         components

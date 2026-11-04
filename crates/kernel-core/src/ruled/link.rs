@@ -5,8 +5,8 @@
 //! field of its constructor. Each leaf of the tree must be the right side of
 //! a rule whose left side matches what the cases above the leaf learned,
 //! minted as the lowering mints one: every call below the root bound in
-//! post-order, the root returned, delivered as one tuple or called last. A
-//! call of the operation itself is a call of the fixpoint's binder. The leaf
+//! post-order, the root returned, its results returned at once or called last.
+//! A call of the operation itself is a call of the fixpoint's binder. The leaf
 //! and the minted side are compared by the kernel's own conversion.
 //!
 //! Together with the rules' convergence this makes the body compute what the
@@ -172,7 +172,7 @@ enum Ending
 {
     /// Return the built value at a position.
     Return(BuiltAt),
-    /// Return the values in the slots from `first` as one tuple.
+    /// Return the values in the slots from `first` at once, one at each output.
     Deliver
     {
         /// The first component's slot.
@@ -219,7 +219,7 @@ struct Linker<'walk>
     minted: Vec<Option<ValueId>>,
     /// The built values left to mint, each with whether its fields are.
     work: Vec<(BuiltAt, bool)>,
-    /// The minted values a constructor or a tuple reads.
+    /// The minted values a constructor or a return of several values reads.
     values: Vec<ValueId>,
 }
 
@@ -759,8 +759,7 @@ impl Linker<'_>
                     let value = self.value(arena, position, at)?;
                     self.values.push(value);
                 }
-                let tuple = arena.value_tuple(&self.values);
-                arena.computation_return(tuple)
+                arena.computation_return_all(&self.values)
             },
             Ending::Tail(call) => self.call(arena, call, at)?,
         };
