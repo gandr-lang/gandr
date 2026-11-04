@@ -4,4 +4,5 @@ error[OutOfFragment.NonContractive]: this recursive session type recurses before
 4 │   let desk = fork (seat : mu turn. turn) { close(seat) };
   │                           ━━━━━━━━━━━━━ recurses before any action
   │
-  ╰ note: `recursion_before_any_action` is refused with OutOfFragment.NonContractive, as its expectation states
+  ├ note: `recursion_before_any_action` is refused with OutOfFragment.NonContractive, as its expectation states
+  ╰ help: put a send, receive or choice below `rec`

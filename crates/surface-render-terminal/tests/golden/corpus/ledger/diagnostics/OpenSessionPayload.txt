@@ -10,4 +10,5 @@ error[OpenSessionPayload]: a session type's payload names a variable bound outsi
 9 │ │ ) ;
   │ └─┘ checked against `Path(Type, ?String >> end, ?String >> end)`; while forming this type under its binder; binds _ : Type
   │
-  ╰ note: `open_payload` is refused with OpenSessionPayload, as its expectation states
+  ├ note: `open_payload` is refused with OpenSessionPayload, as its expectation states
+  ╰ help: bind the session payload inside the run's protocol

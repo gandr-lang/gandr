@@ -1802,6 +1802,24 @@ pub mod tests
                 sort: FragmentSort::Value,
                 boundary: FragmentBoundary::Unannotated,
             },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::ForeignClaim,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Misplaced,
+            },
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::NonContractive,
+            },
             LoweringRefusal::BareFeedback { span, rule: span },
             LoweringRefusal::IllFormedDescription {
                 span,

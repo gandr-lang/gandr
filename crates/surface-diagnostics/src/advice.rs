@@ -44,6 +44,7 @@ use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::session::ForkSide;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::ProtocolDefect;
+use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::Crossed;
 use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_checker::worlds::Predicate;
@@ -140,6 +141,18 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             format!("use a member that `{module}` declares, or add `{member}` to `{module}`")
         },
         LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::ForeignClaim,
+            ..
+        } => String::from("put the descent claim on its recursive function or a mutual member"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Misplaced,
+            ..
+        } => String::from("write the form as a theory's sort member"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::NonContractive,
+            ..
+        } => String::from("put a send, receive or choice below `rec`"),
+        LoweringRefusal::OutOfFragment {
             sort,
             boundary: FragmentBoundary::WrongSort,
             ..
@@ -221,6 +234,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         },
         LoweringRefusal::IllTypedPayload { name, expected, .. } => {
             format!("give `{name}` {expected}")
+        },
+        LoweringRefusal::NonValuePayload { .. } => {
+            String::from("give the attribute a value payload")
         },
         LoweringRefusal::NonExhaustiveMatch { .. } => String::from(
             "add an arm for the values that no arm matches, or a last arm that matches any value",
@@ -333,7 +349,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::NoUniverseAbove { .. }
         | LoweringRefusal::UnknownAttribute { .. }
         | LoweringRefusal::DuplicateAttribute { .. }
-        | LoweringRefusal::NonValuePayload { .. }
         | LoweringRefusal::PartialField { .. }
         | LoweringRefusal::NotAFunctor { .. }
         | LoweringRefusal::NotAModel { .. }
@@ -607,6 +622,13 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             "apply the datatype there only to its own parameters, one stage below its \
              constructor",
         ),
+        CheckRefusal::NestedOccurrence(_) => String::from(
+            "place the datatype only where each enclosing type holds it strictly positively",
+        ),
+        CheckRefusal::UaInequivalent {
+            defect: UaDefect::NotNatural { .. },
+            ..
+        } => String::from("make each `ua` translator commute with every corolla symmetry"),
         CheckRefusal::RunNotAdmitted { .. } => String::from(
             "change the run so that each move is one that the protocol admits at that point",
         ),
@@ -665,6 +687,14 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             defect: LocatedDefect::Elsewhere { .. },
             ..
         } => String::from("open the value at its binder with `let x at w`"),
+        CheckRefusal::Located {
+            defect: LocatedDefect::OpenedElsewhere { .. },
+            ..
+        } => String::from("write the handle's own world after `at`"),
+        CheckRefusal::Located {
+            defect: LocatedDefect::NotAHandle { .. },
+            ..
+        } => String::from("give `let x at w` a value that has a handle type"),
         CheckRefusal::BridgeAtSealedType { .. } => String::from(
             "give the abstract type an `identity` attribute that names its relation, or relate \
              points of a type that is not sealed",
@@ -805,6 +835,10 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             defect: ProtocolDefect::Action { .. },
             ..
         } => String::from("change the endpoint action or protocol so that they agree"),
+        CheckRefusal::SessionMismatch {
+            defect: ProtocolDefect::Arms,
+            ..
+        } => String::from("handle every label of the endpoint's protocol exactly once"),
         CheckRefusal::Access {
             defect: AccessDefect::Spent,
             ..
@@ -819,6 +853,9 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         } => String::from("remove the effect from the `unwind`"),
         CheckRefusal::SessionNotEquivalent { .. } => {
             String::from("make the two protocols bisimilar at every step")
+        },
+        CheckRefusal::OpenSessionPayload { .. } => {
+            String::from("bind the session payload inside the run's protocol")
         },
         CheckRefusal::Access {
             defect: AccessDefect::Unended,
@@ -941,7 +978,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::FamilyArgumentClassifier { .. }
         | CheckRefusal::StaticLambdaArgument { .. }
         | CheckRefusal::StaticClassifierExpected { .. }
-        | CheckRefusal::NestedOccurrence(_)
         | CheckRefusal::NonUniformOccurrence(_)
         | CheckRefusal::CrossBlockReference { .. }
         | CheckRefusal::StageNotCarried { .. }
@@ -956,7 +992,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::FootprintsOverlap { .. }
         | CheckRefusal::SessionNotSubtype { .. }
         | CheckRefusal::SessionCodeExpected { .. }
-        | CheckRefusal::OpenSessionPayload { .. }
         | CheckRefusal::RideUnsupported { .. }
         | CheckRefusal::ForwardUnsupported { .. } => return Maybe::Absent(help::Absent::Unworded),
     })
@@ -974,7 +1009,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 136] = [
+    const WORDED: [&str; 146] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1112,6 +1147,16 @@ mod tests
         "MismatchedPattern",
         "MissingPayload",
         "MissingRecordField",
+        "NestedOccurrence",
+        "NonValuePayload",
+        "NotAHandle",
+        "NotNatural",
+        "OfferArms",
+        "OpenSessionPayload",
+        "OpenedElsewhere",
+        "OutOfFragment.ForeignClaim",
+        "OutOfFragment.Misplaced",
+        "OutOfFragment.NonContractive",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

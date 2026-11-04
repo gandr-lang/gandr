@@ -6,7 +6,8 @@ error[NestedOccurrence]: the datatype occurs nested inside another type in its f
 30 │ ┃ }
    │ ┗━┛ the declared type inside another former, at a place it does not hold strictly positively
    │
-   ╰ note: `Rose` is refused with NestedOccurrence, as its expectation states
+   ├ note: `Rose` is refused with NestedOccurrence, as its expectation states
+   ╰ help: place the datatype only where each enclosing type holds it strictly positively
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
    ╭▸ corpus/pathological/data/rose.gandr:81:45

@@ -4,4 +4,5 @@ error[NonValuePayload]: the argument of the attribute `doc` must be a value
 2 │ @[ doc(#!{ echo hi; }) ]
   │        ━━━━━━━━━━━━━━ a payload that is not a value
   │
-  ╰ note: `f` is refused with NonValuePayload, as its expectation states
+  ├ note: `f` is refused with NonValuePayload, as its expectation states
+  ╰ help: give the attribute a value payload
