@@ -443,7 +443,7 @@ enum Kind
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Univalence(_)
         | Former::Ua { .. } | Former::Compose { .. } | Former::Fill { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
         | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Step(..) | Former::Back(_) | Former::Cong(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. } | Former::Dialogue { .. } | Former::Web(_) | Former::Annotated { .. }),
-    | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_) | Former::Decompose(_)
+    | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::BindAll { .. } | Former::Force(_) | Former::Decompose(_)
         | Former::Application(..) | Former::Lambda(_) | Former::Primitive { .. } | Former::Transport(..)
         | Former::PathTransport { .. } | Former::Ride { .. } | Former::TelescopeTransport { .. } | Former::Fixpoint(_) | Former::Case { .. }
         | Former::Split { .. } | Former::DataCase { .. } | Former::RecordProjection(..) | Former::TupleProjection(..)
@@ -540,6 +540,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Returned(_) => Kind::Value,
         Former::Return(_)
         | Former::Bind(..)
+        | Former::BindAll { .. }
         | Former::Force(_)
         | Former::Decompose(_)
         | Former::Application(..)
@@ -1432,6 +1433,13 @@ where
         Former::Bind(bound, rest) => {
             Vec::from([continues(bound), Slot::of(rest, admits, Binds::ONE)])
         },
+        Former::BindAll { bound, arity, body } => Vec::from([
+            continues(bound),
+            Slot::of(body, admits, Binds {
+                zone: Zone::Intuitionistic,
+                count: usize::from(arity),
+            }),
+        ]),
         // A `for` loop walks its list; its body runs under the loop's binder,
         // the remaining list's, and the cell's element and tail, of which only
         // the element is written. What follows the loop is visited before the
@@ -2872,6 +2880,11 @@ enum Join
     /// written `_`: `let _ = f(a) ; rest`, which runs the call, as a `let`
     /// naming it would not (#4466).
     DiscardedSequence,
+    /// A bind of each value a computation of several results returns, over
+    /// the computation and the rest under one binder for each value, named
+    /// as a bind's binder is, the first value first: `let (a, b) = c ;
+    /// rest`.
+    SequenceAll(Arity),
     /// A typed bind over the computation it ascribes, the value type its
     /// returner returns, and the rest under the bind's binder, named as a
     /// dependent arrow's is: `let x : A = c ; rest`.
@@ -7317,6 +7330,7 @@ impl Walk<'_, '_>
                 | Former::Decompose(_)
                 | Former::Return(_)
                 | Former::Bind(..)
+                | Former::BindAll { .. }
                 | Former::Force(_)
                 | Former::Application(..)
                 | Former::Lambda(_)
@@ -9308,6 +9322,10 @@ impl Walk<'_, '_>
                 Some(writes(Production("block"), Join::DiscardedSequence))
             },
             Former::Bind(..) => Some(writes(Production("block"), Join::Sequence)),
+            Former::BindAll { arity, .. } => Some(writes(
+                Production("block"),
+                Join::SequenceAll(Arity(usize::from(arity))),
+            )),
             // A placement has no spelling of its own: the bind before it
             // writes `let b = c.alloc(n) ;`, and the placement stands as the
             // rest of the block, under the buffer's linear binder, which takes
@@ -12001,6 +12019,7 @@ impl Walk<'_, '_>
             | Former::Decompose(_)
             | Former::Return(_)
             | Former::Bind(..)
+            | Former::BindAll { .. }
             | Former::Force(_)
             | Former::Application(..)
             | Former::Lambda(_)
@@ -12179,7 +12198,7 @@ impl Walk<'_, '_>
                 let taken = count.checked_mul(2_usize)?;
                 taken.checked_add(1_usize)
             },
-            Join::Arrow | Join::Pi | Join::Sigma | Join::RecordProduct | Join::Sequence | Join::DiscardedSequence | Join::TypedLambda | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sigma | Join::RecordProduct | Join::Sequence | Join::DiscardedSequence | Join::SequenceAll(_) | Join::TypedLambda | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
             Join::EffectReturner { ref close, group, .. } => group.map_or(1_usize, |Arity(results)| results).checked_add(usize::from(close.is_some())),
             Join::TypedSequence | Join::Bracket(Bracket::BisimPaid) => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
@@ -12196,7 +12215,7 @@ impl Walk<'_, '_>
                     // a dependent pair, and the product otherwise.
                     Join::RecordProduct if piece.binding == Binding::Atom => Binding::Atom,
                     Join::RecordProduct => Infix::Product.binding(),
-                    Join::Sequence | Join::DiscardedSequence | Join::TypedSequence => Binding::Sequence,
+                    Join::Sequence | Join::DiscardedSequence | Join::SequenceAll(_) | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
                     Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::Ua(_) | Join::Compose(..) | Join::Fill(..) | Join::Tuple(_) | Join::OpenRow { .. } => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
@@ -12575,6 +12594,26 @@ impl Walk<'_, '_>
                         .concat_all(&[lead, binder, equals, bound, semicolon, line, rest.doc])?,
                     Binding::Sequence,
                 )
+            },
+            Join::SequenceAll(Arity(count)) => {
+                let rest = self.pop()?;
+                let bound = self.pop()?;
+                let bound = self.bare_up_to(bound, Binding::Arrow)?;
+                let mut items = Vec::from([self.leaf(Glyphs("let ("))?]);
+                for position in 0_usize .. count {
+                    if position > 0_usize {
+                        items.push(self.leaf(Glyphs(", "))?);
+                    }
+                    // The walk closes the body's binders before this join,
+                    // the first value's binder nearest.
+                    items.push(self.binder(OpenBinders(position))?);
+                }
+                items.push(self.leaf(Glyphs(") = "))?);
+                items.push(bound);
+                items.push(self.leaf(Glyphs(" ;"))?);
+                items.push(Doc::LINE);
+                items.push(rest.doc);
+                (self.builder.concat_all(&items)?, Binding::Sequence)
             },
             Join::TypedSequence => {
                 let rest = self.pop()?;

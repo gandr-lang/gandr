@@ -6054,6 +6054,44 @@ fn a_run_only_sequencing_a_call_is_written_at_its_read_1416()
     }
 }
 
+/// A bind of every output of a call to an operation with several outputs is
+/// written as the statement that binds them, `let (a, b) = c ;`, the first
+/// output first, as the lowering reads it back (#5157).
+#[test]
+fn a_bind_of_several_outputs_is_written_as_its_pattern_5157()
+{
+    let names = [Name::from("f")];
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let two = integer(&mut core, Sign::NonNegative, Written("2"));
+    let f = core.value_constant(ConstantIndex::from(0_usize));
+    let forced = core.computation_force(f);
+    let applied = core.computation_application(forced, one);
+    let called = core.computation_application(applied, two);
+    let first = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let second = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let swapped = core.value_tuple(&[second, first]);
+    let returned = core.computation_return(swapped);
+    let bound = core.computation_bind_all(called, ComponentCount::from(2_usize), returned);
+    let source = CoreSource::new(&core, &names);
+    for (form, expected) in [
+        (Form::Sugared, "let (a, b) = f(1, 2) ; (b, a)"),
+        (Form::Explicit, "let (a, b) = f(1, 2) ; #{b, a}"),
+    ] {
+        let presented = presented_in(
+            &source,
+            Root::Computation(CoreNode::Computation(bound)),
+            wide(),
+            form,
+        );
+        assert_eq!(
+            (presented.as_ref(), presented.fidelity()),
+            (expected, Fidelity::Faithful),
+            "{form:?}"
+        );
+    }
+}
+
 /// A definition over region binders spells whole with its telescope,
 /// `[r : Region]`, before its parameters, and each type kept at a binder
 /// names it; a binder below the greatest one kept at is written though
