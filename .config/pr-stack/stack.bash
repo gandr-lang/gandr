@@ -7,6 +7,8 @@
 # The caller sets `repo` (owner/name) and `trunk` (the default branch).
 
 pr_stack_dir="$(git rev-parse --show-toplevel)/.config/pr-stack"
+# shellcheck source=../gh/budget.bash
+source "$pr_stack_dir/../gh/budget.bash"
 
 # Refuse while `origin/$trunk` holds a change to the stacking rule the
 # checked-out branch lacks (#1455). A task runs the rule from the branch it is
@@ -23,12 +25,53 @@ stacking_current() {
   fi
 }
 
+# What every reading of a pull request takes, one GraphQL selection: its
+# place in a stack, its holds, its merge and queue state, and its head's
+# check rollup in the shape `gh pr view --json statusCheckRollup` gives.
+pr_fields='number state headRefName baseRefName isDraft createdAt isInMergeQueue mergeStateStatus mergeable headRefOid
+  autoMergeRequest { enabledAt } labels(first: 50) { nodes { name } } stack { number } author { __typename }
+  mergeQueueEntry { state headCommit { oid } }
+  timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) { nodes { ... on RemovedFromMergeQueueEvent { reason } } }
+  commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state contexts(first: 100) { nodes {
+    __typename
+    ... on CheckRun { name status conclusion startedAt detailsUrl }
+    ... on StatusContext { context state startedAt: createdAt targetUrl } } } } } } }'
+
+# Every open pull request, as a JSON array of `pr_fields`: one paginated
+# query, about four points, that every pull request reading on the host
+# shares through the budget's cache (`budget.bash`), so a watch, a landing
+# and a stacking asking at once cost one query between them.
+pulls_reading() {
+  gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" \
+    -f query="query(\$owner: String!, \$name: String!, \$endCursor: String) { repository(owner: \$owner, name: \$name) { pullRequests(states: OPEN, first: 100, after: \$endCursor) { pageInfo { hasNextPage endCursor } nodes { $pr_fields } } } }" \
+    --jq '.data.repository.pullRequests.nodes[]' \
+    | jq -cs .
+}
+
+# Pull request `$1` as `pr_fields`: from `pulls_reading` while it is open,
+# else read alone (a merged or closed one).
+pr_reading() {
+  local all found
+  all=$(pulls_reading) || return 1
+  found=$(jq -c --argjson n "$1" '.[] | select(.number == $n)' <<< "$all")
+  if [[ -n $found ]]; then
+    printf '%s\n' "$found"
+    return
+  fi
+  gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
+    -f query="query(\$owner: String!, \$name: String!, \$number: Int!) { repository(owner: \$owner, name: \$name) { pullRequest(number: \$number) { $pr_fields } } }" \
+    --jq '.data.repository.pullRequest'
+}
+
+# The check rollup of a pull request reading on stdin, as `required.jq`
+# reads it.
+rollup_of() {
+  jq -c '.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // []'
+}
+
 # The open pull requests, held ones among them, as a JSON array (`open.jq`).
 open_prs() {
-  gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" \
-    -f query='query($owner: String!, $name: String!, $endCursor: String) { repository(owner: $owner, name: $name) { pullRequests(states: OPEN, first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { number headRefName baseRefName isDraft createdAt isInMergeQueue autoMergeRequest { enabledAt } labels(first: 50) { nodes { name } } stack { number } author { __typename } } } } }' \
-    --jq '.data.repository.pullRequests.nodes[]' \
-    | jq -cs -f "$pr_stack_dir/open.jq"
+  pulls_reading | jq -c -f "$pr_stack_dir/open.jq"
 }
 
 # The open pull requests that land: the held ones, a draft or the owner's
@@ -285,18 +328,15 @@ evidence_base() { mise run --quiet evidence:base; }
 # own (auto-merge). Either way it lands alone, and GitHub refuses to link it
 # into a stack.
 in_queue() {
-  gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
-    -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { isInMergeQueue autoMergeRequest { enabledAt } } } }' \
-    --jq '.data.repository.pullRequest | .isInMergeQueue or .autoMergeRequest != null'
+  pr_reading "$1" | jq '.isInMergeQueue or .autoMergeRequest != null'
 }
 
 # What `bound.jq` reads of pull request `$1`: whether it is queued or set to
 # enter the queue, whether it is a draft, its merge state, its head's check
 # rollup and the seconds since its head commit was made, as one JSON object.
 top_reading() {
-  gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
-    -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { isInMergeQueue autoMergeRequest { enabledAt } isDraft mergeStateStatus commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } } } } }' \
-    --jq '.data.repository.pullRequest | {queued: (.isInMergeQueue or .autoMergeRequest != null), draft: .isDraft, merge: .mergeStateStatus, checks: (.commits.nodes[0].commit.statusCheckRollup.state // null), age: (now - (.commits.nodes[0].commit.committedDate | fromdateiso8601) | floor)}'
+  pr_reading "$1" \
+    | jq -c '{queued: (.isInMergeQueue or .autoMergeRequest != null), draft: .isDraft, merge: .mergeStateStatus, checks: (.commits.nodes[0].commit.statusCheckRollup.state // null), age: (now - (.commits.nodes[0].commit.committedDate | fromdateiso8601) | floor)}'
 }
 
 # The line a seat's harness arms `pr:await $1` on (#4164, `await.jq`).
@@ -321,20 +361,15 @@ below_clean() {
 # The numbers of the stack `$1`'s pull requests in the merge queue, as a JSON
 # array.
 queued_of() {
-  local number members=()
-  for number in $(jq -r '.[].number' <<< "$1"); do
-    if [[ $(in_queue "$number") == true ]]; then members+=("$number"); fi
-  done
-  jq -cn '$ARGS.positional | map(tonumber)' --args "${members[@]}"
+  pulls_reading | jq -c --argjson stack "$1" \
+    'map(select(.isInMergeQueue or .autoMergeRequest != null) | .number) as $queued | [$stack[].number | select(IN($queued[]))]'
 }
 
 # The number of the server stack pull request `$1` belongs to, `null` when
 # none. GitHub keeps a stack's merged members, so a pull request whose stack
 # below it merged still belongs to it.
 stack_of() {
-  gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
-    -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { stack { number } } } }' \
-    --jq '.data.repository.pullRequest.stack.number // "null"'
+  pr_reading "$1" | jq -r '.stack.number // "null"'
 }
 
 # The members of the server stack pull request `$1` belongs to, bottom to
@@ -467,6 +502,7 @@ restack() {
     done
     if (( ${#pushes[@]} > 0 )); then
       git -C "$scratch" push --quiet --atomic "${leases[@]}" origin "${pushes[@]}" || status=$?
+      gh_budget_stale
     fi
   fi
   for head in "${heads[@]::${#heads[@]}-1}"; do
@@ -528,6 +564,7 @@ restack_past() {
   fi
   if (( status == 0 )); then
     git -C "$scratch" push --quiet --atomic "${leases[@]}" origin "${pushes[@]}" || status=$?
+    gh_budget_stale
   fi
   if (( status == 0 )); then
     stack_link "$(jq -c --argjson red "$red" 'map(select(.number != $red))' <<< "$stack")" || status=$?
@@ -686,8 +723,7 @@ wait_required() {
   local required reading
   required=$(required_contexts)
   while :; do
-    reading=$(gh pr view "$1" -R "$repo" --json statusCheckRollup --jq .statusCheckRollup \
-      | jq -c --argjson required "$required" -f "$pr_stack_dir/required.jq")
+    reading=$(pr_reading "$1" | rollup_of | jq -c --argjson required "$required" -f "$pr_stack_dir/required.jq")
     if [[ $(jq '.failed | length' <<< "$reading") != 0 ]]; then
       echo "#$1's required checks are red: $(jq -r '.failed | join(", ")' <<< "$reading")" >&2
       return 1
@@ -701,7 +737,7 @@ wait_required() {
 # cancelled (`twins.jq`); succeeds when it re-ran one.
 rerun_twins() {
   local sha ids id
-  sha=$(gh pr view "$1" -R "$repo" --json headRefOid --jq .headRefOid)
+  sha=$(pr_reading "$1" | jq -r .headRefOid)
   mapfile -t ids < <(gh run list -R "$repo" --commit "$sha" --event pull_request --limit 100 \
     --json databaseId,workflowName,startedAt,conclusion | jq -c -f "$pr_stack_dir/twins.jq" | jq -r '.[]')
   for id in "${ids[@]}"; do
@@ -860,8 +896,8 @@ queue_stack() {
 # failed, `pending` otherwise.
 required_state() {
   local view
-  view=$(gh pr view "$1" -R "$repo" --json mergeable,statusCheckRollup)
-  jq -c .statusCheckRollup <<< "$view" \
+  view=$(pr_reading "$1")
+  rollup_of <<< "$view" \
     | jq -c --argjson required "$2" -f "$pr_stack_dir/required.jq" \
     | jq -c --arg mergeable "$(jq -r .mergeable <<< "$view")" '. + {mergeable: $mergeable}' \
     | jq -r -f "$pr_stack_dir/state.jq"

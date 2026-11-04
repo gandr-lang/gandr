@@ -23,6 +23,8 @@ sqlite3 "$scratch/features.db" .dump > "$repo/ledger/features.sql"
 printf '%s\n' '/// `owing`' '/// Implemented: the row.' '/// Not implemented: the rest.' '///' '/// - owes: #2' 'package owing {}' \
   > "$repo/corpus/ledger/features/owing.gandr"
 git -C "$repo" add .
+# Each case's stub answers differently: no reading is kept between them.
+export GH_BUDGET_TTL=0
 cat > "$scratch/gh/gh" <<'STUB'
 #!/usr/bin/env bash
 # `gh api graphql -f query=<q> --jq <filter>`: answer each `nN: issue(number: N)`

@@ -4143,8 +4143,6 @@ timeout=${usage_timeout:-10800}
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
 [[ "$timeout" =~ ^[0-9]+$ ]] || { echo 'Expected --timeout in seconds' >&2; exit 2; }
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-owner=${repo%/*}
-name=${repo#*/}
 deadline=$((SECONDS + timeout))
 seen_queued=false
 # The head the landing trigger last ran on, and the earliest time it runs
@@ -4160,33 +4158,23 @@ dirty_seen=null
 
 # State, merge state, queued, the entry's state and head, the last removal,
 # whether it carries the `landing` label, the pull request's head, and
-# whether it is a draft.
+# whether it is a draft: from the host's one reading of every open pull
+# request (`pr_reading`).
 snapshot() {
-  gh api graphql -f owner="$owner" -f name="$name" -F number="$number" -f query="
-    query(\$owner: String!, \$name: String!, \$number: Int!) {
-      repository(owner: \$owner, name: \$name) {
-        pullRequest(number: \$number) {
-          state mergeStateStatus isInMergeQueue headRefOid isDraft
-          mergeQueueEntry { state headCommit { oid } }
-          timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) {
-            nodes { ... on RemovedFromMergeQueueEvent { reason } }
-          }
-          labels(first: 50) { nodes { name } }
-        }
-      }
-    }" --jq '.data.repository.pullRequest | [.state, .mergeStateStatus, .isInMergeQueue, (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.headCommit.oid // "-"), ((.timelineItems.nodes[0].reason // "") | if . == "" then "-" else ascii_downcase end), any(.labels.nodes[]; .name == "landing"), .headRefOid, .isDraft] | @tsv'
+  pr_reading "$number" \
+    | jq -r '[.state, .mergeStateStatus, .isInMergeQueue, (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.headCommit.oid // "-"), ((.timelineItems.nodes[0].reason // "") | if . == "" then "-" else ascii_downcase end), any(.labels.nodes[]; .name == "landing"), .headRefOid, .isDraft] | @tsv'
 }
 # The first failed required check on the head of `$1`, this pull request by
-# default, if any. A cancelled check is red unless another run of its
+# default, if any, read off the same reading against the trunk's required
+# contexts (`required.jq`). A cancelled check is red unless another run of its
 # workflow on the same head was not cancelled (`superseded.jq`, #2829): two
 # pull_request events for one head start two runs in the same second, the
 # concurrency group cancels one, whichever id it carries, and its cancelled
 # checks stay listed until the surviving run's jobs start.
 red_check() {
-  local status=0 checks red link run superseded
-  checks=$(gh pr checks "${1:-$number}" -R "$repo" --required --json bucket,name,link) || status=$?
-  # 1: some check failed; 8: some check pending.
-  if [[ "$status" != 0 && "$status" != 1 && "$status" != 8 ]]; then return "$status"; fi
+  local rollup failed red link run superseded
+  rollup=$(pr_reading "${1:-$number}" | rollup_of) || return 1
+  failed=$(jq -c --argjson required "$required" -f "$pr_stack_dir/required.jq" <<< "$rollup" | jq -c .failed)
   while IFS=$'\t' read -r red link; do
     [[ -n "$red" ]] || continue
     if [[ "$link" =~ /actions/runs/([0-9]+)/ ]]; then
@@ -4202,7 +4190,7 @@ red_check() {
     fi
     printf '%s' "$red"
     return 0
-  done < <(jq -r '.[] | select(.bucket == "fail" or .bucket == "cancel") | "\(.name)\t\(if .bucket == "cancel" then .link else "" end)"' <<< "$checks")
+  done < <(jq -r --argjson failed "$failed" 'sort_by(.startedAt // "") as $rollup | $failed[] as $name | ([$rollup[] | select((.name // .context) == $name)] | last) | "\($name)\t\(if .conclusion == "CANCELLED" then (.detailsUrl // "") else "" end)"' <<< "$rollup")
 }
 trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 root=$(git rev-parse --show-toplevel)
@@ -4311,7 +4299,7 @@ above_word() {
   local above ejected='' kept='' in_queue
   while IFS= read -r above; do
     [[ -n "$above" ]] || continue
-    in_queue=$(gh api graphql -f owner="$owner" -f name="$name" -F number="$above" -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { isInMergeQueue } } }' --jq .data.repository.pullRequest.isInMergeQueue)
+    in_queue=$(pr_reading "$above" | jq .isInMergeQueue)
     if [[ "$in_queue" == true ]]; then kept+=" #$above"; else ejected+=" #$above"; fi
   done <<< "$(stacked_above)"
   if [[ -z "$ejected$kept" ]]; then printf 'above-none'; return; fi

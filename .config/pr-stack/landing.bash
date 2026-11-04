@@ -82,6 +82,10 @@ tell() {
     || echo "::warning::#$1: the $3 comment failed"
 }
 
+# The run's GraphQL spend, read before and after from the free `rate_limit`
+# endpoint and printed last, so a costly run shows in its own log.
+spent_before=$(command gh api rate_limit --jq .resources.graphql.used 2> /dev/null) || spent_before=
+trap 'if [[ -n $spent_before ]] && spent_after=$(command gh api rate_limit --jq .resources.graphql.used 2> /dev/null); then echo "landing: $((spent_after - spent_before)) GraphQL points this run"; fi' EXIT
 prs=$(read_prs)
 actions=$(jq -c --argjson token "$token" '{token: $token, prs: .}' <<< "$prs" | jq -c -f "$pr_stack_dir/landing.jq")
 err=$(mktemp)

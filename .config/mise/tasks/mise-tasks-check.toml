@@ -1908,6 +1908,8 @@ done < <(jq -c '.[]' .config/claims/patched.json)
 # bytes of body each, and the dry run prints the case's decision. The pinned
 # `gh` is disabled for the run, so the stub answers.
 mkdir -p "$scratch/gh"
+# Each case's stub answers differently: no reading is kept between them.
+export GH_BUDGET_TTL=0
 printf '%s\n' '#!/usr/bin/env bash' 'case $1 in' \
   'repo) echo gandr-lang/gandr ;;' 'api) cat "$STUB_GH/pr.json" ;;' 'issue) cat "$STUB_GH/issues.json" ;;' \
   '*) echo "stub gh: $*" >&2; exit 1 ;;' 'esac' > "$scratch/gh/gh"

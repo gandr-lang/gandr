@@ -10,6 +10,9 @@
 # Each takes the repository as `owner/name` first. A setter checks before it
 # writes, so each is idempotent and a rerun repairs what a first run missed.
 
+# shellcheck source=../gh/budget.bash
+source "${BASH_SOURCE[0]%/*}/../gh/budget.bash"
+
 # The issue's REST id, which the dependency and sub-issue resources take.
 deps_id() {
   gh api "repos/$1/issues/$2" --jq .id

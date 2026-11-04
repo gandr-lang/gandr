@@ -11,6 +11,8 @@ cases=$here/await.json
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-await.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 mkdir "$work/bin"
+# Each case's stub answers differently: no reading is kept between them.
+export GH_BUDGET_TTL=0
 cat > "$work/bin/gh" << 'EOF'
 #!/usr/bin/env bash
 case "$*" in
