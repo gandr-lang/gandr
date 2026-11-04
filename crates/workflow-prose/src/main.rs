@@ -96,7 +96,7 @@ enum Outcome
 ///   observed process result.
 /// - witness: `tests::cli::a_new_finding_is_refused_with_its_fix`
 /// - witness: `tests::cli::a_body_is_refused_on_its_findings`
-/// - witness: `tests::cli::a_stale_line_is_refused_and_written_away`
+/// - witness: `tests::cli::a_stale_line_is_refused_and_written_away_5007`
 /// - witness: `tests::cli::a_failing_parse_is_reported_with_its_message`
 fn main() -> ExitCode
 {
@@ -252,7 +252,7 @@ fn judge(
 /// # Adequacy
 /// - hypothesis: L3 — as [`main`].
 /// - witness: `tests::cli::a_new_finding_is_refused_with_its_fix`
-/// - witness: `tests::cli::a_stale_line_is_refused_and_written_away`
+/// - witness: `tests::cli::a_stale_line_is_refused_and_written_away_5007`
 fn run(cli: &Cli) -> Result<Outcome, ProseError>
 {
     let io = |path: PathBuf| {

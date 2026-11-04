@@ -74,7 +74,7 @@ fn a_new_finding_is_refused_with_its_fix()
     assert_eq!(output.status.code(), Some(1_i32));
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "corpus/a.gandr:1: Tense: \"The kernel reduced the term.\" — state it in the present \
+        "corpus/a.gandr:1: STE-3.2: \"The kernel reduced the term.\" — state it in the present \
          tense\ncorpus/a.gandr:1: Head: \"the head is not four paragraphs\" — open the source on \
          four paragraphs: what, why, how and references\n"
     );
@@ -111,7 +111,7 @@ fn a_body_is_refused_on_its_findings()
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         format!(
-            "{}:3: Tense: \"The kernel reduced the term.\" — state it in the present tense\n",
+            "{}:3: STE-3.2: \"The kernel reduced the term.\" — state it in the present tense\n",
             body.display()
         )
     );
@@ -138,12 +138,12 @@ fn a_body_is_refused_on_its_findings()
 }
 
 #[test]
-fn a_stale_line_is_refused_and_written_away()
+fn a_stale_line_is_refused_and_written_away_5007()
 {
     let root = scratch!(
         "stale",
         "The kernel reduces the term.",
-        "# header\ncorpus/a.gandr Tense 0123456789abcdef\n",
+        "# header\ncorpus/a.gandr STE-3.2 0123456789abcdef\n",
         PRESENT
     );
     let output = run!(root, NO_ARGS, "");
@@ -152,7 +152,7 @@ fn a_stale_line_is_refused_and_written_away()
         String::from_utf8_lossy(&output.stdout),
         "corpus/a.gandr:1: Head: \"the head is not four paragraphs\" — open the source on four \
          paragraphs: what, why, how and references\ncorpus/prose.ledger: stale line \
-         `corpus/a.gandr Tense 0123456789abcdef`: no finding matches it; run `mise run \
+         `corpus/a.gandr STE-3.2 0123456789abcdef`: no finding matches it; run `mise run \
          check:prose --write`\n"
     );
     let written = run!(root, ["--write"], "");
@@ -194,7 +194,7 @@ fn a_written_finding_passes_until_its_sentence_is_fixed()
     assert_eq!(fixed.status.code(), Some(1_i32));
     assert!(
         String::from_utf8_lossy(&fixed.stdout)
-            .starts_with("corpus/prose.ledger: stale line `corpus/a.gandr Tense "),
+            .starts_with("corpus/prose.ledger: stale line `corpus/a.gandr STE-3.2 "),
         "{}",
         String::from_utf8_lossy(&fixed.stdout)
     );
