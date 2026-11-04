@@ -26,7 +26,7 @@ required=$(required_contexts)
 # The open pull requests, held ones left out (a draft, or the owner's
 # `hold:owner`, #3253), as `landing.jq` reads them.
 read_prs() {
-  local pr number head base upstream rollup
+  local pr number head base upstream rollup gated
   gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" -f query='
     query($owner: String!, $name: String!, $endCursor: String) {
       repository(owner: $owner, name: $name) {
@@ -64,8 +64,10 @@ read_prs() {
         fi
         rollup=$(jq '.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // []' <<< "$pr")
         # A pull request the depth gate stopped (#5074) carries its mark for
-        # this head, and none of its required checks has started.
-        jq -c --argjson reading "$(jq -c --argjson required "$required" -f "$pr_stack_dir/required.jq" <<< "$rollup")" \
+        # this head. Its cancelled checks wait for its promotion, so they read
+        # as pending, never red; it waits while none of them has started again.
+        gated=$(jq '.headRefOid as $head | any(.comments.nodes[].body; contains("<!-- landing:pr-depth:\($head) -->"))' <<< "$pr")
+        jq -c --argjson reading "$(jq -c --argjson required "$required" --argjson gated "$gated" -f "$pr_stack_dir/required.jq" <<< "$rollup")" \
           --argjson unstarted "$(jq -c --argjson required "$required" \
             '[.[] | select((.name // .context) as $n | $required | index($n)) | select(.conclusion != "CANCELLED")] == []' <<< "$rollup")" \
           --argjson upstream "$upstream" \
