@@ -701,6 +701,18 @@ pub enum Former<'source, Node>
     /// A sequencing bind over the computation it runs and the rest, which
     /// stands under one binder for the value returned: `let x = c ; rest`.
     Bind(Node, Node),
+    /// A bind of every value a computation of several results returns, over
+    /// the computation and the rest, which stands under one binder for each
+    /// value, the first value outermost: `let (a, b) = c ; rest`.
+    BindAll
+    {
+        /// The computation whose values are bound.
+        bound: Node,
+        /// How many values it returns, each bound in the rest.
+        arity: Arity,
+        /// The rest, under one binder for each value.
+        body: Node,
+    },
     /// A force of a thunk value: `force v`.
     Force(Node),
     /// The causal web of a dialogue, `decompose(d)`.
@@ -1279,8 +1291,8 @@ pub enum Unreadable
     /// A world's capability: the linear resource a migration spends, which
     /// the checker opens where a run enters and the surface never writes.
     WorldCapability,
-    /// A return or a bind of several values, or a returner of several results
-    /// one of which reads a result before it or whose computation requests an
+    /// A return of several values, or a returner of several results one of
+    /// which reads a result before it or whose computation requests an
     /// interface: the core's many-value formers the surface does not yet
     /// write.
     SeveralResults,

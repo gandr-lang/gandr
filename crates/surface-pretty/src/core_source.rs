@@ -2167,12 +2167,15 @@ impl<'arena> CoreSource<'arena>
                 dylint_lib = "quenchant_dylints",
                 expect(
                     answer_totality,
-                    reason = "a return or a bind of several values, which the surface grammar has \
-                              no syntax for"
+                    reason = "a return of several values, which the surface grammar has no syntax \
+                              for"
                 )
             )]
-            Computation::ReturnAll(_) | Computation::BindAll { .. } => {
-                Former::Unreadable(Unreadable::SeveralResults)
+            Computation::ReturnAll(_) => Former::Unreadable(Unreadable::SeveralResults),
+            Computation::BindAll { bound, arity, body } => Former::BindAll {
+                bound: computation(bound),
+                arity: Arity::from(usize::from(arity)),
+                body: computation(body),
             },
             Computation::Ascribe { body, ty } => Former::Ascription {
                 body: computation(body),
