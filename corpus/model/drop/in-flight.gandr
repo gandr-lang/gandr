@@ -1,10 +1,12 @@
-// An abandoned stack that holds a pending completion cancels it: the stack's
-// end of the kernel's protocol counts as ended, and the kernel's next action
-// is the one that observes the cancellation (Fowler, Lindley, Morris and
-// Decova, _Exceptional Asynchronous Session Types_, POPL 2019,
-// doi:10.1145/3290341).
-//
-// - see: #1334 — `inFlight`
+//! An abandoned stack that holds a pending completion cancels it: the stack's
+//! end of the kernel's protocol counts as ended, and the kernel's next action
+//! is the one that observes the cancellation
+//! [Fowler-2019-exceptional_asynchronous_session_types].
+//!
+//! - see: #1334 — `inFlight`
+//! - cites: [Fowler-2019-exceptional_asynchronous_session_types]
+//!
+//! [Fowler-2019-exceptional_asynchronous_session_types]: https://doi.org/10.1145/3290341 "Fowler, Lindley, Morris and Decova, Exceptional Asynchronous Session Types"
 
 // The ring's protocol and its entries.
 import "../completion/ring-base.gandr";

@@ -1,15 +1,16 @@
-// A doubly recursive function of twelve levels answers true without allocating.
-//
-// Boespflug, Dénès and Grégoire make 2^27 trivial calls, so the run measures
-// calls without garbage collection. Their native code gained most on that
-// workload.
-//
-// Each level calls the level below twice and answers a constant. The path
-// reads the answer at twelve levels.
-//
-// - see: Boespflug, Dénès and Grégoire, _Full Reduction at Full Throttle_,
-//   CPP 2011, § 4, RecNoAlloc
-// - see: #2282 — the benchmark set
+//! A doubly recursive function of twelve levels answers true without allocating.
+//!
+//! Boespflug, Dénès and Grégoire make 2^27 trivial calls, so the run measures
+//! calls without garbage collection. Their native code gained most on that
+//! workload.
+//!
+//! Each level calls the level below twice and answers a constant. The path
+//! reads the answer at twelve levels.
+//!
+//! - cites: [Boespflug-2011-full_reduction_at_full_throttle], § 4, RecNoAlloc
+//! - see: #2282 — the benchmark set
+//!
+//! [Boespflug-2011-full_reduction_at_full_throttle]: https://doi.org/10.1007/978-3-642-25379-9_26 "Boespflug, Dénès and Grégoire, Full Reduction at Full Throttle"
 
 // The free naturals.
 import "../data/data-base.gandr";

@@ -1,11 +1,14 @@
-// One function of a buddy allocator, popping a free block, meets its free-list specification.
-//
-// Corten's case study verifies a buddy allocator against a representation predicate over Rust's value forest. This is its second rung after Corten's `example`, a function that reads, matches on and writes through a place.
-//
-// The body is THIR written as data, its precondition computed by a weakest-precondition fold over it. A read or a write is an existential, a value the place holds with its equation, so stuck places stay in path endpoints. The proof cases on the free list and carries each equation by `Path.ap` and transport.
-//
-// - see: Farka et al., Corten, arXiv:2609.04372, 2026, § 3 and § 8
-// - see: corpus/model/interop/thir/example.gandr
+//! One function of a buddy allocator, popping a free block, meets its free-list specification.
+//!
+//! Corten's case study verifies a buddy allocator against a representation predicate over Rust's value forest. This is its second rung after Corten's `example`, a function that reads, matches on and writes through a place.
+//!
+//! The body is THIR written as data, its precondition computed by a weakest-precondition fold over it. A read or a write is an existential, a value the place holds with its equation, so stuck places stay in path endpoints. The proof cases on the free list and carries each equation by `Path.ap` and transport.
+//!
+//! - cites: [Farka-2026-corten_foundational_verification_rust_programs], 2026,
+//!   § 3 and § 8
+//! - see: corpus/model/interop/thir/example.gandr
+//!
+//! [Farka-2026-corten_foundational_verification_rust_programs]: https://arxiv.org/abs/2609.04372 "Farka et al., Corten: Foundational Verification of Rust Programs"
 
 // `Nat`.
 import "../../data/data-base.gandr";

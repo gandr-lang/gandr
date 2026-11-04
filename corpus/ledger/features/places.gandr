@@ -3,13 +3,17 @@
 /// Not implemented: a linear token naming the place: the lend stays per held slot.
 ///
 /// - owes: #1184
-// Access at a place. `access xs.#[i] as w { … }` lends one element of a held
-// list to a view: the index is a value read where the access stands, and the
-// view is the element at it. An exclusive view writes its element back at its
-// index and the rest of the list stands as it was; a shared view reads it.
-// The held list is lent as a whole, whatever the index, so two views of one
-// list stand together only when both are shared. The place follows Rust's
-// index expression on a place (_The Rust Reference_, § Index expressions).
+//! Access at a place. `access xs.#[i] as w { … }` lends one element of a held
+//! list to a view: the index is a value read where the access stands, and the
+//! view is the element at it. An exclusive view writes its element back at its
+//! index and the rest of the list stands as it was; a shared view reads it. The
+//! held list is lent as a whole, whatever the index, so two views of one list
+//! stand together only when both are shared. The place follows Rust's index
+//! expression on a place [Rust-reference], § Index expressions.
+//!
+//! - cites: [Rust-reference]
+//!
+//! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
 
 // The native finite lists.
 import std.list (List);

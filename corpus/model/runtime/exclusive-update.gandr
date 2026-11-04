@@ -1,18 +1,20 @@
-// An update through an exclusive view of a held pair, answering as the copy
-// it stands for.
-//
-// The view lends the held value, the body builds the new one, and `resume`
-// writes it back. The exclusivity conjecture says a runtime may build the new
-// value in the held value's own block when nothing else holds it. No program
-// can tell the difference, and these answers are what such a rebuild keeps.
-//
-// Each item runs on both tiers. Normalisation by evaluation runs no memory
-// form, so the stated answers are the reference. A copy taken before the
-// update keeps its value, the independence the conjecture rests on.
-//
-// - owes: #3205 — the rebuild in the held value's own block
-// - see: `crates/runtime-emitter/src/run.rs` — where the rebuild lands today
-// - see: Racordon, _A Formal Definition of Swift's Value Semantics_, 2020
+//! An update through an exclusive view of a held pair, answering as the copy
+//! it stands for.
+//!
+//! The view lends the held value, the body builds the new one, and `resume`
+//! writes it back. The exclusivity conjecture says a runtime may build the new
+//! value in the held value's own block when nothing else holds it. No program
+//! can tell the difference, and these answers are what such a rebuild keeps.
+//!
+//! Each item runs on both tiers. Normalisation by evaluation runs no memory
+//! form, so the stated answers are the reference. A copy taken before the
+//! update keeps its value, the independence the conjecture rests on.
+//!
+//! - owes: #3205 — the rebuild in the held value's own block
+//! - see: `crates/runtime-emitter/src/run.rs` — where the rebuild lands today
+//! - cites: [Racordon-2020-formal_definition_swifts_value_semantics]
+//!
+//! [Racordon-2020-formal_definition_swifts_value_semantics]: https://archive-ouverte.unige.ch/unige:145490 "Racordon, A Formal Definition of Swift's Value Semantics"
 
 /// A pair of integers.
 pub data Pair : Type where {

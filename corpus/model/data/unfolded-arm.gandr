@@ -1,12 +1,14 @@
-// An arm that hands its recursive call to another definition, unfolded at an
-// open argument: the call is stuck at the argument's variable, and the arm
-// goes on into the other definition's call over it. Each step states one
-// unfolding of the recursion as a path, as an arm that returns constructors
-// over its call converts (`nested-call-sugar.gandr`). Structural recursion
-// unfolds only at a constructor (Abel, _Termination checking with types_,
-// doi:10.1051/ita:2004015).
-//
-// - see: #761 — `doubleStep`
+//! An arm that hands its recursive call to another definition, unfolded at an
+//! open argument: the call is stuck at the argument's variable, and the arm
+//! goes on into the other definition's call over it. Each step states one
+//! unfolding of the recursion as a path, as an arm that returns constructors
+//! over its call converts (`nested-call-sugar.gandr`). Structural recursion
+//! unfolds only at a constructor [Abel-2004-termination_checking_with_types].
+//!
+//! - see: #761 — `doubleStep`
+//! - cites: [Abel-2004-termination_checking_with_types]
+//!
+//! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
 
 // The naturals the recursion takes apart.
 import "./data-base.gandr";

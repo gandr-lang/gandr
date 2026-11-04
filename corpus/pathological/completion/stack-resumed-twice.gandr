@@ -1,10 +1,13 @@
-// A stack holding a pending completion, resumed twice: an operation's clause
-// resumes the handled body twice, and that body holds a submitted read across
-// the operation, so its one completion would be reaped twice. Handlers after
-// Plotkin and Pretnar, _Handling Algebraic Effects_
-// (doi:10.2168/LMCS-9(4:23)2013).
-//
-// - see: #1334 — `resumedTwice`
+//! A stack holding a pending completion, resumed twice: an operation's clause
+//! resumes the handled body twice, and that body holds a submitted read across
+//! the operation, so its one completion would be reaped twice. Handlers after
+//! Plotkin and Pretnar, _Handling Algebraic Effects_
+//! [Plotkin-2013-handling_algebraic_effects].
+//!
+//! - see: #1334 — `resumedTwice`
+//! - cites: [Plotkin-2013-handling_algebraic_effects]
+//!
+//! [Plotkin-2013-handling_algebraic_effects]: https://doi.org/10.2168/LMCS-9(4:23)2013 "Plotkin and Pretnar, Handling Algebraic Effects"
 
 // The ring's protocol and its entries.
 import "../../model/completion/ring-base.gandr";

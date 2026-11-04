@@ -1,11 +1,15 @@
-// What a forward flow between data types does not decide yet, after directed
-// univalence (Gratzer, Weinberger and Buchholtz, _Directed univalence in
-// simplicial homotopy type theory_, arXiv:2407.09146, Definition 1.2): a data
-// type is covered constructor by constructor only when each field is a closed
-// type of the vocabulary, so a field naming a parameter and a type holding
-// itself are refused. Each refusal names the issue whose steps take them.
-//
-// - owes: #1835 — a field naming a parameter, and a type holding itself
+//! What a forward flow between data types does not decide yet, after directed
+//! univalence
+//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory],
+//! Definition 1.2: a data type is covered constructor by constructor only when
+//! each field is a closed type of the vocabulary, so a field naming a parameter
+//! and a type holding itself are refused. Each refusal names the issue whose
+//! steps take them.
+//!
+//! - owes: #1835 — a field naming a parameter, and a type holding itself
+//! - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
+//!
+//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
 
 /// A box of any type: its field names the parameter.
 data Box(a : Type) : Type where {

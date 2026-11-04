@@ -1,20 +1,21 @@
-// `std.cost`: decalf's cost effect. A program charges what a step costs with
-// `charge`, an operation of the theory `Cost.Eff`. The theory's two laws are
-// decalf's: charging nothing is the identity, and two charges are one charge
-// of their sum.
-//
-// A cost is a value of the sort a scope fixes. The cost monoid's unit and sum
-// are value operations, and only a model the scope names answers them.
-// `Counting` counts in the prelude's binary naturals: a cost is the function
-// that adds it. So the unit is the identity, the sum is composition, and both
-// laws hold by conversion.
-//
-// A bound is a program. A run's count under `Counting` is at most `n` exactly
-// when `Count.le` holds. `gandr check` decides that by conversion for a closed
-// run, and the kernel replays the decision.
-//
-// - see: Grodin, Niu, Sterling and Harper, _decalf: A Directed, Effectful
-//   Cost-Aware Logical Framework_, POPL 2024, doi:10.1145/3632852
+//! `std.cost`: decalf's cost effect. A program charges what a step costs with
+//! `charge`, an operation of the theory `Cost.Eff`. The theory's two laws are
+//! decalf's: charging nothing is the identity, and two charges are one charge
+//! of their sum.
+//!
+//! A cost is a value of the sort a scope fixes. The cost monoid's unit and sum
+//! are value operations, and only a model the scope names answers them.
+//! `Counting` counts in the prelude's binary naturals: a cost is the function
+//! that adds it. So the unit is the identity, the sum is composition, and both
+//! laws hold by conversion.
+//!
+//! A bound is a program. A run's count under `Counting` is at most `n` exactly
+//! when `Count.le` holds. `gandr check` decides that by conversion for a closed
+//! run, and the kernel replays the decision.
+//!
+//! - cites: [Grodin-2024-decalf_directed_effectful_costaware_logical_framework]
+//!
+//! [Grodin-2024-decalf_directed_effectful_costaware_logical_framework]: https://doi.org/10.1145/3632852 "Grodin, Niu, Sterling and Harper, decalf: A Directed, Effectful Cost-Aware Logical Framework"
 
 // `Count`, whose sum counts and whose order bounds.
 import "./grade.gandr";

@@ -1,15 +1,19 @@
-// Copy-on-write pays for a holder count it reads at every write, even when
-// the string is held once. A write that reads no count is sound exactly where
-// the string has one holder: there it writes what copy-on-write writes, and on
-// a shared string it would write the buffer another string reads. So where the
-// program states that a string is not copied for a scope, the count and its
-// branch can go (Racordon et al., "Implementation strategies for mutable value
-// semantics", _Journal of Object Technology_ 21(2), 2022,
-// doi:10.5381/jot.2022.21.2.a2, § 4: uniqueness-elided copies). The statement
-// is a grade on the string: `var[1] s = e;` holds a string made where the hold
-// stands, which nothing else holds while it is held, and the checker refuses a
-// grade-one hold of a string that may have been copied. The items below show
-// the write the grade licenses, and on what.
+//! Copy-on-write pays for a holder count it reads at every write, even when the
+//! string is held once. A write that reads no count is sound exactly where the
+//! string has one holder: there it writes what copy-on-write writes, and on a
+//! shared string it would write the buffer another string reads. So where the
+//! program states that a string is not copied for a scope, the count and its
+//! branch can go
+//! [Racordon-2022-implementation_strategies_mutable_value_semantics], § 4:
+//! uniqueness-elided copies. The statement is a grade on the string: `var[1] s
+//! = e;` holds a string made where the hold stands, which nothing else holds
+//! while it is held, and the checker refuses a grade-one hold of a string that
+//! may have been copied. The items below show the write the grade licenses, and
+//! on what.
+//!
+//! - cites: [Racordon-2022-implementation_strategies_mutable_value_semantics]
+//!
+//! [Racordon-2022-implementation_strategies_mutable_value_semantics]: https://doi.org/10.5381/jot.2022.21.2.a2 "Racordon et al., Implementation strategies for mutable value semantics"
 
 // The lists; the byte lists; the owned bytes; where they live; the writes.
 import "../data/data-base.gandr";

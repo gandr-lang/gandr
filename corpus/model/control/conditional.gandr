@@ -1,9 +1,14 @@
-// A conditional, `if c { t } else { e }`: the case of its condition over the
-// two booleans, the true branch first. The condition is a computation the
-// case binds, as `while` binds its own, and each branch is a block whose last
-// computation is the conditional's answer. The derived form is the usual
-// one: `if` as the eliminator of the booleans (Levy, "Call-By-Push-Value",
-// Springer 2003, § 2.3, where the case of a sum is a computation).
+//! A conditional, `if c { t } else { e }`: the case of its condition over the
+//! two booleans, the true branch first. The condition is a computation the case
+//! binds, as `while` binds its own, and each branch is a block whose last
+//! computation is the conditional's answer. The derived form is the usual one:
+//! `if` as the eliminator of the booleans
+//! [Levy-2003-callbypushvalue_functional_imperative_synthesis], § 2.3, where
+//! the case of a sum is a computation.
+//!
+//! - cites: [Levy-2003-callbypushvalue_functional_imperative_synthesis]
+//!
+//! [Levy-2003-callbypushvalue_functional_imperative_synthesis]: https://doi.org/10.1007/978-94-007-0954-6 "Levy, Call-By-Push-Value"
 
 /// A conditional over a boolean value: the true branch runs.
 @[ runs("1") ]

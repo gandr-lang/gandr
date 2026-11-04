@@ -1,11 +1,15 @@
-// The twin of the model's `originOther`: an atom whose type member states a
-// relation and its reflexivity but no transport law. Without the law the
-// relation is no identity system (Univalent Foundations Program, _Homotopy
-// Type Theory_, 2013, §5.8, Theorem 5.8.2), so the atom's identity stays its
-// own and the relation's evidence is no path between its points.
-//
-// - see: #1784 — `lawlessOriginOther`
-// - see: #1959 — `unpairedContraction`, `UnpairedPoint`
+//! The twin of the model's `originOther`: an atom whose type member states a
+//! relation and its reflexivity but no transport law. Without the law the
+//! relation is no identity system
+//! [Program-2013-homotopy_type_theory_univalent_foundations_mathematics], §
+//! 5.8, Theorem 5.8.2, so the atom's identity stays its own and the relation's
+//! evidence is no path between its points.
+//!
+//! - see: #1784 — `lawlessOriginOther`
+//! - see: #1959 — `unpairedContraction`, `UnpairedPoint`
+//! - cites: [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]
+//!
+//! [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
 // The relation, its reflexivity and its transport law over the unit type.
 import "../../model/identity/atom-identity.gandr";

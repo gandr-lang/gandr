@@ -1,11 +1,15 @@
-// An extension type stated as the signature the face theory generates for it.
-// `ext Val on left is zero` over the two points of `Two` is the type of cells
-// fixed to `zero` on the face `left`: a cell holds its value off the face,
-// `ins` introduces it and `outp`, `outq` read it at each point. The boundary,
-// β and η are the signature's laws, so each holds by conversion, on a neutral
-// cell as on an introduced one (Tesla Zhang, _Three non-cubical applications
-// of extension types_, arXiv:2311.05658). The member `ext` generates this
-// signature from its spelling (`generated.gandr`).
+//! An extension type stated as the signature the face theory generates for it.
+//! `ext Val on left is zero` over the two points of `Two` is the type of cells
+//! fixed to `zero` on the face `left`: a cell holds its value off the face,
+//! `ins` introduces it and `outp`, `outq` read it at each point. The boundary,
+//! β and η are the signature's laws, so each holds by conversion, on a neutral
+//! cell as on an introduced one
+//! [Zhang-2024-three_noncubical_applications_extension_types]. The member `ext`
+//! generates this signature from its spelling (`generated.gandr`).
+//!
+//! - cites: [Zhang-2024-three_noncubical_applications_extension_types]
+//!
+//! [Zhang-2024-three_noncubical_applications_extension_types]: https://arxiv.org/abs/2311.05658 "Zhang, Three non-cubical applications of extension types"
 
 /// The cells of `Val` over `Two` fixed to `zero` on `left`, with `c` a cell
 /// nothing introduces. The boundary reads `zero` at `left` of every cell, `c`

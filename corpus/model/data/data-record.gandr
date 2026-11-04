@@ -1,6 +1,10 @@
-// A data type with one constructor of several fields: a record, read by a
-// match that binds each field by position, or by a field's name (Martin-Löf,
-// _Intuitionistic Type Theory_, Bibliopolis, 1984).
+//! A data type with one constructor of several fields: a record, read by a
+//! match that binds each field by position, or by a field's name
+//! [MartinLof-1984-intuitionistic_type_theory].
+//!
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 /// A colour as its three channels.
 data Color3 : Type where {

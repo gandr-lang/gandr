@@ -1,8 +1,14 @@
-// A program: a source declaring a top-level `main` that returns the exit
-// code and reads the arguments `gandr run` passes after the path, as a C or a
-// Rust program's `main` does (ISO/IEC 9899:2018 § 5.1.2.2; the Rust
-// Reference, § Crates and source files, "Main functions"). `gandr run
-// entry.gandr a b c` exits 3.
+//! A program: a source declaring a top-level `main` that returns the exit code
+//! and reads the arguments `gandr run` passes after the path, as a C or a Rust
+//! program's `main` does [ISO-2018-programming_languages_c], § 5.1.2.2, and
+//! [Rust-reference], § Crates and source files, "Main functions". `gandr run
+//! entry.gandr a b c` exits 3.
+//!
+//! - cites: [ISO-2018-programming_languages_c]
+//! - cites: [Rust-reference]
+//!
+//! [ISO-2018-programming_languages_c]: https://www.iso.org/standard/74528.html "ISO/IEC JTC 1/SC 22, ISO/IEC 9899:2018, Programming languages — C"
+//! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
 
 // The native finite lists.
 import std.list (List);

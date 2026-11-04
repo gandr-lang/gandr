@@ -1,8 +1,13 @@
-// The moves subject's shared declarations, written once and imported by every
-// source that reads them (`import "./file-base.gandr";`): a file after POSIX
-// open(2) and close(2), whose descriptor its holder releases by closing it,
-// once. The handle is a linear resident, the end of a forked owner, so moving
-// it is delegation (Honda, Vasconcelos and Kubo, doi:10.1007/BFb0053567).
+//! The moves subject's shared declarations, written once and imported by every
+//! source that reads them (`import "./file-base.gandr";`): a file after POSIX
+//! open(2) and close(2), whose descriptor its holder releases by closing it,
+//! once. The handle is a linear resident, the end of a forked owner, so moving
+//! it is delegation
+//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming].
+//!
+//! - cites: [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]
+//!
+//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]: https://doi.org/10.1007/BFb0053567 "Honda, Vasconcelos and Kubo, Language Primitives and Type Discipline for Structured Communication-Based Programming"
 
 /// A file: the handle its holder closes, the protocol of a closer that takes a
 /// handle and of a writer that takes one and hands it back, and the line a

@@ -123,13 +123,15 @@ pub enum Rule
     Semicolon,
     /// A dash joining two clauses of a body or a comment.
     Dash,
-    /// A path, an issue number or a URL in a comment's prose.
+    /// A path, an issue number, a URL or a paper's citation in a comment's
+    /// prose.
     InlineReference,
     /// A comment paragraph of more than five sentences, or an item comment of
     /// more than two.
     Wall,
-    /// A corpus source's head is not four paragraphs, or a references line
-    /// opens with neither `- see:` nor `- owes:`.
+    /// A corpus source's head is not four paragraphs, a references line opens
+    /// with none of `- see:`, `- owes:` and `- cites:`, or a `- cites:` label
+    /// has no footer line with a quoted title.
     Head,
     /// The head's first sentence runs past twenty words.
     What,
@@ -274,7 +276,9 @@ impl fmt::Display for Fix
                  with no verb"
             },
             Rule::InlineReference => {
-                "move the path, the issue or the URL to a `- see:` line after the paragraph"
+                "move the path, the issue or the URL to a `- see:` line after the paragraph, and a \
+                 paper to a `- cites: [label]` line with its footer line `[label]: <URL> \
+                 \"<authors>, <title>\"`"
             },
             Rule::Wall => {
                 "split the paragraph into paragraphs of at most five sentences, one idea each, or \
@@ -709,38 +713,105 @@ fn instructions(
     }
 }
 
-/// [`Rule::InlineReference`] when `text` names a path in the tree, an issue or
-/// a URL: a word, its opening quotes and brackets and its closing quotes,
-/// brackets and punctuation left out in any order, holding `://`, being `#`
-/// and digits, or holding a `/` and starting with a tree directory or ending
-/// with a file extension.
+/// [`Rule::InlineReference`] when `text` names a path in the tree, an issue, a
+/// URL or a paper: a word, its opening quotes and brackets and its closing
+/// quotes, brackets and punctuation left out in any order, holding `://`,
+/// being `#` and digits, holding a `/` and starting with a tree directory or
+/// ending with a file extension, or being a paper's locator ([`locator`]); or
+/// a parenthesis holding a title in underscores ([`titled`]).
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a path in backticks, an issue in brackets or closing a
-///   parenthesis before a full stop, and a URL fire, and a quotient `A/B`, an
-///   attribute `#[cfg]` and `#` alone do not; a dropped pattern, a wider one or
-///   a closing bracket kept changes a verdict.
+///   parenthesis before a full stop, a URL, a DOI, an arXiv identifier and a
+///   parenthesised title fire, and a quotient `A/B`, an attribute `#[cfg]`, `#`
+///   alone, a decimal and an emphasis outside a parenthesis do not; a dropped
+///   pattern, a wider one or a closing bracket kept changes a verdict.
 /// - witness: `rules::tests::a_comment_holds_the_body_rules_its_references_and_walls`
 fn referenced(text: Text<'_>) -> Option<Rule>
 {
-    text.0
-        .split_whitespace()
-        .any(|word| {
-            let word = word
-                .trim_start_matches(|c: char| "`'\"([{".contains(c))
-                .trim_end_matches(|c: char| "`'\")]},;:!?.".contains(c));
-            word.contains("://")
-                || word.strip_prefix('#').is_some_and(|digits| {
-                    !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
-                })
-                || (word.contains('/')
-                    && (ROOTS.iter().any(|root| word.starts_with(root))
-                        || EXTENSIONS.iter().any(|extension| word.ends_with(extension))))
-        })
-        .then_some(Rule::InlineReference)
+    (text.0.split_whitespace().any(|word| {
+        let word = word
+            .trim_start_matches(|c: char| "`'\"([{".contains(c))
+            .trim_end_matches(|c: char| "`'\")]},;:!?.".contains(c));
+        word.contains("://")
+            || word.strip_prefix('#').is_some_and(|digits| {
+                !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
+            })
+            || (word.contains('/')
+                && (ROOTS.iter().any(|root| word.starts_with(root))
+                    || EXTENSIONS.iter().any(|extension| word.ends_with(extension))))
+            || locator(Text(word)).is_some()
+    }) || titled(text).is_some())
+    .then_some(Rule::InlineReference)
+}
+
+/// [`Rule::InlineReference`] when `word` is a paper's locator: `doi:` or
+/// `arXiv:` before its identifier, in any case, or a bare DOI, `10.`, a
+/// registrant of four digits or more, `/` and a suffix.
+///
+/// # Specification
+/// trivial.
+fn locator(word: Text<'_>) -> Option<Rule>
+{
+    let lower = word.0.to_ascii_lowercase();
+    let named = ["doi:", "arxiv:"].iter().any(|scheme| {
+        lower
+            .strip_prefix(scheme)
+            .is_some_and(|id| id.starts_with(|c: char| c.is_ascii_alphanumeric()))
+    });
+    (named
+        || lower
+            .strip_prefix("10.")
+            .and_then(|rest| rest.split_once('/'))
+            .is_some_and(|(registrant, suffix)| {
+                registrant.len() >= 4
+                    && registrant.chars().all(|c| c.is_ascii_digit())
+                    && !suffix.is_empty()
+            }))
+    .then_some(Rule::InlineReference)
+}
+
+/// [`Rule::InlineReference`] when a parenthesis of `text` holds a title: a
+/// word that opens with `_` and a capital letter, or a capital letter after
+/// `, "`, the ways a citation sets a paper's title, `(Dybjer, _Inductive
+/// families_, 1994)` or `(Levy, "Call-By-Push-Value", 2003)`. A code span is
+/// skipped, so a parenthesis of code holds no title.
+///
+/// # Specification
+/// trivial.
+fn titled(text: Text<'_>) -> Option<Rule>
+{
+    let mut code = false;
+    let mut depth = 0_usize;
+    // The last three characters outside a code span, the latest last.
+    let mut window = [' '; 3];
+    for c in text.0.chars() {
+        if c == '`' {
+            code = !code;
+            continue;
+        }
+        if code {
+            continue;
+        }
+        match c {
+            '(' => depth = depth.saturating_add(1),
+            ')' => depth = depth.saturating_sub(1),
+            _ if depth > 0 && c.is_uppercase() => {
+                let [before, quote, latest] = window;
+                let underscored = latest == '_' && (quote.is_whitespace() || quote == '(');
+                let quoted = latest == '"' && quote == ' ' && before == ',';
+                if underscored || quoted {
+                    return Some(Rule::InlineReference);
+                }
+            },
+            _ => {},
+        }
+        window = [window[1], window[2], c];
+    }
+    None
 }
 
 /// [`Rule::Wall`] when more than five of the parse `sentences` end in prose:
@@ -787,10 +858,10 @@ fn walled(
 /// - ensures: one finding per rule each sentence breaks, under the rules of the
 ///   passage's source, in sentence order, each naming the passage's path and
 ///   line and the sentence's text. A comment's sentence that names a path, an
-///   issue or a URL ([`referenced`]) adds [`Rule::InlineReference`] after its
-///   other rules; a comment paragraph of more than five sentences that end in
-///   prose ([`walled`]) adds one [`Rule::Wall`] last, naming the whole
-///   paragraph.
+///   issue, a URL, a paper's locator or a paper's title ([`referenced`]) adds
+///   [`Rule::InlineReference`] after its other rules; a comment paragraph of
+///   more than five sentences that end in prose ([`walled`]) adds one
+///   [`Rule::Wall`] last, naming the whole paragraph.
 /// - provides: the sentence rules over one passage.
 /// - fails: never.
 /// - panics: none.
@@ -842,10 +913,12 @@ pub fn sentences(
 /// # Specification
 /// - requires: `parsed` is the parse of `passages`, in the same order.
 /// - ensures: one [`Rule::Head`] when a corpus head is not four paragraphs or a
-///   references line opens with neither `- see:` nor `- owes:`. One
-///   [`Rule::What`] when that head's first sentence holds more than twenty
-///   words. One [`Rule::Wall`] when an item comment holds more than two
-///   sentences. The word count is the one [`words`] states.
+///   references line opens with none of `- see:`, `- owes:` and `- cites:`. One
+///   [`Rule::Head`] at the `- cites:` line whose label no footer line defines,
+///   or else at the footer line that gives no quoted title. One [`Rule::What`]
+///   when that head's first sentence holds more than twenty words. One
+///   [`Rule::Wall`] when an item comment holds more than two sentences. The
+///   word count is the one [`words`] states.
 /// - provides: the shape rules over the spaCy sentences.
 /// - fails: never.
 /// - panics: none.
@@ -853,8 +926,10 @@ pub fn sentences(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a head of three paragraphs, a first sentence of
-///   twenty-one words and an item of three sentences, each beside a twin that
-///   holds. An off-by-one limit changes a verdict.
+///   twenty-one words, an item of three sentences, a citation with no footer
+///   line and a footer line with no quoted title, each beside a twin that
+///   holds. An off-by-one limit or a dropped citation verdict changes a
+///   verdict.
 /// - witness: `rules::tests::a_head_and_an_item_hold_their_sentence_counts`
 #[inline]
 #[must_use]
@@ -877,6 +952,25 @@ pub fn shaped(
                     line: head.line,
                     rule: Rule::Head,
                     sentence: "the head is not four paragraphs".to_owned(),
+                });
+            }
+            let cited = match head.references {
+                References::Unfooted(line) => Some((
+                    line,
+                    "a `- cites:` label has no footer line `[label]: <URL> \"<authors>, <title>\"` at the run's end",
+                )),
+                References::Untitled(line) => Some((
+                    line,
+                    "a footer line gives no quoted title: write `[label]: <URL> \"<authors>, <title>\"`",
+                )),
+                References::Shaped | References::Broken => None,
+            };
+            if let Some((line, sentence)) = cited {
+                findings.push(Finding {
+                    path: shape.path.clone(),
+                    line,
+                    rule: Rule::Head,
+                    sentence: sentence.to_owned(),
                 });
             }
             if let WhatLine::At(line) = head.what
@@ -1515,6 +1609,12 @@ mod tests
             "Reads [#4900] today.",
             "Reads https://example.org now.",
             "Reads the twin pathological/a.gandr now.",
+            "Reads the families (doi:10.1007/BF01211308) now.",
+            "Reads the path types, arXiv:2501.11620, now.",
+            "Reads 10.1145/96709.96718 now.",
+            "Reads the families (Dybjer, _Inductive families_, 1994) now.",
+            "Reads the case (Levy, \"Call-By-Push-Value\", 2003) now.",
+            "Reads the attribute (after `#[doc]`, _The Rust Reference_) now.",
         ] {
             assert_eq!(
                 commented(Text(reference), Source::Comment),
@@ -1532,6 +1632,11 @@ mod tests
             "Reads #[cfg] here.",
             "Reads # here.",
             "Reads #x here.",
+            "Reads 10.5 here.",
+            "Reads _Stressed_ here.",
+            "Reads `f(x, \"Hello\")` here.",
+            "Reads the greeting (\"Hello\") here.",
+            "Reads doi: here.",
         ] {
             assert_eq!(
                 commented(Text(plain), Source::Comment),
@@ -1750,6 +1855,18 @@ mod tests
             ),
             [Rule::Head]
         );
+        let at = passage("/// term\n").line;
+        for cited in [References::Unfooted(at), References::Untitled(at)] {
+            let held = shape(4, cited, WhatLine::None, Vec::new());
+            assert_eq!(
+                shaped(core::slice::from_ref(&held), &[], &[])
+                    .iter()
+                    .map(|finding| (finding.rule, finding.line))
+                    .collect::<Vec<_>>(),
+                [(Rule::Head, at)],
+                "{cited:?} is refused once, at its line"
+            );
+        }
         let item = passage("/// One. Two. Three.\n");
         let item_line = item.line;
         let item_parse = vec![

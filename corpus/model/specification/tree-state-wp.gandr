@@ -1,15 +1,18 @@
-// The weakest-precondition observation of state as data: the increment as a
-// tree over the row of state alone, and `state-wp.gandr`'s clauses as a fold
-// of the tree into a type, so the normaliser computes a program's
-// precondition and the kernel replays every declaration here. A Dijkstra
-// monad pairs a program with evidence that its transformer is below a
-// specification (Maillard et al., "Dijkstra Monads for All", ICFP 2019,
-// § 2); here the pair is a dependent record: the increment below its
-// specification at one postcondition and at every postcondition, and the
-// stopped program below the return specification at every postcondition.
-//
-// - see: #2773 — `incrSpecifiedEverywhere`, `incrSpecBare`
-// - see: #2751 — `doneSpecified`
+//! The weakest-precondition observation of state as data: the increment as a
+//! tree over the row of state alone, and `state-wp.gandr`'s clauses as a fold
+//! of the tree into a type, so the normaliser computes a program's precondition
+//! and the kernel replays every declaration here. A Dijkstra monad pairs a
+//! program with evidence that its transformer is below a specification
+//! [Maillard-2019-dijkstra_monads_all], § 2; here the pair is a dependent
+//! record: the increment below its specification at one postcondition and at
+//! every postcondition, and the stopped program below the return specification
+//! at every postcondition.
+//!
+//! - see: #2773 — `incrSpecifiedEverywhere`, `incrSpecBare`
+//! - see: #2751 — `doneSpecified`
+//! - cites: [Maillard-2019-dijkstra_monads_all]
+//!
+//! [Maillard-2019-dijkstra_monads_all]: https://doi.org/10.1145/3341708 "Maillard et al., Dijkstra Monads for All"
 
 // `Either`, `StateOp` and `Prog`.
 import "../effects/tree.gandr";

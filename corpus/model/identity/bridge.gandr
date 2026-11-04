@@ -1,20 +1,21 @@
-// A bridge `Bridge(A, a, b)` relates two points of `A` parametrically, as
-// the bridge fold reads `A`.
-//
-// A path identifies its endpoints, and a bridge only relates them. A bridge
-// at the universe is a relation between two types, and one at a type former
-// lifts the relations of its parts. A bridge has no reflexivity, transport
-// or eliminator of its own.
-//
-// An introduction checked at a bridge checks at the fibre the fold reads from
-// the carrier and the endpoints. The fold reads a list cell by cell, a base
-// type or a sum as its identity, and a function code by extensionality. An
-// atom stating an identity system bears its relation.
-//
-// - see: `pathological/identity/bridge.gandr` — the bridges refused
-// - see: #3519 — the model laws of the fold
-// - see: Cavallo and Harper, _Internal parametricity for cubical type
-//   theory_, LMCS 2021, § 3
+//! A bridge `Bridge(A, a, b)` relates two points of `A` parametrically, as
+//! the bridge fold reads `A`.
+//!
+//! A path identifies its endpoints, and a bridge only relates them. A bridge
+//! at the universe is a relation between two types, and one at a type former
+//! lifts the relations of its parts. A bridge has no reflexivity, transport
+//! or eliminator of its own.
+//!
+//! An introduction checked at a bridge checks at the fibre the fold reads from
+//! the carrier and the endpoints. The fold reads a list cell by cell, a base
+//! type or a sum as its identity, and a function code by extensionality. An
+//! atom stating an identity system bears its relation.
+//!
+//! - see: `pathological/identity/bridge.gandr` — the bridges refused
+//! - see: #3519 — the model laws of the fold
+//! - cites: [Cavallo-2021-internal_parametricity_cubical_type_theory], § 3
+//!
+//! [Cavallo-2021-internal_parametricity_cubical_type_theory]: https://doi.org/10.46298/lmcs-17(4:5)2021 "Cavallo and Harper, Internal parametricity for cubical type theory"
 
 // The sealed points whose relation is their identity.
 import "./atom-identity.gandr";

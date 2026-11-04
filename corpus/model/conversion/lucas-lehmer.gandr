@@ -1,16 +1,17 @@
-// The Lucas–Lehmer test shows that thirty-one, two to the fifth less one, is
-// prime.
-//
-// Boespflug, Dénès and Grégoire decide a Mersenne number's primality by the
-// Lucas–Lehmer test. Its squares and remainders allocate large unary naturals.
-//
-// From four, the test squares, subtracts two and takes the remainder three
-// times. At one hundred and twenty-seven the run outlasts the conversion's step
-// budget.
-//
-// - see: Boespflug, Dénès and Grégoire, _Full Reduction at Full Throttle_,
-//   CPP 2011, § 4, Lucas-Lehmer
-// - see: #2282 — the benchmark set
+//! The Lucas–Lehmer test shows that thirty-one, two to the fifth less one, is
+//! prime.
+//!
+//! Boespflug, Dénès and Grégoire decide a Mersenne number's primality by the
+//! Lucas–Lehmer test. Its squares and remainders allocate large unary naturals.
+//!
+//! From four, the test squares, subtracts two and takes the remainder three
+//! times. At one hundred and twenty-seven the run outlasts the conversion's step
+//! budget.
+//!
+//! - cites: [Boespflug-2011-full_reduction_at_full_throttle], § 4, Lucas-Lehmer
+//! - see: #2282 — the benchmark set
+//!
+//! [Boespflug-2011-full_reduction_at_full_throttle]: https://doi.org/10.1007/978-3-642-25379-9_26 "Boespflug, Dénès and Grégoire, Full Reduction at Full Throttle"
 
 // The free naturals and the numeral two.
 import "../data/data-base.gandr";

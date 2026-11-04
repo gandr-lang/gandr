@@ -1,10 +1,13 @@
-// Second-order signatures written as their descriptions render them. A sort
-// classified `Type+` is representable, and a port `t : pi+ (x : S) . T` binds
-// a variable of the representable sort `S` over `T` (Kaposi and Xie,
-// _Second-Order Generalised Algebraic Theories_, FSCD 2024,
-// doi:10.4230/LIPIcs.FSCD.2024.10, Definition 3 and the identity-return
-// example). Each block is a value of `Theory` that keeps both, so a program
-// reads them back by `case`.
+//! Second-order signatures written as their descriptions render them. A sort
+//! classified `Type+` is representable, and a port `t : pi+ (x : S) . T` binds
+//! a variable of the representable sort `S` over `T`
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics],
+//! Definition 3 and the identity-return example. Each block is a value of
+//! `Theory` that keeps both, so a program reads them back by `case`.
+//!
+//! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
+//!
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
 
 /// The naturals, a first-order signature: one ordinary sort, a constant and
 /// a successor.

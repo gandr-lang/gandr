@@ -1,15 +1,18 @@
-// State's models over host types. `get`'s continuation binds the state, so a
-// model gives it the thunked function from the state to the carrier,
-// `+U (S -> -F C)`: in the standard model of a second-order signature a
-// representable sort's binder is an exponential (Fiore and Hur,
-// _Second-Order Equational Logic_, CSL 2010). The model here is state
-// passing, the carrier a function of the current state. A law relating terms
-// at `get`'s port is a path between host functions, which the derivation does
-// not state yet: `../../pathological/effects/state-model.gandr`. A model is
-// a record, so one carried along an equivalence of states is a model again,
-// its `get` conjugated by the equivalence.
-//
-// - see: #2421 — `carried`
+//! State's models over host types. `get`'s continuation binds the state, so a
+//! model gives it the thunked function from the state to the carrier, `+U (S ->
+//! -F C)`: in the standard model of a second-order signature a representable
+//! sort's binder is an exponential [Fiore-2010-second_order_equational_logic].
+//! The model here is state passing, the carrier a function of the current
+//! state. A law relating terms at `get`'s port is a path between host
+//! functions, which the derivation does not state yet:
+//! `../../pathological/effects/state-model.gandr`. A model is a record, so one
+//! carried along an equivalence of states is a model again, its `get`
+//! conjugated by the equivalence.
+//!
+//! - see: #2421 — `carried`
+//! - cites: [Fiore-2010-second_order_equational_logic]
+//!
+//! [Fiore-2010-second_order_equational_logic]: https://doi.org/10.1007/978-3-642-15205-4_26 "Fiore and Hur, Second-Order Equational Logic"
 
 // The theories `State.Eff` and `StatePutPut`.
 import "./state.gandr";

@@ -1,11 +1,15 @@
-// A recursive call at a variable converts through the arm that waits on it.
-// `windWords(Loop(x))` runs to the `Loop` arm, whose `run` waits on
-// `windWords(x)`, stuck at the variable; an endpoint's computation is pure, so
-// the bind reads as the arm's constructor over the held call,
-// `S(windWords(x))`, and the kernel replays the reading by forcing it. An arm
-// that cases on the call before it returns keeps the call stuck, and a path
-// stating a value for it is refused. Conversion is definitional equality by
-// computation (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984).
+//! A recursive call at a variable converts through the arm that waits on it.
+//! `windWords(Loop(x))` runs to the `Loop` arm, whose `run` waits on
+//! `windWords(x)`, stuck at the variable; an endpoint's computation is pure, so
+//! the bind reads as the arm's constructor over the held call,
+//! `S(windWords(x))`, and the kernel replays the reading by forcing it. An arm
+//! that cases on the call before it returns keeps the call stuck, and a path
+//! stating a value for it is refused. Conversion is definitional equality by
+//! computation [MartinLof-1984-intuitionistic_type_theory].
+//!
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 // The presented integers and the free naturals.
 import "./circle-base.gandr";

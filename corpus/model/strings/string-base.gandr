@@ -1,11 +1,14 @@
-// The strings subject's shared declarations, imported by every source that
-// reads them (`import "./string-base.gandr";`): where a string's bytes live,
-// and the byte lists every claim reads and builds. A string is a value: a copy
-// is a new string, and no write to one is seen through another (Racordon et
-// al., "Implementation strategies for mutable value semantics", _Journal of
-// Object Technology_ 21(2), 2022, doi:10.5381/jot.2022.21.2.a2). Short
-// strings keep their bytes inline and long ones share a buffer until a write,
-// as the C++ and Rust small-string representations do.
+//! The strings subject's shared declarations, imported by every source that
+//! reads them (`import "./string-base.gandr";`): where a string's bytes live,
+//! and the byte lists every claim reads and builds. A string is a value: a copy
+//! is a new string, and no write to one is seen through another
+//! [Racordon-2022-implementation_strategies_mutable_value_semantics]. Short
+//! strings keep their bytes inline and long ones share a buffer until a write,
+//! as the C++ and Rust small-string representations do.
+//!
+//! - cites: [Racordon-2022-implementation_strategies_mutable_value_semantics]
+//!
+//! [Racordon-2022-implementation_strategies_mutable_value_semantics]: https://doi.org/10.5381/jot.2022.21.2.a2 "Racordon et al., Implementation strategies for mutable value semantics"
 
 // The lists the bytes are held in.
 import "../data/data-base.gandr";

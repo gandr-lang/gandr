@@ -1,10 +1,12 @@
-// Abandoning the rest of a scope ends what it held without resuming it: an
-// access abandoned before its `resume` writes nothing back, so its hold keeps
-// the value it held. A handler clause that does not resume its continuation
-// discards it (Plotkin and Pretnar, _Handling Algebraic Effects_,
-// doi:10.2168/LMCS-9(4:23)2013).
-//
-// - see: #1334 — `unwritten`
+//! Abandoning the rest of a scope ends what it held without resuming it: an
+//! access abandoned before its `resume` writes nothing back, so its hold keeps
+//! the value it held. A handler clause that does not resume its continuation
+//! discards it [Plotkin-2013-handling_algebraic_effects].
+//!
+//! - see: #1334 — `unwritten`
+//! - cites: [Plotkin-2013-handling_algebraic_effects]
+//!
+//! [Plotkin-2013-handling_algebraic_effects]: https://doi.org/10.2168/LMCS-9(4:23)2013 "Plotkin and Pretnar, Handling Algebraic Effects"
 
 // Early exit's host interface.
 import std.process;

@@ -1,11 +1,15 @@
-// Renaming twice is renaming once, the renaming case of the fusion lemmas of
-// Allais et al. (_A type- and scope-safe universe of syntaxes with binding:
-// their semantics and proofs_, JFP 2021, doi:10.1017/S0956796820000076): a
-// term renamed by `a1` then `a2` is the term renamed by `a3` when the
-// lookups agree at every index, and likewise for two composites. Each is an
-// induction on the term whose hypothesis is the pointwise one, lifted once
-// under each abstraction; an application's two paths are joined by
-// `Path.walk`.
+//! Renaming twice is renaming once, the renaming case of the fusion lemmas of
+//! Allais et al.
+//! [Allais-2021-a_type_and_scope_safe_universe_of_syntaxes_with_binding_their_semantics_and_proofs]:
+//! a term renamed by `a1` then `a2` is the term renamed by `a3` when the
+//! lookups agree at every index, and likewise for two composites. Each is an
+//! induction on the term whose hypothesis is the pointwise one, lifted once
+//! under each abstraction; an application's two paths are joined by
+//! `Path.walk`.
+//!
+//! - cites: [Allais-2021-a_type_and_scope_safe_universe_of_syntaxes_with_binding_their_semantics_and_proofs]
+//!
+//! [Allais-2021-a_type_and_scope_safe_universe_of_syntaxes_with_binding_their_semantics_and_proofs]: https://doi.org/10.1017/S0956796820000076 "Allais et al., A type- and scope-safe universe of syntaxes with binding: their semantics and proofs"
 
 // The naturals; the syntax; the congruences.
 import "../model-in-source.gandr";

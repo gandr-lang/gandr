@@ -1,20 +1,22 @@
-// Foreign functions admitted against the rows their ABI computes, as the
-// writer states them.
-//
-// Today a writer builds each foreign row by hand, value by value. Here the
-// writer states the foreign signature alone, and the checker computes the
-// row from the types.
-//
-// The checker derives each argument's witness record from its type's layout
-// under `std.abi.C`: size, alignment and niche. A signature the library's
-// layout does not realise is refused `BoundaryUnrealised` at the clause it
-// fails. No parser accepts the extern block's `fun` yet.
-//
-// - see: #4562 — the ABI sketch, its rulings in the issue body
-// - see: `../../model/interop/boundary/function-row.gandr` — the same `f`,
-//   its row and each refused neighbour built by hand
-// - see: Wagner, Eisbach and Ahmed, "Realistic Realizability: Specifying
-//   ABIs You Can Count On", OOPSLA 2024, doi:10.1145/3689755, § 3.1
+//! Foreign functions admitted against the rows their ABI computes, as the
+//! writer states them.
+//!
+//! Today a writer builds each foreign row by hand, value by value. Here the
+//! writer states the foreign signature alone, and the checker computes the
+//! row from the types.
+//!
+//! The checker derives each argument's witness record from its type's layout
+//! under `std.abi.C`: size, alignment and niche. A signature the library's
+//! layout does not realise is refused `BoundaryUnrealised` at the clause it
+//! fails. No parser accepts the extern block's `fun` yet.
+//!
+//! - see: #4562 — the ABI sketch, its rulings in the issue body
+//! - see: `../../model/interop/boundary/function-row.gandr` — the same `f`,
+//!   its row and each refused neighbour built by hand
+//! - cites: [Wagner-2024-realistic_realizability_specifying_abis_you_can_count],
+//!   § 3.1
+//!
+//! [Wagner-2024-realistic_realizability_specifying_abis_you_can_count]: https://doi.org/10.1145/3689755 "Wagner, Eisbach and Ahmed, Realistic Realizability: Specifying ABIs You Can Count On"
 
 // The C calling convention, as an `Abi` value.
 import std.abi.C;

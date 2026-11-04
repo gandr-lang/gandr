@@ -1,13 +1,16 @@
-// Calls nested inside a path type's endpoints convert to their values. An
-// endpoint that applies a function to another call waits on the inner call
-// once the outer one unfolds, and conversion unfolds that call next; over a
-// presented type the inner call stands under a constructor the outer call
-// built, and the normal form reads it before the rules run. An endpoint that
-// applies the function a call returns is the bind over that call applying
-// what it binds. Conversion is definitional equality by computation
-// (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984).
-//
-// - see: #2326 — `bound_is_applied`, `outside_is_inside`
+//! Calls nested inside a path type's endpoints convert to their values. An
+//! endpoint that applies a function to another call waits on the inner call
+//! once the outer one unfolds, and conversion unfolds that call next; over a
+//! presented type the inner call stands under a constructor the outer call
+//! built, and the normal form reads it before the rules run. An endpoint that
+//! applies the function a call returns is the bind over that call applying what
+//! it binds. Conversion is definitional equality by computation
+//! [MartinLof-1984-intuitionistic_type_theory].
+//!
+//! - see: #2326 — `bound_is_applied`, `outside_is_inside`
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 // The free naturals, the presented integers and their steps `up` and `down`.
 import "./circle-base.gandr";

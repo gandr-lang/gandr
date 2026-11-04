@@ -1,10 +1,12 @@
-// A seat's open play carried across its protocol's evolution: the moves a
-// seat has made so far ride forward along the simulation to the widened
-// protocol, as a complete run does (`./seat-evolution.gandr`), and stay open
-// there, the seat's next move still owed (Gay and Hole, _Subtyping for
-// Session Types in the Pi Calculus_, doi:10.1007/s00236-005-0177-z).
-//
-// - see: #1318 — `carried`
+//! A seat's open play carried across its protocol's evolution: the moves a seat
+//! has made so far ride forward along the simulation to the widened protocol,
+//! as a complete run does (`./seat-evolution.gandr`), and stay open there, the
+//! seat's next move still owed [Gay-2005-subtyping_session_types_pi_calculus].
+//!
+//! - see: #1318 — `carried`
+//! - cites: [Gay-2005-subtyping_session_types_pi_calculus]
+//!
+//! [Gay-2005-subtyping_session_types_pi_calculus]: https://doi.org/10.1007/s00236-005-0177-z "Gay and Hole, Subtyping for Session Types in the Pi Calculus"
 
 // The native session formers.
 import std.session (Prefix);

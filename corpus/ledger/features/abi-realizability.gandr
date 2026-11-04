@@ -4,12 +4,16 @@
 ///
 /// - owes: #2835 — the logic as a theory with heaps its model
 /// - owes: #327 — the C side read from its source
-// A type's realisers are a predicate on a word and a heap, `V⟦T⟧ : (Nat,
-// Heap) => Type`, and a layout optimisation is another predicate, a
-// marshaller between two of them a proof (Wagner, Eisbach and Ahmed,
-// "Realistic Realizability: Specifying ABIs You Can Count On", OOPSLA 2024,
-// doi:10.1145/3689755, § 4.2). The heap is data, so the normaliser computes
-// every assertion and the kernel replays every declaration.
+//! A type's realisers are a predicate on a word and a heap, `V⟦T⟧ : (Nat, Heap)
+//! => Type`, and a layout optimisation is another predicate, a marshaller
+//! between two of them a proof
+//! [Wagner-2024-realistic_realizability_specifying_abis_you_can_count], § 4.2.
+//! The heap is data, so the normaliser computes every assertion and the kernel
+//! replays every declaration.
+//!
+//! - cites: [Wagner-2024-realistic_realizability_specifying_abis_you_can_count]
+//!
+//! [Wagner-2024-realistic_realizability_specifying_abis_you_can_count]: https://doi.org/10.1145/3689755 "Wagner, Eisbach and Ahmed, Realistic Realizability: Specifying ABIs You Can Count On"
 
 // `Nat`.
 import "../../model/data/data-base.gandr";

@@ -75,7 +75,7 @@ The test suite follows the same shape: one witness per behaviour, in the crate t
 
 Write as ASD-STE100 writes. Use short sentences, one topic a paragraph, the active voice and the present tense. Keep the technical vocabulary free.
 
-A source opens on four paragraphs. The first sentence of the first paragraph holds at most twenty words. The next two paragraphs say why and how. The fourth paragraph holds only `- see:` and `- owes:` lines.
+A source opens on four paragraphs. The first sentence of the first paragraph holds at most twenty words. The next two say why and how. The fourth holds only `- see:`, `- owes:` and `- cites: [label]` lines. The head ends on one `[label]: <URL> "<authors>, <title>"` line per label.
 
 An item comment holds at most two sentences. No sentence holds more than twenty-five words. No semicolon joins two sentences. A passive is one of `is refused`, `is admitted`, `is replayed`, `is checked` and `is normalised`.
 

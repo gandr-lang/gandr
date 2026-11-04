@@ -10,7 +10,11 @@
 /// - owes: #2879 — a face naming each half's footprint
 /// - owes: #2878 — a row read per operation
 /// - see: corpus/ledger/diagnostics/FootprintsOverlap.gandr
-/// - see: Xu, Bračevac, Pham, Zhao and Odersky, System Capybara, arXiv:2607.09383, § 4.5
+/// - cites:
+///   [Xu-2026-system_capybara_tracking_capabilities_separation_freshness_extended_version],
+///   § 4.5
+///
+/// [Xu-2026-system_capybara_tracking_capabilities_separation_freshness_extended_version]: https://arxiv.org/abs/2607.09383 "Xu, System Capybara: Tracking Capabilities for Separation and Freshness (Extended Version)"
 
 // The task's protocol.
 import "../../model/tasks/task-base.gandr";

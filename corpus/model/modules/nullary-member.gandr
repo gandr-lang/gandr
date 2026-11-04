@@ -1,8 +1,12 @@
-// Calls of no arguments: a module member called through its module's name,
-// and a suspension called by its own. Such a call is its head's force, and
-// it answers at the call, as a call that applies arguments does: forcing a
-// thunk, after Levy's call-by-push-value (_Call-By-Push-Value_, Springer,
-// 2003, doi:10.1007/978-94-007-0954-6).
+//! Calls of no arguments: a module member called through its module's name, and
+//! a suspension called by its own. Such a call is its head's force, and it
+//! answers at the call, as a call that applies arguments does: forcing a thunk,
+//! after Levy's call-by-push-value
+//! [Levy-2003-callbypushvalue_functional_imperative_synthesis].
+//!
+//! - cites: [Levy-2003-callbypushvalue_functional_imperative_synthesis]
+//!
+//! [Levy-2003-callbypushvalue_functional_imperative_synthesis]: https://doi.org/10.1007/978-94-007-0954-6 "Levy, Call-By-Push-Value"
 
 /// A module whose one member takes no arguments.
 module Origin where {

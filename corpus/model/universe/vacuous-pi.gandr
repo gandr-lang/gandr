@@ -1,10 +1,13 @@
-// A dependent arrow whose codomain ignores its binder is the plain arrow
-// . A family applied at its binder is a dependent codomain until the
-// family is read; a family that reads to one type at every argument makes
-// the function type over it the arrow to that type, in both directions
-// (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984).
-//
-// - see: #577 — `viaArrow`
+//! A dependent arrow whose codomain ignores its binder is the plain arrow . A
+//! family applied at its binder is a dependent codomain until the family is
+//! read; a family that reads to one type at every argument makes the function
+//! type over it the arrow to that type, in both directions
+//! [MartinLof-1984-intuitionistic_type_theory].
+//!
+//! - see: #577 — `viaArrow`
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 // The naturals.
 import "../data/data-base.gandr";

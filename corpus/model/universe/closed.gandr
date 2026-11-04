@@ -1,16 +1,19 @@
-// A Tarski universe written by hand: a datatype of codes and a decoder from
-// codes to value types. The decode of a code over a binder is a value type
-// over a neutral code, compared by its code; the decode of a code that runs
-// to a quote is the quoted type. The arrow code decodes to the function type
-// between its two decoded sides, so a function at a decoded arrow applies. A
-// type a body quotes reads each binder where the body binds it, and a decode
-// at its path type's carrier reads as it does in a binder's type. A
-// constructor field may read the one before it, so a value packs with its
-// code (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984).
-//
-// - see: #540 — `endo`
-// - see: #583 — `byCode`
-// - see: #590 — `onType`
+//! A Tarski universe written by hand: a datatype of codes and a decoder from
+//! codes to value types. The decode of a code over a binder is a value type
+//! over a neutral code, compared by its code; the decode of a code that runs to
+//! a quote is the quoted type. The arrow code decodes to the function type
+//! between its two decoded sides, so a function at a decoded arrow applies. A
+//! type a body quotes reads each binder where the body binds it, and a decode
+//! at its path type's carrier reads as it does in a binder's type. A
+//! constructor field may read the one before it, so a value packs with its code
+//! [MartinLof-1984-intuitionistic_type_theory].
+//!
+//! - see: #540 — `endo`
+//! - see: #583 — `byCode`
+//! - see: #590 — `onType`
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 // The naturals.
 import "../data/data-base.gandr";

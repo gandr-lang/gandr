@@ -1,8 +1,11 @@
-// The arms a match may write besides one constructor each: a wildcard that
-// takes every constructor the arms before it left, an or-pattern that shares
-// one body between constructors, and a pattern nested inside a constructor's
-// field (Augustsson, _Compiling pattern matching_,
-// doi:10.1007/3-540-15975-4_48).
+//! The arms a match may write besides one constructor each: a wildcard that
+//! takes every constructor the arms before it left, an or-pattern that shares
+//! one body between constructors, and a pattern nested inside a constructor's
+//! field [Augustsson-1985-compiling_pattern_matching].
+//!
+//! - cites: [Augustsson-1985-compiling_pattern_matching]
+//!
+//! [Augustsson-1985-compiling_pattern_matching]: https://doi.org/10.1007/3-540-15975-4_48 "Augustsson, Compiling pattern matching"
 
 // The three colours.
 import "./data-base.gandr";

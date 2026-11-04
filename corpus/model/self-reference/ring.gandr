@@ -1,10 +1,13 @@
-// A structure that refers to itself names its parts by ids into an arena,
-// never by address, so it moves and copies as any value and every link
-// reads. A heap whose locations are never observed hides its symmetries
-// (Sterling, Gratzer and Birkedal, CSL 2024, doi:10.4230/LIPIcs.CSL.2024.19).
-//
-// - see: #1183 — `ring`
-// - see: #1481 — `ring`
+//! A structure that refers to itself names its parts by ids into an arena,
+//! never by address, so it moves and copies as any value and every link reads.
+//! A heap whose locations are never observed hides its symmetries
+//! [Sterling-2023-univalent_reference_types].
+//!
+//! - see: #1183 — `ring`
+//! - see: #1481 — `ring`
+//! - cites: [Sterling-2023-univalent_reference_types]
+//!
+//! [Sterling-2023-univalent_reference_types]: https://doi.org/10.4230/LIPIcs.CSL.2024.19 "Sterling, Gratzer and Birkedal, Towards univalent reference types"
 
 // The lists.
 import "../data/data-base.gandr";

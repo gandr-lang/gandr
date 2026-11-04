@@ -1,12 +1,14 @@
-// Copy-on-write: a copy of a long string shares its buffer and counts one
-// more holder, and a write copies the buffer only when another string holds
-// it; a buffer held once is written in place. A short string's bytes are its
-// own, so its copy is a copy of at most the inline capacity. Either way a
-// write to one string is never seen through another (Racordon et al.,
-// "Implementation strategies for mutable value semantics", _Journal of Object
-// Technology_ 21(2), 2022, doi:10.5381/jot.2022.21.2.a2, § 3).
-//
-// - see: #1481 — `long`
+//! Copy-on-write: a copy of a long string shares its buffer and counts one more
+//! holder, and a write copies the buffer only when another string holds it; a
+//! buffer held once is written in place. A short string's bytes are its own, so
+//! its copy is a copy of at most the inline capacity. Either way a write to one
+//! string is never seen through another
+//! [Racordon-2022-implementation_strategies_mutable_value_semantics], § 3.
+//!
+//! - see: #1481 — `long`
+//! - cites: [Racordon-2022-implementation_strategies_mutable_value_semantics]
+//!
+//! [Racordon-2022-implementation_strategies_mutable_value_semantics]: https://doi.org/10.5381/jot.2022.21.2.a2 "Racordon et al., Implementation strategies for mutable value semantics"
 
 // The lists; the byte lists; the owned bytes; where they live.
 import "../data/data-base.gandr";

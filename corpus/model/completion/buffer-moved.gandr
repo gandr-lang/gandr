@@ -1,9 +1,15 @@
-// The buffer a read fills is moved into its submission, not borrowed, because
-// the kernel owns it until the operation completes (boats, _Notes on
-// io-uring_, 2020), and it is handed back with the completion. The buffer is a
-// linear resident, here the end of a forked owner, and moving it into a
-// submission is delegation (Honda, Vasconcelos and Kubo,
-// doi:10.1007/BFb0053567).
+//! The buffer a read fills is moved into its submission, not borrowed, because
+//! the kernel owns it until the operation completes
+//! [boats-2020-notes_on_io_uring], and it is handed back with the completion.
+//! The buffer is a linear resident, here the end of a forked owner, and moving
+//! it into a submission is delegation
+//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming].
+//!
+//! - cites: [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]
+//! - cites: [boats-2020-notes_on_io_uring]
+//!
+//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]: https://doi.org/10.1007/BFb0053567 "Honda, Vasconcelos and Kubo, Language Primitives and Type Discipline for Structured Communication-Based Programming"
+//! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
 
 // The ring's protocol and its entries.
 import "./ring-base.gandr";

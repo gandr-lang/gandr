@@ -1,25 +1,27 @@
-// A category with families as a theory whose sorts depend on earlier sorts.
-// Contexts and substitutions form a category, a type lives in a context, and
-// a term has a type in a context (Huang and Angiuli, _Fat cell structures
-// and generalized algebraic theories_, doi:10.4230/LIPIcs.LICS.2026.58,
-// § 1.1).
-//
-// Dependent type theory states its syntax and its models through this
-// signature. `Tm(g, a)` reads `a` at the sort `Ty(g)`, so a term's sort
-// names the context of its type. Comprehension extends a context by a type,
-// and substitution moves types and terms between contexts. The block's value
-// of `Theory` keeps each index as data, so a program reads it back.
-//
-// The standard model reads a context as a type. A type in a context is a
-// family over it, and a term is a section of that family. The block states
-// the category laws and the laws on types. Their rules carry each context
-// that a substitution stands between, so two identities compose at one
-// context and the unit laws join. The twin keeps the laws on terms.
-//
-// - see: #522
-// - see: #5016
-// - see: #5017
-// - see: #5042
+//! A category with families as a theory whose sorts depend on earlier sorts.
+//! Contexts and substitutions form a category, a type lives in a context, and a
+//! term has a type in a context
+//! [Huang-2026-fat_cell_structures_generalized_algebraic_theories], § 1.1.
+//!
+//! Dependent type theory states its syntax and its models through this
+//! signature. `Tm(g, a)` reads `a` at the sort `Ty(g)`, so a term's sort
+//! names the context of its type. Comprehension extends a context by a type,
+//! and substitution moves types and terms between contexts. The block's value
+//! of `Theory` keeps each index as data, so a program reads it back.
+//!
+//! The standard model reads a context as a type. A type in a context is a
+//! family over it, and a term is a section of that family. The block states
+//! the category laws and the laws on types. Their rules carry each context
+//! that a substitution stands between, so two identities compose at one
+//! context and the unit laws join. The twin keeps the laws on terms.
+//!
+//! - see: #522
+//! - see: #5016
+//! - see: #5017
+//! - see: #5042
+//! - cites: [Huang-2026-fat_cell_structures_generalized_algebraic_theories]
+//!
+//! [Huang-2026-fat_cell_structures_generalized_algebraic_theories]: https://doi.org/10.4230/LIPIcs.LICS.2026.58 "Huang and Angiuli, Fat Cell Structures and Generalized Algebraic Theories"
 
 /// The CwF signature: four sorts, each over the sorts before it, and the
 /// operations of a category with families.

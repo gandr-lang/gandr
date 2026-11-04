@@ -1,16 +1,16 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/universe/pair-and-path-codes.gandr:41:56
+   ╭▸ corpus/pathological/universe/pair-and-path-codes.gandr:43:56
    │
-36 │      def rec elSigRun(u : USigRun) -> Type {
+38 │      def rec elSigRun(u : USigRun) -> Type {
    │      │                ─ checked against `USigRun -> -F Type`; while checking the body of this function; binds u : USigRun
    │ ┌────┘
    │ │
-37 │ │┌     match u {
-38 │ ││       NatR => return Nat,
-39 │ ││       SigR(a, b) => {
-40 │ ││         let t = elSigRun[<](a);
+39 │ │┌     match u {
+40 │ ││       NatR => return Nat,
+41 │ ││       SigR(a, b) => {
+42 │ ││         let t = elSigRun[<](a);
    │ ││         ─── checked against `-F Type`; while checking the body under this binding; binds _ : Type
-41 │ ││         return (Sig(t, thunk { fun (x) { elSigRun[<](b(x)) } }))
+43 │ ││         return (Sig(t, thunk { fun (x) { elSigRun[<](b(x)) } }))
    │ ││         ┬───────┬──────┬───────┬─────────┬───────────┬─┯────────
    │ ││         │       │      │       │         │           │ │
    │ ││         │       │      │       │         │           │ its type does not convert: expected `elSigRun(a)`, found `?`
@@ -20,28 +20,28 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ ││         │       │      checked against `? => Type`; while checking the body of this thunk
    │ ││         │       checked against `Type`; while forming the type this quotes
    │ ││         checked against `-F Type`; while judging the value this returns
-42 │ ││       }
-43 │ ││     }
+44 │ ││       }
+45 │ ││     }
    │ │└─────┘ checked against `-F Type`; while checking the body of this function; binds a : USigRun, b : elSigRun(a) => USigRun
-44 │ │    }
+46 │ │    }
    │ └────┘ checked against `USigRun => Type`; while checking the body of this function; binds elSigRun : USigRun => Type
    │
    ├ note: `USigRun` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/universe/pair-and-path-codes.gandr:41:56
+   ╭▸ corpus/pathological/universe/pair-and-path-codes.gandr:43:56
    │
-36 │      def rec elSigRun(u : USigRun) -> Type {
+38 │      def rec elSigRun(u : USigRun) -> Type {
    │      │                ─ checked against `USigRun -> -F Type`; while checking the body of this function; binds u : USigRun
    │ ┌────┘
    │ │
-37 │ │┌     match u {
-38 │ ││       NatR => return Nat,
-39 │ ││       SigR(a, b) => {
-40 │ ││         let t = elSigRun[<](a);
+39 │ │┌     match u {
+40 │ ││       NatR => return Nat,
+41 │ ││       SigR(a, b) => {
+42 │ ││         let t = elSigRun[<](a);
    │ ││         ─── checked against `-F Type`; while checking the body under this binding; binds _ : Type
-41 │ ││         return (Sig(t, thunk { fun (x) { elSigRun[<](b(x)) } }))
+43 │ ││         return (Sig(t, thunk { fun (x) { elSigRun[<](b(x)) } }))
    │ ││         ┬───────┬──────┬───────┬─────────┬───────────┬─┯────────
    │ ││         │       │      │       │         │           │ │
    │ ││         │       │      │       │         │           │ its type does not convert: expected `elSigRun(a)`, found `?`
@@ -51,10 +51,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ ││         │       │      checked against `? => Type`; while checking the body of this thunk
    │ ││         │       checked against `Type`; while forming the type this quotes
    │ ││         checked against `-F Type`; while judging the value this returns
-42 │ ││       }
-43 │ ││     }
+44 │ ││       }
+45 │ ││     }
    │ │└─────┘ checked against `-F Type`; while checking the body of this function; binds a : USigRun, b : elSigRun(a) => USigRun
-44 │ │    }
+46 │ │    }
    │ └────┘ checked against `USigRun => Type`; while checking the body of this function; binds elSigRun : USigRun => Type
    │
    ├ note: `elSigRun` is refused with TypeMismatch, as its expectation states

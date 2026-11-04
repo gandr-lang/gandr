@@ -1,11 +1,14 @@
-// Allocation permutation (Sterling, Gratzer and Birkedal, _Towards univalent
-// reference types_, CSL 2024, doi:10.4230/LIPIcs.CSL.2024.19, Fig. 2): two
-// allocations commute. A structure whose parts name each other by ids into an
-// arena is built twice, its nodes allocated in two orders, so the ids of one
-// arena are a relabelling of the other's. The relabelling is a path between
-// the id types; the links and the labels carried along it are the other
-// arena's, so the two arenas are one, and a consumer that walks the links
-// reads both alike.
+//! Allocation permutation [Sterling-2023-univalent_reference_types],
+//! Fig. 2: two allocations commute. A structure whose parts name each other by
+//! ids into an arena is built twice, its nodes allocated in two orders, so the
+//! ids of one arena are a relabelling of the other's. The relabelling is a path
+//! between the id types; the links and the labels carried along it are the
+//! other arena's, so the two arenas are one, and a consumer that walks the
+//! links reads both alike.
+//!
+//! - cites: [Sterling-2023-univalent_reference_types]
+//!
+//! [Sterling-2023-univalent_reference_types]: https://doi.org/10.4230/LIPIcs.CSL.2024.19 "Sterling, Gratzer and Birkedal, Towards univalent reference types"
 
 /// The relabelling between the two allocation orders: the first two ids
 /// swap, the third stays.

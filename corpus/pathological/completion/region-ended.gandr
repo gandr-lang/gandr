@@ -1,10 +1,14 @@
-// A buffer's region ended under its pending completion: buffers passed to a
-// read "must remain valid until completion" (io_uring(7)), so the region the
-// buffer lives in may not end while the submission that holds it is pending.
-// The kernel is a forked peer, which no region bounds, so a submission that
-// carries a value kept in a region is refused where the kernel is forked. A
-// region is a static extent erased before anything runs (Koronkevich and
-// Bowman, _Type Universes as Kripke Worlds_, ICFP 2025, doi:10.1145/3747532).
+//! A buffer's region ended under its pending completion: buffers passed to a
+//! read "must remain valid until completion" (io_uring(7)), so the region the
+//! buffer lives in may not end while the submission that holds it is pending.
+//! The kernel is a forked peer, which no region bounds, so a submission that
+//! carries a value kept in a region is refused where the kernel is forked. A
+//! region is a static extent erased before anything runs
+//! [Koronkevich-2025-type_universes_kripke_worlds].
+//!
+//! - cites: [Koronkevich-2025-type_universes_kripke_worlds]
+//!
+//! [Koronkevich-2025-type_universes_kripke_worlds]: https://doi.org/10.1145/3747532 "Koronkevich and Bowman, Type Universes as Kripke Worlds"
 
 // The ring's protocol and its entries.
 import "../../model/completion/ring-base.gandr";

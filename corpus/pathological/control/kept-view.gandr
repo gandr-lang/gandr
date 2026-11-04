@@ -1,9 +1,12 @@
-// What a kept view may not do: a view no region keeps escapes its access, an
-// exclusive view is kept nowhere, a held value a live region keeps a view of
-// is not written, and nothing kept in a region leaves it, whether a capability
-// scope or a hold opened the region. A region is a static
-// extent erased before anything runs (Koronkevich and Bowman, _Type Universes
-// as Kripke Worlds_, ICFP 2025, doi:10.1145/3747532).
+//! What a kept view may not do: a view no region keeps escapes its access, an
+//! exclusive view is kept nowhere, a held value a live region keeps a view of
+//! is not written, and nothing kept in a region leaves it, whether a capability
+//! scope or a hold opened the region. A region is a static extent erased before
+//! anything runs [Koronkevich-2025-type_universes_kripke_worlds].
+//!
+//! - cites: [Koronkevich-2025-type_universes_kripke_worlds]
+//!
+//! [Koronkevich-2025-type_universes_kripke_worlds]: https://doi.org/10.1145/3747532 "Koronkevich and Bowman, Type Universes as Kripke Worlds"
 
 // Early exit's host interface.
 import std.process;

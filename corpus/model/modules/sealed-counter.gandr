@@ -1,9 +1,12 @@
-// A module sealed by a signature, after ML's opaque ascription (Harper and
-// Lillibridge, _A Type-Theoretic Approach to Higher-Order Modules with
-// Sharing_, POPL 1994, doi:10.1145/174675.176927): outside the seal its type
-// is abstract, so a value of it is reached only through the members the
-// signature exposes. A run answering one is opaque at the seal, since its
-// type is not marked `mobile`.
+//! A module sealed by a signature, after ML's opaque ascription
+//! [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]:
+//! outside the seal its type is abstract, so a value of it is reached only
+//! through the members the signature exposes. A run answering one is opaque at
+//! the seal, since its type is not marked `mobile`.
+//!
+//! - cites: [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]
+//!
+//! [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]: https://doi.org/10.1145/174675.176927 "Harper and Lillibridge, A Type-Theoretic Approach to Higher-Order Modules with Sharing"
 
 // The sealed counter `Seed`.
 import "./functor-pair.gandr";

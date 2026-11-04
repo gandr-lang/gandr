@@ -1,6 +1,10 @@
-// A declaration documented by the `doc` attribute rather than a doc comment
-// (after Rust's `#[doc]`, _The Rust Reference_, § Attributes): the attribute
-// is read into the report beside the declaration's verdict.
+//! A declaration documented by the `doc` attribute rather than a doc comment
+//! (after Rust's `#[doc]`, [Rust-reference], § Attributes): the attribute is
+//! read into the report beside the declaration's verdict.
+//!
+//! - cites: [Rust-reference]
+//!
+//! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
 
 // A greeting, its documentation given by the attribute alone.
 @[ doc("Returns a fixed greeting.") ]

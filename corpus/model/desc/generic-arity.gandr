@@ -1,10 +1,13 @@
-// A generic program over descriptions. A `theory` block is a value of `Theory`, so
-// an ordinary function reads any presentation by `case`; a function whose arms
-// return type quotes names a type where a type is read (`El` as unquote),
-// after Chapman, Dagand, McBride and Morris (_The Gentle Art of Levitation_,
-// doi:10.1145/1863543.1863547).
-//
-// - see: #729 — `sign`
+//! A generic program over descriptions. A `theory` block is a value of
+//! `Theory`, so an ordinary function reads any presentation by `case`; a
+//! function whose arms return type quotes names a type where a type is read
+//! (`El` as unquote), after Chapman, Dagand, McBride and Morris
+//! [Chapman-2010-gentle_art_levitation].
+//!
+//! - see: #729 — `sign`
+//! - cites: [Chapman-2010-gentle_art_levitation]
+//!
+//! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
 /// A monoid presented as data: the block binds `Monoid : Theory`, its sort and
 /// its two operations held in one value.

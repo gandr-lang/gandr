@@ -1,7 +1,7 @@
 error[ForwardUnsupported]: `Flow.into` cannot image this translator at every input
-   ╭▸ corpus/pathological/identity/flow-forward-unsupported.gandr:19:38
+   ╭▸ corpus/pathological/identity/flow-forward-unsupported.gandr:22:38
    │
-19 │   def scrub : Flow(Type, Old, New) = Flow.into(anonymise);
+22 │   def scrub : Flow(Type, Old, New) = Flow.into(anonymise);
    │                                      ━━━━━━━━━━━━━━━━━━━━ a translator the rule cannot image
    │
    ├ note: `scrub` is refused with ForwardUnsupported, as its expectation states

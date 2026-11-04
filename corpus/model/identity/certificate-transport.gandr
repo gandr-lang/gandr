@@ -1,13 +1,21 @@
-// Confluence certificates as paths in a presented type, and univalence over
-// the types of them (the HoTT book's § 2.10; Behr and Kock, _Tracelet Hopf
-// Algebras and Decomposition Spaces_, EPTCS 372, 2022). The critical pair of
-// the presented integers at `S(P(S(x)))` joins at `S(x)` two ways, and each
-// way is a certificate: a path from the peak to the join. The two are one
-// path, so certificate identity is an identification in the presented type
-// rather than a relation beside it; certificates no rule relates stay apart
-// (the pathological twin). Two boundaries that convert have certificate types
-// that `ua` makes one, and a consumer of one boundary's certificates is
-// carried to the other's unchanged.
+//! Confluence certificates as paths in a presented type, and univalence over
+//! the types of them
+//! [Program-2013-homotopy_type_theory_univalent_foundations_mathematics], §
+//! 2.10, and
+//! [Behr-2022-tracelet_hopf_algebras_decomposition_spaces_extended_abstract].
+//! The critical pair of the presented integers at `S(P(S(x)))` joins at `S(x)`
+//! two ways, and each way is a certificate: a path from the peak to the join.
+//! The two are one path, so certificate identity is an identification in the
+//! presented type rather than a relation beside it; certificates no rule
+//! relates stay apart (the pathological twin). Two boundaries that convert have
+//! certificate types that `ua` makes one, and a consumer of one boundary's
+//! certificates is carried to the other's unchanged.
+//!
+//! - cites: [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]
+//! - cites: [Behr-2022-tracelet_hopf_algebras_decomposition_spaces_extended_abstract]
+//!
+//! [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
+//! [Behr-2022-tracelet_hopf_algebras_decomposition_spaces_extended_abstract]: https://doi.org/10.4204/EPTCS.372.23 "Behr and Kock, Tracelet Hopf Algebras and Decomposition Spaces"
 
 // The presented integers and `up`.
 import "./circle-base.gandr";

@@ -1,10 +1,16 @@
-// Univalence at the corollas of a signature: `ua[1, 4](Magma, Magma, f, g)`
-// is a path between the two models' degree telescopes, derived corolla by
-// corolla from the translator tables `f` and `g` (Shulman, _Univalence for
-// Inverse Diagrams and Homotopy Canonicity_, doi:10.1017/S0960129514000565;
-// a univalence map as a typoid function, Petrakis, _Univalent Typoids_,
-// arXiv:2205.06651). Transport along it applies each corolla's translator,
-// and two tables that agree at every element give the same path.
+//! Univalence at the corollas of a signature: `ua[1, 4](Magma, Magma, f, g)`
+//! is a path between the two models' degree telescopes, derived corolla by
+//! corolla from the translator tables `f` and `g`
+//! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]. A
+//! univalence map acts as a typoid function [Petrakis-2022-univalent_typoids].
+//! Transport along it applies each corolla's translator, and two tables that
+//! agree at every element give the same path.
+//!
+//! - cites: [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]
+//! - cites: [Petrakis-2022-univalent_typoids]
+//!
+//! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]: https://doi.org/10.1017/S0960129514000565 "Shulman, Univalence for Inverse Diagrams and Homotopy Canonicity"
+//! [Petrakis-2022-univalent_typoids]: https://arxiv.org/abs/2205.06651 "Petrakis, Univalent Typoids"
 
 // The magma, the swap, the identity on the booleans and the unit's identity.
 import "./magma-base.gandr";

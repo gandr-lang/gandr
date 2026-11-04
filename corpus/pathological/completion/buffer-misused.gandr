@@ -1,11 +1,14 @@
-// A ring buffer held other than exactly once. The kernel owns a buffer while
-// an operation is in flight and hands it back with the completion (boats,
-// _Notes on io-uring_, 2020): a buffer never handed back leaks its slot in
-// the registered area, one handed back twice is reclaimed while the kernel
-// may still own it, and one read while held would observe bytes the kernel
-// may still be writing.
-//
-// - see: #1792 — `freedInOneArm`
+//! A ring buffer held other than exactly once. The kernel owns a buffer while
+//! an operation is in flight and hands it back with the completion
+//! [boats-2020-notes_on_io_uring]: a buffer never handed back leaks its slot in
+//! the registered area, one handed back twice is reclaimed while the kernel may
+//! still own it, and one read while held would observe bytes the kernel may
+//! still be writing.
+//!
+//! - see: #1792 — `freedInOneArm`
+//! - cites: [boats-2020-notes_on_io_uring]
+//!
+//! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
 
 // The native buffer a receive places live.
 import std.buffer (Buf);

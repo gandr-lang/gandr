@@ -4,9 +4,12 @@
 ///
 /// - owes: #2345
 /// - owes: #2343
-// `Nat`'s code is `1` for `Zero` and `var Nat` for `Succ` (Chapman, Dagand,
-// McBride and Morris, _The Gentle Art of Levitation_, ICFP 2010,
-// doi:10.1145/1863543.1863547); its equality is read off that code.
+//! `Nat`'s code is `1` for `Zero` and `var Nat` for `Succ`
+//! [Chapman-2010-gentle_art_levitation]; its equality is read off that code.
+//!
+//! - cites: [Chapman-2010-gentle_art_levitation]
+//!
+//! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
 /// Unary naturals: a unit and a recursive occurrence.
 @[ checks ]

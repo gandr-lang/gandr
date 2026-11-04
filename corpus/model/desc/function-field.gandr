@@ -1,14 +1,17 @@
-// A presented type whose constructor holds a continuation. A field
-// written `A => T` is the description code's function former, the
-// higher-order descriptions' `Π` over a type of arguments (Chapman, Dagand,
-// McBride and Morris, _The Gentle Art of Levitation_, ICFP 2010,
-// doi:10.1145/1863543.1863547). It decodes to the thunked arrow the native
-// reading gives the same field, so the type keeps its rule. Programs that read
-// and store a state are state's free model, and put-put is the law of state
-// a store obeys (Plotkin and Power, _Notions of computation determine
-// monads_, 2002, doi:10.1007/3-540-45931-6_24).
-//
-// - see: #2511
+//! A presented type whose constructor holds a continuation. A field written `A
+//! => T` is the description code's function former, the higher-order
+//! descriptions' `Π` over a type of arguments
+//! [Chapman-2010-gentle_art_levitation]. It decodes to the thunked arrow the
+//! native reading gives the same field, so the type keeps its rule. Programs
+//! that read and store a state are state's free model, and put-put is the law
+//! of state a store obeys [Plotkin-2002-notions_computation_determine_monads].
+//!
+//! - see: #2511
+//! - cites: [Chapman-2010-gentle_art_levitation]
+//! - cites: [Plotkin-2002-notions_computation_determine_monads]
+//!
+//! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
+//! [Plotkin-2002-notions_computation_determine_monads]: https://doi.org/10.1007/3-540-45931-6_24 "Plotkin and Power, Notions of computation determine monads"
 
 /// Programs over an integer state: a read hands the state to its
 /// continuation, and a store the next store overwrites is no store.

@@ -1,13 +1,20 @@
-// `map`'s functoriality stated as a law beside the definition it governs:
-// mapping a composite is mapping twice (Bird, _An Introduction to the Theory
-// of Lists_, 1987, § 2). The list `map` of `recursive-lists.gandr` takes its
-// function as a value, and a rule names only its block's operations, so the
-// law is stated over `map` presented as an operation with its function
-// defunctionalised (Reynolds, _Definitional Interpreters for Higher-Order
-// Programming Languages_, 1972): a function is a name `app` applies, and
-// `compose` builds one from two. The coincidence check certifies the law with
-// the definition's own rules, and the `normalizes` row fires it. The same law
-// written over the `def` is refused in `../../pathological/data/map-law-on-a-def.gandr`.
+//! `map`'s functoriality stated as a law beside the definition it governs:
+//! mapping a composite is mapping twice
+//! [Bird-1987-an_introduction_to_the_theory_of_lists], § 2. The list `map` of
+//! `recursive-lists.gandr` takes its function as a value, and a rule names only
+//! its block's operations, so the law is stated over `map` presented as an
+//! operation with its function defunctionalised
+//! [Reynolds-1972-definitional_interpreters_higherorder_programming_languages]:
+//! a function is a name `app` applies, and `compose` builds one from two. The
+//! coincidence check certifies the law with the definition's own rules, and the
+//! `normalizes` row fires it. The same law written over the `def` is refused in
+//! `../../pathological/data/map-law-on-a-def.gandr`.
+//!
+//! - cites: [Bird-1987-an_introduction_to_the_theory_of_lists]
+//! - cites: [Reynolds-1972-definitional_interpreters_higherorder_programming_languages]
+//!
+//! [Bird-1987-an_introduction_to_the_theory_of_lists]: https://doi.org/10.1007/978-3-642-87374-4_1 "Bird, An Introduction to the Theory of Lists"
+//! [Reynolds-1972-definitional_interpreters_higherorder_programming_languages]: https://doi.org/10.1145/800194.805852 "Reynolds, Definitional Interpreters for Higher-Order Programming Languages"
 
 /// Lists with `map` as an operation: `mapNil` and `mapCons` define it,
 /// `appCompose` reads a composite, `composeAssoc` orients composition, and

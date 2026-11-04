@@ -11,7 +11,7 @@ The sentence rules that need a parse, held over the comments of every tracked ga
 
 ## Synopsis
 
-**What.** `gandr-workflow-prose` installs the `prose` binary, which `mise run check:prose` runs. It reads every `//!`, `///` and `//` paragraph of each `.gandr` source `git ls-files` tracks, every prose paragraph of `crates/*/README.md`, and every rendered diagnostic under `crates/surface-render-terminal/tests/golden/`, each file's diagnostics one by one. A comment's list items, its `- see:` and `- owes:` lines among them, and the indented lines continuing them stay unread. spaCy parses the text, and the binary judges each sentence against the rules below and each diagnostic against the procedural form. It compares the findings with `corpus/prose.ledger` and refuses a finding the ledger lacks or a ledger line no finding matches. The body mode reads a pull request's or an issue's body under the body rules, with no ledger: `mise run body:prose` runs it, and so do `pr:open`, `issue:file` and the nightly `report:prose`.
+**What.** `gandr-workflow-prose` installs the `prose` binary, which `mise run check:prose` runs. It reads every `//!`, `///` and `//` paragraph of each `.gandr` source `git ls-files` tracks, every prose paragraph of `crates/*/README.md`, and every rendered diagnostic under `crates/surface-render-terminal/tests/golden/`, each file's diagnostics one by one. A comment's list items, its `- see:`, `- owes:` and `- cites:` lines among them, the indented lines continuing them, and its footer lines `[label]: <URL> "<authors>, <title>"` stay unread. spaCy parses the text, and the binary judges each sentence against the rules below and each diagnostic against the procedural form. It compares the findings with `corpus/prose.ledger` and refuses a finding the ledger lacks or a ledger line no finding matches. The body mode reads a pull request's or an issue's body under the body rules, with no ledger: `mise run body:prose` runs it, and so do `pr:open`, `issue:file` and the nightly `report:prose`.
 
 **Why.** The style the corpus follows is ASD-STE100's: short sentences, the active voice, the present tense, no noun stacks. A reviewer misses a passive or a past tense in a dense paragraph; a parser does not. The rules need a part-of-speech tag and a dependency parse, which a pattern over the text cannot give. The ledger names the existing debt, so the check refuses new debt at once while a sweep pays the old debt down.
 
@@ -42,9 +42,9 @@ Each finding prints its file, the line its passage starts on, the rule, the sent
 | `STE-5.2` | an imperative has a second imperative joined by `and` or a comma | write each instruction as a sentence |
 | `STE-8.1` | a semicolon in a body or a comment has a word after it | end the first sentence and start the next |
 | `STE-4.1` | an em or en dash in a body or a comment has a verb after it | end the first clause, or make the text after the dash a phrase |
-| `STE-4.3` | a comment names a URL, an issue or a path | move it to a `- see:` line |
+| `STE-4.3` | a comment names a URL, an issue, a path, a DOI or arXiv locator, or a paper's title in a parenthesis | move it to a `- see:` line, or cite the paper as `[label]` and give its locator in the footer |
 | `STE-6.6` | a comment paragraph holds more than five sentences, or an item comment more than two | split the paragraph or cut the item comment |
-| `STE-6.4` | a corpus head is not four paragraphs, or a references line is malformed | open the source on four paragraphs |
+| `STE-6.4` | a corpus head is not four paragraphs, a references line is malformed, a `- cites:` label has no footer line, or a footer line gives no quoted title | open the source on four paragraphs, and end the head on one footer line per cited label |
 | `STE-6.5` | the head's first sentence holds more than 20 words | cut the first sentence |
 | `STE-5.3` | a diagnostic lacks its what, its where or an imperative | state the procedure |
 

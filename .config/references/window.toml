@@ -130,6 +130,9 @@ subject = "model/circuit"
 subject = "model/completion"
 
 [[corpus]]
+subject = "model/conversion"
+
+[[corpus]]
 subject = "model/control"
 
 [[corpus]]
@@ -140,6 +143,9 @@ subject = "model/desc"
 
 [[corpus]]
 subject = "model/drop"
+
+[[corpus]]
+subject = "model/effects"
 
 [[corpus]]
 subject = "model/higher-cells"
@@ -163,7 +169,13 @@ subject = "model/sessions"
 subject = "model/universe"
 
 [[corpus]]
+subject = "model/worlds"
+
+[[corpus]]
 subject = "pathological/completion"
+
+[[corpus]]
+subject = "pathological/identity"
 
 [[corpus]]
 subject = "pathological/sessions"

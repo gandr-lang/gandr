@@ -1,16 +1,18 @@
-// A manifest model type: `Model(T) with sort x = A` is the type of the models
-// of `T` whose sort `x` is `A`, the record of `T`'s other components with `x`
-// read as `A`, as `model-manifest.gandr`'s ascription states it of a module.
-// A chain, `with sort x = A with sort y = B`, fixes one sort per binding. The
-// type is a family in `A`, so two sharings whose types are equivalent are one
-// type along the equivalence, and a model of one is carried to a model of the
-// other: the structure identity principle at a fixed sort (the HoTT book's
-// § 2.14; cubical Agda's `Cubical/Foundations/SIP.agda`), after Leroy's
-// manifest types (_Manifest Types, Modules, and Separate Compilation_, POPL
-// 1994, doi:10.1145/174675.176926).
-//
-// - see: #1480 — `secondLeft`
-// - see: #2129 — `inlineLeft`
+//! A manifest model type: `Model(T) with sort x = A` is the type of the models
+//! of `T` whose sort `x` is `A`, the record of `T`'s other components with `x`
+//! read as `A`, as `model-manifest.gandr`'s ascription states it of a module. A
+//! chain, `with sort x = A with sort y = B`, fixes one sort per binding. The
+//! type is a family in `A`, so two sharings whose types are equivalent are one
+//! type along the equivalence, and a model of one is carried to a model of the
+//! other: the structure identity principle at a fixed sort (the HoTT book's §
+//! 2.14; cubical Agda's `Cubical/Foundations/SIP.agda`), after Leroy's manifest
+//! types [Leroy-1994-manifest_types_modules_and_separate_compilation].
+//!
+//! - see: #1480 — `secondLeft`
+//! - see: #2129 — `inlineLeft`
+//! - cites: [Leroy-1994-manifest_types_modules_and_separate_compilation]
+//!
+//! [Leroy-1994-manifest_types_modules_and_separate_compilation]: https://doi.org/10.1145/174675.176926 "Leroy, Manifest Types, Modules, and Separate Compilation"
 
 // The counter: a carrier, a start and a step.
 import "./model-ascription.gandr";

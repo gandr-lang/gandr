@@ -2494,8 +2494,10 @@ run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --t
 # `.gandr` source and the crate READMEs. A comment also keeps a body's length,
 # semicolon and dash rules, a paragraph of at most five sentences, and no
 # path, issue or URL outside its `- see:` and `- owes:` lines (#4900).
+# A paper is cited as `[label]`, never by a locator or a title in prose.
 # A corpus source outside the features ledger holds a head of four paragraphs.
 # Its first sentence holds at most twenty words.
+# Each `- cites:` label has a footer line with a quoted title (#5045).
 # An item comment holds at most two sentences.
 # The procedural form binds the rendered diagnostics
 # (crates/workflow-prose/README.md). spaCy parses under the venv these

@@ -1,13 +1,17 @@
-// A sealed atom whose type member states an identity system: a relation, its
-// reflexivity and the transport law contracting the singleton of each point
-// onto its reflexivity. The relation is then the atom's identity type, so its
-// evidence between two points is a path between them (Univalent Foundations
-// Program, _Homotopy Type Theory_, 2013, §5.8, Theorem 5.8.2).
-//
-// - see: #1854 — `carriedAlong`
-// - see: #1937 — `backAlong`
-// - see: #1960 — `overAlong`, `pathContraction`, `pathBack`
-// - see: #1959 — `pathRelated`
+//! A sealed atom whose type member states an identity system: a relation, its
+//! reflexivity and the transport law contracting the singleton of each point
+//! onto its reflexivity. The relation is then the atom's identity type, so its
+//! evidence between two points is a path between them
+//! [Program-2013-homotopy_type_theory_univalent_foundations_mathematics], §
+//! 5.8, Theorem 5.8.2.
+//!
+//! - see: #1854 — `carriedAlong`
+//! - see: #1937 — `backAlong`
+//! - see: #1960 — `overAlong`, `pathContraction`, `pathBack`
+//! - see: #1959 — `pathRelated`
+//! - cites: [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]
+//!
+//! [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
 /// Any two points of the unit type are related, by the unit type.
 pub def related(a : Unit, b : Unit) -> Type { return Unit }

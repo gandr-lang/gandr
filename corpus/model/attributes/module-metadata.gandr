@@ -1,7 +1,11 @@
-// Package metadata written as attributes on a declaration — a name and
-// version, a dependency and a toolchain bound, after Cargo's manifest (_The
-// Cargo Book_, § The Manifest Format): the language registers none of these
-// schemas, so the block is refused by the first unknown attribute.
+//! Package metadata written as attributes on a declaration — a name and
+//! version, a dependency and a toolchain bound, after Cargo's manifest
+//! [Rust-cargo_book], § The Manifest Format: the language registers none of
+//! these schemas, so the block is refused by the first unknown attribute.
+//!
+//! - cites: [Rust-cargo_book]
+//!
+//! [Rust-cargo_book]: https://doc.rust-lang.org/cargo/ "The Rust Project, The Cargo Book"
 
 // A unit value carrying a package's metadata.
 @[ refuses("UnknownAttribute") ]

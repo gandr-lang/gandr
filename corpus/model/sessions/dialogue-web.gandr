@@ -1,12 +1,16 @@
-// A seat's dialogue with its operator: both endpoints' moves in the one
-// order a recorder saw them, the seat on the left following its protocol and
-// the operator on the right following the dual. A dialogue's logical time is
-// its causal web, not its log (Mazurkiewicz, _Trace Theory_,
-// doi:10.1007/3-540-17906-2_30): each endpoint's own order and each send
-// before its receipt. Two logs that commute independent moves are one
-// dialogue, and `decompose` reads the web's modular decomposition back as
-// data (Gallai, _Transitiv orientierbare Graphen_,
-// doi:10.1007/BF02020961).
+//! A seat's dialogue with its operator: both endpoints' moves in the one order
+//! a recorder saw them, the seat on the left following its protocol and the
+//! operator on the right following the dual. A dialogue's logical time is its
+//! causal web, not its log [Mazurkiewicz-1987-trace_theory]: each endpoint's
+//! own order and each send before its receipt. Two logs that commute
+//! independent moves are one dialogue, and `decompose` reads the web's modular
+//! decomposition back as data [Gallai-1967-transitiv_orientierbare_graphen].
+//!
+//! - cites: [Mazurkiewicz-1987-trace_theory]
+//! - cites: [Gallai-1967-transitiv_orientierbare_graphen]
+//!
+//! [Mazurkiewicz-1987-trace_theory]: https://doi.org/10.1007/3-540-17906-2_30 "Mazurkiewicz, Trace Theory"
+//! [Gallai-1967-transitiv_orientierbare_graphen]: https://doi.org/10.1007/BF02020961 "Gallai, Transitiv orientierbare Graphen"
 
 // The native session formers.
 import std.session (Dialogue);

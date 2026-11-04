@@ -1,9 +1,13 @@
-// The cancellation subject's shared declarations, written once and imported
-// by every source that reads them (`import "./cancel-base.gandr";`): a task
-// hands its parent what it found over its end. A cancellation point is an
-// operation a capability scope answers; its clause resumes the rest of the
-// scope once or abandons it, and an abandoned end is cancelled for its peer
-// (Fowler, Lindley, Morris and Decova, doi:10.1145/3290341).
+//! The cancellation subject's shared declarations, written once and imported by
+//! every source that reads them (`import "./cancel-base.gandr";`): a task hands
+//! its parent what it found over its end. A cancellation point is an operation
+//! a capability scope answers; its clause resumes the rest of the scope once or
+//! abandons it, and an abandoned end is cancelled for its peer
+//! [Fowler-2019-exceptional_asynchronous_session_types].
+//!
+//! - cites: [Fowler-2019-exceptional_asynchronous_session_types]
+//!
+//! [Fowler-2019-exceptional_asynchronous_session_types]: https://doi.org/10.1145/3290341 "Fowler, Lindley, Morris and Decova, Exceptional Asynchronous Session Types"
 
 /// A task: the protocol its end carries back to the parent, and the path it
 /// reads.

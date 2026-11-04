@@ -10,13 +10,16 @@
 /// A fixed type may name a parameter, and each scope and exercise reads it where it stands.
 /// A fixed type may name an implicit the call omits, and the checker reads it at the implicit's solution, which a scope may supply.
 ///
-/// - see: Cooper, "The marriage of effects and rewrites" (2023), § 2.1 — the laws of global state
+/// - cites: [e.k.Cooper-2023-marriage_effects_rewrites], § 2.1 — the laws of
+///   global state
 /// - see: `corpus/model/effects/state-handler.gandr` — a handler answering each operation at a fixed sort
 /// - see: #2116 — the overlapping laws join
 /// - see: #2844 — the row names a theory at the sorts it fixes
 /// - see: #2881 — a fixed type names a parameter
 /// - see: #2944 — a fixed type names an omitted implicit
 /// - see: #4514 — a theory homed in its module
+///
+/// [e.k.Cooper-2023-marriage_effects_rewrites]: https://arxiv.org/abs/2302.02462 "Cooper, The marriage of effects and rewrites"
 
 /// The operations alone, reading and storing a state of sort `S`, with no law.
 @[ checks ]

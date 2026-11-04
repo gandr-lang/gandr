@@ -1,11 +1,17 @@
-// Abstraction in rule terms (Gabbay and Mathijssen, _Nominal (universal)
-// algebra_, JLC 2009; Fernández and Gabbay, _Nominal rewriting_, I&C 2007).
-// At a port written `bind (a : N) . T`, a rule writes `bind a . t`: the atom
-// `a` abstracted over the term `t`. Admission re-mints every abstraction's
-// atom by its depth among the abstractions above it, so `bind a . t` and
-// `bind b . t` are one term to matching, the critical pairs and the kernel's
-// replay alike. The value of `Theory` keeps each atom as written, as it keeps
-// a rule's variables. The signature is `bind-port.gandr`'s restriction.
+//! Abstraction in rule terms [Gabbay-2009-nominal_universal_algebra] and
+//! [Fernandez-2007-nominal_rewriting]. At a port written `bind (a : N) . T`, a
+//! rule writes `bind a . t`: the atom `a` abstracted over the term `t`.
+//! Admission re-mints every abstraction's atom by its depth among the
+//! abstractions above it, so `bind a . t` and `bind b . t` are one term to
+//! matching, the critical pairs and the kernel's replay alike. The value of
+//! `Theory` keeps each atom as written, as it keeps a rule's variables. The
+//! signature is `bind-port.gandr`'s restriction.
+//!
+//! - cites: [Gabbay-2009-nominal_universal_algebra]
+//! - cites: [Fernandez-2007-nominal_rewriting]
+//!
+//! [Gabbay-2009-nominal_universal_algebra]: https://doi.org/10.1093/logcom/exp033 "Gabbay and Mathijssen, Nominal (Universal) Algebra: Equational Logic with Names and Binding"
+//! [Fernandez-2007-nominal_rewriting]: https://doi.org/10.1016/j.ic.2006.12.002 "Fernández and Gabbay, Nominal rewriting"
 
 /// Scope extrusion: a restriction over one side of a parallel composition
 /// encloses both. `q` moves under the restriction, so the law states `a`

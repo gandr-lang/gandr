@@ -4,12 +4,16 @@
 ///
 /// - owes: #1314 — pruning at several indices
 /// - owes: #3515 — injectivity at a match
-// Vectors: lists indexed by their length, a family whose constructors each
-// state the index their value stands at (Dybjer, _Inductive families_,
-// doi:10.1007/BF01211308). The kind `Nat -> Type` reads the length's type
-// before the universe; `VNil` stands at zero and `VCons` at the successor of
-// its tail's length, so a vector's type says how long it is. What a vector
-// refuses is in the pathological twin.
+//! Vectors: lists indexed by their length, a family whose constructors each
+//! state the index their value stands at [Dybjer-1994-inductive_families]. The
+//! kind `Nat -> Type` reads the length's type before the universe; `VNil`
+//! stands at zero and `VCons` at the successor of its tail's length, so a
+//! vector's type says how long it is. What a vector refuses is in the
+//! pathological twin.
+//!
+//! - cites: [Dybjer-1994-inductive_families]
+//!
+//! [Dybjer-1994-inductive_families]: https://doi.org/10.1007/BF01211308 "Dybjer, Inductive families"
 
 // The naturals the lengths count in.
 import "../../model/data/data-base.gandr" ;

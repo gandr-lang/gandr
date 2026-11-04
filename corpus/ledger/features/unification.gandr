@@ -3,12 +3,16 @@
 /// Not implemented: injectivity, a clash as a refutation and a conversion failure as a refusal.
 ///
 /// - owes: #3515
-// Values tagged by the code of their type: a family whose constructors each
-// state the code they stand at. A case on a tagged value solves each arm's
-// equation from its constructor's code to the scrutinee's, so the arm's goal
-// reads the constructor's code (Cockx and Abel, _Elaborating dependent
-// (co)pattern matching_, ICFP 2018, doi:10.1145/3236770). What the step does
-// not reach is in the pathological typed evaluator.
+//! Values tagged by the code of their type: a family whose constructors each
+//! state the code they stand at. A case on a tagged value solves each arm's
+//! equation from its constructor's code to the scrutinee's, so the arm's goal
+//! reads the constructor's code
+//! [Cockx-2018-elaborating_dependent_copattern_matching]. What the step does
+//! not reach is in the pathological typed evaluator.
+//!
+//! - cites: [Cockx-2018-elaborating_dependent_copattern_matching]
+//!
+//! [Cockx-2018-elaborating_dependent_copattern_matching]: https://doi.org/10.1145/3236770 "Cockx and Abel, Elaborating dependent (co)pattern matching"
 
 /// The codes of two types.
 @[ checks ]

@@ -1,21 +1,25 @@
-// Corten's running example as THIR written by hand, its postcondition
-// derived in a weakest-precondition calculus (Farka et al., "Corten:
-// Foundational Verification of Rust Programs", arXiv:2609.04372, 2026, § 4,
-// Fig. 2): `example` returns early from inside `identity`'s argument. The
-// calculus is the specification monad of THIR's control effect: an
-// expression's precondition takes one postcondition for the value it ends
-// at and one for a `return`, a `return` sends its operand's value to the
-// second, and a function's guard, the effect's handler, hands both to the
-// caller's continuation (§ 4.2, Defs. 4.1, 4.2 and 4.10). Departing from
-// § 4: `break`, `continue` and `nomatch` are left out, `u8` is read as
-// `Integer`, each function takes one parameter, and propositions are read
-// as types. The axioms are written twice. As the rules of `Thir.Wp`, over
-// THIR's nodes as its operations, the checker orients them, joins their
-// pairs in the second-order reading, and fires them at an inspected call:
-// `example`'s guarded body at false ends at its return continuation, never
-// reaching `identity`. As a fold of THIR's data, the normaliser computes
-// each precondition and the kernel replays it, so `example` meets its
-// specification at every value and postcondition given `identity`'s.
+//! Corten's running example as THIR written by hand, its postcondition derived
+//! in a weakest-precondition calculus
+//! [Farka-2026-corten_foundational_verification_rust_programs], 2026, § 4, Fig.
+//! 2: `example` returns early from inside `identity`'s argument. The calculus
+//! is the specification monad of THIR's control effect: an expression's
+//! precondition takes one postcondition for the value it ends at and one for a
+//! `return`, a `return` sends its operand's value to the second, and a
+//! function's guard, the effect's handler, hands both to the caller's
+//! continuation (§ 4.2, Defs. 4.1, 4.2 and 4.10). Departing from § 4: `break`,
+//! `continue` and `nomatch` are left out, `u8` is read as `Integer`, each
+//! function takes one parameter, and propositions are read as types. The axioms
+//! are written twice. As the rules of `Thir.Wp`, over THIR's nodes as its
+//! operations, the checker orients them, joins their pairs in the second-order
+//! reading, and fires them at an inspected call: `example`'s guarded body at
+//! false ends at its return continuation, never reaching `identity`. As a fold
+//! of THIR's data, the normaliser computes each precondition and the kernel
+//! replays it, so `example` meets its specification at every value and
+//! postcondition given `identity`'s.
+//!
+//! - cites: [Farka-2026-corten_foundational_verification_rust_programs]
+//!
+//! [Farka-2026-corten_foundational_verification_rust_programs]: https://arxiv.org/abs/2609.04372 "Farka et al., Corten: Foundational Verification of Rust Programs"
 
 /// A value the fragment computes: an integer or a boolean.
 pub data Value : Type where {
