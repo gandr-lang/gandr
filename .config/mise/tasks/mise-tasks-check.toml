@@ -1870,7 +1870,10 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # read, not refused by the shell (#2671). Each case in
 # `.config/claims/board.json` runs `refactor:file` itself the same way, a stub
 # `gh` answering with a board past the argument limit, and holds the decision
-# its dry run prints (#3771). Each case in
+# its dry run prints (#3771). Each case in `.config/claims/filed-once.json`
+# runs `issue:file` or `refactor:file` from two clones over one stub GitHub,
+# and holds the issues the board ends with (`filed-once.bash`, #5149). Each
+# case in
 # `.config/claims/shown.json` holds an issue body, the vault's pages and the
 # tree's filenames, and the lines `unit:check` reads for the vault pages the
 # body names (`shown.jq`, #2793); each in `.config/claims/annotated.json` a
@@ -2031,6 +2034,11 @@ while IFS= read -r case; do
   fi
 done < <(jq -c '.[]' .config/claims/board.json)
 (( failed == 0 )) || exit 1
+# A filing ends with one open issue against one GitHub (#5149): each case in
+# `.config/claims/filed-once.json` runs `issue:file --epic` over an epic at or
+# below GitHub's 100 sub-issues, or two `refactor:file` runs at once from two
+# clones, over the stub `filed-once-gh.bash` (`filed-once.bash`).
+.config/claims/filed-once.bash || exit 1
 # `observed.bash` hands a transcript of any size to jq (#3871): for each case
 # in `.config/claims/hand-off.json` a scratch repository adds a transcript of
 # the case's size, stopped in a test the body names, and the script prints the

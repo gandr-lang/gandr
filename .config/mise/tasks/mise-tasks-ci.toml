@@ -2301,9 +2301,14 @@ exit "$status"
 # issue under the epic and sets the epic `blocked by` it, and a body line
 # `Advances #n`, `Part of #n` or `from: #n` naming an open `kind:epic` sets
 # that epic `blocked by` it too (#3398): an epic is blocked by its units and
-# closes once every one is closed (`.config/claims/deps.bash`). A closing
-# keyword in the body outside its head's keyword lines (`targets.jq`'s
-# `strays`, #2980) is noted on stderr:
+# closes once every one is closed (`.config/claims/deps.bash`). An epic that
+# holds 100 sub-issues, GitHub's limit, takes no more, and GitHub refuses the
+# link only once the issue exists (#5149). So `--epic` counts the epic's
+# sub-issues before it creates the issue. At the limit it files the issue
+# under no epic, ends the body with `Epic: #<n> (full)`, and prints a note
+# that names the epic. A count that fails stops the task before it creates
+# the issue. A closing keyword in the body outside its head's keyword lines
+# (`targets.jq`'s `strays`, #2980) is noted on stderr:
 # it does nothing in an issue, but the same words in a pull request's body
 # close the issue they name on merge. A mechanism files a unit or marks what
 # it could not (#3112, `tracker.md` § tracker-filing): `--template <filer>`
@@ -2403,12 +2408,25 @@ while IFS=$'\t' read -r verb label; do
       ;;
   esac
 done <<< "$plan"
+repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
+full=false
+if [[ -n $epic ]]; then
+  held=$(deps_sub_issues "$repo" "$epic" | jq length)
+  if (( held >= 100 )); then
+    full=true
+    filed=$(mktemp)
+    trap 'rm -f "${rendered:-}" "$filed"' EXIT
+    { cat "$body"; printf '\nEpic: #%s (full)\n' "$epic"; } > "$filed"
+    body=$filed
+  fi
+fi
 flags=()
 for label in "${labels[@]}"; do flags+=(--label "$label"); done
 url=$(gh issue create --title "$usage_title" --body-file "$body" "${flags[@]}")
 number=${url##*/}
-repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
-if [[ -n $epic ]]; then
+if [[ $full == true ]]; then
+  echo "issue:file: #$epic holds $held sub-issues, GitHub's limit, so #$number is filed under no epic; its body names #$epic" >&2
+elif [[ -n $epic ]]; then
   deps_link "$repo" "$epic" "$number" >&2
 fi
 deps_block_named_epics "$repo" "$number" "$(< "$body")" >&2
@@ -2432,8 +2450,11 @@ echo "$url"
 # its branch names (`<lane>-<n>-…`, or `<lane>-<seat>-<n>-…` from a numbered
 # seat, #3836), and failing that the lane's own `area:<lane>` label. An
 # issue carrying the pull request's `from:` line is the filing, so a second
-# run files nothing. `pr:watch` runs it when its pull request merges;
-# `stall:watch` pages a verdict still unfiled. `--dry-run` prints the
+# run files nothing. Two runs that overlap, on one host or two, each read the
+# board before the other files (#5149). So a run that opens an issue reads
+# the board again, and closes its own issue as the duplicate of an earlier
+# one that carries the `from:` line. `pr:watch` runs it when its pull request
+# merges; `stall:watch` pages a verdict still unfiled. `--dry-run` prints the
 # decision and changes nothing.
 ["refactor:file"]
 description = "File a merged pull request's yes or maybe refactoring verdict as a kind:refactor issue and page the coordinator"
@@ -2507,6 +2528,19 @@ case $(jq -r .act <<< "$decision") in
     mapfile -t labels < <(jq -r '.labels[]' <<< "$decision")
     url=$(mise run --quiet issue:file "$(jq -r .title <<< "$decision")" "$body" "${labels[@]}" ${epic:+--epic "$epic"})
     issue=${url##*/}
+    # Another run, on this host or another, can file the same verdict between
+    # this run's board read and its create (#5149). So the run reads the board
+    # again: the earliest issue that carries `from: #<pr>` is the filing. Of
+    # two runs, the later create reads after both issues exist, so it closes
+    # its own issue as the earlier one's duplicate, and the earlier run pages.
+    gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,body > "$scratch/after.json"
+    first=$(jq -r -L "$claims" --argjson pr "$number" \
+      'include "sections"; [.[] | select(.body | from_lines | any(.[]; . == $pr)) | .number] | min // empty' "$scratch/after.json")
+    if [[ -n $first && $first -lt $issue ]]; then
+      gh issue close "$issue" -R "$repo" --duplicate-of "$first" > /dev/null
+      echo "refactor:file: #$number is filed as #$first by another run, so #$issue is closed as its duplicate"
+      exit 0
+    fi
     line="refactor #$issue filed from #$number's verdict; its claiming seat sections it"
     ;;
 esac

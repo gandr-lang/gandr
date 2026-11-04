@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# The `gh` that `filed-once.bash` puts first on the path (#5149): one GitHub
+# for every run of a case, kept in the directory `$STUB_GH`. The epic #4481
+# holds `$STUB_SUBS` sub-issues. Above 99 it refuses a link as GitHub does,
+# after the issue exists. The board of refactor issues is `board.json`, and
+# each create adds its issue to it. The first two board reads wait for each
+# other, so two runs both read the board before either one creates. Every call
+# is a line of `calls`.
+set -euo pipefail
+dir=${STUB_GH:?}
+board=$dir/board.json
+printf '%s\n' "$*" >> "$dir/calls"
+# Hold the board while this call reads and writes it.
+locked() {
+  exec 7> "$dir/board.lock"
+  flock 7
+}
+case "$*" in
+  "auth token"*) exit 1 ;;
+  "repo view"*) echo case/case ;;
+  "api graphql"*) cat "$dir/pr.json" ;;
+  "api repos/{owner}/{repo} --jq .full_name") echo case/case ;;
+  "issue list"*)
+    locked
+    reads=$(($(cat "$dir/reads" 2> /dev/null || echo 0) + 1))
+    echo "$reads" > "$dir/reads"
+    flock --unlock 7
+    if ((reads <= 2)); then
+      for _ in $(seq 300); do
+        (($(cat "$dir/reads") >= 2)) && break
+        sleep 0.1
+      done
+    fi
+    locked
+    cat "$board"
+    ;;
+  "issue create"*)
+    file=
+    args=("$@")
+    for ((i = 0; i < ${#args[@]}; i++)); do
+      [[ ${args[i]} != --body-file ]] || file=${args[i + 1]}
+    done
+    locked
+    number=$(($(jq length "$board") + 1))
+    jq --argjson n "$number" --rawfile body "$file" '. + [{number: $n, state: "OPEN", body: $body}]' "$board" > "$board.new"
+    mv "$board.new" "$board"
+    echo "https://github.com/case/case/issues/$number"
+    ;;
+  "issue close"*)
+    locked
+    jq --argjson n "$3" 'map(if .number == $n then .state = "CLOSED" else . end)' "$board" > "$board.new"
+    mv "$board.new" "$board"
+    ;;
+  "api --paginate repos/case/case/issues/4481/sub_issues?per_page=100"*)
+    jq -cn --argjson n "${STUB_SUBS:?}" '[range($n) | {number: (. + 1), state: "OPEN"}]'
+    ;;
+  "api -X POST repos/case/case/issues/4481/sub_issues"*)
+    if ((STUB_SUBS >= 100)); then
+      echo 'gh: Parent cannot have more than 100 sub-issues (HTTP 422)' >&2
+      exit 1
+    fi
+    echo '{}'
+    ;;
+  "api -X POST "*) echo '{}' ;;
+  "api repos/case/case/issues/"*"--jq .parent_issue_url"*) echo "" ;;
+  "api repos/case/case/issues/"*"/dependencies/blocked_by"*) echo '[]' ;;
+  "api repos/case/case/issues/"*"--jq .id"*) echo 1 ;;
+  *)
+    echo "filed-once-gh: no answer for: $*" >&2
+    exit 1
+    ;;
+esac
