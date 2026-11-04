@@ -87,6 +87,18 @@ server_stack() {
   landable_prs | jq -c --argjson n "$1" --arg trunk "$trunk" -f "$pr_stack_dir/chain.jq"
 }
 
+# Pull request `$1`'s depth in its stack (#5074): 1 on the trunk, one more
+# for each open pull request below it.
+stack_depth() {
+  server_stack "$1" | jq -e --argjson number "$1" 'map(.number) | index($number) | values + 1'
+}
+
+# Whether pull request `$1` carries the depth gate's comment for head `$2`.
+depth_marked() {
+  gh api --paginate "repos/$repo/issues/$1/comments?per_page=100" --jq '.[].body' \
+    | jq -e -s -R --arg mark "<!-- landing:pr-depth:$2 -->" 'contains($mark)' > /dev/null
+}
+
 # The open pull request a new one on branch `$1` stacks on (`top.jq`), or
 # `null`.
 stack_top() {

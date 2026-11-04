@@ -1,6 +1,6 @@
-// A theory whose operation lands at a sort indexed by two calls, the second
-// call's sort indexed by the first. Another theory includes it, and a function
-// takes and gives back a model of it.
+// A theory whose operation lands at a sort that two calls index. The sort of
+// the second call has the first call as its index. Another theory includes
+// it, and a function takes a model of it and returns one.
 //
 // The model type of such a theory states the operation as a function into the
 // family at those two calls. The include and the function form that type.
@@ -22,9 +22,9 @@ pub theory Scoped where {
   sort Tm(g : Con, a : Ty(g)) : Type;
   /// A context extended by a type in it.
   oper ext : (g : Con, a : Ty(g)) --> Con;
-  /// A type moved into the extended context.
+  /// A type of the context, as a type in the extended context.
   oper wk : (g : Con, a : Ty(g)) --> Ty(ext(g, a));
-  /// The newest variable, at its type moved into the extended context.
+  /// The newest variable, whose type is that type in the extended context.
   oper q : (g : Con, a : Ty(g)) --> Tm(ext(g, a), wk(g, a));
 }
 

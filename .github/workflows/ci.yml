@@ -458,7 +458,8 @@ jobs:
   # this job skips, and every job after it skips without its outputs.
   prepare:
     name: prepare the run
-    if: ${{ github.actor != 'renovate[bot]' }}
+    needs: depth
+    if: ${{ !cancelled() && github.actor != 'renovate[bot]' }}
     runs-on: *linux
     permissions:
       contents: read
@@ -654,6 +655,33 @@ jobs:
           | max_by(.created_at) // {}
           | "run-id=\(.workflow_run.id // "")\nsha=\(.workflow_run.head_sha // "")\ncreated=\(.created_at // "")"'
           >> "$GITHUB_OUTPUT"
+
+  # The CI depth gate (#5074): a pull request above the third member of its
+  # stack runs no lane. The merge queue builds three entries at most, so the
+  # runs of the members above them only took runners from the three that land
+  # next and from the merge groups. The gate cancels the whole run before
+  # `prepare` and comments once a head; the landing watcher runs the run again
+  # once a landing moves the pull request to depth 3. A cancelled run leaves
+  # every required check unset, never passed. A gate that fails runs the
+  # whole CI.
+  depth:
+    name: wait for stack depth 3
+    if: ${{ github.event_name == 'pull_request' && github.actor != 'renovate[bot]' && !github.event.pull_request.head.repo.fork }}
+    runs-on: *linux
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CI_PULL_REQUEST: ${{ github.event.pull_request.number }}
+      CI_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - *git-checkout
+      - name: cancel the run above depth 3
+        continue-on-error: true
+        run: .config/pr-stack/landing.bash depth
 
   # Builds and publishes the missing tag with the image workflow itself.
   # Every image job needs it, so all of them wait for a build. A job's

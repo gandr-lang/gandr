@@ -80,6 +80,34 @@
     "output": "[{\"number\":1262,\"head\":\"theory-solve\"},{\"number\":1258,\"head\":\"pending-diag-1248\"},{\"number\":1264,\"head\":\"triage-1264-stack-tasks\"}]"
   },
   {
+    "name": "#5074: each member of a stack of five has its depth from main, and a pull request alone on main is at depth 1",
+    "program": "depths.jq",
+    "args": {
+      "trunk": "main"
+    },
+    "input": [
+      { "number": 5, "head": "e", "base": "d" },
+      { "number": 1, "head": "a", "base": "main" },
+      { "number": 3, "head": "c", "base": "b" },
+      { "number": 2, "head": "b", "base": "a" },
+      { "number": 4, "head": "d", "base": "c" },
+      { "number": 9, "head": "z", "base": "main" }
+    ],
+    "output": "[{\"number\":5,\"head\":\"e\",\"base\":\"d\",\"depth\":5},{\"number\":1,\"head\":\"a\",\"base\":\"main\",\"depth\":1},{\"number\":3,\"head\":\"c\",\"base\":\"b\",\"depth\":3},{\"number\":2,\"head\":\"b\",\"base\":\"a\",\"depth\":2},{\"number\":4,\"head\":\"d\",\"base\":\"c\",\"depth\":4},{\"number\":9,\"head\":\"z\",\"base\":\"main\",\"depth\":1}]"
+  },
+  {
+    "name": "#5074: a pull request on a base no open pull request holds counts from that base, at depth 1",
+    "program": "depths.jq",
+    "args": {
+      "trunk": "main"
+    },
+    "input": [
+      { "number": 7, "head": "g", "base": "merged-branch" },
+      { "number": 8, "head": "h", "base": "g" }
+    ],
+    "output": "[{\"number\":7,\"head\":\"g\",\"base\":\"merged-branch\",\"depth\":1},{\"number\":8,\"head\":\"h\",\"base\":\"g\",\"depth\":2}]"
+  },
+  {
     "name": "a pull request alone is a stack of one",
     "program": "chain.jq",
     "args": {

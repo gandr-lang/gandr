@@ -61,6 +61,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
     permissions:
+      # The depth gate's promotion runs a cancelled CI run again (#5074).
+      actions: write
       contents: read
       pull-requests: write
       issues: write
