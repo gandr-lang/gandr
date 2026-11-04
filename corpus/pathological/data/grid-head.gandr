@@ -1,0 +1,24 @@
+// A case at a family of two indices that cannot omit an arm.
+//
+// The constructor of the arm can stand at the indices of the scrutinee. So
+// the path that its branch eliminates has ends that are not apart.
+//
+// The checker refuses the omitted arm with `NotApart`.
+//
+// - see: #3402
+
+// The naturals the dimensions count in.
+import "../../model/data/data-base.gandr";
+
+// The grids.
+import "../../model/data/grid-head.gandr";
+
+/// The last cell of a grid of any size, with no `GNil` arm. Both `n` and `m`
+/// can be zero, so `GNil` can stand there and the case cannot omit its arm.
+@[ refuses("NotApart") ]
+def anyCell(n : Nat, m : Nat, g : Grid(n, m)) -> Integer {
+  match g {
+    GRow(r, c, cell, rest) => cell,
+    GCol(r, c, cell, rest) => cell
+  }
+}

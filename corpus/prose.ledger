@@ -460,15 +460,13 @@ corpus/ledger/features/implicit-arguments.gandr STE-6.3 954f0265b8f2dbe0
 corpus/ledger/features/implicit-arguments.gandr STE-6.3 9926db53d0744d9b
 corpus/ledger/features/implicit-arguments.gandr STE-8.1 7cf1e834ca3f5ea2
 corpus/ledger/features/implicit-arguments.gandr STE-4.3 c5a89bbfe9fd8185
-corpus/ledger/features/indexed-data.gandr STE-3.2 20638baee4158e02
 corpus/ledger/features/indexed-data.gandr STE-3.2 2c9daa3e530dfc8d
 corpus/ledger/features/indexed-data.gandr STE-3.2 8d210e27c33b4200
 corpus/ledger/features/indexed-data.gandr STE-3.5 5a46085657e485e5
-corpus/ledger/features/indexed-data.gandr STE-9.3 c6dfbd27ba9d97ea
 corpus/ledger/features/indexed-data.gandr STE-6.3 654affcdcfa2b286
 corpus/ledger/features/indexed-data.gandr STE-6.3 8d210e27c33b4200
 corpus/ledger/features/indexed-data.gandr STE-8.1 654affcdcfa2b286
-corpus/ledger/features/indexed-data.gandr STE-6.6 6454ce3154f57e16
+corpus/ledger/features/indexed-data.gandr STE-6.6 11404ef45d03d7ac
 corpus/ledger/features/indexed-sorts.gandr STE-3.2 45720986ee126271
 corpus/ledger/features/indexed-sorts.gandr STE-3.2 6b60898902d1cf02
 corpus/ledger/features/indexed-sorts.gandr STE-3.2 a8801bb6141675f7

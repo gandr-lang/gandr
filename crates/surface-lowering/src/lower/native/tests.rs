@@ -5153,6 +5153,84 @@ fn a_constructor_no_row_admits_at_one_index_is_pruned()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A case over a family of two indices with no arm for its empty constructor
+/// prunes that constructor at the index where it stands apart. `Grid`'s
+/// `GNil` states `Zero` at both indices. Over `Grid(Succ(n), m)` its branch
+/// eliminates the first equation, and over `Grid(m, Succ(n))` the second. The
+/// checker admits both.
+#[test]
+fn a_case_over_two_indices_prunes_at_the_apart_one_3402()
+{
+    let mut arena = CoreArena::new();
+    let source = concat!(
+        "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n",
+        "data Grid : (r : Nat, c : Nat) --> Type where { | GNil : Grid(Zero, Zero) ",
+        "| GRow : (r : Nat, c : Nat, rest : Grid(r, c)) --> Grid(Succ(r), c) ",
+        "| GCol : (r : Nat, c : Nat, rest : Grid(r, c)) --> Grid(r, Succ(c)) }\n",
+        "def rows(n : Nat, m : Nat, g : Grid(Succ(n), m)) -> -F Nat ",
+        "{ match g { GRow(r, c, rest) => return r, GCol(r, c, rest) => return c } }\n",
+        "def cols(n : Nat, m : Nat, g : Grid(m, Succ(n))) -> -F Nat ",
+        "{ match g { GRow(r, c, rest) => return r, GCol(r, c, rest) => return c } }\n",
+    );
+    let module = lowered(SourceText::from(source), &mut arena);
+    // The equation the left-out `GNil` eliminates, counted from the innermost
+    // of the two it binds.
+    let eliminated = |name: &str| {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        let reached = reachable(&arena, tail);
+        let cases: Vec<_> = reached
+            .iter()
+            .filter_map(|&at| match arena.computation(at) {
+                Some(&Computation::DataCase { ref branches, .. }) if !branches.is_empty() => {
+                    Some(branches.clone())
+                },
+                _ => None,
+            })
+            .collect();
+        let [ref branches] = *cases
+        else {
+            panic!("`{name}` cases once on the grid: {cases:?}");
+        };
+        let mut at = *branches.first().expect("`GNil` has a branch");
+        let mut bound = 0_usize;
+        while let Some(&Computation::Lambda(body)) = arena.computation(at) {
+            bound = bound.saturating_add(1);
+            at = body;
+        }
+        assert_eq!(bound, 2, "`GNil` binds its two equations alone");
+        let Some(&Computation::DataCase {
+            scrutinee,
+            ref branches,
+            ..
+        }) = arena.computation(at)
+        else {
+            panic!(
+                "`{name}`'s left-out arm is a case: {:?}",
+                arena.computation(at)
+            );
+        };
+        assert!(branches.is_empty(), "of no branches");
+        arena.value(scrutinee).cloned()
+    };
+    let equation = |index: u32| {
+        Some(Value::Variable {
+            zone: gandr_core_term::Zone::Intuitionistic,
+            index: DeBruijnIndex::from(index),
+        })
+    };
+    assert_eq!(
+        eliminated("rows"),
+        equation(1),
+        "over `Grid(Succ(n), m)` the first index is apart"
+    );
+    assert_eq!(
+        eliminated("cols"),
+        equation(0),
+        "over `Grid(m, Succ(n))` the second index is apart"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// A leaf's copy of an arm keeps each written use naming the pattern variable
 /// that binds it, so a split's components are named where the arm reads them;
 /// the swapped pair tells a copy bound at the wrong component apart. A
