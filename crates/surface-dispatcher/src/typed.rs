@@ -3067,6 +3067,23 @@ impl TypeTable
         )
     }
 
+    /// Where the unit writes the declaration admitted at `constant`: its
+    /// source, its name and its form, each span in the source's own text; the
+    /// unreferred absence for a constant the unit admits no declaration at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn declared_at(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<Referent, referred::Absent>
+    {
+        self.referents
+            .declared(constant)
+            .map_or(Maybe::Absent(referred::Absent::Unreferred), Maybe::Present)
+    }
+
     /// Every written name lying wholly inside `within` and what it refers to,
     /// ascending by where the name starts.
     ///

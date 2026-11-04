@@ -11,7 +11,9 @@
 //! then the block a hover on its name shows: the fenced `gandr` block with the
 //! name and its type, or the declaration as written for a theory or a module,
 //! then a refusal, a deprecation and the `///` documentation, each after a
-//! blank line. Both come from one function, so a page and a hover never differ.
+//! blank line, and a reference line per declaration the documentation links.
+//! Both come from one function, so a page and a hover never differ. A link
+//! leads to the file of the declaring source, not to another page.
 //! The types are spelled as the editor spells them by default: sugared, in
 //! Unicode.
 //!
@@ -212,7 +214,7 @@ pub fn page(
         }
         let shown = declared(
             &session,
-            table,
+            &hovering,
             declaration,
             declaration.symbol.selection_range,
             &quoted,
@@ -333,20 +335,25 @@ mod tests
             &path,
             "//! A small source, for its page. It says little.\n//!\n//! Its second \
              paragraph.\n\n/// Kept to the source.\ndef hidden = 1 ;\n/// The answer, said \
-             once.\npub def answer = 42 ;\npub def plain : String ;\n/// A sort, alone.\npub theory \
-             Lone where {\n  sort N : Type;\n}\n",
+             once, unlike [hidden].\npub def answer = 42 ;\npub def plain : String ;\n/// A sort, \
+             alone.\npub theory Lone where {\n  sort N : Type;\n}\n",
         )
         .expect("the source is written");
         let paged = page(&path, Path::new("small.gandr")).expect("the source has a page");
         let _cleared = std::fs::remove_dir_all(&directory);
+        let uri = crate::protocol::DocumentUri::of_path(&path).expect("the path is absolute");
         assert_eq!(paged.summary, "A small source, for its page.");
         assert_eq!(
             paged.markdown,
-            "# `small.gandr`\n\nA small source, for its page. It says little.\n\nIts second \
-             paragraph.\n\n## `answer`\n\n```gandr\nanswer : Integer\n```\n\nThe answer, said \
-             once.\n\n## `plain`\n\n```gandr\nplain : String\n```\n\n## `Lone`\n\n```gandr\ntheory \
-             Lone where {\n  sort N : Type;\n}\n```\n\nA sort, alone.\n",
-            "the private `hidden` has no section, and each block is the hover's"
+            format!(
+                "# `small.gandr`\n\nA small source, for its page. It says little.\n\nIts second \
+                 paragraph.\n\n## `answer`\n\n```gandr\nanswer : Integer\n```\n\nThe answer, said \
+                 once, unlike [hidden].\n\n[hidden]: {uri}#L6\n\n## `plain`\n\n```gandr\nplain : \
+                 String\n```\n\n## `Lone`\n\n```gandr\ntheory Lone where {{\n  sort N : \
+                 Type;\n}}\n```\n\nA sort, alone.\n"
+            ),
+            "the private `hidden` has no section, each block is the hover's, and a link \
+             writes its reference line"
         );
     }
 

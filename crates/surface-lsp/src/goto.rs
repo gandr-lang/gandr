@@ -29,6 +29,7 @@ use gandr_surface_dispatcher::Referent;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_render_remote::ByteOffset as RenderOffset;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_render_remote::PositionRow;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
@@ -152,28 +153,69 @@ impl<'held, 'text> Locator<'held, 'text>
         referent: &Referent,
     ) -> Option<Placed>
     {
-        let table = self.hovering.table();
-        let (uri, index) = if referent.source() == table.own_source() {
-            (self.uri, self.index)
-        }
-        else {
-            let hovering = self.hovering;
-            let sibling = self
-                .siblings
-                .entry(referent.source())
-                .or_insert_with(|| {
-                    let uri = hovering.path(referent).and_then(DocumentUri::of_path)?;
-                    let text = hovering.table().source_text(referent.source())?;
-                    Some((uri, LineIndex::new(<&str>::from(text).into())))
-                })
-                .as_ref()?;
-            (&sibling.0, &sibling.1)
-        };
+        let (uri, index) = self.indexed(referent)?;
         Some(Placed {
             uri: uri.clone(),
             whole: ranged(index, referent.extent())?,
             named: ranged(index, referent.named())?,
         })
+    }
+
+    /// The document `referent` is declared in and the row its name starts on,
+    /// with no column counted.
+    ///
+    /// # Specification
+    /// - requires: `referent` was answered by the table `hovering` keeps.
+    /// - ensures: the URI [`Self::place`] places `referent` at and the row its
+    ///   name starts on in that document's text; none where [`Self::place`]
+    ///   answers none for a sibling with no path or text.
+    /// - provides: the line of a documentation link's reference line.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the row is read off a text the predicate would have
+    ///   to index again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a link to a declaration of the document and a link to
+    ///   one of a sibling each write their file and line.
+    /// - witness: `hover::tests::a_documentation_link_writes_its_reference_line_4963`
+    pub fn row(
+        &mut self,
+        referent: &Referent,
+    ) -> Option<(&DocumentUri, PositionRow)>
+    {
+        let start = RenderOffset::from(usize::from(referent.named().start()));
+        let (uri, index) = self.indexed(referent)?;
+        Some((uri, index.row_of_byte(start)))
+    }
+
+    /// The document `referent` is declared in and its text indexed: the
+    /// document's own, or the sibling's, indexed on the first referent asked
+    /// of it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn indexed(
+        &mut self,
+        referent: &Referent,
+    ) -> Option<(&DocumentUri, &LineIndex<'held>)>
+    where
+        'text: 'held,
+    {
+        if referent.source() == self.hovering.table().own_source() {
+            return Some((self.uri, self.index));
+        }
+        let hovering = self.hovering;
+        let sibling = self
+            .siblings
+            .entry(referent.source())
+            .or_insert_with(|| {
+                let uri = hovering.path(referent).and_then(DocumentUri::of_path)?;
+                let text = hovering.table().source_text(referent.source())?;
+                Some((uri, LineIndex::new(<&str>::from(text).into())))
+            })
+            .as_ref()?;
+        Some((&sibling.0, &sibling.1))
     }
 }
 

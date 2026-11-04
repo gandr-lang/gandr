@@ -222,6 +222,7 @@ pub use crate::session::CandidateIndex;
 pub use crate::session::ClosureKey;
 pub use crate::session::ClosureSlot;
 pub use crate::session::Detached;
+pub use crate::session::DocumentedLink;
 pub use crate::session::Holding;
 pub use crate::session::ImportRow;
 pub use crate::session::JudgedParse;

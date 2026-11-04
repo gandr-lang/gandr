@@ -1584,6 +1584,59 @@ impl<Store, Blocks> Reopened<Store, Blocks>
     }
 }
 
+/// A documentation link that names a declaration, as the session keeps it:
+/// the name the link writes and the admission position of the declaration.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DocumentedLink
+{
+    /// The name between the brackets.
+    name: String,
+    /// The declaration the name resolves to.
+    constant: ConstantIndex,
+}
+
+impl DocumentedLink
+{
+    /// The name between the brackets.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn name(&self) -> SourceText<'_>
+    {
+        SourceText::from(self.name.as_str())
+    }
+
+    /// The declaration the name resolves to.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn constant(&self) -> ConstantIndex
+    {
+        self.constant
+    }
+}
+
+/// One form's documentation, as the session keeps it: the text, and each
+/// link the text writes that names a declaration.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Documented
+{
+    /// The text the lowering filed.
+    text: DocumentationText,
+    /// Each linked name that names a declaration, once, in written order.
+    links: Vec<DocumentedLink>,
+}
+
 /// The interactive session over successive revisions of one source.
 ///
 /// # Specification
@@ -1618,9 +1671,9 @@ pub struct Session<Store, Blocks>
     imports: Imports,
     /// The lowered core of the latest accepted revision.
     snapshot: Snapshot,
-    /// The documentation of the latest accepted revision, by the documented
-    /// form's cross-tree key.
-    documentation: BTreeMap<NodeKey, DocumentationText>,
+    /// The documentation of the latest accepted revision, its text beside
+    /// its declaration links, by the documented form's cross-tree key.
+    documentation: BTreeMap<NodeKey, Documented>,
     /// What the `deprecated` attribute states of each of the latest accepted
     /// revision's own declarations it marks, by the marked form's
     /// cross-tree key.
@@ -3547,7 +3600,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   answers the new text under the same key.
     /// - witness: `tests::session::documentation_is_kept_by_declaration_identity`
     #[spec(ensures: |ret| match ret {
-        | Maybe::Present(found) => self.documentation.get(&key) == Some(found),
+        | Maybe::Present(found) => self.documentation.get(&key).map(|documented| &documented.text) == Some(found),
         | Maybe::Absent(_) => !self.documentation.contains_key(&key),
     })]
     #[inline]
@@ -3558,8 +3611,37 @@ impl<Store, Blocks> Session<Store, Blocks>
     {
         self.documentation.get(&key).map_or(
             Maybe::Absent(documentation::Absent::Undocumented),
-            Maybe::Present,
+            |documented| Maybe::Present(&documented.text),
         )
+    }
+
+    /// The declaration links of the latest accepted revision's documentation
+    /// of the form whose key is `key`.
+    ///
+    /// # Specification
+    /// - requires: nothing — any key is admissible input.
+    /// - ensures: each name the documentation filed under `key` links that
+    ///   names a declaration, once, in written order, with that declaration's
+    ///   admission position; none for an undocumented form.
+    /// - provides: the reference lines a hover writes after the documentation.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration linked twice is kept once, a
+    ///   constructor is not kept, and an undocumented form keeps none.
+    /// - witness: `tests::session::documentation_keeps_its_declaration_links_4963`
+    #[spec(ensures: |ret| ret.len() == self.documentation.get(&key).map_or(0, |documented| documented.links.len()))]
+    #[inline]
+    #[must_use]
+    pub fn documentation_links(
+        &self,
+        key: NodeKey,
+    ) -> &[DocumentedLink]
+    {
+        self.documentation
+            .get(&key)
+            .map_or(&[], |documented| documented.links.as_slice())
     }
 
     /// What the `deprecated` attribute states of the latest accepted
@@ -4272,22 +4354,35 @@ const fn unrestored(reason: restored::Absent) -> reopened::Absent
     }
 }
 
-/// The text of each documentation `module` filed in the source at `own`, by
-/// the documented form's key in that source's own tree: a sibling's, even one
-/// documenting the same form byte for byte (#596), is not the document's.
+/// The text of each documentation `module` filed in the source at `own`, with
+/// its declaration links, by the documented form's key in that source's own
+/// tree: a sibling's, even one documenting the same form byte for byte
+/// (#596), is not the document's.
 ///
 /// # Specification
 /// trivial.
 fn documentation_of(
     module: &LoweredModule<'_>,
     own: SourceIndex,
-) -> BTreeMap<NodeKey, DocumentationText>
+) -> BTreeMap<NodeKey, Documented>
 {
     module
         .documentations()
         .iter()
         .filter(|&(key, _)| key.source() == own)
-        .map(|(key, documented)| (key.form(), documented.text().clone()))
+        .map(|(key, documented)| {
+            (key.form(), Documented {
+                text: documented.text().clone(),
+                links: documented
+                    .targets()
+                    .iter()
+                    .map(|target| DocumentedLink {
+                        name: String::from(target.name().as_ref()),
+                        constant: target.constant(),
+                    })
+                    .collect(),
+            })
+        })
         .collect()
 }
 

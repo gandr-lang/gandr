@@ -1059,6 +1059,33 @@ fn documentation_is_kept_by_declaration_identity()
     );
 }
 
+/// #4963: the session keeps each declaration a documentation links beside
+/// the text, once per name, and none for an undocumented form.
+#[test]
+fn documentation_keeps_its_declaration_links_4963()
+{
+    let mut session = session(SourceRoot::Strict);
+    let text = "/// See [other], [other] and [Red].\ndef answer = 42 ;\ndef other = 1 ;\ndata Color \
+                : Type where { | Red : Color }";
+    let _submitted = submit(&mut session, text);
+    let answer = first_declaration(text.into());
+    let links = session
+        .documentation_links(answer)
+        .iter()
+        .map(|link| (<&str>::from(link.name()), usize::from(link.constant())))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        links,
+        [("other", 1_usize)],
+        "a declaration linked twice is kept once, and a constructor is not kept"
+    );
+    let other = first_declaration("def other = 1 ;".into());
+    assert!(
+        session.documentation_links(other).is_empty(),
+        "an undocumented form keeps no link"
+    );
+}
+
 /// The session keeps what each accepted declaration's `deprecated`
 /// attribute states under the form's identity: a record's texts, nothing
 /// for a bare mark, and no answer for an unmarked form.

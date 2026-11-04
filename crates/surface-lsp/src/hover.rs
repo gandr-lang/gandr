@@ -13,12 +13,14 @@
 //!   — with a fenced `gandr` block holding the name and, when the table types
 //!   the declaration, ` : ` and its type, then the documentation the session's
 //!   latest accepted lowering filed for the declaring form, after a blank line,
-//!   about the name's range. The table keys a declaration by each of its forms,
-//!   so a signature and the definition completing it both answer the one
-//!   declaration they make. A theory, a module and a declaration the table does
-//!   not type answer as written instead: the head up to the `where` opening its
-//!   body — a module's ascription included — and, for a theory, its members
-//!   after `where {`, one to a line, an `include` among them unflattened.
+//!   then one Markdown reference line per declaration the documentation links,
+//!   `[name]: <file URI>#L<line>`, after another, about the name's range. The
+//!   table keys a declaration by each of its forms, so a signature and the
+//!   definition completing it both answer the one declaration they make. A
+//!   theory, a module and a declaration the table does not type answer as
+//!   written instead: the head up to the `where` opening its body — a module's
+//!   ascription included — and, for a theory, its members after `where {`, one
+//!   to a line, an `include` among them unflattened.
 //! - **A member a theory, a family or a codata declaration writes** among its
 //!   own tiles — on its name when nothing inside it is typed, and anywhere in
 //!   it when the only entry there is its holder's — as written, without the
@@ -159,6 +161,7 @@
 use alloc::format;
 use alloc::string::String;
 use core::cell::OnceCell;
+use core::fmt::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -201,11 +204,13 @@ use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::complete::Names;
+use crate::goto::Locator;
 use crate::markup::Code;
 use crate::markup::Host;
 use crate::markup::Markup;
 use crate::position::Position;
 use crate::position::Range;
+use crate::protocol::DocumentUri;
 use crate::protocol::Hover;
 use crate::protocol::MarkupContent;
 use crate::protocol::SymbolKind;
@@ -721,7 +726,7 @@ pub fn hover<Store, Blocks>(
             Written::Form => {
                 return Maybe::Present(declared(
                     session,
-                    table,
+                    hovering,
                     named,
                     named.symbol.selection_range,
                     &quoted,
@@ -786,7 +791,14 @@ pub fn hover<Store, Blocks>(
         && let Ok(about) =
             Range::of_bytes(&index, RenderOffset::from(start), RenderOffset::from(end))
     {
-        return Maybe::Present(declared(session, table, declaration, about, &quoted, style));
+        return Maybe::Present(declared(
+            session,
+            hovering,
+            declaration,
+            about,
+            &quoted,
+            style,
+        ));
     }
     if let Some((start, end)) = unnamed
         && let Ok(range) =
@@ -845,7 +857,7 @@ pub fn hover<Store, Blocks>(
             else {
                 range
             };
-            return Maybe::Present(declared(session, table, whole, about, &quoted, style));
+            return Maybe::Present(declared(session, hovering, whole, about, &quoted, style));
         }
         let mut value = typed(&quoted, &entry, style.markup);
         // A parameter, written or used, answers the `///` run written before
@@ -931,7 +943,7 @@ pub fn hover<Store, Blocks>(
         };
         return Maybe::Present(match enclosing.written {
             Written::Form | Written::Root => {
-                declared(session, table, enclosing, about, &quoted, style)
+                declared(session, hovering, enclosing, about, &quoted, style)
             },
             Written::Member => member(enclosing, about, &quoted, style),
         });
@@ -1306,7 +1318,7 @@ fn stubbed<Store, Blocks>(
             .ok()?;
             let shown = match holder.written {
                 Written::Form | Written::Root => {
-                    declared(session, table, holder, range, quoted, style)
+                    declared(session, hovering, holder, range, quoted, style)
                 },
                 Written::Member => member(holder, range, quoted, style),
             };
@@ -1347,7 +1359,7 @@ fn stubbed<Store, Blocks>(
         Standing::Refused(refused) => {
             value.push_str("\n\n");
             value.push_str(
-                &declared(session, table, refused, range, quoted, style)
+                &declared(session, hovering, refused, range, quoted, style)
                     .contents
                     .value,
             );
@@ -1552,19 +1564,23 @@ impl<'text> Quoted<'text>
 /// - requires: `range` holds the hovered position, and `quoted` is the document
 ///   `declaration` was read from.
 /// - ensures: a block of the declaration. For one that is neither a module nor
-///   a theory and that `table` types by its form's key: the name — in the
-///   colours the document gives it — then ` : ` and its type in `style`'s form.
-///   A root form that declares nothing is named by what it writes, as the
-///   outline names it. For one `table` holds the lowering's refusal of instead:
-///   the name, then that refusal after a blank line. Otherwise, a theory and a
-///   module always among them, the declaration as [`written`] writes it, a
-///   theory with its members. Where `table` holds the checker's refusal of a
-///   declaration it does not hold the lowering's refusal of, that refusal after
-///   a blank line. Where a `deprecated` attribute marks the form, `deprecated`,
-///   with the version after `since` and the note after a colon when the
-///   attribute states them, after a blank line. Then the documentation
-///   `session` filed under the form's key, as [`crate::markup::documented`]
-///   writes it, after a blank line.
+///   a theory and that `hovering`'s table types by its form's key: the name —
+///   in the colours the document gives it — then ` : ` and its type in
+///   `style`'s form. A root form that declares nothing is named by what it
+///   writes, as the outline names it. For one the table holds the lowering's
+///   refusal of instead: the name, then that refusal after a blank line.
+///   Otherwise, a theory and a module always among them, the declaration as
+///   [`written`] writes it, a theory with its members. Where the table holds
+///   the checker's refusal of a declaration it does not hold the lowering's
+///   refusal of, that refusal after a blank line. Where a `deprecated`
+///   attribute marks the form, `deprecated`, with the version after `since` and
+///   the note after a colon when the attribute states them, after a blank line.
+///   Then the documentation `session` filed under the form's key, as
+///   [`crate::markup::documented`] writes it, after a blank line. Then, after
+///   another blank line, one Markdown reference line per declaration the
+///   documentation links, `[name]: <file URI>#L<line>`, its file and line as
+///   [`Locator::row`] reads them for the declaration's name, the line counted
+///   from one, when it reads any. A document with no absolute path writes none.
 /// - provides: the declaration half of [`hover`], and each declaration's block
 ///   on a documentation page ([`crate::doc::page`]).
 /// - fails: never.
@@ -1580,11 +1596,12 @@ impl<'text> Quoted<'text>
 /// - witness: `hover::tests::a_checker_refused_declaration_hovers_its_refusal_1204`
 /// - witness: `hover::tests::a_deprecated_declaration_hovers_its_note`
 /// - witness: `hover::tests::a_stray_hovers_as_a_declaration_2073`
+/// - witness: `hover::tests::a_documentation_link_writes_its_reference_line_4963`
 #[spec(ensures: |ref ret| ret.range == range
     && ret.contents.value.starts_with(style.markup.opener().0))]
 pub fn declared<Store, Blocks>(
     session: &Session<Store, Blocks>,
-    table: &TypeTable,
+    hovering: &Hovering,
     declaration: &Declaration,
     range: Range,
     quoted: &Quoted<'_>,
@@ -1592,6 +1609,7 @@ pub fn declared<Store, Blocks>(
 ) -> Hover
 {
     let symbol = &declaration.symbol;
+    let table = &hovering.table;
     let key = declaration.key;
     let theory = symbol.kind == SymbolKind::INTERFACE;
     let held = key
@@ -1661,6 +1679,30 @@ pub fn declared<Store, Blocks>(
             style.markup,
             SourceText::from(text.as_ref()),
         ));
+        let links = key.map_or(&[][..], |key| session.documentation_links(key));
+        if let (false, Some(uri)) = (links.is_empty(), DocumentUri::of_path(&hovering.document)) {
+            // Each sibling's text is indexed once, however many links lead to
+            // it, and a line is read without its column.
+            let mut locator = Locator::new(hovering, &uri, quoted.index);
+            let mut separator = "\n\n";
+            for link in links {
+                let Maybe::Present(referent) = table.declared_at(link.constant())
+                else {
+                    continue;
+                };
+                let Some((linked, row)) = locator.row(&referent)
+                else {
+                    continue;
+                };
+                let _written = write!(
+                    value,
+                    "{separator}[{}]: {linked}#L{}",
+                    <&str>::from(link.name()),
+                    usize::from(row).saturating_add(1)
+                );
+                separator = "\n";
+            }
+        }
     }
     Hover {
         contents: MarkupContent {
@@ -2559,6 +2601,77 @@ mod tests
                 "```gandr\nanswer : Integer\n```\n\nThe answer, said once."
             )),
             "the keyword answers the declaration it introduces"
+        );
+    }
+
+    /// #4963: a link to a declaration writes a Markdown reference line after
+    /// the documentation, which names the declaring file and the line of the
+    /// name, a sibling's included. A link to a constructor writes none.
+    #[test]
+    fn a_documentation_link_writes_its_reference_line_4963()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-hover-links-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let base = directory.join("base.gandr");
+        std::fs::write(&base, "def one = 1 ;\ndef cube = 3 ;\n").expect("the sibling is written");
+        let path = directory.join("top.gandr");
+        let text = SourceText::from(
+            "import \"./base.gandr\";\n/// Squares, as [cube] and [twice], not [Red].\ndef \
+             square = 1 ;\n\ndef twice = 2 ;\ndata Color : Type where { | Red : Color }\n",
+        );
+        std::fs::write(&path, <&str>::from(text)).expect("the document is written");
+        let grammar = grammar().expect("the grammar builds");
+        let root = gandr_surface_dispatcher::classify(&path);
+        let mut session = Session::new(
+            grammar.clone(),
+            root,
+            MemoryCheckpointStore::default(),
+            InMemoryBlockStore::default(),
+            BackendArtifact::from(b"hover".as_slice()),
+        );
+        let laid = gandr_surface_dispatcher::lay_out_shadowed(
+            grammar,
+            &path,
+            root,
+            text,
+            &gandr_surface_dispatcher::Unshadowed,
+        );
+        let _judged = session
+            .judge_unit_reading(
+                SourceText::from(laid.text.as_str()),
+                &laid.unit,
+                laid.base,
+                &gandr_surface_session::ClosureSlot::new(),
+                |_tree| {},
+            )
+            .expect("the session does not fault");
+        let read = super::hovering_laid(text, &path, &session, (&Maybe::Present(laid), None));
+        let shown = hover(
+            text,
+            &session,
+            &Reading::of(text),
+            &read,
+            Position {
+                line: 2.into(),
+                character: 5.into(),
+            },
+            PLAIN,
+        );
+        let _cleared = std::fs::remove_dir_all(&directory);
+        let uri = |path: &std::path::Path| {
+            crate::protocol::DocumentUri::of_path(path).expect("the path is absolute")
+        };
+        let expected = format!(
+            "```gandr\nsquare : Integer\n```\n\nSquares, as [cube] and [twice], not [Red].\n\n[cube]: \
+             {}#L2\n[twice]: {}#L5",
+            uri(&base),
+            uri(&path)
+        );
+        assert!(
+            matches!(shown, Maybe::Present(ref hovered) if hovered.contents.value == expected),
+            "each link to a declaration writes its file and line: {shown:?}"
         );
     }
 

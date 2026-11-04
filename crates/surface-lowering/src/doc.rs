@@ -47,6 +47,14 @@
 //! broken link in its documentation refuses its first member, as a module's
 //! refused attribute does; a module with no member has none to refuse.
 //!
+//! A link that names a declaration keeps it as its target
+//! ([`Documentation::targets`]): the lowering reads the name where the
+//! documentation stands, in the documented form's module and then around it.
+//! The hover and `gandr doc` follow the target to write a Markdown reference
+//! line, `[name]: <file URI>#L<line>`, so a reader follows `[name]` to the
+//! declaration. A link to a module, a constructor or a built-in name keeps no
+//! target, and reads as text.
+//!
 //! A reference leaves the prose for the footer of its run. The footer is the
 //! run of lines `[label]: target` that ends a `///` run, a `//!` run or the
 //! string of a `doc("…")` entry. A link to a label the footer defines
@@ -82,6 +90,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Literal;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteOffset;
@@ -183,8 +192,48 @@ impl<'source> DocLink<'source>
     }
 }
 
+/// A link that resolves to a declaration: the name the link writes and the
+/// admission position of the declaration it names.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LinkTarget<'source>
+{
+    /// The name between the brackets.
+    name: SurfaceName<'source>,
+    /// The declaration the name resolves to.
+    constant: ConstantIndex,
+}
+
+impl<'source> LinkTarget<'source>
+{
+    /// The name between the brackets.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn name(&self) -> SurfaceName<'source>
+    {
+        self.name
+    }
+
+    /// The declaration the name resolves to.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn constant(&self) -> ConstantIndex
+    {
+        self.constant
+    }
+}
+
 /// A declaration form's documentation: the text of every piece written for
-/// it, in source order, and the names that text links to.
+/// it, in source order, the names that text links to, and the declaration
+/// each name resolves to.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Documentation<'source>
 {
@@ -192,6 +241,9 @@ pub struct Documentation<'source>
     text: DocumentationText,
     /// Every link the pieces write, in source order.
     links: Vec<DocLink<'source>>,
+    /// Each linked name that resolves to a declaration, once, in the order
+    /// the links first write it.
+    targets: Vec<LinkTarget<'source>>,
 }
 
 impl<'source> Documentation<'source>
@@ -217,7 +269,74 @@ impl<'source> Documentation<'source>
     {
         &self.links
     }
+
+    /// Each linked name that resolves to a declaration, once, in the order
+    /// the links first write it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn targets(&self) -> &[LinkTarget<'source>]
+    {
+        &self.targets
+    }
+
+    /// How many links the pieces write so far: the mark a later piece's links
+    /// start after.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn link_count(&self) -> LinkCount
+    {
+        LinkCount(self.links.len())
+    }
+
+    /// The links the pieces write from the mark `from` on.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn links_from(
+        &self,
+        from: LinkCount,
+    ) -> &[DocLink<'source>]
+    {
+        self.links.get(from.0 ..).unwrap_or_default()
+    }
+
+    /// Keep that the linked name `name` resolves to the declaration admitted
+    /// at `constant`, after the targets kept already.
+    ///
+    /// # Specification
+    /// - requires: `name` is the name of one of the links, and no target of
+    ///   `name` is kept yet.
+    /// - ensures: the target is the last one kept.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name linked twice keeps one target.
+    /// - witness: `lower::tests::a_link_keeps_the_declaration_it_resolves_to_4963`
+    #[spec(ensures: self.targets.last().is_some_and(|target| target.name == name && target.constant == constant))]
+    pub(crate) fn target(
+        &mut self,
+        name: SurfaceName<'source>,
+        constant: ConstantIndex,
+    )
+    {
+        self.targets.push(LinkTarget { name, constant });
+    }
 }
+
+/// A count of the links a documentation writes, the mark the links of a
+/// later piece start after.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LinkCount(usize);
 
 /// Read the documentation node at `at` onto `into`.
 ///

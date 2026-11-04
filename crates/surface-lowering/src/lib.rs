@@ -406,6 +406,7 @@ pub use crate::classify::TrackingIssue;
 pub use crate::doc::DocLink;
 pub use crate::doc::Documentation;
 pub use crate::doc::DocumentationText;
+pub use crate::doc::LinkTarget;
 pub use crate::doc::documentation;
 pub use crate::doc::read_doc;
 pub use crate::error::AscriptionForm;

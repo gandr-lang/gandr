@@ -521,6 +521,7 @@ use alloc::collections::btree_map::Entry;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::cell::OnceCell;
 use core::fmt;
 use core::ops::ControlFlow;
 
@@ -595,9 +596,10 @@ use crate::attribute::payload_form;
 use crate::attribute::payload_verdict;
 use crate::classify::FailureClass;
 use crate::coincide::Decisions;
-use crate::doc::DocLink;
 use crate::doc::Documentation;
 use crate::doc::INNER_DOC_LINE;
+use crate::doc::LinkCount;
+use crate::doc::LinkTarget;
 use crate::doc::read_doc;
 use crate::error::CrossedExit;
 use crate::error::FormFault;
@@ -2283,6 +2285,67 @@ quenchant_shape::reason_enum! {
             /// A tuple, a wildcard or another pattern stands under `at`.
             OtherPattern,
         }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a documentation link keeps no declaration.
+    pub mod linked {
+        /// The link resolves, but to no declaration of the unit.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A module, a constructor or a built-in name answers the link.
+            Undeclared,
+        }
+    }
+}
+
+/// The unit's declared names by spelling alone, each read once: what a
+/// documentation link answers outside the containers around it, in an
+/// ordered-map lookup and never a walk of the collection.
+#[derive(Debug, Default)]
+struct LinkNames<'source>
+{
+    /// Each declared name, at the first slot of that name in container order.
+    slots: BTreeMap<SurfaceName<'source>, SlotIndex>,
+    /// Each module name, at the first module of that name in container order.
+    modules: BTreeMap<SurfaceName<'source>, StructureIndex>,
+    /// Each constructor name.
+    constructors: BTreeSet<SurfaceName<'source>>,
+}
+
+impl<'source> LinkNames<'source>
+{
+    /// The names `collected` declares, each at its first holder in key order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each name a slot, a module or a constructor of `collected`
+    ///   takes, the slot and the module at the first entry of that name in the
+    ///   collection's key order.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a link to a name declared in another module keeps the
+    ///   declaration, and a link to a constructor answers.
+    /// - witness: `lower::tests::a_link_keeps_the_declaration_it_resolves_to_4963`
+    #[spec(ensures: |ret| ret.slots.len() <= collected.by_name.len())]
+    fn of(collected: &Collected<'source>) -> Self
+    {
+        let mut names = Self::default();
+        for (&(_, name), &slot) in &collected.by_name {
+            names.slots.entry(name).or_insert(slot);
+        }
+        for (&(_, name), &module) in &collected.modules {
+            names.modules.entry(name).or_insert(module);
+        }
+        names.constructors = collected
+            .constructors
+            .keys()
+            .map(|&(_, name)| name)
+            .collect();
+        names
     }
 }
 
@@ -20918,10 +20981,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut filed = Filed::default();
         let mut slots = core::mem::take(&mut self.collected.slots);
         let modules = core::mem::take(&mut self.collected.module_docs);
+        // Built on the first link the pass resolves, never for a unit whose
+        // documentation links nothing.
+        let names = OnceCell::new();
         let outcome = self
-            .document_slots(&mut slots, &mut filed.forms)
-            .and_then(|()| self.document_modules(&modules, &mut slots, &mut filed.forms))
-            .and_then(|()| self.document_files(&mut slots, &mut filed.sources));
+            .document_slots(&mut slots, &mut filed.forms, &names)
+            .and_then(|()| self.document_modules(&modules, &mut slots, &mut filed.forms, &names))
+            .and_then(|()| self.document_files(&mut slots, &mut filed.sources, &names));
         self.collected.slots = slots;
 
         outcome.map(|()| filed)
@@ -20961,6 +21027,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         &mut self,
         slots: &mut [DeclarationSlot<'source>],
         files: &mut BTreeMap<SourceIndex, Documentation<'source>>,
+        names: &OnceCell<LinkNames<'source>>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let tree = self.tree;
@@ -20989,7 +21056,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         .is_some_and(|start| unit.source_at(start) == source)
                 });
                 let documentation = files.entry(source).or_default();
-                let before = documentation.links().len();
+                let before = documentation.link_count();
                 if let Err(refusal) = read_doc(self.pbg, tree, child, documentation) {
                     if refusal.classify() == FailureClass::EngineFault {
                         return Err(refusal);
@@ -20999,13 +21066,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     }
                     continue;
                 }
-                for &link in documentation.links().get(before ..).unwrap_or_default() {
-                    if let Some(refusal) = self.unresolved(link)
-                        && let Some(slot) = first.and_then(|first| slots.get_mut(first))
-                    {
-                        slot.refuse(child, refusal);
-                    }
-                }
+                self.resolve_links(
+                    documentation,
+                    (before, names),
+                    Container::TopLevel(source),
+                    &mut |refusal| {
+                        if let Some(slot) = first.and_then(|first| slots.get_mut(first)) {
+                            slot.refuse(child, refusal);
+                        }
+                    },
+                );
             }
         }
 
@@ -21046,13 +21116,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
         docs: &[WrittenDoc],
         slots: &mut [DeclarationSlot<'source>],
         filed: &mut BTreeMap<UnitKey, Documentation<'source>>,
+        names: &OnceCell<LinkNames<'source>>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        // Each module by its form, read once for every piece of documentation.
+        let modules: BTreeMap<NodeIndex, StructureIndex> = self
+            .collected
+            .structures
+            .iter()
+            .enumerate()
+            .map(|(at, structure)| (structure.declared_by.node, StructureIndex::from(at)))
+            .collect();
         for written in docs {
             self.fuel.spend()?;
-            let first = self.first_slot(written.documents);
+            let module = modules.get(&written.documents).copied();
+            let first = module.and_then(|module| self.first_slot(module));
             let documentation = filed.entry(self.key_at(written.documents)).or_default();
-            let before = documentation.links().len();
+            let before = documentation.link_count();
             if let Err(refusal) = read_doc(self.pbg, self.tree, written.at.node, documentation) {
                 if refusal.classify() == FailureClass::EngineFault {
                     return Err(refusal);
@@ -21062,33 +21142,32 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }
                 continue;
             }
-            for &link in documentation.links().get(before ..).unwrap_or_default() {
-                if let Some(refusal) = self.unresolved(link)
-                    && let Some(slot) = first.and_then(|first| slots.get_mut(usize::from(first)))
-                {
+            // A module's documentation reads its links inside the module.
+            let container = module.map_or_else(
+                || Container::TopLevel(self.collected.unit.source_at(written.at.span.start())),
+                Container::Module,
+            );
+            self.resolve_links(documentation, (before, names), container, &mut |refusal| {
+                if let Some(slot) = first.and_then(|first| slots.get_mut(usize::from(first))) {
                     slot.refuse(written.at.node, refusal);
                 }
-            }
+            });
         }
 
         Ok(())
     }
 
-    /// The first slot the module form `module` admitted, its nested modules'
+    /// The first slot the module `module` admitted, its nested modules'
     /// included, in source order.
     ///
     /// # Specification
     /// trivial.
     fn first_slot(
         &self,
-        module: NodeIndex,
+        module: StructureIndex,
     ) -> Option<SlotIndex>
     {
-        let mut structure = self
-            .collected
-            .structures
-            .iter()
-            .find(|structure| structure.declared_by.node == module)?;
+        let mut structure = self.collected.structures.get(usize::from(module))?;
         loop {
             match *structure.members.first()? {
                 Member::Slot(slot) => return Some(slot),
@@ -21099,34 +21178,153 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// The refusal of the documentation link `link` when its name names
-    /// nothing the module declares or recognises — a resolved path, a
-    /// declaration, a module or a constructor — at the link's span.
+    /// Check each link `documentation` writes from its `before`th on, read in
+    /// `container`: offer a link that nothing answers to `refuse`, and keep
+    /// the declaration a link names as its target. `names` holds the unit's
+    /// names by spelling, built here on the first link of the pass, so a link
+    /// costs ordered-map lookups and never a walk of the collection.
     ///
     /// # Specification
-    /// trivial.
-    fn unresolved(
+    /// - requires: `before` is at most the count of the links; `names`, when
+    ///   built, was built from this collection.
+    /// - ensures: each link from the `before`th on whose name names nothing the
+    ///   module declares or recognises — a resolved path, a declaration, a
+    ///   module or a constructor — is offered to `refuse` as
+    ///   [`LoweringRefusal::UnresolvedDocLink`] at its span. Each other link
+    ///   whose name [`Self::link_target`] answers keeps that declaration as its
+    ///   target ([`Documentation::target`]), once per name. The links are
+    ///   unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a link to a missing name is refused at the link, and
+    ///   a link to a declaration, plain or by a module path, keeps it.
+    /// - witness: `lower::tests::a_link_to_a_missing_name_is_refused_at_the_link`
+    /// - witness: `lower::tests::a_link_keeps_the_declaration_it_resolves_to_4963`
+    #[spec(
+        captures: written = documentation.links().len(),
+        ensures: documentation.links().len() == written,
+    )]
+    fn resolve_links(
         &self,
-        link: DocLink<'source>,
-    ) -> Option<LoweringRefusal<'source>>
+        documentation: &mut Documentation<'source>,
+        (before, names): (LinkCount, &OnceCell<LinkNames<'source>>),
+        container: Container,
+        refuse: &mut dyn FnMut(LoweringRefusal<'source>),
+    )
     {
-        let name = link.name();
-        let spelled: &str = name.as_ref();
-        let path = NamePath::from(spelled.split('.').map(Segment::from).collect::<Vec<_>>());
-        let declared = matches!(
-            self.recognition.resolve_path(&path),
-            PathResolution::Complete(_)
-        ) || self.collected.by_name.keys().any(|&(_, held)| held == name)
-            || self.collected.modules.keys().any(|&(_, held)| held == name)
-            || self
-                .collected
-                .constructors
-                .keys()
-                .any(|&(_, held)| held == name);
+        let fresh = documentation.links_from(before).len();
+        if fresh == 0 {
+            return;
+        }
+        let names = names.get_or_init(|| LinkNames::of(&self.collected));
+        let mut kept: BTreeSet<SurfaceName<'source>> = documentation
+            .targets()
+            .iter()
+            .map(LinkTarget::name)
+            .collect();
+        for at in 0 .. fresh {
+            let Some(&link) = documentation.links_from(before).get(at)
+            else {
+                continue;
+            };
+            let name = link.name();
+            let spelled: &str = name.as_ref();
+            let path = NamePath::from(spelled.split('.').map(Segment::from).collect::<Vec<_>>());
+            let answered = matches!(
+                self.recognition.resolve_path(&path),
+                PathResolution::Complete(_)
+            ) || names.slots.contains_key(&name)
+                || names.modules.contains_key(&name)
+                || names.constructors.contains(&name);
+            if !answered {
+                refuse(LoweringRefusal::UnresolvedDocLink {
+                    span: link.span(),
+                    name,
+                });
+                continue;
+            }
+            if kept.contains(&name) {
+                continue;
+            }
+            if let Maybe::Present(constant) = self.link_target(name, container, names) {
+                kept.insert(name);
+                documentation.target(name, constant);
+            }
+        }
+    }
 
-        (!declared).then_some(LoweringRefusal::UnresolvedDocLink {
-            span: link.span(),
-            name,
+    /// The declaration the linked name `name` names, read in `container`.
+    ///
+    /// A plain name is looked up in `container`, then in each container around
+    /// it, then in any container of the unit. A dotted path reads its leading
+    /// segments as nested modules, the first one found as a plain name is,
+    /// and its last segment as a member of the innermost one.
+    ///
+    /// # Specification
+    /// - requires: `names` was built from this collection.
+    /// - ensures: the admission position of the slot found as above;
+    ///   [`linked::Absent::Undeclared`] when no slot answers, as for a module,
+    ///   a constructor or a built-in name.
+    /// - provides: the target a documentation link keeps.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a plain link, a link by a module path, a link to a
+    ///   module and a link to a constructor are asserted at their targets.
+    /// - witness: `lower::tests::a_link_keeps_the_declaration_it_resolves_to_4963`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(_) => !self.collected.by_name.is_empty(),
+        Maybe::Absent(_) => true,
+    })]
+    fn link_target(
+        &self,
+        name: SurfaceName<'source>,
+        container: Container,
+        names: &LinkNames<'source>,
+    ) -> Maybe<ConstantIndex, linked::Absent>
+    {
+        let collected = &self.collected;
+        let spelled: &'source str = SourceFragment::from(name).into();
+        let around = || {
+            core::iter::successors(Some(container), |&held| match held {
+                Container::Module(module) => collected
+                    .structures
+                    .get(usize::from(module))
+                    .map(|structure| structure.container),
+                Container::TopLevel(_) => None,
+            })
+        };
+        let slot = match spelled.rsplit_once('.') {
+            None => around()
+                .find_map(|held| collected.by_name.get(&(held, name)).copied())
+                .or_else(|| names.slots.get(&name).copied()),
+            Some((modules, last)) => {
+                let mut segments = modules.split('.');
+                let head = SurfaceName::from(segments.next().unwrap_or_default());
+                let mut module = around()
+                    .find_map(|held| collected.modules.get(&(held, head)).copied())
+                    .or_else(|| names.modules.get(&head).copied());
+                for segment in segments {
+                    module = module.and_then(|held| {
+                        collected
+                            .modules
+                            .get(&(Container::Module(held), SurfaceName::from(segment)))
+                            .copied()
+                    });
+                }
+                module.and_then(|held| {
+                    collected
+                        .by_name
+                        .get(&(Container::Module(held), SurfaceName::from(last)))
+                        .copied()
+                })
+            },
+        };
+        slot.map_or(Maybe::Absent(linked::Absent::Undeclared), |slot| {
+            Maybe::Present(ConstantIndex::from(usize::from(slot)))
         })
     }
 
@@ -21166,13 +21364,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
         &mut self,
         slots: &mut [DeclarationSlot<'source>],
         filed: &mut BTreeMap<UnitKey, Documentation<'source>>,
+        names: &OnceCell<LinkNames<'source>>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         for slot in slots.iter_mut() {
             for written in core::mem::take(&mut slot.docs) {
                 self.fuel.spend()?;
                 let documentation = filed.entry(self.key_at(written.documents)).or_default();
-                let before = documentation.links().len();
+                let before = documentation.link_count();
                 if let Err(refusal) = read_doc(self.pbg, self.tree, written.at.node, documentation)
                 {
                     if refusal.classify() == FailureClass::EngineFault {
@@ -21181,11 +21380,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     slot.refuse(written.at.node, refusal);
                     continue;
                 }
-                for &link in documentation.links().get(before ..).unwrap_or_default() {
-                    if let Some(refusal) = self.unresolved(link) {
-                        slot.refuse(written.at.node, refusal);
-                    }
-                }
+                let container = slot.container;
+                self.resolve_links(documentation, (before, names), container, &mut |refusal| {
+                    slot.refuse(written.at.node, refusal);
+                });
             }
         }
 
@@ -30453,6 +30651,55 @@ def ended() -> -F [Partial] Unit {
                 name: SurfaceName::from("gone"),
             }),
             "a module beside a missing name does not answer for it"
+        );
+    }
+
+    /// #4963: a link that names a declaration keeps it, read where the
+    /// documentation stands. A link to a module or a constructor keeps none.
+    #[test]
+    fn a_link_keeps_the_declaration_it_resolves_to_4963()
+    {
+        let mut arena = CoreArena::new();
+        let source = "/// See [b], [M.x], [M], [Red], [b] again and [y].\ndef a = 1 ;\ndef b = 2 \
+                      ;\nmodule M where {\n  /// Inner [x] and [b].\n  def x = 3 ;\n}\nmodule N \
+                      where { def x = 4 ; def y = 5 ; }\ndata Color : Type where { | Red : Color }";
+        let module = lowered(SourceText::from(source), &mut arena);
+        let declared = module.declarations().iter().collect::<Vec<_>>();
+        let [a, b, inner, _, y, ..] = *declared
+        else {
+            panic!("the names are declared: {declared:?}");
+        };
+        let targets = |declaration: &crate::module::LoweredDeclaration<'_>| {
+            let Maybe::Present(key) = declaration.definition()
+            else {
+                panic!("the name has a definition");
+            };
+            let Maybe::Present(found) = module.documentation(key)
+            else {
+                panic!("the name is documented");
+            };
+            found
+                .targets()
+                .iter()
+                .map(|target| (String::from(target.name().as_ref()), target.constant()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            targets(a),
+            [
+                (String::from("b"), b.constant()),
+                (String::from("M.x"), inner.constant()),
+                (String::from("y"), y.constant()),
+            ],
+            "each declaration linked keeps it once; a module and a constructor keep none"
+        );
+        assert_eq!(
+            targets(inner),
+            [
+                (String::from("x"), inner.constant()),
+                (String::from("b"), b.constant()),
+            ],
+            "a member's link reads its own module before any other"
         );
     }
 

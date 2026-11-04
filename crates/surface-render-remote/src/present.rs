@@ -911,6 +911,38 @@ impl<'source> LineIndex<'source>
         }
     }
 
+    /// The row `byte` sits in, found by a binary search over the row starts
+    /// alone: no character of the row is read.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the last row whose start is at or before `byte`, so an offset
+    ///   at or past the end of the text is on the last row.
+    /// - provides: the row of an offset whose column nobody reads, and the row
+    ///   [`Self::utf16_pos_of_byte`] counts its column in.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the start of each row, a byte inside a terminator,
+    ///   the end and past it each answer their exact row.
+    /// - witness: `present::tests::a_row_is_read_without_its_column`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| self.starts.get(ret.0).is_some_and(|start| ret.0 == 0 || *start <= byte)
+        && self.starts.get(ret.0.saturating_add(1)).is_none_or(|next| byte < *next))]
+    pub fn row_of_byte(
+        &self,
+        byte: ByteOffset,
+    ) -> PositionRow
+    {
+        PositionRow(
+            self.starts
+                .partition_point(|start| *start <= byte)
+                .saturating_sub(1),
+        )
+    }
+
     /// The position of `byte`, its column counted in UTF-16 code units.
     ///
     /// # Specification
@@ -954,11 +986,8 @@ impl<'source> LineIndex<'source>
         byte: ByteOffset,
     ) -> Result<Utf16Pos, PosOfByteError>
     {
-        let row = self
-            .starts
-            .partition_point(|start| *start <= byte)
-            .saturating_sub(1);
-        let start = self.starts.get(row).copied().unwrap_or_default();
+        let row = self.row_of_byte(byte);
+        let start = self.starts.get(row.0).copied().unwrap_or_default();
         let tail = self.text.get(start.0 ..).unwrap_or_default();
         // No trait yields a text's characters with their byte offsets, so the
         // walk reads the string here, the one site that needs both.
@@ -967,7 +996,7 @@ impl<'source> LineIndex<'source>
             let at = ByteOffset(start.0.saturating_add(offset));
             if at == byte {
                 return Ok(Utf16Pos {
-                    row: PositionRow(row),
+                    row,
                     col: Utf16Column(col),
                 });
             }
@@ -981,7 +1010,7 @@ impl<'source> LineIndex<'source>
         }
 
         Ok(Utf16Pos {
-            row: PositionRow(row),
+            row,
             col: Utf16Column(col),
         })
     }
@@ -1234,6 +1263,26 @@ mod tests
             ByteOffset::from(6_usize),
             index.byte_of_utf16_pos(utf16(At(0, 4))),
             "a column between the two units of 𝄞 resolves to its first byte"
+        );
+    }
+
+    #[test]
+    fn a_row_is_read_without_its_column()
+    {
+        // Rows: "a" ended by \r\n, "b" by a lone \r, "c" by \n, then "d".
+        let index = LineIndex::new(SourceText::from("a\r\nb\rc\nd"));
+        let rows = [0_usize, 1, 2, 3, 4, 5, 6, 7, 8, 99]
+            .map(|byte| usize::from(index.row_of_byte(ByteOffset::from(byte))));
+        assert_eq!(
+            rows,
+            [0, 0, 0, 1, 1, 2, 2, 3, 3, 3],
+            "a terminator is on the row it ends, and the end is on the last row"
+        );
+        let astral = LineIndex::new(SourceText::from("x\n𝄞y"));
+        assert_eq!(
+            usize::from(astral.row_of_byte(ByteOffset::from(3_usize))),
+            1,
+            "a byte inside a character still has its row"
         );
     }
 

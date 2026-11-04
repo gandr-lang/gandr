@@ -2610,6 +2610,7 @@ INSERT INTO purpose VALUES('surface-lowering','description::written::WrittenWire
 INSERT INTO purpose VALUES('surface-lowering','doc::DocLink','struct','Holds a documentation link, so a link''s name is resolved against the module''s declared names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','doc::Documentation','struct','Holds a declaration''s documentation, so the documentation''s links are resolved against the module''s declared names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','doc::DocumentationText','struct','Holds a declaration''s documentation text, so the text''s links are resolved against the module''s declared names.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','doc::LinkTarget','struct','Holds a link that resolves to a declaration, so the link''s name is paired with the declaration it names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','doc::read_doc','function','Reads a declaration''s `///` lines and `doc("…")` entries into one text, so the text''s links are resolved against the module''s declared names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','error::AscriptionForm','enum','Names the form an ascription takes, so an ascription''s form is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','error::CrossedExit','enum','Names an exit that crosses a handler''s frame, so the refusal names the fault.',NULL,'fits','sound',NULL);
@@ -3257,6 +3258,7 @@ INSERT INTO purpose VALUES('surface-session','session::CandidateIndex','struct',
 INSERT INTO purpose VALUES('surface-session','session::ClosureKey','struct','Holds a closure''s key, so the closure''s text and sources are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::ClosureSlot','struct','Names the slot of a closure, so the slot''s position is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::Detached','struct','Holds a detached revision, so the revision''s state is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-session','session::DocumentedLink','struct','Holds a documentation link that names a declaration, so an editor reads the link''s target.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::Holding','enum','Names what the store holds for a closure, so the holding''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::ImportRow','struct','Holds an import''s row, so the import''s target is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::JudgedParse','struct','Holds a judged parse, so the parse''s repairs are read.',NULL,'fits','sound',NULL);
