@@ -1,0 +1,210 @@
+// The simply typed lambda calculus as a theory whose terms are indexed by a
+// context and a type. Its syntax is a first-order model of the signature
+// (Kaposi and Xie, _Second-order generalised algebraic theories_,
+// doi:10.4230/LIPIcs.FSCD.2024.10). This source is the first rung of
+// normalisation by evaluation as a model.
+//
+// The object types, the contexts, the variables and the terms are indexed
+// families. A renaming sends each variable of one context to a variable of
+// another. The semantic type of an arrow is the Kripke function space over
+// renamings. A recursion computes it from the object type.
+//
+// The evaluator, reflection and reification stop at five refusals. The twin
+// in the pathological corpus names each of them.
+//
+// - see: #5032
+
+/// The STLC signature: terms indexed by a context and a type.
+pub theory STLC where {
+  /// Types.
+  sort Ty : Type;
+  /// Contexts.
+  sort Con : Type;
+  /// Variables of a type in a context.
+  sort Var(g : Con, a : Ty) : Type;
+  /// Terms of a type in a context.
+  sort Tm(g : Con, a : Ty) : Type;
+
+  /// The base type.
+  oper base : () --> Ty;
+  /// The function type.
+  oper arr : (a : Ty, b : Ty) --> Ty;
+  /// The empty context.
+  oper empty : () --> Con;
+  /// A context extended by a type.
+  oper ext : (g : Con, a : Ty) --> Con;
+  /// The newest variable.
+  oper vz : (g : Con, a : Ty) --> Var(ext(g, a), a);
+  /// An older variable.
+  oper vs : (x : Var(g, a), b : Ty) --> Var(ext(g, b), a);
+  /// A variable as a term.
+  oper var : (x : Var(g, a)) --> Tm(g, a);
+  /// Abstraction.
+  oper lam : (t : Tm(ext(g, a), b)) --> Tm(g, arr(a, b));
+  /// Application.
+  oper app : (t : Tm(g, arr(a, b)), u : Tm(g, a)) --> Tm(g, b);
+}
+
+/// The object types.
+pub data ObjTy : Type where {
+  /// The base type.
+  | Base : ObjTy
+  /// The functions from `dom` to `cod`.
+  | Arr : (dom : ObjTy, cod : ObjTy) --> ObjTy
+}
+
+/// The contexts, the last entry outermost.
+pub data Ctx : Type where {
+  /// The empty context.
+  | Empty : Ctx
+  /// The context `gamma` and one more entry of type `a`.
+  | Extend : (gamma : Ctx, a : ObjTy) --> Ctx
+}
+
+/// A variable of type `a` in the context `gamma`.
+pub data Var : (gamma : Ctx, a : ObjTy) --> Type where {
+  /// The variable of the last entry.
+  | Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a)
+  /// A variable of `gamma`, past one more entry.
+  | There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var(gamma, a)) --> Var(Extend(gamma, b), a)
+}
+
+/// A term of type `a` in the context `gamma`.
+pub data Term : (gamma : Ctx, a : ObjTy) --> Type where {
+  /// A variable.
+  | V : (gamma : Ctx, a : ObjTy, x : Var(gamma, a)) --> Term(gamma, a)
+  /// An abstraction over one more entry.
+  | Lam : (gamma : Ctx, a : ObjTy, b : ObjTy, t : Term(Extend(gamma, a), b)) --> Term(
+    gamma,
+    Arr(a, b)
+  )
+  /// An application.
+  | Ap : (
+    gamma : Ctx,
+    a : ObjTy,
+    b : ObjTy,
+    t : Term(gamma, Arr(a, b)),
+    u : Term(gamma, a)
+  ) --> Term(gamma, b)
+}
+
+/// The neutral terms and the normal forms, each over the other.
+rec {
+  /// A variable under applications.
+  pub data Ne : (gamma : Ctx, a : ObjTy) --> Type where {
+    /// A variable.
+    | NVar : (gamma : Ctx, a : ObjTy, x : Var(gamma, a)) --> Ne(gamma, a)
+    /// A neutral applied to a normal form.
+    | NApp : (gamma : Ctx, a : ObjTy, b : ObjTy, t : Ne(gamma, Arr(a, b)), u : Nf(gamma, a)) --> Ne(
+      gamma,
+      b
+    )
+  }
+  /// A term with no redex.
+  pub data Nf : (gamma : Ctx, a : ObjTy) --> Type where {
+    /// A neutral at the base type.
+    | NNe : (gamma : Ctx, t : Ne(gamma, Base)) --> Nf(gamma, Base)
+    /// An abstraction over a normal form.
+    | NLam : (gamma : Ctx, a : ObjTy, b : ObjTy, t : Nf(Extend(gamma, a), b)) --> Nf(
+      gamma,
+      Arr(a, b)
+    )
+  }
+}
+
+/// The syntax as a model: each operation is the constructor of its sort.
+pub module Syntax : Model(STLC) where {
+  /// A type is an object type.
+  type Ty = ObjTy;
+  /// A context is an object context.
+  type Con = Ctx;
+  /// A variable is a variable of the object language.
+  type Var(g : Con, a : Ty) = Var(g, a);
+  /// A term is a term of the object language.
+  type Tm(g : Con, a : Ty) = Term(g, a);
+
+  /// The base type.
+  def base() -> ObjTy { Base }
+  /// The function type.
+  def arr(a : ObjTy, b : ObjTy) -> ObjTy { Arr(a, b) }
+  /// The empty context.
+  def empty() -> Ctx { Empty }
+  /// One more entry.
+  def ext(g : Ctx, a : ObjTy) -> Ctx { Extend(g, a) }
+  /// The variable of the last entry.
+  def vz(g : Ctx, a : ObjTy) -> Var(Extend(g, a), a) { Here(g, a) }
+  /// A variable past one more entry.
+  def vs(g : Ctx, a : ObjTy, x : Var(g, a), b : ObjTy) -> Var(Extend(g, b), a) { There(g, a, b, x) }
+  /// A variable as a term.
+  def var(g : Ctx, a : ObjTy, x : Var(g, a)) -> Term(g, a) { V(g, a, x) }
+  /// An abstraction.
+  def lam(g : Ctx, a : ObjTy, b : ObjTy, t : Term(Extend(g, a), b)) -> Term(g, Arr(a, b)) {
+    Lam(g, a, b, t)
+  }
+  /// An application.
+  def app(g : Ctx, a : ObjTy, b : ObjTy, t : Term(g, Arr(a, b)), u : Term(g, a)) -> Term(g, b) {
+    Ap(g, a, b, t, u)
+  }
+}
+
+/// A renaming from `g` to `d`: each variable of `g` as a variable of `d`.
+pub type Ren(d : Ctx, g : Ctx) = (a : ObjTy) => Var(g, a) => Var(d, a);
+
+/// The semantic type of `a` at the context `g`. At an arrow it is the
+/// Kripke function space: a function at each renaming of `g`.
+pub def rec sem(a : ObjTy, g : Ctx) -> Type {
+  match a {
+    Base => return Nf(g, Base),
+    Arr(dom, cod) => return type((d : Ctx) => Ren(d, g) => sem[<](dom, d) => sem[<](cod, d))
+  }
+}
+
+/// A semantic function applied at a renaming and a value.
+pub def apply(
+  g : Ctx,
+  a : ObjTy,
+  b : ObjTy,
+  w : sem(Arr(a, b), g),
+  d : Ctx,
+  r : Ren(d, g),
+  v : sem(a, d)
+) -> sem(b, d) {
+  w(d)(r)(v)
+}
+
+/// The size of a term. Each recursive call is at the indices its pattern
+/// binds.
+pub def rec size(g : Ctx, a : ObjTy, t : Term(g, a)) -> Integer {
+  match t {
+    V(_g, _a, _x) => 1,
+    Lam(h, b, c, u) => size[<](Extend(h, b), c, u) + 1,
+    Ap(h, b, c, f, u) => size[<](h, Arr(b, c), f) + size[<](h, b, u) + 1
+  }
+}
+
+/// The identity applied to a variable, through the syntax model.
+def redex() -> Term(Extend(Empty, Base), Base) {
+  let one = Extend(Empty, Base);
+  let two = Extend(one, Base);
+  let body = Syntax.var(two, Base, Syntax.vz(one, Base));
+  Syntax.app(
+    one,
+    Base,
+    Base,
+    Syntax.lam(one, Base, Base, body),
+    Syntax.var(one, Base, Syntax.vz(Empty, Base))
+  )
+}
+
+/// The redex has four nodes: an application, an abstraction and two
+/// variables.
+@[ runs("4") ]
+def redexSize() -> Integer { size(Extend(Empty, Base), Base, redex()) }
+
+/// Environments: a semantic value for each entry of `g`, at the context `d`.
+pub data Env : (g : Ctx, d : Ctx) --> Type where {
+  /// The empty environment.
+  | ENil : (d : Ctx) --> Env(Empty, d)
+  /// An environment and one more value.
+  | ECons : (g : Ctx, a : ObjTy, d : Ctx, rest : Env(g, d), v : sem(a, d)) --> Env(Extend(g, a), d)
+}
