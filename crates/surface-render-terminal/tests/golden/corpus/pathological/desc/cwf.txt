@@ -11,18 +11,18 @@ error[RulesUncompleted]: this rule and an earlier one rewrite one term to two no
    ╰ help: add a rule that joins the two normal forms, or remove one of the two rules
 
 error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
-   ╭▸ corpus/pathological/desc/cwf.gandr:36:3
+   ╭▸ corpus/pathological/desc/cwf.gandr:37:3
    │
-36 │   rule tyId : subTy(a, id(g)) ==> a;
+37 │   rule tyId : subTy(a, id(g)) ==> a;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
    │
    ├ note: `CwFTermIdentity` is refused with UndescribedMember.NestedOperation, as its expectation states
    ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>
 
 error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
-   ╭▸ corpus/pathological/desc/cwf.gandr:38:3
+   ╭▸ corpus/pathological/desc/cwf.gandr:39:3
    │
-38 │   rule tmId : subTm(t, id(g)) ==> t;
+39 │   rule tmId : subTm(t, id(g)) ==> t;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
    │
    ├ note: `CwFTermIdentity` is refused with UndescribedMember.NestedOperation, as its expectation states

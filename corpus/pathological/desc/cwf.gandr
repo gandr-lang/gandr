@@ -1,6 +1,6 @@
-// The laws of a category with families, refused until the rule reading
-// carries an index at a sort the laws rewrite (Huang and Angiuli, _Fat Cell
-// Structures and Generalized Algebraic Theories_, LICS 2026,
+// The rule reading refuses the laws of a category with families for now.
+// It carries no index at a sort that the laws rewrite (Huang and Angiuli,
+// _Fat cell structures and generalized algebraic theories_,
 // doi:10.4230/LIPIcs.LICS.2026.58, § 1.1).
 //
 // The category laws rewrite substitutions, a type moves along a substitution
@@ -15,8 +15,8 @@
 /// The CwF signature that the model source declares.
 import "../../model/desc/cwf.gandr";
 
-/// The unit laws of composition part at `comp(id(a), id(b))`, which the
-/// sorting reads at one context.
+/// The unit laws of composition give two results for `comp(id(a), id(b))`,
+/// and the sorting reads both at one context.
 @[ refuses("RulesUncompleted") ]
 theory CwFUnits where {
   /// The sorts and operations of a category with families.
@@ -27,13 +27,14 @@ theory CwFUnits where {
   rule idr : comp(s, id(d)) ==> s;
 }
 
-/// A term moved along the identity has its sort only modulo the law on types.
+/// The sort of a term after the identity agrees with its own sort only
+/// modulo the law on types.
 @[ refuses("UndescribedMember.NestedOperation") ]
 theory CwFTermIdentity where {
   /// The sorts and operations of a category with families.
   include CwF;
-  /// A type moved along the identity.
+  /// The identity leaves a type as it is.
   rule tyId : subTy(a, id(g)) ==> a;
-  /// A term moved along the identity.
+  /// The identity leaves a term as it is.
   rule tmId : subTm(t, id(g)) ==> t;
 }

@@ -1,18 +1,18 @@
 // A category with families as a theory whose sorts depend on earlier sorts.
 // Contexts and substitutions form a category, a type lives in a context, and
-// a term has a type in a context (Huang and Angiuli, _Fat Cell Structures
-// and Generalized Algebraic Theories_, LICS 2026,
-// doi:10.4230/LIPIcs.LICS.2026.58, § 1.1).
+// a term has a type in a context (Huang and Angiuli, _Fat cell structures
+// and generalized algebraic theories_, doi:10.4230/LIPIcs.LICS.2026.58,
+// § 1.1).
 //
 // Dependent type theory states its syntax and its models through this
 // signature. `Tm(g, a)` reads `a` at the sort `Ty(g)`, so a term's sort
 // names the context of its type. Comprehension extends a context by a type,
 // and substitution moves types and terms between contexts.
 //
-// The standard model reads a context as a type, a type in it as a family
-// over it, and a term as a section of that family. The block's value of
-// `Theory` keeps each index as data, so a program reads it back. The laws
-// are refused in the twin until the units that admit them land.
+// The standard model reads a context as a type. A type in a context is a
+// family over it, and a term is a section of that family. The block's value
+// of `Theory` keeps each index as data, so a program reads it back. The twin
+// refuses the laws until the units that admit them land.
 //
 // - see: #522
 // - see: #5016
@@ -40,11 +40,11 @@ pub theory CwF where {
   oper comp : (s : Sub(d, g), t : Sub(e, d)) --> Sub(e, g);
   /// The substitution into the empty context.
   oper eps : (g : Con) --> Sub(g, empty());
-  /// A type moved along a substitution.
+  /// Substitution in a type: it moves the type along `s`.
   oper subTy : (a : Ty(g), s : Sub(d, g)) --> Ty(d);
-  /// A term moved along a substitution, at its moved type.
+  /// Substitution in a term: it moves the term along `s`, to its moved type.
   oper subTm : (t : Tm(g, a), s : Sub(d, g)) --> Tm(d, subTy(a, s));
-  /// Weakening by the newest type.
+  /// Weakening: it forgets the newest type.
   oper p : (a : Ty(g)) --> Sub(ext(g, a), g);
   /// The newest variable.
   oper q : (a : Ty(g)) --> Tm(ext(g, a), subTy(a, p(a)));
@@ -71,40 +71,40 @@ pub module Standard : Model(CwF) where {
   def ext(g : Type, a : g => Type) -> Type { return type(#{x : g, y : a(x)}) }
 
   /// The identity function.
-  def id(g : Type) -> g => g { thunk { fun (x) { x } } }
+  def id(g : Type) -> g => g { return fun (x) { x } }
 
   /// Composition of two functions.
   def comp(d : Type, g : Type, e : Type, s : d => g, t : e => d) -> e => g {
-    thunk { fun (x) { s(t(x)) } }
+    return fun (x) { s(t(x)) }
   }
 
   /// Every point goes to the one point.
-  def eps(g : Type) -> g => Unit { thunk { fun (_x) { unit } } }
+  def eps(g : Type) -> g => Unit { return fun (_x) { unit } }
 
-  /// A family read after a function.
+  /// A family after a function: it reads the family at the function's result.
   def subTy(g : Type, d : Type, a : g => Type, s : d => g) -> d => Type {
-    thunk { fun (x) { a(s(x)) } }
+    return fun (x) { a(s(x)) }
   }
 
   /// A section read after a function.
   def subTm(g : Type, a : g => Type, d : Type, t : (x : g) => a(x), s : d => g) -> (
     x : d
   ) => a(s(x)) {
-    thunk { fun (x) { t(s(x)) } }
+    return fun (x) { t(s(x)) }
   }
 
   /// The first projection.
-  def p(g : Type, a : g => Type) -> #{x : g, y : a(x)} => g { thunk { fun (z) { z.0 } } }
+  def p(g : Type, a : g => Type) -> #{x : g, y : a(x)} => g { return fun (z) { z.0 } }
 
   /// The point a pair holds first.
   def first(g : Type, a : g => Type, z : #{x : g, y : a(x)}) -> g { z.0 }
 
   /// The second projection, at the family read at the first.
   def q(g : Type, a : g => Type) -> (z : #{x : g, y : a(x)}) => a(first(g, a, z)) {
-    thunk { fun (z) { z.1 } }
+    return fun (z) { z.1 }
   }
 
-  /// A function and a section paired pointwise.
+  /// Pairing: each point goes to its image and the section's value there.
   def pair(
     d : Type,
     g : Type,
@@ -112,7 +112,7 @@ pub module Standard : Model(CwF) where {
     s : d => g,
     t : (x : d) => a(s(x))
   ) -> d => #{x : g, y : a(x)} {
-    thunk { fun (z) { (s(z), t(z)) } }
+    return fun (z) { (s(z), t(z)) }
   }
 }
 
