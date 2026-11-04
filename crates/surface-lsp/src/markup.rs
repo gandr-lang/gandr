@@ -62,6 +62,9 @@ pub enum Markup
     Markdown,
     /// Markdown with HTML: gandr text in `<pre><code>`, coloured by role.
     Html,
+    /// HTML for the documentation site: gandr text in `<pre><code>`, each run
+    /// in the class `hl-<role>` that the site's stylesheet colours.
+    Site,
 }
 
 impl Markup
@@ -104,7 +107,7 @@ impl Markup
     {
         Opener(match self {
             Self::Markdown => "```gandr\n",
-            Self::Html => "<pre><code>",
+            Self::Html | Self::Site => "<pre><code>",
         })
     }
 }
@@ -313,8 +316,9 @@ impl Code
     ///   boundary is dropped.
     /// - ensures: in markdown, `text` itself; in HTML, `text` with `&`, `<` and
     ///   `>` escaped, each kept run of a role other than [`HlRole::Other`]
-    ///   inside one `span` coloured by its role's variable; an `Other` run is
-    ///   uncoloured, as the editor gives it no token.
+    ///   inside one `span` coloured by its role's variable, or of its role's
+    ///   class `hl-<role>` for the site; an `Other` run is uncoloured, as the
+    ///   editor gives it no token.
     /// - provides: the one writer every quoted and printed piece goes through.
     /// - fails: never.
     /// - panics: none.
@@ -347,10 +351,17 @@ impl Code
                 continue;
             };
             escape(&mut self.written, SourceText::from(before));
-            self.written
-                .push_str("<span style=\"color:var(--vscode-gandr-hover-");
-            self.written.push_str(colour);
-            self.written.push_str(");\">");
+            if self.markup == Markup::Site {
+                self.written.push_str("<span class=\"hl-");
+                self.written.push_str(colour);
+                self.written.push_str("\">");
+            }
+            else {
+                self.written
+                    .push_str("<span style=\"color:var(--vscode-gandr-hover-");
+                self.written.push_str(colour);
+                self.written.push_str(");\">");
+            }
             escape(&mut self.written, SourceText::from(run));
             self.written.push_str("</span>");
             cursor = end;
@@ -370,7 +381,7 @@ impl Code
     {
         match self.markup {
             Markup::Markdown => format!("```gandr\n{}\n```", self.written),
-            Markup::Html => format!("<pre><code>{}</code></pre>", self.written),
+            Markup::Html | Markup::Site => format!("<pre><code>{}</code></pre>", self.written),
         }
     }
 
@@ -391,7 +402,7 @@ impl Code
     {
         match self.markup {
             Markup::Markdown => format!("`{}`", self.written),
-            Markup::Html => {
+            Markup::Html | Markup::Site => {
                 let mut inline = String::from("<code>");
                 let mut tag = false;
                 for character in self.written.chars() {
@@ -430,10 +441,11 @@ impl Code
 ///
 /// # Specification
 /// - requires: nothing; any text is admitted.
-/// - ensures: in markdown, `text` itself. In HTML, `text` with each fragment
-///   that [`fragments`] finds outside a fenced block and that [`coloured`]
-///   colours, its backquotes included, written as [`Code::inline`] writes it
-///   under the fragment's spans. Every other byte stays as it is.
+/// - ensures: in markdown, `text` itself. In HTML or for the site, `text` with
+///   each fragment that [`fragments`] finds outside a fenced block and that
+///   [`coloured`] colours, its backquotes included, written as [`Code::inline`]
+///   writes it in `markup` under the fragment's spans. Every other byte stays
+///   as it is.
 /// - provides: the documentation half of a hover.
 /// - fails: never.
 /// - panics: none.
@@ -446,7 +458,7 @@ impl Code
 ///   stays as it is. The markdown text is unchanged.
 /// - witness: `markup::tests::documentation_colours_its_fragments_in_html`
 /// - witness: `hover::tests::a_documented_fragment_hovers_in_its_editor_colours_4919`
-#[spec(ensures: |ret| markup == Markup::Html || ret == <&str>::from(text))]
+#[spec(ensures: |ret| markup != Markup::Markdown || ret == <&str>::from(text))]
 #[must_use]
 pub fn documented(
     markup: Markup,
@@ -482,7 +494,7 @@ pub fn documented(
                 continue;
             };
             written.push_str(before);
-            let mut code = Code::new(Markup::Html);
+            let mut code = Code::new(markup);
             code.quoted(SourceText::from(inner), ByteOffset::from(0_usize), &spans);
             written.push_str(&code.inline());
             cursor = end.saturating_add(1);
@@ -523,7 +535,7 @@ fn unfenced(text: SourceText<'_>) -> Vec<ByteRange>
 ///
 /// # Specification
 /// trivial.
-fn escape(
+pub fn escape(
     out: &mut String,
     text: SourceText<'_>,
 )
@@ -625,6 +637,19 @@ mod tests
         )]);
         markdown.printed(SourceText::from(" : Integer"), Host::Signature);
         assert_eq!(markdown.block(), "```gandr\nx : Integer\n```");
+        let mut site = Code::new(Markup::Site);
+        site.quoted(SourceText::from("x"), ByteOffset::from(10_usize), &[span(
+            10,
+            11,
+            HlRole::VariableParam,
+        )]);
+        site.printed(SourceText::from(" : Integer"), Host::Signature);
+        assert_eq!(
+            site.block(),
+            "<pre><code><span class=\"hl-variableParam\">x</span> : <span \
+             class=\"hl-typeBuiltin\">Integer</span></code></pre>",
+            "the site writes the same runs, each in its role's class"
+        );
     }
 
     #[test]

@@ -423,6 +423,7 @@ use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lsp::Capabilities;
 use gandr_surface_lsp::Entry;
+use gandr_surface_lsp::File;
 #[cfg(unix)]
 use gandr_surface_lsp::Handover;
 #[cfg(unix)]
@@ -430,6 +431,8 @@ use gandr_surface_lsp::Relayed;
 use gandr_surface_lsp::Served;
 use gandr_surface_lsp::index;
 use gandr_surface_lsp::page;
+use gandr_surface_lsp::site;
+use gandr_surface_lsp::sourced;
 use gandr_surface_render_terminal::RenderStyle;
 use gandr_surface_render_terminal::TerminalCapability;
 use gandr_surface_repl::Ended;
@@ -822,19 +825,24 @@ enum Command
         /// working directory sits in, or the workspace when it sits in none.
         paths: Vec<PathBuf>,
     },
-    /// Write the documentation of the sources under a path as Markdown: an
-    /// index, and one page per source.
+    /// Write the documentation of the sources under a path: an HTML site, or
+    /// Markdown pages with `--markdown`.
     ///
-    /// A page holds the source's own documentation, then each public
-    /// declaration's signature as a hover on its name shows it, then its
-    /// documentation. Prints the path of each page written, the index last.
-    /// Exits 0 when every page was written, and 2 when the path names no
-    /// source, or a source cannot be read, judged or written.
+    /// The site holds an index, a page per source and per public item, an
+    /// index of every item, a view of each source and a search over the items.
+    /// A reader opens its `index.html` from disk. A Markdown page holds the
+    /// source's own documentation, then each public declaration's signature as
+    /// a hover on its name shows it, then its documentation. Prints the path of
+    /// each file written. Exits 0 when every file was written, and 2 when the
+    /// path names no source, or a source cannot be read, judged or written.
     Doc
     {
-        /// The directory the pages are written under, made when missing.
+        /// The directory the files are written under, made when missing.
         #[arg(long, value_name = "DIRECTORY")]
         out: PathBuf,
+        /// Write Markdown pages and their index in place of the site.
+        #[arg(long)]
+        markdown: bool,
         /// A source file, or a directory searched for `.gandr` sources.
         path: PathBuf,
     },
@@ -1985,7 +1993,22 @@ fn main() -> ExitCode
             Verbosity::User,
         ),
         Some(Command::Cells { paths }) => (Invocation::Cells { paths }, Verbosity::User),
-        Some(Command::Doc { out, path }) => return doc(&path, &out),
+        Some(Command::Doc {
+            out,
+            markdown,
+            path,
+        }) => {
+            return doc(
+                &path,
+                &out,
+                if markdown {
+                    Pages::Markdown
+                }
+                else {
+                    Pages::Site
+                },
+            );
+        },
         Some(Command::Ledger {
             ledger: LedgerName::Syntax { write, exemplars },
         }) => (
@@ -2960,20 +2983,33 @@ fn tui(
     }
 }
 
+/// What `gandr doc` writes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Pages
+{
+    /// A Markdown page per source and an index.
+    Markdown,
+    /// The HTML site.
+    Site,
+}
+
 /// Write the documentation of the sources under `path` into `out`, printing
-/// the path of each page written, and choose the exit code.
+/// the path of each file written, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: each source the walk reaches under `path`, in walk order, has its
-///   [`page`] written at its path relative to `path` — the file's own name when
-///   `path` is a file — under `out`, its extension `md`, and the page's path
-///   printed on standard output; then `index.md` under `out` holds [`index`] of
-///   the pages titled by `path`'s last component, and its path is printed. A
-///   source that cannot be read or paged, a page that cannot be written and a
-///   path naming no source are each `gandr: <path>: <why>` on standard error,
-///   and the run goes on past them. The exit is two when any of them happened,
-///   and zero otherwise.
+/// - ensures: each source the walk reaches under `path`, in walk order, is
+///   named by its path relative to `path`, the file's own name when `path` is a
+///   file. For [`Pages::Markdown`], each source has its [`page`] written at
+///   that name under `out`, its extension `md`, and the page's path printed on
+///   standard output; then `index.md` under `out` holds [`index`] of the pages
+///   titled by `path`'s last component, and its path is printed. For
+///   [`Pages::Site`], each source is read for the site, and then each file of
+///   [`site`] over them, titled the same, is written under `out` and its path
+///   printed, in the site's order. A source that cannot be read or paged, a
+///   file that cannot be written and a path naming no source are each `gandr:
+///   <path>: <why>` on standard error, and the run goes on past them. The exit
+///   is two when any of them happened, and zero otherwise.
 /// - provides: `gandr doc`.
 /// - fails: never; every failure is an exit code.
 /// - panics: none.
@@ -2981,20 +3017,30 @@ fn tui(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a package of two sources, one documented, writes its
-///   pages and its index at their paths, and a path naming no source exits two.
+///   Markdown pages and its index at their paths, and its site at its paths,
+///   and a path naming no source exits two.
 /// - witness: `tests::cli::doc_writes_a_page_per_source_and_an_index_4906`
+/// - witness: `tests::cli::doc_writes_an_html_site_4909`
 fn doc(
     path: &Path,
     out: &Path,
+    pages: Pages,
 ) -> ExitCode
 {
     let mut stdout = std::io::stdout().lock();
     let mut stderr = std::io::stderr().lock();
     let mut traversal = Traversal::new(Vec::from([path.to_path_buf()]));
-    let (mut entries, mut faulted) = (Vec::new(), false);
+    let (mut entries, mut sources, mut faulted) = (Vec::new(), Vec::new(), false);
     let mut fault = |stderr: &mut dyn std::io::Write, at: &Path, why: &dyn core::fmt::Display| {
         faulted = true;
         writeln!(stderr, "gandr: {}: {why}", at.display())
+    };
+    let write = |target: &Path, contents: &str| {
+        target
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| std::fs::write(target, contents))
+            .map_err(|error| error.to_string())
     };
     while let Maybe::Present(reached) = traversal.reach() {
         let source = traversal.path().to_path_buf();
@@ -3007,27 +3053,33 @@ fn doc(
                     .or_else(|| source.file_name().map(Path::new))
                     .unwrap_or(&source)
                     .to_path_buf();
-                let written = page(&source, &relative)
-                    .map_err(|unpaged| unpaged.to_string())
-                    .and_then(|paged| {
-                        let target = out.join(&relative).with_extension("md");
-                        target
-                            .parent()
-                            .map_or(Ok(()), std::fs::create_dir_all)
-                            .and_then(|()| std::fs::write(&target, &paged.markdown))
-                            .map(|()| (target, paged.summary))
-                            .map_err(|error| error.to_string())
-                    });
-                match written {
-                    Ok((target, summary)) => {
-                        entries.push(Entry {
-                            page: relative.with_extension("md"),
-                            source: relative,
-                            summary,
-                        });
-                        writeln!(stdout, "{}", target.display())
+                match pages {
+                    Pages::Markdown => {
+                        let written = page(&source, &relative)
+                            .map_err(|unpaged| unpaged.to_string())
+                            .and_then(|paged| {
+                                let target = out.join(&relative).with_extension("md");
+                                write(&target, &paged.markdown).map(|()| (target, paged.summary))
+                            });
+                        match written {
+                            Ok((target, summary)) => {
+                                entries.push(Entry {
+                                    page: relative.with_extension("md"),
+                                    source: relative,
+                                    summary,
+                                });
+                                writeln!(stdout, "{}", target.display())
+                            },
+                            Err(why) => fault(&mut stderr, &source, &why),
+                        }
                     },
-                    Err(why) => fault(&mut stderr, &source, &why),
+                    Pages::Site => match sourced(&source, relative) {
+                        Ok(read) => {
+                            sources.push(read);
+                            Ok(())
+                        },
+                        Err(unpaged) => fault(&mut stderr, &source, &unpaged),
+                    },
                 }
             },
             Reached::Unreadable(error) => fault(&mut stderr, &source, &error),
@@ -3042,14 +3094,24 @@ fn doc(
         .ok()
         .and_then(|canonical| canonical.file_name().map(PathBuf::from))
         .unwrap_or_else(|| path.to_path_buf());
-    let target = out.join("index.md");
-    let noted = match std::fs::create_dir_all(out)
-        .and_then(|()| std::fs::write(&target, index(&package, &entries)))
-    {
-        Ok(()) => writeln!(stdout, "{}", target.display()),
-        Err(error) => fault(&mut stderr, &target, &error),
+    let files = match pages {
+        Pages::Markdown => Vec::from([File {
+            path: PathBuf::from("index.md"),
+            contents: index(&package, &entries),
+        }]),
+        Pages::Site => site(&package, &sources),
     };
-    if noted.is_err() || faulted {
+    for file in files {
+        let target = out.join(&file.path);
+        let noted = match write(&target, &file.contents) {
+            Ok(()) => writeln!(stdout, "{}", target.display()),
+            Err(why) => fault(&mut stderr, &target, &why),
+        };
+        if noted.is_err() {
+            return ExitCode::from(FAULTED);
+        }
+    }
+    if faulted {
         return ExitCode::from(FAULTED);
     }
     ExitCode::SUCCESS

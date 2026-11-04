@@ -1,30 +1,31 @@
-//! A package's documentation as Markdown: one page per source, and an index
-//! naming each source by the first sentence of its own documentation.
+//! A package's documentation: one page per source, and an index naming each
+//! source by the first sentence of its own documentation, as Markdown or as
+//! the HTML site that [`site`](mod@crate::site) writes.
 //!
 //! # A page is the hover of each public declaration
 //!
-//! [`page`] judges a source laid out over its import closure, as an editor's
-//! copy is judged, and reads it as a hover does. The page opens with the
-//! source's path as its title and its own `//!` documentation. Then comes each
-//! public declaration the source writes, in source order, a declaration being
-//! public when `pub` is written before its head. Each has a heading naming it,
-//! then the block a hover on its name shows: the fenced `gandr` block with the
-//! name and its type, or the declaration as written for a theory or a module,
-//! then a refusal, a deprecation and the `///` documentation, each after a
-//! blank line, and a reference line per declaration the documentation links.
-//! Both come from one function, so a page and a hover never differ. A link
-//! leads to the file of the declaring source, not to another page.
-//! The types are spelled as the editor spells them by default: sugared, in
-//! Unicode.
+//! [`read`] judges a source laid out over its import closure, as an editor's
+//! copy is judged, and reads it as a hover does. It keeps the source's own
+//! `//!` documentation and each public declaration the source writes, in
+//! source order, a declaration being public when `pub` is written before its
+//! head. For each it keeps the block a hover on its name shows: the gandr
+//! block with the name and its type, or the declaration as written for a
+//! theory or a module, then a refusal, a deprecation and the `///`
+//! documentation, each after a blank line, and a reference line per
+//! declaration the documentation links. Both come from one function, so a
+//! page and a hover never differ. A link leads to the file of the declaring
+//! source, not to another page. The types are spelled as the editor spells
+//! them by default: sugared, in Unicode. The markup decides how the block is
+//! written: a fenced `gandr` block for [`page`], or coloured HTML for the
+//! site.
 //!
 //! The alternative was a printer of its own over the lowering's declarations:
 //! it would print each signature a second way, beside the hover's, and the two
 //! would drift. A page returns to its own printer when it shows what a hover
 //! does not, such as the body of a definition.
 //!
-//! [`index`] lists the pages under the package's name, each linked by its path
-//! beside its summary. Pages are Markdown alone, so the documentation needs no
-//! renderer; links between pages, doctests and an HTML site are later stages.
+//! [`page`] writes one source as Markdown, and [`index`] lists the pages under
+//! the package's name, each linked by its path beside its summary.
 
 use alloc::format;
 use alloc::string::String;
@@ -42,6 +43,8 @@ use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::lay_out_shadowed;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
+use gandr_surface_render_remote::ByteOffset;
+use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::ClosureSlot;
 use gandr_surface_session::Session;
@@ -53,17 +56,24 @@ use crate::hover::Style;
 use crate::hover::declared;
 use crate::hover::hovering_laid;
 use crate::markup::Markup;
+use crate::protocol::SymbolKind;
 use crate::reading::Reading;
 use crate::reading::Written;
 use crate::recheck::grammar;
 
 /// The style a page spells its types in: the editor's default, sugared and
-/// in Unicode, in Markdown.
-const PAGE: Style = Style {
-    form: Form::Sugared,
-    spelling: Spelling::Unicode,
-    markup: Markup::Markdown,
-};
+/// in Unicode, written in `markup`.
+///
+/// # Specification
+/// trivial.
+const fn style(markup: Markup) -> Style
+{
+    Style {
+        form: Form::Sugared,
+        spelling: Spelling::Unicode,
+        markup,
+    }
+}
 
 /// One source's documentation page.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -75,6 +85,51 @@ pub struct Page
     /// it has none.
     pub summary: String,
 }
+
+/// What the documentation of one source reads.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Source
+{
+    /// The source's own `//!` documentation, as written.
+    pub own: String,
+    /// The first sentence of the own documentation, or nothing when it has
+    /// none.
+    pub summary: String,
+    /// Each public declaration, in source order.
+    pub items: Vec<Item>,
+    /// The source's text.
+    pub text: String,
+    /// The highlighter's spans over the text, as the editor colours it.
+    pub spans: Vec<HlSpan>,
+}
+
+/// One public declaration of a source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Item
+{
+    /// Its name.
+    pub name: String,
+    /// What it declares.
+    pub kind: Kind,
+    /// The line its name is on.
+    pub line: Lineno,
+    /// The hover on its name, in the markup the source was read in.
+    pub shown: String,
+    /// The first sentence of its `///` documentation, or nothing when it has
+    /// none.
+    pub summary: String,
+}
+
+/// What a declaration declares, as the keyword names it: `theory`, `data`,
+/// `function` and so on.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Kind(pub &'static str);
+
+/// A one-based line of a source, as a reader counts it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Lineno(pub u32);
 
 /// One row of an index: where a source's page is, relative to the index, and
 /// its summary.
@@ -133,15 +188,12 @@ impl core::error::Error for Unpaged
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `# ` and `title` in backquotes; then the source's own
-///   documentation after a blank line when it has any; then, for each
-///   declaration a form of the source's own writes whose head `pub` precedes,
-///   in source order, a blank line, `## ` and its name in backquotes, a blank
-///   line, and the block the hover on its name shows in the sugared Unicode
-///   form; a final newline. The summary is [`summary`] of the own
-///   documentation, empty when it has none.
-/// - provides: one page of `gandr doc`.
-/// - fails: [`Unpaged`] when the source could not be read, the grammar did not
-///   build, the text did not parse, or the session faulted judging it.
+///   documentation after a blank line when it has any; then, for each item that
+///   [`read`] reads in markdown, a blank line, `## ` and its name in
+///   backquotes, a blank line, and the block the hover on its name shows; a
+///   final newline. The summary is the summary that [`read`] reads.
+/// - provides: one Markdown page of `gandr doc`.
+/// - fails: [`Unpaged`], as [`read`] fails.
 /// - panics: none.
 ///
 /// # Errors
@@ -158,6 +210,52 @@ pub fn page(
     path: &Path,
     title: &Path,
 ) -> Result<Page, Unpaged>
+{
+    let source = read(path, Markup::Markdown)?;
+    let mut markdown = format!("# `{}`\n", title.display());
+    if !source.own.is_empty() {
+        markdown.push('\n');
+        markdown.push_str(&source.own);
+        markdown.push('\n');
+    }
+    for item in &source.items {
+        let _written = write!(markdown, "\n## `{}`\n\n{}\n", item.name, item.shown);
+    }
+    Ok(Page {
+        markdown,
+        summary: source.summary,
+    })
+}
+
+/// The documentation of the source at `path`, each hover written in `markup`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the source's own documentation and its summary, [`summary`] of
+///   it; for each declaration a form of the source's own writes whose head
+///   `pub` precedes, in source order, an [`Item`] with its name, the keyword
+///   [`kind`] names, the one-based line of its name, the block the hover on its
+///   name shows in the sugared Unicode form in `markup`, and [`summary`] of its
+///   `///` documentation; the text and the highlighter's spans over it.
+/// - provides: what a Markdown page and a site page are written from.
+/// - fails: [`Unpaged`] when the source could not be read, the grammar did not
+///   build, the text did not parse, or the session faulted judging it.
+/// - panics: none.
+///
+/// # Errors
+/// [`Unpaged`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`page`], whose page is written from these items, and
+///   the site's witness, whose item pages are.
+/// - witness: `doc::tests::a_page_holds_each_public_declaration_s_hover`
+/// - witness: `site::tests::a_site_writes_each_page_the_search_and_the_source_view`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |source| source.items.iter().all(|item| item.line >= Lineno(1))))]
+#[inline]
+pub fn read(
+    path: &Path,
+    markup: Markup,
+) -> Result<Source, Unpaged>
 {
     let written =
         std::fs::read_to_string(path).map_err(|error| Unpaged::Unread(error.to_string()))?;
@@ -197,12 +295,7 @@ pub fn page(
     };
     let index = LineIndex::new(<&str>::from(text).into());
     let quoted = Quoted::new(text, &index, reading.spans());
-    let mut markdown = format!("# `{}`\n", title.display());
-    if !own.is_empty() {
-        markdown.push('\n');
-        markdown.push_str(&own);
-        markdown.push('\n');
-    }
+    let mut items = Vec::new();
     for declaration in declarations {
         let head = usize::from(declaration.head.start.byte(&index));
         let public = <&str>::from(text)
@@ -218,17 +311,66 @@ pub fn page(
             declaration,
             declaration.symbol.selection_range,
             &quoted,
-            PAGE,
+            style(markup),
         );
-        let _written = write!(
-            markdown,
-            "\n## `{}`\n\n{}\n",
-            declaration.symbol.name, shown.contents.value
-        );
+        let documented = declaration
+            .key
+            .and_then(|key| match session.documentation(key) {
+                Maybe::Present(text) => Some(summary(SourceText::from(text.as_ref()))),
+                Maybe::Absent(_) => None,
+            })
+            .unwrap_or_default();
+        items.push(Item {
+            name: declaration.symbol.name.clone(),
+            kind: kind(declaration.symbol.kind),
+            line: line_of(text, declaration.symbol.selection_range.start.byte(&index)),
+            shown: shown.contents.value,
+            summary: documented,
+        });
     }
-    Ok(Page {
+    Ok(Source {
         summary: summary(SourceText::from(own.as_str())),
-        markdown,
+        own,
+        items,
+        spans: reading.spans().to_vec(),
+        text: written,
+    })
+}
+
+/// The line of byte `at` in `text`.
+///
+/// # Specification
+/// trivial.
+fn line_of(
+    text: SourceText<'_>,
+    at: ByteOffset,
+) -> Lineno
+{
+    let before = <&str>::from(text)
+        .get(.. usize::from(at))
+        .unwrap_or_default();
+    Lineno(
+        u32::try_from(before.matches('\n').count())
+            .unwrap_or(u32::MAX)
+            .saturating_add(1),
+    )
+}
+
+/// What a declaration of `symbol` kind declares, as its keyword names it.
+///
+/// # Specification
+/// trivial.
+const fn kind(symbol: SymbolKind) -> Kind
+{
+    Kind(match symbol {
+        SymbolKind::PROPERTY => "law",
+        SymbolKind::FUNCTION => "function",
+        SymbolKind::VARIABLE => "value",
+        SymbolKind::CONSTANT => "world",
+        SymbolKind::MODULE => "module",
+        SymbolKind::INTERFACE => "theory",
+        SymbolKind::STRUCT => "codata",
+        _ => "data",
     })
 }
 
