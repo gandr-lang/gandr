@@ -243,7 +243,7 @@ impl fmt::Display for FragmentSort
 ///   by exact typed payloads. The fixtures do not enumerate every grammar form.
 /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
 /// - witness: `lower::native::tests::a_descent_claim_names_its_own_function_873`
-/// - witness: `lower::native::tests::an_indexed_generator_is_declined`
+/// - witness: `lower::native::tests::an_indexed_family_presents_no_rule_2865`
 /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
 /// - witness: `lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
@@ -1385,6 +1385,16 @@ pub enum LoweringRefusal<'source>
         fault: TelescopeFault,
     },
 
+    /// A generator whose result does not apply its family to the parameter
+    /// variables in order, then one term per index. Head uniformity makes
+    /// an instantiated parameter unwritable: a parameter that varies by
+    /// generator is an index of the family.
+    NonUniformResult
+    {
+        /// The bytes of the generator's result.
+        span: ByteSpan,
+    },
+
     /// An effect theory a world's requirement row names under no label: code
     /// at the world performs a theory through the capability its label binds,
     /// and the theory's own name performs nothing (#1106).
@@ -2277,6 +2287,10 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::FamilyTelescope { name, fault, .. } => {
                 write!(f, "the type member `{name}` {fault}")
             },
+            Self::NonUniformResult { .. } => f.write_str(
+                "this generator's result does not apply its family to the family's parameters, \
+                 then one term for each index",
+            ),
             Self::UnlabelledRequirement { name, .. } => write!(
                 f,
                 "the world requires the theory `{name}` under no label, so code at the world has \
@@ -2726,6 +2740,7 @@ impl LoweringRefusal<'_>
             | Self::UninterfacedMember { span, .. }
             | Self::UndescribedMember { span, .. }
             | Self::FamilyTelescope { span, .. }
+            | Self::NonUniformResult { span }
             | Self::UnlabelledRequirement { span, .. }
             | Self::UnfixedParameter { span, .. }
             | Self::ImplicitTelescope { span }
@@ -2837,7 +2852,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 79_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 80_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -3191,6 +3206,9 @@ mod tests
                 span: s(145_usize, 146_usize),
                 name: SurfaceName::from("count"),
             },
+            LoweringRefusal::NonUniformResult {
+                span: s(147_usize, 148_usize),
+            },
             LoweringRefusal::AmbiguousConstructor {
                 span: s(149_usize, 150_usize),
                 name: SurfaceName::from("Red"),
@@ -3287,6 +3305,7 @@ mod tests
             s(139_usize, 140_usize),
             s(143_usize, 144_usize),
             s(145_usize, 146_usize),
+            s(147_usize, 148_usize),
             s(149_usize, 150_usize),
         ];
 

@@ -648,6 +648,10 @@ fn lowered(
         LoweringRefusal::FamilyTelescope { name, fault, .. } => {
             write!(f, "the type member `{name}` {fault}")
         },
+        LoweringRefusal::NonUniformResult { .. } => f.write_str(
+            "this generator's result does not apply its family to the family's parameters, then \
+             one term for each index",
+        ),
         LoweringRefusal::UninterfacedMember { name, fault, .. } => write!(
             f,
             "the theory cannot stand as the interface its handler reads at `{name}`, which {fault}"
@@ -2110,6 +2114,7 @@ pub mod tests
                 name,
                 fault: TelescopeFault::Index(OperandCount::from(1_usize)),
             },
+            LoweringRefusal::NonUniformResult { span },
             LoweringRefusal::UninterfacedMember {
                 span,
                 name,

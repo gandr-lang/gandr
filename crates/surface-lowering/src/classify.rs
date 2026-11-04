@@ -272,6 +272,7 @@ impl LoweringRefusal<'_>
             | Self::NotATranslation { .. }
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
+            | Self::NonUniformResult { .. }
             | Self::UnlabelledRequirement { .. }
             | Self::UnfixedParameter { .. }
             | Self::ImplicitTelescope { .. }
@@ -350,6 +351,7 @@ impl LoweringRefusal<'_>
             | Self::NotATranslation { .. }
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
+            | Self::NonUniformResult { .. }
             | Self::UninterfacedMember { .. }
             | Self::UnlabelledRequirement { .. }
             | Self::UnfixedParameter { .. }
@@ -822,7 +824,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 81_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 82_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1160,6 +1162,7 @@ mod tests
                 second: SurfaceName::from("Light"),
                 more: crate::CandidateCount::from(0_usize),
             },
+            LoweringRefusal::NonUniformResult { span: empty },
         ]
     }
 
@@ -1246,6 +1249,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::PASTING_READING),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
         ];
