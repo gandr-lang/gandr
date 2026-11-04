@@ -22,7 +22,7 @@
 251..252 Other "("
 252..253 Other "("
 253..254 Other ")"
-255..257 Operator "=>"
+255..257 Operator "->"
 258..265 TypeBuiltin "Integer"
 265..266 Other ")"
 267..269 Keyword "at"

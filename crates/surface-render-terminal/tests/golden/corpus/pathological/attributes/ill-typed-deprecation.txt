@@ -10,7 +10,7 @@ error[IllTypedPayload]: the attribute `deprecated` takes no payload or a record 
 error[IllTypedPayload]: the attribute `deprecated` takes no payload or a record of the texts `since`, `note`, not a non-literal payload
    ╭▸ corpus/pathological/attributes/ill-typed-deprecation.gandr:12:15
    │
-12 │ @[ deprecated(#{reason = "replaced"}) ]
+12 │ @[ deprecated(*{reason = "replaced"}) ]
    │               ━━━━━━━━━━━━━━━━━━━━━━ a payload of another schema
    │
    ├ note: `foreign_field` is refused with IllTypedPayload, as its expectation states
@@ -19,7 +19,7 @@ error[IllTypedPayload]: the attribute `deprecated` takes no payload or a record 
 error[IllTypedPayload]: the attribute `deprecated` takes no payload or a record of the texts `since`, `note`, not a non-literal payload
    ╭▸ corpus/pathological/attributes/ill-typed-deprecation.gandr:17:15
    │
-17 │ @[ deprecated(#{since = 2}) ]
+17 │ @[ deprecated(*{since = 2}) ]
    │               ━━━━━━━━━━━━ a payload of another schema
    │
    ├ note: `untexted_field` is refused with IllTypedPayload, as its expectation states

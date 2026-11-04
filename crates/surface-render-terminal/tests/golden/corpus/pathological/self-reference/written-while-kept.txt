@@ -1,16 +1,15 @@
 error[HeldKept]: a shared view of this value is kept in a region whose scope is still running; an exclusive `access` waits until that scope ends
    ╭▸ corpus/pathological/self-reference/written-while-kept.gandr:12:3
    │
- 9 │ ┌ def writtenWhileKept() -> Integer {
-10 │ │   var s = 3;
+ 9 │ ┌ def writtenWhileKept() -> Integer =
+10 │ │   var s = 3
    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
-11 │ │   let k : (() => Integer) at s = access shared s as w { pure thunk { pure w } };
-   │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds k : (() => Integer) at s
+11 │ │   let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };
+   │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds k : (() -> Integer) at s
 12 │ │   access s as v { resume(v, 4) };
    │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
 13 │ │   force k
-14 │ │ }
-   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │ └─────────┘ checked against `() -> Integer`; while checking the body of this thunk
    │
    ├ note: `writtenWhileKept` is refused with HeldKept, as its expectation states
    ╰ help: write the value only after the scope that keeps its shared view ends

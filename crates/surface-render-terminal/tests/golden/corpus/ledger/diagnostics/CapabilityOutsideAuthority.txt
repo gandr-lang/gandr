@@ -1,14 +1,15 @@
 error[CapabilityOutsideAuthority]: the capability does not grant this operation
-   ╭▸ corpus/ledger/diagnostics/CapabilityOutsideAuthority.gandr:9:3
-   │
- 8 │   def save(c : Cap {read}) -> -F [std.fs.Eff] Unit {
-   │   │        ─ checked against `Cap {read} -> -F [std.fs.Eff] Unit`; while checking the body of this function; binds c : Cap {read}
-   │ ┌─┘
-   │ │
- 9 │ │   c.write("notes", "draft")
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━ an operation its capability withholds: found `Cap {read}`
-10 │ │ }
-   │ └─┘ checked against `+U (Cap {read} -> -F [std.fs.Eff] Unit)`; while checking the body of this thunk
-   │
-   ├ note: `save` is refused with CapabilityOutsideAuthority, as its expectation states
-   ╰ help: use an operation the capability grants
+  ╭▸ corpus/ledger/diagnostics/CapabilityOutsideAuthority.gandr:9:3
+  │
+8 │   def save(c : Cap {read}) -> -F [std.fs.Eff] Unit =
+  │   │        ─ checked against `Cap {read} -> -F [std.fs.Eff] Unit`; while checking the body of this function; binds c : Cap {read}
+  │ ┌─┘
+  │ │
+9 │ │   c.write "notes" "draft"
+  │ │   ┯━━━━━━━━━━━━━━━━━━━━━│
+  │ └───│─────────────────────┤
+  │     │                     checked against `+U (Cap {read} -> -F [std.fs.Eff] Unit)`; while checking the body of this thunk
+  │     an operation its capability withholds: found `Cap {read}`
+  │
+  ├ note: `save` is refused with CapabilityOutsideAuthority, as its expectation states
+  ╰ help: use an operation the capability grants

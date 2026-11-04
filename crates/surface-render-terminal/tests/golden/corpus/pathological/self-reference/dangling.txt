@@ -1,8 +1,8 @@
 error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
    ╭▸ corpus/pathological/self-reference/dangling.gandr:18:12
    │
-12 │ ┌   def dangling() -> Integer {
-13 │ │     var x = 5;
+12 │ ┌   def dangling() -> Integer =
+13 │ │     var x = 5
    │ │     ─── checked against `-F Integer`; while checking the scope of this hold
 14 │ │     let r : Integer = handle c : std.process.Exit.Eff {
    │ │┌────┬─────────────────┘
@@ -12,8 +12,8 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    │ ││┌─────┬───────┘
    │ │││     │
    │ │││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while synthesising the computation this binds
-16 │ │││       c.exit(1);
-   │ │││       ───────── synthesised; while checking the body of this split; binds _ : Unit
+16 │ │││       c.exit 1;
+   │ │││       ──────── synthesised; while checking the body of this split; binds _ : Unit
 17 │ │││       resume(v, v + 7);
    │ │││       ──────────────── synthesised; while checking the body of this split; binds _ : Unit
 18 │ │││       pure thunk { pure v }
@@ -24,12 +24,11 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
 19 │ │││     };
    │ ││└─────┘ synthesised; while checking the body of this access
    ┆ ┆┆
-23 │ ││      oper exit(code, k) => k(unit)
+23 │ ││      | oper exit(code, k) => k *{}
 24 │ ││    };
    │ │└────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
 25 │ │     pure x
-26 │ │   }
-   │ └───┘ checked against `() => Integer`; while checking the body of this thunk
+   │ └──────────┘ checked against `() -> Integer`; while checking the body of this thunk
    │
    ├ note: `dangling` is refused with ViewEscaped, as its expectation states
    ╰ help: use the view outside a thunk, or open the `access` inside it

@@ -1,11 +1,12 @@
 error[Immobile]: this value crosses to another world, but its type is not mobile
    ╭▸ corpus/ledger/diagnostics/Immobile.gandr:21:3
    │
-20 │ ┌ def unmarkedBack() -> Seat.Dispatch {
+20 │ ┌ def unmarkedBack() -> Seat.Dispatch =
 21 │ │   migrate [seat] { pure Seat.task }
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a value whose type holds a former that is not mobile: found `Seat.Dispatch`
-22 │ │ }
-   │ └─┘ checked against `() => Seat.Dispatch`; while checking the body of this thunk
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│───────────────────────────────┤
+   │     │                               checked against `() -> Seat.Dispatch`; while checking the body of this thunk
+   │     a value whose type holds a former that is not mobile: found `Seat.Dispatch`
    │
    ├ note: `unmarkedBack` is refused with Immobile, as its expectation states
    ╰ help: return data or a handle from the migration, or mark the abstract type `mobile` in its signature

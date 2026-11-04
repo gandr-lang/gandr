@@ -1,7 +1,7 @@
 0..6 Keyword "module"
 7..14 Type "Counter"
 15..17 Operator ":>"
-18..20 Other "#{"
+18..20 Other "*{"
 21..25 Keyword "type"
 26..27 Type "T"
 27..28 Other ","

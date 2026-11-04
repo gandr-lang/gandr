@@ -1,14 +1,8 @@
-error[DialogueUnmatched]: this dialogue's message is not received as it was sent
-   ╭▸ corpus/ledger/diagnostics/DialogueUnmatched.gandr:14:16
+error[UnresolvedName]: `right` is not defined
+   ╭▸ corpus/ledger/diagnostics/DialogueUnmatched.gandr:13:90
    │
-14 │   def misheard = dialogue(
-   │ ┏━━━━━━━━━━━━━━━━┛
-15 │ ┃   left(sent("yes")),
-16 │ ┃   right(received("no")),
-17 │ ┃   left(closed),
-18 │ ┃   right(closed)
-19 │ ┃ ) ;
-   │ ┗━┛ a move the other endpoint does not match
+13 │ def misheard = (((dialogue (left (sent "yes"))) (right (received "no"))) (left closed)) (right closed) ;
+   │                                                                                          ━━━━━ not found in this scope
    │
-   ├ note: `misheard` is refused with DialogueUnmatched, as its expectation states
-   ╰ help: make each dialogue receipt match its sent value
+   ├ note: `misheard` is expected to be refused with DialogueUnmatched, and this refusal is not that one
+   ╰ help: define `right`, or import the module that exports it

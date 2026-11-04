@@ -4,7 +4,7 @@ error[ImportShadows]: `Circle` is bound by an import and again in this source
  9 │ import "../../model/identity/circle-base.gandr";
    │ ──────────────────────────────────────────────── first written here
    ┆
-13 │ data Circle : Type where {
+13 │ data Circle : Type where
    │      ━━━━━━ bound here and by an import
    │
    ├ note: `Circle` is refused with ImportShadows, as its expectation states

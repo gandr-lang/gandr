@@ -1,16 +1,16 @@
 error[MalformedForm]: a keyword or symbol of this def value is out of place
-   ╭▸ corpus/pathological/desc/shaped-signature.gandr:37:3
+   ╭▸ corpus/pathological/desc/shaped-signature.gandr:34:3
    │
-37 │   boundary Line { a, b };
+34 │   boundary Line { a, b };
    │   ━━━━━━━━━━━━━━━━━━━━━━ out of place
    │
    ├ note: `TwoBoundaries` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the def value
 
 error[MalformedForm]: this keyword is retired here, and `boundary` replaces it
-   ╭▸ corpus/pathological/desc/shaped-signature.gandr:45:3
+   ╭▸ corpus/pathological/desc/shaped-signature.gandr:41:3
    │
-45 │   shape Square : 4 { left = {0, 2}; };
+41 │   shape Square : 4 { left = {0, 2}; };
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a retired keyword
    │
    ├ note: `Retired` is refused with MalformedForm, as its expectation states
@@ -26,23 +26,22 @@ error[IllFormedDescription]: the face `far` holds a name the boundary `Square` d
    ╰ help: put in the face only names that the boundary lists
 
 error[IllFormedDescription]: the boundary `Square` names the face `left` twice
-   ╭▸ corpus/pathological/desc/shaped-signature.gandr:18:1
+   ╭▸ corpus/pathological/desc/shaped-signature.gandr:17:1
    │
-18 │ ┏ theory Twice where {
-19 │ ┃   boundary Square { a, b, c, d };
-20 │ ┃   face left = {a, c};
-21 │ ┃   face left = {b, d};
-22 │ ┃   sort Cell : Type;
-23 │ ┃ }
-   │ ┗━┛ what the description check refuses
+17 │ ┏ theory Twice where
+18 │ ┃   boundary Square { a, b, c, d };
+19 │ ┃   face left = {a, c};
+20 │ ┃   face left = {b, d};
+21 │ ┃   sort Cell : Type;
+   │ ┗━━━━━━━━━━━━━━━━━━━┛ what the description check refuses
    │
    ├ note: `Twice` is refused with IllFormedDescription, as its expectation states
    ╰ help: give each face of the boundary its own name
 
 error[DuplicateDefinition]: `b` is defined twice
-   ╭▸ corpus/pathological/desc/shaped-signature.gandr:29:25
+   ╭▸ corpus/pathological/desc/shaped-signature.gandr:27:25
    │
-29 │   boundary Line { a, b, b };
+27 │   boundary Line { a, b, b };
    │                      ┬  ━ written again here
    │                      │
    │                      first written here

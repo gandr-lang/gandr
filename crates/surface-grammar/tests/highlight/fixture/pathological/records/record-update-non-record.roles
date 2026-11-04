@@ -19,7 +19,7 @@
 299..302 Keyword "def"
 303..310 FunctionDef "updated"
 311..312 Other "="
-313..315 Other "#{"
+313..315 Other "*{"
 315..316 Variable "n"
 317..318 Operator "|"
 319..320 Member "x"

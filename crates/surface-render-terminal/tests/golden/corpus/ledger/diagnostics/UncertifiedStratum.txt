@@ -1,11 +1,20 @@
-error[UncertifiedStratum]: `equiv` needs each list cell's round trip to return the cell, its tail unread
-   ╭▸ corpus/ledger/diagnostics/UncertifiedStratum.gandr:58:17
+error[OutOfFragment.Arity]: the call expression cannot take 1 operands
+   ╭▸ corpus/ledger/diagnostics/UncertifiedStratum.gandr:29:13
    │
-53 │ def emptied(xs : List(Bool)) -> -F List(Bool) {
+29 │ def both = (cons (+{.0 = *{}})) (cons (+{.1 = *{}}) nil) ;
+   │             ━━━━━━━━━━━━━━━━━━ the wrong number of operands
+   │
+   ├ note: `both` is expected to run to cons +{.0 = *{}} (cons +{.1 = *{}} nil), and this refusal leaves it unsettled
+   ╰ help: give the form its declared number of operands
+
+error[UncertifiedStratum]: `equiv` needs each list cell's round trip to return the cell, its tail unread
+   ╭▸ corpus/ledger/diagnostics/UncertifiedStratum.gandr:50:17
+   │
+46 │ def emptied(xs : List(Bool)) -> -F List(Bool) =
    │                  ────────── the type it synthesises
    ┆
-58 │ def collapsed = equiv(emptied, keep) ;
-   │                 ━━━━━━━━━━━━━━━━━━━━ a list cell its round trip does not return: found `List(Bool)`
+50 │ def collapsed = equiv emptied keep ;
+   │                 ━━━━━━━━━━━━━━━━━━ a list cell its round trip does not return: found `List(Bool)`
    │
    ├ note: `collapsed` is refused with UncertifiedStratum, as its expectation states
    ╰ note: tracked by #524 <https://github.com/gandr-lang/gandr/issues/524>

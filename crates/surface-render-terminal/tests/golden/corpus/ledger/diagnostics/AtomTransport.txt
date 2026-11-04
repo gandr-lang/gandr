@@ -1,8 +1,8 @@
 error[AtomTransport]: this abstract type's identity attribute names no transport law, so its relation cannot stand for its identity
    ╭▸ corpus/ledger/diagnostics/AtomTransport.gandr:15:20
    │
-15 │ def origin_other = unit ;
-   │                    ━━━━ an identity of an atom stating no transport law
+15 │ def origin_other = *{} ;
+   │                    ━━━ an identity of an atom stating no transport law
    │
    ├ note: `origin_other` is refused with AtomTransport, as its expectation states
    ╰ help: add a transport law to the abstract type's identity attribute

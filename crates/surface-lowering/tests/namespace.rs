@@ -2243,7 +2243,7 @@ fn an_include_reads_the_theories_its_source_imports_1224()
         &mut Decisions::none(),
     )
     .expect("the unit lowers");
-    assert_eq!(resumed, whole, "the module the whole *{} lowers to");
+    assert_eq!(resumed, whole, "the module the whole unit lowers to");
 }
 
 /// #776: a unit is lowered a source at a time, so a source lowers to the same
@@ -2532,7 +2532,7 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
         let resumed = closure
             .resume(&joined, &unit, &mut arena, &mut Decisions::none())
             .expect("the unit lowers resumed");
-        assert_eq!(resumed, whole, "the module the whole *{} lowers to");
+        assert_eq!(resumed, whole, "the module the whole unit lowers to");
         assert_eq!(arena, whole_arena, "the arena the whole unit mints");
     }
     let tree = parsed(&pbg, SourceText::from(text.as_str()));
@@ -2786,7 +2786,7 @@ fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_w
                 "`{name:?}`'s model plans"
             );
         }
-        assert_eq!(resumed, whole, "the module the whole *{} lowers to");
+        assert_eq!(resumed, whole, "the module the whole unit lowers to");
     }
 }
 

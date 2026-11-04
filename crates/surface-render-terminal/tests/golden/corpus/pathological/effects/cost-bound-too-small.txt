@@ -1,10 +1,39 @@
-error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/effects/cost-bound-too-small.gandr:36:75
+error[MalformedForm]: a keyword or symbol of this F type is out of place
+   ╭▸ corpus/pathological/effects/cost-bound-too-small.gandr:19:29
    │
-36 │ def boundTwo : Path(Count.le(countOf(countedSteps()), (2 : Nat)), true) = Path.here(true);
-   │                     ┬───────────────────────────────────────────  ┬───    ━━━━━━━━━━━━━━━ not both endpoints of the path
-   │                     │                                             │
-   │                     │                                             an endpoint the point does not convert to
+19 │ def threeSteps() -> [cost : Cost.Eff with sort N = Nat -> Nat] Integer =
+   │                             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ out of place
+   │
+   ├ note: `threeSteps` is expected to check, and this refusal leaves it unsettled
+   ╰ help: move the keyword or symbol to its place in the F type
+
+note[UnknownConstant]: this names a declaration whose type is not known
+   ╭▸ corpus/pathological/effects/cost-bound-too-small.gandr:27:19
+   │
+25 │ ┌  def countedSteps() -> (Nat -> Nat) -> Nat =
+26 │ │┌   handle cost : Cost.Eff with sort N = Nat -> Nat {
+27 │ ││     let _answer = threeSteps ();
+   │ ││     ┬──           ┯━━━━━━━━━───
+   │ ││     │             │
+   │ ││     │             no declaration with a type
+   │ ││     │             synthesised; while forcing this
+   │ ││     checked against `-F [Cost.Eff, cost : Cost.Eff] ((Nat -> Nat) -> Nat)`; while synthesising the computation this runs where a value is read
+28 │ ││     pure counted
+29 │ ││   } with Counting
+   │ ││                 │
+   │ └│─────────────────│
+   │  └─────────────────checked against `() -> ((Nat -> Nat) -> Nat)`; while checking the body of this thunk
+   │                    checked against `-F ((Nat -> Nat) -> Nat)`; while checking the subject of this scope under its capability; binds cost : Cap {charge}
+   │
+   ╰ note: `countedSteps` is expected to check, and the refusal of `threeSteps` leaves it unsettled
+
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/effects/cost-bound-too-small.gandr:34:77
+   │
+34 │ def boundTwo : Path(Count.le (countOf (countedSteps ())) (2 : Nat), true) = Path.here true;
+   │                     ┬─────────────────────────────────────────────  ┬───    ━━━━━━━━━━━━━━ not both endpoints of the path
+   │                     │                                               │
+   │                     │                                               an endpoint the point does not convert to
    │                     an endpoint the point does not convert to
    │
    ├ note: `boundTwo` is refused with EndpointMismatch, as its expectation states

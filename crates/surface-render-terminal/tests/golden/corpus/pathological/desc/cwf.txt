@@ -46,8 +46,8 @@ error[UndescribedMember.NestedOperation]: this member rewrites a term with an op
 error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
    ╭▸ corpus/pathological/desc/cwf.gandr:28:3
    │
-28 │   rule tmId : subTm(t, id(g)) ==> t;
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
+28 │   rule tmId : subTm t (id g) ==> t;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
    │
    ├ note: `CwFTermIdentity` is refused with UndescribedMember.NestedOperation, as its expectation states
    ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>

@@ -1,14 +1,15 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-  ╭▸ corpus/pathological/identity/compound-endpoint-body-mismatch.gandr:7:3
+  ╭▸ corpus/pathological/identity/compound-endpoint-body-mismatch.gandr:6:3
   │
-6 │   def refuted(x : Integer) -> Path(dbl(x), x) {
-  │   │           ─ checked against `(a : Integer) -> -F Path[.A = Integer](dbl(a), a)`; while checking the body of this function; binds x : Integer
+5 │   def refuted(x : Integer) -> Path(dbl x, x) =
+  │   │           ─ checked against `(a : Integer) -> -F Path[.A = Integer](dbl a, a)`; while checking the body of this function; binds x : Integer
   │ ┌─┘
   │ │
-7 │ │   5
-  │ │   ━ its type does not convert: expected `Path[.A = Integer](dbl(x), x)`, found `Integer`
-8 │ │ }
-  │ └─┘ checked against `(a : Integer) => Path[.A = Integer](dbl(a), a)`; while checking the body of this thunk
+6 │ │   5
+  │ │   ┯
+  │ │   │
+  │ └───its type does not convert: expected `Path[.A = Integer](dbl x, x)`, found `Integer`
+  │     checked against `(a : Integer) -> Path[.A = Integer](dbl a, a)`; while checking the body of this thunk
   │
   ├ note: `refuted` is refused with TypeMismatch, as its expectation states
   ╰ help: change the term or the type it is checked against, so that the two types agree

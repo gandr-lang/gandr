@@ -1,8 +1,8 @@
 error[ModelUnanswered]: no module in scope answers the model implicit `p` this call to `pointOf` omits at `Integer`; supply one as `pointOf[p = …](…)`
-   ╭▸ corpus/ledger/diagnostics/ModelUnanswered.gandr:15:31
+   ╭▸ corpus/ledger/diagnostics/ModelUnanswered.gandr:14:31
    │
-15 │ def unanswered() -> Integer { pointOf(3) }
-   │                               ━━━━━━━━━━ a model implicit no module answers: found `Integer`
+14 │ def unanswered() -> Integer { pointOf 3 }
+   │                               ━━━━━━━━━ a model implicit no module answers: found `Integer`
    │
    ├ note: `unanswered` is refused with ModelUnanswered, as its expectation states
    ╰ help: declare a module that is a model of the theory at these types, or supply one by name in brackets

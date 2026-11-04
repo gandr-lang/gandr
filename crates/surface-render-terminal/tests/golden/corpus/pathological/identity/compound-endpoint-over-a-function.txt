@@ -1,15 +1,21 @@
-error[CompoundEndpoint]: a path endpoint must compute a value without effects
-  ╭▸ corpus/pathological/identity/compound-endpoint-over-a-function.gandr:6:34
+error[OutOfFragment.WrongSort]: an F type cannot stand where a value type is expected
+  ╭▸ corpus/pathological/identity/compound-endpoint-over-a-function.gandr:1:43
   │
-1 │ def constantly(x : Integer) -> Integer -> -F Integer {
-  │                                ───────────────────── the type it synthesises
-  ┆
-6 │ def refuted(x : Integer) -> Path(constantly(x), x) {
-  │             ┬               ┬────┯━━━━━━━━━━━━────
+1 │ def constantly(x : Integer) -> Integer -> -F Integer =
+  │                                           ━━━━━━━━━━ a form of another sort than this position takes
+  │
+  ├ note: `constantly` is expected to check, and this refusal leaves it unsettled
+  ╰ help: write a value type in this position
+
+note[UnknownConstant]: this names a declaration whose type is not known
+  ╭▸ corpus/pathological/identity/compound-endpoint-over-a-function.gandr:5:34
+  │
+5 │ def refuted(x : Integer) -> Path(constantly x, x) =
+  │             ┬               ┬────┯━━━━━━━━━──────
   │             │               │    │
-  │             │               │    an endpoint that returns no pure value: found `Integer -> -F Integer`
+  │             │               │    no declaration with a type
+  │             │               │    checked against `?`; while synthesising the function this applies
   │             │               formed; while checking the remaining parts of this
   │             formed; while forming this type under its binder; binds x : Integer
   │
-  ├ note: `refuted` is refused with CompoundEndpoint, as its expectation states
-  ╰ help: return a value without effects from the path endpoint
+  ╰ note: `refuted` is expected to be refused with CompoundEndpoint, and this refusal is not that one; it rests on `constantly`, which is refused

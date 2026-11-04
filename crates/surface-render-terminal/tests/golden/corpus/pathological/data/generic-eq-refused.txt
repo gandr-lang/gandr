@@ -1,16 +1,16 @@
 error[GenericUncovered]: `Eq.generic` derives no equality for `Shape`: field 0 of constructor 0 has no equality the program decides: a function, a universe, a path, a list or a float
-   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:40:26
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:35:26
    │
-40 │ def eqShape = Eq.generic(Shape);
+35 │ def eqShape = Eq.generic Shape;
    │                          ━━━━━ a type with no derived equality
    │
    ├ note: `eqShape` is refused with GenericUncovered, as its expectation states
    ╰ help: write an equality function for the datatype
 
 error[GenericUncovered]: `Eq.generic` derives no equality for `Box`: it takes parameters or indices
-   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:44:24
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:39:24
    │
-44 │ def eqBox = Eq.generic(Box);
+39 │ def eqBox = Eq.generic Box;
    │                        ━━━ a type with no derived equality
    │
    ├ note: `eqBox` is refused with GenericUncovered, as its expectation states
@@ -18,49 +18,48 @@ error[GenericUncovered]: `Eq.generic` derives no equality for `Box`: it takes pa
    ╰ help: write an equality function for the datatype
 
 error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, applied to one data type: `def eq = Eq.generic(T)`
-   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:48:24
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:43:26
    │
-48 │ def inside() -> Bool { Eq.generic(Point)(Point(1, 2), Point(1, 2)) }
-   │                        ━━━━━━━━━━━━━━━━━ a generic program read off its place
+43 │ def inside() -> Bool { ((Eq.generic Point) (Point 1 2)) (Point 1 2) }
+   │                          ━━━━━━━━━━━━━━━━ a generic program read off its place
    │
    ├ note: `inside` is refused with GenericMisplaced, as its expectation states
    ╰ help: write `Eq.generic(T)` as a definition's whole body
 
 error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, applied to one data type: `def eq = Eq.generic(T)`
-   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:52:17
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:47:17
    │
-52 │ def eqInteger = Eq.generic(Integer);
-   │                 ━━━━━━━━━━━━━━━━━━━ a generic program read off its place
+47 │ def eqInteger = Eq.generic (Integer);
+   │                 ━━━━━━━━━━━━━━━━━━━━ a generic program read off its place
    │
    ├ note: `eqInteger` is refused with GenericMisplaced, as its expectation states
    ╰ help: write `Eq.generic(T)` as a definition's whole body
 
 error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, applied to one data type: `def eq = Eq.generic(T)`
-   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:56:12
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:51:12
    │
-56 │ def bare = Eq.generic;
+51 │ def bare = Eq.generic;
    │            ━━━━━━━━━━ a generic program read off its place
    │
    ├ note: `bare` is refused with GenericMisplaced, as its expectation states
    ╰ help: write `Eq.generic(T)` as a definition's whole body
 
-error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:60:15
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:55:15
    │
-60 │ def eqWrong : (Point, Point) => Integer = Eq.generic(Point);
-   │               ┬────────────────────────   ───────────────── checked against `(Point, Point) => Integer`; while checking the body of this thunk
+55 │ def eqWrong : *{Point, Point} -> Integer = Eq.generic Point;
+   │               ┬─────────────────────────   ──────────────── checked against `Point * Point -> Integer`; while checking the body of this thunk
    │               │
-   │               the type it is checked against
+   │               the type met, where an arrow `A → C` is required
    │
-   ├ note: while checking the body of this function; binds _ : (Point, Point) => Integer, _ : Point, _ : Point
-   ├ note: while comparing the type this synthesises with the one it is checked against
-   ├ note: `eqWrong` is refused with TypeMismatch, as its expectation states
-   ╰ help: change the term or the type it is checked against, so that the two types agree
+   ├ note: while checking the body of this function; binds _ : Point * Point -> Integer, _ : Point * Point
+   ├ note: `eqWrong` is expected to be refused with TypeMismatch, and this refusal is not that one
+   ╰ help: change the term or the type it is checked against, so that the type has the required shape
 
 error[GenericUncovered.Dependent]: `Eq.generic` derives no equality for `Flagged`: field 1 of constructor 0 is a sum or a tuple, whose law cases on it under a motive core's case does not carry (#2374)
-   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:64:35
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:59:35
    │
-64 │ def reflFlagged = Eq.generic.refl(Flagged);
+59 │ def reflFlagged = Eq.generic.refl Flagged;
    │                                   ━━━━━━━ a type with no derived equality
    │
    ├ note: `reflFlagged` is refused with GenericUncovered.Dependent, as its expectation states
@@ -68,9 +67,9 @@ error[GenericUncovered.Dependent]: `Eq.generic` derives no equality for `Flagged
    ╰ help: write an equality function for the datatype
 
 error[GenericUncovered.Dependent]: `Eq.generic` derives no equality for `Flagged`: field 1 of constructor 0 is a sum or a tuple, whose law cases on it under a motive core's case does not carry (#2374)
-   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:68:33
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:63:33
    │
-68 │ def symFlagged = Eq.generic.sym(Flagged);
+63 │ def symFlagged = Eq.generic.sym Flagged;
    │                                 ━━━━━━━ a type with no derived equality
    │
    ├ note: `symFlagged` is refused with GenericUncovered.Dependent, as its expectation states
@@ -78,9 +77,9 @@ error[GenericUncovered.Dependent]: `Eq.generic` derives no equality for `Flagged
    ╰ help: write an equality function for the datatype
 
 error[GenericUncovered]: `Eq.generic` derives no equality for `Peano`: field 0 of constructor 1 holds the type itself, whose law is an induction the derivation does not write
-   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:72:33
+   ╭▸ corpus/pathological/data/generic-eq-refused.gandr:67:33
    │
-72 │ def reflPeano = Eq.generic.refl(Peano);
+67 │ def reflPeano = Eq.generic.refl Peano;
    │                                 ━━━━━ a type with no derived equality
    │
    ├ note: `reflPeano` is refused with GenericUncovered, as its expectation states

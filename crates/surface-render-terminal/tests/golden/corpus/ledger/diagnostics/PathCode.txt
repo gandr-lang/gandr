@@ -1,11 +1,8 @@
-error[PathCode]: a universe path needs a quoted, closed, first-order code at each end
-  ╭▸ corpus/ledger/diagnostics/PathCode.gandr:4:38
+error[OutOfFragment.Arity]: the call expression cannot take 1 operands
+  ╭▸ corpus/ledger/diagnostics/PathCode.gandr:4:16
   │
-4 │ def thunked = Path.product(Path.here(+U (-F Integer)), Path.here(Unit)) ;
-  │               ┬──────────────────────┯━━━━━━━━━━━━━━───────────────────
-  │               │                      │
-  │               │                      not a quoted closed first-order code
-  │               checked against `Path[.A = Type]((() => Integer) * Unit, (() => Integer) * Unit)`; while synthesising the first path of this product
+4 │ def thunked = (Path.product (Path.here (+U (-F Integer)))) (Path.here (Unit)) ;
+  │                ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
   │
-  ├ note: `thunked` is refused with PathCode, as its expectation states
-  ╰ help: use a quoted closed first-order code at each end
+  ├ note: `thunked` is expected to be refused with PathCode, and this refusal is not that one
+  ╰ help: give the form its declared number of operands

@@ -1,12 +1,12 @@
-error[Undecided]: the checker could not decide what this code unfolds to
-   ╭▸ corpus/ledger/diagnostics/Undecided.gandr:36:16
+error[OutOfFragment.Arity]: the call expression cannot take 3 operands
+   ╭▸ corpus/ledger/diagnostics/Undecided.gandr:30:16
    │
-36 │   def compared = ua[
-   │ ┌────────────────┘
-37 │ │   1,
-38 │ │   4
-39 │ │ ](Magma, Magma, #{.mul = measured, .one = keep}, #{.mul = measured, .one = keep}) ;
-   │ └─────────────────────────────────────────────────────────────────────────────────┘ synthesised; while checking the translators of this univalence against their corollas
+30 │   def compared = ua[
+   │ ┏━━━━━━━━━━━━━━━━┛
+31 │ ┃   1,
+32 │ ┃   4
+33 │ ┃ ] Magma (Magma (*{.mul = measured, .one = keep})) (*{.mul = measured, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the wrong number of operands
    │
-   ├ note: `compared` is refused with Undecided, as its expectation states
-   ╰ help: write code whose unfolding the checker can decide
+   ├ note: `compared` is expected to be refused with Undecided, and this refusal is not that one
+   ╰ help: give the form its declared number of operands

@@ -2,42 +2,44 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╭▸ corpus/pathological/data/stuck-beside-call.gandr:18:3
    │
 14 │   def walkTwiceOvershot(b : Nat, c1 : Nat, c2 : Nat) -> Path(
-   │   │                     ┬        ┬─        ── checked against `(a : Nat) -> -F Path[.A = Nat](walk(Succ(walk(b, c1)), a), Succ(walk(walk(b, c1), succ(succ(a)))))`; while checking the body of this function; binds c2 : Nat
+   │   │                     ┬        ┬─        ── checked against `(a : Nat) -> -F Path[.A = Nat](walk (Succ (walk b c1)) a, Succ (walk (walk b c1) (succ (succ a))))`; while checking the body of this function; binds c2 : Nat
    │   │                     │        │
    │   │                     │        checked; while checking the body of this function; binds c1 : Nat
    │ ┌─┘                     checked; while checking the body of this function; binds b : Nat
    │ │
-15 │ │   walk(Succ(walk(b, c1)), c2),
-   │ │   ─────────────────────────── an endpoint the point does not convert to
-16 │ │   Succ(walk(walk(b, c1), succ(succ(c2))))
-   │ │   ─────────────────────────────────────── an endpoint the point does not convert to
-17 │ │ ) {
-18 │ │   Path.here(Succ(walk(walk(b, c1), succ(succ(c2)))))
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
-19 │ │ }
-   │ └─┘ checked; while checking the body of this thunk
+15 │ │   walk (Succ (walk b c1)) c2,
+   │ │   ────────────────────────── an endpoint the point does not convert to
+16 │ │   Succ ((walk (walk b c1)) (succ (succ c2)))
+   │ │   ────────────────────────────────────────── an endpoint the point does not convert to
+17 │ │ ) =
+18 │ │   Path.here (Succ ((walk (walk b c1)) (succ (succ c2))))
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│────────────────────────────────────────────────────┤
+   │     │                                                    checked; while checking the body of this thunk
+   │     not both endpoints of the path
    │
    ├ note: `walkTwiceOvershot` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/data/stuck-beside-call.gandr:27:3
+   ╭▸ corpus/pathological/data/stuck-beside-call.gandr:26:3
    │
-23 │   def walkTwiceInner(b : Nat, c1 : Nat, c2 : Nat) -> Path(
-   │   │                  ┬        ┬─        ── checked against `(a : Nat) -> -F Path[.A = Nat](walk(Succ(walk(b, c1)), a), Succ(walk(walk(b, succ(c1)), succ(a))))`; while checking the body of this function; binds c2 : Nat
+22 │   def walkTwiceInner(b : Nat, c1 : Nat, c2 : Nat) -> Path(
+   │   │                  ┬        ┬─        ── checked against `(a : Nat) -> -F Path[.A = Nat](walk (Succ (walk b c1)) a, Succ (walk (walk b (succ c1)) (succ a)))`; while checking the body of this function; binds c2 : Nat
    │   │                  │        │
    │   │                  │        checked; while checking the body of this function; binds c1 : Nat
    │ ┌─┘                  checked; while checking the body of this function; binds b : Nat
    │ │
-24 │ │   walk(Succ(walk(b, c1)), c2),
-   │ │   ─────────────────────────── an endpoint the point does not convert to
-25 │ │   Succ(walk(walk(b, succ(c1)), succ(c2)))
-   │ │   ─────────────────────────────────────── an endpoint the point does not convert to
-26 │ │ ) {
-27 │ │   Path.here(Succ(walk(walk(b, succ(c1)), succ(c2))))
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
-28 │ │ }
-   │ └─┘ checked; while checking the body of this thunk
+23 │ │   walk (Succ (walk b c1)) c2,
+   │ │   ────────────────────────── an endpoint the point does not convert to
+24 │ │   Succ ((walk (walk b (succ c1))) (succ c2))
+   │ │   ────────────────────────────────────────── an endpoint the point does not convert to
+25 │ │ ) =
+26 │ │   Path.here (Succ ((walk (walk b (succ c1))) (succ c2)))
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│────────────────────────────────────────────────────┤
+   │     │                                                    checked; while checking the body of this thunk
+   │     not both endpoints of the path
    │
    ├ note: `walkTwiceInner` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints

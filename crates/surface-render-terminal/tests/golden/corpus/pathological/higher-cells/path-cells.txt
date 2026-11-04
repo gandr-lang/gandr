@@ -1,29 +1,29 @@
 error[NoFiller.Omitted]: the module omits this law, and its sides do not convert, so nothing discharges it
-   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:65:1
+   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:60:1
    │
-65 │ ┏ module Unwitnessed : Model(Glob) where {
-66 │ ┃   /// The one object.
-67 │ ┃   type Ob = One;
-68 │ ┃   /// The numbers, each a cell from the object to itself.
+60 │ ┏ module Unwitnessed : Model(Glob) where
+61 │ ┃   /// The one object.
+62 │ ┃   type Ob = One;
+63 │ ┃   /// The numbers, each a cell from the object to itself.
    ┆ ┇
-75 │ ┃   def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat { plus(f, g) }
-76 │ ┃ }
-   │ ┗━┛ a law whose sides do not convert
+69 │ ┃   /// Addition, the composite.
+70 │ ┃   def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat { plus f g }
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a law whose sides do not convert
    │
    ├ note: `assoc` is refused with NoFiller.Omitted, as its expectation states
    ╰ help: prove the law by a definition at its type, or admit it where the host asserts it
 
 error[HandlerUnlawful]: this handler is not shown to satisfy the law `putSkip` of the theory it handles
-    ╭▸ corpus/pathological/higher-cells/path-cells.gandr:96:3
-    │
- 96 │ ┏   handle st : Skipping with sort S = Integer {
- 97 │ ┃     st.put(1);
- 98 │ ┃     let a = st.get();
- 99 │ ┃     pure a
-    ┆ ┇
-103 │ ┃     oper put(s, k) => pure 9
-104 │ ┃   }
-    │ ┗━━━┛ not shown to satisfy a law of its theory
-    │
-    ├ note: `discarding` is refused with HandlerUnlawful, as its expectation states
-    ╰ help: change the handler's clauses so that they satisfy the law
+   ╭▸ corpus/pathological/higher-cells/path-cells.gandr:89:3
+   │
+89 │ ┏   handle st : Skipping with sort S = Integer {
+90 │ ┃     st.put 1;
+91 │ ┃     let a = st.get ();
+92 │ ┃     pure a
+   ┆ ┇
+96 │ ┃     | oper put(s, k) => pure 9
+97 │ ┃   }
+   │ ┗━━━┛ not shown to satisfy a law of its theory
+   │
+   ├ note: `discarding` is refused with HandlerUnlawful, as its expectation states
+   ╰ help: change the handler's clauses so that they satisfy the law

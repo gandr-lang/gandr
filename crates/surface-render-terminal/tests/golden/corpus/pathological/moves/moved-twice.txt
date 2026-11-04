@@ -1,7 +1,7 @@
 error[UsedAfterClose]: the endpoint is used after `close`
    ╭▸ corpus/pathological/moves/moved-twice.gandr:24:13
    │
-11 │ ┌ def movedTwice() -> Unit {
+11 │ ┌ def movedTwice() -> Unit =
 12 │ │   let file = fork (owner : File.Handle) { close(owner) };
    │ │   ┬──
    │ │   │
@@ -14,17 +14,16 @@ error[UsedAfterClose]: the endpoint is used after `close`
 18 │ │   let two = fork (second : File.Closer) {
    │ │   ─── checked against `-F Unit`; while checking the rest of this fork's parent
    ┆ ┆
-23 │ │   send(one, file);
+23 │ │   send(one, file)
    │ │   ─────────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit
-24 │ │   send(two, file);
+24 │ │   send(two, file)
    │ │   ┬─────────┯━━━─
    │ │   │         │
    │ │   │         an endpoint already closed
    │ │   checked against `-F Unit`; while synthesising the computation this binds
-25 │ │   close(one);
+25 │ │   close(one)
 26 │ │   close(two)
-27 │ │ }
-   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │ └────────────┘ checked against `() -> Unit`; while checking the body of this thunk
    │
    ├ note: `movedTwice` is refused with UsedAfterClose, as its expectation states
    ╰ help: move the action before the `close`, or delete it

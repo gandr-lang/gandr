@@ -1089,14 +1089,14 @@ def stated(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Path[.A =
         }
 
         def onward(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Circle](x, Base) {
-          Path.walk(fun (a) { type(Path[.A = Circle](x, a)) }, Path.here(Base), q)
+          Path.step (q, Path.here (Base))
         }
 
         def stated(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Path[.A = Circle](x, Base)](
-          Path.walk(fun (a) { type(Path[.A = Circle](x, a)) }, Path.here(Base), q),
-          Path.walk(fun (a) { type(Path[.A = Circle](x, a)) }, Path.here(Base), q)
+          Path.step (q, Path.here (Base)),
+          Path.step (q, Path.here (Base))
         ) {
-          Path.here(Path.walk(fun (a) { type(Path[.A = Circle](x, a)) }, Path.here(Base), q))
+          Path.here (Path.step (q, Path.here (Base)))
         }
     "#]]
     .assert_eq(formatted.text().as_ref());
@@ -1134,32 +1134,17 @@ def beside(q : Path[.A = Circle](Base, Base), r : Path[.A = Path[.A = Circle](Ba
         }
 
         def twice(q : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](
-          Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q),
-          Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q)
+          Path.step (q, q),
+          Path.step (q, q)
         ) {
-          Path.here(Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q))
+          Path.here (Path.step (q, q))
         }
 
         def beside(
           q : Path[.A = Circle](Base, Base),
-          r : Path[.A = Path[.A = Circle](Base, Base)](
-            Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q),
-            Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q)
-          )
-        ) -> -F Path[.A = Path[.A = Circle](Base, Base)](
-          Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q),
-          Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q)
-        ) {
-          Path.walk(
-            fun (a) {
-              type(Path[.A = Path[.A = Circle](Base, Base)](
-                Path.walk(fun (b) { type(Path[.A = Circle](Base, b)) }, q, q),
-                a
-              ))
-            },
-            twice(q),
-            r
-          )
+          r : Path[.A = Path[.A = Circle](Base, Base)](Path.step (q, q), Path.step (q, q))
+        ) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step (q, q), Path.step (q, q)) {
+          Path.step (r, twice (q))
         }
     "#]]
     .assert_eq(formatted.text().as_ref());

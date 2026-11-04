@@ -1,7 +1,7 @@
 error[UnlabelledRequirement]: the world requires `Store` under no label, so its code cannot perform it
-  ╭▸ corpus/ledger/diagnostics/UnlabelledRequirement.gandr:9:25
+  ╭▸ corpus/ledger/diagnostics/UnlabelledRequirement.gandr:8:25
   │
-9 │ pub world far requires [Store with sort V = String];
+8 │ pub world far requires [Store with sort V = String];
   │                         ━━━━━ a theory under no label
   │
   ├ note: `far` is refused with UnlabelledRequirement, as its expectation states

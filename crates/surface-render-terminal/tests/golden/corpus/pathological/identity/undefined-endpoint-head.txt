@@ -1,7 +1,7 @@
 error[UnresolvedName]: `nosuch` is not defined
   ╭▸ corpus/pathological/identity/undefined-endpoint-head.gandr:2:37
   │
-2 │ def refuted(x : Integer) -> -F Path(nosuch(x), x) {
+2 │ def refuted(x : Integer) -> -F Path(nosuch x, x) =
   │                                     ━━━━━━ not found in this scope
   │
   ├ note: `refuted` is refused with UnresolvedName, as its expectation states

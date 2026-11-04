@@ -1,12 +1,25 @@
-error[NotInverse]: the `ua` translators are not inverse to each other
-   ╭▸ corpus/ledger/diagnostics/NotInverse.gandr:33:16
+error[OutOfFragment.Arity]: the call expression cannot take 3 operands
+   ╭▸ corpus/ledger/diagnostics/NotInverse.gandr:22:14
    │
-33 │   def lopsided = ua[
+22 │   def raised = ua[
+   │ ┏━━━━━━━━━━━━━━┛
+23 │ ┃   2,
+24 │ ┃   4
+25 │ ┃ ] Magma (Magma (*{.mul = exchange, .one = keep})) (*{.mul = exchange, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the wrong number of operands
+   │
+   ├ note: `raised` is expected to check, and this refusal leaves it unsettled
+   ╰ help: give the form its declared number of operands
+
+error[OutOfFragment.Arity]: the call expression cannot take 3 operands
+   ╭▸ corpus/ledger/diagnostics/NotInverse.gandr:28:16
+   │
+28 │   def lopsided = ua[
    │ ┏━━━━━━━━━━━━━━━━┛
-34 │ ┃   1,
-35 │ ┃   4
-36 │ ┃ ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = boolId, .one = keep}) ;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ translators that are not inverse
+29 │ ┃   1,
+30 │ ┃   4
+31 │ ┃ ] Magma (Magma (*{.mul = exchange, .one = keep})) (*{.mul = boolId, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the wrong number of operands
    │
-   ├ note: `lopsided` is refused with NotInverse, as its expectation states
-   ╰ help: make the `ua` translators inverse
+   ├ note: `lopsided` is expected to be refused with NotInverse, and this refusal is not that one
+   ╰ help: give the form its declared number of operands

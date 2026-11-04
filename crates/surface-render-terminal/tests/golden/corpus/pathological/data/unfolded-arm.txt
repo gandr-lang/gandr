@@ -1,33 +1,35 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/data/unfolded-arm.gandr:17:3
    │
-16 │   def callDropped(n : Nat) -> Path(double(Succ(n)), plusTwo(n)) {
-   │   │               ┬                ┬──────────────  ────────── an endpoint the point does not convert to
+16 │   def callDropped(n : Nat) -> Path(double (Succ n), plusTwo n) =
+   │   │               ┬                ┬──────────────  ───────── an endpoint the point does not convert to
    │   │               │                │
    │   │               │                an endpoint the point does not convert to
-   │ ┌─┘               checked against `(a : Nat) -> -F Path[.A = Nat](double(Succ(a)), plusTwo(a))`; while checking the body of this function; binds n : Nat
+   │ ┌─┘               checked against `(a : Nat) -> -F Path[.A = Nat](double (Succ a), plusTwo a)`; while checking the body of this function; binds n : Nat
    │ │
-17 │ │   Path.here(plusTwo(n))
-   │ │   ━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
-18 │ │ }
-   │ └─┘ checked against `(a : Nat) => Path[.A = Nat](double(Succ(a)), plusTwo(a))`; while checking the body of this thunk
+17 │ │   Path.here (plusTwo n)
+   │ │   ┯━━━━━━━━━━━━━━━━━━━│
+   │ └───│───────────────────┤
+   │     │                   checked against `(a : Nat) -> Path[.A = Nat](double (Succ a), plusTwo a)`; while checking the body of this thunk
+   │     not both endpoints of the path
    │
    ├ note: `callDropped` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/data/unfolded-arm.gandr:23:3
+   ╭▸ corpus/pathological/data/unfolded-arm.gandr:22:3
    │
-22 │   def overshot(n : Nat) -> Path(double(Succ(n)), Succ(plusTwo(double(n)))) {
-   │   │            ┬                ┬──────────────  ──────────────────────── an endpoint the point does not convert to
+21 │   def overshot(n : Nat) -> Path(double (Succ n), Succ (plusTwo (double n))) =
+   │   │            ┬                ┬──────────────  ───────────────────────── an endpoint the point does not convert to
    │   │            │                │
    │   │            │                an endpoint the point does not convert to
-   │ ┌─┘            checked against `(a : Nat) -> -F Path[.A = Nat](double(Succ(a)), Succ(plusTwo(double(a))))`; while checking the body of this function; binds n : Nat
+   │ ┌─┘            checked against `(a : Nat) -> -F Path[.A = Nat](double (Succ a), Succ (plusTwo (double a)))`; while checking the body of this function; binds n : Nat
    │ │
-23 │ │   Path.here(Succ(plusTwo(double(n))))
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
-24 │ │ }
-   │ └─┘ checked against `(a : Nat) => Path[.A = Nat](double(Succ(a)), Succ(plusTwo(double(a))))`; while checking the body of this thunk
+22 │ │   Path.here (Succ (plusTwo (double n)))
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│───────────────────────────────────┤
+   │     │                                   checked against `(a : Nat) -> Path[.A = Nat](double (Succ a), Succ (plusTwo (double a)))`; while checking the body of this thunk
+   │     not both endpoints of the path
    │
    ├ note: `overshot` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints

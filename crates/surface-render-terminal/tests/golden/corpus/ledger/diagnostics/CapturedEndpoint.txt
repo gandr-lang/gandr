@@ -1,7 +1,7 @@
 error[CapturedEndpoint]: the endpoint is used inside a thunk, which may run it other than once
   ╭▸ corpus/ledger/diagnostics/CapturedEndpoint.gandr:4:40
   │
-3 │ ┌ def seat_closed_in_a_thunk() -> -F Unit {
+3 │ ┌ def seat_closed_in_a_thunk() -> -F Unit =
 4 │ │   let desk = fork (seat : end) { force thunk { close(seat) } };
   │ │   ┬──                            ┬─────┯━━━━━━━━━━━━━━━━━━━━
   │ │   │                              │     │
@@ -10,8 +10,7 @@ error[CapturedEndpoint]: the endpoint is used inside a thunk, which may run it o
   │ │   the endpoint was opened by this fork
   │ │   checked against `-F Unit`; while checking the child this forks
 5 │ │   close(desk)
-6 │ │ }
-  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │ └─────────────┘ checked against `() -> Unit`; while checking the body of this thunk
   │
   ├ note: `seat_closed_in_a_thunk` is refused with CapturedEndpoint, as its expectation states
   ╰ help: use the endpoint outside a thunk

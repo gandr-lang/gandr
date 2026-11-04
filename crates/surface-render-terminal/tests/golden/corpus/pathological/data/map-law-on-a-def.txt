@@ -1,8 +1,8 @@
 error[IllFormedDescription]: a rule applies `map`, which the signature does not declare
    ╭▸ corpus/pathological/data/map-law-on-a-def.gandr:16:3
    │
-16 │   rule mapMap : map(f, map(g, xs)) <=> map(compose(f, g), xs);
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
+16 │   rule mapMap : map f (map g xs) <=> map (compose f g) xs;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
    ├ note: `MapLaws` is refused with IllFormedDescription, as its expectation states
    ╰ help: declare the operation in the signature, or write the rule over operations it declares
@@ -10,8 +10,8 @@ error[IllFormedDescription]: a rule applies `map`, which the signature does not 
 error[IllFormedDescription]: a rule applies `compose`, which the signature does not declare
    ╭▸ corpus/pathological/data/map-law-on-a-def.gandr:16:3
    │
-16 │   rule mapMap : map(f, map(g, xs)) <=> map(compose(f, g), xs);
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
+16 │   rule mapMap : map f (map g xs) <=> map (compose f g) xs;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
    ├ note: `MapLaws` is refused with IllFormedDescription, as its expectation states
    ╰ help: declare the operation in the signature, or write the rule over operations it declares

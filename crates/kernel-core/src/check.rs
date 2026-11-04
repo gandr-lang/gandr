@@ -9432,7 +9432,7 @@ mod tests
                     ..
                 })
             ),
-            "a binder decoding to the *{} type is no data case's: {refused:?}"
+            "a binder decoding to the unit type is no data case's: {refused:?}"
         );
     }
 

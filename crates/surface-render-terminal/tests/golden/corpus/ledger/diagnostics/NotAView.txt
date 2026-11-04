@@ -1,13 +1,14 @@
 error[NotAView]: `resume` and `abort` need the view an `access` opened
   ╭▸ corpus/ledger/diagnostics/NotAView.gandr:5:3
   │
-3 │ ┌ def resumed() -> -F Unit {
-4 │ │   var n = 1;
+3 │ ┌ def resumed() -> -F Unit =
+4 │ │   var n = 1
   │ │   ─── checked against `-F Unit`; while checking the scope of this hold
 5 │ │   resume(n, 1)
-  │ │   ━━━━━━━━━━━━ no view here
-6 │ │ }
-  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │ │   ┯━━━━━━━━━━│
+  │ └───│──────────┤
+  │     │          checked against `() -> Unit`; while checking the body of this thunk
+  │     no view here
   │
   ├ note: `resumed` is refused with NotAView, as its expectation states
   ╰ help: open the value with `access` before resuming it

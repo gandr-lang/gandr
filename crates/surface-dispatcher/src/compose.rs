@@ -4987,7 +4987,7 @@ mod tests
             assert_eq!(
                 module(resumed_lowering),
                 module(whole),
-                "the module and arena the whole *{} lowers to"
+                "the module and arena the whole unit lowers to"
             );
             assert_eq!(
                 lowerings,

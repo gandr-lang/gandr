@@ -1,41 +1,41 @@
 error[OutOfFragment.Arity]: the type path cannot take 2 operands
-   ╭▸ corpus/pathological/modules/family-applied.gandr:23:15
+   ╭▸ corpus/pathological/modules/family-applied.gandr:22:15
    │
-23 │ def twice(x : Shapes.Same(Integer, Bool)) -> Integer { 0 }
+22 │ def twice(x : Shapes.Same(Integer, Bool)) -> Integer { 0 }
    │               ━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
    │
    ├ note: `twice` is refused with OutOfFragment.Arity, as its expectation states
    ╰ help: give the form its declared number of operands
 
 error[OutOfFragment.Arity]: the type path cannot take 1 operands
-   ╭▸ corpus/pathological/modules/family-applied.gandr:27:14
+   ╭▸ corpus/pathological/modules/family-applied.gandr:26:14
    │
-27 │ def flat(x : Shapes.Count(Integer)) -> Integer { 0 }
+26 │ def flat(x : Shapes.Count(Integer)) -> Integer { 0 }
    │              ━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
    │
    ├ note: `flat` is refused with OutOfFragment.Arity, as its expectation states
    ╰ help: give the form its declared number of operands
 
 error[OutOfFragment.projection_expression]: the type path is not supported yet
-   ╭▸ corpus/pathological/modules/family-applied.gandr:31:18
+   ╭▸ corpus/pathological/modules/family-applied.gandr:30:18
    │
-31 │ def selected(x : Shapes.Same(Integer).Count) -> Integer { 0 }
+30 │ def selected(x : Shapes.Same(Integer).Count) -> Integer { 0 }
    │                  ━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `selected` is refused with OutOfFragment.projection_expression, as its expectation states
    ╰ note: tracked by #1106 <https://github.com/gandr-lang/gandr/issues/1106>
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/modules/family-applied.gandr:35:47
+   ╭▸ corpus/pathological/modules/family-applied.gandr:34:47
    │
-35 │ def other(x : Shapes.Same(Integer)) -> Bool { x }
+34 │ def other(x : Shapes.Same(Integer)) -> Bool { x }
    │ ┬─────────┬───────────────┬────────────┬──────┯──
    │ │         │               │            │      │
    │ │         │               │            │      its type does not convert: expected `Bool`, found `Integer`
    │ │         │               │            the type it is checked against
    │ │         │               the type it synthesises
    │ │         checked against `Integer -> -F Bool`; while checking the body of this function; binds x : Integer
-   │ checked against `Integer => Bool`; while checking the body of this thunk
+   │ checked against `Integer -> Bool`; while checking the body of this thunk
    │
    ├ note: `other` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

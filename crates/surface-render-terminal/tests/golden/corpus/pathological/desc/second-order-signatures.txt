@@ -1,16 +1,16 @@
 error[MalformedForm]: a keyword or symbol of this def value is out of place
-   ╭▸ corpus/pathological/desc/second-order-signatures.gandr:21:3
+   ╭▸ corpus/pathological/desc/second-order-signatures.gandr:20:3
    │
-21 │   sort Scoped(i : pi+ (x : Tm). Tm) : Type;
+20 │   sort Scoped(i : pi+ (x : Tm). Tm) : Type;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ out of place
    │
    ├ note: `BoundIndex` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the def value
 
 error[OutOfFragment.Misplaced]: the representable universe type classifies a theory's sort member, and stands nowhere else
-   ╭▸ corpus/pathological/desc/second-order-signatures.gandr:26:23
+   ╭▸ corpus/pathological/desc/second-order-signatures.gandr:24:23
    │
-26 │ def universeOutside : Type+;
+24 │ def universeOutside : Type+;
    │                       ━━━━━ a form admitted only as a theory's sort member
    │
    ├ note: `universeOutside` is refused with OutOfFragment.Misplaced, as its expectation states
@@ -19,11 +19,10 @@ error[OutOfFragment.Misplaced]: the representable universe type classifies a the
 error[IllFormedDescription]: the port `t` binds a variable of the sort `Tm`, which is not representable
    ╭▸ corpus/pathological/desc/second-order-signatures.gandr:11:1
    │
-11 │ ┏ theory Unbindable where {
+11 │ ┏ theory Unbindable where
 12 │ ┃   sort Tm : Type;
 13 │ ┃   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
-14 │ ┃ }
-   │ ┗━┛ what the description check refuses
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ what the description check refuses
    │
    ├ note: `Unbindable` is refused with IllFormedDescription, as its expectation states
    ╰ help: bind the variable over a declared, representable sort

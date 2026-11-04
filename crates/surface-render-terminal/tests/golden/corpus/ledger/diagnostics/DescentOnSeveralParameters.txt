@@ -1,8 +1,8 @@
 error[DescentOnSeveralParameters]: this call descends on `m`, and an earlier one on `n`; a recursive definition descends on one parameter, the one its matches take apart
-   ╭▸ corpus/ledger/diagnostics/DescentOnSeveralParameters.gandr:15:16
+   ╭▸ corpus/ledger/diagnostics/DescentOnSeveralParameters.gandr:13:18
    │
-15 │     Succ(p) => both[<](p, n)
-   │                ━━━━━━━ descends on another parameter
+13 │     | Succ(p) => both[<] p n
+   │                  ━━━━━━━ descends on another parameter
    │
    ├ note: `both` is refused with DescentOnSeveralParameters, as its expectation states
    ╰ help: mark descent on one parameter in each recursive call

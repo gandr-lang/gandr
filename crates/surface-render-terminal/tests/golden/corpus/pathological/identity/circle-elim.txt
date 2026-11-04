@@ -1,85 +1,84 @@
 error[LoopNotRespected]: this case might tell a loop apart from staying put: carried along the loop, its answer at the loop's point is not that answer
-   ╭▸ corpus/pathological/identity/circle-elim.gandr:21:3
+   ╭▸ corpus/pathological/identity/circle-elim.gandr:20:3
    │
-20 │    def contractible(x : Circle) -> Path[.A = Circle](Base, x) {
+19 │    def contractible(x : Circle) -> Path[.A = Circle](Base, x) =
    │    │                ─ checked against `(x : Circle) -> -F Path[.A = Circle](Base, x)`; while checking the body of this function; binds x : Circle
    │ ┌──┘
    │ │
-21 │ │┏   match x {
-22 │ │┃     Base => Path.here(Base)
-23 │ │┃   }
-   │ │┗━━━┛ a case its sort's loops do not admit
-24 │ │  }
-   │ └──┘ checked against `(x : Circle) => Path[.A = Circle](Base, x)`; while checking the body of this thunk
+20 │ │┏   match x
+21 │ │┃     | Base => Path.here Base
+   │ │┃                            ╿
+   │ └┃────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(x : Circle) -> Path[.A = Circle](Base, x)`; while checking the body of this thunk
+   │                               a case its sort's loops do not admit
    │
    ├ note: `contractible` is refused with LoopNotRespected, as its expectation states
    ╰ help: make the case respect each loop of its sort
 
 error[LoopNotRespected]: this case answers at its loop's point by a case over another looped point, and the fibre it answers in is not presented as a set: the square between the two loops is owed, and nothing here supplies it
-   ╭▸ corpus/pathological/identity/circle-elim.gandr:32:3
+   ╭▸ corpus/pathological/identity/circle-elim.gandr:29:3
    │
-31 │    def rotTwin(a : Circle, b : Circle) -> #{centre : Circle, around : Path[.A = Circle](a, a)} {
-   │    │           ┬           ─ checked against `Circle -> -F #{around : Path[.A = Circle](a, a), centre : Circle}`; while checking the body of this function; binds b : Circle
+28 │    def rotTwin(a : Circle, b : Circle) -> *{centre : Circle, around : Path[.A = Circle](a, a)} =
+   │    │           ┬           ─ checked against `Circle -> -F *{around : Path[.A = Circle](a, a), centre : Circle}`; while checking the body of this function; binds b : Circle
    │    │           │
-   │ ┌──┘           checked against `(a : Circle) -> Circle -> -F #{around : Path[.A = Circle](a, a), centre : Circle}`; while checking the body of this function; binds a : Circle
+   │ ┌──┘           checked against `(a : Circle) -> Circle -> -F *{around : Path[.A = Circle](a, a), centre : Circle}`; while checking the body of this function; binds a : Circle
    │ │
-32 │ │┏   match a {
-33 │ │┃     Base => match b {
-34 │ │┃       Base => #{centre = Base, around = loop}
-35 │ │┃     }
-36 │ │┃   }
-   │ │┗━━━┛ a case its sort's loops do not admit
-37 │ │  }
-   │ └──┘ checked against `(a : Circle, Circle) => #{around : Path[.A = Circle](a, a), centre : Circle}`; while checking the body of this thunk
+29 │ │┏   match a
+30 │ │┃     | Base => match b
+31 │ │┃       | Base => *{centre = Base, around = loop}
+   │ │┃                                               ╿
+   │ └┃───────────────────────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(a : Circle, Circle) -> *{around : Path[.A = Circle](a, a), centre : Circle}`; while checking the body of this thunk
+   │                                                  a case its sort's loops do not admit
    │
    ├ note: `rotTwin` is refused with LoopNotRespected, as its expectation states
    ╰ help: make the case respect each loop of its sort
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/identity/circle-elim.gandr:56:13
+   ╭▸ corpus/pathological/identity/circle-elim.gandr:48:15
    │
-53 │    def misjoined(x : Circle) -> Path[.A = Circle](Base, x) {
+45 │    def misjoined(x : Circle) -> Path[.A = Circle](Base, x) =
    │    │             ─ checked against `(x : Circle) -> -F Path[.A = Circle](Base, x)`; while checking the body of this function; binds x : Circle
    │ ┌──┘
    │ │
-54 │ │┌   match x {
-55 │ ││     Base => Path.here(Base),
-   │ ││             ─────────────── an endpoint the point does not convert to
-56 │ ││     loop => Path.here(Path.here(Base))
-   │ ││             ━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
-57 │ ││   }
-   │ │└───┘ checked against `-F Path[.A = Circle](Base, x)`; while showing this case respects its sort's loops
-58 │ │  }
-   │ └──┘ checked against `(x : Circle) => Path[.A = Circle](Base, x)`; while checking the body of this thunk
+46 │ │┌   match x
+47 │ ││     | Base => Path.here Base
+   │ ││               ────────────── an endpoint the point does not convert to
+48 │ ││     | loop => Path.here (Path.here Base)
+   │ ││               ┯━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └│───────────────│────────────────────────│
+   │  └───────────────│────────────────────────checked against `(x : Circle) -> Path[.A = Circle](Base, x)`; while checking the body of this thunk
+   │                  │                        checked against `-F Path[.A = Circle](Base, x)`; while showing this case respects its sort's loops
+   │                  not both endpoints of the path
    │
    ├ note: `misjoined` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[ComposeDoesNotFill]: a composite needs its cells to meet end to end along the chain
-   ╭▸ corpus/pathological/identity/circle-elim.gandr:71:46
+   ╭▸ corpus/pathological/identity/circle-elim.gandr:60:46
    │
-71 │ def misjoined_then : Path(Mark, Elsewhere) = Path.step(turn, Path.here(Elsewhere));
-   │                                              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ cells that do not fill the chain
+60 │ def misjoined_then : Path(Mark, Elsewhere) = Path.step turn (Path.here Elsewhere);
+   │                                              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ cells that do not fill the chain
    │
    ├ note: `misjoined_then` is refused with ComposeDoesNotFill, as its expectation states
    ╰ help: start each cell at the point where the cell before it ends
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/identity/circle-elim.gandr:87:66
+   ╭▸ corpus/pathological/identity/circle-elim.gandr:74:64
    │
-87 │ def elsewhereComputed : Path(kept(Elsewhere), kept(Elsewhere)) = Path.here(Mark);
-   │                                                                  ┯━━━━━━━━━━━━━━
-   │                                                                  │
-   │                                                                  its type does not convert: expected `Path[.A = Marked](kept(Elsewhere), kept(Elsewhere))`, found `Path[.A = Marked](Mark, Mark)`
-   │                                                                  the type it synthesises
+74 │ def elsewhereComputed : Path(kept Elsewhere, kept Elsewhere) = Path.here Mark;
+   │                                                                ┯━━━━━━━━━━━━━
+   │                                                                │
+   │                                                                its type does not convert: expected `Path[.A = Marked](kept Elsewhere, kept Elsewhere)`, found `Path[.A = Marked](Mark, Mark)`
+   │                                                                the type it synthesises
    │
    ├ note: `elsewhereComputed` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[OutOfFragment.NotAFunction]: `Path.ap` maps a path by a function, and a constructor is none; write `fun (q) { e }`, or a function definition that applies the constructor
-   ╭▸ corpus/pathological/identity/circle-elim.gandr:93:21
+   ╭▸ corpus/pathological/identity/circle-elim.gandr:80:21
    │
-93 │ def cong_at_point = Path.ap(Base, loop);
+80 │ def cong_at_point = Path.ap Base (loop);
    │                     ━━━━━━━━━━━━━━━━━━━ no function `Path.ap` maps a path by
    │
    ├ note: `cong_at_point` is refused with OutOfFragment.NotAFunction, as its expectation states

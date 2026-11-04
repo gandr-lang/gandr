@@ -1,10 +1,9 @@
 error[CodataObservationLevel]: an observation's type lives above the universe the codata declaration names
   ╭▸ corpus/ledger/diagnostics/CodataObservationLevel.gandr:3:1
   │
-3 │ ┏ codata Holder(a : Type[+, 1]) : Type[-] where {
+3 │ ┏ codata Holder(a : Type[+, 1]) : Type[-] where
 4 │ ┃   held : a;
-5 │ ┃ }
-  │ ┗━┛ an observation above the declared universe
+  │ ┗━━━━━━━━━━━┛ an observation above the declared universe
   │
   ├ note: `Holder` is refused with CodataObservationLevel, as its expectation states
   ╰ help: lower each observation type to the codata declaration's universe

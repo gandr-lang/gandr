@@ -25,11 +25,11 @@ error[MalformedForm]: `mu` is a keyword and cannot stand here in this def value
    ├ note: `def` is refused with MalformedForm, as its expectation states
    ╰ help: write a term in place of `mu`
 
-error[MalformedForm]: a term is missing in this source file
+error[OutOfFragment.TopLevel]: an identifier cannot stand at a source's top level, where only declarations stand; a program runs the `main` it declares, so write it in `def main() -> Unit { … }`, or name it with a definition
    ╭▸ corpus/pathological/modules/stray-root-child.gandr:30:1
    │
 30 │ §
-   │ ━ a term is missing here
+   │ ━ an expression where only declarations stand
    │
-   ├ note: `§` is refused with MalformedForm, as its expectation states
-   ╰ help: write the missing term
+   ├ note: `§` is expected to be refused with MalformedForm, and this refusal is not that one
+   ╰ help: write the expression in a declaration

@@ -1,16 +1,16 @@
 error[CodataKindNotUniverse]: a codata declaration's kind must be a computation universe
   ╭▸ corpus/ledger/diagnostics/CodataUndeclared.gandr:3:17
   │
-3 │ codata Scaled : Type where {
+3 │ codata Scaled : Type where
   │                 ━━━━ a codata kind that is no computation universe
   │
   ├ note: `Scaled` is refused with CodataKindNotUniverse, as its expectation states
   ╰ help: give the codata declaration a computation universe as its kind
 
 error[CodataUndeclared]: this names no codata declaration
-  ╭▸ corpus/ledger/diagnostics/CodataUndeclared.gandr:8:17
+  ╭▸ corpus/ledger/diagnostics/CodataUndeclared.gandr:7:17
   │
-8 │ def read(s : +U Scaled) -> -F Integer {
+7 │ def read(s : +U Scaled) -> -F Integer =
   │          ┬      ━━━━━━ no codata declaration here
   │          │
   │          formed; while forming the parts of this type

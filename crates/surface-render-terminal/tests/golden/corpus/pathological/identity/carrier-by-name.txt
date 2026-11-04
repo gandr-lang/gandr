@@ -1,7 +1,7 @@
 error[UnresolvedName]: `B` is not defined
    ╭▸ corpus/pathological/identity/carrier-by-name.gandr:15:23
    │
-15 │ def strayPath : Path[.B = Integer](4, 4) = Path.here(4);
+15 │ def strayPath : Path[.B = Integer](4, 4) = Path.here 4;
    │                       ━ not found in this scope
    │
    ├ note: `strayPath` is refused with UnresolvedName, as its expectation states
@@ -10,7 +10,7 @@ error[UnresolvedName]: `B` is not defined
 error[UnresolvedName]: `B` is not defined
    ╭▸ corpus/pathological/identity/carrier-by-name.gandr:19:27
    │
-19 │ def strayBridge : Bridge[.B = Integer](4, 4) = unit;
+19 │ def strayBridge : Bridge[.B = Integer](4, 4) = *{};
    │                           ━ not found in this scope
    │
    ├ note: `strayBridge` is refused with UnresolvedName, as its expectation states
@@ -19,7 +19,7 @@ error[UnresolvedName]: `B` is not defined
 error[UnresolvedName]: `B` is not defined
    ╭▸ corpus/pathological/identity/carrier-by-name.gandr:23:23
    │
-23 │ def strayFlow : Flow[.B = Integer](4, 4) = Flow.stay(4);
+23 │ def strayFlow : Flow[.B = Integer](4, 4) = Flow.stay 4;
    │                       ━ not found in this scope
    │
    ├ note: `strayFlow` is refused with UnresolvedName, as its expectation states
@@ -28,7 +28,7 @@ error[UnresolvedName]: `B` is not defined
 error[ImplicitUnsolved]: the implicit `A` this call to `Flow` omits is determined by neither its arguments nor the type it is checked against
    ╭▸ corpus/pathological/identity/carrier-by-name.gandr:27:19
    │
-27 │ def unfixedFlow : Flow(fun (y) { y }, fun (y) { y }) = Flow.stay(fun (y) { y });
+27 │ def unfixedFlow : Flow(fun (y) { y }, fun (y) { y }) = Flow.stay (fun (y) { y });
    │                   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an implicit left unsolved
    │
    ├ note: `unfixedFlow` is refused with ImplicitUnsolved, as its expectation states

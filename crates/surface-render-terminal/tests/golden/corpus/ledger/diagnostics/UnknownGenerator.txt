@@ -1,12 +1,25 @@
-error[UnknownGenerator]: a `ua` translator record must name the generators of its description
-   ╭▸ corpus/ledger/diagnostics/UnknownGenerator.gandr:28:16
+error[OutOfFragment.Arity]: the call expression cannot take 3 operands
+   ╭▸ corpus/ledger/diagnostics/UnknownGenerator.gandr:18:14
    │
-28 │   def misspelt = ua[
+18 │   def raised = ua[
+   │ ┏━━━━━━━━━━━━━━┛
+19 │ ┃   2,
+20 │ ┃   4
+21 │ ┃ ] Magma (Magma (*{.mul = exchange, .one = keep})) (*{.mul = exchange, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the wrong number of operands
+   │
+   ├ note: `raised` is expected to check, and this refusal leaves it unsettled
+   ╰ help: give the form its declared number of operands
+
+error[OutOfFragment.Arity]: the call expression cannot take 3 operands
+   ╭▸ corpus/ledger/diagnostics/UnknownGenerator.gandr:24:16
+   │
+24 │   def misspelt = ua[
    │ ┏━━━━━━━━━━━━━━━━┛
-29 │ ┃   1,
-30 │ ┃   4
-31 │ ┃ ](Magma, Magma, #{.mul = exchange, .zero = keep}, #{.mul = exchange, .one = keep}) ;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ no generator of the description
+25 │ ┃   1,
+26 │ ┃   4
+27 │ ┃ ] Magma (Magma (*{.mul = exchange, .zero = keep})) (*{.mul = exchange, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the wrong number of operands
    │
-   ├ note: `misspelt` is refused with UnknownGenerator, as its expectation states
-   ╰ help: name only generators of the `ua` description
+   ├ note: `misspelt` is expected to be refused with UnknownGenerator, and this refusal is not that one
+   ╰ help: give the form its declared number of operands

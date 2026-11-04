@@ -1,8 +1,8 @@
 error[UnguardedCorecursion]: `ahead[>](…)` must be the whole arm of a copattern block, so each observation yields before `ahead` runs again
-   ╭▸ corpus/ledger/diagnostics/UnguardedCorecursion.gandr:12:16
+   ╭▸ corpus/ledger/diagnostics/UnguardedCorecursion.gandr:11:18
    │
-12 │     Succ(p) => ahead[>](p)
-   │                ━━━━━━━━ not the whole arm of a copattern
+11 │     | Succ(p) => ahead[>] p
+   │                  ━━━━━━━━ not the whole arm of a copattern
    │
    ├ note: `ahead` is refused with UnguardedCorecursion, as its expectation states
    ╰ help: write the productive self-call as a copattern arm's whole body

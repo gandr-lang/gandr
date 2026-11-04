@@ -1,17 +1,17 @@
 error[OutOfFragment.WrongSort]: a wildcard cannot stand where a computation is expected
    ╭▸ corpus/pathological/holes/wildcard.gandr:24:3
    │
-24 │   _;
+24 │   _
    │   ━ a form of another sort than this position takes
    │
    ├ note: `ranWildcard` is refused with OutOfFragment.WrongSort, as its expectation states
    ╰ help: write a computation in this position
 
 error[ImplicitUnsolved]: no equation determines the term this `_` stands for
-   ╭▸ corpus/pathological/holes/wildcard.gandr:13:40
+   ╭▸ corpus/pathological/holes/wildcard.gandr:13:41
    │
-13 │ def loose() -> Integer { idAt(Integer, _) }
-   │                                        ━ an implicit left unsolved
+13 │ def loose() -> Integer { idAt (Integer) _ }
+   │                                         ━ an implicit left unsolved
    │
    ├ note: `loose` is refused with ImplicitUnsolved, as its expectation states
    ╰ help: write the term in place of the `_`
@@ -19,12 +19,12 @@ error[ImplicitUnsolved]: no equation determines the term this `_` stands for
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/holes/wildcard.gandr:18:29
    │
-18 │ def disagreeing() -> Unit { idAt(_, 3) }
-   │ ┬────────────────────┬──────┯━━━━━━━━━──
+18 │ def disagreeing() -> Unit { idAt _ 3 }
+   │ ┬────────────────────┬──────┯━━━━━━━──
    │ │                    │      │
    │ │                    │      its type does not convert: expected `-F Unit`, found `-F Integer`
    │ │                    the type it is checked against
-   │ checked against `() => Unit`; while checking the body of this thunk
+   │ checked against `() -> Unit`; while checking the body of this thunk
    │
    ├ note: `disagreeing` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

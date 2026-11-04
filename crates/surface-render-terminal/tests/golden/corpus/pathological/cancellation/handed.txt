@@ -1,21 +1,22 @@
 error[ContinuationAsValue]: this continuation holds something that must end, so it can be used only by `resume` or `abandon`
-   ╭▸ corpus/pathological/cancellation/handed.gandr:31:40
+   ╭▸ corpus/pathological/cancellation/handed.gandr:30:42
    │
-20 │ ┌  def handed() -> Unit {
-21 │ │┌   handle c : std.process.Exit.Eff {
-22 │ ││     let found = fork (task : Cancel.Join) {
-23 │ ││       send(task, Cancel.notes);
-24 │ ││       close(task)
+19 │ ┌  def handed() -> Unit =
+20 │ │┌   handle c : std.process.Exit.Eff {
+21 │ ││     let found = fork (task : Cancel.Join) {
+22 │ ││       send(task, Cancel.notes);
+23 │ ││       close(task)
    ┆ ┆┆
-31 │ ││     oper exit(code, k) => resume_stack(k)
-   │ ││                           ┬────────────┯─
-   │ ││                           │            │
-   │ ││                           │            a continuation read as a value
-   │ ││                           checked against `-F Unit`; while checking the argument of this application
-32 │ ││   }
-   │ │└───┘ checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack(-F Unit, -F Unit)
-33 │ │  }
-   │ └──┘ checked against `() => Unit`; while checking the body of this thunk
+30 │ ││     | oper exit(code, k) => resume_stack k
+   │ ││                             ┬────────────┯
+   │ ││                             │            │
+   │ ││                             │            a continuation read as a value
+   │ ││                             checked against `-F Unit`; while checking the argument of this application
+31 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> Unit`; while checking the body of this thunk
+   │      checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack(-F Unit, -F Unit)
    │
    ├ note: `handed` is refused with ContinuationAsValue, as its expectation states
    ╰ help: use the continuation only with `resume` or `abandon`

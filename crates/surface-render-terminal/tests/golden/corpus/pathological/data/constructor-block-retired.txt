@@ -1,8 +1,8 @@
-error[MalformedForm]: this lambda expression has an operand it does not take here
-  ╭▸ corpus/pathological/data/constructor-block-retired.gandr:5:27
+error[MalformedForm]: this block is missing its closing `}`
+  ╭▸ corpus/pathological/data/constructor-block-retired.gandr:5:21
   │
 5 │ data Maybe(a) { None, Some(x : a) }
-  │                           ━ the form leaves its shape here
+  │                     ━ missing `}`
   │
   ├ note: `Maybe` is refused with MalformedForm, as its expectation states
-  ╰ help: remove the extra operand
+  ╰ help: add the closing `}`

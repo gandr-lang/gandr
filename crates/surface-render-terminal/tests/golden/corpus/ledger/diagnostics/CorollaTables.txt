@@ -1,8 +1,8 @@
-error[CorollaTables]: `ua` needs exactly one translator per corolla on each side
-   ╭▸ corpus/ledger/diagnostics/CorollaTables.gandr:19:13
+error[OutOfFragment.Arity]: the call expression cannot take 3 operands
+   ╭▸ corpus/ledger/diagnostics/CorollaTables.gandr:16:13
    │
-19 │ def twice = ua[1, 4](Rig, Rig, #{.plus = rename, .times = rename}, #{.plus = rename}) ;
-   │             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a corolla translated other than once
+16 │ def twice = ua[1, 4] Rig (Rig (*{.plus = rename, .times = rename})) (*{.plus = rename}) ;
+   │             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
    │
-   ├ note: `twice` is refused with CorollaTables, as its expectation states
-   ╰ help: give each corolla exactly one translator on each side
+   ├ note: `twice` is expected to be refused with CorollaTables, and this refusal is not that one
+   ╰ help: give the form its declared number of operands

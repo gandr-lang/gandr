@@ -1,7 +1,7 @@
 error[MalformedForm]: this bracket after an operand indexes an element
-   ╭▸ corpus/pathological/control/accessor-place.gandr:37:19
+   ╭▸ corpus/pathological/control/accessor-place.gandr:34:19
    │
-37 │   access shared xs[1] as w { pure w }
+34 │   access shared xs[1] as w { pure w }
    │                   ━ a bare index
    │
    ├ note: `bare_place` is refused with MalformedForm, as its expectation states
@@ -10,49 +10,48 @@ error[MalformedForm]: this bracket after an operand indexes an element
 error[PlaceUnindexed]: an access at a place reads an element at an index; the held value is no list
    ╭▸ corpus/pathological/control/accessor-place.gandr:12:3
    │
-10 │ ┌ def unindexed() -> Integer {
-11 │ │   var c = 0;
+10 │ ┌ def unindexed() -> Integer =
+11 │ │   var c = 0
    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 12 │ │   access shared c.#[0] as w { pure w }
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a held value with no elements to index
-13 │ │ }
-   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│──────────────────────────────────┤
+   │     │                                  checked against `() -> Integer`; while checking the body of this thunk
+   │     a held value with no elements to index
    │
    ├ note: `unindexed` is refused with PlaceUnindexed, as its expectation states
    ╰ help: access a list before indexing it
 
 error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
-   ╭▸ corpus/pathological/control/accessor-place.gandr:21:32
+   ╭▸ corpus/pathological/control/accessor-place.gandr:20:32
    │
-18 │ ┌ def index_frozen() -> Unit {
-19 │ │   var i = 0;
+17 │ ┌ def index_frozen() -> Unit =
+18 │ │   var i = 0
    │ │   ─── checked against `-F Unit`; while checking the scope of this hold
-20 │ │   var xs = pair;
+19 │ │   var xs = pair
    │ │   ─── checked against `-F Unit`; while checking the scope of this hold
-21 │ │   access shared xs.#[i] as w { access i as v { resume(v, w) } }
-   │ │   ┬────────────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──
-   │ │   │                            │
-   │ │   │                            a held value lent to an access
-   │ │   checked against `-F Unit`; while checking the body of this access
-22 │ │ }
-   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+20 │ │   access shared xs.#[i] as w { access i as v { resume(v, w) } }
+   │ │   ┬────────────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─│
+   │ └───│────────────────────────────│──────────────────────────────┤
+   │     │                            │                              checked against `() -> Unit`; while checking the body of this thunk
+   │     │                            a held value lent to an access
+   │     checked against `-F Unit`; while checking the body of this access
    │
    ├ note: `index_frozen` is refused with HeldLent, as its expectation states
    ╰ help: use the held value only after the `access` that lends it ends
 
 error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
-   ╭▸ corpus/pathological/control/accessor-place.gandr:29:25
+   ╭▸ corpus/pathological/control/accessor-place.gandr:27:25
    │
-27 │ ┌ def two_places() -> Unit {
-28 │ │   var xs = pair;
+25 │ ┌ def two_places() -> Unit =
+26 │ │   var xs = pair
    │ │   ─── checked against `-F Unit`; while checking the scope of this hold
-29 │ │   access xs.#[0] as v { access xs.#[1] as w { resume(w, v) }; resume(v, 0) }
-   │ │   ┬─────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━────────────────
-   │ │   │                     │
-   │ │   │                     a held value lent to an access
-   │ │   checked against `-F Unit`; while checking the body of this access
-30 │ │ }
-   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+27 │ │   access xs.#[0] as v { access xs.#[1] as w { resume(w, v) }; resume(v, 0) }
+   │ │   ┬─────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━───────────────│
+   │ └───│─────────────────────│──────────────────────────────────────────────────┤
+   │     │                     │                                                  checked against `() -> Unit`; while checking the body of this thunk
+   │     │                     a held value lent to an access
+   │     checked against `-F Unit`; while checking the body of this access
    │
    ├ note: `two_places` is refused with HeldLent, as its expectation states
    ╰ help: use the held value only after the `access` that lends it ends

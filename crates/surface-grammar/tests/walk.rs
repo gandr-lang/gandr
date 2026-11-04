@@ -68,8 +68,11 @@ use gandr_theory_graphs::WalkChainLength;
 /// a path-shaped type's carrier supplied by name, `Path[.A = C](a, b)`
 /// (#4932), then by an inner attribute block `@![ … ]` at a theory's member
 /// slot (#3586), then by the carrier written first, `Path(A, a, b)`, leaving
-/// for the bare `Path(a, b)`.
-const BUILT_IN_FINGERPRINT: u64 = 0x8102_ae27_52ba_20ae;
+/// for the bare `Path(a, b)`, then by the floor's respelling: tokens cut at
+/// whitespace, `*{ }` products, the box arrow, juxtaposed calls and layout,
+/// with the call form, the value function type, `unit` and the arm commas
+/// gone (#4853).
+const BUILT_IN_FINGERPRINT: u64 = 0x96bf_64da_a117_d1f6;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
@@ -78,7 +81,7 @@ const BUILT_IN_FINGERPRINT: u64 = 0x8102_ae27_52ba_20ae;
 const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2995);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
@@ -95,23 +98,23 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("&&", 1),
     ("&{", 2),
     ("'", 2),
-    ("(", 126),
-    (")", 130),
+    ("(", 136),
+    (")", 140),
     ("*", 2),
     ("*=", 15),
     ("*{", 9),
-    ("+", 5),
+    ("+", 6),
     ("++", 1),
     ("+=", 15),
     ("+U", 1),
     ("+{", 3),
-    (",", 275),
-    ("-", 5),
+    (",", 267),
+    ("-", 6),
     ("-->", 31),
     ("-=", 15),
     ("->", 12),
     ("-F", 3),
-    (".", 87),
+    (".", 90),
     (".#[", 2),
     (".*{", 1),
     ("..", 3),
@@ -125,10 +128,10 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("<=", 1),
     ("<=>", 27),
     ("<>", 1),
-    ("=", 136),
+    ("=", 141),
     ("==", 1),
     ("==>", 27),
-    ("=>", 49),
+    ("=>", 36),
     (">", 4),
     (">&", 1),
     (">=", 1),
@@ -143,23 +146,24 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Buf", 1),
     ("Cap", 1),
     ("Char", 1),
+    ("Flow", 1),
     ("Integer", 1),
     ("Never", 1),
     ("Path", 1),
     ("String", 1),
     ("Symbol", 1),
-    ("Type", 3),
+    ("Type", 4),
     ("Type+", 1),
     ("Unit", 1),
     ("Unknown", 1),
     ("Void", 1),
-    ("[", 55),
-    ("]", 65),
+    ("[", 59),
+    ("]", 76),
     ("_", 48),
     ("abort", 1),
     ("access", 1),
     ("acquire", 1),
-    ("arm_bar", 25),
+    ("arm_bar", 21),
     ("as", 4),
     ("at", 3),
     ("become", 1),
@@ -204,7 +208,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
-    ("identifier", 405),
+    ("identifier", 407),
     ("if", 15),
     ("import", 16),
     ("in", 1),
@@ -220,7 +224,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("mu", 1),
     ("newline", 1),
     ("node", 3),
-    ("number", 56),
+    ("number", 57),
     ("obs", 1),
     ("offer", 1),
     ("offers", 1),
@@ -261,7 +265,6 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("u32", 1),
     ("u64", 1),
     ("under", 1),
-    ("unit", 2),
     ("unwind", 1),
     ("var", 15),
     ("variable_name", 5),
@@ -270,12 +273,12 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("while", 1),
     ("with", 15),
     ("world", 1),
-    ("{", 56),
+    ("{", 54),
     ("|", 9),
     ("|&", 1),
     ("|>", 1),
     ("||", 1),
-    ("}", 78),
+    ("}", 76),
     ("~", 1),
     ("~>", 3),
     ("ω", 17),

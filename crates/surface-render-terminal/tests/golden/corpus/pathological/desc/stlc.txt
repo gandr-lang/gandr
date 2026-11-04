@@ -1,34 +1,61 @@
 error[OutOfFragment.Unannotated]: the call expression needs a type annotation
-   ╭▸ corpus/pathological/desc/stlc.gandr:22:37
+   ╭▸ corpus/pathological/desc/stlc.gandr:24:37
    │
-22 │   return fun (a) { return fun (x) { There(d, a, b, r(a)(x)) } }
-   │                                     ━━━━━━━━━━━━━━━━━━━━━━━ needs a stated type
+24 │   return fun (a) { return fun (x) { There d a b ((r a) x) } }
+   │                                     ━━━━━━━━━━━━━━━━━━━━━ needs a stated type
    │
    ├ note: `wk` is refused with OutOfFragment.Unannotated, as its expectation states
    ╰ help: write a type annotation for the form
 
-error[OutOfFragment.mutual_block.staged_after_first]: the call expression is not supported yet
-   ╭▸ corpus/pathological/desc/stlc.gandr:34:18
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/desc/stlc.gandr:34:22
    │
-34 │         let f2 = renNe[<](h, Arr(b, c), f, d, r);
-   │                  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
+29 │    def liftAt(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g), b : ObjTy, x : Var(Extend(g, a), b)) -> Var(
+   │    │          ┬        ┬        ┬          ┬              ┬          ─ checked against `Var(Extend(g, a), b) -> -F Var(Extend(d, a), b)`; while checking the body of this function; binds x : Var(Extend(g, a), b)
+   │    │          │        │        │          │              │
+   │    │          │        │        │          │              checked against `(b : ObjTy) -> Var(Extend(g, a), b) -> -F Var(Extend(d, a), b)`; while checking the body of this function; binds b : ObjTy
+   │    │          │        │        │          checked; while checking the body of this function; binds r : (b : ObjTy) -> (Var(g, b) -> Var(d, b))
+   │    │          │        │        checked; while checking the body of this function; binds a : ObjTy
+   │    │          │        checked; while checking the body of this function; binds g : Ctx
+   │ ┌──┘          checked; while checking the body of this function; binds d : Ctx
+   │ │
+30 │ │    Extend(d, a),
+31 │ │    b
+32 │ │  ) =
+33 │ │┌   match x
+34 │ ││     | Here(_h, c) => Here d c
+   │ ││                      ━━━━━━━━ its type does not convert: expected `Var(Extend(d, a), c)`, found `Var(Extend(d, c), c)`
+35 │ ││     | There(_h, c, _e, y) => There d c a ((r c) y)
+   │ ││                                                  │
+   │ └│──────────────────────────────────────────────────│
+   │  └──────────────────────────────────────────────────checked; while checking the body of this thunk
+   │                                                     checked against `-F Var(Extend(d, a), b)`; while checking the body of this function; binds _h : Ctx, c : ObjTy, _ : Path[.A = Ctx](Extend _h c, Extend g a), _ : Path[.A = ObjTy](c, b)
+   │
+   ├ note: `liftAt` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[OutOfFragment.mutual_block.staged_after_first]: the call expression is not supported yet
+   ╭▸ corpus/pathological/desc/stlc.gandr:50:18
+   │
+50 │         let f2 = renNe[<] h (Arr b c) f d r;
+   │                  ━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `renNe` is refused with OutOfFragment.mutual_block.staged_after_first, as its expectation states
    ╰ note: tracked by #5065 <https://github.com/gandr-lang/gandr/issues/5065>
 
 error[OutOfFragment.mutual_block.staged_after_first]: the call expression is not supported yet
-   ╭▸ corpus/pathological/desc/stlc.gandr:44:31
+   ╭▸ corpus/pathological/desc/stlc.gandr:61:21
    │
-44 │       NNe(h, n) => { let n2 = renNe[<](h, Base, n, d, r); NNe(d, n2) },
-   │                               ━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
+61 │         let body2 = renNf[<] (Extend h b) c (body (Extend d b)) (lift d h b r);
+   │                     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `renNf` is refused with OutOfFragment.mutual_block.staged_after_first, as its expectation states
    ╰ note: tracked by #5065 <https://github.com/gandr-lang/gandr/issues/5065>
 
 error[ShapeMismatch]: expected an eager product `A * B`
-   ╭▸ corpus/pathological/desc/stlc.gandr:67:5
+   ╭▸ corpus/pathological/desc/stlc.gandr:78:5
    │
-64 │   def extendEnv(g : Ctx, a : ObjTy, d : Ctx, rho : envs(g, d), v : sem(a, d)) -> envs(
+75 │   def extendEnv(g : Ctx, a : ObjTy, d : Ctx, rho : envs(g, d), v : sem(a, d)) -> envs(
    │   │             ┬        ┬          ┬        ┬──               ─ checked against `sem(a, d) -> -F envs(Extend(g, a), d)`; while checking the body of this function; binds v : sem(a, d)
    │   │             │        │          │        │
    │   │             │        │          │        checked against `envs(g, d) -> sem(a, d) -> -F envs(Extend(g, a), d)`; while checking the body of this function; binds rho : envs(g, d)
@@ -36,12 +63,23 @@ error[ShapeMismatch]: expected an eager product `A * B`
    │   │             │        checked against `(a : ObjTy) -> (d : Ctx) -> envs(g, d) -> sem(a, d) -> -F envs(Extend(g, a), d)`; while checking the body of this function; binds a : ObjTy
    │ ┌─┘             checked against `(g : Ctx) -> (a : ObjTy) -> (d : Ctx) -> envs(g, d) -> sem(a, d) -> -F envs(Extend(g, a), d)`; while checking the body of this function; binds g : Ctx
    │ │
-65 │ │   Extend(g, a),
-66 │ │   d
-67 │ │ ) { (rho, v) }
-   │ └─────┯━━━━━━━─┘ checked against `(g : Ctx, a : ObjTy, d : Ctx, envs(g, d), sem(a, d)) => envs(Extend(g, a), d)`; while checking the body of this thunk
+76 │ │   Extend(g, a),
+77 │ │   d
+78 │ │ ) { *{rho, v} }
+   │ └─────┯━━━━━━━━─┘ checked against `(g : Ctx, a : ObjTy, d : Ctx, envs(g, d), sem(a, d)) -> envs(Extend(g, a), d)`; while checking the body of this thunk
    │       │
-   │       its type is not of the required shape: found `envs(Extend(g, a), d)`, which unfolds to `#{x : envs(g, d), y : sem(a, d)}`
+   │       its type is not of the required shape: found `envs(Extend(g, a), d)`, which unfolds to `*{x : envs(g, d), y : sem(a, d)}`
    │
    ├ note: `extendEnv` is refused with ShapeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the type has the required shape
+
+error[NonExhaustiveMatch]: this match does not cover every value it can be given
+   ╭▸ corpus/pathological/desc/stlc.gandr:85:23
+   │
+85 │       | Here(_h, _b) => match rho
+   │ ┏━━━━━━━━━━━━━━━━━━━━━━━┛
+86 │ ┃       | ECons(_h, _b, _d, _rest, v) => v
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ some value matches no arm
+   │
+   ├ note: `look` is refused with NonExhaustiveMatch, as its expectation states
+   ╰ help: add an arm for the values that no arm matches, or a last arm that matches any value

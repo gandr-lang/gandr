@@ -1,8 +1,8 @@
 error[OutOfFragment.projection_expression]: the projection expression is not supported yet
-   ╭▸ corpus/pathological/builtins/update-in-loop.gandr:13:14
+   ╭▸ corpus/pathological/builtins/update-in-loop.gandr:13:15
    │
-13 │ def pushed = list.reduce(thunk { fun (acc, n) { return list.push(acc, n) } }, #[], steps);
-   │              ━━━━━━━━━━━ a form the fragment does not admit
+13 │ def pushed = (list.reduce (thunk { fun (acc, n) { return list.push acc n } })) (#[]) steps;
+   │               ━━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `pushed` is refused with OutOfFragment.projection_expression, as its expectation states
    ╰ note: tracked by #1106 <https://github.com/gandr-lang/gandr/issues/1106>

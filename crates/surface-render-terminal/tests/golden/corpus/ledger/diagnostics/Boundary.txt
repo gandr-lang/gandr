@@ -1,11 +1,11 @@
 error[Boundary]: this boundary flow runs against the variance of its position
-   ╭▸ corpus/ledger/diagnostics/Boundary.gandr:16:27
+   ╭▸ corpus/ledger/diagnostics/Boundary.gandr:14:27
    │
-16 │   def reader = Flow.arrow(upgrade, Flow.stay(Integer)) ;
-   │                ┬──────────┯━━━━━━─────────────────────
+14 │   def reader = Flow.arrow upgrade (Flow.stay (Integer)) ;
+   │                ┬──────────┯━━━━━━──────────────────────
    │                │          │
    │                │          a boundary flow running against its variance
-   │                checked against `Flow[.A = Type](String * Integer => Integer, Integer * String => Integer)`; while checking this arrow's boundaries against the function codes it relates
+   │                checked against `Flow[.A = Type](String * Integer -> Integer, Integer * String -> Integer)`; while checking this arrow's boundaries against the function codes it relates
    │
    ├ note: `reader` is refused with Boundary, as its expectation states
    ╰ help: write the boundary flow in the direction its position's variance permits

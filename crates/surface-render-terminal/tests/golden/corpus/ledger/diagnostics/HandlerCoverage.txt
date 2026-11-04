@@ -1,15 +1,16 @@
 error[HandlerCoverage]: the handler must handle every operation of its interface exactly once
    ╭▸ corpus/ledger/diagnostics/HandlerCoverage.gandr:9:3
    │
- 8 │ ┌  def asked() -> -F Integer {
+ 8 │ ┌  def asked() -> -F Integer =
  9 │ │┏   handle c : std.process.Exit.Eff {
 10 │ │┃     pure 1
 11 │ │┃   } with {
-12 │ │┃     pure(x) => pure x
+12 │ │┃     | pure(x) => pure x
 13 │ │┃   }
-   │ │┗━━━┛ not every operation once
-14 │ │  }
-   │ └──┘ checked against `() => Integer`; while checking the body of this thunk
+   │ │┃   ╿
+   │ └┃───│
+   │  ┗━━━checked against `() -> Integer`; while checking the body of this thunk
+   │      not every operation once
    │
    ├ note: `asked` is refused with HandlerCoverage, as its expectation states
    ╰ help: handle each interface operation exactly once

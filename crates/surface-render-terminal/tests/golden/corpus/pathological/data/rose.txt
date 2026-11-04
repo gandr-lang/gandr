@@ -1,33 +1,30 @@
 error[NestedOccurrence]: the datatype occurs nested inside another type in its field 0 of constructor 0, at a place that type does not hold strictly positively
-   ╭▸ corpus/pathological/data/rose.gandr:28:1
+   ╭▸ corpus/pathological/data/rose.gandr:26:1
    │
-28 │ ┏ data Rose : Type where {
-29 │ ┃   | Node : (kids : Test(Rose)) --> Rose
-30 │ ┃ }
-   │ ┗━┛ the declared type inside another former, at a place it does not hold strictly positively
+26 │ ┏ data Rose : Type where
+27 │ ┃   | Node : (kids : Test(Rose)) --> Rose
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the declared type inside another former, at a place it does not hold strictly positively
    │
    ├ note: `Rose` is refused with NestedOccurrence, as its expectation states
    ╰ help: place the datatype only where each enclosing type holds it strictly positively
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
-   ╭▸ corpus/pathological/data/rose.gandr:81:45
+   ╭▸ corpus/pathological/data/rose.gandr:69:47
    │
-79 │    def rec forged(t : Bush) -> Nat {
+67 │    def rec forged(t : Bush) -> Nat =
    │    │              ─ checked against `Bush -> -F Nat`; while checking the body of this function; binds t : Bush
    │ ┌──┘
    │ │
-80 │ │┌   match t {
-81 │ ││     Sprout(kids) => Succ(sum(map(Bush, Nat, forged[<], (Cons(t, (Nil : List(Bush))) : List(Bush)))))
-   │ ││                     ┬────┬───┬──────────────┯━━━━━━━━───────────────────────────────────────────────
-   │ ││                     │    │   │              │
-   │ ││                     │    │   │              not below the stage its recursion wants
-   │ ││                     │    │   checked against `List(Nat)`; while checking the argument of this application
-   │ ││                     │    checked against `Nat`; while checking the argument of this application
-   │ ││                     checked against `-F Nat`; while finishing the type of this
-82 │ ││   }
-   │ │└───┘ checked against `-F Nat`; while checking the body of this function; binds kids : List(Bush)
-83 │ │  }
-   │ └──┘ checked against `Bush => Nat`; while checking the body of this function; binds forged : Bush => Nat
+68 │ │┌   match t
+69 │ ││     | Sprout(kids) => Succ (sum (map Bush Nat forged[<] (Cons t (Nil : List(Bush)) : List(Bush))))
+   │ ││                       ┬─────┬────┬────────────┯━━━━━━━━──────────────────────────────────────────│
+   │ └│───────────────────────│─────│────│────────────│──────────────────────────────────────────────────│
+   │  └───────────────────────│─────│────│────────────│──────────────────────────────────────────────────checked against `Bush -> Nat`; while checking the body of this function; binds forged : Bush -> Nat
+   │                          │     │    │            │                                                  checked against `-F Nat`; while checking the body of this function; binds kids : List(Bush)
+   │                          │     │    │            not below the stage its recursion wants
+   │                          │     │    checked against `List(Nat)`; while checking the argument of this application
+   │                          │     checked against `Nat`; while checking the argument of this application
+   │                          checked against `-F Nat`; while finishing the type of this
    │
    ├ note: `forged` is refused with StageNotBelow, as its expectation states
    ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself

@@ -1,12 +1,25 @@
-error[UncertifiedCondition]: `ua` needs a catalogue whose site meets the corolla and Segal conditions
-   ╭▸ corpus/ledger/diagnostics/UncertifiedCondition.gandr:28:13
+error[OutOfFragment.Arity]: the call expression cannot take 3 operands
+   ╭▸ corpus/ledger/diagnostics/UncertifiedCondition.gandr:18:14
    │
-28 │   def empty = ua[
+18 │   def raised = ua[
+   │ ┏━━━━━━━━━━━━━━┛
+19 │ ┃   2,
+20 │ ┃   4
+21 │ ┃ ] Magma (Magma (*{.mul = exchange, .one = keep})) (*{.mul = exchange, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the wrong number of operands
+   │
+   ├ note: `raised` is expected to check, and this refusal leaves it unsettled
+   ╰ help: give the form its declared number of operands
+
+error[OutOfFragment.Arity]: the call expression cannot take 3 operands
+   ╭▸ corpus/ledger/diagnostics/UncertifiedCondition.gandr:24:13
+   │
+24 │   def empty = ua[
    │ ┏━━━━━━━━━━━━━┛
-29 │ ┃   1,
-30 │ ┃   0
-31 │ ┃ ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a catalogue failing the corolla or Segal condition
+25 │ ┃   1,
+26 │ ┃   0
+27 │ ┃ ] Magma (Magma (*{.mul = exchange, .one = keep})) (*{.mul = exchange, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the wrong number of operands
    │
-   ├ note: `empty` is refused with UncertifiedCondition, as its expectation states
-   ╰ note: tracked by #312 <https://github.com/gandr-lang/gandr/issues/312>
+   ├ note: `empty` is expected to be refused with UncertifiedCondition, and this refusal is not that one
+   ╰ help: give the form its declared number of operands

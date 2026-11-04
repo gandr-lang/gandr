@@ -1,162 +1,165 @@
 error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
    ╭▸ corpus/pathological/control/kept-view.gandr:20:57
    │
-17 │ ┌  def unkept() -> Integer {
-18 │ │    var s = 3;
+17 │ ┌  def unkept() -> Integer =
+18 │ │    var s = 3
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
 19 │ │┌   handle c : std.process.Exit.Eff {
-20 │ ││     let k : () => Integer = access shared s as w { pure thunk { pure w } };
+20 │ ││     let k : () -> Integer = access shared s as w { pure thunk { pure w } };
    │ ││     ┬──                     ┬──────────────────────┬────┯━━━━━━━━━━━━━━━──
    │ ││     │                       │                      │    │
    │ ││     │                       │                      │    a view outliving its access
-   │ ││     │                       │                      checked against `-F (() => Integer)`; while judging the value this returns
-   │ ││     │                       checked against `-F (() => Integer)`; while checking the body of this access
+   │ ││     │                       │                      checked against `-F (() -> Integer)`; while judging the value this returns
+   │ ││     │                       checked against `-F (() -> Integer)`; while checking the body of this access
    │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while finishing the type of this
 21 │ ││     force k
 22 │ ││   } with {
-23 │ ││     pure(x) => pure x,
-24 │ ││     oper exit(code, k) => pure 0
+23 │ ││     | pure(x) => pure x
+24 │ ││     | oper exit(code, k) => pure 0
 25 │ ││   }
-   │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
-26 │ │  }
-   │ └──┘ checked against `() => Integer`; while checking the body of this thunk
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> Integer`; while checking the body of this thunk
+   │      checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
    │
    ├ note: `unkept` is refused with ViewEscaped, as its expectation states
    ╰ help: use the view outside a thunk, or open the `access` inside it
 
 error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
-   ╭▸ corpus/pathological/control/kept-view.gandr:35:38
+   ╭▸ corpus/pathological/control/kept-view.gandr:34:38
    │
-31 │ ┌   def keptExclusive() -> Integer {
-32 │ │     var s = 3;
+30 │ ┌   def keptExclusive() -> Integer =
+31 │ │     var s = 3
    │ │     ─── checked against `-F Integer`; while checking the scope of this hold
-33 │ │┌    handle c : std.process.Exit.Eff {
-34 │ ││┌     access s as v {
-35 │ │││       let k : (() => Integer) at c = thunk { pure v };
+32 │ │┌    handle c : std.process.Exit.Eff {
+33 │ ││┌     access s as v {
+34 │ │││       let k : (() -> Integer) at c = thunk { pure v };
    │ │││       ┬──                            ━━━━━━━━━━━━━━━━ a view outliving its access
    │ │││       │
    │ │││       synthesised; while finishing the type of this
-36 │ │││       resume(v, v)
-37 │ │││     };
+35 │ │││       resume(v, v)
+36 │ │││     };
    │ ││└─────┘ checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body of this access
    ┆ ┆┆
-41 │ ││      oper exit(code, k) => pure 0
-42 │ ││    }
-   │ │└────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
-43 │ │   }
-   │ └───┘ checked against `() => Integer`; while checking the body of this thunk
+40 │ ││      | oper exit(code, k) => pure 0
+41 │ ││    }
+   │ ││    │
+   │ └│────│
+   │  └────checked against `() -> Integer`; while checking the body of this thunk
+   │       checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
    │
    ├ note: `keptExclusive` is refused with ViewEscaped, as its expectation states
    ╰ help: use the view outside a thunk, or open the `access` inside it
 
 error[HeldKept]: a shared view of this value is kept in a region whose scope is still running; an exclusive `access` waits until that scope ends
-   ╭▸ corpus/pathological/control/kept-view.gandr:52:5
+   ╭▸ corpus/pathological/control/kept-view.gandr:50:5
    │
-48 │ ┌  def written() -> Integer {
-49 │ │    var s = 3;
+46 │ ┌  def written() -> Integer =
+47 │ │    var s = 3
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
-50 │ │┌   handle c : std.process.Exit.Eff {
-51 │ ││     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
-   │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
-52 │ ││     access s as v { resume(v, v + 1) };
+48 │ │┌   handle c : std.process.Exit.Eff {
+49 │ ││     let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
+   │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() -> Integer) at c
+50 │ ││     access s as v { resume(v, v + 1) };
    │ ││     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
-53 │ ││     force k
+51 │ ││     force k
    ┆ ┆┆
-56 │ ││     oper exit(code, k) => pure 0
-57 │ ││   }
-   │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
-58 │ │  }
-   │ └──┘ checked against `() => Integer`; while checking the body of this thunk
+54 │ ││     | oper exit(code, k) => pure 0
+55 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> Integer`; while checking the body of this thunk
+   │      checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
    │
    ├ note: `written` is refused with HeldKept, as its expectation states
    ╰ help: write the value only after the scope that keeps its shared view ends
 
 error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding `c`; the scope cannot answer it
-   ╭▸ corpus/pathological/control/kept-view.gandr:67:29
+   ╭▸ corpus/pathological/control/kept-view.gandr:64:29
    │
-63 │ ┌  def rewrapped() -> Integer {
-64 │ │    var s = 3;
+60 │ ┌  def rewrapped() -> Integer =
+61 │ │    var s = 3
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
-65 │ │┌   handle c : std.process.Exit.Eff {
-66 │ ││     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
-   │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() => Integer) at c
-67 │ ││     let j : () => Integer = thunk { force k };
+62 │ │┌   handle c : std.process.Exit.Eff {
+63 │ ││     let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
+   │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() -> Integer) at c
+64 │ ││     let j : () -> Integer = thunk { force k };
    │ ││     ┬──                     ━━━━━━━━━━━━━━━━━ a value kept in the scope's own region
    │ ││     │
    │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while finishing the type of this
-68 │ ││     force j
+65 │ ││     force j
    ┆ ┆┆
-71 │ ││     oper exit(code, k) => pure 0
-72 │ ││   }
-   │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
-73 │ │  }
-   │ └──┘ checked against `() => Integer`; while checking the body of this thunk
+68 │ ││     | oper exit(code, k) => pure 0
+69 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> Integer`; while checking the body of this thunk
+   │      checked against `-F Integer`; while checking the subject of this scope under its capability; binds c : Cap {exit}
    │
    ├ note: `rewrapped` is refused with KeptEscaped, as its expectation states
    ╰ help: return a value that the scope's own region does not keep
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/control/kept-view.gandr:82:10
+   ╭▸ corpus/pathological/control/kept-view.gandr:78:10
    │
-78 │    def answered() -> () => Integer {
+74 │    def answered() -> () -> Integer =
    │    │                 ───────────── the type it is checked against
    │ ┌──┘
    │ │
-79 │ │    var s = 3;
-   │ │    ─── checked against `-F (() => Integer)`; while checking the scope of this hold
-80 │ │┌   handle c : std.process.Exit.Eff {
-81 │ ││     let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
+75 │ │    var s = 3
+   │ │    ─── checked against `-F (() -> Integer)`; while checking the scope of this hold
+76 │ │┌   handle c : std.process.Exit.Eff {
+77 │ ││     let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
    │ ││     ┬──     ──────────────────── the type it synthesises
    │ ││     │
-   │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] (() => Integer)`; while checking the body under this binding; binds k : (() => Integer) at c
-82 │ ││     pure k
+   │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] (() -> Integer)`; while checking the body under this binding; binds k : (() -> Integer) at c
+78 │ ││     pure k
    │ ││     ┬────┯
    │ ││     │    │
-   │ ││     │    its type does not convert: expected `() => Integer`, found `(() => Integer) at c`
-   │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] (() => Integer)`; while judging the value this returns
-83 │ ││   } with {
-84 │ ││     pure(x) => pure x,
-85 │ ││     oper exit(code, k) => pure thunk { pure 0 }
-86 │ ││   }
-   │ │└───┘ checked against `-F (() => Integer)`; while checking the subject of this scope under its capability; binds c : Cap {exit}
-87 │ │  }
-   │ └──┘ checked against `() => () => Integer`; while checking the body of this thunk
+   │ ││     │    its type does not convert: expected `() -> Integer`, found `(() -> Integer) at c`
+   │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] (() -> Integer)`; while judging the value this returns
+79 │ ││   } with {
+80 │ ││     | pure(x) => pure x
+81 │ ││     | oper exit(code, k) => pure thunk { pure 0 }
+82 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> (() -> Integer)`; while checking the body of this thunk
+   │      checked against `-F (() -> Integer)`; while checking the subject of this scope under its capability; binds c : Cap {exit}
    │
    ├ note: `answered` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[HeldKept]: a shared view of this value is kept in a region whose scope is still running; an exclusive `access` waits until that scope ends
-   ╭▸ corpus/pathological/control/kept-view.gandr:95:3
+   ╭▸ corpus/pathological/control/kept-view.gandr:90:3
    │
-92 │ ┌ def writtenInHold() -> Integer {
-93 │ │   var s = 3;
+87 │ ┌ def writtenInHold() -> Integer =
+88 │ │   var s = 3
    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
-94 │ │   let k : (() => Integer) at s = access shared s as w { pure thunk { pure w } };
-   │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds k : (() => Integer) at s
-95 │ │   access s as v { resume(v, v + 1) };
+89 │ │   let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };
+   │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds k : (() -> Integer) at s
+90 │ │   access s as v { resume(v, v + 1) };
    │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
-96 │ │   force k
-97 │ │ }
-   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+91 │ │   force k
+   │ └─────────┘ checked against `() -> Integer`; while checking the body of this thunk
    │
    ├ note: `writtenInHold` is refused with HeldKept, as its expectation states
    ╰ help: write the value only after the scope that keeps its shared view ends
 
 error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding `c`; the scope cannot answer it
-    ╭▸ corpus/pathological/control/kept-view.gandr:105:27
+    ╭▸ corpus/pathological/control/kept-view.gandr:99:27
     │
-102 │ ┌ def leftHold() -> Integer {
-103 │ │   var s = 3;
+ 96 │ ┌ def leftHold() -> Integer =
+ 97 │ │   var s = 3
     │ │   ─── checked against `-F Integer`; while checking the scope of this hold
-104 │ │   let k : (() => Integer) at s = access shared s as w { pure thunk { pure w } };
-    │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds k : (() => Integer) at s
-105 │ │   let j : () => Integer = thunk { force k };
+ 98 │ │   let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };
+    │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds k : (() -> Integer) at s
+ 99 │ │   let j : () -> Integer = thunk { force k };
     │ │   ┬──                     ━━━━━━━━━━━━━━━━━ a value kept in the scope's own region
     │ │   │
     │ │   checked against `-F Integer`; while finishing the type of this
-106 │ │   force j
-107 │ │ }
-    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+100 │ │   force j
+    │ └─────────┘ checked against `() -> Integer`; while checking the body of this thunk
     │
     ├ note: `leftHold` is refused with KeptEscaped, as its expectation states
     ╰ help: return a value that the scope's own region does not keep

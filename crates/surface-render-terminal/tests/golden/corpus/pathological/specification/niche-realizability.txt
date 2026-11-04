@@ -1,28 +1,48 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/specification/niche-realizability.gandr:34:31
+   ╭▸ corpus/pathological/specification/niche-realizability.gandr:22:48
    │
-31 │     def derefMeets(w : Nat, h : Heap) -> (vOpt(vInt, w, h)) => derefWp(w, keptOpt, h) {
-   │     │              ┬        ─ checked against `(h : Heap) -> -F (vOpt(vInt, w, h) => derefWp(w, keptOpt, h))`; while checking the body of this function; binds h : Heap
-   │     │              │
-   │ ┌───┘              checked against `(w : Nat) -> (h : Heap) -> -F (vOpt(vInt, w, h) => derefWp(w, keptOpt, h))`; while checking the body of this function; binds w : Nat
+17 │      def derefWp(w : Nat, q : *{Nat, Nat, Heap} -> Type, h : Heap) -> Type =
+   │      │           ┬        ┬                              ─ checked against `Heap -> -F Type`; while checking the body of this function; binds h : Heap
+   │      │           │        │
+   │      │           │        checked against `(Nat * Nat * Heap -> Type) -> Heap -> -F Type`; while checking the body of this function; binds q : Nat * Nat * Heap -> Type
+   │ ┌────┘           checked against `Nat -> (Nat * Nat * Heap -> Type) -> Heap -> -F Type`; while checking the body of this function; binds w : Nat
    │ │
-32 │ │┌    match w {
-33 │ ││      Zero => match h {
-   │ ││┌─────────────┘
-34 │ │││       Emp => return fun (e) { e },
-   │ │││              ┬──────┬─────────┯──
-   │ │││              │      │         │
-   │ │││              │      │         its type does not convert: expected `derefWp(Zero, keptOpt, Emp)`, found `vOpt(vInt, Zero, Emp)`
-   │ │││              │      checked against `vOpt(vInt, Zero, Emp) => derefWp(Zero, keptOpt, Emp)`; while checking the body of this function; binds e : vOpt(vInt, Zero, Emp)
-   │ │││              checked against `-F (vOpt(vInt, Zero, Emp) => derefWp(Zero, keptOpt, Emp))`; while judging the value this returns
-35 │ │││       Cell(_l, _v, _rest) => return fun (e) { e }
-36 │ │││     },
-   │ ││└─────┘ checked against `-F (vOpt(vInt, Zero, h) => derefWp(Zero, keptOpt, h))`; while checking the next premise of this
-37 │ ││      Succ(n) => return fun (r) { derefOrSome(n, Zero, h, r) }
-38 │ ││    }
-   │ │└────┘ checked against `-F (vOpt(vInt, w, h) => derefWp(w, keptOpt, h))`; while checking the next premise of this
-39 │ │   }
-   │ └───┘ checked against `(w : Nat, h : Heap) => vOpt(vInt, w, h) => derefWp(w, keptOpt, h)`; while checking the body of this thunk
+18 │ │┌     match w
+19 │ ││       | Zero => return Void
+20 │ ││       | Succ(_n) => return type(*{
+   │ ││ ┌───────────────────│───────────┘
+   │ ││┌│───────────────────┘
+   │ ││││
+21 │ ││││       v : Nat,
+22 │ ││││       cell : star(pointsToAt(w, v), realisedAt(vInt, v), h),
+   │ ││││              ┬──────────────────────┬──────────┯━━━────────
+   │ ││││              │                      │          │
+   │ ││││              │                      │          its type does not convert: expected `Nat * Heap -> Type`, found `(Nat, Heap) -> Type`
+   │ ││││              │                      checked against `Heap -> Type`; while checking the argument of this application
+   │ ││││              formed; while checking the argument of this application
+23 │ ││││       post : q(w, v, h)
+24 │ ││││     })
+   │ ││││     ││
+   │ └│││─────││
+   │  └││─────│checked against `(Nat, Nat * Nat * Heap -> Type, Heap) -> Type`; while checking the body of this thunk
+   │   └│─────│checked against `-F Type`; while checking the body of this function; binds _n : Nat
+   │    └─────┤checked against `-F Type`; while judging the value this returns
+   │          checked against `Type`; while forming the parts of this type; binds _ : Nat
+   │
+   ├ note: `derefWp` is expected to check, and this refusal leaves it unsettled
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/specification/niche-realizability.gandr:29:44
+   │
+29 │ def derefMeets(w : Nat, h : Heap) -> (vOpt(vInt, w, h)) -> derefWp(w, keptOpt, h) =
+   │                ┬        ┬            ┬┬────┯━━━──────────────────────────────────
+   │                │        │            ││    │
+   │                │        │            ││    its type does not convert: expected `Nat * Heap -> Type`, found `(Nat, Heap) -> Type`
+   │                │        │            │formed; while checking the argument of this application
+   │                │        │            formed; while forming the parts of this type
+   │                │        formed; while forming this type under its binder; binds h : Heap
+   │                formed; while forming this type under its binder; binds w : Nat
    │
    ├ note: `derefMeets` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

@@ -1,8 +1,42 @@
 error[NonExhaustiveMatch]: this match does not cover every value it can be given
-   ╭▸ corpus/pathological/data/dependent-bounds.gandr:26:3
+   ╭▸ corpus/pathological/data/dependent-bounds.gandr:34:3
    │
-26 │   match i {}
+34 │   match i {}
    │   ━━━━━━━━━━ some value matches no arm
    │
    ├ note: `absurdFin` is refused with NonExhaustiveMatch, as its expectation states
    ╰ help: add an arm for the values that no arm matches, or a last arm that matches any value
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/data/dependent-bounds.gandr:48:66
+   │
+45 │    def rec lookup(a : Type, n : Nat, v : Vec(a, n), i : Fin(n)) -> a =
+   │    │              ┬         ┬        ┬              ─ checked against `Fin(n) -> -F a`; while checking the body of this function; binds i : Fin(n)
+   │    │              │         │        │
+   │    │              │         │        checked against `Vec(a, n) -> Fin(n) -> -F a`; while checking the body under this binding; binds v : Vec(a, n), v : Vec(a, Succ(m))
+   │    │              │         checked against `(b : Nat) -> Vec(a, b) -> Fin(b) -> -F a`; while checking the body of this function; binds n : Nat
+   │ ┌──┘              checked against `(a : Type) -> (n : Nat) -> Vec(a, n) -> Fin(n) -> -F a`; while checking the body of this function; binds a : Type
+   │ │
+46 │ │┌   match i
+47 │ ││     | FZero(m) => match v { | VCons(_, h, _) => h }
+48 │ ││     | FSucc(m, j) => match v { | VCons(_, _, t) => lookup[<] a m t j }
+   │ ││                      ┬─────────────────────────────┬─────────────┯───│
+   │ └│──────────────────────│─────────────────────────────│─────────────│───│
+   │  └──────────────────────│─────────────────────────────│─────────────│───checked against `(a : Type, n : Nat, Vec(a, n), Fin(n)) -> a`; while checking the body of this function; binds lookup : (b : Nat, Vec(a, b), Fin(b)) -> a
+   │                         │                             │             │   checked against `-F a`; while checking the body of this function; binds m : Nat, j : Fin(m), _ : Path[.A = Nat](Succ m, n)
+   │                         │                             │             its type does not convert: expected `Vec(a, m)`, found `Vec(a, ?)`
+   │                         │                             checked against `-F a`; while checking the argument of this application
+   │                         checked against `-F a`; while checking the body of this function; binds _ : Nat, _ : a, _ : Vec(a, ?), _ : Path[.A = Nat](Succ ?, Succ m)
+   │
+   ├ note: while checking the body under this binding; binds _ : Path[.A = Nat](n, Succ m)
+   ├ note: `lookup` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[OutOfFragment.Arity]: the call expression cannot take 1 operands
+   ╭▸ corpus/pathological/data/dependent-bounds.gandr:51:39
+   │
+51 │ def one() -> Fin(Succ(Succ(Zero))) { (FSucc (Succ Zero)) (FZero Zero) }
+   │                                       ━━━━━━━━━━━━━━━━━ the wrong number of operands
+   │
+   ├ note: `one` is expected to check, and this refusal leaves it unsettled
+   ╰ help: give the form its declared number of operands
