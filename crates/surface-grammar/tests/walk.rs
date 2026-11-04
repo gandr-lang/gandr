@@ -71,8 +71,6 @@ use gandr_theory_graphs::WalkChainLength;
 /// for the bare `Path(a, b)`.
 const BUILT_IN_FINGERPRINT: u64 = 0x8102_ae27_52ba_20ae;
 
-
-
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of

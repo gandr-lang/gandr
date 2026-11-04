@@ -1897,7 +1897,8 @@ where
 }
 
 /// Whether `former` is a path or a bridge type whose endpoints the grammar
-/// reads as expressions: one over a carrier other than a universe.
+/// reads as expressions: one over a carrier other than a universe, or one
+/// whose carrier is left to its endpoints.
 ///
 /// # Specification
 /// trivial.
@@ -1911,7 +1912,7 @@ where
     matches!(
         *former,
         Former::Path { carrier, .. } | Former::Bridge { carrier, .. }
-            if !matches!(source.read(carrier), Former::Universe { .. })
+            if carrier.is_none_or(|carrier| !matches!(source.read(carrier), Former::Universe { .. }))
     )
 }
 
