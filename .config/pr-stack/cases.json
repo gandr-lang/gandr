@@ -1779,6 +1779,39 @@
     "output": "[{\"path\":\"/w/fresh\",\"branch\":\"fresh\",\"action\":\"keep\",\"reason\":\"not landed\"},{\"path\":\"/w/moving\",\"branch\":\"moving\",\"action\":\"keep\",\"reason\":\"its head moved after it was judged landed\"}]"
   },
   {
+    "name": "#5030: a branch whose commits have equal patches on origin/main is deleted, and a fresh branch is kept",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/equal",
+        "branch": "equal",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [],
+        "ahead": 2,
+        "pulls": null
+      },
+      {
+        "path": "/w/fresh",
+        "branch": "fresh",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [],
+        "ahead": 0,
+        "pulls": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/equal\",\"branch\":\"equal\",\"action\":\"delete\",\"reason\":\"landed: each commit's patch stands on origin/main\"},{\"path\":\"/w/fresh\",\"branch\":\"fresh\",\"action\":\"keep\",\"reason\":\"not landed\"}]"
+  },
+  {
     "name": "a landed wip/ branch keeps its worktree",
     "program": "sweep.jq",
     "input": [

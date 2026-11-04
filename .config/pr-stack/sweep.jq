@@ -26,26 +26,35 @@
 #   watched   null, or the pid of a live `pr:watch` whose mark
 #             (`gandr-watch-<pid>`) the worktree's git directory holds;
 #   commits   null, or for a branch Worktrunk does not read merged, the
-#             commits `git cherry origin/main` lists, each `{subject,
-#             on_main}`: `on_main` when a commit origin/main holds has the
-#             subject, a queue merge's ` (#n)` suffix dropped;
+#             `+` lines `git cherry origin/main` lists, each `{subject,
+#             on_main}`. `on_main` is true when origin/main holds a commit
+#             of that subject. A queue merge's ` (#n)` suffix is dropped;
+#   ahead     null, or the count of `git rev-list origin/main..<head>` for
+#             that branch. A count above zero and no `+` line means each
+#             commit's patch stands on origin/main (#5030). Absent reads
+#             as zero;
 #   pulls     null, or the merged pull requests whose head is the branch,
 #             each `{number, subjects}`, read only when some commit is not
 #             on main;
 #   idle      no `incremental` directory under its `target/` changed within
 #             the 4-hour claim window (#4221); absent reads as not idle.
 #
-# The queue lands a branch rebased onto a moved main, and a rebase that
-# resolves a conflict changes the patch, so Worktrunk's readings all miss it
-# (#4227). Such a branch has landed when each commit it lists stands on main
-# by subject, or when one merged pull request of the branch holds each
-# commit's subject that main lacks. A branch listing no commit is left to
-# Worktrunk's reading: it may be one cut from main and not yet committed to.
+# The queue lands a branch rebased onto a moved main. A rebase that
+# resolves a conflict changes the patch. Worktrunk misses that branch
+# (#4227). The branch has landed when each listed commit stands on main
+# by subject. It has also landed when one merged pull request holds each
+# subject that main lacks. A fast-forward of main can carry an equal
+# patch of each commit under a new hash (#5030). `git cherry` then lists
+# no `+` line. The branch has landed when `ahead` is above zero. A branch
+# with `ahead` at zero lists no commit of its own. That branch stays with
+# Worktrunk's reading. It may be a branch cut from main and not yet
+# committed to.
 #
 # Output: an array of `{path, branch, action, reason}`, one per worktree:
 #   remove   `wt remove --foreground`, the branch deleted as merged;
-#   delete   `wt remove -D --foreground`, a branch landed by subject or by
-#            its merged pull request, which Worktrunk reads unmerged;
+#   delete   `wt remove -D --foreground`, a branch landed by subject, by
+#            a merged pull request, or by an equal patch, which Worktrunk
+#            reads unmerged;
 #   force    `git worktree remove --force`, a scratch tree nothing holds;
 #   keep     left as it is.
 # A kept worktree that is idle, and no primary, caller's, watched or scratch
@@ -55,7 +64,11 @@
 # Why the branch has landed though Worktrunk reads it unmerged, or null.
 def landing:
   (.commits // []) as $commits
-  | if ($commits | length) == 0 then null
+  | (.ahead // 0) as $ahead
+  | if ($commits | length) == 0 then
+      if $ahead > 0 then "each commit's patch stands on origin/main"
+      else null
+      end
     elif all($commits[]; .on_main) then "its commits stand on origin/main"
     else
       first(
