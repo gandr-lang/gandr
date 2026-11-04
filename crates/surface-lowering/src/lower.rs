@@ -18228,45 +18228,37 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: every argument is already minted or absent.
     /// - ensures: `f(v1, …, vn)` mints as `app(… app(force f, v1) …, vn)`, `f`
     ///   the constant at its admission position or the variable at the binder's
-    ///   index in the telescope of the type the call stands in. An argument a
-    ///   type reads as the value a call returns, `⟨c⟩`, runs first instead: the
-    ///   application is bound under one `c ← …` per such argument, in written
-    ///   order, the first outermost, the argument read as its bind's variable
-    ///   and everything else raised past the binds. The applications carry the
-    ///   written origin, and the head carries `head`, the call's own origin or
-    ///   its head's where a call the expression grammar molds stands in a type;
-    ///   the force is marked inserted, and each bind the nested origin of the
-    ///   argument it runs. Nothing is minted when an argument did not lower.
+    ///   index in the telescope of the type the call stands in. Each argument
+    ///   is passed as it lowered: an argument a type reads as the value a call
+    ///   returns, `⟨c⟩`, stays in place, so a later argument whose type reads
+    ///   it meets the same value. The applications carry the written origin,
+    ///   and the head carries `head`, the call's own origin or its head's where
+    ///   a call the expression grammar molds stands in a type; the force is
+    ///   marked inserted. Nothing is minted when an argument did not lower.
     /// - provides: the call an unquote decodes, and a type-position call's
-    ///   argument written as a call, which the checker runs. A descent through
-    ///   a function field, `el[<](b(x))`, is then the bind `c ← b(x); el[<](c)`
-    ///   a body writes, whose variable stands below the stage as that descent's
-    ///   does.
+    ///   argument written as a call, which the checker runs where it reads the
+    ///   type. A descent through a function field, `el[<](b(x))`, passes
+    ///   `⟨b(x)⟩` as written.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Termination
-    /// Every loop runs once per entry of the finite stretch `arguments`.
+    /// The loop runs once per entry of the finite stretch `arguments`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_unquote`], whose calls it mints.
+    /// - hypothesis: L3 — as [`Self::mint_unquote`], whose calls it mints, and
+    ///   a call whose later argument's type reads an earlier argument's call.
     /// - witness: `lower::tests::a_thunk_binder_called_in_a_type_unquotes_its_call`
     /// - witness: `lower::native::tests::a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint`
+    /// - witness: `tests::modules::models::a_family_over_an_applied_index_reads_the_call_in_place_5051`
     #[spec(
         ensures: |ret| match ret {
             | Maybe::Present(id) => matches!(
                 sink.arena.computation(id),
-                Some(&(gandr_core_term::Computation::Force(_) | gandr_core_term::Computation::Application(..) | gandr_core_term::Computation::Bind(..)))
+                Some(&(gandr_core_term::Computation::Force(_) | gandr_core_term::Computation::Application(..)))
             ),
             | Maybe::Absent(_) => true,
         },
-    )]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            linear_search_in_loop,
-            reason = "bounded: `runs` holds the runs among one call's arguments"
-        )
     )]
     fn mint_called(
         &self,
@@ -18277,94 +18269,31 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<ComputationId, lowered::Absent>
     {
         let written = stretch(&self.operands, arguments);
-        let mut passed = Vec::with_capacity(written.len());
-        let mut runs = Vec::new();
         for &argument in written {
-            let value = match self.value_at(argument) {
-                Maybe::Present(value) => value,
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            };
-            if self.type_read.contains(&argument)
-                && let Some(&Value::Returned(run)) = sink.arena.value(value)
-            {
-                let ran = match self.origin_at(argument) {
-                    Maybe::Present(at) => at,
-                    Maybe::Absent(_) => origin,
-                };
-                runs.push((passed.len(), run, ran));
+            if let Maybe::Absent(reason) = self.value_at(argument) {
+                return Maybe::Absent(reason);
             }
-            passed.push(value);
         }
-        let past = Binders::from(u32::try_from(runs.len()).unwrap_or(u32::MAX));
-        // The copies first, each carrying its source's origin: every argument
-        // no run takes, raised past the runs' binders, and each run under the
-        // runs before it. The spine minted after them records its own.
-        let mark = sink.arena.watermark();
-        let mut carried = Vec::new();
-        let mut raised = Vec::with_capacity(passed.len());
-        for (position, &value) in passed.iter().enumerate() {
-            if runs.is_empty() || runs.iter().any(|&(at, ..)| at == position) {
-                raised.push(value);
-                continue;
-            }
-            let wrapped = sink.arena.computation_return(value);
-            let shifted =
-                gandr_core_term::shift_computation_under(sink.arena, wrapped, Binders::NONE, past)
-                    .settle_traced(sink.arena, &mut carried);
-            raised.push(match sink.arena.computation(shifted) {
-                Some(&gandr_core_term::Computation::Return(inner)) => inner,
-                _ => value,
-            });
-        }
-        let mut firsts = Vec::with_capacity(runs.len());
-        for (order, &(_, run, _)) in runs.iter().enumerate() {
-            let before = Binders::from(u32::try_from(order).unwrap_or(u32::MAX));
-            firsts.push(
-                gandr_core_term::shift_computation_under(sink.arena, run, Binders::NONE, before)
-                    .settle_traced(sink.arena, &mut carried),
-            );
-        }
-        exits::record_copies(sink, mark, &carried, origin);
         let head = match function {
             Code::Bound {
                 from,
                 binder,
                 telescope,
-            } => {
-                let index = u32::from(self.scope.index_in(from, binder, telescope));
-                sink.arena.value_variable(
-                    Zone::Intuitionistic,
-                    DeBruijnIndex::from(index.saturating_add(u32::from(past))),
-                )
-            },
+            } => sink.arena.value_variable(
+                Zone::Intuitionistic,
+                self.scope.index_in(from, binder, telescope),
+            ),
             Code::Constant(constant) => sink.arena.value_constant(constant),
         };
         sink.origins.record_value(head, head_origin);
         let mut called = sink.arena.computation_force(head);
         sink.origins
             .record_computation(called, origin.inserted(Insertion::Force));
-        for (position, &value) in raised.iter().enumerate() {
-            let argument = match runs.iter().position(|&(at, ..)| at == position) {
-                Some(order) => {
-                    let index = runs.len().saturating_sub(order).saturating_sub(1);
-                    let bound = sink.arena.value_variable(
-                        Zone::Intuitionistic,
-                        DeBruijnIndex::from(u32::try_from(index).unwrap_or(u32::MAX)),
-                    );
-                    let ran = runs.get(order).map_or(origin, |&(.., ran)| ran);
-                    sink.origins
-                        .record_value(bound, ran.inserted(Insertion::Nested));
-                    bound
-                },
-                None => value,
-            };
-            called = sink.arena.computation_application(called, argument);
-            sink.origins.record_computation(called, origin);
-        }
-        for (&first, &(.., ran)) in firsts.iter().zip(&runs).rev() {
-            called = sink.arena.computation_bind(first, called);
-            sink.origins
-                .record_computation(called, ran.inserted(Insertion::Nested));
+        for &argument in written {
+            if let Maybe::Present(value) = self.value_at(argument) {
+                called = sink.arena.computation_application(called, value);
+                sink.origins.record_computation(called, origin);
+            }
         }
 
         Maybe::Present(called)
@@ -28530,23 +28459,22 @@ def ended() -> -F [Partial] Unit {
             variable(0),
             "the binder's call is the code it returns"
         );
-        let Some(&Computation::Bind(inner, outer)) = arena.computation(returned(argued))
+        let (head, argument) = call(returned(argued));
+        assert_eq!(
+            head,
+            Some(Value::Constant(ConstantIndex::from(0_usize))),
+            "the outer call forces `pick`"
+        );
+        let Some(Value::Returned(inner)) = argument
         else {
-            panic!(
-                "an argument calling the binder is bound ahead: {:?}",
-                arena.computation(returned(argued))
-            );
+            panic!("an argument calling the binder is the code it returns: {argument:?}");
         };
         // `v` binds nothing for `w`'s type, a plain arrow's rest, so the binder
         // is the nearest one.
-        assert_eq!(call(inner).0, variable(0), "the binder's call runs first");
         assert_eq!(
-            call(outer),
-            (
-                Some(Value::Constant(ConstantIndex::from(0_usize))),
-                variable(0)
-            ),
-            "and the outer call takes what it returned"
+            call(inner).0,
+            variable(0),
+            "the argument calls the binder in place"
         );
     }
 
@@ -28610,62 +28538,6 @@ def ended() -> -F [Partial] Unit {
             (arena.value(head).cloned(), arena.value(argument).cloned()),
             (variable(1), variable(0)),
             "the binder `a` is called at `x`"
-        );
-    }
-
-    /// A call in a type passing one argument that runs and one that does
-    /// not binds the run ahead and raises the other past the bind, so it
-    /// still reads what was written.
-    #[test]
-    fn a_call_in_a_type_raises_its_plain_arguments_past_the_runs_it_binds()
-    {
-        let mut arena = CoreArena::new();
-        let module = lowered(
-            SourceText::from(
-                "def pick(t : Type, n : Integer) -> -F Type { return t } def take(g : +U \
-                 (Integer -> -F Type), w : pick(g(2), 7)) -> -F Integer { return 1 }",
-            ),
-            &mut arena,
-        );
-        let declared = declared_of(outcomes(&module)[1]);
-        let Some(&ValueType::Thunk(mut at)) = arena.value_type(declared)
-        else {
-            panic!("a function's type is a thunk");
-        };
-        let mut domains = Vec::new();
-        while let Some(&CompType::Pi { domain, codomain } | &CompType::Arrow { domain, codomain }) =
-            arena.comp_type(at)
-        {
-            domains.push(domain);
-            at = codomain;
-        }
-        let [_, argued] = *domains
-        else {
-            panic!("two parameters: {domains:?}");
-        };
-        let Some(&ValueType::Element { code, .. }) = arena.value_type(argued)
-        else {
-            panic!("a call where a type is read decodes");
-        };
-        let Some(&Value::Returned(called)) = arena.value(code)
-        else {
-            panic!("the code is what the call returns");
-        };
-        let Some(&Computation::Bind(_, outer)) = arena.computation(called)
-        else {
-            panic!(
-                "the running argument is bound ahead: {:?}",
-                arena.computation(called)
-            );
-        };
-        let Some(&Computation::Application(_, last)) = arena.computation(outer)
-        else {
-            panic!("the outer call applies its head");
-        };
-        assert_eq!(
-            arena.value(last),
-            Some(&Value::Literal(integer(SourceFragment::from("7")))),
-            "the plain argument is passed as written, past the bind"
         );
     }
 

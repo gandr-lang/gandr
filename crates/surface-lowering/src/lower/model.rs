@@ -65,7 +65,6 @@ use anodized::spec;
 use gandr_core_term::Binders;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompTypeId;
-use gandr_core_term::Computation;
 use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
@@ -1421,11 +1420,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `at` is the field's index under `context`.
-    /// - ensures: `↑((force x) t₁ … tₙ)` over the index terms' values; an index
-    ///   term that applies an operation runs first, `c ← t; …`, one bind per
-    ///   such term in written order, the first outermost, the term read as its
-    ///   bind's variable and every other value raised past the binds; every
-    ///   node carrying the minting's origin.
+    /// - ensures: `↑((force x) t₁ … tₙ)` over the index terms' values, each
+    ///   passed in place: an index term that applies an operation is the value
+    ///   its call returns, so a later index whose sort reads it meets the same
+    ///   value; every node carrying the minting's origin.
     /// - fails: an index term that does not mint, as [`Self::term_value`].
     /// - panics: none.
     ///
@@ -1433,21 +1431,14 @@ impl<'source> Lowerer<'_, 'source>
     /// [`Missing`].
     ///
     /// # Termination
-    /// Every loop runs once per index term of the finite `indices`.
+    /// The loop runs once per index term of the finite `indices`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a graph's edges over two variables, and the terms of
-    ///   a context extended by a call.
+    ///   a context extended by a call, at a type in that context.
     /// - witness: `tests::modules::models::a_family_sort_is_a_function_into_the_universe`
-    /// - witness: `tests::modules::models::a_family_over_an_applied_index_runs_the_call_first`
+    /// - witness: `tests::modules::models::a_family_over_an_applied_index_reads_the_call_in_place_5051`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&code| matches!(sink.arena.value(code), Some(&Value::Returned(_)))))]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            linear_search_in_loop,
-            reason = "bounded: `runs` holds the runs among one sort term's indices"
-        )
-    )]
     fn family_call(
         &self,
         at: DeBruijnIndex,
@@ -1458,67 +1449,13 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<ValueId, Missing<'source>>
     {
         let origin = minting.origin;
-        let mut passed = Vec::with_capacity(indices.len());
-        let mut runs = Vec::new();
-        for index in indices {
-            let value = self.term_value(index, context, minting, sink)?;
-            if let Some(&Value::Returned(run)) = sink.arena.value(value) {
-                runs.push((passed.len(), run));
-            }
-            passed.push(value);
-        }
-        let past = Binders::from(u32::try_from(runs.len()).unwrap_or(u32::MAX));
-        let mark = sink.arena.watermark();
-        let mut carried = Vec::new();
-        let mut raised = Vec::with_capacity(passed.len());
-        for (position, &value) in passed.iter().enumerate() {
-            if runs.is_empty() || runs.iter().any(|&(run_at, _)| run_at == position) {
-                raised.push(value);
-                continue;
-            }
-            let wrapped = sink.arena.computation_return(value);
-            let shifted =
-                gandr_core_term::shift_computation_under(sink.arena, wrapped, Binders::NONE, past)
-                    .settle_traced(sink.arena, &mut carried);
-            raised.push(match sink.arena.computation(shifted) {
-                Some(&Computation::Return(inner)) => inner,
-                _ => value,
-            });
-        }
-        let mut firsts = Vec::with_capacity(runs.len());
-        for (order, &(_, run)) in runs.iter().enumerate() {
-            let before = Binders::from(u32::try_from(order).unwrap_or(u32::MAX));
-            firsts.push(
-                gandr_core_term::shift_computation_under(sink.arena, run, Binders::NONE, before)
-                    .settle_traced(sink.arena, &mut carried),
-            );
-        }
-        exits::record_copies(sink, mark, &carried, origin);
-        let head = sink.arena.value_variable(
-            Zone::Intuitionistic,
-            DeBruijnIndex::from(u32::from(at).saturating_add(u32::from(past))),
-        );
+        let head = sink.arena.value_variable(Zone::Intuitionistic, at);
         sink.origins.record_value(head, origin);
         let mut called = sink.arena.computation_force(head);
         sink.origins.record_computation(called, origin);
-        for (position, &value) in raised.iter().enumerate() {
-            let argument = match runs.iter().position(|&(run_at, _)| run_at == position) {
-                Some(order) => {
-                    let index = runs.len().saturating_sub(order).saturating_sub(1);
-                    let bound = sink.arena.value_variable(
-                        Zone::Intuitionistic,
-                        DeBruijnIndex::from(u32::try_from(index).unwrap_or(u32::MAX)),
-                    );
-                    sink.origins.record_value(bound, origin);
-                    bound
-                },
-                None => value,
-            };
-            called = sink.arena.computation_application(called, argument);
-            sink.origins.record_computation(called, origin);
-        }
-        for &first in firsts.iter().rev() {
-            called = sink.arena.computation_bind(first, called);
+        for index in indices {
+            let value = self.term_value(index, context, minting, sink)?;
+            called = sink.arena.computation_application(called, value);
             sink.origins.record_computation(called, origin);
         }
         let returned = sink.arena.value_returned(called);

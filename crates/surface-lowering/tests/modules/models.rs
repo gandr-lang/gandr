@@ -1348,16 +1348,20 @@ fn a_computation_sort_is_a_family_into_computation_types_3050()
     );
 }
 
-/// A family read at an index that applies an operation runs that call first,
-/// as a written family call does: the terms of a context extended by one, and
-/// the variable the extension binds.
+/// A family read at an index that applies an operation reads that call in
+/// place, as a written family call does. A later index whose sort reads the
+/// call meets the same value, so `q`'s result `m(ext(g, a), wk(g, a))`
+/// checks where `wk(g, a)` stands at `t(ext(g, a))`.
 #[test]
-fn a_family_over_an_applied_index_runs_the_call_first()
+fn a_family_over_an_applied_index_reads_the_call_in_place_5051()
 {
     states_the_written_types(
-        "theory Scoped where {\n  sort C : Type;\n  sort T(g : C) : Type;\n  oper ext : (g : C) --> C;\n  \
-         oper top : (g : C) --> T(ext(g));\n}\ndef derived : Model(Scoped) ;\ndef written : #{c : \
-         Type, t : (g : c) => Type, ext : (g : c) => c, top : (g : c) => t(ext(g))} ;\n",
+        "theory Scoped where {\n  sort C : Type;\n  sort T(g : C) : Type;\n  sort M(g : C, a : \
+         T(g)) : Type;\n  oper ext : (g : C, a : T(g)) --> C;\n  oper wk : (g : C, a : T(g)) --> \
+         T(ext(g, a));\n  oper q : (g : C, a : T(g)) --> M(ext(g, a), wk(g, a));\n}\ndef derived \
+         : Model(Scoped) ;\ndef written : #{c : Type, t : (g : c) => Type, m : (g : c, a : t(g)) \
+         => Type, ext : (g : c, a : t(g)) => c, wk : (g : c, a : t(g)) => t(ext(g, a)), q : (g : \
+         c, a : t(g)) => m(ext(g, a), wk(g, a))} ;\n",
         &[("derived", "written")],
     );
 }

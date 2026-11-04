@@ -1,0 +1,38 @@
+// A theory whose operation lands at a sort indexed by two calls, the second
+// call's sort indexed by the first. Another theory includes it, and a function
+// takes and gives back a model of it.
+//
+// The model type of such a theory states the operation as a function into the
+// family at those two calls. The include and the function form that type.
+//
+// Each index that applies an operation stands in its family call as the value
+// that the call returns. The later index then reads the same value, so the
+// family call checks.
+//
+// - see: #5051
+
+/// Contexts, types in a context and terms of a type, with an extension, a
+/// weakened type and the newest variable.
+pub theory Scoped where {
+  /// Contexts.
+  sort Con : Type;
+  /// Types in a context.
+  sort Ty(g : Con) : Type;
+  /// Terms of a type in a context.
+  sort Tm(g : Con, a : Ty(g)) : Type;
+  /// A context extended by a type in it.
+  oper ext : (g : Con, a : Ty(g)) --> Con;
+  /// A type moved into the extended context.
+  oper wk : (g : Con, a : Ty(g)) --> Ty(ext(g, a));
+  /// The newest variable, at its type moved into the extended context.
+  oper q : (g : Con, a : Ty(g)) --> Tm(ext(g, a), wk(g, a));
+}
+
+/// The same signature through an include.
+pub theory Again where {
+  /// The signature of `Scoped`.
+  include Scoped;
+}
+
+/// A model of `Scoped`, given back as it is.
+pub def keep(m : Model(Scoped)) -> Model(Scoped) { m }
