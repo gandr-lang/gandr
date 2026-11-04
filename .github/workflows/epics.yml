@@ -8,14 +8,16 @@
 # summary of what, how many and the verdict.
 name: epics
 
-# An epic closes itself when every issue it is blocked by is closed, never
-# with none (#3398, `tracker.md` § tracker-issues). On every closed issue,
-# `.config/epics/epics.sh` reads the epics it blocks and, for each, the
-# issues that epic is blocked by, and `close.jq` decides: an open `kind:epic`
-# here blocked by at least one issue and none of them open is closed with a
-# comment under `<!-- epic-closed -->` naming them. An epic blocked by
-# nothing is left alone, its units not linked yet; one in another repository
-# is listed in the run log, not closed.
+# An epic closes itself when every issue it is blocked by and every
+# sub-issue it holds is closed, never with none (#3398, #4972, `tracker.md`
+# § tracker-issues). On every closed issue, `.config/epics/epics.sh` reads
+# the epics it blocks and the epic it sits under, and for each the issues
+# that epic is blocked by and its sub-issues, and `close.jq` decides. Each
+# open sub-issue that the epic is not blocked by is set as a blocked-by
+# issue, so the two lists agree. An open `kind:epic` here with at least one
+# unit and none open is closed with a comment under `<!-- epic-closed -->`
+# naming them. An epic with no unit is left alone, its units not linked yet;
+# one in another repository is listed in the run log, not closed.
 on:
   issues:
     types: [closed]
