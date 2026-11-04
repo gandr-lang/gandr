@@ -808,6 +808,38 @@ fn an_omitted_law_is_discharged_by_the_checker_4112()
 }
 
 #[test]
+fn a_repaired_model_body_owes_no_law_beside_its_parse_error_5142()
+{
+    let source = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : \
+                  Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), \
+                  true);\n  law sym : (a : Carrier, b : Carrier) => Path(Bool, same(a, b), same(b, \
+                  a));\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Cut : Model(Same) \
+                  with sort Carrier = One where {\n  def same(a ";
+    let lowered = super::repaired(source);
+    let refused: Vec<_> = rows(&lowered)
+        .into_iter()
+        .filter_map(|(name, _, amounts)| match amounts {
+            Amounts::Refused(refusal) => Some((name, refusal)),
+            Amounts::Completed
+            | Amounts::Uncompleted
+            | Amounts::Bodied
+            | Amounts::Data
+            | Amounts::Codata
+            | Amounts::Abstract
+            | Amounts::World => None,
+        })
+        .collect();
+    assert!(
+        matches!(refused.as_slice(), [(member, LoweringRefusal::MalformedForm {
+            fault: FormFault::Repaired(_),
+            ..
+        })] if member == "Cut.same"),
+        "a model body cut inside its member is refused at that member's repair alone, the laws \
+         it owes raising nothing beside it: {refused:?}"
+    );
+}
+
+#[test]
 fn an_instance_with_a_wrong_law_endpoint_is_refused_naming_the_law()
 {
     // The left-zero semigroup on `Integer`, `comp(f, g) = f` and `id = 0`:
