@@ -9,4 +9,5 @@ error[PlaceUnindexed]: an access at a place reads an element at an index; the he
 6 │ │ }
   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
   │
-  ╰ note: `unindexed` is refused with PlaceUnindexed, as its expectation states
+  ├ note: `unindexed` is refused with PlaceUnindexed, as its expectation states
+  ╰ help: access a list before indexing it

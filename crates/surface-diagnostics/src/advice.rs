@@ -153,6 +153,14 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             ..
         } => String::from("put a send, receive or choice below `rec`"),
         LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::NotAFunction,
+            ..
+        } => String::from("pass a function to `Path.ap`"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::TopLevel,
+            ..
+        } => String::from("write the expression in a declaration"),
+        LoweringRefusal::OutOfFragment {
             sort,
             boundary: FragmentBoundary::WrongSort,
             ..
@@ -336,13 +344,24 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::MismatchedPattern { .. } => {
             String::from("match constructors of the same datatype in every arm")
         },
+        LoweringRefusal::ShadowedBuiltin { .. } => {
+            String::from("rename the declaration that shadows the builtin")
+        },
+        LoweringRefusal::ProjectionFromApplication { .. } => {
+            String::from("bind the application to a module before selecting its member")
+        },
+        LoweringRefusal::TelescopeCycle { .. } => {
+            String::from("order parameters so each type names only earlier parameters")
+        },
+        LoweringRefusal::RegionAsValue { .. } => {
+            String::from("name the region only in a type such as `A at r`")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::DuplicateSignature { .. }
         | LoweringRefusal::DuplicateImportAlias { .. }
         | LoweringRefusal::UnlockedDependency { .. }
         | LoweringRefusal::UnexportedName { .. }
-        | LoweringRefusal::ShadowedBuiltin { .. }
         | LoweringRefusal::OutOfFragment { .. }
         | LoweringRefusal::GradedBridge { .. }
         | LoweringRefusal::MalformedLiteral { .. }
@@ -352,14 +371,11 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::PartialField { .. }
         | LoweringRefusal::NotAFunctor { .. }
         | LoweringRefusal::NotAModel { .. }
-        | LoweringRefusal::ProjectionFromApplication { .. }
         | LoweringRefusal::UnreadAscription { .. }
         | LoweringRefusal::UnreadCells { .. }
         | LoweringRefusal::UnstatedComponent { .. }
         | LoweringRefusal::UndescribedMember { .. }
         | LoweringRefusal::ImplicitTelescope { .. }
-        | LoweringRefusal::TelescopeCycle { .. }
-        | LoweringRefusal::RegionAsValue { .. }
         | LoweringRefusal::EntryType { .. }
         | LoweringRefusal::ViewOfNoPlace { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
@@ -625,6 +641,9 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::NestedOccurrence(_) => String::from(
             "place the datatype only where each enclosing type holds it strictly positively",
         ),
+        CheckRefusal::PointwiseDistinct { .. } => {
+            String::from("make both functions return the same value at every input")
+        },
         CheckRefusal::UaInequivalent {
             defect: UaDefect::NotNatural { .. },
             ..
@@ -787,6 +806,10 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             defect: AccessDefect::Consumed,
             ..
         } => String::from("use the held value before the consumed method call"),
+        CheckRefusal::Access {
+            defect: AccessDefect::Unindexed,
+            ..
+        } => String::from("access a list before indexing it"),
         CheckRefusal::HandlerUnlawful { .. } => {
             String::from("change the handler's clauses so that they satisfy the law")
         },
@@ -854,6 +877,12 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::SessionNotEquivalent { .. } => {
             String::from("make the two protocols bisimilar at every step")
         },
+        CheckRefusal::RoundTripDistinct { .. } => {
+            String::from("make each `equiv` round trip return its input")
+        },
+        CheckRefusal::SessionNotSubtype { .. } => String::from(
+            "make the source protocol select no more and offer no less than the target",
+        ),
         CheckRefusal::OpenSessionPayload { .. } => {
             String::from("bind the session payload inside the run's protocol")
         },
@@ -936,7 +965,8 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             ..
         } => String::from("remove `mobile` or use a representation that crosses"),
         // Unworded: a later slice words each, most-seen first.
-        CheckRefusal::NotADataType(_)
+        CheckRefusal::Access { .. }
+        | CheckRefusal::NotADataType(_)
         | CheckRefusal::LoopUndecided { .. }
         | CheckRefusal::AbstractKindNotUniverse(_)
         | CheckRefusal::RepresentationAboveKind { .. }
@@ -953,11 +983,9 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::DependentStack { .. }
         | CheckRefusal::PathCode(_)
         | CheckRefusal::FunextUnsupported { .. }
-        | CheckRefusal::PointwiseDistinct { .. }
         | CheckRefusal::EquivUnsupported { .. }
         | CheckRefusal::UncertifiedStratum { .. }
         | CheckRefusal::OutsideFold { .. }
-        | CheckRefusal::RoundTripDistinct { .. }
         | CheckRefusal::NotOver { .. }
         | CheckRefusal::UaUncertified { .. }
         | CheckRefusal::UaInequivalent { .. }
@@ -983,14 +1011,12 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::StageNotCarried { .. }
         | CheckRefusal::SessionMismatch { .. }
         | CheckRefusal::Linearity { .. }
-        | CheckRefusal::Access { .. }
         | CheckRefusal::Codata { .. }
         | CheckRefusal::Located { .. }
         | CheckRefusal::LiteralAmbiguous { .. }
         | CheckRefusal::CapabilityOutsideAuthority { .. }
         | CheckRefusal::CapabilityUngranted { .. }
         | CheckRefusal::FootprintsOverlap { .. }
-        | CheckRefusal::SessionNotSubtype { .. }
         | CheckRefusal::SessionCodeExpected { .. }
         | CheckRefusal::RideUnsupported { .. }
         | CheckRefusal::ForwardUnsupported { .. } => return Maybe::Absent(help::Absent::Unworded),
@@ -1009,7 +1035,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 146] = [
+    const WORDED: [&str; 156] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1157,6 +1183,16 @@ mod tests
         "OutOfFragment.ForeignClaim",
         "OutOfFragment.Misplaced",
         "OutOfFragment.NonContractive",
+        "OutOfFragment.NotAFunction",
+        "OutOfFragment.TopLevel",
+        "PlaceUnindexed",
+        "PointwiseDistinct",
+        "ProjectionFromApplication",
+        "RegionAsValue",
+        "RoundTripDistinct",
+        "SessionNotSubtype",
+        "ShadowedBuiltin",
+        "TelescopeCycle",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

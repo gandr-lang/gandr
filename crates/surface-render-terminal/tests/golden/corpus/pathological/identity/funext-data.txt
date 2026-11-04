@@ -4,7 +4,8 @@ error[PointwiseDistinct]: `Path.funext` needs both functions to agree at every i
 25 │ def sides : Path(Shape => Integer, width, height) = Path.funext(width, height);
    │                                                     ━━━━━━━━━━━━━━━━━━━━━━━━━━ functions that differ at some input
    │
-   ╰ note: `sides` is refused with PointwiseDistinct, as its expectation states
+   ├ note: `sides` is refused with PointwiseDistinct, as its expectation states
+   ╰ help: make both functions return the same value at every input
 
 error[FunextUnsupported]: `Path.funext` needs two closed pure functions between types built from units, integers, strings, pairs, two-way sums and data types that do not hold themselves; an argument may itself be a function between such types
    ╭▸ corpus/pathological/identity/funext-data.gandr:31:66

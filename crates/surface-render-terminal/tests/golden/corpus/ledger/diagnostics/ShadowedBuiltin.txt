@@ -4,4 +4,5 @@ error[ShadowedBuiltin]: `Unit` is a builtin name, which this source may not rebi
 3 │ data Unit : Type where {
   │      ━━━━ shadows a builtin
   │
-  ╰ note: `Unit` is refused with ShadowedBuiltin, as its expectation states
+  ├ note: `Unit` is refused with ShadowedBuiltin, as its expectation states
+  ╰ help: rename the declaration that shadows the builtin

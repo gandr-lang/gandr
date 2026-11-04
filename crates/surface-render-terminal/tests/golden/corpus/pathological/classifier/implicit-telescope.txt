@@ -119,7 +119,8 @@ error[TelescopeCycle]: `a` and `b` mention each other in their types, so neither
 84 │ def tangled[a : b, b : a](x : a) -> -F a { return x }
    │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parameters mentioning each other
    │
-   ╰ note: `tangled` is refused with TelescopeCycle, as its expectation states
+   ├ note: `tangled` is refused with TelescopeCycle, as its expectation states
+   ╰ help: order parameters so each type names only earlier parameters
 
 error[ImplicitUnsolved]: the implicit `x` this call to `chosen` omits is determined by neither its arguments nor the type it is checked against
    ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:89:36

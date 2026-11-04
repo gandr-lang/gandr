@@ -4,4 +4,5 @@ error[PointwiseDistinct]: `Path.funext` needs both functions to agree at every i
 18 │ def not_identity = Path.funext(not, same) ;
    │                    ━━━━━━━━━━━━━━━━━━━━━━ functions that differ at some input
    │
-   ╰ note: `not_identity` is refused with PointwiseDistinct, as its expectation states
+   ├ note: `not_identity` is refused with PointwiseDistinct, as its expectation states
+   ╰ help: make both functions return the same value at every input
