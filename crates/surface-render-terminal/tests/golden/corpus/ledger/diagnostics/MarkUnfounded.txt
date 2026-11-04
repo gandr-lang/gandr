@@ -4,4 +4,5 @@ error[MarkUnfounded]: this type is marked `mobile`, but its representation canno
 4 │   type Report = +U (Integer -> -F Integer);
   │                 ━━━━━━━━━━━━━━━━━━━━━━━━━━ a representation that does not cross
   │
-  ╰ note: `Report` is refused with MarkUnfounded, as its expectation states
+  ├ note: `Report` is refused with MarkUnfounded, as its expectation states
+  ╰ help: remove `mobile` or use a representation that crosses

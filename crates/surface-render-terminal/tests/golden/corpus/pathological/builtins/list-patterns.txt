@@ -17,4 +17,5 @@ error[MismatchedPattern]: this pattern matches another type than the first arm's
 20 │     3 => return 1,
    │     ━ a pattern of another type
    │
-   ╰ note: `mixed` is refused with MismatchedPattern, as its expectation states
+   ├ note: `mixed` is refused with MismatchedPattern, as its expectation states
+   ╰ help: match constructors of the same datatype in every arm

@@ -7,4 +7,5 @@ error[ImportShadows]: `Circle` is bound by an import and again in this source
 13 │ data Circle : Type where {
    │      ━━━━━━ bound here and by an import
    │
-   ╰ note: `Circle` is refused with ImportShadows, as its expectation states
+   ├ note: `Circle` is refused with ImportShadows, as its expectation states
+   ╰ help: rename the declaration or its imported binding

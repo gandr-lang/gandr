@@ -7,4 +7,5 @@ error[LevelMismatch]: this code lives in a larger universe than the one expected
 5 │ def too_big = Type ;
   │               ━━━━ a universe at a level not admitted: expected `Type`, found `Type[+, 1]`
   │
-  ╰ note: `too_big` is refused with LevelMismatch, as its expectation states
+  ├ note: `too_big` is refused with LevelMismatch, as its expectation states
+  ╰ help: lower the code to the expected universe

@@ -4,7 +4,8 @@ error[InstanceAmbiguous]: `say`'s instance `out` could be `b` or `a`, each an in
 22 │       say();
    │       ━━━━━ an instance with several in scope
    │
-   ╰ note: `ambiguous` is refused with InstanceAmbiguous, as its expectation states
+   ├ note: `ambiguous` is refused with InstanceAmbiguous, as its expectation states
+   ╰ help: supply the intended instance by name
 
 error[InstanceUnanswered]: `say` performs `std.io.Console.Eff` through its instance `out`, and no instance of `std.io.Console.Eff` is handled where this call stands: handle one around the call, `handle c : std.io.Console.Eff { … }`, or supply one by name, `say[out = c](…)`
    ╭▸ corpus/pathological/control/named-instances.gandr:37:49
@@ -12,7 +13,8 @@ error[InstanceUnanswered]: `say` performs `std.io.Console.Eff` through its insta
 37 │ def unanswered() -> [std.io.Console.Eff] Unit { say() }
    │                                                 ━━━━━ an instance with none in scope
    │
-   ╰ note: `unanswered` is refused with InstanceUnanswered, as its expectation states
+   ├ note: `unanswered` is refused with InstanceUnanswered, as its expectation states
+   ╰ help: handle the interface or supply its instance by name
 
 error[DuplicateDefinition]: `o` is defined twice
    ╭▸ corpus/pathological/control/named-instances.gandr:41:41

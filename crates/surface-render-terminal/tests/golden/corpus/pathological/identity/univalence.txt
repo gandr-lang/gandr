@@ -34,7 +34,8 @@ error[LevelMismatch]: this code lives in a larger universe than the one expected
    │ └─┘ checked against `(Type ≃ Type, Type) => Type`; while checking the body of this thunk
    │
    ├ note: while comparing the type this synthesises with the one it is checked against
-   ╰ note: `alongTypeSelf` is refused with LevelMismatch, as its expectation states
+   ├ note: `alongTypeSelf` is refused with LevelMismatch, as its expectation states
+   ╰ help: lower the code to the expected universe
 
 error[ShapeMismatch]: expected a dependent record `#{x : A, y : B(x)}`
    ╭▸ corpus/pathological/identity/univalence.gandr:53:28

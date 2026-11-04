@@ -4,7 +4,8 @@ error[MarkUnfounded]: this type is marked `mobile`, but its representation canno
 7 │   type Report = +U (Integer -> -F Integer);
   │                 ━━━━━━━━━━━━━━━━━━━━━━━━━━ a representation that does not cross
   │
-  ╰ note: `Report` is refused with MarkUnfounded, as its expectation states
+  ├ note: `Report` is refused with MarkUnfounded, as its expectation states
+  ╰ help: remove `mobile` or use a representation that crosses
 
 error[NotAnAbstractType]: this names an abstract type that was not admitted
   ╭▸ corpus/ledger/diagnostics/NotAnAbstractType.gandr:8:3
