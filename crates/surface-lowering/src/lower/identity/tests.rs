@@ -3466,3 +3466,122 @@ fn two_sites_of_one_fill_convert_at_the_same_entries_4180()
     );
     assert_accepted(&judged(&module, &mut arena));
 }
+
+/// The declared type `name`'s signature lowers to.
+///
+/// # Specification
+/// trivial.
+fn declared_of(
+    module: &LoweredModule<'_>,
+    name: SurfaceName<'_>,
+) -> gandr_core_term::ValueTypeId
+{
+    match outcome_of(module, name) {
+        DeclarationOutcome::Completed { declared_type, .. }
+        | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
+        other @ (DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("{name} lowers its signature: {other:?}"),
+    }
+}
+
+#[test]
+fn a_carrier_supplied_by_name_is_the_carrier_written_first_4932()
+{
+    // `Path[.A = C](a, b)` and `Path[.A](a, b)` lower to the type the
+    // positional form lowers to, under each head; a supply naming another
+    // implicit is refused at its name.
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def written : Path(Integer, 4, 4);\n",
+            "def named : Path[.A = Integer](4, 4);\n",
+            "def bound : (A : Type, x : A) => Path(A, x, x);\n",
+            "def punned : (A : Type, x : A) => Path[.A](x, x);\n",
+            "def universe : Path(Type, Integer + Unit, Unit);\n",
+            "def universal : Path[.A = Type](Integer + Unit, Unit);\n",
+            "def bridge : Bridge(Integer, 4, 4);\n",
+            "def bridged : Bridge[.A = Integer](4, 4);\n",
+            "def directed : Flow(Integer, 4, 4);\n",
+            "def flowed : Flow[.A = Integer](4, 4);\n",
+            "def stray : Path[.B = Integer](4, 4);\n",
+        )),
+        &mut arena,
+    );
+    for (written, supplied, what) in [
+        ("written", "named", "a carrier supplied by name"),
+        (
+            "bound",
+            "punned",
+            "a carrier supplied from the variable `A`",
+        ),
+        ("universe", "universal", "a universe supplied by name"),
+        ("bridge", "bridged", "a bridge's carrier supplied by name"),
+        ("directed", "flowed", "a flow's carrier supplied by name"),
+    ] {
+        assert_eq!(
+            equal_type_syntax(
+                &arena,
+                declared_of(&module, written.into()),
+                declared_of(&module, supplied.into())
+            ),
+            CertificateEquality::Equal,
+            "{what} is the carrier written first"
+        );
+    }
+    assert!(
+        matches!(
+            outcome_of(&module, "stray".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName { name, .. })
+                if name == SurfaceName::from("B")
+        ),
+        "`B` names no implicit of `Path`"
+    );
+}
+
+#[test]
+fn an_omitted_carrier_is_a_nominated_hole_4932()
+{
+    // `Flow(a, b)` omits its carrier: the carrier is the decoding of a hole
+    // the form nominates, which the endpoints fix where the type forms, and
+    // which nothing fixes between two lambdas.
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def fixed : Flow(4, 4);\ndef fixed = Flow.stay(4);\n",
+            "def unfixed : Flow(fun (y) { y }, fun (y) { y });\n",
+        )),
+        &mut arena,
+    );
+    let Some(&ValueType::Flow { carrier, .. }) =
+        arena.value_type(declared_of(&module, "fixed".into()))
+    else {
+        panic!("`fixed`'s signature is a flow type");
+    };
+    assert!(
+        matches!(
+            arena.value_type(carrier),
+            Some(&ValueType::Element { code, .. }) if matches!(
+                arena.value(code),
+                Some(&Value::Hole(hole)) if hole.origin() == gandr_core_term::hole::HoleOrigin::Nominated
+            )
+        ),
+        "the omitted carrier decodes a nominated hole"
+    );
+    let report = judged(&module, &mut arena);
+    let verdicts: Vec<_> = report
+        .judged()
+        .iter()
+        .map(gandr_core_checker::Judged::verdict)
+        .collect();
+    assert!(
+        matches!(verdicts.as_slice(), [
+            Verdict::Checked { .. },
+            Verdict::Refused(CheckRefusal::ImplicitUnsolved { .. })
+        ]),
+        "the endpoints fix one carrier and leave the other unsolved: {verdicts:?}"
+    );
+}

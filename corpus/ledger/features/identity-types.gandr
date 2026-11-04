@@ -19,3 +19,14 @@ def join(
 @[ checks ]
 def joined : () => Path(Integer, 4, 4) ;
 def joined = thunk { join(4, 4, 4, four_eq_four, four_eq_four) } ;
+
+/// The same path, its carrier supplied by name.
+@[ checks ]
+def four_named : Path[.A = Integer](4, 4) ;
+def four_named = Path.here(4) ;
+
+/// A point identified with itself, the carrier supplied from `A`.
+@[ checks ]
+def itself(A : Type, x : A) -> Path[.A](x, x) {
+  Path.here(x)
+}

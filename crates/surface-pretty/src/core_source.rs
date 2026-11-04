@@ -1142,6 +1142,31 @@ impl<'arena> CoreSource<'arena>
         }
     }
 
+    /// The carrier `carrier` as the source wrote it, or nothing where the
+    /// source omitted it: the decoding of a hole a type nominated, as
+    /// `Flow(x, y)` lowers its carrier. A source cannot write a nominated
+    /// hole, so an omitted carrier reads back as nothing.
+    ///
+    /// # Specification
+    /// - ensures: nothing exactly for the decoding of a nominated hole, and the
+    ///   carrier itself otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a flow whose carrier the source omitted spells
+    ///   without it, and one whose carrier the source wrote spells with it.
+    /// - witness: `core_source::tests::an_omitted_flow_carrier_reads_as_nothing_4932`
+    #[spec(ensures: |ret| ret.is_none_or(|node| node == CoreNode::ValueType(carrier)))]
+    fn written_carrier(
+        &self,
+        carrier: ValueTypeId,
+    ) -> Option<CoreNode>
+    {
+        let omitted = matches!(self.arena.value_type(carrier), Some(&ValueType::Element { code, .. })
+            if matches!(self.arena.value(code), Some(Value::Hole(hole)) if hole.origin() == HoleOrigin::Nominated));
+        (!omitted).then_some(CoreNode::ValueType(carrier))
+    }
+
     /// The computation `id` is written as: the fold a returned binary
     /// composite realises, since `Path.step(p, q)` writes it, and `id`
     /// otherwise.
@@ -1669,9 +1694,10 @@ impl<'arena> CoreSource<'arena>
         | (Some(&ValueType::Data { declaration, ref arguments }), Former::Data { name, arity }) =>
             usize::from(arity) == arguments.len() && self.name(declaration) == name,
         | (Some(&ValueType::Path { carrier, left, right }), Former::Path { carrier: actual_carrier, left: actual_left, right: actual_right })
-        | (Some(&ValueType::Bridge { carrier, left, right }), Former::Bridge { carrier: actual_carrier, left: actual_left, right: actual_right })
-        | (Some(&ValueType::Flow { carrier, source: left, target: right }), Former::Flow { carrier: actual_carrier, left: actual_left, right: actual_right }) =>
+        | (Some(&ValueType::Bridge { carrier, left, right }), Former::Bridge { carrier: actual_carrier, left: actual_left, right: actual_right }) =>
             actual_carrier == CoreNode::ValueType(carrier) && actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
+        | (Some(&ValueType::Flow { carrier, source: left, target: right }), Former::Flow { carrier: actual_carrier, left: actual_left, right: actual_right }) =>
+            actual_carrier == self.written_carrier(carrier) && actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
         (Some(&ValueType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (Some(&ValueType::Lift { .. }), Former::Unreadable(Unreadable::Lift))
             | (Some(&ValueType::World(WorldType::Capability(_))), Former::Unreadable(Unreadable::WorldCapability))
             | (None, Former::Unreadable(Unreadable::Dangling))
@@ -1764,7 +1790,7 @@ impl<'arena> CoreSource<'arena>
                 source,
                 target,
             } => Former::Flow {
-                carrier: CoreNode::ValueType(carrier),
+                carrier: self.written_carrier(carrier),
                 left: CoreNode::Value(source),
                 right: CoreNode::Value(target),
             },
@@ -3668,6 +3694,37 @@ mod tests
         assert!(matches!(
             source.read(CoreNode::Computation(returned)),
             Former::Return(value) if value == CoreNode::Value(unit)
+        ));
+    }
+
+    /// A flow whose carrier decodes a nominated hole reads with no carrier,
+    /// as the source omitted it, and one over a written hole keeps it.
+    #[test]
+    fn an_omitted_flow_carrier_reads_as_nothing_4932()
+    {
+        let mut arena = CoreArena::new();
+        let point = arena.value_unit();
+        let nominated = gandr_core_term::hole::HoleId::nominated(
+            gandr_core_term::hole::NominationIndex::from(0_u32),
+        )
+        .expect("the first nomination names a hole");
+        let mut flow_over = |hole| {
+            let code = arena.value_hole(hole);
+            let carrier = arena.value_type_element(code, gandr_kernel_strata::Level::zero());
+            (carrier, arena.value_type_flow(carrier, point, point))
+        };
+        let (_, omitted) = flow_over(nominated);
+        let (written_carrier, written) = flow_over(gandr_core_term::hole::HoleId::from(0_u32));
+        let source = CoreSource::new(&arena, &[]);
+        assert!(matches!(
+            source.read(CoreNode::ValueType(omitted)),
+            Former::Flow { carrier: None, left, right }
+                if left == CoreNode::Value(point) && right == CoreNode::Value(point)
+        ));
+        assert!(matches!(
+            source.read(CoreNode::ValueType(written)),
+            Former::Flow { carrier: Some(carrier), .. }
+                if carrier == CoreNode::ValueType(written_carrier)
         ));
     }
 

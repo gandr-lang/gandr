@@ -223,6 +223,7 @@ const COUNTED: &[&str] = &[
     "type equivalence_type",
     "type f_type",
     "type f_type name",
+    "type flow_type",
     "type function_type",
     "type isomorphism_type",
     "type labelled_sum_type",

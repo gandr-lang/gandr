@@ -600,6 +600,8 @@ impl TileName
     pub const PATH: Self = Self("Path");
     /// The bridge type's head `Bridge`.
     pub const BRIDGE: Self = Self("Bridge");
+    /// The flow type's head `Flow`, where it supplies its carrier by name.
+    pub const FLOW_TYPE: Self = Self("Flow");
     /// The capability type's head `Cap`.
     pub const CAP: Self = Self("Cap");
     /// The keyword `at` placing a capability type in a scope's region.
@@ -950,6 +952,10 @@ pub enum Former
     /// The bridge type `Bridge(A, a, b)`: a value type over a carrier and two
     /// endpoint terms, read as the path type is.
     BridgeType,
+    /// The directed identity type with its carrier supplied by name,
+    /// `Flow[.A = C](a, b)`: the positional `Flow(C, a, b)` is a type
+    /// application.
+    FlowType,
     /// A relation between two types written infix: the equivalence `A ≃ B`
     /// and the quasi-inverse `A ≅ B`, each the record type it abbreviates,
     /// and the flow `A ⇝ B`, the directed identity `Flow(Type, A, B)`.
@@ -1152,7 +1158,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 136_usize] = [
+pub const FORMERS: [(&str, Former); 137_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1210,6 +1216,7 @@ pub const FORMERS: [(&str, Former); 136_usize] = [
     ("parenthesized_type", Former::ParenthesizedType),
     ("path_type", Former::PathType),
     ("bridge_type", Former::BridgeType),
+    ("flow_type", Former::FlowType),
     ("equivalence_type", Former::RelationType),
     ("isomorphism_type", Former::RelationType),
     ("universe_flow_type", Former::RelationType),

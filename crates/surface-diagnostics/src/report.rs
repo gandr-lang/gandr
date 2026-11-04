@@ -704,7 +704,7 @@ impl Report<'_>
                             ..
                         },
                     ) => Maybe::Present(alloc::format!(
-                        "supply the implicit `{implicit}` by name, as `{function}[{implicit} = \
+                        "supply the implicit `{implicit}` by name, as `{function}[.{implicit} = \
                          …](…)`"
                     )),
                     Maybe::Present(&Omitted::Scope { .. }) => Maybe::Present(String::from(

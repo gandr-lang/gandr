@@ -523,6 +523,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::ParenthesizedType
                 | Former::PathType
                 | Former::BridgeType
+                | Former::FlowType
                 | Former::RelationType
                 | Former::ManifestType
                 | Former::CapabilityType
@@ -641,6 +642,7 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::ValueFunctionType
                         | Former::PathType
                         | Former::BridgeType
+                        | Former::FlowType
                         | Former::RelationType
                         | Former::ManifestType
                         | Former::CapabilityType
@@ -714,6 +716,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::ValueFunctionType
                 | Former::PathType
                 | Former::BridgeType
+                | Former::FlowType
                 | Former::RelationType
                 | Former::ManifestType
                 | Former::CapabilityType

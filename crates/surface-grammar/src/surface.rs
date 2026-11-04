@@ -436,6 +436,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "derived_rule_declaration",
     "equivalence_type",
     "flow_declaration",
+    "flow_type",
     "for_expression",
     "fork_expression",
     "forget_model_expression",

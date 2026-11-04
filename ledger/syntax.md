@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xaef8a7a4843e3c5b`
-- Rules: 171 — 170 committed, 1 internal
-- Molds: 2894
+- Grammar fingerprint: `0x6f328e17dae9cec9`
+- Rules: 172 — 171 committed, 1 internal
+- Molds: 2964
 - Attributes: 17
 
 ## Reading a form
@@ -158,7 +158,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`redirection_operator`](../corpus/ledger/syntax/redirection-operator.gandr) | `<> ‖ <& ‖ >& ‖ >> ‖ < ‖ >` | `expression.atom` | `redirection_operator` | admitted | Operator |
 | [`forget_model_expression`](../corpus/ledger/syntax/forget-model-expression.gandr) | `forget [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] ( EXPRESSION ) at TYPE` | `expression.pure` | `forget_model_expression` * | admitted | Other, Keyword |
 
-## `type` — 40 rules
+## `type` — 41 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -180,8 +180,9 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`universe_type`](../corpus/ledger/syntax/universe-type.gandr) | `Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆?` | `type.atom` | `universe_type` * | admitted | TypeBuiltin, Other, Keyword, Number |
 | [`representable_universe_type`](../corpus/ledger/syntax/representable-universe-type.gandr) | `Type+` | `type.atom` | `representable_universe_type` * | admitted | TypeBuiltin |
 | [`at_type`](../corpus/ledger/syntax/at-type.gandr) | `TYPE at ‹identifier›` | `type.application` | `at_type` | admitted | Keyword, Label |
-| [`path_type`](../corpus/ledger/syntax/path-type.gandr) | `Path ( ⦅ Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆? , TYPE , TYPE ‖ TYPE , EXPRESSION , EXPRESSION ⦆ )` | `type.application` | `path_type` * | admitted | TypeBuiltin, Other, Operator, Number |
-| [`bridge_type`](../corpus/ledger/syntax/bridge-type.gandr) | `Bridge ( ⦅ Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆? , TYPE , TYPE ‖ TYPE , EXPRESSION , EXPRESSION ⦆ )` | `type.application` | `bridge_type` * | admitted | TypeBuiltin, Other, Operator, Number |
+| [`path_type`](../corpus/ledger/syntax/path-type.gandr) | `Path ⦅ ( ⦅ ⟨universe_type⟩ , TYPE , TYPE ‖ TYPE , EXPRESSION , EXPRESSION ⦆ ) ‖ [ . TYPE ⦅ = ⟨universe_type⟩ ] ( TYPE , TYPE ) ‖ = TYPE ] ( EXPRESSION , EXPRESSION ) ‖ ] ( EXPRESSION , EXPRESSION ) ⦆ ⦆` | `type.application` | `path_type` * | admitted | TypeBuiltin, Other, Operator, Number |
+| [`bridge_type`](../corpus/ledger/syntax/bridge-type.gandr) | `Bridge ⦅ ( ⦅ ⟨universe_type⟩ , TYPE , TYPE ‖ TYPE , EXPRESSION , EXPRESSION ⦆ ) ‖ [ . TYPE ⦅ = ⟨universe_type⟩ ] ( TYPE , TYPE ) ‖ = TYPE ] ( EXPRESSION , EXPRESSION ) ‖ ] ( EXPRESSION , EXPRESSION ) ⦆ ⦆` | `type.application` | `bridge_type` * | admitted | TypeBuiltin, Other, Operator, Number |
+| [`flow_type`](../corpus/ledger/syntax/flow-type.gandr) | `Flow [ . TYPE ⦅ = ⟨universe_type⟩ ] ( TYPE , TYPE ) ‖ = TYPE ] ( EXPRESSION , EXPRESSION ) ‖ ] ( EXPRESSION , EXPRESSION ) ⦆` | `type.application` | `flow_type` * | admitted | Other, TypeBuiltin, Operator, Number |
 | [`type_application`](../corpus/ledger/syntax/type-application.gandr) | `⦅ ‹type_identifier› ‖ ‹type_variable› ⦅ [ < ] ⦆? ⦆ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? )` | `type.application` | `type_application` | admitted | Type, TypeVariable, Other, Operator |
 | [`type_path`](../corpus/ledger/syntax/type-path.gandr) | `TYPE . ⦅ ‹type_variable› . ⦆* ‹type_identifier› ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `type_path` * | admitted | Other, TypeVariable, Type |
 | [`staged_type`](../corpus/ledger/syntax/staged-type.gandr) | `TYPE [ ⦅ < ⦆? ‹identifier› ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `staged_type` * | admitted | Other, Operator, VariableParam |
@@ -262,7 +263,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
 
-## Decisions — 110 of 171 rules decided at every token
+## Decisions — 108 of 172 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -399,8 +400,9 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `universe_type` | type | 7 | `Type` | — | 0 |
 | `representable_universe_type` | type | 1 | `Type+` | — | 0 |
 | `at_type` | type | 2 | `at` | — | 0 |
-| `path_type` | type | 14 | `Path` | — | 0 |
-| `bridge_type` | type | 14 | `Bridge` | — | 0 |
+| `path_type` | type | 37 | `Path` | — | 1 |
+| `bridge_type` | type | 37 | `Bridge` | — | 1 |
+| `flow_type` | type | 24 | `Flow` | — | 1 |
 | `type_application` | type | 9 | `type_identifier` `type_variable` | `moded_type`, `type_identifier`, `type_variable` | 2 |
 | `type_path` | type | 8 | `.` | — | 2 |
 | `staged_type` | type | 8 | `[` | — | 2 |
@@ -440,27 +442,27 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `f_type.row.labelled` | type | 24 | `-F` | `f_type`, `f_type.row` | 12 |
 | `f_type.result.labelled` | type | 23 | `[` | `f_type.result` | 12 |
 
-## Menus — 197 labels
+## Menus — 198 labels
 
 Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.
 
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
 | `identifier` | 379 | 58 | 3 |
-| `,` | 271 | 51 | 0 |
+| `,` | 283 | 52 | 0 |
 | `:` | 248 | 32 | 0 |
 | `type_identifier` | 181 | 33 | 2 |
-| `=` | 129 | 31 | 0 |
-| `)` | 128 | 44 | 0 |
-| `(` | 124 | 43 | 4 |
+| `)` | 137 | 45 | 0 |
+| `=` | 135 | 34 | 0 |
+| `(` | 133 | 44 | 4 |
 | `;` | 124 | 26 | 1 |
-| `.` | 83 | 39 | 3 |
+| `.` | 86 | 42 | 3 |
 | `}` | 78 | 40 | 0 |
+| `]` | 77 | 40 | 0 |
 | `type_variable` | 70 | 15 | 3 |
-| `]` | 65 | 39 | 0 |
+| `[` | 61 | 33 | 4 |
 | `{` | 61 | 31 | 2 |
-| `[` | 55 | 32 | 4 |
-| `number` | 52 | 30 | 3 |
+| `number` | 55 | 31 | 3 |
 | `_` | 48 | 7 | 2 |
 | `=>` | 45 | 10 | 1 |
 | `-->` | 31 | 5 | 0 |
@@ -488,16 +490,17 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `"` | 12 | 5 | 3 |
 | `->` | 12 | 8 | 1 |
 | `data` | 12 | 3 | 1 |
+| `+` | 11 | 9 | 5 |
 | `mobile` | 10 | 2 | 0 |
 | `#{` | 9 | 5 | 4 |
 | `bind` | 9 | 3 | 1 |
 | `\|` | 9 | 9 | 3 |
-| `+` | 8 | 8 | 5 |
+| `-` | 8 | 6 | 2 |
 | `pi+` | 8 | 2 | 0 |
 | `oper` | 7 | 5 | 1 |
+| `Type` | 6 | 4 | 1 |
 | `constructor` | 6 | 5 | 2 |
 | `escape_sequence` | 6 | 5 | 0 |
-| `-` | 5 | 5 | 2 |
 | `rec` | 5 | 5 | 2 |
 | `string_fragment` | 5 | 4 | 0 |
 | `variable_name` | 5 | 3 | 1 |
@@ -512,7 +515,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `-F` | 3 | 3 | 3 |
 | `..` | 3 | 2 | 1 |
 | `>>` | 3 | 3 | 1 |
-| `Type` | 3 | 3 | 1 |
 | `at` | 3 | 3 | 1 |
 | `face` | 3 | 3 | 0 |
 | `feed` | 3 | 2 | 0 |
@@ -558,6 +560,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `Buf` | 1 | 1 | 1 |
 | `Cap` | 1 | 1 | 1 |
 | `Char` | 1 | 1 | 1 |
+| `Flow` | 1 | 1 | 1 |
 | `Integer` | 1 | 1 | 1 |
 | `Never` | 1 | 1 | 1 |
 | `Path` | 1 | 1 | 1 |

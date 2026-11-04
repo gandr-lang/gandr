@@ -207,6 +207,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type Buf", Standing::Owed(0)),
     ("Type Cap", Standing::Owed(0)),
     ("Type Char", Standing::Owed(0)),
+    ("Type Flow", Standing::Owed(0)),
     ("Type Integer", Standing::Owed(0)),
     ("Type Path", Standing::Owed(0)),
     ("Type String", Standing::Owed(0)),
@@ -372,7 +373,8 @@ fn kind(
 /// binding port binds or an abstracting operation in a theory's rule, as
 /// the head or the type of an `Eq.generic(T)` or of one of its laws, as a
 /// node of the tactic a splice runs, as the splice a law member admits by,
-/// as a node of a world's requirement row, or as a host interface's path.
+/// as a node of a world's requirement row, as a host interface's path, or
+/// as the implicit a path-shaped type supplies its carrier by.
 ///
 /// # Specification
 /// trivial.
@@ -517,6 +519,11 @@ enum Placed
     /// `handle` head: the name of an interface, neither a term nor a type the
     /// lowering forms, so the row or the scope answers.
     Interface,
+    /// The implicit a path-shaped type supplies its carrier by, `A` in
+    /// `Path[.A = C](a, b)`: the name of the former's implicit, neither a
+    /// term nor a type, so the type answers (#4932). The pun `Path[.A](a,
+    /// b)` reads `A` as the carrier, which answers.
+    Implicit,
 }
 
 /// What the lowering knows of a source's models: each model implicit a
@@ -1151,6 +1158,12 @@ fn gated(
             && unders.iter().any(|&(start, end)| {
                 start <= usize::from(span.start()) && usize::from(span.end()) <= end
             });
+        let implicit = !melded
+            && def.label == "type_identifier"
+            && parent.is_some_and(|(_, label, ..)| matches!(label, "Path" | "Bridge" | "Flow"))
+            && source
+                .get(usize::from(span.end()) ..)
+                .is_some_and(|after| after.trim_start().starts_with('='));
         let placed = placed
             .or_else(|| templated.then_some(Placed::Template))
             .or_else(|| head.then_some(Placed::Head))
@@ -1168,7 +1181,8 @@ fn gated(
             .or_else(|| packed.then_some(Placed::Packed))
             .or_else(|| interfaced.then_some(Placed::Interface))
             .or_else(|| conditioned.then_some(Placed::Theory))
-            .or_else(|| lent.then_some(Placed::Lent));
+            .or_else(|| lent.then_some(Placed::Lent))
+            .or_else(|| implicit.then_some(Placed::Implicit));
         gated.push((kind(grammar, tree, position, *def), span, placed));
     }
     gated

@@ -1,0 +1,47 @@
+// A path-shaped type takes its carrier by name, as a call takes an implicit.
+//
+// The endpoints often fix the carrier, so a source need not write it first.
+// A supply by name writes it where the endpoints leave it open.
+//
+// `Path[.A = C](a, b)` supplies the carrier `C`. `Path[.A](a, b)` supplies
+// the variable `A` in scope. A universe that a supply names reads the
+// endpoints as types. `Bridge` and `Flow` take the same supplies.
+// `Flow(a, b)` omits its carrier, and the endpoints fix it where the type
+// forms.
+//
+// - see: `../../pathological/identity/carrier-by-name.gandr` — the carriers refused
+// - see: #4932
+// - see: #5026 — a hole in a declared type, solved where the type forms
+
+/// Four identified with itself, the carrier supplied by name.
+def namedPath : Path[.A = Integer](4, 4) = Path.here(4);
+
+/// A point identified with itself, the carrier supplied from `A`.
+def punnedPath(A : Type, x : A) -> Path[.A](x, x) { Path.here(x) }
+
+/// The unit type identified with itself, the universe supplied by name.
+def universalPath : Path[.A = Type](Unit, Unit) = Path.here(Unit);
+
+/// Two equal integers related by their identity, the carrier supplied by name.
+def namedBridge : Bridge[.A = Integer](4, 4) = unit;
+
+/// A bridge that `A` supplies is the bridge that writes `A` first.
+def punnedBridge(A : Type, x : A, b : Bridge[.A](x, x)) -> Bridge(A, x, x) { b }
+
+/// The total relation between the unit type and the string type, the
+/// universe supplied by name.
+def universalBridge : Bridge[.A = Type](Unit, String) = thunk {
+  fun (x : Unit) { fun (y : String) { return Unit } }
+};
+
+/// Four flows to itself, and a supply names the carrier.
+def namedFlow : Flow[.A = Integer](4, 4) = Flow.stay(4);
+
+/// A point flows to itself, and `A` supplies the carrier.
+def punnedFlow(A : Type, x : A) -> Flow[.A](x, x) { Flow.stay(x) }
+
+/// The unit type flows to itself, and a supply names the universe.
+def universalFlow : Flow[.A = Type](Unit, Unit) = Flow.stay(Unit);
+
+/// Four flows to itself. The source omits the carrier, and the endpoints fix it.
+def omittedFlow : Flow(4, 4) = Flow.stay(4);

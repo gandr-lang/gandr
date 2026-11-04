@@ -753,7 +753,7 @@ impl Source for ContentSource<'_>
                 source,
                 target,
             } => Former::Flow {
-                carrier,
+                carrier: Some(carrier),
                 left: source,
                 right: target,
             },

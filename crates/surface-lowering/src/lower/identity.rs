@@ -387,8 +387,25 @@ pub(super) const BACK: &str = "back";
 pub(super) const NIL: &str = "nil";
 
 /// The directed identity type's head, resolved after every binder and
-/// earlier declaration at three arguments.
+/// earlier declaration at two or three arguments.
 pub(super) const FLOW: &str = "Flow";
+
+/// The implicit that names a path-shaped type's carrier, `Path[.A = C](a, b)`.
+pub(super) const CARRIER: &str = "A";
+
+/// The operands a `Flow` type application writes: its carrier and its two
+/// endpoints, or its two endpoints alone.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum FlowOperands
+{
+    /// `Flow(A, a, b)`.
+    Three([NodeIndex; 3]),
+    /// `Flow(a, b)`, the carrier omitted.
+    Two([NodeIndex; 2]),
+}
 
 /// The quasi-inverse's head, `Iso(A, B)`, the spelling of `A ≅ B` as an
 /// application, resolved after every binder and earlier declaration at two
@@ -1254,22 +1271,19 @@ pub(super) struct Transported
 
 impl<'source> Lowerer<'_, 'source>
 {
-    /// Classify a path type, `Path(A, a, b)`, or `Path(Type, A, B)` at a
-    /// universe its own tiles spell; or a bridge type, `Bridge(A, a, b)`,
-    /// read alike under its own head.
+    /// Classify a path type, `Path(A, a, b)`, `Path(Type, A, B)` at a universe
+    /// its own tiles spell, or `Path[.A = A](a, b)` and `Path[.A](a, b)` with
+    /// the carrier supplied by name; or a bridge type, read alike under its
+    /// own head.
     ///
     /// # Specification
     /// - requires: `site` is a path or bridge type, as `relating` names, in
     ///   type position, or in value position where a type is quoted.
     /// - ensures: the form stands as a value type and is planned over its
-    ///   former, its carrier and its two endpoints, each endpoint read as a
-    ///   value standing inside a type, all under the form's own frame. A
-    ///   written carrier is read as a value type. A universe carrier is the
-    ///   universe its tiles spell, and its endpoints, written at the type sort,
-    ///   are read as the codes of the types they spell.
+    ///   former, its carrier and its two endpoints, as [`Self::path_shape`]
+    ///   reads them.
     /// - provides: element identity's and relatedness's type formers.
-    /// - fails: yields the wrong-sort refusal where no value type is read, and
-    ///   a misplaced-tile or extra-operand fault for a form out of shape.
+    /// - fails: as [`Self::path_shape`].
     /// - panics: none.
     ///
     /// # Errors
@@ -1278,11 +1292,14 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a closed path type and one whose endpoint is a
     ///   computation, each read back out of the arena; a path at a universe
-    ///   between a sum and a session type reads each endpoint as its code.
+    ///   between a sum and a session type reads each endpoint as its code; a
+    ///   carrier supplied by name, or from the variable `A`, is the carrier
+    ///   written first.
     /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
     /// - witness: `lower::identity::tests::a_path_at_a_universe_reads_its_endpoints_as_types_402`
     /// - witness: `lower::identity::tests::a_bridge_type_lowers_to_the_core_bridge_3427`
+    /// - witness: `lower::identity::tests::a_carrier_supplied_by_name_is_the_carrier_written_first_4932`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -1292,6 +1309,7 @@ impl<'source> Lowerer<'_, 'source>
                         if planned == relating && match carrier {
                             Carrier::Written(carrier) => self.reading(carrier) == Reading::ValueType(site.reading.frame()),
                             Carrier::Universe(_) => true,
+                            Carrier::Omitted(_) => false,
                         }
                             && self.reading(left) == Reading::Value(site.reading.frame())
                             && self.reading(right) == Reading::Value(site.reading.frame())
@@ -1310,29 +1328,152 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::ValueType)?;
-        closed(site, &mut cursor, relating.head())?;
-        closed(site, &mut cursor, TileName::PAREN_OPEN)?;
-        let carrier = if let Maybe::Present(_) = cursor.at(TileName::UNIVERSE) {
-            Carrier::Universe(self.universe_tiles(site, &mut cursor)?)
+        let (carrier, left, right) = self.path_shape(site, &mut cursor, relating.head(), frame)?;
+        self.plan(site, Plan::Path(relating, carrier, left, right));
+
+        Ok(())
+    }
+
+    /// Classify a directed identity type with its carrier supplied by name,
+    /// `Flow[.A = A](a, b)` or `Flow[.A](a, b)`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a flow type in type position, or in value position
+    ///   where a type is quoted.
+    /// - ensures: the form stands as a value type and is planned over its
+    ///   carrier and its two endpoints, as [`Self::path_shape`] reads them.
+    /// - provides: directed identity's type former, its carrier by name.
+    /// - fails: as [`Self::path_shape`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a flow whose carrier is supplied by name is the flow
+    ///   whose carrier is written first.
+    /// - witness: `lower::identity::tests::a_carrier_supplied_by_name_is_the_carrier_written_first_4932`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(site.at.node),
+                    Some(&Plan::Flow(Carrier::Written(_) | Carrier::Universe(_), left, right))
+                        if self.reading(left) == Reading::Value(site.reading.frame())
+                            && self.reading(right) == Reading::Value(site.reading.frame())
+                            && self.at_endpoint.contains(&left)
+                            && self.at_endpoint.contains(&right)
+                )
+        },
+    )]
+    pub(super) fn supplied_flow(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::ValueType)?;
+        let (carrier, left, right) =
+            self.path_shape(site, &mut cursor, TileName::FLOW_TYPE, frame)?;
+        self.plan(site, Plan::Flow(carrier, left, right));
+
+        Ok(())
+    }
+
+    /// Read the carrier and the two endpoints of a path-shaped type under the
+    /// head `head`: written first, `Path(A, a, b)`; a universe its own tiles
+    /// spell, `Path(Type, A, B)`; or supplied by name, `Path[.A = A](a, b)`,
+    /// or from the variable `A`, `Path[.A](a, b)`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` holds the form's pieces, its head first.
+    /// - ensures: each endpoint is read as a value standing inside a type,
+    ///   under `frame`. A written or supplied carrier is read as a value type,
+    ///   the variable `A` where the supply puns. A universe carrier is the
+    ///   universe its tiles spell, and its endpoints, written at the type sort,
+    ///   are read as the codes of the types they spell.
+    /// - fails: [`LoweringRefusal::UnresolvedName`] for a supply naming an
+    ///   implicit other than `A`; a misplaced-tile or extra-operand fault for a
+    ///   form out of shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::path_type`]; a supply naming `B` is
+    ///   refused at `B`.
+    /// - witness: `lower::identity::tests::a_carrier_supplied_by_name_is_the_carrier_written_first_4932`
+    #[spec(ensures: |ret| ret.as_ref().is_err_and(|refusal| matches!(*refusal, LoweringRefusal::UnresolvedName { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::OutOfFragment { .. }))
+        || ret.as_ref().is_ok_and(|&(_, left, right)| self.reading(left) == Reading::Value(frame)
+            && self.reading(right) == Reading::Value(frame)
+            && self.in_type.contains(&left)
+            && self.in_type.contains(&right)
+            && self.at_endpoint.contains(&left)
+            && self.at_endpoint.contains(&right)))]
+    fn path_shape(
+        &mut self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+        head: TileName,
+        frame: Frame,
+    ) -> Result<(Carrier, NodeIndex, NodeIndex), LoweringRefusal<'source>>
+    {
+        closed(site, cursor, head)?;
+        let carrier = if let Maybe::Present(_) = cursor.at(TileName::BRACKET_OPEN) {
+            closed(site, cursor, TileName::BRACKET_OPEN)?;
+            closed(site, cursor, TileName::DOT)?;
+            let named = site.one(cursor.operands())?;
+            let name = SurfaceName::from(self.text_at(named));
+            if name.as_ref() != CARRIER {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: named.span,
+                    name,
+                });
+            }
+            let carrier = if let Maybe::Present(_) = cursor.at(TileName::EQUALS) {
+                closed(site, cursor, TileName::EQUALS)?;
+                if let Maybe::Present(_) = cursor.at(TileName::UNIVERSE) {
+                    Carrier::Universe(self.universe_tiles(site, cursor)?)
+                }
+                else {
+                    let supplied = site.one(cursor.operands())?;
+                    self.read(supplied.node, Reading::ValueType(frame));
+                    Carrier::Written(supplied.node)
+                }
+            }
+            else {
+                self.read(named.node, Reading::ValueType(frame));
+                Carrier::Written(named.node)
+            };
+            closed(site, cursor, TileName::BRACKET_CLOSE)?;
+            closed(site, cursor, TileName::PAREN_OPEN)?;
+            carrier
         }
         else {
-            let carrier = site.one(cursor.operands())?;
-            self.read(carrier.node, Reading::ValueType(frame));
-            Carrier::Written(carrier.node)
+            closed(site, cursor, TileName::PAREN_OPEN)?;
+            let carrier = if let Maybe::Present(_) = cursor.at(TileName::UNIVERSE) {
+                Carrier::Universe(self.universe_tiles(site, cursor)?)
+            }
+            else {
+                let written = site.one(cursor.operands())?;
+                self.read(written.node, Reading::ValueType(frame));
+                Carrier::Written(written.node)
+            };
+            closed(site, cursor, TileName::COMMA)?;
+            carrier
         };
-        closed(site, &mut cursor, TileName::COMMA)?;
         let left = site.one(cursor.operands())?;
-        closed(site, &mut cursor, TileName::COMMA)?;
+        closed(site, cursor, TileName::COMMA)?;
         let right = site.one(cursor.operands())?;
-        closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
-        exhausted(site, &cursor)?;
+        closed(site, cursor, TileName::PAREN_CLOSE)?;
+        exhausted(site, cursor)?;
         self.read(left.node, Reading::Value(frame));
         self.read(right.node, Reading::Value(frame));
         self.in_type.extend([left.node, right.node]);
         self.at_endpoint.extend([left.node, right.node]);
-        self.plan(site, Plan::Path(relating, carrier, left.node, right.node));
 
-        Ok(())
+        Ok((carrier, left.node, right.node))
     }
 
     /// Classify a path or bridge type written as a call, `Path(A, a, b)` or
@@ -1398,15 +1539,18 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Classify a directed identity type, `Flow(A, a, b)`, its three operands
-    /// already read off the application.
+    /// Classify a directed identity type written as a type application,
+    /// `Flow(A, a, b)` or `Flow(a, b)`, its operands already read off the
+    /// application.
     ///
     /// # Specification
     /// - requires: `site` is a type application headed `Flow`, which nothing
-    ///   the scope binds answers, written over `carrier`, `left` and `right`.
-    /// - ensures: the form stands as a value type, reads its carrier as a value
-    ///   type and its two endpoints as endpoints standing inside a type, all
-    ///   under its own frame, and is planned over the three.
+    ///   the scope binds answers, written over `written`: the carrier and the
+    ///   two endpoints, or the two endpoints alone.
+    /// - ensures: the form stands as a value type, reads a written carrier as a
+    ///   value type and its two endpoints as endpoints standing inside a type,
+    ///   all under its own frame, and is planned over the three. A carrier the
+    ///   form omits is a hole it nominates for the implicit `A` of `Flow`.
     /// - provides: directed identity's type former.
     /// - fails: yields the wrong-sort refusal where no value type is read.
     /// - panics: none.
@@ -1416,16 +1560,23 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a flow between two session codes read back out of the
-    ///   arena with its carrier and endpoints in order.
+    ///   arena with its carrier and endpoints in order; a flow omitting its
+    ///   carrier reads it as the decoding of a nominated hole.
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
+    /// - witness: `lower::identity::tests::an_omitted_carrier_is_a_nominated_hole_4932`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
                     Some(&Plan::Flow(carrier, left, right))
-                        if [carrier, left, right] == written
-                            && self.reading(carrier) == Reading::ValueType(site.reading.frame())
+                        if match (carrier, written) {
+                            (Carrier::Written(carrier), FlowOperands::Three([at, from, to])) => [carrier, left, right] == [at, from, to]
+                                && self.reading(carrier) == Reading::ValueType(site.reading.frame()),
+                            (Carrier::Omitted(_), FlowOperands::Two([from, to])) => [left, right] == [from, to],
+                            (Carrier::Written(_) | Carrier::Universe(_), FlowOperands::Two(_))
+                            | (Carrier::Omitted(_) | Carrier::Universe(_), FlowOperands::Three(_)) => false,
+                        }
                             && self.reading(left) == Reading::Value(site.reading.frame())
                             && self.reading(right) == Reading::Value(site.reading.frame())
                             && self.at_endpoint.contains(&left)
@@ -1436,12 +1587,23 @@ impl<'source> Lowerer<'_, 'source>
     pub(super) fn flow_type(
         &mut self,
         site: Site,
-        written: [NodeIndex; 3],
+        written: FlowOperands,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::ValueType)?;
-        let [carrier, left, right] = written;
-        self.read(carrier, Reading::ValueType(frame));
+        let (carrier, [left, right]) = match written {
+            FlowOperands::Three([carrier, left, right]) => {
+                self.read(carrier, Reading::ValueType(frame));
+                (Carrier::Written(carrier), [left, right])
+            },
+            FlowOperands::Two(endpoints) => {
+                let hole = self.nominate(super::implicit::Nomination::Omitted {
+                    function: SurfaceName::from(FLOW),
+                    implicit: SurfaceName::from(CARRIER),
+                })?;
+                (Carrier::Omitted(hole), endpoints)
+            },
+        };
         self.read(left, Reading::Value(frame));
         self.read(right, Reading::Value(frame));
         self.in_type.extend([left, right]);
@@ -4357,6 +4519,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::LazyRecordType
                 | Former::ValueFunctionType
                 | Former::BridgeType
+                | Former::FlowType
                 | Former::CapabilityType
                 | Former::AtType
                 | Former::StagedType

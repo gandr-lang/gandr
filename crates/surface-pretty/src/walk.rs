@@ -1327,12 +1327,16 @@ where
             carrier,
             left,
             right,
-        }
-        | Former::Flow {
+        } => Vec::from([value_type(carrier), bare(left), bare(right)]),
+        Former::Flow {
             carrier,
             left,
             right,
-        } => Vec::from([value_type(carrier), bare(left), bare(right)]),
+        } => carrier
+            .map(value_type)
+            .into_iter()
+            .chain([bare(left), bare(right)])
+            .collect(),
         Former::Relation {
             relation: Relation::Flow,
             left,
@@ -10949,8 +10953,10 @@ impl Walk<'_, '_>
                 let _ = parts.part(Part::Tight).text(")");
                 writes(Production("path_type"), Binding::Atom)
             },
-            Former::Flow { .. } => {
-                let _ = parts.text("Flow").arguments(Arity(3_usize));
+            // `Flow(x, y)`: a carrier the source omitted reads back as nothing.
+            Former::Flow { carrier, .. } => {
+                let operands = if carrier.is_some() { 3_usize } else { 2_usize };
+                let _ = parts.text("Flow").arguments(Arity(operands));
                 writes(Production("type_application"), Binding::Atom)
             },
             // `Bridge(List(Integer), [1, 2], [1, 2])`: its endpoints are terms,

@@ -1,5 +1,5 @@
 /// `directed-paths`: Directed paths (Flow).
-/// Implemented: `Flow(A, a, b)` with `Flow.stay`, `Flow.then` and covariant `Flow.ride`, certified on readmission, and `Flow.into(f)` decided for a closed translator at its finitely many patterns.
+/// Implemented: `Flow(A, a, b)` with `Flow.stay`, `Flow.then` and covariant `Flow.ride`, certified on readmission, and `Flow.into(f)` decided for a closed translator at its finitely many patterns. `Flow(a, b)` omits the carrier, and the endpoints fix it.
 /// Not implemented: a forward the rule does not decide, which is refused.
 ///
 /// - owes: #1835
@@ -56,4 +56,7 @@ module Versions where {
   /// A first-version record migrated to the third by a run.
   @[ runs("(+{.1 = unit}, 30, \"ada\")") ]
   def latest : () => V3 = moved(("ada", 30)) ;
+  /// Four flows to itself. The endpoints fix the carrier the source omits.
+  @[ checks ]
+  def stayed : Flow(4, 4) = Flow.stay(4) ;
 }

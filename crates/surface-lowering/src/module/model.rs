@@ -1689,6 +1689,7 @@ pub fn spine_domains<'source>(
             | Former::ValueFunctionType
             | Former::PathType
             | Former::BridgeType
+            | Former::FlowType
             | Former::RelationType
             | Former::ManifestType
             | Former::CapabilityType

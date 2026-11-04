@@ -393,6 +393,60 @@ fn add_type_rules(
     // The bridge type `Bridge(C, e1, e2)` relates its endpoints as the path
     // type identifies them, and is read at the same sorts for the same
     // reasons, so it is the same production under its own head tile.
+    //
+    // Each head also takes its carrier by name, as a call takes an implicit:
+    // `Path[.A = C](e1, e2)` supplies it, and `Path[.A](e1, e2)` supplies it
+    // from the variable `A` (#4932). The `[` after the head parts these forms
+    // from the positional one at once. The name is a type operand, so the pun
+    // reads the variable as the carrier. A universe supplied by name reads its
+    // endpoints at the type sort, as the positional universe does. `Flow` is
+    // a type application where it writes its carrier first, so its rule holds
+    // the supplied forms alone.
+    let universe = || {
+        Regex::seq([
+            tile(TileLabel("Type")),
+            Regex::optional(Regex::seq([
+                tile(TileLabel("[")),
+                Regex::alt([tile(TileLabel("+")), tile(TileLabel("-"))]),
+                Regex::optional(Regex::seq([
+                    tile(TileLabel(",")),
+                    tile(TileLabel("number")),
+                ])),
+                tile(TileLabel("]")),
+            ])),
+        ])
+    };
+    let endpoints = |sort: Sort| {
+        Regex::seq([
+            tile(TileLabel("(")),
+            Regex::sort(sort),
+            tile(TileLabel(",")),
+            Regex::sort(sort),
+            tile(TileLabel(")")),
+        ])
+    };
+    let supplied = || {
+        Regex::seq([
+            tile(TileLabel("[")),
+            tile(TileLabel(".")),
+            Regex::sort(ty),
+            Regex::alt([
+                Regex::seq([
+                    tile(TileLabel("=")),
+                    universe(),
+                    tile(TileLabel("]")),
+                    endpoints(ty),
+                ]),
+                Regex::seq([
+                    tile(TileLabel("=")),
+                    Regex::sort(ty),
+                    tile(TileLabel("]")),
+                    endpoints(Sort::Expression),
+                ]),
+                Regex::seq([tile(TileLabel("]")), endpoints(Sort::Expression)]),
+            ]),
+        ])
+    };
     for (name, head) in [("path_type", "Path"), ("bridge_type", "Bridge")] {
         rules.push(rule(
             RuleName(name),
@@ -400,36 +454,38 @@ fn add_type_rules(
             type_application,
             Regex::seq([
                 tile(TileLabel(head)),
-                tile(TileLabel("(")),
                 Regex::alt([
                     Regex::seq([
-                        tile(TileLabel("Type")),
-                        Regex::optional(Regex::seq([
-                            tile(TileLabel("[")),
-                            Regex::alt([tile(TileLabel("+")), tile(TileLabel("-"))]),
-                            Regex::optional(Regex::seq([
+                        tile(TileLabel("(")),
+                        Regex::alt([
+                            Regex::seq([
+                                universe(),
                                 tile(TileLabel(",")),
-                                tile(TileLabel("number")),
-                            ])),
-                            tile(TileLabel("]")),
-                        ])),
-                        tile(TileLabel(",")),
-                        Regex::sort(ty),
-                        tile(TileLabel(",")),
-                        Regex::sort(ty),
+                                Regex::sort(ty),
+                                tile(TileLabel(",")),
+                                Regex::sort(ty),
+                            ]),
+                            Regex::seq([
+                                Regex::sort(ty),
+                                tile(TileLabel(",")),
+                                Regex::sort(Sort::Expression),
+                                tile(TileLabel(",")),
+                                Regex::sort(Sort::Expression),
+                            ]),
+                        ]),
+                        tile(TileLabel(")")),
                     ]),
-                    Regex::seq([
-                        Regex::sort(ty),
-                        tile(TileLabel(",")),
-                        Regex::sort(Sort::Expression),
-                        tile(TileLabel(",")),
-                        Regex::sort(Sort::Expression),
-                    ]),
+                    supplied(),
                 ]),
-                tile(TileLabel(")")),
             ]),
         ));
     }
+    rules.push(rule(
+        RuleName("flow_type"),
+        ty,
+        type_application,
+        Regex::seq([tile(TileLabel("Flow")), supplied()]),
+    ));
     // A type application's head is a type name or a type variable: a
     // declaration's name is lowercase, so a type operator a declaration binds
     // is applied under the spelling a type position reads it by, `small` or
