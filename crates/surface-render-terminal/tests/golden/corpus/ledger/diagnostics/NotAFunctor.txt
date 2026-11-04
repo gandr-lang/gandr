@@ -4,4 +4,5 @@ error[NotAFunctor]: `Plain` is not a functor declared before this binding
 9 │ module Applied = Plain(Plain) ;
   │                  ━━━━━ not a functor
   │
-  ╰ note: `Applied` is refused with NotAFunctor, as its expectation states
+  ├ note: `Applied` is refused with NotAFunctor, as its expectation states
+  ╰ help: declare `Plain` as a functor before this binding

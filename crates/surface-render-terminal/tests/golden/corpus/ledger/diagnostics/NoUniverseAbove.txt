@@ -4,4 +4,5 @@ error[NoUniverseAbove]: the universe level `18446744073709551615` is at or past 
 3 │ def greatest : Type[+, 18446744073709551615] ;
   │                        ━━━━━━━━━━━━━━━━━━━━ no universe stands above this level
   │
-  ╰ note: `greatest` is refused with NoUniverseAbove, as its expectation states
+  ├ note: `greatest` is refused with NoUniverseAbove, as its expectation states
+  ╰ help: use a smaller universe level

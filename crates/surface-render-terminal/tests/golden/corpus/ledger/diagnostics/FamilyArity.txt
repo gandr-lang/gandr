@@ -6,4 +6,5 @@ error[FamilyArity]: the type operator takes 1 arguments but is given 2
   │          │
   │          formed; while forming the parts of this type
   │
-  ╰ note: `over` is refused with FamilyArity, as its expectation states
+  ├ note: `over` is refused with FamilyArity, as its expectation states
+  ╰ help: give the type operator its declared number of arguments

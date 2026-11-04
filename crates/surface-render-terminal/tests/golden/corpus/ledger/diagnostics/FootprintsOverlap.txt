@@ -14,4 +14,5 @@ error[FootprintsOverlap]: both halves of this fork may use the authority found h
 22 │ │ }
    │ └─┘ checked against `+U (Cap {read, write} -> -F [std.fs.Eff] Unit)`; while checking the body of this thunk
    │
-   ╰ note: `racing` is refused with FootprintsOverlap, as its expectation states
+   ├ note: `racing` is refused with FootprintsOverlap, as its expectation states
+   ╰ help: give each fork half separate authority

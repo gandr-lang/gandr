@@ -15,4 +15,5 @@ error[LoopUndecided]: deciding whether this case respects its sort's loops ran p
 34 │ │  }
    │ └──┘ checked against `(x : Circle) => Path[.A = Circle](x, x)`; while checking the body of this thunk
    │
-   ╰ note: `costly` is refused with LoopUndecided, as its expectation states
+   ├ note: `costly` is refused with LoopUndecided, as its expectation states
+   ╰ help: simplify the loop obligation until the checker decides it
