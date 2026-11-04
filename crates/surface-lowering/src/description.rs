@@ -84,11 +84,38 @@
 //! route describe the family and lifts the rule-carrying case with it
 //! (`description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`).
 //!
+//! # A mutual block's data families as one description
+//!
+//! Each `data` family of a mutual block `rec { … }` reads into its own
+//! description of one sort, as any family does, and a field at a sibling is a
+//! field at a named type there. The block's families also read as one
+//! description, a [`mutual::MutualDescription`] in the report. Its sorts are
+//! the families and its constructors are theirs, each at its family's sort. A
+//! field at a sibling, applied to the shared parameters in order, is a
+//! recursive occurrence at the sibling's sort. The group needs two or more
+//! well-formed, unindexed families that state the same parameters, and the
+//! universe's check must admit it. Otherwise the block reads no group.
+//!
+//! **Choice.** The group sits beside each family's own description. The
+//! native reading and the cells read each family alone, so a group in place
+//! of the families would change what each reader sees. The alternative was a
+//! group as the only description, which every reader of a family's
+//! description must first learn to split. **Reversal.** A reader that wants
+//! one family of a group reads the group at that family's sort, and then the
+//! group can replace the per-family descriptions
+//! (`description::tests::a_mutual_block_s_data_families_read_as_one_description_5018`).
+//!
 //! # References
 //!
 //! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: § quant-counts
 //!   — a member's finite grade and a cell's hole count are one count, the cell
 //!   layer's `Multiplicity`; the grade carrier is unchanged.
+//! - `vault:01a178aa-e578-7e31-8903-9f223de2dd91` — anchor: §
+//!   ornament-requirement-sort-indexed-universe — the universe carries the sort
+//!   index, so a mutual block's families read as one description.
+//! - `vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a` — anchor: § What the block
+//!   still cannot say — a recursion across two sorts is a recursive occurrence
+//!   at the sibling's sort.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -632,6 +659,9 @@ pub struct DescriptionReport
     pub diagnostics: Vec<DescriptionDiagnostic>,
     /// The data families the native reading owns whole, in declaration order.
     pub natives: Vec<NativeFamily>,
+    /// Each mutual block's data families read as one description, in block
+    /// order.
+    pub mutuals: Vec<mutual::MutualDescription>,
 }
 
 /// A nullary observation or a parameterized observation boundary.
@@ -992,6 +1022,10 @@ pub(crate) fn elaborate_roots<'source>(
     // A `pub` mark exports the declaration after it, past any attribute block
     // between them.
     let mut marked = Visibility::Private;
+    // The mutual block each member of one stands in, by the block's order, so
+    // that its data families read as one description once each one is read.
+    let mut grouped: BTreeMap<NodeIndex, usize> = BTreeMap::new();
+    let mut groups = 0_usize;
     while let Some(position) = pending.pop() {
         let Some(node) = tree.node(position)
         else {
@@ -1021,10 +1055,13 @@ pub(crate) fn elaborate_roots<'source>(
                 former: Former::Mutual,
                 ..
             } => {
-                pending.extend(pieces.pieces.iter().rev().filter_map(|piece| match *piece {
-                    Piece::Operand(member) => Some(member.node),
-                    Piece::Tile { .. } => None,
-                }));
+                for piece in pieces.pieces.iter().rev() {
+                    if let Piece::Operand(member) = *piece {
+                        pending.push(member.node);
+                        let _first = grouped.insert(member.node, groups);
+                    }
+                }
+                groups = groups.saturating_add(1);
                 continue;
             },
             Shape::Form {
@@ -1156,6 +1193,20 @@ pub(crate) fn elaborate_roots<'source>(
             Err(diagnostic) => report.diagnostics.push(diagnostic),
         }
     }
+    let mut members: Vec<Vec<&DescribedDeclaration>> = vec![Vec::new(); groups];
+    for declaration in &report.declarations {
+        if let Some(read) = grouped
+            .get(&declaration.at.node)
+            .and_then(|&group| members.get_mut(group))
+        {
+            read.push(declaration);
+        }
+    }
+    let found: Vec<mutual::MutualDescription> = members
+        .iter()
+        .filter_map(|read| mutual::group(read))
+        .collect();
+    report.mutuals.extend(found);
     Ok(())
 }
 
@@ -2401,6 +2452,8 @@ mod family;
 mod joins;
 
 mod members;
+
+mod mutual;
 
 mod theory;
 

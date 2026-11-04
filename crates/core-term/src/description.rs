@@ -6,12 +6,13 @@
 //! # Description decoding
 //!
 //! `description::decode` interprets description codes in a `DecodeContext`.
-//! Unit, products, coproducts, parameters, a selected recursive sort and the
-//! function former, as the thunked arrow `U (Ā → F B)`, have core readings.
-//! `decode_desc` selects a positive, inhabited, single-sorted description;
-//! negative descriptions, empty coproducts, foreign recursive sorts and
-//! unsupported leaves return typed `DecodeError` values instead of substitute
-//! types. Grades and descriptive attributes do not change the decoded type.
+//! Unit, products, coproducts, parameters, the selected recursive sort, a
+//! sibling sort the type table binds to its family, and the function former,
+//! as the thunked arrow `U (Ā → F B)`, have core readings. `decode_desc`
+//! selects a positive, inhabited, single-sorted description; negative
+//! descriptions, empty coproducts, unbound recursive sorts and unsupported
+//! leaves return typed `DecodeError` values instead of substitute types.
+//! Grades and descriptive attributes do not change the decoded type.
 //!
 //! `decode_signature` instead retains a family as a native `DataSignature`:
 //! constructor order fixes tags, parameter classifiers retain their telescope
@@ -20,7 +21,10 @@
 //! declaration identity. Type-valued arguments are quoted; `TypeBinding::Value`
 //! and `TypeBinding::Parameter` arguments retain their values, so a value index
 //! in a type slot is not changed into a quoted type. Local bindings shadow the
-//! ambient type table without copying it.
+//! ambient type table without copying it. A description of several sorts,
+//! such as a mutual block's families, decodes one sort at a time: the
+//! constructors at the selected sort, a recursive leaf at a sibling sort the
+//! sibling's family at the same arguments.
 //!
 //! **Choice.** Keep structural description interpretation and native nominal
 //! family formation distinct; a coproduct encoding must not erase a declared
@@ -370,31 +374,40 @@ pub fn decode_desc<G>(
     Ok(result)
 }
 
-/// Decode the constructor table into a native nominal signature.
+/// Decode the constructor table of the sort `context.self_sort` into a
+/// native nominal signature.
 ///
 /// # Specification
 /// - requires: parameter classifiers and `context` have matching de Bruijn
 ///   scopes; `kind` is the positive universe intended to bound constructor
-///   fields.
+///   fields. In a description of several sorts, `context.types` binds each
+///   sibling sort to its nominal family.
 /// - ensures: parameters and kind are retained; tags follow declaration order;
 ///   nullary codes produce no fields, products flatten in field order,
 ///   recursive leaves retain the native self application, and a function former
-///   is one field, the thunked arrow into its body. Empty data is admitted.
-/// - fails: non-data or multi-sort descriptions, mismatched parameter arity,
-///   and unreadable field codes are declined explicitly.
+///   is one field, the thunked arrow into its body. Empty data is admitted. A
+///   description of one sort gives all its constructors. A description of
+///   several sorts gives the constructors at `context.self_sort`, and a
+///   recursive leaf at a sibling sort is that sibling's family at the same
+///   arguments.
+/// - fails: codata descriptions, a sort the description does not declare,
+///   mismatched parameter arity and unreadable field codes are declined
+///   explicitly.
 /// - panics: none.
 ///
 /// # Errors
-/// Returns `CodataNu`, `MultiSorted`, `ParameterArity` or a `decode` refusal.
+/// Returns `CodataNu`, `ForeignSort`, `ParameterArity` or a `decode` refusal.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — native signatures distinguish empty data from an empty
 ///   payload coproduct and retain recursive heads and constructor tag order; a
-///   function former stays one field rather than flattening.
+///   function former stays one field rather than flattening; each sort of an
+///   even and odd description reads its own constructors.
 /// - witness: `description::tests::native_signatures_keep_nominality_and_empty_data`
 /// - witness: `description::tests::a_function_former_decodes_to_the_thunked_arrow`
+/// - witness: `description::tests::each_sort_of_a_mutual_description_decodes_to_its_family_5018`
 #[inline]
-#[spec(ensures: |result| result.as_ref().map_or(true, |signature| signature.constructors().len() == description.ctors.len() && signature.parameters().len() == description.params.len() && signature.kind() == kind))]
+#[spec(ensures: |result| result.as_ref().map_or(true, |signature| signature.constructors().len() <= description.ctors.len() && signature.parameters().len() == description.params.len() && signature.kind() == kind))]
 pub fn decode_signature<G>(
     arena: &mut CoreArena,
     description: &TheoryDesc<G>,
@@ -403,13 +416,15 @@ pub fn decode_signature<G>(
     kind: ValueTypeId,
 ) -> Result<DataSignature, DecodeError>
 {
-    single_data_sort(description)?;
+    let at_sort = data_sort(description, context.self_sort)?;
     if parameters.len() != description.params.len() {
         return Err(DecodeError::ParameterArity);
     }
     let mut constructors = Vec::with_capacity(description.ctors.len());
     let mut pending = Vec::new();
-    for constructor in &description.ctors {
+    for constructor in description.ctors.iter().filter(|constructor| {
+        at_sort == AtSort::Every || constructor.result.as_ref() == context.self_sort.as_ref()
+    }) {
         let mut fields = Vec::new();
         // The walk below drains the stack, so each constructor starts it empty.
         pending.push(constructor.code.to_node());
@@ -531,6 +546,57 @@ fn single_data_sort<G>(description: &TheoryDesc<G>) -> Result<(), DecodeError>
     Ok(())
 }
 
+/// Which constructors of a description a data sort reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AtSort
+{
+    /// The description declares one sort, so every constructor builds it.
+    Every,
+    /// The description declares several sorts, so a constructor builds the
+    /// sort its result names.
+    Named,
+}
+
+/// Enforce the positive sort boundary of the native data interpretation for
+/// the sort `sort`.
+///
+/// # Specification
+/// - ensures: success means data polarity, and either one declared sort or
+///   several among which `sort` stands.
+/// - fails: `CodataNu` for codata, `ForeignSort` for a sort that several
+///   declared sorts leave out, and `Uninhabited` for no declared sort.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `CodataNu`, `ForeignSort` or `Uninhabited`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — polarity, sort count and sort membership each separate a
+///   refusal.
+/// - witness: `description::tests::each_sort_of_a_mutual_description_decodes_to_its_family_5018`
+#[spec(ensures: |result| result.is_ok() == (description.polarity == DeclPolarity::Data && (description.sorts.len() == 1 || description.sorts.iter().any(|declared| declared.name.as_ref() == sort.as_ref()))))]
+fn data_sort<G>(
+    description: &TheoryDesc<G>,
+    sort: NameRef<'_>,
+) -> Result<AtSort, DecodeError>
+{
+    if description.polarity == DeclPolarity::Codata {
+        return Err(DecodeError::CodataNu);
+    }
+    match *description.sorts {
+        [] => Err(DecodeError::Uninhabited),
+        [_] => Ok(AtSort::Every),
+        ref sorts
+            if sorts
+                .iter()
+                .any(|declared| declared.name.as_ref() == sort.as_ref()) =>
+        {
+            Ok(AtSort::Named)
+        },
+        _ => Err(DecodeError::ForeignSort(Name::from(sort.as_ref()))),
+    }
+}
+
 /// Drain the first-order decoder's explicit worklist.
 ///
 /// # Specification
@@ -563,10 +629,27 @@ fn interpret<G>(
             Frame::Code(node) => match node.view() {
                 CodeView::Unit => values.push(arena.value_type_unit()),
                 CodeView::Var(sort) => {
-                    if sort.as_ref() != context.self_sort.as_ref() {
+                    if sort.as_ref() == context.self_sort.as_ref() {
+                        values.push(context.self_type);
+                        continue;
+                    }
+                    // A sibling sort of one description is its own family, at
+                    // the arguments the decoded family stands at.
+                    let sibling = context.types.get(sort).copied();
+                    let Some(TypeBinding::Nominal { declaration, arity }) = sibling
+                    else {
+                        return Err(DecodeError::ForeignSort(sort.clone()));
+                    };
+                    let Some(&crate::ValueType::Data { ref arguments, .. }) =
+                        arena.value_type(context.self_type)
+                    else {
+                        return Err(DecodeError::ForeignSort(sort.clone()));
+                    };
+                    if arguments.len() != arity.0 {
                         return Err(DecodeError::ForeignSort(sort.clone()));
                     }
-                    values.push(context.self_type);
+                    let arguments = arguments.clone();
+                    values.push(arena.value_type_data(declaration, arguments));
                 },
                 CodeView::Prod(mut children) | CodeView::Sum(mut children) => {
                     let left = children.next().ok_or(DecodeError::MalformedCode)?;
