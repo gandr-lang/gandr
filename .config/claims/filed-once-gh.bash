@@ -10,10 +10,13 @@ set -euo pipefail
 dir=${STUB_GH:?}
 board=$dir/board.json
 printf '%s\n' "$*" >> "$dir/calls"
-# Hold the board while this call reads and writes it.
+# Hold the board while this call reads and writes it, with `host-lock.bash`'s
+# lock: `flock(1)` where the host has it and perl's `flock` on macOS. The
+# stub runs through a link, so its own directory is the link's target's.
+source "$(dirname "$(readlink "${BASH_SOURCE[0]}" || echo "${BASH_SOURCE[0]}")")/../mise/host-lock.bash"
 locked() {
   exec 7> "$dir/board.lock"
-  flock 7
+  until host_flock 7; do sleep 0.05; done
 }
 case "$*" in
   "auth token"*) exit 1 ;;
@@ -24,7 +27,7 @@ case "$*" in
     locked
     reads=$(($(cat "$dir/reads" 2> /dev/null || echo 0) + 1))
     echo "$reads" > "$dir/reads"
-    flock --unlock 7
+    host_unlock 7
     if ((reads <= 2)); then
       for _ in $(seq 300); do
         (($(cat "$dir/reads") >= 2)) && break

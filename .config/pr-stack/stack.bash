@@ -11,8 +11,6 @@ pr_stack_dir="$(git rev-parse --show-toplevel)/.config/pr-stack"
 source "$pr_stack_dir/../gh/budget.bash"
 # shellcheck source=../mise/host-lock.bash
 source "$pr_stack_dir/../mise/host-lock.bash"
-# shellcheck source=hold.bash
-source "$pr_stack_dir/hold.bash"
 
 # Refuse while `origin/$trunk` holds a change to the stacking rule the
 # checked-out branch lacks (#1455). A task runs the rule from the branch it is

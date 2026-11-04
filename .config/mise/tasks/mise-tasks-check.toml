@@ -1627,15 +1627,8 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # branches as `wt:sweep` reads them: a commit whose subject repeats one the
 # trunk held before the fork keeps its branch, and a subject the trunk gains
 # after the fork deletes it (#5118, `own_commits`).
-# `.config/pr-stack/race.bash` runs seats' `pr:open` steps over one scratch
-# origin, once per case in `.config/pr-stack/race.json`: a `pr:open` that
-# finds the stack top held waits and does not restack, the holder opens and
-# releases the hold, and the next one opens on its head after one gate; a
-# hold past its deadline is taken over, and two seats writing at once leave
-# one holder (#5122, `hold.bash`). `hold.jq` decides whether a `pr:open`
-# takes, renews or waits on the hold.
 ["check:pr-stack"]
-description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a red member is cut out of its stack, a heal reports its restack, a change is measured from a fetched trunk, a top behind the trunk arms pr:await, is stacked past or is refused, the commits a rebase would replay empty are read, a member above a queued one is merged only once linked, pr:await outlasts a failed read, the sweep judges a subject from the fork, and one pr:open at a time holds the top"
+description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a red member is cut out of its stack, a heal reports its restack, a change is measured from a fetched trunk, a top behind the trunk arms pr:await, is stacked past or is refused, the commits a rebase would replay empty are read, a member above a queued one is merged only once linked, pr:await outlasts a failed read, and the sweep judges a subject from the fork"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1658,9 +1651,8 @@ fi
 .config/pr-stack/queue.bash || failed=1
 .config/pr-stack/await.bash || failed=1
 .config/pr-stack/sweep-subjects.bash || failed=1
-.config/pr-stack/race.bash || failed=1
 (( failed == 0 )) || exit 1
-echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a red member is cut out of its stack; a heal reports its restack; a change is measured from a fetched trunk; a top behind the trunk arms pr:await, is stacked past or is refused; a rebase's empty replays are read; a member above a queued one merges only once linked; pr:await outlasts a failed read; the sweep judges a subject from the fork; one pr:open at a time holds the top"
+echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a red member is cut out of its stack; a heal reports its restack; a change is measured from a fetched trunk; a top behind the trunk arms pr:await, is stacked past or is refused; a rebase's empty replays are read; a member above a queued one merges only once linked; pr:await outlasts a failed read; the sweep judges a subject from the fork"
 '''
 
 # Every `gh` call site has a measured price, and each identity's hour of
@@ -1709,6 +1701,10 @@ run = ".config/mise/host-lock-cases.bash"
 # `passed.jq` (#5076), a gated tree accepted, a changed tree refused, a
 # reworded commit accepted, a gate that skipped a selected check refused,
 # and a head stacked on the top refused for the gate before the stack (#5091).
+# `.config/gate-scope/carry-cases.bash` builds scratch repositories (#5153): a
+# restack onto a top that touches other files carries the gate to the new
+# tree, a restack that changes the branch's patch carries none, and a head on
+# the gated tree keeps its own record.
 # Then `unmapped.jq` reads the live tasks: a check that builds or runs the
 # toolchain outside every group of the table, or a group naming no check,
 # fails it. So does a check that builds `GATE_SCOPE` under
@@ -1720,6 +1716,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 .config/cases/run.bash gate-scope .config/gate-scope/cases.json --programs .config/gate-scope --mode c --raw unmapped.jq
+.config/gate-scope/carry-cases.bash
 findings=$(mise tasks ls --json \
   | jq '{tasks: [.[] | select(.name | startswith("check:")) | {name, run, depends, env}]}' \
   | jq -r -L .config/gate-scope -f .config/gate-scope/unmapped.jq)
