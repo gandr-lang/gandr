@@ -45,9 +45,9 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - Progress and trace: an open and a recheck of changed files reported to a client showing progress; each log line sent as `$/logTrace` at the client's level; a session's messages traced to the file `sessionTrace` names, which `replay` holds a fresh server to.
 - Signature help: the head the called name was written with, its documentation, and the argument at the cursor.
 - Inline completion: ranked snippets closing the form at the cursor or filling its hole, each hole a named tab stop.
-- The outline: document symbols nesting each declaration inside its holder, folding ranges over multi-line forms, documentation and block comments, and selection ranges growing from the innermost node to the whole document.
+- The outline: document symbols nesting each declaration inside its holder, folding ranges over multi-line forms, documentation and block comments, and selection ranges from the innermost node outward.
 - Hover: the type of the innermost node under the cursor, and a declaration's documentation or refusal; inlay hints: binders' unwritten types.
-- `page`, `index`, `Page`, `Entry` and `Unpaged`: `gandr doc`'s pages, each public declaration as its hover shows it.
+- `page`, `index`, `site` and `sourced`: `gandr doc`'s pages and site, each declaration as its hover shows it.
 - Definitions and declarations: what the name under the cursor refers to, at its definition or its signature, and the families its type names, here or in an imported sibling; links: path imports to their files.
 - Highlights, and linked editing of a local binder: where the name under the cursor is declared and used in the document; references and rename: in every open document and importer in the opened projects; a file renamed: its importers' addresses.
 - Workspace symbols: the names the open documents' import closures declare, each holding the query's characters in order.
@@ -99,8 +99,9 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | A session across builds | [`handover`](src/handover.rs) |
 | Model proposals | [`proposal`](src/proposal.rs) |
 | The render bus | [`bus`](src/bus.rs) |
+| `gandr doc`'s site | [`site`](src/site.rs) |
 | The transport | [`transport`](src/transport.rs) |
-| Coverage of the specification, editors and extensions, specification evidence, references | [`src/lib.rs`](src/lib.rs) |
+| Specification coverage, editors and extensions, evidence, references | [`src/lib.rs`](src/lib.rs) |
 
 ## References
 

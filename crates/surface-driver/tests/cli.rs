@@ -1356,9 +1356,13 @@ fn doc_writes_a_page_per_source_and_an_index_4906()
         ),
     );
     let out = scratch.0.join("out");
-    let (doc, flag) = (Path::new("doc"), Path::new("--out"));
+    let (doc, flag, markdown) = (
+        Path::new("doc"),
+        Path::new("--out"),
+        Path::new("--markdown"),
+    );
 
-    let written = ran(gandr(&[doc, &package, flag, &out]));
+    let written = ran(gandr(&[doc, markdown, &package, flag, &out]));
     assert_eq!(code(&written), Code(0_i32), "{}", stderr(&written));
     assert_eq!(
         stdout(&written),
@@ -1387,13 +1391,67 @@ fn doc_writes_a_page_per_source_and_an_index_4906()
     );
 
     let absent = scratch.0.join("absent");
-    let faulted = ran(gandr(&[doc, &absent, flag, &out]));
+    let faulted = ran(gandr(&[doc, markdown, &absent, flag, &out]));
     assert_eq!(code(&faulted), Code(2_i32), "{}", stdout(&faulted));
     assert!(
         stderr(&faulted).starts_with(&format!("gandr: {}: ", absent.display())),
         "{}",
         stderr(&faulted)
     );
+}
+
+/// `gandr doc` without `--markdown` writes the site: each source's page, its
+/// public items' pages and its view, then the index, the item index, the
+/// search and the assets, each path printed; a path naming no source exits
+/// two.
+#[test]
+fn doc_writes_an_html_site_4909()
+{
+    let scratch = Scratch::new(Path::new("doc-site"));
+    let package = scratch.0.join("lib");
+    let _base = scratch.file(
+        Path::new("lib/src/base.gandr"),
+        Text::from(
+            "//! The base. It holds one number.\n\ndef zero = 0 ;\n/// One.\npub def one : Integer ;\ndef one = \
+             1 ;\n",
+        ),
+    );
+    let out = scratch.0.join("out");
+    let (doc, flag) = (Path::new("doc"), Path::new("--out"));
+
+    let written = ran(gandr(&[doc, &package, flag, &out]));
+    assert_eq!(code(&written), Code(0_i32), "{}", stderr(&written));
+    let expected: Vec<String> = [
+        "src/base.html",
+        "src/base/one.html",
+        "source/src/base.html",
+        "index.html",
+        "all.html",
+        "search.js",
+        "gandr.css",
+        "gandr-search.js",
+    ]
+    .iter()
+    .map(|relative| format!("{}\n", out.join(relative).display()))
+    .collect();
+    assert_eq!(stdout(&written), expected.concat());
+    let read =
+        |relative: &str| std::fs::read_to_string(out.join(relative)).expect("the file is written");
+    assert!(
+        read("index.html").contains(
+            "<tr><td><a href=\"src/base.html\"><code>src/base.gandr</code></a></td><td>The \
+             base.</td></tr>"
+        ),
+        "the index links each source's page beside its summary"
+    );
+    assert!(
+        read("src/base/one.html").contains("<span class=\"hl-typeBuiltin\">Integer</span>"),
+        "an item's page holds its hover, coloured"
+    );
+
+    let absent = scratch.0.join("absent");
+    let faulted = ran(gandr(&[doc, &absent, flag, &out]));
+    assert_eq!(code(&faulted), Code(2_i32), "{}", stdout(&faulted));
 }
 
 #[test]
