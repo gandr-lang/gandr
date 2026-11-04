@@ -387,16 +387,16 @@ impl<'source> Lowerer<'_, 'source>
         Ok(HoldGrade::One)
     }
 
-    /// The linear binder the name written at `written` resolves to under
-    /// `frame`: the one path by which every form that lends, ends or writes a
-    /// slot, or reads its element, finds the slot its name names.
+    /// The linear binder the name at `subject` resolves to under its frame:
+    /// the one path by which every form that lends, ends or writes a slot,
+    /// reads its element or acts on an endpoint finds the slot its name names.
     ///
     /// # Specification
-    /// - requires: `written` is a name the form writes, an identifier tile or a
-    ///   name's operand.
-    /// - ensures: the innermost binder of the name `written` spells, as
-    ///   [`Self::resolve_name`] reads it, when that binder is linear; why not
-    ///   otherwise; nothing is recorded.
+    /// - requires: `subject.at` is a name the form writes, an identifier tile
+    ///   or a name's operand, and `subject.name` is the form a refusal names.
+    /// - ensures: the innermost binder of the name `subject.at` spells, as
+    ///   [`Self::resolve_name`] reads it under `subject`'s frame, when that
+    ///   binder is linear; why not otherwise; nothing is recorded.
     /// - fails: the name's own refusals.
     /// - panics: none.
     /// - executable: none — the answer is the resolver's, which
@@ -411,19 +411,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::access::tests::the_counter_lowers_to_its_memory_forms`
     /// - witness: `lower::access::tests::an_access_names_a_held_value_and_an_eliminator_its_view`
     /// - witness: `lower::access::tests::an_assignment_writes_only_a_held_place`
+    /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
     pub(super) fn linear_binder(
         &mut self,
-        frame: Frame,
-        written: Placed,
+        subject: Site,
     ) -> Result<Maybe<Bound, slot::Absent>, LoweringRefusal<'source>>
     {
-        let subject = Site {
-            at: written,
-            name: FormName::IDENTIFIER,
-            reading: Reading::Value(frame),
-        };
+        let frame = subject.reading.frame();
         Ok(
-            match self.resolve_name(subject, frame, self.name_at(written))? {
+            match self.resolve_name(subject, frame, self.name_at(subject.at))? {
                 Maybe::Present(Resolved::Binder(bound)) if bound.zone == Zone::Linear => {
                     Maybe::Present(bound)
                 },
@@ -433,8 +429,8 @@ impl<'source> Lowerer<'_, 'source>
         )
     }
 
-    /// The held slot the name written at `written` names under `frame`: the
-    /// linear binder it resolves to, when a `var` binds it.
+    /// The held slot the name at `subject` names under its frame: the linear
+    /// binder it resolves to, when a `var` binds it.
     ///
     /// # Specification
     /// - requires: as [`Self::linear_binder`].
@@ -457,11 +453,10 @@ impl<'source> Lowerer<'_, 'source>
     }))]
     pub(super) fn held_slot(
         &mut self,
-        frame: Frame,
-        written: Placed,
+        subject: Site,
     ) -> Result<Maybe<Bound, slot::Absent>, LoweringRefusal<'source>>
     {
-        Ok(match self.linear_binder(frame, written)? {
+        Ok(match self.linear_binder(subject)? {
             Maybe::Present(bound) if !self.held.contains(&bound.binder) => {
                 Maybe::Absent(slot::Absent::Unheld)
             },
@@ -502,58 +497,59 @@ impl<'source> Lowerer<'_, 'source>
         boundary: FragmentBoundary,
     ) -> Result<(DeBruijnIndex, ScopeId), LoweringRefusal<'source>>
     {
-        let found = self.linear_binder(frame, written)?;
-        self.kept_slot(frame, written, found, boundary)
+        let subject = Site {
+            at: written,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        };
+        let found = self.linear_binder(subject)?;
+        self.kept_slot(subject, found, boundary)
     }
 
     /// The linear index and the binder of `found`, the binder the name at
-    /// `written` resolved to under `frame`, kept as the name's resolution, or
-    /// the refusal its absence answers.
+    /// `subject` resolved to under its frame, kept as the name's resolution,
+    /// or the refusal its absence answers.
     ///
     /// # Specification
     /// - requires: `found` is what [`Self::linear_binder`] or
-    ///   [`Self::held_slot`] answered for `written` under `frame`.
+    ///   [`Self::held_slot`] answered for `subject`.
     /// - ensures: the binder's linear index and its binder, its resolution kept
     ///   at the name.
     /// - fails: [`LoweringRefusal::UnresolvedName`] for a name nothing binds;
-    ///   `boundary` at the name for any other absence.
+    ///   `boundary` at `subject` for any other absence.
     /// - panics: none.
     ///
     /// # Errors
     /// The name's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::linear_slot`] and [`Self::assign`].
+    /// - hypothesis: L3 — as [`Self::linear_slot`], [`Self::assign`] and an
+    ///   action's endpoint.
     /// - witness: `lower::access::tests::each_name_a_form_lends_ends_or_writes_keeps_its_binder_5011`
     /// - witness: `lower::access::tests::an_assignment_writes_only_a_held_place`
+    /// - witness: `lower::session::tests::an_action_on_no_endpoint_is_refused`
     #[spec(ensures: |ret| match ret {
         | Ok(_) => matches!(found, Maybe::Present(_)),
-        | Err(LoweringRefusal::OutOfFragment { span, .. } | LoweringRefusal::UnresolvedName { span, .. }) => span == written.span,
+        | Err(LoweringRefusal::OutOfFragment { span, .. } | LoweringRefusal::UnresolvedName { span, .. }) => span == subject.at.span,
         | Err(_) => false,
     })]
-    fn kept_slot(
+    pub(super) fn kept_slot(
         &mut self,
-        frame: Frame,
-        written: Placed,
+        subject: Site,
         found: Maybe<Bound, slot::Absent>,
         boundary: FragmentBoundary,
     ) -> Result<(DeBruijnIndex, ScopeId), LoweringRefusal<'source>>
     {
         match found {
             Maybe::Present(bound) => {
-                self.resolved(written.span, Resolved::Binder(bound));
+                self.resolved(subject.at.span, Resolved::Binder(bound));
                 Ok((bound.index, bound.binder))
             },
             Maybe::Absent(slot::Absent::Unbound) => Err(LoweringRefusal::UnresolvedName {
-                span: written.span,
-                name: self.name_at(written),
+                span: subject.at.span,
+                name: self.name_at(subject.at),
             }),
             Maybe::Absent(slot::Absent::Unlinear | slot::Absent::Unheld) => {
-                let subject = Site {
-                    at: written,
-                    name: FormName::IDENTIFIER,
-                    reading: Reading::Value(frame),
-                };
                 Err(subject.out(boundary))
             },
         }
@@ -859,8 +855,13 @@ impl<'source> Lowerer<'_, 'source>
             },
             _ => return Err(site.out(FragmentBoundary::Held)),
         };
-        let found = self.held_slot(frame, head)?;
-        let (held, _) = self.kept_slot(frame, head, found, FragmentBoundary::Held)?;
+        let named = Site {
+            at: head,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        };
+        let found = self.held_slot(named)?;
+        let (held, _) = self.kept_slot(named, found, FragmentBoundary::Held)?;
         let combined = if assignment.operator == TileName::EQUALS {
             Maybe::Absent(assigned::Absent::Plain)
         }

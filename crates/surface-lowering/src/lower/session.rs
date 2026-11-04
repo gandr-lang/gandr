@@ -947,7 +947,8 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The linear index of the endpoint `operand` names, the subject of an
-    /// action read under `frame`.
+    /// action read under `frame`: the slot [`Self::linear_binder`] finds, kept
+    /// by [`Self::kept_slot`], each refusal named at the operand's own form.
     ///
     /// # Specification
     /// - requires: `operand` is the subject hole's operand of an action.
@@ -987,18 +988,9 @@ impl<'source> Lowerer<'_, 'source>
         if !matches!(formed, Some((_, Former::Name))) {
             return Err(subject.out(FragmentBoundary::Endpoint));
         }
-        let spelled = self.name_at(operand);
-        match self.resolve_name(subject, frame, spelled)? {
-            Maybe::Present(Resolved::Binder(bound)) if bound.zone == Zone::Linear => {
-                self.resolved(operand.span, Resolved::Binder(bound));
-                Ok(bound.index)
-            },
-            Maybe::Present(_) => Err(subject.out(FragmentBoundary::Endpoint)),
-            Maybe::Absent(_) => Err(LoweringRefusal::UnresolvedName {
-                span: operand.span,
-                name: spelled,
-            }),
-        }
+        let found = self.linear_binder(subject)?;
+        let (index, _binder) = self.kept_slot(subject, found, FragmentBoundary::Endpoint)?;
+        Ok(index)
     }
 
     /// What the type `declared` a parameter is written at stands for, read

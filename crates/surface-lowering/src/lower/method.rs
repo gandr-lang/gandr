@@ -1071,7 +1071,12 @@ impl<'source> Lowerer<'_, 'source>
         if !matches!(self.form_at(head)?, Some((_, Former::Name))) {
             return Ok(Maybe::Absent(unlent::Absent::Unnamed));
         }
-        match self.held_slot(site.reading.frame(), head)? {
+        let named = Site {
+            at: head,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(site.reading.frame()),
+        };
+        match self.held_slot(named)? {
             Maybe::Present(bound) => Ok(Maybe::Present(bound)),
             Maybe::Absent(_) => Ok(Maybe::Absent(unlent::Absent::Unheld)),
         }
