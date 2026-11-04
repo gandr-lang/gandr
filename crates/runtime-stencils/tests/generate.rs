@@ -209,8 +209,9 @@ impl Generator
         self.state ^= self.state.wrapping_shl(13);
         self.state ^= self.state.wrapping_shr(7);
         self.state ^= self.state.wrapping_shl(17);
-        let word = usize::try_from(self.state).expect("a 64-bit host");
-        Draw(word.checked_rem(bound.0).unwrap_or(0))
+        let bound = u64::try_from(bound.0).expect("a bound fits 64 bits");
+        let draw = self.state.checked_rem(bound).unwrap_or(0);
+        Draw(usize::try_from(draw).expect("a draw below a `usize` bound fits one"))
     }
 
     /// The integers or the unit, at random.

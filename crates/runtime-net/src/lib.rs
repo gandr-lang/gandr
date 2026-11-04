@@ -25,6 +25,14 @@
 //!   location a stream is, held by its host and never moved, beside the
 //!   content-addressed values that do cross.
 
+#![cfg_attr(
+    target_os = "wasi",
+    expect(
+        dead_code,
+        reason = "WASI 0.3 binds no endpoint, so the wire's readers and the requests serve no driver there"
+    )
+)]
+
 extern crate alloc;
 
 mod chunks;

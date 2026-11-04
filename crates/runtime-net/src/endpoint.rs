@@ -27,7 +27,12 @@
 //! [`CHUNKS_ALPN`]: crate::CHUNKS_ALPN
 //! [`WORLDS_ALPN`]: crate::WORLDS_ALPN
 
+#[cfg(target_os = "wasi")]
+#[path = "endpoint/absent.rs"]
 mod driver;
+#[cfg(not(target_os = "wasi"))]
+mod driver;
+mod request;
 
 use core::error::Error;
 use core::fmt;
@@ -432,7 +437,7 @@ impl Error for Fault
 pub struct Endpoint
 {
     /// Where requests go.
-    requests: tokio::sync::mpsc::UnboundedSender<driver::Request>,
+    requests: tokio::sync::mpsc::UnboundedSender<request::Request>,
     /// The thread, joined when the endpoint drops.
     thread: Option<thread::JoinHandle<()>>,
     /// The key it proves.
@@ -562,7 +567,7 @@ impl Endpoint
     ) -> Result<StreamId, Fault>
     {
         let (id, dialed) = (peer.id(), peer.endpoint_addr());
-        self.ask(|reply| driver::Request::Connect(id, dialed, reply))
+        self.ask(|reply| request::Request::Connect(id, dialed, reply))
     }
 
     /// Wait for a peer to open a stream to this endpoint.
@@ -584,7 +589,7 @@ impl Endpoint
     #[inline]
     pub fn accept(&mut self) -> Result<(NodeId, StreamId), Fault>
     {
-        self.ask(driver::Request::Accept)
+        self.ask(request::Request::Accept)
     }
 
     /// Send `frame` on `stream`.
@@ -615,7 +620,7 @@ impl Endpoint
         frame: Frame,
     ) -> Result<(), Fault>
     {
-        self.ask(|reply| driver::Request::Send(stream, frame, reply))
+        self.ask(|reply| request::Request::Send(stream, frame, reply))
     }
 
     /// Receive the next frame on `stream`.
@@ -644,7 +649,7 @@ impl Endpoint
         stream: StreamId,
     ) -> Result<Frame, Fault>
     {
-        self.ask(|reply| driver::Request::Recv(stream, reply))
+        self.ask(|reply| request::Request::Recv(stream, reply))
     }
 
     /// Close `stream`, once the peer closes its end too.
@@ -672,7 +677,7 @@ impl Endpoint
         stream: StreamId,
     ) -> Result<(), Fault>
     {
-        self.ask(|reply| driver::Request::Close(stream, reply))
+        self.ask(|reply| request::Request::Close(stream, reply))
     }
 
     /// Fetch the chunks of `wanted` that this endpoint's store lacks from
@@ -718,7 +723,7 @@ impl Endpoint
     {
         let request = Framed::request(wanted, held)?;
         let (id, dialed, wanted) = (peer.id(), peer.endpoint_addr(), *wanted);
-        self.ask(|reply| driver::Request::Fetch(id, dialed, (wanted, request), reply))
+        self.ask(|reply| request::Request::Fetch(id, dialed, (wanted, request), reply))
     }
 
     /// Ship `configuration` to `peer`, serve the chunks of its captures `peer`
@@ -761,7 +766,7 @@ impl Endpoint
         let framed = configuration.framed()?;
         let captures = configuration.captures().to_vec();
         let (id, dialed) = (peer.id(), peer.endpoint_addr());
-        self.ask(|reply| driver::Request::Migrate(id, dialed, (framed, captures), reply))
+        self.ask(|reply| request::Request::Migrate(id, dialed, (framed, captures), reply))
     }
 
     /// Wait for a migration to reach this endpoint.
@@ -786,7 +791,7 @@ impl Endpoint
     #[inline]
     pub fn arrive(&mut self) -> Result<Arrival, Fault>
     {
-        self.ask(driver::Request::Arrive)
+        self.ask(request::Request::Arrive)
     }
 
     /// Fetch the chunks of `wanted` that this endpoint's store lacks from the
@@ -818,7 +823,7 @@ impl Endpoint
     {
         let request = Framed::request(wanted, held)?;
         let wanted = *wanted;
-        self.ask(|reply| driver::Request::FetchArrived(arrival, (wanted, request), reply))
+        self.ask(|reply| request::Request::FetchArrived(arrival, (wanted, request), reply))
     }
 
     /// Answer `arrival` with `answer`, then serve the chunks its asker fetches
@@ -849,7 +854,7 @@ impl Endpoint
     ) -> Result<(), Fault>
     {
         let framed = answer.framed()?;
-        self.ask(|reply| driver::Request::Answer(arrival, framed, reply))
+        self.ask(|reply| request::Request::Answer(arrival, framed, reply))
     }
 
     /// Hand the thread the request `make` builds around a reply channel, and
@@ -862,7 +867,7 @@ impl Endpoint
         make: Make,
     ) -> Result<Answered, Fault>
     where
-        Make: FnOnce(driver::Reply<Answered>) -> driver::Request,
+        Make: FnOnce(request::Reply<Answered>) -> request::Request,
     {
         let (reply, answer) = mpsc::sync_channel(1);
         self.requests
@@ -896,7 +901,7 @@ impl Drop for Endpoint
     #[inline]
     fn drop(&mut self)
     {
-        match self.requests.send(driver::Request::Shutdown) {
+        match self.requests.send(request::Request::Shutdown) {
             // A thread already gone has closed its endpoint as it ended.
             Ok(()) | Err(_) => {},
         }

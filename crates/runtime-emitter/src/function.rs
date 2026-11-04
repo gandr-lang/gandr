@@ -83,7 +83,8 @@ impl From<Immediate> for usize
     #[inline]
     fn from(immediate: Immediate) -> Self
     {
-        // A u32 always fits a 64-bit usize, which the stencil layout asserts.
+        // A u32 fits the usize of every target the driver builds for:
+        // 64-bit hosts and `wasm32`.
         Self::try_from(immediate.0).unwrap_or(Self::MAX)
     }
 }

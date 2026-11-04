@@ -1077,6 +1077,18 @@ version = "=1.4.1"
 default-features = false
 features = ["tls-ring"]
 
+# The keys iroh names a peer by and an endpoint proves, apart from the
+# transport: a peer's spelling parses on every target, WASI 0.3 among them.
+# The version moves with iroh's.
+# features:
+# - key: the ed25519 keys and the endpoint address
+# consumers:
+# - runtime-net
+[workspace.dependencies.iroh-base]
+version = "=1.4.1"
+default-features = false
+features = ["key"]
+
 # Finding iroh peers by multicast DNS on the local network, when a binding
 # asks for it; dialing at the addresses a peer's spelling names needs none.
 # features:

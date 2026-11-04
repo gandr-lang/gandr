@@ -105,7 +105,7 @@ pub const KIND_HEAD: usize = 5;
 const KIND_LITERAL: usize = 6;
 /// The header a freed object's block holds until an allocation takes it:
 /// kind bits no [`Kind`] names.
-pub const FREED: Word = Word(KIND_MASK);
+pub const FREED: Word = Word(0xF);
 /// The header bits of [`Kind::Opaque`].
 const KIND_OPAQUE: usize = 7;
 /// The header bits of [`Kind::Capability`].
@@ -152,18 +152,6 @@ pub const ACCUMULATED_APPLIED: usize = 1;
 /// captures: the variable's index, doubled, plus one for the linear zone, is
 /// added to it.
 pub const ACCUMULATOR_FREE: usize = 2;
-/// The header of an accumulator a force grew.
-pub const FORCED_ACCUMULATOR: usize = OBJECT_CLOSURE
-    | 1_usize.wrapping_shl(ARITY_SHIFT)
-    | ACCUMULATED_FORCED
-        .wrapping_add(1)
-        .wrapping_shl(FAMILY_SHIFT);
-/// The header of an accumulator an application grew.
-pub const APPLIED_ACCUMULATOR: usize = OBJECT_CLOSURE
-    | 2_usize.wrapping_shl(ARITY_SHIFT)
-    | ACCUMULATED_APPLIED
-        .wrapping_add(1)
-        .wrapping_shl(FAMILY_SHIFT);
 /// The bits a case arm compares against operand A: kind, tag and arity.
 pub const MATCHED_MASK: usize = 0xFFFF_FFFF;
 /// The bits a nominal match compares: kind and tag.
@@ -481,12 +469,11 @@ impl Header
             Kind::Cell => KIND_CELL,
             Kind::Code => KIND_CODE,
         };
-        let family = usize::try_from(family.0).unwrap_or(0);
-        Self(Word(
+        let low = Word::from(
             kind | usize::from(tag).wrapping_shl(TAG_SHIFT)
-                | usize::from(arity).wrapping_shl(ARITY_SHIFT)
-                | family.wrapping_shl(FAMILY_SHIFT),
-        ))
+                | usize::from(arity).wrapping_shl(ARITY_SHIFT),
+        );
+        Self(Word(low.0 | u64::from(family.0).wrapping_shl(FAMILY_SHIFT)))
     }
 
     /// The header an object starts with.
@@ -517,9 +504,9 @@ impl Header
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn matched(self) -> Word
+    pub fn matched(self) -> Word
     {
-        Word(self.0.0 & MATCHED_MASK)
+        Word::from(usize::from(self.0) & MATCHED_MASK)
     }
 
     /// The family field.
@@ -541,9 +528,9 @@ impl Header
     /// # Errors
     /// [`UnknownKind`] when the kind bits name no kind.
     #[inline]
-    pub const fn kind(self) -> Result<Kind, UnknownKind>
+    pub fn kind(self) -> Result<Kind, UnknownKind>
     {
-        match self.0.0 & KIND_MASK {
+        match usize::from(self.0) & KIND_MASK {
             KIND_INTEGER => Ok(Kind::Integer),
             KIND_TUPLE => Ok(Kind::Tuple),
             KIND_INJECTION => Ok(Kind::Injection),
@@ -568,7 +555,7 @@ impl Header
     #[must_use]
     pub fn tag(self) -> Tag
     {
-        Tag(u16::try_from(self.0.0.wrapping_shr(TAG_SHIFT) & TAG_MASK).unwrap_or(0))
+        Tag(u16::try_from(usize::from(self.0).wrapping_shr(TAG_SHIFT) & TAG_MASK).unwrap_or(0))
     }
 
     /// The object's field or capture count.
@@ -579,7 +566,9 @@ impl Header
     #[must_use]
     pub fn arity(self) -> Arity
     {
-        Arity(u16::try_from(self.0.0.wrapping_shr(ARITY_SHIFT) & ARITY_MASK).unwrap_or(0))
+        Arity(
+            u16::try_from(usize::from(self.0).wrapping_shr(ARITY_SHIFT) & ARITY_MASK).unwrap_or(0),
+        )
     }
 
     /// The words the object's block spans, its count word included, when the
@@ -638,7 +627,7 @@ pub const COUNT_ONE: Word = Word(1);
 pub const FREE_CLASSES: usize = 16;
 /// The host entry a drop calls with the object whose count it found at one:
 /// no callee table numbers an entry this high.
-pub const RELEASE: Word = Word(usize::MAX);
+pub const RELEASE: Word = Word(u64::MAX);
 
 /// Why a run returned to its entry.
 ///
@@ -794,7 +783,7 @@ impl TryFrom<Word> for Status
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Fuel(usize);
+pub struct Fuel(u64);
 
 impl Fuel
 {
@@ -819,7 +808,7 @@ impl From<usize> for Fuel
     #[inline]
     fn from(jumps: usize) -> Self
     {
-        Self(jumps)
+        Self(u64::try_from(jumps).unwrap_or(u64::MAX))
     }
 }
 
@@ -832,6 +821,6 @@ impl From<Fuel> for usize
     #[inline]
     fn from(fuel: Fuel) -> Self
     {
-        fuel.0
+        Self::try_from(fuel.0).unwrap_or(Self::MAX)
     }
 }

@@ -46,6 +46,10 @@ quenchant_shape::reason_enum! {
             )]
             Unsupported,
             /// The query exists but could not be read or parsed.
+            #[cfg_attr(
+                not(any(target_os = "macos", target_os = "linux", test)),
+                expect(dead_code, reason = "only a host with a topology query answers this")
+            )]
             Unreadable,
         }
     }

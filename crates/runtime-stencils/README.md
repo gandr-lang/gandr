@@ -41,7 +41,7 @@ The L machine's transitions written once: the stencils copy-and-patch emits, and
 ## Expected features
 
 - **A pinned nightly toolchain.** The crate enables `rust_preserve_none_cc` and `explicit_tail_calls`; `src/lib.rs` states why neither has a stable equivalent.
-- **A 64-bit host.** An integer literal is one word and a header's family rides in its high half.
+- **A 64-bit word.** A word is 64 bits on every target. An integer literal is one word, and a header's family is its high half. On `wasm32` an address is the low half.
 - **A lowering that keeps the invariants.** A stencil dereferences its registers unchecked; `gandr-runtime-emitter` establishes every slot, mark and object it reads, and the entries are `unsafe` for that reason.
 
 ## Examples

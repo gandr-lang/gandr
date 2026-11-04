@@ -1378,6 +1378,7 @@ dependencies = [
  "gandr-storage-chunker",
  "gandr-storage-values",
  "iroh",
+ "iroh-base",
  "iroh-mdns-address-lookup",
  "quenchant-anodized",
  "tokio",

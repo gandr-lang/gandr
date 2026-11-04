@@ -328,7 +328,12 @@ impl Temporary
                 let _private = std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
             }
         }
+        // WASI has no process id. There the random nonce alone keeps two
+        // writers' temporaries apart.
+        #[cfg(not(target_os = "wasi"))]
         let process = std::process::id();
+        #[cfg(target_os = "wasi")]
+        let process = 0_u32;
         for _ in 0 .. MAX_TEMPORARY_ATTEMPTS {
             // A fresh nonce per attempt, so a retry resolves the collision it
             // met instead of meeting it again.

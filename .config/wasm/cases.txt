@@ -1,0 +1,8 @@
+# The cases `test:wasm` runs on the native driver and on the wasm32-wasip3
+# driver under Wasmtime: one verb and one path from the tree's root per line.
+check corpus/model/projects
+check library/std
+run corpus/model/effects/hello.gandr
+run corpus/model/console/answer.gandr
+run corpus/model/control/program-exit.gandr
+run corpus/model/programs/entry.gandr

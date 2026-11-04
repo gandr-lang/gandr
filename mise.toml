@@ -51,6 +51,12 @@ includes = [".config/mise/tasks"]
 # prebuilt sqlite3 CLI mise resolves on every platform.
 "conda:sqlite" = "3.54.1"
 "github:aubepkg/aube" = "2.8.5"
+# The test oracle the `wasm32-wasip3` build of `gandr` runs under (#4882).
+"github:bytecodealliance/wasmtime" = "v50.0.1"
+# The WASI 0.3 C library and the linker that reads it, for `build:wasm`. Its
+# `bin` holds clang, ar and nm, which would shadow the host's, so no
+# directory of it enters PATH: the task names the linker by its path.
+"github:WebAssembly/wasi-sdk" = { version = "34", version_prefix = "wasi-sdk-", bin_path = "share/wasi-sysroot" }
 # The ci:* tasks and the workflows' report steps read and write the server
 # through gh; the CI image carries this pin, as the hosted runner ships its own.
 "github:cli/cli" = "v2.103.3"

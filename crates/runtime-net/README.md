@@ -38,7 +38,7 @@ The network a host holds for its `Net` interface: streams to peers named by thei
 
 ## Expected features
 
-- **UDP sockets.** A binding names the sockets it holds; with none, the endpoint binds every interface on a port the system picks.
+- **UDP sockets.** A binding names the sockets it holds; with none, the endpoint binds every interface on a port the system picks. WASI 0.3 has no UDP socket that iroh binds. On `wasm32-wasip3` the crate builds without iroh, and the endpoint's thread refuses its bind with `Fault::Bind`. A peer's spelling still parses there, through `iroh-base`.
 - **A dialer that knows the peer's key.** A peer's key is its identity; a dial without an address finds the peer only under mDNS lookup.
 
 ## Examples

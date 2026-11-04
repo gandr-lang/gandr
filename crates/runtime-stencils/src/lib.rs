@@ -225,27 +225,51 @@ pub type Stencil = extern "rust-preserve-none" fn(
 
 /// The machine word every register, slot, frame word and heap word holds.
 ///
-/// A word is a pointer-sized integer: an address (a heap object, a frame
-/// mark, a code address, a window), an integer literal's two's-complement
-/// bits, or a header.
+/// A word is a 64-bit integer on every target. It holds an address, the
+/// two's-complement bits of an integer literal, or a header. An address is a
+/// heap object, a frame mark, a code address or a window. A 32-bit target
+/// such as `wasm32` keeps its address in the low half, so a literal and a
+/// header's family keep their 64 bits there too.
 ///
 /// # Specification
-/// - ensures: one word is exactly one `usize`, so a heap object's fields and a
+/// - ensures: one word is exactly 64 bits, so a heap object's fields and a
 ///   window's slots are addressed by word offsets.
 /// - executable: none — a layout claim is a property of the type.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Word(usize);
-
-// An integer literal is one 64-bit word and a header's family rides in bits
-// 32–63, so the layout needs 64-bit words. Reversal: a 32-bit host, which
-// would box integers and move the family into a second header word.
-const _: () = assert!(usize::BITS == 64, "the stencil layout needs 64-bit words");
+pub struct Word(u64);
 
 impl Word
 {
     /// The zero word: the value register's content when a run starts.
     pub const ZERO: Self = Self(0);
+
+    /// The word whose low 32 bits are `low` and whose high 32 bits are
+    /// `high`: a header from its kind, tag and arity and its family. The
+    /// halves join in 64 bits, so a 32-bit target keeps the family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn from_halves(
+        low: Self,
+        high: Self,
+    ) -> Self
+    {
+        Self(low.0 | high.0.wrapping_shl(32))
+    }
+
+    /// The word's high 32 bits: a header's family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn high(self) -> Self
+    {
+        Self(self.0.wrapping_shr(32))
+    }
 
     /// The word holding `pointer`'s address, its provenance exposed so
     /// [`Self::to_pointer`] recovers a usable pointer.
@@ -256,7 +280,7 @@ impl Word
     #[must_use]
     pub fn from_pointer<Target>(pointer: *const Target) -> Self
     {
-        Self(pointer.expose_provenance())
+        Self::from(pointer.expose_provenance())
     }
 
     /// The pointer whose address this word holds, with the provenance the
@@ -268,7 +292,7 @@ impl Word
     #[must_use]
     pub fn to_pointer<Target>(self) -> *mut Target
     {
-        core::ptr::with_exposed_provenance_mut(self.0)
+        core::ptr::with_exposed_provenance_mut(usize::from(self))
     }
 }
 
@@ -281,20 +305,23 @@ impl From<usize> for Word
     #[inline]
     fn from(raw: usize) -> Self
     {
-        Self(raw)
+        Self(u64::try_from(raw).unwrap_or(u64::MAX))
     }
 }
 
 impl From<Word> for usize
 {
-    /// The word's bits.
+    /// The word's bits that fit a `usize`: all 64 on a 64-bit target, the
+    /// low half on a 32-bit one, where an address and a header's kind, tag
+    /// and arity lie.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn from(word: Word) -> Self
     {
-        word.0
+        let low = word.0 & u64::try_from(Self::MAX).unwrap_or(u64::MAX);
+        Self::try_from(low).unwrap_or(0)
     }
 }
 
@@ -307,7 +334,7 @@ impl From<i64> for Word
     #[inline]
     fn from(integer: i64) -> Self
     {
-        Self(usize::from_le_bytes(integer.to_le_bytes()))
+        Self(u64::from_le_bytes(integer.to_le_bytes()))
     }
 }
 
@@ -333,7 +360,7 @@ impl From<u64> for Word
     #[inline]
     fn from(bits: u64) -> Self
     {
-        Self(usize::from_le_bytes(bits.to_le_bytes()))
+        Self(bits)
     }
 }
 
@@ -346,7 +373,7 @@ impl From<Word> for u64
     #[inline]
     fn from(word: Word) -> Self
     {
-        Self::from_le_bytes(word.0.to_le_bytes())
+        word.0
     }
 }
 
@@ -491,7 +518,7 @@ impl Runtime
             frame_base,
             heap_top: heap,
             status: layout::STATUS_RUNNING,
-            fuel: Word(usize::from(fuel)),
+            fuel: Word::from(usize::from(fuel)),
             instruction: core::ptr::null(),
             host,
             context,

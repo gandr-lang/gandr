@@ -271,10 +271,12 @@ macro_rules! constructor {
                 value,
                 1_usize.wrapping_add($count)
             );
-            let header =
-                operand!(runtime, A) | operand!(runtime, B).wrapping_shl(layout::FAMILY_SHIFT);
+            let header = Word::from_halves(
+                Word::from(operand!(runtime, A)),
+                Word::from(operand!(runtime, B)),
+            );
             // SAFETY: the object's block is the run's.
-            unsafe { *object = Word::from(header) };
+            unsafe { *object = header };
             let fields = frames.wrapping_sub($count);
             let mut index = 0_usize;
             while index < $count {
@@ -331,10 +333,10 @@ pub extern "rust-preserve-none" fn stencil_ctor_n(
         value,
         count.wrapping_add(1)
     );
-    let header = low | operand!(runtime, B).wrapping_shl(layout::FAMILY_SHIFT);
+    let header = Word::from_halves(Word::from(low), Word::from(operand!(runtime, B)));
     // SAFETY: the object's block is the run's.
     unsafe {
-        *object = Word::from(header);
+        *object = header;
     }
     let fields = frames.wrapping_sub(count);
     let mut index = 0_usize;
@@ -401,10 +403,10 @@ pub extern "rust-preserve-none" fn stencil_ctor_into(
     else {
         (value.to_pointer::<Word>(), heap)
     };
-    let header = low | operand!(runtime, B).wrapping_shl(layout::FAMILY_SHIFT);
+    let header = Word::from_halves(Word::from(low), Word::from(operand!(runtime, B)));
     // SAFETY: the object's block is the run's, fresh or the token's.
     unsafe {
-        *object = Word::from(header);
+        *object = header;
     }
     let fields = frames.wrapping_sub(count);
     let mut index = 0_usize;
@@ -452,9 +454,13 @@ pub extern "rust-preserve-none" fn stencil_match(
 ) -> Word
 {
     // SAFETY: a positive value in hand addresses an object.
-    let header = usize::from(unsafe { *value.to_pointer::<Word>() });
-    let expected = operand!(runtime, A) | operand!(runtime, B).wrapping_shl(layout::FAMILY_SHIFT);
-    if header == expected {
+    let header = unsafe { *value.to_pointer::<Word>() };
+    if header
+        == Word::from_halves(
+            Word::from(operand!(runtime, A)),
+            Word::from(operand!(runtime, B)),
+        )
+    {
         become hole_alt(runtime, heap, frames, environment, value)
     }
     become hole_next(runtime, heap, frames, environment, value)
@@ -1337,12 +1343,16 @@ pub extern "rust-preserve-none" fn stencil_accumulate(
     if !applied && observed != layout::OBSERVED_FORCE {
         become hole_stuck(runtime, heap, frames, environment, accumulator)
     }
-    let (header, captures) = if applied {
-        (layout::APPLIED_ACCUMULATOR, 2_usize)
+    let (family, captures) = if applied {
+        (layout::ACCUMULATED_APPLIED, 2_usize)
     }
     else {
-        (layout::FORCED_ACCUMULATOR, 1_usize)
+        (layout::ACCUMULATED_FORCED, 1_usize)
     };
+    let header = Word::from_halves(
+        Word::from(layout::OBJECT_CLOSURE | captures.wrapping_shl(layout::ARITY_SHIFT)),
+        Word::from(family.wrapping_add(1)),
+    );
     let (object, next) = allocate!(
         runtime,
         heap,
@@ -1355,7 +1365,7 @@ pub extern "rust-preserve-none" fn stencil_accumulate(
     let code = unsafe { *environment.wrapping_add(1) };
     // SAFETY: the object's block is the run's.
     unsafe {
-        *object = Word::from(header);
+        *object = header;
     }
     // SAFETY: as above.
     unsafe {
@@ -1932,8 +1942,7 @@ pub extern "rust-preserve-none" fn stencil_select_field(
 {
     let object = value.to_pointer::<Word>();
     // SAFETY: a positive value in hand addresses an object.
-    let header = usize::from(unsafe { *object });
-    let entry = header.wrapping_shr(layout::FAMILY_SHIFT).wrapping_sub(1);
+    let entry = usize::from(unsafe { *object }.high()).wrapping_sub(1);
     let table = address!(runtime, A).to_pointer::<Word>();
     // SAFETY: the table's first word is its entry count.
     let count = usize::from(unsafe { *table });
@@ -2472,7 +2481,7 @@ pub extern "rust-preserve-none" fn stencil_unmatched(
     let site = operand!(runtime, A);
     // SAFETY: the runtime record outlives the run.
     unsafe {
-        (*runtime).observed = Word(site);
+        (*runtime).observed = Word::from(site);
     }
     // SAFETY: as above.
     unsafe {

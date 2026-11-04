@@ -83,7 +83,6 @@ gandr-surface-lsp.workspace = true
 gandr-surface-mcp.workspace = true
 gandr-surface-render-terminal.workspace = true
 gandr-surface-repl.workspace = true
-gandr-surface-tui.workspace = true
 getrandom.workspace = true
 hotpath = { workspace = true, optional = true }
 quenchant-shape.workspace = true
@@ -104,6 +103,11 @@ gandr-surface-parser.workspace = true
 gandr-surface-session.workspace = true
 gandr-surface-syntax.workspace = true
 gandr-workflow-sweep.workspace = true
+
+# The terminal face draws through crossterm, which has no WASI 0.3 terminal,
+# so `gandr tui` is absent from a `wasm32-wasip3` build.
+[target.'cfg(not(target_os = "wasi"))'.dependencies]
+gandr-surface-tui.workspace = true
 
 # The tests give a child one terminal stream through a pseudo-terminal pair.
 [target."cfg(unix)".dev-dependencies]

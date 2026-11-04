@@ -682,6 +682,7 @@ enum Command
     ///
     /// Needs a terminal on standard input and output. Exits 0 when the user
     /// leaves, and 2 when a fault stops the face or no terminal is attached.
+    #[cfg(not(target_os = "wasi"))]
     Tui
     {
         /// Run the face once off-screen, print `gandr tui: ready`, and exit.
@@ -1629,6 +1630,7 @@ enum Face
 }
 
 /// Where the terminal face draws.
+#[cfg(not(target_os = "wasi"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Screen
 {
@@ -2069,6 +2071,7 @@ fn main() -> ExitCode
                 spelling,
             );
         },
+        #[cfg(not(target_os = "wasi"))]
         Some(Command::Tui { smoke }) => {
             return tui(
                 if smoke {
@@ -2926,6 +2929,7 @@ fn repl(
 ///   these subprocess fixtures and is exercised by the smoke run.
 /// - witness: `tests::cli::smoke_is_terminal_free_but_interactive_tui_refuses_pipes`
 /// - witness: `tests::cli::unwritable_standard_output_exits_two`
+#[cfg(not(target_os = "wasi"))]
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn tui(
     screen: Screen,

@@ -15,7 +15,7 @@ use anodized::spec;
 /// No formatting shows the key: `Debug` prints `Secret(SecretKey(..))`.
 #[derive(Clone, Debug)]
 #[repr(transparent)]
-pub struct Secret(iroh::SecretKey);
+pub struct Secret(iroh_base::SecretKey);
 
 impl Secret
 {
@@ -27,7 +27,7 @@ impl Secret
     #[must_use]
     pub fn generate() -> Self
     {
-        Self(iroh::SecretKey::generate())
+        Self(iroh_base::SecretKey::generate())
     }
 
     /// The key this secret proves.
@@ -45,7 +45,7 @@ impl Secret
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn key(&self) -> iroh::SecretKey
+    pub(crate) fn key(&self) -> iroh_base::SecretKey
     {
         self.0.clone()
     }
@@ -72,7 +72,7 @@ impl FromStr for Secret
     #[inline]
     fn from_str(text: &str) -> Result<Self, PeerError>
     {
-        iroh::SecretKey::from_str(&text.to_ascii_lowercase())
+        iroh_base::SecretKey::from_str(&text.to_ascii_lowercase())
             .map(Self)
             .map_err(|refused| PeerError::Key {
                 text: String::from(text),
@@ -86,7 +86,7 @@ impl FromStr for Secret
 /// It prints as 64 lowercase hex digits.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
-pub struct NodeId(iroh::PublicKey);
+pub struct NodeId(iroh_base::PublicKey);
 
 impl NodeId
 {
@@ -94,20 +94,20 @@ impl NodeId
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn key(self) -> iroh::PublicKey
+    pub(crate) const fn key(self) -> iroh_base::PublicKey
     {
         self.0
     }
 }
 
-impl From<iroh::PublicKey> for NodeId
+impl From<iroh_base::PublicKey> for NodeId
 {
     /// The identity a connection's remote key names.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn from(key: iroh::PublicKey) -> Self
+    fn from(key: iroh_base::PublicKey) -> Self
     {
         Self(key)
     }
@@ -152,7 +152,7 @@ impl FromStr for NodeId
     #[inline]
     fn from_str(text: &str) -> Result<Self, PeerError>
     {
-        iroh::PublicKey::from_str(&text.to_ascii_lowercase())
+        iroh_base::PublicKey::from_str(&text.to_ascii_lowercase())
             .map(Self)
             .map_err(|refused| PeerError::Key {
                 text: String::from(text),
@@ -232,10 +232,10 @@ impl Peer
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn endpoint_addr(&self) -> iroh::EndpointAddr
+    pub(crate) fn endpoint_addr(&self) -> iroh_base::EndpointAddr
     {
         self.addresses.iter().fold(
-            iroh::EndpointAddr::new(self.id.key()),
+            iroh_base::EndpointAddr::new(self.id.key()),
             |dialed, &address| dialed.with_ip_addr(address),
         )
     }

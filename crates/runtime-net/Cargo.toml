@@ -18,17 +18,16 @@ autotests = false
 name = "tests"
 path = "tests/lib.rs"
 
-# iroh dials and accepts; the mDNS lookup finds peers on the local network
-# when a binding asks for it; tokio runs the endpoint's thread. The value
-# plane holds the chunks an endpoint serves and fetches, and verifies each
-# on receipt. The core's world vocabulary names why a migration answered
+# iroh-base spells the keys a peer is named by and an endpoint proves. tokio
+# carries the requests to the endpoint's thread and runs it. The value plane
+# holds the chunks an endpoint serves and fetches, and verifies each on
+# receipt. The core's world vocabulary names why a migration answered
 # nothing. The pinned anodized facade supplies the specification attribute.
 [dependencies]
 anodized.workspace = true
 gandr-core-term.workspace = true
 gandr-storage-values.workspace = true
-iroh.workspace = true
-iroh-mdns-address-lookup.workspace = true
+iroh-base.workspace = true
 tokio.workspace = true
 
 # The chunk wire's witnesses commit a run's values through the emitter's
@@ -39,6 +38,13 @@ gandr-core-sequent.workspace = true
 gandr-kernel-term.workspace = true
 gandr-runtime-emitter.workspace = true
 gandr-storage-chunker.workspace = true
+
+# iroh dials and accepts, and the mDNS lookup finds peers on the local
+# network when a binding asks for it. WASI 0.3 offers no UDP socket either
+# binds, so there the endpoint's thread refuses its bind.
+[target.'cfg(not(target_os = "wasi"))'.dependencies]
+iroh.workspace = true
+iroh-mdns-address-lookup.workspace = true
 
 [lints]
 workspace = true

@@ -82,7 +82,12 @@ struct Crossover(u64);
 impl Crossover
 {
     /// The linux host's measured crossover, 1 MiB.
+    #[cfg(not(target_os = "wasi"))]
     const MAPPED: Self = Self(1 << 20);
+    /// No size: WASI 0.3 maps no file, so the reader reads every file into a
+    /// buffer.
+    #[cfg(target_os = "wasi")]
+    const MAPPED: Self = Self(u64::MAX);
 }
 
 /// What tells one state of a file from another without reading it.

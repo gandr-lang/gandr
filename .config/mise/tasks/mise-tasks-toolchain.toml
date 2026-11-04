@@ -128,6 +128,36 @@ cargo build --release --locked -p gandr-lang --bin gandr
 target/release/gandr toolchain link dev target/release
 '''
 
+# The driver built for WASI 0.3 (#4882): `gandr check`, `gandr run` and the
+# portable executor inside it, in `target/wasm32-wasip3/release/gandr.wasm`.
+# The pinned nightly ships no `wasm32-wasip3` standard library, so the build
+# rebuilds it from `rust-src`. wasi-sdk gives the C library and the linker:
+# its `wasm-ld` resolves the thread-local import that library makes, which
+# the nightly's linker does not. `+tail-call` keeps each `become` a tail
+# call. Wasmtime runs the module, as `test:wasm` does.
+["build:wasm"]
+description = "Build the release driver for wasm32-wasip3"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+sdk=$(printf '%s' "$(mise where github:WebAssembly/wasi-sdk)"/wasi-sdk-*)
+library=$sdk/share/wasi-sysroot/lib/wasm32-wasip3
+export CARGO_TARGET_WASM32_WASIP3_RUSTFLAGS="-C target-feature=+tail-call -C linker=$sdk/bin/wasm-component-ld -C link-self-contained=no -L native=$library -C link-arg=$library/crt1-command.o"
+cargo build --release --locked -Zbuild-std=std,panic_abort --target wasm32-wasip3 -p gandr-lang --bin gandr
+'''
+
+# The wasm driver against the native one (#4882): each case of
+# `.config/wasm/cases.txt` runs on both, and the task fails on any case
+# where they print differently or one fails alone. Wasmtime is the test
+# oracle here, never a dependency of the driver.
+["test:wasm"]
+description = "Run the wasm32-wasip3 driver under Wasmtime against the native driver"
+depends = ["build:wasm"]
+run = '''
+cargo build --release --locked -p gandr-lang --bin gandr
+.config/wasm/compare.bash target/release/gandr target/wasm32-wasip3/release/gandr.wasm
+'''
+
 # Each host's toolchain follows `main` (#4499): every `interval` seconds the
 # follower fetches `origin main` into the main checkout, fast-forwards it,
 # builds the driver in its warm `target/` and deploys the build as the

@@ -65,7 +65,8 @@ enum Hold
 /// # Specification
 /// - requires: nothing.
 /// - ensures: on success the lock file stands at `root`, held shared or alone
-///   as `hold` says, for as long as the returned file is open.
+///   as `hold` says, for as long as the returned file is open. On WASI the file
+///   stands unlocked, because the target has no file lock.
 /// - provides: the lock every reading and naming of the roots holds.
 /// - fails: [`StoreError::Io`] when the lock file cannot be opened or locked.
 /// - panics: none.
@@ -89,11 +90,18 @@ fn locked(
         .write(true)
         .open(&path)
         .map_err(|error| StoreError::io(&path, &error))?;
-    let held = match hold {
-        Hold::Shared => lock.lock_shared(),
-        Hold::Alone => lock.lock(),
-    };
-    held.map_err(|error| StoreError::io(&path, &error))?;
+    // WASI 0.3 has no file lock. The host that preopens the store's
+    // directory to one instance holds that exclusion itself.
+    #[cfg(not(target_os = "wasi"))]
+    {
+        let held = match hold {
+            Hold::Shared => lock.lock_shared(),
+            Hold::Alone => lock.lock(),
+        };
+        held.map_err(|error| StoreError::io(&path, &error))?;
+    }
+    #[cfg(target_os = "wasi")]
+    let (Hold::Shared | Hold::Alone) = hold;
     Ok(lock)
 }
 

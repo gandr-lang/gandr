@@ -285,6 +285,55 @@ conda_deps = [
     "vcomp14-14.51.36247-habf1de7_41",
 ]
 
+[[tools."github:WebAssembly/wasi-sdk"]]
+version = "34"
+backend = "github:WebAssembly/wasi-sdk"
+specifiers = ["34"]
+
+[tools."github:WebAssembly/wasi-sdk".options]
+version_prefix = "wasi-sdk-"
+
+[tools."github:WebAssembly/wasi-sdk"."platforms.linux-arm64"]
+checksum = "sha256:f7e243dff54d60bcc576e94d6166b69f410f2500ae4a9ceef34315be10e77971"
+checksum_source = "mise-versions"
+url = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-arm64-linux.tar.gz"
+url_api = "https://api.github.com/repos/WebAssembly/wasi-sdk/releases/assets/528366381"
+
+[tools."github:WebAssembly/wasi-sdk"."platforms.linux-arm64-musl"]
+checksum = "sha256:f7e243dff54d60bcc576e94d6166b69f410f2500ae4a9ceef34315be10e77971"
+checksum_source = "mise-versions"
+url = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-arm64-linux.tar.gz"
+url_api = "https://api.github.com/repos/WebAssembly/wasi-sdk/releases/assets/528366381"
+
+[tools."github:WebAssembly/wasi-sdk"."platforms.linux-x64"]
+checksum = "sha256:b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4"
+url = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz"
+url_api = "https://api.github.com/repos/WebAssembly/wasi-sdk/releases/assets/528366474"
+
+[tools."github:WebAssembly/wasi-sdk"."platforms.linux-x64-musl"]
+checksum = "sha256:b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4"
+checksum_source = "mise-versions"
+url = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz"
+url_api = "https://api.github.com/repos/WebAssembly/wasi-sdk/releases/assets/528366474"
+
+[tools."github:WebAssembly/wasi-sdk"."platforms.macos-arm64"]
+checksum = "sha256:9c59398106b417f8f14913380fdf0097a8cc0ff4af9eb3ce0065a859e88d49e9"
+checksum_source = "mise-versions"
+url = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-arm64-macos.tar.gz"
+url_api = "https://api.github.com/repos/WebAssembly/wasi-sdk/releases/assets/528366387"
+
+[tools."github:WebAssembly/wasi-sdk"."platforms.macos-x64"]
+checksum = "sha256:87d27fa8adc68dee59bfbf2e22a6d34ef717c34d6bf1d8af2a56fc929d9ce0eb"
+checksum_source = "mise-versions"
+url = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-macos.tar.gz"
+url_api = "https://api.github.com/repos/WebAssembly/wasi-sdk/releases/assets/528366482"
+
+[tools."github:WebAssembly/wasi-sdk"."platforms.windows-x64"]
+checksum = "sha256:cccb5c323a9b34f0349a9b09e8804a0a7632c68c3310f4b5f437ed57d7e71d8f"
+checksum_source = "mise-versions"
+url = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-windows.tar.gz"
+url_api = "https://api.github.com/repos/WebAssembly/wasi-sdk/releases/assets/528366541"
+
 [[tools."github:astral-sh/uv"]]
 version = "0.13.6"
 backend = "github:astral-sh/uv"
@@ -377,6 +426,53 @@ provenance = "github-attestations"
 checksum = "sha256:97cfb2ee932529091f39f6f47933802569e5b38a689f867ee45ae0ee6f2be4cc"
 url = "https://github.com/aubepkg/aube/releases/download/v2.8.5/aube-v2.8.5-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/aubepkg/aube/releases/assets/692818539"
+provenance = "github-attestations"
+
+[[tools."github:bytecodealliance/wasmtime"]]
+version = "50.0.1"
+backend = "github:bytecodealliance/wasmtime"
+specifiers = ["v50.0.1"]
+
+[tools."github:bytecodealliance/wasmtime"."platforms.linux-arm64"]
+checksum = "sha256:d737e077416d78fbfb0a008229ec27d6a0fd5a4924874b8c38b293c850cf4094"
+url = "https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.1/wasmtime-v50.0.1-aarch64-linux.tar.xz"
+url_api = "https://api.github.com/repos/bytecodealliance/wasmtime/releases/assets/689409149"
+provenance = "github-attestations"
+
+[tools."github:bytecodealliance/wasmtime"."platforms.linux-arm64-musl"]
+checksum = "sha256:d737e077416d78fbfb0a008229ec27d6a0fd5a4924874b8c38b293c850cf4094"
+url = "https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.1/wasmtime-v50.0.1-aarch64-linux.tar.xz"
+url_api = "https://api.github.com/repos/bytecodealliance/wasmtime/releases/assets/689409149"
+provenance = "github-attestations"
+
+[tools."github:bytecodealliance/wasmtime"."platforms.linux-x64"]
+checksum = "sha256:685466455dd42a14774a86c36c8f2e45cbb9bd6d92a850139315df60a75498a5"
+url = "https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.1/wasmtime-v50.0.1-x86_64-linux.tar.xz"
+url_api = "https://api.github.com/repos/bytecodealliance/wasmtime/releases/assets/689409604"
+provenance = "github-attestations"
+
+[tools."github:bytecodealliance/wasmtime"."platforms.linux-x64-musl"]
+checksum = "sha256:685466455dd42a14774a86c36c8f2e45cbb9bd6d92a850139315df60a75498a5"
+url = "https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.1/wasmtime-v50.0.1-x86_64-linux.tar.xz"
+url_api = "https://api.github.com/repos/bytecodealliance/wasmtime/releases/assets/689409604"
+provenance = "github-attestations"
+
+[tools."github:bytecodealliance/wasmtime"."platforms.macos-arm64"]
+checksum = "sha256:960e5216c7ebd7e9b45e6561d15821b8b801b7d54aee28c7b91921aeb30c65c8"
+url = "https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.1/wasmtime-v50.0.1-aarch64-macos.tar.xz"
+url_api = "https://api.github.com/repos/bytecodealliance/wasmtime/releases/assets/689409249"
+provenance = "github-attestations"
+
+[tools."github:bytecodealliance/wasmtime"."platforms.macos-x64"]
+checksum = "sha256:ea1818fa8cbb51524847ab2ad22197e0051594fdc96cbd0cc2afb65832e11925"
+url = "https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.1/wasmtime-v50.0.1-x86_64-macos.tar.xz"
+url_api = "https://api.github.com/repos/bytecodealliance/wasmtime/releases/assets/689409612"
+provenance = "github-attestations"
+
+[tools."github:bytecodealliance/wasmtime"."platforms.windows-x64"]
+checksum = "sha256:c3646ee2de8cfcefe532e75852e1fd2728d78c3fcc43251794803a698d1c30ca"
+url = "https://github.com/bytecodealliance/wasmtime/releases/download/v50.0.1/wasmtime-v50.0.1-x86_64-windows.zip"
+url_api = "https://api.github.com/repos/bytecodealliance/wasmtime/releases/assets/689409731"
 provenance = "github-attestations"
 
 [[tools."github:cli/cli"]]
