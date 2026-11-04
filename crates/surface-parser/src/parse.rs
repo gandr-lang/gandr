@@ -1339,10 +1339,7 @@ mod tests
             ("def a = 1;\n/* open\n", Unlayable::Open),
             ("def a = \"open\n", Unlayable::Repaired),
             ("def a = (1\n", Unlayable::Repaired),
-            (
-                "def a = 1; // closed by the newline // closed by the newline",
-                Unlayable::Open,
-            ),
+            ("def a = 1; // closed by the newline", Unlayable::Open),
         ] {
             let before = parse(&pbg, SourceText::from(closure)).unwrap();
             assert_eq!(before.layable(), Err(refused), "{closure:?}");

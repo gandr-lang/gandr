@@ -139,8 +139,8 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
             r"def f : G(fun (X) { -F (X * X) }, Integer);",
         ),
         ("unary alias", "def f : Integer -> Integer * Integer;"),
-        ("n-ary alias", "def f : *{A, B -> C} -> D;"),
-        ("alias in a product", "def f : (A -> B) * (*{C, D} -> E);"),
+        ("n-ary alias", "def f : (A, B -> C) -> D;"),
+        ("alias in a product", "def f : (A -> B) * ((C, D) -> E);"),
         (
             "alias in a binder",
             "def f(k : A -> B) -> -F B { become force k }",
@@ -173,11 +173,11 @@ fn a_group_before_the_value_function_arrow_molds_as_its_domains_2255() -> Result
 {
     let cases = [
         ("def f = g ((y : A, z : P(y)) -> B);", "parenthesized_type"),
-        ("def f = g (*{A, B} -> C);", "parenthesized_type"),
+        ("def f = g ((A, B) -> C);", "parenthesized_type"),
         ("def f = g (((A)) -> C);", "parenthesized_type"),
         ("def f = g (x : A) y;", "parenthesized_expression"),
-        ("def f = g *{x, y} z;", "parenthesized_expression"),
-        ("def f = g((), z);", "parenthesized_expression"),
+        ("def f = g (x, y) z;", "parenthesized_expression"),
+        ("def f = g () z;", "parenthesized_expression"),
     ];
     let grammar = built();
     for (source, expected) in cases {

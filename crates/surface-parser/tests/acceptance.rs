@@ -1330,7 +1330,7 @@ fn a_keyword_in_a_name_slot_stands_there_unmolded_722() -> Result<(), Box<dyn Er
 #[test]
 fn a_statement_keyword_starts_the_next_statement_1090() -> Result<(), Box<dyn Error>>
 {
-    let source = "def swapped() -> -F Unit {\n  handle c : Proc {\n    handle e : Proc {\n      let d : Cap {exit} at e c ;\n      let f : Cap {exit} at c = e ;\n      return unit\n    } with {\n      pure(x) => return x,\n      oper exit(code, k) => return unit\n    }\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return unit\n  }\n}\n";
+    let source = "def swapped() -> -F Unit {\n  handle c : Proc {\n    handle e : Proc {\n      let d : Cap {exit} at e c ;\n      let f : Cap {exit} at c = e ;\n      return *{}\n    } with {\n      pure(x) => return x,\n      oper exit(code, k) => return *{}\n    }\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return *{}\n  }\n}\n";
     let result = parse(built(), SourceText::from(source))?;
     let next = source
         .find("let f")
@@ -1864,7 +1864,7 @@ fn a_product_opens_with_its_own_sign() -> Result<(), Box<dyn Error>>
         "def point = *{.x = 1, .y = 2};",
         "def pair : *{Integer, Integer};",
         "module M : *{ x : Integer } where { def x = 1; }",
-        "def first(p : *{Integer, Integer}) -> -F Integer { match p { *{a, b} => return a } }",
+        "def first(p : *{Integer, Integer}) -> -F Integer { match p { | *{a, b} => return a } }",
         "def picked = r.*{ .a };",
     ] {
         let retired = source.replace("*{", "#{");

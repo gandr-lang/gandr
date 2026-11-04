@@ -1207,7 +1207,7 @@ mod tests
             ]),
             ("def f = #[1, 2", LeadingSlot::Occupied, vec![tile("]")]),
             (
-                "def f(x: Nat) -> -F Nat { let y =",
+                "def f(x : Nat) -> -F Nat { let y =",
                 LeadingSlot::Empty,
                 vec![hole(Sort::Expression), tile(";"), tile("}")],
             ),
@@ -1296,14 +1296,14 @@ mod tests
             ]),
             // A parameter list's parenthesis faces only tiles, so its pair is
             // never filled; the `,` repeat is never walked twice.
-            ("def f(x: Integer", LeadingSlot::Occupied, 4, vec![
+            ("def f(x : Integer", LeadingSlot::Occupied, 4, vec![
                 ") { <Expression@{> }",
                 ", ) { <Expression@{> }",
                 ") -> <Type@->> { <Expression@{> }",
                 ", identifier ) { <Expression@{> }",
             ]),
             (
-                "def f(x: Integer) -> -F Integer {",
+                "def f(x : Integer) -> -F Integer {",
                 LeadingSlot::Empty,
                 3,
                 vec![
@@ -1316,7 +1316,7 @@ mod tests
             // faces only its opener, so that pair stays empty; the arm is a
             // closing of the arm block's reading of the same `{`.
             (
-                "def f(x: Nat) -> -F Nat { match x {",
+                "def f(x : Nat) -> -F Nat { match x {",
                 LeadingSlot::Empty,
                 2,
                 vec!["}", "<Pattern@{> => <Expression@=>> }"],

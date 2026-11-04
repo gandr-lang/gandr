@@ -5,11 +5,12 @@
 //! The shifts between the value and the computation sorts, Levy's `U` and `F`,
 //! are spelled `+U` and `-F`: the sign names the sort the bridge produces, so
 //! the suspension `+U C` is a value type, positive, and the returner `-F A` a
-//! computation type, negative. Each is one compound tile, which the labeler
-//! forms only when the letter ends there: `+Unit` stays the sign before the
-//! word `Unit`, and `A + B` is the sum however it is spaced. A type has no
-//! unary sign, so the compound tile takes no reading from the sum; `A +U B`
-//! reads as a bridge after an operand, which the lowering refuses. The bare
+//! computation type, negative. Each is one tile of the keyword table, which
+//! the labeler forms only when the run is the whole token: `+Unit` is one
+//! name, as every run is whose sign is glued to a word, and `A + B` is the
+//! sum with its operator spaced. A type has no unary sign, so the compound
+//! tile takes no reading from the sum; `A +U B` reads as a bridge after an
+//! operand, which the lowering refuses. The bare
 //! letters `U` and `F` are ordinary type names. The universe is the reserved
 //! word `Type`, with an optional bracket naming its sort by the same signs and,
 //! after a comma, its level: `Type`, `Type[-]`, `Type[+, 1]`. The rules keep
@@ -127,24 +128,23 @@ fn add_type_rules(
     let type_equivalence = precs.prec(PrecName("type.equivalence"))?;
     let type_arrow = precs.prec(PrecName("type.arrow"))?;
 
-    rules.push(rule(
+    // The arrow `A -> C`. A box, the value function space `(A, B) -> C`, is
+    // this form too: its codomain is a value type, so it is the alias of the
+    // thunked arrow `+U (A -> B -> -F C)`, and its parenthesized domain list
+    // is `parenthesized_type`'s. The lowering tells the two apart by the
+    // codomain's kind.
+    let mut function = rule(
         RuleName("function_type"),
         ty,
         type_arrow,
         Regex::seq([Regex::sort(ty), tile(TileLabel("->")), Regex::sort(ty)]),
+    );
+    function.adaptations.push(Adaptation::new(
+        RuleName("function_type"),
+        SurfaceForm("value_function_type"),
+        AdaptationReason("folded into function_type: the box `(A, B) -> C` is the arrow over a value codomain, so the value function space has no arrow of its own"),
     ));
-    // The value function space `A => B`, the alias of the thunked arrow `+U (A
-    // -> -F B)`, and its n-ary form `(A, B) => C`, whose parenthesized domain
-    // list is `parenthesized_type`'s. It shares `->`'s group, so the two
-    // arrows nest to the right of each other. `=>` also separates a case arm's
-    // pattern from its answer, but that tile follows a pattern and this one a
-    // type, so the two never compete for one slot.
-    rules.push(binary_infix_rule(
-        RuleName("value_function_type"),
-        ty,
-        type_arrow,
-        TileLabel("=>"),
-    ));
+    rules.push(function);
     rules.push(binary_infix_rule(
         RuleName("union_type"),
         ty,
@@ -552,9 +552,9 @@ fn add_type_rules(
             ])),
         ]),
     ));
-    // A type at a stage, `Nat[i]`, or below one, `Nat[<i]`: the stage a
+    // A type at a stage, `Nat[i]`, or below one, `Nat[< i]`: the stage a
     // declaration's implicit `[i : Size]` binds. Postfix in the path band,
-    // so `Nat[<i] => Nat` and `-F Nat[i]` need no parentheses. The same
+    // so `Nat[< i] -> Nat` and `-F Nat[i]` need no parentheses. The same
     // bracket names a method's deduced mode where a view's type reads its
     // element after it, `View[m](a)`.
     rules.push(rule(

@@ -850,8 +850,8 @@ mod tests
         // A line-leading bar and a closer take no separator; a sigil's brace
         // is no statement block.
         assert_eq!(
-            marked("data D {\n  | a\n  | b\n}\ndef r() -> R { #{\n  x = 1\n  y = 2\n} }\n"),
-            "data D {\n  | a\n  | b\n}\ndef r() -> R { #{\n  x = 1\n  y = 2\n} }\n"
+            marked("data D {\n  | a\n  | b\n}\ndef r() -> R { *{\n  x = 1\n  y = 2\n} }\n"),
+            "data D {\n  | a\n  | b\n}\ndef r() -> R { *{\n  x = 1\n  y = 2\n} }\n"
         );
     }
 

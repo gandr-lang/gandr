@@ -11123,8 +11123,8 @@ mod tests
         let sources = [
             "#!{ echo a b c d e f; ls | grep x && echo y; }",
             "#!{ [ cd d; ls ] | sort; echo ${x}${y} \"z $w\"; }",
-            "def f(x: Integer) -> -F Integer { return (x * x + 1) }",
-            "data Tree(a) where { Leaf, Node(l: Tree(a), v: a, r: Tree(a)) }",
+            "def f(x : Integer) -> -F Integer { return (x * x + 1) }",
+            "data Tree(a) where { Leaf, Node(l : Tree(a), v : a, r : Tree(a)) }",
             "def s = \"a ${ f \"${x}\" } b\";",
             "match v { Inl(x) => x, Inr(y) => y }",
             "#!{ echo unclosed",
@@ -11402,8 +11402,8 @@ mod tests
     fn each_comment_is_owned_by_the_node_it_describes() -> Result<(), Box<dyn Error>>
     {
         let pbg = built_in()?;
-        let source = "// lead\ndef x = 1; // trail // trail\n\n// alone\n\n// first\n// second\ndef w = 2;\n\
-                      def f(x: Integer) -> -F Integer {\n  // above\n  return x\n}\n\
+        let source = "// lead\ndef x = 1; // trail\n\n// alone\n\n// first\n// second\ndef w = 2;\n\
+                      def f(x : Integer) -> -F Integer {\n  // above\n  return x\n}\n\
                       def y = #[ /* empty */ ];\ndef z = 1 /* one */;\n";
         let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
         assert_eq!(crate::testing::reconstruct(&tree), source);
@@ -11546,7 +11546,7 @@ mod tests
     fn an_inner_run_documents_what_it_stands_in_1365() -> Result<(), Box<dyn Error>>
     {
         let pbg = built_in()?;
-        let source = "//! s\n//! t\n/// a\ndef x = 1;\n//! u\ndef f(x: Integer) -> -F Integer {\n  \
+        let source = "//! s\n//! t\n/// a\ndef x = 1;\n//! u\ndef f(x : Integer) -> -F Integer {\n  \
                       //! inner\n  return x\n}\n";
         let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
         assert_eq!(crate::testing::reconstruct(&tree), source);
@@ -11574,7 +11574,7 @@ mod tests
             ("/// a".to_owned(), "def x = 1;".to_owned()),
             (
                 "//! inner".to_owned(),
-                "def f(x: Integer) -> -F Integer {\n  //! inner\n  return x\n}".to_owned()
+                "def f(x : Integer) -> -F Integer {\n  //! inner\n  return x\n}".to_owned()
             ),
         ]);
         Ok(())

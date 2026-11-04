@@ -1954,7 +1954,7 @@ fn instantiations(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 66 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "bind_expression", "binary_expression.pipe", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.cons", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "run_expression", "hold_expression", "splice_expression", "pack_model_expression", "call_expression", "instantiation_expression", "projection_expression", "record_selection_expression", "view_expression", "index_expression", "hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "recv_expression", "acquire_expression", "release_expression", "fork_expression", "access_expression", "resume_expression", "abort_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "bind_expression" | "pack_model_expression" => p.pure, "binary_expression.pipe" => p.pipe, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.cons" => p.cons, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" | "splice_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" | "record_selection_expression" | "view_expression" | "index_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 66 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "bind_expression", "binary_expression.pipe", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.cons", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "application_expression", "unary_expression", "force_expression", "run_expression", "hold_expression", "splice_expression", "pack_model_expression", "instantiation_expression", "projection_expression", "record_selection_expression", "view_expression", "index_expression", "hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "recv_expression", "acquire_expression", "release_expression", "fork_expression", "access_expression", "resume_expression", "abort_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "bind_expression" | "pack_model_expression" => p.pure, "binary_expression.pipe" => p.pipe, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.cons" => p.cons, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "application_expression" => p.application, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" | "splice_expression" => p.unary, "instantiation_expression" | "projection_expression" | "record_selection_expression" | "view_expression" | "index_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == match name { "application_expression" => "call_expression", _ => name.split_once('.').map_or(name, |(stem, _)| stem) })))]
 fn expressions(
     out: &mut Vec<Rule>,
     p: ExprPrecs,
@@ -2105,14 +2105,20 @@ fn expressions(
     // Juxtaposition, `f x`: a call written with no parentheses. Its tile is
     // zero bytes wide and no lexeme spells it. The melder pushes the tile
     // between two expression operands. The rule is a call by provenance, so
-    // the lowering reads `f x y` as the call `f(x, y)`.
-    out.push(r(
+    // the lowering reads `f x y` as a call of `f` on `x` and `y`.
+    let mut application = r(
         RuleName("application_expression"),
         Provenance("call_expression"),
         s,
         p.application,
         seq([h(s), t(TileLabel(super::APPLICATION)), h(s)]),
+    );
+    application.adaptations.push(Adaptation::new(
+        RuleName("application_expression"),
+        SurfaceForm("arguments"),
+        AdaptationReason("folded into application_expression: each argument is one operand of a juxtaposition, `f a b`, so no argument list `( E, … )` stands apart"),
     ));
+    out.push(application);
     out.push(r(
         RuleName("unary_expression"),
         Provenance("unary_expression"),
@@ -2169,26 +2175,6 @@ fn expressions(
             h(Sort::Type),
         ]),
     ));
-    // The `arguments` list `( E, … )` is inlined in `call_expression` below. A
-    // standalone `arguments` rule additionally gives `(` a form-first
-    // Expression-sort mold that competes with the parenthesized-expression atom
-    // at a fresh slot — a tie a bounded lookahead cannot settle when the
-    // parenthesized expression is long. It is folded into `call_expression`
-    // (recorded as an adaptation for the parity inventory); the inlined argument
-    // list still realises the arguments' shape in the only place it occurs.
-    let mut call = r(
-        RuleName("call_expression"),
-        Provenance("call_expression"),
-        s,
-        p.postfix,
-        seq([h(s), args()]),
-    );
-    call.adaptations.push(Adaptation::new(
-        RuleName("call_expression"),
-        SurfaceForm("arguments"),
-        AdaptationReason("folded into call_expression: the argument list `( E, … )` is inlined as the call's tail, not a standalone atom competing with the parenthesized expression"),
-    ));
-    out.push(call);
     out.push(r(
         RuleName("instantiation_expression"),
         Provenance("instantiation_expression"),
@@ -2271,11 +2257,12 @@ fn expressions(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: appends two pattern lexical forms followed by eight expression
+/// - ensures: appends one pattern lexical form followed by seven expression
 ///   lexical forms, preserving the shared source kinds and distinct bands. A
 ///   constructor, boolean, number or string pattern is read by
 ///   `constructor_pattern` and `literal_pattern`, so the pattern sort has no
-///   lexical rule of its own for them.
+///   lexical rule of its own for them. The unit is `*{}`, a telescope, so no
+///   lexical rule reads it.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2286,7 +2273,7 @@ fn expressions(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 10 && added.iter().zip([("identifier.pattern", "identifier", Sort::Pattern, pat), ("unit.pattern", "unit", Sort::Pattern, pat), ("identifier.expression", "identifier", Sort::Expression, expr), ("constructor.expression", "constructor", Sort::Expression, expr), ("boolean.expression", "boolean", Sort::Expression, expr), ("unit.expression", "unit", Sort::Expression, expr), ("number.expression", "number", Sort::Expression, expr), ("typed_number.expression", "typed_number", Sort::Expression, expr), ("character", "character", Sort::Expression, expr), ("string.expression", "string", Sort::Expression, expr)]).all(|(rule, (name, provenance, sort, prec))| rule.name().0 == name && rule.provenance().0 == provenance && rule.sort() == sort && rule.prec() == prec)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 8 && added.iter().zip([("identifier.pattern", "identifier", Sort::Pattern, pat), ("identifier.expression", "identifier", Sort::Expression, expr), ("constructor.expression", "constructor", Sort::Expression, expr), ("boolean.expression", "boolean", Sort::Expression, expr), ("number.expression", "number", Sort::Expression, expr), ("typed_number.expression", "typed_number", Sort::Expression, expr), ("character", "character", Sort::Expression, expr), ("string.expression", "string", Sort::Expression, expr)]).all(|(rule, (name, provenance, sort, prec))| rule.name().0 == name && rule.provenance().0 == provenance && rule.sort() == sort && rule.prec() == prec)))]
 fn lexical(
     out: &mut Vec<Rule>,
     pat: Prec,
@@ -2300,13 +2287,6 @@ fn lexical(
         p,
         pat,
         t(TileLabel("identifier")),
-    ));
-    out.push(r(
-        RuleName("unit.pattern"),
-        Provenance("unit"),
-        p,
-        pat,
-        t(TileLabel("unit")),
     ));
 
     let e = Sort::Expression;
@@ -2330,13 +2310,6 @@ fn lexical(
         e,
         expr,
         alt([t(TileLabel("true")), t(TileLabel("false"))]),
-    ));
-    out.push(r(
-        RuleName("unit.expression"),
-        Provenance("unit"),
-        e,
-        expr,
-        t(TileLabel("unit")),
     ));
     out.push(r(
         RuleName("number.expression"),
@@ -3038,30 +3011,6 @@ fn rest_pat() -> Regex
     seq([t(TileLabel("..")), h(Sort::Pattern)])
 }
 
-/// Build expression arguments.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: parentheses around an optional expression-argument list.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
-///   role observations catch changed discriminators, delimiters and hole sorts.
-///   The predicate observes the stated shape; source programs outside the
-///   finite corpus are not exhausted.
-/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
-fn args() -> Regex
-{
-    seq([
-        t(TileLabel("(")),
-        opt(comma1(h(Sort::Expression))),
-        t(TileLabel(")")),
-    ])
-}
-
 /// Build a grade fragment.
 ///
 /// # Specification
@@ -3278,25 +3227,18 @@ fn handler_clause() -> Regex
     ])
 }
 
-/// Build a braced, nonempty arm list whose every arm may open with `|`, the
-/// arms separated by `,` or by the bar alone.
+/// Build a braced, nonempty arm list whose every arm opens with its bar, `{ |
+/// p => e | q => f }`, the first arm's too.
 ///
-/// A leading `|` lets an arm open with its bar, as a clause does; the labeler
-/// marks it an arm bar after the brace or a comma and at a line's start. A
-/// mold is one tile occurrence, and an occurrence a hole can follow admits an
-/// operand before any successor: an optional bar after a single `{` would
-/// admit `{ A | B => …` as `A` before the arm's bar, a reading that ties with
-/// the or-pattern's. So the bar is never optional after a shared tile: the
-/// opener and every separator come in two occurrences, one a hole follows and
-/// one the bar follows, and the token after the tile tells them apart. A bar
-/// alone after an arm's body separates arms, as a line-leading `|` does under
-/// layout: the bar is its own lexeme, so it ties with no operand.
+/// The labeler marks a `|` an arm bar after the brace and at a line's start.
+/// A bar after an arm's body ends that arm, as a data member's does: the bar
+/// is its own lexeme, so it ties with no operand, and an or-pattern's `|`
+/// stands inside a pattern, never after `{` or a body.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: two alternatives, `{` then an arm and `{ |` then an arm, each
-///   followed by repetitions of `,`, `, |` or `|` before an arm, an optional
-///   trailing `,`, and `}`.
+/// - ensures: `{`, an arm led by the arm bar, repetitions of a bar-led arm, and
+///   `}`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3306,23 +3248,16 @@ fn handler_clause() -> Regex
 ///   reachable after a hole breaks.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref branches) if branches.len() == 2 && branches.iter().all(|branch| matches!(branch.shape(), RegexShape::Seq(ref parts) if parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.last().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "arm_bar")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.last().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
 fn arm_block() -> Regex
 {
     let bar = || t(TileLabel("arm_bar"));
-    let tail = || {
-        seq([
-            repeat(alt([
-                seq([t(TileLabel(",")), arm()]),
-                seq([t(TileLabel(",")), bar(), arm()]),
-                seq([bar(), arm()]),
-            ])),
-            opt(t(TileLabel(","))),
-        ])
-    };
-    alt([
-        seq([t(TileLabel("{")), arm(), tail(), t(TileLabel("}"))]),
-        seq([t(TileLabel("{")), bar(), arm(), tail(), t(TileLabel("}"))]),
+    seq([
+        t(TileLabel("{")),
+        bar(),
+        arm(),
+        repeat(seq([bar(), arm()])),
+        t(TileLabel("}")),
     ])
 }
 
@@ -4551,13 +4486,6 @@ fn primary_expressions(
             opt(seq([
                 t(TileLabel("with")),
                 alt([
-                    seq([
-                        t(TileLabel("{")),
-                        handler_clause(),
-                        repeat(seq([t(TileLabel(",")), handler_clause()])),
-                        opt(t(TileLabel(","))),
-                        t(TileLabel("}")),
-                    ]),
                     seq([
                         t(TileLabel("{")),
                         t(TileLabel("arm_bar")),

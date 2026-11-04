@@ -1012,10 +1012,10 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 pub const KEYWORDS: &[&str] = &[
     "def", "run", "as", "extern", "type", "fun", "pure", "return", "become", "thunk", "force",
     "match", "if", "else", "hold", "dup", "drop", "send", "recv", "close", "select", "offer",
-    "fork", "acquire", "release", "migrate", "at", "true", "false", "unit", "mu", "end", "data",
-    "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue", "with", "import",
-    "module", "theory", "oper", "handle", "access", "unwind", "resume", "abort", "world", "mobile",
-    "inf", "pub", "flow", "where",
+    "fork", "acquire", "release", "migrate", "at", "true", "false", "mu", "end", "data", "codata",
+    "rec", "op", "rule", "for", "in", "while", "break", "continue", "with", "import", "module",
+    "theory", "oper", "handle", "access", "unwind", "resume", "abort", "world", "mobile", "inf",
+    "pub", "flow", "where",
 ];
 
 /// The keywords that open a block's statements: one that no open form
@@ -1023,12 +1023,6 @@ pub const KEYWORDS: &[&str] = &[
 const STATEMENT_LEADS: &[&str] = &[
     "let", "run", "unpack", "hold", "var", "recv", "acquire", "release", "fork",
 ];
-
-/// The spellings a respelling retires, each with the tile it is read as: the
-/// product and the sub-record selection open with the connective's own sign,
-/// `*{` and `.*{`, and the `#` spelling molds that tile until no source
-/// writes it.
-const RETIRED: &[(&str, &str)] = &[("#{", "*{"), (".#{", ".*{")];
 
 /// Return the grammar tile labels to enumerate for a labeled token.
 ///
@@ -1050,10 +1044,10 @@ const RETIRED: &[(&str, &str)] = &[("#{", "*{"), (".#{", ".*{")];
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every lexeme menu, reserved and ordinary words, canonical
-///   versus dialect shell openers, each ASCII token of the spelling table
-///   (`<~>`, `~~>`, `::`, `inf`) and each retired spelling (`#{`, `.#{`) expose
-///   exact label sequences. Dropping a generic alternative, widening a keyword
-///   or losing the source spelling changes the menu.
+///   versus dialect shell openers and each ASCII token of the spelling table
+///   (`<~>`, `~~>`, `::`, `inf`) expose exact label sequences. Dropping a
+///   generic alternative, widening a keyword or losing the source spelling
+///   changes the menu.
 /// - witness: `mold::tests::keyword_and_identifier_share_a_word_menu`
 /// - witness: `mold::tests::literal_and_shell_menus_are_exact`
 #[inline]
@@ -1145,10 +1139,6 @@ pub fn candidate_labels<'text>(
             // the glyph's tile, so the alias molds the glyph's one form.
             else if let Some(tile) = aliased(LabelText(text)) {
                 labels.push(CandidateLabel::from(tile.0));
-            }
-            // A retired spelling offers its successor's tile.
-            else if let Some(&(_, tile)) = RETIRED.iter().find(|&&(retired, _)| retired == text) {
-                labels.push(CandidateLabel::from(tile));
             }
         },
         Lexeme::Space | Lexeme::Unknown => {},
@@ -4743,8 +4733,8 @@ mod tests
             (Lexeme::Punct, "~~>", &["~~>", "⇝"]),
             (Lexeme::Punct, "::", &["::", "∷"]),
             (Lexeme::Punct, "≃", &["≃"]),
-            (Lexeme::Punct, "#{", &["#{", "*{"]),
-            (Lexeme::Punct, ".#{", &[".#{", ".*{"]),
+            (Lexeme::Punct, "#{", &["#{"]),
+            (Lexeme::Punct, ".#{", &[".#{"]),
             (Lexeme::Punct, "*{", &["*{"]),
             (Lexeme::LowerWord, "inf", &["inf", "ω"]),
             (Lexeme::Space, " ", &[]),
