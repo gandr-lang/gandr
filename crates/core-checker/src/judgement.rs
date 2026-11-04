@@ -3063,7 +3063,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   rule; the unknown type reads as a stack of unknowns.
     /// - witness: `judgement::tests::control_rules_preserve_rows_scopes_and_shapes`
     /// - witness: `judgement::tests::an_introduction_against_the_unknown_type_checks_its_parts`
-    #[spec(ensures: |ret| match ret { Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == TermNode::Value(at) && wanted == ExpectedShape::Stack && found == TypeNode::Value(classifier), Ok((input, output)) => self.context.arena().comp_type(input).is_some() && self.context.arena().comp_type(output).is_some(), Err(_) => true })]
+    #[spec(ensures: |ret| match ret { Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == TermNode::Value(at) && wanted == ExpectedShape::Stack && found == TypeNode::Value(classifier), Ok((input, output)) => self.context.arena().comp_type(input).is_some() && self.context.arena().comp_type(output).is_some(), Err(_) => true })]
     fn stack_expected(
         &mut self,
         at: ValueId,
@@ -3080,6 +3080,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     at: TermNode::Value(at),
                     wanted: ExpectedShape::Stack,
                     found: TypeNode::Value(classifier),
+                    unfolded: TypeNode::Value(head),
                 },
             )),
         }
@@ -3098,7 +3099,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::control_rules_preserve_rows_scopes_and_shapes`
     /// - witness: `judgement::tests::an_introduction_against_the_unknown_type_checks_its_parts`
     #[spec(ensures: |ret| match ret {
-        | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == at && wanted == ExpectedShape::With && found == TypeNode::Computation(classifier),
+        | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == at && wanted == ExpectedShape::With && found == TypeNode::Computation(classifier),
         | Ok(Components::Known(ref parts)) => parts.iter().all(|&part| self.context.arena().comp_type(part).is_some()),
         | Ok(Components::Unknown(unknown)) => self.context.arena().comp_type(unknown).is_some(),
         | Err(_) => true,
@@ -3119,6 +3120,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     at,
                     wanted: ExpectedShape::With,
                     found: TypeNode::Computation(classifier),
+                    unfolded: TypeNode::Computation(classifier),
                 },
             )),
         }
@@ -3135,7 +3137,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — dependent stack application must substitute its
     ///   argument.
     /// - witness: `judgement::tests::control_rules_preserve_rows_scopes_and_shapes`
-    #[spec(ensures: |ret| match ret { Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == at && wanted == ExpectedShape::Arrow && found == TypeNode::Computation(classifier), Ok((domain, _)) => self.context.arena().value_type(domain).is_some(), Err(_) => true })]
+    #[spec(ensures: |ret| match ret { Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == at && wanted == ExpectedShape::Arrow && found == TypeNode::Computation(classifier), Ok((domain, _)) => self.context.arena().value_type(domain).is_some(), Err(_) => true })]
     fn application_type(
         &mut self,
         at: TermNode,
@@ -3155,6 +3157,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     at,
                     wanted: ExpectedShape::Arrow,
                     found: TypeNode::Computation(classifier),
+                    unfolded: TypeNode::Computation(classifier),
                 },
             )),
         }
@@ -3228,6 +3231,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         at: TermNode::Value(judgement.at),
                         wanted: ExpectedShape::Returner,
                         found: TypeNode::Computation(input),
+                        unfolded: TypeNode::Computation(head),
                     });
                 };
                 self.context.binders().open(Zone::Intuitionistic, result);
@@ -3253,6 +3257,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                                 at: TermNode::Value(judgement.at),
                                 wanted: ExpectedShape::With,
                                 found: TypeNode::Computation(input),
+                                unfolded: TypeNode::Computation(input),
                             },
                         )?,
                         Components::Unknown(unknown) => unknown,
@@ -3533,6 +3538,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 at: TermNode::Computation(at),
                 wanted: ExpectedShape::Returner,
                 found: TypeNode::Computation(subject),
+                unfolded: TypeNode::Computation(head),
             });
         };
         let Computation::Handle {
@@ -5592,6 +5598,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         at: TermNode::Value(term),
                         wanted: ExpectedShape::Product,
                         found: TypeNode::Value(expected),
+                        unfolded: TypeNode::Value(expected),
                     });
                 }
                 let Some(components) = self.context.arena().value(term).and_then(Value::components)
@@ -5790,6 +5797,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                                     ExpectedShape::Summand
                                 },
                                 found: TypeNode::Value(expected),
+                                unfolded: TypeNode::Value(expected),
                             })?
                     },
                     Components::Unknown(unknown) => unknown,
@@ -6625,6 +6633,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         at: TermNode::Computation(term),
                         wanted: ExpectedShape::With,
                         found: TypeNode::Computation(expected),
+                        unfolded: TypeNode::Computation(expected),
                     });
                 }
                 let Some(&Computation::With(ref components)) =
@@ -7089,6 +7098,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         at: TermNode::Computation(bound),
                         wanted: ExpectedShape::Returner,
                         found: TypeNode::Computation(synthesised),
+                        unfolded: TypeNode::Computation(synthesised),
                     },
                 ));
             },
@@ -7234,6 +7244,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         at: TermNode::Computation(bound),
                         wanted: ExpectedShape::Returner,
                         found: TypeNode::Computation(synthesised),
+                        unfolded: TypeNode::Computation(read),
                     },
                 ));
             },
@@ -7302,7 +7313,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Ok(ValueTypeView::Unknown) => matches!(comp_type_view(self.context.arena(), body), Ok(CompTypeView::Unknown)),
                 | Ok(_) | Err(_) => true,
             },
-        | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Value(at)
+        | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found, .. }) => named == TermNode::Value(at)
             && wanted == ExpectedShape::Thunk && found == TypeNode::Value(expected),
         | Err(_) => true,
     })]
@@ -7322,6 +7333,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     at: TermNode::Value(at),
                     wanted: ExpectedShape::Thunk,
                     found: TypeNode::Value(expected),
+                    unfolded: TypeNode::Value(head),
                 },
             )),
         }
@@ -7409,7 +7421,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             parts.iter().all(|&part| self.context.arena().value_type(part).is_some())
         },
         | Ok(Components::Unknown(unknown)) => self.context.arena().value_type(unknown).is_some(),
-        | Err(CheckRefusal::ShapeMismatch { at: shaped, wanted, found }) => {
+        | Err(CheckRefusal::ShapeMismatch { at: shaped, wanted, found, .. }) => {
             shaped == TermNode::Value(at)
                 && wanted == ExpectedShape::Product
                 && found == TypeNode::Value(expected)
@@ -7432,6 +7444,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     at: TermNode::Value(at),
                     wanted: ExpectedShape::Product,
                     found: TypeNode::Value(expected),
+                    unfolded: TypeNode::Value(head),
                 },
             )),
         }
@@ -7466,7 +7479,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         captures: depth = self.frames.len(),
         ensures: |ret| match ret {
             | Ok(step) => matches!(step, Step::Descend(_)) && self.frames.len() == depth.saturating_add(1),
-            | Err(CheckRefusal::ShapeMismatch { at, wanted, found }) => at == TermNode::Value(term) && wanted == ExpectedShape::Sigma && found == TypeNode::Value(expected),
+            | Err(CheckRefusal::ShapeMismatch { at, wanted, found, .. }) => at == TermNode::Value(term) && wanted == ExpectedShape::Sigma && found == TypeNode::Value(expected),
             | Err(_) => true,
         },
     )]
@@ -7484,6 +7497,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 at: TermNode::Value(term),
                 wanted: ExpectedShape::Sigma,
                 found: TypeNode::Value(expected),
+                unfolded: TypeNode::Value(expected),
             });
         };
         self.read_by_a_type(left);
@@ -7742,7 +7756,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             self.context.arena().value_type(domain).is_some()
                 && self.context.arena().value_type(codomain).is_some()
         },
-        | Err(CheckRefusal::ShapeMismatch { at: shaped, wanted, found }) => {
+        | Err(CheckRefusal::ShapeMismatch { at: shaped, wanted, found, .. }) => {
             shaped == TermNode::Value(at)
                 && wanted == ExpectedShape::StaticPi
                 && found == TypeNode::Value(expected)
@@ -7770,6 +7784,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     at: TermNode::Value(at),
                     wanted: ExpectedShape::StaticPi,
                     found: TypeNode::Value(expected),
+                    unfolded: TypeNode::Value(head),
                 },
             )),
         }
@@ -7807,7 +7822,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Ok(CompTypeView::Element { .. } | CompTypeView::Unknown | CompTypeView::Codata { .. }) => true,
                 | Ok(CompTypeView::Returner { .. } | CompTypeView::Returns { .. } | CompTypeView::With(..)) | Err(_) => false,
             },
-        | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Computation(at)
+        | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found, .. }) => named == TermNode::Computation(at)
             && wanted == ExpectedShape::Arrow && found == TypeNode::Computation(expected),
         | Err(_) => true,
     })]
@@ -7838,6 +7853,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     at: TermNode::Computation(at),
                     wanted: ExpectedShape::Arrow,
                     found: TypeNode::Computation(expected),
+                    unfolded: TypeNode::Computation(expected),
                 },
             )),
         }
@@ -7872,7 +7888,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Ok(CompTypeView::Element { .. } | CompTypeView::Unknown | CompTypeView::Codata { .. }) => true,
                 | Ok(CompTypeView::Arrow { .. } | CompTypeView::Pi { .. } | CompTypeView::With(..) | CompTypeView::Returns { .. }) | Err(_) => false,
             },
-        | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Computation(at)
+        | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found, .. }) => named == TermNode::Computation(at)
             && wanted == ExpectedShape::Returner && found == TypeNode::Computation(expected),
         | Err(_) => true,
     })]
@@ -7892,6 +7908,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     at: TermNode::Computation(at),
                     wanted: ExpectedShape::Returner,
                     found: TypeNode::Computation(expected),
+                    unfolded: TypeNode::Computation(expected),
                 },
             )),
         }
@@ -7921,8 +7938,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_return_of_several_values_checks_each_at_its_instantiated_result`
     #[spec(ensures: |ret| match ret {
         | Ok(ref results) => results.len() == usize::from(arity),
-        | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Computation(at)
-            && wanted == ExpectedShape::Returns && found == TypeNode::Computation(expected),
+        | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found, unfolded }) => named == TermNode::Computation(at)
+            && wanted == ExpectedShape::Returns && found == TypeNode::Computation(expected)
+            && matches!(unfolded, TypeNode::Computation(_)),
         | Err(_) => true,
     })]
     fn returns_expected(
@@ -7942,6 +7960,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     at: TermNode::Computation(at),
                     wanted: ExpectedShape::Returns,
                     found: TypeNode::Computation(expected),
+                    unfolded: TypeNode::Computation(head),
                 },
             )),
         }
@@ -8440,6 +8459,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 at: TermNode::Computation(at),
                 wanted: ExpectedShape::Returner,
                 found: TypeNode::Computation(continued),
+                unfolded: TypeNode::Computation(head),
             }),
         }
     }
@@ -9735,6 +9755,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                             at: TermNode::Computation(nested),
                             wanted: ExpectedShape::Returner,
                             found: TypeNode::Computation(synthesised),
+                            unfolded: TypeNode::Computation(head),
                         });
                     },
                 };
@@ -9827,6 +9848,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         at: TermNode::Computation(at),
                         wanted: ExpectedShape::Path,
                         found: TypeNode::Value(classifier),
+                        unfolded: TypeNode::Value(classifier),
                     });
                 };
                 let motive = crate::flow::levelled(self.context, at, motive, carrier)?;
@@ -10090,6 +10112,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         at: TermNode::Computation(at),
                         wanted: ExpectedShape::Path,
                         found: TypeNode::Value(classifier),
+                        unfolded: TypeNode::Value(classifier),
                     });
                 };
                 let (motive, _) = self.telescope(at)?;
@@ -10167,6 +10190,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         at: TermNode::Value(over),
                         wanted: ExpectedShape::Path,
                         found: TypeNode::Value(classifier),
+                        unfolded: TypeNode::Value(classifier),
                     });
                 };
                 let arena = self.context.arena_mut();
@@ -10237,6 +10261,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         at: TermNode::Value(scrutinee),
                         wanted: ExpectedShape::Sum,
                         found: TypeNode::Value(classifier),
+                        unfolded: TypeNode::Value(classifier),
                     });
                 }
                 let owner = self.owner;
@@ -10456,6 +10481,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                             at: TermNode::Value(value),
                             wanted: ExpectedShape::Thunk,
                             found: TypeNode::Value(synthesised),
+                            unfolded: TypeNode::Value(synthesised),
                         },
                     )),
                 }
@@ -10506,6 +10532,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         at: TermNode::Value(dialogue),
                         wanted: ExpectedShape::Dialogue,
                         found: TypeNode::Value(synthesised),
+                        unfolded: TypeNode::Value(head),
                     }),
                 }
             },
@@ -11033,6 +11060,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 at: TermNode::Value(scrutinee),
                 wanted: ExpectedShape::Product,
                 found: TypeNode::Value(classifier),
+                unfolded: TypeNode::Value(classifier),
             });
         }
         let binders = u32::try_from(count).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
@@ -11081,7 +11109,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| match ret {
         Ok(pair) => <[ValueTypeId; 2]>::from(pair).iter().all(|&id| matches!(self.context.arena().value_type(id), Some(&(gandr_core_term::ValueType::Base(_) | gandr_core_term::ValueType::Product(_) | gandr_core_term::ValueType::Sum(_))))),
-        Err(CheckRefusal::ShapeMismatch { at: found_at, wanted, found }) => found_at == TermNode::Value(at) && wanted == ExpectedShape::PathUniverse && found == TypeNode::Value(classifier),
+        Err(CheckRefusal::ShapeMismatch { at: found_at, wanted, found, .. }) => found_at == TermNode::Value(at) && wanted == ExpectedShape::PathUniverse && found == TypeNode::Value(classifier),
         Err(_) => true,
     })]
     fn path_endpoints(
@@ -11098,6 +11126,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 at: TermNode::Value(at),
                 wanted: ExpectedShape::PathUniverse,
                 found: TypeNode::Value(classifier),
+                unfolded: TypeNode::Value(head),
             });
         };
         Ok((
@@ -11131,7 +11160,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `bridge::tests::bridges::an_interfaced_atom_bears_its_relation_as_its_bridge_in_both_checkers`
     /// - witness: `bridge::tests::bridges::a_bridge_at_the_universe_is_a_relation_in_both_checkers`
     #[spec(ensures: |ret| match ret {
-        | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == at && wanted == ExpectedShape::Path && found == TypeNode::Value(classifier),
+        | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == at && wanted == ExpectedShape::Path && found == TypeNode::Value(classifier),
         | Ok(PathReading::Known { .. } | PathReading::Unknown(_)) | Err(_) => true,
     })]
     fn reflexive_expected(
@@ -11180,7 +11209,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
     /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| match ret {
-        | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == at && wanted == ExpectedShape::Path && found == TypeNode::Value(classifier),
+        | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == at && wanted == ExpectedShape::Path && found == TypeNode::Value(classifier),
         | Ok(PathReading::Known { .. } | PathReading::Unknown(_)) | Err(_) => true,
     })]
     fn path_expected(
@@ -11238,6 +11267,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 at,
                 wanted: ExpectedShape::Path,
                 found: TypeNode::Value(classifier),
+                unfolded: TypeNode::Value(head),
             }),
         }
     }
@@ -11504,6 +11534,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             at: TermNode::Computation(at),
             wanted: ExpectedShape::Telescope,
             found: TypeNode::Computation(motive),
+            unfolded: TypeNode::Computation(motive),
         };
         let Some(&CompType::Pi {
             domain: carrier,
@@ -11703,7 +11734,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     #[spec(ensures: |ret| match ret {
         Ok(Components::Known(ref parts)) => parts.iter().all(|&part| self.context.arena().value_type(part).is_some()) && self.context.arena().value_type(classifier).is_none_or(|held| !matches!(*held, gandr_core_term::ValueType::Sum(ref held) if held != parts)),
         Ok(Components::Unknown(unknown)) => self.context.arena().value_type(unknown).is_some(),
-        Err(CheckRefusal::ShapeMismatch { at: found_at, wanted, found }) => found_at == TermNode::Value(at) && wanted == ExpectedShape::Sum && found == TypeNode::Value(classifier),
+        Err(CheckRefusal::ShapeMismatch { at: found_at, wanted, found, .. }) => found_at == TermNode::Value(at) && wanted == ExpectedShape::Sum && found == TypeNode::Value(classifier),
         Err(_) => true,
     })]
     fn sum_expected(
@@ -11722,6 +11753,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     at: TermNode::Value(at),
                     wanted: ExpectedShape::Sum,
                     found: TypeNode::Value(classifier),
+                    unfolded: TypeNode::Value(head),
                 },
             )),
         }
@@ -11758,6 +11790,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     at: TermNode::Value(at),
                     wanted: ExpectedShape::List,
                     found: TypeNode::Value(classifier),
+                    unfolded: TypeNode::Value(head),
                 },
             )),
         }

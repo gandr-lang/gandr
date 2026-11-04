@@ -157,7 +157,7 @@ pub struct Component
 /// - witness: `product::tests::a_product_of_written_paths_elaborates_to_the_native_product`
 /// - witness: `product::tests::what_the_product_cannot_read_it_refuses_by_name`
 #[spec(ensures: |ret| match ret {
-    | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == TermNode::Value(at) && wanted == ExpectedShape::PathUniverse && found == TypeNode::Value(classifier),
+    | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == TermNode::Value(at) && wanted == ExpectedShape::PathUniverse && found == TypeNode::Value(classifier),
     | Ok(_) | Err(_) => true,
 })]
 pub fn component(
@@ -170,6 +170,7 @@ pub fn component(
         at: TermNode::Value(at),
         wanted: ExpectedShape::PathUniverse,
         found: TypeNode::Value(classifier),
+        unfolded: TypeNode::Value(classifier),
     };
     let head = context.whnf_value_type(classifier)?;
     let (source, target, reading) = match value_type_view(context.arena(), head)? {
@@ -324,7 +325,7 @@ pub fn classifier(
 /// - witness: `product::tests::a_flow_product_synthesises_the_flow_between_its_pairs`
 /// - witness: `product::tests::what_the_flow_product_cannot_read_it_refuses_by_name`
 #[spec(ensures: |ret| match ret {
-    | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == TermNode::Value(at) && wanted == ExpectedShape::Flow && found == TypeNode::Value(classifier),
+    | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == TermNode::Value(at) && wanted == ExpectedShape::Flow && found == TypeNode::Value(classifier),
     | Ok(_) | Err(_) => true,
 })]
 pub fn flow_component(
@@ -337,6 +338,7 @@ pub fn flow_component(
         at: TermNode::Value(at),
         wanted: ExpectedShape::Flow,
         found: TypeNode::Value(classifier),
+        unfolded: TypeNode::Value(classifier),
     };
     let head = context.whnf_value_type(classifier)?;
     let ValueTypeView::Flow {
@@ -510,6 +512,7 @@ pub fn certificate(
         at: TermNode::Value(at),
         wanted: ExpectedShape::PathUniverse,
         found: TypeNode::Value(classifier),
+        unfolded: TypeNode::Value(classifier),
     };
     let mut read = at;
     loop {

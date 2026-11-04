@@ -553,6 +553,7 @@ impl Machine<'_, '_>
                     at: term,
                     wanted: ExpectedShape::Session,
                     found: TypeNode::Value(resided.state),
+                    unfolded: TypeNode::Value(resided.state),
                 }),
                 CoreNode::Type(_) => Err(CheckRefusal::MachineInvariant),
             },
@@ -3436,6 +3437,7 @@ impl Machine<'_, '_>
                 at: TermNode::Computation(at),
                 wanted: ExpectedShape::Session,
                 found: TypeNode::Value(protocol),
+                unfolded: TypeNode::Value(head),
             });
         }
         let node = CoreNode::Term(TermNode::Computation(at));

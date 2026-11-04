@@ -145,7 +145,7 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x10";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x11";
 
 /// The magic and version a program's address is computed over.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0a";
@@ -7573,7 +7573,8 @@ field!(
                 ref expected,
                 ..
             } => [synthesised.nodes(), expected.nodes()],
-            Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} | Refusal::ShapeMismatch { ref found, .. }
+            Refusal::ShapeMismatch { ref found, ref unfolded, .. } => [found.nodes(), unfolded.nodes()],
+            Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..}
             | Refusal::SessionMismatch { state: ref found, .. } | Refusal::Linearity { defect: Linearity::Residue { state: ref found, .. }, .. }
             | Refusal::StaticClassifierExpected { ref found, .. } => [found.nodes(), &[]],
             | Refusal::DependentBind {
@@ -7775,7 +7776,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                         ref expected,
                         ..
                     } => [synthesised.nodes(), expected.nodes()],
-                    | Refusal::ShapeMismatch { ref found, .. }
+                    | Refusal::ShapeMismatch { ref found, ref unfolded, .. } => [found.nodes(), unfolded.nodes()],
                     | Refusal::SessionMismatch {
                         state: ref found, ..
                     }
@@ -8048,7 +8049,8 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
                     ref expected,
                     ..
                 } => [synthesised.nodes(), expected.nodes()],
-                Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} | Refusal::ShapeMismatch { ref found, .. }
+                Refusal::ShapeMismatch { ref found, ref unfolded, .. } => [found.nodes(), unfolded.nodes()],
+                Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..}
                 | Refusal::SessionMismatch { state: ref found, .. } | Refusal::Linearity { defect: Linearity::Residue { state: ref found, .. }, .. }
                 | Refusal::StaticClassifierExpected { ref found, .. } => [found.nodes(), &[]],
                 | Refusal::DependentBind {
@@ -8251,7 +8253,6 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
                 expected: ref found,
                 ..
             }
-            | Refusal::ShapeMismatch { ref found, .. }
             | Refusal::SessionMismatch {
                 state: ref found, ..
             }
@@ -8263,6 +8264,11 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
                 ..
             }
             | Refusal::StaticClassifierExpected { ref found, .. } => [Some(found), None],
+            Refusal::ShapeMismatch {
+                ref found,
+                ref unfolded,
+                ..
+            } => [Some(found), Some(unfolded)],
             Refusal::DependentBind {
                 ref synthesised, ..
             } => [Some(synthesised), None],

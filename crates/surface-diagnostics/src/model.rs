@@ -292,13 +292,17 @@ pub struct Compared
 {
     /// The type the rule required.
     pub expected: Maybe<String, spelling::Absent>,
-    /// The type the rule met.
+    /// The type the rule met, as written.
     pub found: Maybe<String, spelling::Absent>,
+    /// The type the rule met at its weak head, where that differs from
+    /// `found`.
+    pub unfolded: Maybe<String, spelling::Absent>,
 }
 
 impl fmt::Display for Compared
 {
-    /// Writes ``expected `E`, found `F` ``, either side alone, or nothing.
+    /// Writes ``expected `E`, found `F` ``, either side alone, or nothing,
+    /// then ``, which unfolds to `U` `` after a found side that unfolds.
     ///
     /// # Specification
     /// trivial.
@@ -310,13 +314,20 @@ impl fmt::Display for Compared
     {
         match (&self.expected, &self.found) {
             (&Maybe::Present(ref expected), &Maybe::Present(ref found)) => {
-                write!(f, "expected `{expected}`, found `{found}`")
+                write!(f, "expected `{expected}`, found `{found}`")?;
             },
             (&Maybe::Present(ref expected), &Maybe::Absent(_)) => {
-                write!(f, "expected `{expected}`")
+                write!(f, "expected `{expected}`")?;
             },
-            (&Maybe::Absent(_), &Maybe::Present(ref found)) => write!(f, "found `{found}`"),
-            (&Maybe::Absent(_), &Maybe::Absent(_)) => Ok(()),
+            (&Maybe::Absent(_), &Maybe::Present(ref found)) => write!(f, "found `{found}`")?,
+            (&Maybe::Absent(_), &Maybe::Absent(_)) => {},
+        }
+        match (&self.found, &self.unfolded) {
+            (&Maybe::Present(_), &Maybe::Present(ref unfolded)) => {
+                write!(f, ", which unfolds to `{unfolded}`")
+            },
+            (&Maybe::Present(_) | &Maybe::Absent(_), &Maybe::Absent(_))
+            | (&Maybe::Absent(_), &Maybe::Present(_)) => Ok(()),
         }
     }
 }

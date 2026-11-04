@@ -631,6 +631,7 @@ impl Report<'_>
                 compared: Compared {
                     expected: owned(comparison.expected),
                     found: owned(comparison.found),
+                    unfolded: owned(comparison.unfolded),
                 },
                 producer: match self.subject {
                     Subject::Refused {

@@ -213,6 +213,7 @@ pub fn open_fixpoint(
         at: TermNode::Computation(at),
         wanted: ExpectedShape::Arrow,
         found: TypeNode::Computation(expected),
+        unfolded: TypeNode::Computation(expected),
     };
     // The telescope down to the recursed-on arrow, outermost first: each
     // domain, and whether its codomain is under its binder.

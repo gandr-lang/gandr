@@ -662,6 +662,7 @@ pub fn stated(
                     at: TermNode::Computation(at),
                     wanted: ExpectedShape::Returner,
                     found: TypeNode::Computation(shape),
+                    unfolded: TypeNode::Computation(head),
                 });
             },
             CompTypeView::Returner { .. }

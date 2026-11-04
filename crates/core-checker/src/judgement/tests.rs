@@ -265,6 +265,7 @@ fn a_pair_synthesises_its_eager_product_and_checks_against_one()
             at: TermNode::Value(pair),
             wanted: ExpectedShape::Product,
             found: TypeNode::Value(integer.id()),
+            unfolded: TypeNode::Value(integer.id()),
         }),
         "a pair against no eager product is a shape mismatch"
     );
@@ -342,6 +343,7 @@ fn n_ary_tuples_injections_and_cases_check_at_their_arity()
             at: TermNode::Value(triple),
             wanted: ExpectedShape::Product,
             found: TypeNode::Value(pair_type.id()),
+            unfolded: TypeNode::Value(pair_type.id()),
         }),
         "a tuple against a product of another arity is a shape mismatch"
     );
@@ -356,6 +358,7 @@ fn n_ary_tuples_injections_and_cases_check_at_their_arity()
             at: TermNode::Value(beyond),
             wanted: ExpectedShape::Summand,
             found: TypeNode::Value(three.id()),
+            unfolded: TypeNode::Value(three.id()),
         }),
         "an injection past the last summand names a summand the sum lacks"
     );
@@ -369,6 +372,7 @@ fn n_ary_tuples_injections_and_cases_check_at_their_arity()
                 at: TermNode::Value(scrutinee),
                 wanted: ExpectedShape::Sum,
                 found: TypeNode::Value(three.id()),
+                unfolded: TypeNode::Value(three.id()),
             }),
         ),
         (absurd, empty, Ok(ConversionCount::default())),
@@ -418,6 +422,7 @@ fn a_split_binds_every_component_of_its_product()
         at: TermNode::Value(scrutinee),
         wanted: ExpectedShape::Product,
         found: TypeNode::Value(found),
+        unfolded: TypeNode::Value(found),
     };
     for (split, scrutinised, accepted) in [
         (reads_first, triple_type.id(), Some(true)),
@@ -524,6 +529,7 @@ fn a_static_lambda_checks_only_against_a_static_pi()
             at: TermNode::Value(identity),
             wanted: ExpectedShape::StaticPi,
             found: TypeNode::Value(integer.id()),
+            unfolded: TypeNode::Value(integer.id()),
         }),
         "against any other former it is a shape mismatch"
     );
@@ -625,6 +631,7 @@ fn every_comp_former_is_answered_in_both_modes()
         at: TermNode::Value(at),
         wanted: ExpectedShape::Sum,
         found: TypeNode::Value(found),
+        ..
     }) = check_comp(&mut context, case, expected)
     else {
         panic!("a unit scrutinee must report the required sum shape");
@@ -1175,7 +1182,8 @@ fn effectful_bind_into_lambda_is_shape_mismatch()
         CheckRefusal::ShapeMismatch {
             at: TermNode::Computation(program),
             wanted: ExpectedShape::Returner,
-            found: TypeNode::Computation(expected)
+            found: TypeNode::Computation(expected),
+            unfolded: TypeNode::Computation(expected),
         }
     );
     assert_eq!(
@@ -1328,6 +1336,7 @@ fn handle_of_a_non_returner_scrutinee_is_a_shape_mismatch()
             at: TermNode::Computation(at),
             wanted: ExpectedShape::Returner,
             found: TypeNode::Computation(found),
+            ..
         }) if at == handler && found == arrow
     ));
 }
@@ -1898,6 +1907,7 @@ fn a_bind_of_a_non_returner_is_a_shape_mismatch()
         at: TermNode::Computation(bound),
         wanted: ExpectedShape::Returner,
         found: TypeNode::Computation(arrow),
+        unfolded: TypeNode::Computation(arrow),
     };
 
     assert_eq!(
@@ -1993,6 +2003,7 @@ fn a_return_of_several_values_checks_each_at_its_instantiated_result()
                 at: TermNode::Computation(admitted),
                 wanted: ExpectedShape::Returns,
                 found: TypeNode::Computation(other.id()),
+                unfolded: TypeNode::Computation(other.id()),
             }),
             "a return of two is no returner of another count"
         );
@@ -2095,6 +2106,7 @@ fn a_bind_of_several_values_refuses_another_arity()
             at: TermNode::Computation(bound),
             wanted: ExpectedShape::Returner,
             found: TypeNode::Computation(synthesised),
+            unfolded: TypeNode::Computation(synthesised),
         };
         assert_eq!(
             synthesise_comp(&mut context, bind).map(|found| found.produced().id()),
@@ -2367,7 +2379,12 @@ fn an_introduction_against_the_wrong_former_is_a_shape_mismatch()
         let refusal = outcome.unwrap_err();
         assert_eq!(
             refusal,
-            CheckRefusal::ShapeMismatch { at, wanted, found },
+            CheckRefusal::ShapeMismatch {
+                at,
+                wanted,
+                found,
+                unfolded: found
+            },
             "an introduction names the former it needed and the type it met"
         );
         assert_eq!(
@@ -2398,6 +2415,7 @@ fn an_elimination_of_the_wrong_former_is_a_shape_mismatch()
             at: TermNode::Value(integer_value),
             wanted: ExpectedShape::Thunk,
             found: TypeNode::Value(context.atom(Atom::Integer).id()),
+            unfolded: TypeNode::Value(context.atom(Atom::Integer).id()),
         }),
         "a forced value that synthesises no thunk type is refused at the value"
     );
@@ -2407,6 +2425,7 @@ fn an_elimination_of_the_wrong_former_is_a_shape_mismatch()
             at: TermNode::Computation(head),
             wanted: ExpectedShape::Arrow,
             found: TypeNode::Computation(returns_integer),
+            unfolded: TypeNode::Computation(returns_integer),
         }),
         "a head that synthesises no arrow is refused at the head"
     );
@@ -4932,6 +4951,7 @@ fn checking_only_forms_and_unwritable_types_are_refused_by_name()
             at: TermNode::Computation(lazy),
             wanted: ExpectedShape::With,
             found: TypeNode::Computation(returns_integer),
+            unfolded: TypeNode::Computation(returns_integer),
         }),
         "a lazy pair wants a lazy product"
     );

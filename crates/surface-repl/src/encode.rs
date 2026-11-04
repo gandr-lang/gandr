@@ -783,6 +783,7 @@ mod tests
                 compared: Compared {
                     expected: Maybe::Absent(gandr_surface_diagnostics::spelling::Absent::Unspelled),
                     found: Maybe::Absent(gandr_surface_diagnostics::spelling::Absent::Unspelled),
+                    unfolded: Maybe::Absent(gandr_surface_diagnostics::spelling::Absent::Unspelled),
                 },
                 producer: Maybe::Absent(producer::Absent::Statement),
             },

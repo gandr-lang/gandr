@@ -332,7 +332,7 @@ impl TypeSpellings
     #[spec(ensures: |ret| [&ret.unicode, &ret.ascii].iter().all(|spelled| spelled.0.iter().all(|(node, presentation)| !presentation.as_ref().contains('\n')
         && (report.declarations().iter().any(|declaration|
             matches!(declaration.produced().refusal(), Maybe::Present(Refusal::Checking(refusal))
-                if [refusal.compared().expected, refusal.compared().found].contains(&Maybe::Present(*node))))
+                if [refusal.compared().expected, refusal.compared().found, refusal.compared().unfolded].contains(&Maybe::Present(*node))))
             || failures.0.values().any(|failure| failure.types().contains(node))))))]
     #[inline]
     #[must_use]
@@ -571,7 +571,7 @@ fn spell<'failure>(
             Maybe::Absent(_) => None,
         };
         named.extend(
-            [compared.expected, compared.found]
+            [compared.expected, compared.found, compared.unfolded]
                 .into_iter()
                 .filter_map(|side| match side {
                     Maybe::Present(node) => Some(node),
@@ -625,7 +625,7 @@ fn spell<'failure>(
                 },
             })
             .flat_map(|(compared, reader)| {
-                [compared.expected, compared.found].map(|side| (side, reader))
+                [compared.expected, compared.found, compared.unfolded].map(|side| (side, reader))
             })
             .filter_map(|(side, reader)| match side {
                 Maybe::Present(node) => Some((node, Scoped::CLOSED, reader)),
