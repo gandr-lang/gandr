@@ -1,0 +1,50 @@
+// A click listener on a button, which the program must remove exactly once.
+//
+// A JavaScript listener keeps its closure alive for as long as the target
+// holds it. A program that forgets to remove it leaks the closure and its
+// captures. A program that removes it twice calls the host with a stale
+// handle. The type must refuse both programs before they run.
+//
+// The DOM specification is one effect, `Dom`, so the row names the
+// specification and nothing finer. `addEventListener` answers a `Listener`
+// at grade one, and `removeEventListener` consumes it. So a body that drops
+// the handle or uses it twice is refused at the handle. The closure crosses
+// as a function reference or a GC closure, and its release goes with the
+// handle. The host runs the closure in a later turn, so the caller's row
+// does not hold the closure's effects.
+//
+// - see: #4883 — the web boundary sketch, its shape in the issue body
+// - see: `granularity.gandr` — the three effect groupings this form chose from
+// - see: `fetch-list.gandr` — the provided modules this source reads
+
+// The DOM specification, which the provider reads from its WebIDL.
+@[provide(std.provide.webidl.specification("dom", revision = "2026-10-01"))]
+module Dom
+
+// The Console specification, which the provider reads from its WebIDL.
+@[provide(std.provide.webidl.specification("console", revision = "2026-10-01"))]
+module Console
+
+/// The message a click writes to the host's console.
+def clicked (event : Dom.Event) -> [Console] () =
+  Console.log "the button is clicked"
+
+/// A listener on `button` while `wait` runs, removed after it. The checker
+/// inserts the coercion from `Element` to `EventTarget`.
+pub def session (button : Dom.Element, wait : () -> [Dom] ()) -> [Dom] () =
+  let listener = Dom.EventTarget.addEventListener button "click" clicked
+  wait()
+  Dom.EventTarget.removeEventListener listener
+
+/// A listener the body never removes. The checker refuses it at the unused
+/// handle.
+pub def leaked (button : Dom.Element) -> [Dom] () =
+  let listener = Dom.EventTarget.addEventListener button "click" clicked
+  ()
+
+/// A listener the body removes twice. The checker refuses it at the second
+/// use.
+pub def twice (button : Dom.Element) -> [Dom] () =
+  let listener = Dom.EventTarget.addEventListener button "click" clicked
+  Dom.EventTarget.removeEventListener listener
+  Dom.EventTarget.removeEventListener listener

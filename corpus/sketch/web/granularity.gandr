@@ -1,0 +1,111 @@
+// The listener's host imports written by hand three ways: per specification,
+// per interface, and one host effect.
+//
+// The WebIDL provider must group the platform's operations into effects. The
+// grouping fixes what a row names and what a test's mock handler answers.
+// The platform is large, so a wrong grouping makes either rows or mocks too
+// costly.
+//
+// Each module is one grouping in the form the provider answers, and ends on
+// the listener's session. An extern block is one effect, and its bodiless
+// members are its operations and the host's types. The provider makes
+// WebIDL's inheritance a coercion, never a subtype. The coercion is a member
+// with an empty row, so no row names it and the glue emits no call. So a
+// host import needs no form past the extern block.
+//
+// - see: #4883 — the web boundary sketch, its shape in the issue body
+// - see: `event-listener.gandr` — the session under the chosen grouping
+// - see: `../abi-and-boundaries/per-language.gandr` — the extern block form
+
+/// One effect per specification: the DOM specification is the effect `Dom`.
+pub module PerSpecification where
+  /// The DOM's host types and operations, one effect for the specification.
+  extern JavaScript from "webidl:dom" as Dom where
+    /// An object that holds listeners.
+    def EventTarget : Type
+    /// A node of the document tree.
+    def Node : Type
+    /// An element of the document tree.
+    def Element : Type
+    /// An event the host passes to a listener.
+    def Event : Type
+    /// A listener the host holds, which the program must remove once.
+    def Listener : Type
+    /// The target an element is. Its row is empty, so the glue passes the handle.
+    def Element.eventTarget (e : Element) -> [] EventTarget
+    /// A listener on `target` for events of `type`.
+    def addEventListener (target : EventTarget, type : String, callback : Event -> ()) -> (listener[1] : Listener)
+    /// The operation that takes the listener off its target.
+    def removeEventListener (listener[1] : Listener) -> ()
+    /// The operation that sends `event` to every listener on `target`.
+    def dispatchEvent (target : EventTarget, event : Event) -> Bool
+    /// The operation that appends `child` to `parent`.
+    def appendChild (parent child : Node) -> ()
+
+  /// The session's row names the specification. A mock handler answers every
+  /// DOM operation the test reaches, and forwards the rest.
+  pub def session (button : Dom.Element, wait : () -> [Dom] ()) -> [Dom] () =
+    let listener = Dom.addEventListener (Dom.Element.eventTarget button) "click" (fun (_) { () })
+    wait()
+    Dom.removeEventListener listener
+
+/// One effect per interface: `EventTarget`, `Node` and `Element` are three effects.
+pub module PerInterface where
+  /// The operations of the interface `EventTarget`.
+  extern JavaScript from "webidl:dom/EventTarget" as EventTarget where
+    /// An object that holds listeners.
+    def Handle : Type
+    /// An event the host passes to a listener.
+    def Event : Type
+    /// A listener the host holds, which the program must remove once.
+    def Listener : Type
+    /// A listener on `target` for events of `type`.
+    def addEventListener (target : Handle, type : String, callback : Event -> ()) -> (listener[1] : Listener)
+    /// The operation that takes the listener off its target.
+    def removeEventListener (listener[1] : Listener) -> ()
+    /// The operation that sends `event` to every listener on `target`.
+    def dispatchEvent (target : Handle, event : Event) -> Bool
+
+  /// The operations of the interface `Element`.
+  extern JavaScript from "webidl:dom/Element" as Element where
+    /// An element of the document tree.
+    def Handle : Type
+    /// The target an element is. Its row is empty, so the glue passes the handle.
+    def eventTarget (e : Handle) -> [] EventTarget.Handle
+
+  /// The session's row names one interface, the finest of the three rows. A
+  /// program that also builds the tree adds `Node` and `Document` to its row.
+  pub def session (button : Element.Handle, wait : () -> [EventTarget] ()) -> [EventTarget] () =
+    let listener = EventTarget.addEventListener (Element.eventTarget button) "click" (fun (_) { () })
+    wait()
+    EventTarget.removeEventListener listener
+
+/// One effect for the host: every platform operation is an operation of `Js`.
+pub module OneHost where
+  /// The whole platform, one effect.
+  extern JavaScript from "webidl:*" as Js where
+    /// An object that holds listeners.
+    def EventTarget : Type
+    /// An element of the document tree.
+    def Element : Type
+    /// An event the host passes to a listener.
+    def Event : Type
+    /// A listener the host holds, which the program must remove once.
+    def Listener : Type
+    /// The target an element is. Its row is empty, so the glue passes the handle.
+    def Element.eventTarget (e : Element) -> [] EventTarget
+    /// A listener on `target` for events of `type`.
+    def addEventListener (target : EventTarget, type : String, callback : Event -> ()) -> (listener[1] : Listener)
+    /// The operation that takes the listener off its target.
+    def removeEventListener (listener[1] : Listener) -> ()
+    /// A response for `url`, from the Fetch specification.
+    def fetch (url : String) -> Response
+    /// A response the host answers.
+    def Response : Type
+
+  /// The session's row names no feature. A mock handler answers the whole
+  /// platform, and a row cannot tell a listener from a fetch.
+  pub def session (button : Js.Element, wait : () -> [Js] ()) -> [Js] () =
+    let listener = Js.addEventListener (Js.Element.eventTarget button) "click" (fun (_) { () })
+    wait()
+    Js.removeEventListener listener

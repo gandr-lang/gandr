@@ -1,0 +1,67 @@
+// A page that fetches entries from an endpoint and lists them in the document.
+//
+// A browser program calls two kinds of host code. It calls the platform's
+// interfaces, which WebIDL specifies. It also reads values that JavaScript
+// holds, which have no gandr layout. The program must state each call and
+// each crossing, so that the toolchain emits glue only for what it names.
+//
+// A provider reads each WebIDL specification into one module. A call of a
+// platform operation is an operation of that module's effect, so the row
+// names each specification the program uses. An interface object crosses by
+// handle, and the JSON body crosses by content through a codec. `Promise`
+// reads as a computation under `Async`, and the host chooses JSPI or a
+// captured continuation. A string takes the engine's builtins where the
+// engine has them, and a shim where it does not.
+//
+// - see: #4883 — the web boundary sketch, its shape in the issue body
+// - see: `event-listener.gandr` — the specification effects of the DOM
+// - see: `../providers/provider.gandr` — a provider and its effects
+
+// The JSON format and its codecs.
+import std.codec.json (Json);
+
+// The native lists.
+import std.list (List);
+
+// The Fetch specification, which the provider reads from its WebIDL.
+@[provide(std.provide.webidl.specification("fetch", revision = "2026-10-01"))]
+module Fetch
+
+// The DOM specification, which the provider reads from its WebIDL.
+@[provide(std.provide.webidl.specification("dom", revision = "2026-10-01"))]
+module Dom
+
+// The HTML specification, which the provider reads from its WebIDL.
+@[provide(std.provide.webidl.specification("html", revision = "2026-10-01"))]
+module Html
+
+/// One entry the endpoint answers: a name and a count.
+@[derive(Json)]
+data Entry where
+  | Entry : (name : String, count : Integer) --> Entry
+
+/// The entries at `url`, decoded by content from the response's JSON body.
+/// A body that does not decode answers `None`.
+def entries (url : String) -> [Fetch, Async] Option (List Entry) =
+  let response = Fetch.fetch url
+  let body = Fetch.Response.json response
+  Json.decode (List Entry) body
+
+/// One list item for each entry, appended to the list element.
+def render (list : Dom.Element, xs : List Entry) -> [Html, Dom] () =
+  let document = Html.Window.document (Html.window())
+  for entry in xs
+    let item = Dom.Document.createElement document "li"
+    Dom.Node.setTextContent item entry.name
+    Dom.Node.appendChild list item
+
+/// The page's start, exported to the host as `start`. A page without the
+/// list, or a body that does not decode, changes nothing.
+pub def start () -> [Html, Dom, Fetch, Async] () =
+  let document = Html.Window.document (Html.window())
+  match Dom.Document.getElementById document "entries"
+    | None => ()
+    | Some list =>
+      match entries "/api/entries"
+        | None => ()
+        | Some xs => render list xs

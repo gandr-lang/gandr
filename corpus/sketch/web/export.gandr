@@ -1,0 +1,59 @@
+// A statistics module that a TypeScript caller imports as an ES module.
+//
+// A TypeScript caller needs two things from a gandr module. It needs the
+// module's functions under their own names. It also needs their types as a
+// declaration file, so its own checker reads every call. Glue that a writer
+// keeps by hand drifts from the module it describes.
+//
+// A host export is a `pub` definition of the module that the JavaScript
+// target compiles, so an export needs no new form. The target renders the
+// module's declaration file from the same signatures. A record crosses as an
+// object type, a sum as a union tagged by a string, and a `List` as an
+// array. A computation under `Async` crosses as a `Promise`. An export's row
+// holds only effects the host answers, so a `Fail` that escapes is refused at
+// the export.
+//
+// - see: #4883 — the web boundary sketch, its shape in the issue body
+// - see: `fetch-list.gandr` — a provided module this source reads
+// - see: `../render-artifacts/package-render.gandr` — a render of a module
+
+// The native lists.
+import std.list (List);
+
+// The JSON format and its codecs.
+import std.codec.json (Json);
+
+// The Fetch specification, which the provider reads from its WebIDL.
+@[provide(std.provide.webidl.specification("fetch", revision = "2026-10-01"))]
+module Fetch
+
+/// The figures of a sample, an object type to the caller.
+pub data Summary where
+  | Summary : (count : Nat, mean : Float, spread : Float) --> Summary
+
+/// The verdict on a sample, a union tagged by `kind` to the caller.
+pub data Verdict where
+  | Empty : Verdict
+  | Figures : (summary : Summary) --> Verdict
+
+/// The arithmetic mean of a sample that holds at least one value.
+def mean (xs : List Float, count : Nat) -> Float =
+  List.sum xs / Float.ofNat count
+
+/// The verdict on `xs`, exported as `summarize`.
+pub def summarize (xs : List Float) -> Verdict =
+  match List.length xs
+    | 0 => Empty
+    | count =>
+      let m = mean xs count
+      let spread = List.maximum xs - List.minimum xs
+      Figures (Summary count m spread)
+
+/// The verdict on the sample at `url`, exported as a function that answers a
+/// `Promise`.
+pub def summarizeAt (url : String) -> [Fetch, Async] Verdict =
+  let response = Fetch.fetch url
+  let body = Fetch.Response.json response
+  match Json.decode (List Float) body
+    | None => Empty
+    | Some xs => summarize xs
