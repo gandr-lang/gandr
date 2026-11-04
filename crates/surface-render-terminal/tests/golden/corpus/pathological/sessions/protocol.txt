@@ -13,7 +13,8 @@ error[SessionMismatch]: the endpoint's protocol expects a send here, not a recei
 6 │ │ }
   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `desk_receives_first` is refused with SessionMismatch, as its expectation states
+  ├ note: `desk_receives_first` is refused with SessionMismatch, as its expectation states
+  ╰ help: change the endpoint action or protocol so that they agree
 
 error[UnofferedLabel]: the endpoint's protocol offers no such label here
    ╭▸ corpus/pathological/sessions/protocol.gandr:11:3
@@ -62,4 +63,5 @@ error[SessionMismatch]: the endpoint's protocol expects an offer here, not a clo
 28 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `desk_drops_a_live_endpoint` is refused with SessionMismatch, as its expectation states
+   ├ note: `desk_drops_a_live_endpoint` is refused with SessionMismatch, as its expectation states
+   ╰ help: change the endpoint action or protocol so that they agree

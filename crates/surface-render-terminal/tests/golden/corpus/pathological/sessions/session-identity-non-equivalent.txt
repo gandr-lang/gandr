@@ -4,4 +4,5 @@ error[SessionNotEquivalent]: `Path.bisim` needs the two protocols to behave alik
 12 │   def same : Path(Type, SeatEnd, SeatEnd′) = Path.bisim(SeatEnd, SeatEnd′);
    │                                              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ protocols that are not bisimilar
    │
-   ╰ note: `same` is refused with SessionNotEquivalent, as its expectation states
+   ├ note: `same` is refused with SessionNotEquivalent, as its expectation states
+   ╰ help: make the two protocols bisimilar at every step

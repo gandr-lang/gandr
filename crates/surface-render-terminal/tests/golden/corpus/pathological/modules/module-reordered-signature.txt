@@ -4,7 +4,8 @@ error[UnenclosedRun]: a computation read as a value runs before the computation 
 14 │   def second = first + 1;
    │                ━━━━━━━━━ a run with no computation to run before
    │
-   ╰ note: `second` is refused with UnenclosedRun, as its expectation states
+   ├ note: `second` is refused with UnenclosedRun, as its expectation states
+   ╰ help: write the run in a function's body, where the body can run it
 
 error[UnenclosedRun]: a computation read as a value runs before the computation around it, and none stands around this one
    ╭▸ corpus/pathological/modules/module-reordered-signature.gandr:17:15
@@ -12,4 +13,5 @@ error[UnenclosedRun]: a computation read as a value runs before the computation 
 17 │   def third = second + 1;
    │               ━━━━━━━━━━ a run with no computation to run before
    │
-   ╰ note: `third` is refused with UnenclosedRun, as its expectation states
+   ├ note: `third` is refused with UnenclosedRun, as its expectation states
+   ╰ help: write the run in a function's body, where the body can run it

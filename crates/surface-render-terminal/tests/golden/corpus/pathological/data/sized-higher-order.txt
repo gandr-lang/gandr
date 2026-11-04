@@ -154,7 +154,8 @@ error[StagesDisagree]: the call's arguments stand at stages that no single stage
 120 │ │  }
     │ └──┘ checked against `Nat => Nat`; while checking the body of this function; binds disagreeing : Nat => Nat
     │
-    ╰ note: `disagreeing` is refused with StagesDisagree, as its expectation states
+    ├ note: `disagreeing` is refused with StagesDisagree, as its expectation states
+    ╰ help: change the call's arguments so that they stand at one stage
 
 error[StagesDisagree]: the call's arguments stand at stages that no single stage of the callee's stage parameter fits
     ╭▸ corpus/pathological/data/sized-higher-order.gandr:126:3
@@ -172,7 +173,8 @@ error[StagesDisagree]: the call's arguments stand at stages that no single stage
 127 │ │ }
     │ └─┘ checked against `(Nat => Nat, Nat) => Nat`; while checking the body of this thunk
     │
-    ╰ note: `suppliedApart` is refused with StagesDisagree, as its expectation states
+    ├ note: `suppliedApart` is refused with StagesDisagree, as its expectation states
+    ╰ help: change the call's arguments so that they stand at one stage
 
 error[OutOfFragment.Stage]: a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel is not supported here
     ╭▸ corpus/pathological/data/sized-higher-order.gandr:133:11

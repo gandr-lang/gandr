@@ -4,4 +4,5 @@ error[UnenclosedRun]: a computation read as a value runs before the computation 
 5 │ def seed = prim.const(40, prim.id(999));
   │            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a run with no computation to run before
   │
-  ╰ note: `seed` is refused with UnenclosedRun, as its expectation states
+  ├ note: `seed` is refused with UnenclosedRun, as its expectation states
+  ╰ help: write the run in a function's body, where the body can run it

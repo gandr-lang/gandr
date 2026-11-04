@@ -4,4 +4,5 @@ error[SessionNotEquivalent]: `Path.bisim` needs the two protocols to behave alik
 9 │ def unpaid : Path(Type, Judge.Right, Judge.Left) = Path.bisim(Judge.Right, Judge.Left);
   │                                                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ protocols that are not bisimilar
   │
-  ╰ note: `unpaid` is refused with SessionNotEquivalent, as its expectation states
+  ├ note: `unpaid` is refused with SessionNotEquivalent, as its expectation states
+  ╰ help: make the two protocols bisimilar at every step

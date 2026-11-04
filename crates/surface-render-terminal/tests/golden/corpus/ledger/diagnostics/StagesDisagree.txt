@@ -14,4 +14,5 @@ error[StagesDisagree]: the call's arguments stand at stages that no single stage
 21 │ │ }
    │ └─┘ checked against `(Nat => Nat, Nat) => Nat`; while checking the body of this thunk
    │
-   ╰ note: `suppliedApart` is refused with StagesDisagree, as its expectation states
+   ├ note: `suppliedApart` is refused with StagesDisagree, as its expectation states
+   ╰ help: change the call's arguments so that they stand at one stage

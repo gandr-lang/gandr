@@ -4,4 +4,5 @@ error[StrayReceiverMode]: `shared` is a receiver's mode: only a module member's 
 3 │ def lent(t : shared Repr) -> -F Integer {
   │              ━━━━━━ a mode off a receiver
   │
-  ╰ note: `lent` is refused with StrayReceiverMode, as its expectation states
+  ├ note: `lent` is refused with StrayReceiverMode, as its expectation states
+  ╰ help: write the receiver mode only on a module member's first `self` parameter

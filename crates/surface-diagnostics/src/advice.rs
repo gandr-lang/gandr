@@ -43,6 +43,7 @@ use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::session::ForkSide;
 use gandr_core_checker::session::LinearityDefect;
+use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::worlds::Crossed;
 use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_checker::worlds::Predicate;
@@ -249,6 +250,15 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::ModelImplicitValue { .. } => {
             String::from("select a component from the model implicit")
         },
+        LoweringRefusal::StrayReceiverMode { .. } => {
+            String::from("write the receiver mode only on a module member's first `self` parameter")
+        },
+        LoweringRefusal::RulesDiverge { .. } => String::from(
+            "change the overlapping rules so that they rewrite to the same constructor term",
+        ),
+        LoweringRefusal::RulesNeverComplete { .. } => String::from(
+            "add a rule that joins the normal forms without wrapping the earlier completion",
+        ),
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::DuplicateSignature { .. }
@@ -285,7 +295,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::InstanceAmbiguous { .. }
         | LoweringRefusal::RegionAsValue { .. }
         | LoweringRefusal::EntryType { .. }
-        | LoweringRefusal::StrayReceiverMode { .. }
         | LoweringRefusal::AmbiguousMethod { .. }
         | LoweringRefusal::ViewOfNoPlace { .. }
         | LoweringRefusal::MismatchedPattern { .. }
@@ -296,8 +305,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::WithoutK { .. }
         | LoweringRefusal::DirectedCell { .. }
         | LoweringRefusal::CellNotALoop { .. }
-        | LoweringRefusal::RulesDiverge { .. }
-        | LoweringRefusal::RulesNeverComplete { .. }
         | LoweringRefusal::RulesUndecided { .. }
         | LoweringRefusal::UnderivedRule { .. }
         | LoweringRefusal::GenericUncovered { .. }
@@ -742,12 +749,34 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::CapabilityEscaped { .. } => {
             String::from("keep the capability inside its scope")
         },
-        // Unworded: a later slice words each, most-seen first.
         CheckRefusal::UnenclosedRun {
             source: RunSource::Written,
             ..
-        }
-        | CheckRefusal::NotADataType(_)
+        } => String::from("write the run in a function's body, where the body can run it"),
+        CheckRefusal::StagesDisagree { .. } => {
+            String::from("change the call's arguments so that they stand at one stage")
+        },
+        CheckRefusal::SessionMismatch {
+            defect: ProtocolDefect::Action { .. },
+            ..
+        } => String::from("change the endpoint action or protocol so that they agree"),
+        CheckRefusal::Access {
+            defect: AccessDefect::Spent,
+            ..
+        } => String::from("use the view before its `resume` or `abort`"),
+        CheckRefusal::Access {
+            defect: AccessDefect::ReadOnly,
+            ..
+        } => String::from("end the shared view with its body, without `resume` or `abort`"),
+        CheckRefusal::Access {
+            defect: AccessDefect::UnwindEffect,
+            ..
+        } => String::from("remove the effect from the `unwind`"),
+        CheckRefusal::SessionNotEquivalent { .. } => {
+            String::from("make the two protocols bisimilar at every step")
+        },
+        // Unworded: a later slice words each, most-seen first.
+        CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
         | CheckRefusal::DataFieldLevel { .. }
         | CheckRefusal::LoopUndecided { .. }
@@ -799,7 +828,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::IndexOccurrence(_)
         | CheckRefusal::NonUniformOccurrence(_)
         | CheckRefusal::CrossBlockReference { .. }
-        | CheckRefusal::StagesDisagree { .. }
         | CheckRefusal::StageNotCarried { .. }
         | CheckRefusal::SessionMismatch { .. }
         | CheckRefusal::Linearity { .. }
@@ -812,7 +840,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::CapabilityConsumable(_)
         | CheckRefusal::CapabilityUngranted { .. }
         | CheckRefusal::FootprintsOverlap { .. }
-        | CheckRefusal::SessionNotEquivalent { .. }
         | CheckRefusal::SessionNotSubtype { .. }
         | CheckRefusal::SessionCodeExpected { .. }
         | CheckRefusal::OpenSessionPayload { .. }
@@ -836,7 +863,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 86] = [
+    const WORDED: [&str; 95] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -872,7 +899,7 @@ mod tests
         "NoFiller",
         "NoFiller.Omitted",
         "DerivedComponent",
-        // Worded for a crossing's run, the one the vocabulary's refusal holds.
+        // Worded for each source of a run.
         "UnenclosedRun",
         "UnresolvedTypeHead",
         "UsedAfterClose",
@@ -924,6 +951,15 @@ mod tests
         "ModelImplicitValue",
         "OutOfFragment.Held",
         "OutOfFragment.Unannotated",
+        "RulesDiverge",
+        "RulesNeverComplete",
+        "SessionMismatch",
+        "SessionNotEquivalent",
+        "StagesDisagree",
+        "StrayReceiverMode",
+        "UnwindEffect",
+        "ViewReadOnly",
+        "ViewSpent",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

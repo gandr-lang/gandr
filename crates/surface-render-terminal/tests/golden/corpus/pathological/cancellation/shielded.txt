@@ -20,4 +20,5 @@ error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an 
 30 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `shielded` is refused with UnwindEffect, as its expectation states
+   ├ note: `shielded` is refused with UnwindEffect, as its expectation states
+   ╰ help: remove the effect from the `unwind`

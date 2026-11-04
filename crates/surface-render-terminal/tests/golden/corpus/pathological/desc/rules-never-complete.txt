@@ -11,7 +11,8 @@ error[RulesNeverComplete]: this rule and an earlier one rewrite one term to two 
 21 │ ┃ }
    │ ┗━┛ rules whose completion never ends
    │
-   ╰ note: `Extrusion` is refused with RulesNeverComplete, as its expectation states
+   ├ note: `Extrusion` is refused with RulesNeverComplete, as its expectation states
+   ╰ help: add a rule that joins the normal forms without wrapping the earlier completion
 
 error[RulesNeverComplete]: this rule and an earlier one rewrite one term to two normal forms, and each rule completion derives to join them wraps the one before, so completion never ends and the block's rules are refused
    ╭▸ corpus/pathological/desc/rules-never-complete.gandr:27:1
@@ -26,4 +27,5 @@ error[RulesNeverComplete]: this rule and an earlier one rewrite one term to two 
 35 │ ┃ }
    │ ┗━┛ rules whose completion never ends
    │
-   ╰ note: `Restriction` is refused with RulesNeverComplete, as its expectation states
+   ├ note: `Restriction` is refused with RulesNeverComplete, as its expectation states
+   ╰ help: add a rule that joins the normal forms without wrapping the earlier completion
