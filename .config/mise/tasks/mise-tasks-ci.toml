@@ -1860,7 +1860,10 @@ fi
 # lane's planned units: they are another lane's planned work (#3827). Any
 # other collector in the lane's areas holding an open row is
 # printed first, on stderr, as `collector: #n (k open rows)` (#3111), the
-# carving due. A defect pick opens with `observation due: #n — mise run
+# carving due. With a vault checkout, the design work that no open issue
+# holds (#3401, `report:design`) is printed next, on stderr, as one line:
+# `design pages: <k> units and <m> pages that no open unit names; mise run
+# report:design`. A defect pick opens with `observation due: #n — mise run
 # debug:refusal <Refusal> <package> <test>` (#3758), the refusal its title
 # names, or `debug:test` when it names none: the observation starts in the
 # debugger. It reads the pick from GitHub again and takes the order again with
@@ -2030,6 +2033,12 @@ if [[ -n $held ]]; then
   exit 1
 fi
 awk '/^collector: /' <<< "$lines" >&2
+source "$claims/design.bash"
+design=$(design_report "$board/issues.json")
+if [[ -n $design ]]; then
+  read -r units pages < <(awk '/ unit [^ ]+: / { u++; next } { p++ } END { print u + 0, p + 0 }' <<< "$design")
+  echo "design pages: $units units and $pages pages that no open unit names; mise run report:design" >&2
+fi
 while read -r _ issue; do
   echo "blocked: $issue by $(jq -r --arg n "${issue#\#}" '.[$n] | map("#\(.)") | join(", ")' <<< "$live")" >&2
 done < <(awk '/^blocked: /' <<< "$lines")
@@ -2705,6 +2714,34 @@ done < <(jq -c '.[]' <<< "$plan")
 echo "epics:link: $epics open epic(s) read; $refused dependency(ies) refused"
 (( refused == 0 ))
 {% endraw %}'''
+
+# The design work that no open issue holds (#3401, #3160 step 6):
+# `report:design` reads the vault checkout that `vault_checkout` names, and
+# prints one line for each design page whose filename no `## Sources` row of
+# an open issue names, and one for each open unit of a vault unit table that
+# no open issue cites (`.config/claims/design.jq`, its cases held by
+# `check:claims`). A unit table has a `complete` column with a box in each
+# row, and an issue cites a unit when its body names the page and writes
+# `unit <n>`, or `units` before a list or a range that holds `<n>`. Drafts
+# count, as the absorption statuses do not cover them. Without a vault
+# checkout, as in CI, it prints nothing. `claim:next` prints one summary line
+# that names this task when the reading finds anything. GH_REPO names the
+# repository.
+["report:design"]
+description = "List each design page and each open vault unit that no open issue names"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+source "$root/.config/claims/design.bash"
+repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+issues=$(mktemp)
+trap 'rm -f "$issues"' EXIT
+gh api --paginate "repos/$repo/issues?state=open&per_page=100" \
+  --jq '[.[] | select(.pull_request == null) | {number, body: (.body // "")}]' | jq -s 'add // []' > "$issues"
+design_report "$issues"
+'''
 
 # The nightly tracker report (#2902): `report:deps` reruns `epic:deps
 # --all`, then reads every open issue for a dependency stated and not set

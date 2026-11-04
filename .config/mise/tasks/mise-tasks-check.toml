@@ -1792,6 +1792,10 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # `.config/claims/absorbing.json` a body, its issues and the vault's
 # absorption statuses, and the line `pr:open` and `pr:land` refuse a design
 # page left unanswered in its `## Vault` with (`absorbing.jq`, #3161); each
+# in `.config/claims/design.json` the vault's absorption statuses, its unit
+# tables and the open issues, and the lines `report:design` prints for the
+# design pages and the open units that no open issue names (`design.jq`,
+# #3401); each
 # in `.config/claims/swept.json` a night's recovery causes, the open recovery
 # collectors, and the rows `ci:recovery-file` marks and the collectors it
 # closes (`swept.jq`, #3326, #3732); each in `.config/claims/landed.json` a
@@ -1839,6 +1843,7 @@ cases obligations obligations.jq obligations.json
 cases period period.jq period.json --mode c
 cases terms terms.jq terms.json
 cases absorbing absorbing.jq absorbing.json
+cases design design.jq design.json
 cases reads reads.jq reads.json --mode c
 cases swept swept.jq swept.json --mode c
 cases landed landed.jq landed.json --mode c
