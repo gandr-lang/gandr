@@ -123,11 +123,15 @@ run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | de
 
 # Runtime sentinels exist only with enforcement enabled. Lint them under the
 # same profile, flags and target directory as the cached enforcing test build.
+# The features unify over the whole workspace, as `check:tests` unifies them:
+# a `GATE_SCOPE` that keeps no member using `anodized` otherwise builds
+# `quenchant-anodized` without its feature under the cfg, and its build stops.
 ["check:clippy-enforcing"]
 description = "The clippy wall with specification enforcement"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
-run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --locked --profile test -- --deny warnings"
+env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
+run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --locked --profile test --config 'resolver.feature-unification=\"workspace\"' -- --deny warnings"
 
 # CI's plain Clippy pass lints only the targets that carry plain-only code,
 # `cfg(not(anodized_panic))`, as the plain test lane runs only their tests
@@ -1683,7 +1687,8 @@ run = ".config/mise/host-lock-cases.bash"
 # and a head stacked on the top refused for the gate before the stack (#5091).
 # Then `unmapped.jq` reads the live tasks: a check that builds or runs the
 # toolchain outside every group of the table, or a group naming no check,
-# fails it.
+# fails it. So does a check that builds `GATE_SCOPE` under
+# `--cfg anodized_panic` without the workspace feature unification.
 ["check:gate-scope"]
 description = "The table scoping `mise run check` maps a change to its checks, and every check that builds the toolchain sits in one of its groups"
 tools.jq = "1.8.1"
@@ -1692,7 +1697,7 @@ run = '''
 set -euo pipefail
 .config/cases/run.bash gate-scope .config/gate-scope/cases.json --programs .config/gate-scope --mode c --raw unmapped.jq
 findings=$(mise tasks ls --json \
-  | jq '{tasks: [.[] | select(.name | startswith("check:")) | {name, run, depends}]}' \
+  | jq '{tasks: [.[] | select(.name | startswith("check:")) | {name, run, depends, env}]}' \
   | jq -r -L .config/gate-scope -f .config/gate-scope/unmapped.jq)
 if [[ -n $findings ]]; then
   printf '%s\n' "$findings" >&2
