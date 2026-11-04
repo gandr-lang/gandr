@@ -15193,21 +15193,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }))
             ),
             // A binder holds a function when its written type is a thunk, the
-            // bridge or the alias, or when it is written with no type: a
-            // pattern's field or a `let`'s result. A static lambda's operand
-            // is an operator, and its application is static.
+            // bridge or the alias, or a type family that stands for one, or
+            // when it is written with no type: a pattern's field or a `let`'s
+            // result. A static lambda's operand is an operator, and its
+            // application is static.
             Resolved::Binder(_) => {
                 called
                     && match declared {
-                        Maybe::Present(written) => self.tree.node(written).is_some_and(|node| {
-                            matches!(
-                                shape_of(self.pbg, node),
-                                Ok(Shape::Form {
-                                    former: Former::ThunkType | Former::ValueFunctionType,
-                                    ..
-                                })
-                            )
-                        }),
+                        Maybe::Present(written) => self.holds_function(written)?,
                         Maybe::Absent(binder_type::Absent::Untyped) => true,
                         Maybe::Absent(
                             binder_type::Absent::Operand | binder_type::Absent::Instance,
@@ -15294,6 +15287,60 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.plan(site, plan);
 
         Ok(())
+    }
+
+    /// Whether a binder whose type is written at `written` holds a function:
+    /// the type is a thunk or the bridge `A => B`, read through each type
+    /// family it names to the type the family stands for.
+    ///
+    /// # Specification
+    /// - requires: `written` is a node of the tree, its plan made.
+    /// - ensures: `true` exactly when the walk meets a thunk type or the bridge
+    ///   before any other form.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
+    ///   allowance.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
+    ///
+    /// # Termination
+    /// Every turn spends one unit of the lowerer's allowance.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binder written at the bridge, at a type member
+    ///   standing for the bridge and at a model's type member standing for it,
+    ///   each called where a type is read and observed through the unquote it
+    ///   plans.
+    /// - witness: `lower::tests::a_binder_at_a_family_standing_for_a_function_unquotes_its_call_522`
+    fn holds_function(
+        &mut self,
+        written: NodeIndex,
+    ) -> Result<bool, LoweringRefusal<'source>>
+    {
+        let mut position = written;
+        loop {
+            self.fuel.spend()?;
+            if let Some(&Plan::Expansion(family, _)) = self.plans.get(position) {
+                let Some(member) = self.collected.families.get(family.0)
+                else {
+                    return Ok(false);
+                };
+                position = member.defined.node;
+                continue;
+            }
+            let Some(node) = self.tree.node(position)
+            else {
+                return Ok(false);
+            };
+            return Ok(matches!(
+                shape_of(self.pbg, node),
+                Ok(Shape::Form {
+                    former: Former::ThunkType | Former::ValueFunctionType,
+                    ..
+                })
+            ));
+        }
     }
 
     /// Classify a type former written as its own keyword: `+U C` or `-F A`,
@@ -28270,6 +28317,69 @@ def ended() -> -F [Partial] Unit {
                 variable(0)
             ),
             "and the outer call takes what it returned"
+        );
+    }
+
+    /// A binder whose written type names a type member standing for the
+    /// bridge holds a function, so its call where a type is read is the code
+    /// the call returns, as a binder written at the bridge is (#522).
+    #[test]
+    fn a_binder_at_a_family_standing_for_a_function_unquotes_its_call_522()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "type Fam(g : Type) = g => Type ; def take(g : Type, a : Fam(g), x : g, v : \
+                 a(x)) -> -F Integer { return 1 }",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let declared = declared_of(*lowered.last().expect("`take` is lowered"));
+        let mut domains = Vec::new();
+        let mut at = match arena.value_type(declared) {
+            Some(&ValueType::Thunk(arrow)) => arrow,
+            other => panic!("a function's type is a thunk: {other:?}"),
+        };
+        while let Some(&CompType::Pi { domain, codomain } | &CompType::Arrow { domain, codomain }) =
+            arena.comp_type(at)
+        {
+            domains.push(domain);
+            at = codomain;
+        }
+        let [_, _, _, applied] = *domains
+        else {
+            panic!("four parameters: {domains:?}");
+        };
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(applied)
+        else {
+            panic!(
+                "a call where a type is read decodes: {:?}",
+                arena.value_type(applied)
+            );
+        };
+        let Some(&Value::Returned(called)) = arena.value(code)
+        else {
+            panic!("the code is what the call returns: {:?}", arena.value(code));
+        };
+        let Some(&Computation::Application(forced, argument)) = arena.computation(called)
+        else {
+            panic!("a call applies its head: {:?}", arena.computation(called));
+        };
+        let Some(&Computation::Force(head)) = arena.computation(forced)
+        else {
+            panic!("the head is forced");
+        };
+        let variable = |index: u32| {
+            Some(Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(index),
+            })
+        };
+        assert_eq!(
+            (arena.value(head).cloned(), arena.value(argument).cloned()),
+            (variable(1), variable(0)),
+            "the binder `a` is called at `x`"
         );
     }
 

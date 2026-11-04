@@ -1,0 +1,39 @@
+// The laws of a category with families, refused until the rule reading
+// carries an index at a sort the laws rewrite (Huang and Angiuli, _Fat Cell
+// Structures and Generalized Algebraic Theories_, LICS 2026,
+// doi:10.4230/LIPIcs.LICS.2026.58, § 1.1).
+//
+// The category laws rewrite substitutions, a type moves along a substitution
+// and comprehension takes a type. So every sort of the CwF is flexible, and
+// the rule reading carries none of their indices.
+//
+// Without the indices two laws part where the sorting joins them. A law on
+// terms relates two sides whose sorts agree only modulo a law on types.
+//
+// - see: #5016
+
+/// The CwF signature that the model source declares.
+import "../../model/desc/cwf.gandr";
+
+/// The unit laws of composition part at `comp(id(a), id(b))`, which the
+/// sorting reads at one context.
+@[ refuses("RulesUncompleted") ]
+theory CwFUnits where {
+  /// The sorts and operations of a category with families.
+  include CwF;
+  /// The identity on the left.
+  rule idl : comp(id(g), s) ==> s;
+  /// The identity on the right.
+  rule idr : comp(s, id(d)) ==> s;
+}
+
+/// A term moved along the identity has its sort only modulo the law on types.
+@[ refuses("UndescribedMember.NestedOperation") ]
+theory CwFTermIdentity where {
+  /// The sorts and operations of a category with families.
+  include CwF;
+  /// A type moved along the identity.
+  rule tyId : subTy(a, id(g)) ==> a;
+  /// A term moved along the identity.
+  rule tmId : subTm(t, id(g)) ==> t;
+}

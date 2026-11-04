@@ -1,8 +1,9 @@
 /// `indexed-sorts`: Dependent sorts in signatures.
-/// Implemented: sorts that other sorts or the host's types index, in a `theory` block and in `Model(S)`, each sort a function from its indices into the universe its classifier names: the value types at `Type`, the computation types at `Type[-]`; a client applies a model's family through the model's name.
-/// Not implemented: rules over indexed sorts.
+/// Implemented: a `theory` block and `Model(S)` index a sort by earlier sorts or by the host's types. A model states each such sort as a family into a universe, and a member reads an earlier member applied. A client reaches a model's family through the model's name.
+/// Not implemented: rules over dependent sorts, and a model's law whose sides sort only modulo an earlier law.
 ///
-/// - owes: #522
+/// - owes: #5016
+/// - owes: #5017
 /// - see: #3051 — `kept`
 
 // The native finite lists.
@@ -94,3 +95,28 @@ theory Computing where {
 module Returning : Model(Computing) where {
   type T(a : Type) = -F List(a);
 }
+
+/// Families and their sections. A context and a family over it index `Sec`,
+/// so an earlier indexed sort indexes it.
+theory Sections where {
+  sort Ctx : Type;
+  sort Fam(g : Ctx) : Type;
+  sort Sec(g : Ctx, a : Fam(g)) : Type;
+
+  oper whole : (g : Ctx) --> Fam(g);
+}
+
+/// Types and their families. The member `Sec` reads the member `Fam` at its
+/// binder `a`, and it calls `a` where it reads a type.
+module Pointwise : Model(Sections) where {
+  type Ctx = Type;
+  type Fam(g : Ctx) = g => Type;
+  type Sec(g : Ctx, a : Fam(g)) = (x : g) => a(x);
+
+  /// The family that is `Unit` at every point.
+  def whole(g : Type) -> g => Type { thunk { fun (_x) { return Unit } } }
+}
+
+/// A section of a family over the integers gives, at a point, a value of the
+/// type the family names there.
+def readAt(a : Integer => Type, s : Pointwise.Sec(Integer, a), n : Integer) -> a(n) { s(n) }

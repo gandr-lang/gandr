@@ -361,10 +361,9 @@ corpus/ledger/features/indexed-data.gandr STE-6.3 8d210e27c33b4200
 corpus/ledger/features/indexed-data.gandr STE-8.1 654affcdcfa2b286
 corpus/ledger/features/indexed-data.gandr STE-6.6 6454ce3154f57e16
 corpus/ledger/features/indexed-sorts.gandr STE-3.2 45720986ee126271
+corpus/ledger/features/indexed-sorts.gandr STE-3.2 6b60898902d1cf02
 corpus/ledger/features/indexed-sorts.gandr STE-3.2 a8801bb6141675f7
 corpus/ledger/features/indexed-sorts.gandr STE-6.3 1f585a4e85b08aec
-corpus/ledger/features/indexed-sorts.gandr STE-6.3 8b8e667785cf0f34
-corpus/ledger/features/indexed-sorts.gandr STE-8.1 8b8e667785cf0f34
 corpus/ledger/features/inert-fields.gandr STE-3.6 043a50d62f5e763a
 corpus/ledger/features/inert-fields.gandr STE-3.2 4362c9f11e50da5b
 corpus/ledger/features/inert-fields.gandr STE-6.3 043a50d62f5e763a
