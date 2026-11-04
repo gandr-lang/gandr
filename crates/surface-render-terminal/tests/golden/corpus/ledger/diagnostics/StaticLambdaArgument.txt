@@ -8,4 +8,5 @@ error[StaticLambdaArgument]: a type operator is given where a value is needed
   │                              │       checked against `-F Unit`; while checking the argument of this application
   │                              checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `at_a_dynamic_parameter` is refused with StaticLambdaArgument, as its expectation states
+  ├ note: `at_a_dynamic_parameter` is refused with StaticLambdaArgument, as its expectation states
+  ╰ help: pass a value instead of a type operator

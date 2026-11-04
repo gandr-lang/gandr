@@ -4,4 +4,5 @@ error[UnlockedDependency]: `circle` is no module of this package and no dependen
 10 │ def radius = circle.radius;
    │              ━━━━━━ no module or locked dependency of this name
    │
-   ╰ note: `radius` is refused with UnlockedDependency, as its expectation states
+   ├ note: `radius` is refused with UnlockedDependency, as its expectation states
+   ╰ help: run `gandr lock` before importing `circle`

@@ -448,10 +448,24 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::PartialField { .. } => {
             String::from("select a field each constructor declares")
         },
+        LoweringRefusal::UndescribedMember {
+            fault: MemberFault::ResultArity,
+            ..
+        } => String::from("give the rule its operation's number of outputs"),
+        LoweringRefusal::UnexportedName { name, .. } => {
+            format!("export `{name}` from its source")
+        },
+        LoweringRefusal::UnlockedDependency { alias, .. } => {
+            format!("run `gandr lock` before importing `{alias}`")
+        },
+        LoweringRefusal::UnmarkedSelfReference { name, .. } => {
+            format!("mark `{name}` with a descent claim")
+        },
+        LoweringRefusal::Unreachable { .. } => {
+            String::from("remove code after every path leaves the body")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
-        | LoweringRefusal::UnlockedDependency { .. }
-        | LoweringRefusal::UnexportedName { .. }
         | LoweringRefusal::OutOfFragment { .. }
         | LoweringRefusal::GradedBridge { .. }
         | LoweringRefusal::UnreadAscription { .. }
@@ -459,8 +473,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::UnstatedComponent { .. }
         | LoweringRefusal::UndescribedMember { .. }
         | LoweringRefusal::ImplicitTelescope { .. }
-        | LoweringRefusal::UnmarkedSelfReference { .. }
-        | LoweringRefusal::Unreachable { .. }
         | LoweringRefusal::RulesUndecided { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
@@ -1159,6 +1171,21 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             defect: UaDefect::PastTheBound { .. },
             ..
         } => String::from("use a corolla within the `ua` catalogue bound"),
+        CheckRefusal::StaticClassifierExpected { .. } => {
+            String::from("give each type parameter a universe or kind")
+        },
+        CheckRefusal::StaticLambdaArgument { .. } => {
+            String::from("pass a value instead of a type operator")
+        },
+        CheckRefusal::UnknownConstant { .. } => String::from("use a declaration with a known type"),
+        CheckRefusal::UaInequivalent {
+            defect: UaDefect::Stuck { .. },
+            ..
+        } => String::from("make each `ua` translator return a target element"),
+        CheckRefusal::UaInequivalent {
+            defect: UaDefect::UnknownGenerator { .. },
+            ..
+        } => String::from("name only generators of the `ua` description"),
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::DataArgumentArity(_)
@@ -1173,20 +1200,16 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::UncertifiedStratum { .. }
         | CheckRefusal::OutsideFold { .. }
         | CheckRefusal::UaUncertified { .. }
-        | CheckRefusal::UaInequivalent { .. }
         | CheckRefusal::ComposeUncertified { .. }
         | CheckRefusal::FillUncertified { .. }
         | CheckRefusal::GeneratorFamilyUnsupported { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
-        | CheckRefusal::UnknownConstant { .. }
         | CheckRefusal::OutOfFragment { .. }
         | CheckRefusal::UnboundIndex { .. }
         | CheckRefusal::BudgetExceeded { .. }
         | CheckRefusal::DanglingNode { .. }
         | CheckRefusal::AdmissionOrder { .. }
         | CheckRefusal::MachineInvariant
-        | CheckRefusal::StaticLambdaArgument { .. }
-        | CheckRefusal::StaticClassifierExpected { .. }
         | CheckRefusal::Linearity { .. }
         | CheckRefusal::Codata { .. }
         | CheckRefusal::Located { .. }
@@ -1208,7 +1231,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 216] = [
+    const WORDED: [&str; 226] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1426,6 +1449,16 @@ mod tests
         "SessionCodeExpected",
         "SortMismatch",
         "StageNotCarried",
+        "StaticClassifierExpected",
+        "StaticLambdaArgument",
+        "TranslatorStuck",
+        "UndescribedMember.ResultArity",
+        "UnexportedName",
+        "UnknownConstant",
+        "UnknownGenerator",
+        "UnlockedDependency",
+        "UnmarkedSelfReference",
+        "Unreachable",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

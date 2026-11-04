@@ -4,4 +4,5 @@ error[Unreachable]: this code never runs: every path before it leaves the body
 5 │   return m
   │   ━━━━━━━━ no path reaches this
   │
-  ╰ note: `early` is refused with Unreachable, as its expectation states
+  ├ note: `early` is refused with Unreachable, as its expectation states
+  ╰ help: remove code after every path leaves the body

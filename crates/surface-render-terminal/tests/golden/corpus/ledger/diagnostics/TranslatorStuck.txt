@@ -8,4 +8,5 @@ error[TranslatorStuck]: a `ua` translator returns no element of its target code
 21 │ ┃ ](Magma, Magma, #{.mul = opaque, .one = keep}, #{.mul = opaque, .one = keep}) ;
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a translator that returns no element
    │
-   ╰ note: `postulated` is refused with TranslatorStuck, as its expectation states
+   ├ note: `postulated` is refused with TranslatorStuck, as its expectation states
+   ╰ help: make each `ua` translator return a target element

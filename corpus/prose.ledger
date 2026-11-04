@@ -5582,17 +5582,9 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotOpen.Ho
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NonContractive.txt STE-5.3 4538ce87b3a6c1e1
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/SessionNotSubtype.txt STE-5.2 e1af2a66c8eda789
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ShadowedBuiltin.txt STE-5.3 d0178ac867679784
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/StaticClassifierExpected.txt STE-5.3 d3e653e5e32ebe66
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/StaticLambdaArgument.txt STE-5.3 b307572cbfb450ab
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/TelescopeCycle.txt STE-5.3 761ce136eef636cd
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/TranslatorStuck.txt STE-5.3 169c883be10596bf
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UndescribedMember.ResultArity.txt STE-5.3 c9caa976000f1900
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnexportedName.txt STE-5.3 3c742c4d5cf41195
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnknownConstant.txt STE-5.3 7cbbe7a24b5fbceb
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnknownGenerator.txt STE-5.3 501323a4a2c6a177
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnlockedDependency.txt STE-5.3 19f4369ec5f582ab
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnmarkedSelfReference.txt STE-5.3 4db31bd807aaf1cf
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/Unreachable.txt STE-5.3 d89b6f71c1bbc9cf
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnresolvedDocLink.txt STE-5.3 521f75ffad0e2fc0
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedComponent.Arity.txt STE-5.3 ce02ed9841827976
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedComponent.IllSorted.txt STE-5.3 da184cf2bcfa9278
