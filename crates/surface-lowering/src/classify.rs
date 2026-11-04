@@ -261,6 +261,7 @@ impl LoweringRefusal<'_>
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
             | Self::UnlabelledRequirement { .. }
+            | Self::UnfixedParameter { .. }
             | Self::TelescopeCycle { .. }
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }
@@ -337,6 +338,7 @@ impl LoweringRefusal<'_>
             | Self::FamilyTelescope { .. }
             | Self::UninterfacedMember { .. }
             | Self::UnlabelledRequirement { .. }
+            | Self::UnfixedParameter { .. }
             | Self::TelescopeCycle { .. }
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }

@@ -636,6 +636,15 @@ fn lowered(
             f,
             "the world requires `{name}` under no label, so its code cannot perform it"
         ),
+        LoweringRefusal::UnfixedParameter {
+            constructor,
+            parameter,
+            ..
+        } => write!(
+            f,
+            "no field of `{constructor}` fixes the parameter `{parameter}`, and the `let` states \
+             no type"
+        ),
         LoweringRefusal::ImplicitTelescope { .. } => f.write_str(
             "this implicit telescope `@[…]` has an entry out of shape: write `a : Type` for an \
              implicit, `i : Size` for a stage and `i < n` for its bound, before the function's \
@@ -1899,6 +1908,11 @@ pub mod tests
                 fault: InterfaceFault::Unfixed,
             },
             LoweringRefusal::UnlabelledRequirement { span, name },
+            LoweringRefusal::UnfixedParameter {
+                span,
+                constructor: name,
+                parameter: name,
+            },
             LoweringRefusal::ImplicitTelescope { span },
             LoweringRefusal::TelescopeCycle {
                 span,

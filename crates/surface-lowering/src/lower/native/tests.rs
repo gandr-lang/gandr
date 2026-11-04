@@ -2645,6 +2645,97 @@ fn a_constructor_takes_a_typed_let_s_type_and_a_lambda_s_codomain_5035()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// The families of variables over contexts that the #5050 tests bind.
+const VARIABLES: &str = "data ObjTy : Type where { | Base : ObjTy | Arr : (dom : ObjTy, cod : ObjTy) --> ObjTy }\n\
+     data Ctx : Type where { | Empty : Ctx | Extend : (gamma : Ctx, a : ObjTy) --> Ctx }\n\
+     data Var : (gamma : Ctx, a : ObjTy) --> Type where {\n\
+       | Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a)\n\
+       | There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var(gamma, a)) --> Var(Extend(gamma, b), a)\n\
+     }\n";
+
+/// #5050: a constructor of a family with indices was refused `Unannotated` as
+/// the value of a `let` with no type. Its generator's result classifies it,
+/// each field replaced by the value written for it, so a result type that
+/// reads another argument is refused by the checker.
+#[test]
+fn an_untyped_let_reads_its_constructor_s_classifier_off_its_result_5050()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{VARIABLES}def here(g : Ctx, a : ObjTy) -> Var(Extend(g, a), a) {{ let x = Here(g, a); x }}\n\
+         def next(g : Ctx, a : ObjTy, b : ObjTy, v : Var(g, a)) -> Var(Extend(g, b), a) {{\n\
+           let x = There(g, a, b, v);\n\
+           x\n\
+         }}\n\
+         def closed() -> Var(Extend(Empty, Arr(Base, Base)), Arr(Base, Base)) {{\n\
+           let x = Here(Empty, Arr(Base, Base));\n\
+           x\n\
+         }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["here", "next", "closed"] {
+        assert!(
+            matches!(
+                outcome_of(&module, SurfaceName::from(name)),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, SurfaceName::from(name))
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+
+    // The result's first index extends `g` by the second field, not the
+    // first: a type stating `b` there misreads the order.
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{VARIABLES}def swapped(g : Ctx, a : ObjTy, b : ObjTy, v : Var(g, a)) -> Var(Extend(g, a), b) {{\n\
+           let x = There(g, a, b, v);\n\
+           x\n\
+         }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            outcome_of(&module, SurfaceName::from("swapped")),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "`swapped` lowers: {:?}",
+        outcome_of(&module, SurfaceName::from("swapped"))
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .any(|judged| matches!(judged.verdict(), Verdict::Refused(_))),
+        "the checker refuses a result type the classifier does not state: {report:?}"
+    );
+}
+
+/// #5050: no field of a constructor fixes its family's parameter, so a `let`
+/// with no type refuses the call and names the parameter.
+#[test]
+fn an_untyped_let_of_a_parameterised_constructor_names_its_parameter_5050()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!("{MAYBE}def kept() -> Maybe(Integer) {{ let x = Some(3); x }}\n");
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let refusal = refusal_of(&module, SurfaceName::from("kept"));
+    let call = source.find("Some(3)").unwrap_or_default();
+    assert!(
+        matches!(
+            refusal,
+            LoweringRefusal::UnfixedParameter { span, constructor, parameter }
+                if constructor == SurfaceName::from("Some")
+                    && parameter == SurfaceName::from("a")
+                    && usize::from(span.start()) == call
+                    && usize::from(span.end()) == call.saturating_add("Some(3)".len())
+        ),
+        "the refusal names the constructor, its parameter and the call: {refusal:?}"
+    );
+}
+
 /// An unsigned definition whose whole value is an annotation is declared at
 /// the annotation's type and checked against it, a value the annotation
 /// misstates refused by the checker rather than by the lowering (#1107).

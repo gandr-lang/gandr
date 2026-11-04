@@ -633,6 +633,7 @@ use crate::module::BodyScope;
 use crate::module::CodataIndex;
 use crate::module::Collected;
 use crate::module::ComponentScope;
+use crate::module::Constructor;
 use crate::module::Container;
 use crate::module::DataIndex;
 use crate::module::DeclarationOutcome;
@@ -643,6 +644,7 @@ use crate::module::FamilyIndex;
 use crate::module::FlattenedSlot;
 use crate::module::Forgetting;
 use crate::module::Functor;
+use crate::module::Generators;
 use crate::module::Half;
 use crate::module::HalfAt;
 use crate::module::Halves;
@@ -11672,20 +11674,31 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // The stated type is read first. A constructor of a family with
         // arguments takes it as its classifier, as under an annotation
         // `(e : T)`; a family of neither classifies its constructors alone.
-        let binding = match annotation {
-            Some(annotation) => {
-                self.read(annotation.node, Reading::ValueType(frame));
-                if let Maybe::Present(constructor) = self.applied_constructor(statement, bound)?
-                    && self.classifies_alone(constructor) == native::Alone(false)
-                {
-                    let _first = self.classifiers.insert(bound.node, annotation.node);
-                }
-                StatementBinding::TypedLet {
-                    name: binder.node,
-                    annotation: annotation.node,
-                }
+        // With no stated type, a family with indices and no parameters gives
+        // the constructor its generator's result (#5050).
+        let applied = match self.applied_constructor(statement, bound)? {
+            Maybe::Present(constructor)
+                if self.classifies_alone(constructor) == native::Alone(false) =>
+            {
+                Some(constructor)
             },
-            None => StatementBinding::Let(binder.node),
+            Maybe::Present(_) | Maybe::Absent(_) => None,
+        };
+        let binding = if let Some(annotation) = annotation {
+            self.read(annotation.node, Reading::ValueType(frame));
+            if applied.is_some() {
+                let _first = self.classifiers.insert(bound.node, annotation.node);
+            }
+            StatementBinding::TypedLet {
+                name: binder.node,
+                annotation: annotation.node,
+            }
+        }
+        else {
+            if let Some(constructor) = applied {
+                self.resulted(bound, constructor)?;
+            }
+            StatementBinding::Let(binder.node)
         };
         self.read(bound.node, Reading::Value(frame));
         self.statements.push(Statement {
@@ -11706,6 +11719,63 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
 
         Ok(Frame::Inner(bound_at))
+    }
+
+    /// Give the constructor `constructor`, which a `let` with no type binds at
+    /// `bound`, the classifier its generator's result states.
+    ///
+    /// # Specification
+    /// - requires: `constructor` is the constructor `bound` applies, and its
+    ///   family has parameters or indices.
+    /// - ensures: a constructor of a written family with indices and no
+    ///   parameters inherits [`native::Classifier::Resulted`] at `bound`; any
+    ///   other constructor inherits nothing.
+    /// - fails: [`LoweringRefusal::UnfixedParameter`] naming the family's first
+    ///   parameter, for a written family with parameters.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnfixedParameter`] for a family with parameters.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `let x = Here(g, a)` classifies `Here` by its result,
+    ///   and `let x = B(n)` of a family `B(a : Type)` is refused.
+    /// - witness: `lower::native::tests::an_untyped_let_reads_its_constructor_s_classifier_off_its_result_5050`
+    /// - witness: `lower::native::tests::an_untyped_let_of_a_parameterised_constructor_names_its_parameter_5050`
+    #[spec(ensures: |ret| ret.is_err() == matches!(constructor.form, Generators::Written(form) if self.collected.data.get(form).is_some_and(|data| !data.parameters.is_empty())))]
+    fn resulted(
+        &mut self,
+        bound: Placed,
+        constructor: Constructor,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Generators::Written(form) = constructor.form
+        else {
+            return Ok(());
+        };
+        let Some(data) = self.collected.data.get(form)
+        else {
+            return Ok(());
+        };
+        // A generator's result applies the family to its own parameters, so
+        // no field fixes one.
+        if let Some(parameter) = data.parameters.first() {
+            return Err(LoweringRefusal::UnfixedParameter {
+                span: bound.span,
+                constructor: self.name_at(constructor.named),
+                parameter: self.name_at(parameter.named),
+            });
+        }
+        if !data.indices.is_empty() {
+            let _first = self.inherited.insert(
+                bound.node,
+                native::Classifier::Resulted(native::ResultOf {
+                    form,
+                    generator: constructor.tag,
+                }),
+            );
+        }
+        Ok(())
     }
 
     /// The component patterns of a tuple pattern standing as a `let`
@@ -17117,6 +17187,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | native::Classifier::Slot(_)
                     | native::Classifier::Parameter(_)
                     | native::Classifier::Stated(_)
+                    | native::Classifier::Resulted(_)
                     | native::Classifier::Inserted => None,
                 }),
         );
@@ -17151,6 +17222,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                     .map(|index| index.node),
                             ),
                     )
+                })
+                .flatten(),
+        );
+        // A constructor a `let` with no type binds reads the indices its
+        // generator's result states, which mint first (#5050).
+        manifests.extend(
+            self.inherited
+                .keys()
+                .filter(|&position| owns(position))
+                .filter_map(|position| match self.plans.get(*position) {
+                    Some(&Plan::Constructor(native::Constructed {
+                        classifier: native::Classifier::Resulted(of),
+                        ..
+                    })) => Some(of),
+                    Some(_) | None => None,
+                })
+                .filter_map(|of| {
+                    let form = self.collected.data.get(of.form)?;
+                    let generator = form.generators.get(of.generator)?;
+                    Some(generator.indices.iter().map(|index| index.node))
                 })
                 .flatten(),
         );
