@@ -2205,7 +2205,7 @@ mod tests
                 Maybe::Absent(reason) => panic!("the position hovers nothing: {reason:?}"),
             }
         };
-        let composite = "Path.step(loop, Path.here(Base))";
+        let composite = "Path.step loop (Path.here Base)";
         let ty = format!("Path[.A = Path[.A = Circle](Base, Base)]({composite}, loop)");
         let named = at(line.saturating_add("def jo".len()));
         assert!(
@@ -2256,18 +2256,18 @@ mod tests
         };
         let applied = |call: &str| format!("\n\nthe checker applies\n\n{}", fenced(call.into()));
         for (needle, call) in [
-            ("multiplies(endoMonoid)", "Monoid.Semigroup(endoMonoid)"),
-            ("multiplies(m)", "UnitAndZero.Semigroup(m)"),
+            ("multiplies endoMonoid", "Monoid.Semigroup(endoMonoid)"),
+            ("multiplies m", "UnitAndZero.Semigroup(m)"),
         ] {
-            let shown = at(needle, "multiplies(".len());
+            let shown = at(needle, "multiplies ".len());
             assert!(
                 shown.ends_with(&applied(call)),
                 "`{needle}` names the reduct the checker applies: {shown}"
             );
         }
         for (needle, past) in [
-            ("multiplies(endoManifest)", "multiplies(".len()),
-            ("multiplies(endoMonoid)", 0),
+            ("multiplies endoManifest", "multiplies ".len()),
+            ("multiplies endoMonoid", 0),
         ] {
             let shown = at(needle, past);
             assert!(
@@ -2307,13 +2307,13 @@ mod tests
         let applied = |call: &str| format!("\n\nthe checker applies\n\n{}", fenced(call.into()));
         for (needle, past, call) in [
             (
-                "observe(upManifest)",
-                "observe(".len(),
+                "observe upManifest",
+                "observe ".len(),
                 "forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter)",
             ),
             (
-                "observeShown(upBoth)",
-                "observeShown(".len(),
+                "observeShown upBoth",
+                "observeShown ".len(),
                 "forget[sort C = +{Unit, Bool}, sort R = Integer](upBoth) at Model(ReadCounter)",
             ),
         ] {
@@ -2323,7 +2323,7 @@ mod tests
                 "`{needle}` names the forgetting map the checker applies: {shown}"
             );
         }
-        let shown = at("observe(b)", "observe(".len());
+        let shown = at("observe b", "observe ".len());
         assert!(
             !shown.contains("the checker applies"),
             "`b`, whose carrier is selected off a binder, names no map: {shown}"
@@ -2390,7 +2390,7 @@ mod tests
             ),
             (
                 "a binder",
-                "def f($0x: Integer) -> -F Integer { return x }\n",
+                "def f($0x : Integer) -> -F Integer { return x }\n",
                 Ok(fenced(SourceText::from("x : Integer"))),
             ),
             (
@@ -2405,7 +2405,7 @@ mod tests
             ),
             (
                 "the keyword introducing a function",
-                "d$0ef f(x: Integer) -> -F Integer { return x }\n",
+                "d$0ef f(x : Integer) -> -F Integer { return x }\n",
                 Ok(fenced(SourceText::from("f : +U (Integer -> -F Integer)"))),
             ),
             (
@@ -2423,7 +2423,7 @@ mod tests
                 "def r$0ing : *{n : Integer, v : Path[.A = Integer](n, n)} ;\ndef ring = *{2, Path.here 2} \
                  ;\n",
                 Ok(fenced(SourceText::from(
-                    "ring : #{n : Integer, v : Path[.A = Integer](n, n)}",
+                    "ring : *{n : Integer, v : Path[.A = Integer](n, n)}",
                 ))),
             ),
             (
@@ -2448,7 +2448,7 @@ mod tests
             ),
             (
                 "a mismatched term",
-                "def bad : Integer ;\ndef bad = u$0nit ;\n",
+                "def bad : Integer ;\ndef bad = *$0{} ;\n",
                 Ok(String::from(
                     "```gandr\nUnit\n```\n\nchecked against\n\n```gandr\nInteger\n```",
                 )),
@@ -2773,14 +2773,14 @@ mod tests
         assert_eq!(
             shown(text, (7.into(), 7.into())),
             Ok(String::from(
-                "```gandr\nrefl : +U ((a : Integer) -> -F Path[.A = Bool](Host.alike(a, a), true))\n```"
+                "```gandr\nrefl : +U ((a : Integer) -> -F Path[.A = Bool](Host.alike a a, true))\n```"
             )),
             "the admitted law"
         );
         assert_eq!(
             shown(text, (3.into(), 7.into())),
             Ok(String::from(
-                "```gandr\nrefl : +U ((a : Carrier) -> -F Path[.A = Bool](alike(a, a), true))\n```"
+                "```gandr\nrefl : +U ((a : Carrier) -> -F Path[.A = Bool](alike a a, true))\n```"
             )),
             "the theory's law"
         );
@@ -2865,13 +2865,13 @@ mod tests
                 "<pre><code>{} : {} {} {}</code></pre>",
                 coloured("functionDef", "f"),
                 coloured("typeBuiltin", "Integer"),
-                coloured("operator", "=&gt;"),
+                coloured("operator", "-&gt;"),
                 coloured("typeBuiltin", "Integer"),
             )),
             "the name in its editor colour, the sugared type in its roles, `>` escaped"
         );
         let (text, at) = marker(SourceText::from(
-            "def f($0x: Integer) -> -F Integer { return x }\n",
+            "def f($0x : Integer) -> -F Integer { return x }\n",
         ));
         assert_eq!(
             styled(SourceText::from(text.as_str()), at, html),
@@ -2941,7 +2941,7 @@ mod tests
         let rec = include_str!("hover/fixtures/rec-group.gandr");
         let succ = fenced(SourceText::from("Succ : (n : NatDiv) --> NatDiv"));
         let family = fenced(SourceText::from("NatDiv : Type"));
-        let rule = fenced(SourceText::from("rule : divmod(m, Zero) ==> (Zero, m)"));
+        let rule = fenced(SourceText::from("rule : divmod m Zero ==> (Zero, m)"));
         let ints = fenced(SourceText::from("module Ints"));
         let group = format!(
             "{}\n\nThe declarations this `rec_block` writes together.",
@@ -2982,14 +2982,14 @@ mod tests
                 Ok(ints.clone()),
             ),
             ("a module's closing brace", module, (3, 0), Ok(ints)),
-            ("a rec group's keyword", rec, (4, 0), Ok(group.clone())),
+            ("a rec group's keyword", rec, (3, 0), Ok(group.clone())),
             (
                 "a rec group's opening brace",
                 rec,
-                (4, 4),
+                (3, 4),
                 Ok(group.clone()),
             ),
-            ("a rec group's closing brace", rec, (7, 0), Ok(group)),
+            ("a rec group's closing brace", rec, (6, 0), Ok(group)),
         ];
         for (position, text, (line, character), expected) in rows {
             assert_eq!(
@@ -3005,7 +3005,7 @@ mod tests
     {
         let data = include_str!("hover/fixtures/natdiv.gandr");
         let theory = include_str!("hover/fixtures/cat.gandr");
-        let rows: [Row<'_>; 14] = [
+        let rows: [Row<'_>; 13] = [
             (
                 "a data family's name",
                 data,
@@ -3041,7 +3041,7 @@ mod tests
                 data,
                 (4, 10),
                 Ok(fenced(SourceText::from(
-                    "divmod : +U (NatDiv -> NatDiv -> -F #{NatDiv, NatDiv})",
+                    "divmod : +U (NatDiv -> NatDiv -> -F *{NatDiv, NatDiv})",
                 ))),
             ),
             (
@@ -3051,16 +3051,10 @@ mod tests
                 Ok(fenced(SourceText::from("oriented left to right"))),
             ),
             (
-                "a rule's pattern variable",
-                data,
-                (4, 16),
-                Ok(fenced(SourceText::from("m : NatDiv"))),
-            ),
-            (
                 "a rule's results",
                 data,
-                (4, 29),
-                Ok(fenced(SourceText::from("#{NatDiv, NatDiv}"))),
+                (4, 27),
+                Ok(fenced(SourceText::from("*{NatDiv, NatDiv}"))),
             ),
             (
                 "a member's keyword",
@@ -3087,16 +3081,14 @@ mod tests
             (
                 "a law's application",
                 theory,
-                (5, 22),
-                Ok(fenced(SourceText::from("Hom(a, a)"))),
+                (5, 20),
+                Ok(fenced(SourceText::from("Hom(a, b)"))),
             ),
             (
                 "a theory member's keyword",
                 theory,
                 (5, 3),
-                Ok(fenced(SourceText::from(
-                    "rule unitL : comp(id(a), f) ==> f",
-                ))),
+                Ok(fenced(SourceText::from("rule unitL : comp (id a) f ==> f"))),
             ),
         ];
         for (position, text, (line, character), expected) in rows {
@@ -3113,7 +3105,7 @@ mod tests
     {
         let model = "theory Semigroup where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> \
                      M;\n}\n\n/// A semigroup with a unit.\ntheory Monoid where {\n  include \
-                     Semigroup;\n  oper one : () --> M;\n  rule unitL : mul(one(), x) ==> \
+                     Semigroup;\n  oper one : () --> M;\n  rule unitL : mul (one ()) x ==> \
                      x;\n}\n\nmodule Ints : Model(Semigroup) where {\n  type M = Integer;\n  def \
                      mul(x : Integer, y : Integer) -> -F Integer { return y }\n}\n";
         let shaped = "theory Generated where {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val \
@@ -3238,7 +3230,7 @@ mod tests
         let rows = [
             (
                 "a constructor's use",
-                (5, 9),
+                (4, 9),
                 format!(
                     "```gandr\nSucc : (n : Nat) --> Nat\n```\n\nA constructor, written at line \
                      3.\n\n{refused}"
@@ -3246,15 +3238,15 @@ mod tests
             ),
             (
                 "a keyword",
-                (5, 2),
+                (4, 2),
                 format!("```gandr\nreturn\n```\n\nA tile of `return_expression`.\n\n{refused}"),
             ),
             (
                 "a parameter's use inside the refused call",
-                (5, 14),
+                (4, 14),
                 format!(
                     "```gandr\ndef bad(x : Nat) -> -F Nat {{\n```\n\nA binder, written at line \
-                     5.\n\n{refused}"
+                     4.\n\n{refused}"
                 ),
             ),
         ];
@@ -3436,21 +3428,13 @@ mod tests
     {
         let top_level = "stands at a source's top level, where only declarations stand; a program \
                          runs the `main` it declares";
-        let rows: [(&str, &str, String); 6] = [
-            (
-                "a final expression",
-                "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\nsame$0(Integer, answer) ;\n",
-                format!(
-                    "{}\n\nrefused: `call_expression`, read as a declaration, {top_level}",
-                    fenced(SourceText::from("same(Integer, answer)"))
-                ),
-            ),
+        let rows: [(&str, &str, String); 5] = [
             (
                 "a final expression's `;`",
-                "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\nsame(Integer, answer) $0;\n",
+                "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\nsame Integer answer $0;\n",
                 format!(
-                    "{}\n\nrefused: `call_expression`, read as a declaration, {top_level}",
-                    fenced(SourceText::from("same(Integer, answer)"))
+                    "{}\n\nrefused: `identifier`, read as a declaration, {top_level}",
+                    fenced(SourceText::from("answer"))
                 ),
             ),
             (

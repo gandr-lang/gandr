@@ -9823,7 +9823,7 @@ mod tests
         assert_eq!(
             changed("sums-and-case.gandr"),
             [
-                "def pick+2:4 `Inl` enumMember→unresolvedReference",
+                "def pick+2:6 `Inl` enumMember→unresolvedReference",
                 "def picked+0:26 `pick` variable→function"
             ],
             "the name the lowering refused `pick` for, an expected refusal, sent as unresolved; \
@@ -9957,9 +9957,9 @@ mod tests
                 "def tag_of+0:30 `w` typeParameter declaration+value",
                 "def tag_of+0:37 `n` typeParameter value",
                 "def tag_of+1:8 `p` parameter value",
-                "def tag_of+2:6 `m` variable declaration+value",
-                "def tag_of+2:9 `w` variable declaration+value",
-                "def tag_of+2:15 `m` variable value",
+                "def tag_of+2:8 `m` variable declaration+value",
+                "def tag_of+2:11 `w` variable declaration+value",
+                "def tag_of+2:17 `m` variable value",
                 "def tag+0:4 `tag` function declaration",
                 "def tag+0:23 `tag_of` function computation",
                 "def tag+0:30 `tagged` function value",
@@ -11332,7 +11332,7 @@ mod tests
             (elim.as_str(), "def involutive("),
             (
                 elim.as_str(),
-                "Path.walk(fun (x) { type(Path[.A = Circle](Base, invLooper(x))) }",
+                "Path.walk (fun (x) { type(Path[.A = Circle](Base, invLooper x)) })",
             ),
         ]
         .map(|(text, held)| {
@@ -11350,8 +11350,8 @@ mod tests
                 serde_json::json!({"title": "3 references", "command": "gandr.showReferences",
                 "arguments": [uri("circle-base.gandr"), at(Line::from(flip_at), Character::from(8_u32)), [
                     location("circle-elim.gandr", involutive_at, 48, 57),
-                    location("circle-elim.gandr", involutive_at, 58, 67),
-                    location("circle-elim.gandr", flipped_at, 51, 60),
+                    location("circle-elim.gandr", involutive_at, 59, 68),
+                    location("circle-elim.gandr", flipped_at, 52, 61),
                 ]]})
             ),
             "the flip's command shows the importer's three calls of it: twice in \
@@ -13608,7 +13608,7 @@ mod tests
         );
     }
 
-    /// #764: the hint of `r`, bound by `let r = minus(p, d)` in a corpus
+    /// #764: the hint of `r`, bound by `let r = minus p d` in a corpus
     /// importer, names `Nat`, which the importer's base declares. A client
     /// that resolves no hint, or resolves other properties alone (#1620), gets
     /// the name located at once; one that resolves a label's locations gets it
@@ -13629,11 +13629,11 @@ mod tests
             Line::from(
                 crate::anchor::line_of(
                     crate::anchor::Source(&text),
-                    crate::anchor::Held("let r = minus(p, d)"),
+                    crate::anchor::Held("let r = minus p d"),
                 )
                 .0,
             ),
-            Character::from(22_u32),
+            Character::from(24_u32),
         );
         let opened = |capabilities: Value| {
             let mut server = Connected::default();

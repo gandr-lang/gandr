@@ -97,6 +97,7 @@ use crate::protocol::SymbolKind;
 use crate::protocol::TakesSnippets;
 use crate::protocol::TextEdit;
 use crate::search::Declared;
+use crate::signature::Calling;
 
 /// One item of a completion before it is numbered: its label, its kind, its
 /// detail, the snippet it inserts in place of its label, and the import edit
@@ -414,10 +415,11 @@ pub fn unimported_as(
 ///   `snippets` holds, a keyword whose form writes more than the keyword
 ///   inserts the form as [`KeywordForm::snippet`] spells it between the text
 ///   before the word and the text after the cursor, and a declared name whose
-///   head has parameters, where the text after the cursor opens no `(`, inserts
-///   its call as [`Signature::called`] spells it; each is read as a snippet and
-///   filtered by its label. Every other item inserts its label. No item for a
-///   filled slot.
+///   head has parameters, where the text after the cursor writes no argument
+///   ([`writes_argument`]), inserts its call as [`Signature::called`] spells it
+///   — a family's application in parentheses, any other call juxtaposed; each
+///   is read as a snippet and filtered by its label. Every other item inserts
+///   its label. No item for a filled slot.
 /// - provides: the answer to `textDocument/completion` for a held document.
 /// - fails: never.
 /// - panics: none.
@@ -513,7 +515,7 @@ pub fn completions(
     );
     // A name the text already calls keeps its call; rust-analyzer's
     // `has_call_parens` reads the same.
-    let calls = snippets.0 && !<&str>::from(after).starts_with('(');
+    let calls = snippets.0 && !writes_argument(after);
     for &(ref name, kind, ref referent) in hovering.names().starting(SourceText::from(prefix)) {
         if let Some(as_kind) = offered_as(category, kind)
             && seen.insert(name.as_str())
@@ -523,9 +525,13 @@ pub fn completions(
                 .map(|signature| <&str>::from(signature.label()))
                 .filter(|head| *head != name.as_str())
                 .map(String::from);
+            let calling = match kind {
+                NameKind::Family => Calling::Applied,
+                NameKind::Constructor | NameKind::Value => Calling::Juxtaposed,
+            };
             let call = signature
                 .filter(|_| calls)
-                .and_then(|signature| signature.called(SourceText::from(name.as_str())));
+                .and_then(|signature| signature.called(SourceText::from(name.as_str()), calling));
             offered.push((name.as_str(), as_kind, head, call, None));
         }
     }
@@ -605,6 +611,30 @@ pub fn completions(
             })
             .collect(),
     }
+}
+
+/// Whether `after`, the text after a completed name, writes an argument of
+/// the name's call already: on the same line, past spaces and tabs, an
+/// operand starts — a word, a number, a `(`, a string or a character.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: true exactly when the first character of `after` that is no space
+///   or tab is a letter, a digit, `_`, `(`, `"` or `'`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a name followed by its written argument inserts itself,
+///   and a name the text follows with nothing inserts its call.
+/// - witness: `complete::tests::a_call_fills_its_parameters_as_tab_stops`
+fn writes_argument(after: SourceText<'_>) -> bool
+{
+    <&str>::from(after)
+        .trim_start_matches([' ', '\t'])
+        .starts_with(|first: char| {
+            first.is_alphanumeric() || matches!(first, '_' | '(' | '"' | '\'')
+        })
 }
 
 /// What a client shows beside the label `name` of an item whose detail is
@@ -859,7 +889,7 @@ mod tests
             offered.keywords.iter().any(|written| written == keyword)
         };
 
-        let value = at("p))");
+        let value = at("p)\n  }");
         assert_eq!(
             value.names,
             named!([
@@ -1141,11 +1171,11 @@ mod tests
         use CompletionItemKind as Kind;
 
         let head = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec plus(n : \
-                    Nat, m : Nat) -> -F Nat {\n  match m {\n    Zero => ";
-        let own = format!("{head}n,\n    Succ(p) => Succ(p");
+                    Nat, m : Nat) -> -F Nat {\n  match m {\n    | Zero => ";
+        let own = format!("{head}n\n    | Succ(p) => Succ p");
         let own = offered(
             SourceText::from(own.as_str()),
-            SourceText::from(")\n  }\n}\n"),
+            SourceText::from("\n  }\n}\n"),
         );
         assert_eq!(
             own.names,
@@ -1155,13 +1185,42 @@ mod tests
         let sibling = format!("{head}p");
         let sibling = offered(
             SourceText::from(sibling.as_str()),
-            SourceText::from(",\n    Succ(p) => Succ(p)\n  }\n}\n"),
+            SourceText::from("\n    | Succ(p) => Succ p\n  }\n}\n"),
         );
         assert_eq!(
             sibling.names,
             named!([("plus", Kind::VARIABLE)]),
             "in the sibling arm: the recursion alone"
         );
+    }
+
+    /// A layout body cut at the cursor is still open there: after `return`
+    /// and after an operator, it offers the names its braced spelling does,
+    /// the parameter first.
+    #[test]
+    fn a_layout_body_offers_as_its_braces_do_4853()
+    {
+        for (layout, braced) in [
+            (
+                ("def f(p : Integer) -> -F Integer =\n  return ", "?\n"),
+                ("def f(p : Integer) -> -F Integer {\n  return ", "?\n}\n"),
+            ),
+            (
+                ("def f(p : Integer) -> Integer =\n  1 + ", "?\n"),
+                ("def f(p : Integer) -> Integer {\n  1 + ", "?\n}\n"),
+            ),
+        ] {
+            let at = |(before, after): (&str, &str)| {
+                offered(SourceText::from(before), SourceText::from(after)).names
+            };
+            let braced_names = at(braced);
+            assert_eq!(
+                braced_names.first().map(|(name, _)| name.as_str()),
+                Some("p"),
+                "the braced body offers its parameter first: {braced_names:?}"
+            );
+            assert_eq!(at(layout), braced_names, "{}", layout.0);
+        }
     }
 
     /// The snippet table over the identity subject's base source: every
@@ -1229,7 +1288,7 @@ mod tests
             item,
             "after the last declaration: each declaration form, its holes tab stops"
         );
-        let body = written.find("  S(n)\n").expect("`up` returns a successor") + 2;
+        let body = written.find("  S n\n").expect("`up` returns a successor") + 2;
         let word = |label: &str| (String::from(label), String::from(label), false);
         let computation = [
             row("pure", "pure ${1:value}"),
@@ -1287,7 +1346,7 @@ mod tests
         assert_eq!(
             table(
                 written.get(.. body).unwrap_or_default(),
-                written.get(body + 4 ..).unwrap_or_default(),
+                written.get(body + 3 ..).unwrap_or_default(),
                 true
             ),
             computation,
@@ -1342,48 +1401,48 @@ mod tests
             })
             .collect::<Vec<_>>()
         };
-        let body = written.find("  S(n)\n").expect("`up` returns a successor") + 2;
+        let body = written.find("  S n\n").expect("`up` returns a successor") + 2;
         let call = |label: &str, text: &str| (String::from(label), String::from(text), true);
         let name = |label: &str| (String::from(label), String::from(label), false);
         assert_eq!(
             table(
                 written.get(.. body).unwrap_or_default(),
-                written.get(body + 4 ..).unwrap_or_default(),
+                written.get(body + 3 ..).unwrap_or_default(),
                 true
             ),
             [
                 name("Base"),
-                call("Bit0", "Bit0(${1:p})$0"),
-                call("Bit1", "Bit1(${1:p})$0"),
+                call("Bit0", "Bit0 ${1:p}$0"),
+                call("Bit1", "Bit1 ${1:p}$0"),
                 name("Eq"),
                 name("One"),
-                call("P", "P(${1:x})$0"),
+                call("P", "P ${1:x}$0"),
                 name("PartialEq"),
-                call("Positive", "Positive(${1:p})$0"),
-                call("S", "S(${1:x})$0"),
-                call("Succ", "Succ(${1:n})$0"),
+                call("Positive", "Positive ${1:p}$0"),
+                call("S", "S ${1:x}$0"),
+                call("Succ", "Succ ${1:n}$0"),
                 name("Z"),
                 name("Zero"),
-                call("down", "down(${1:n})$0"),
-                call("eq", "eq(${1:a}, ${2:b})$0"),
-                call("ge", "ge(${1:a}, ${2:b})$0"),
-                call("gt", "gt(${1:a}, ${2:b})$0"),
-                call("invLooper", "invLooper(${1:x})$0"),
-                call("le", "le(${1:a}, ${2:b})$0"),
+                call("down", "down ${1:n}$0"),
+                call("eq", "eq ${1:a} ${2:b}$0"),
+                call("ge", "ge ${1:a} ${2:b}$0"),
+                call("gt", "gt ${1:a} ${2:b}$0"),
+                call("invLooper", "invLooper ${1:x}$0"),
+                call("le", "le ${1:a} ${2:b}$0"),
                 name("loop"),
-                call("loopOn", "loopOn(${1:p})$0"),
-                call("lt", "lt(${1:a}, ${2:b})$0"),
-                call("mul", "mul(${1:a}, ${2:b})$0"),
+                call("loopOn", "loopOn ${1:p}$0"),
+                call("lt", "lt ${1:a} ${2:b}$0"),
+                call("mul", "mul ${1:a} ${2:b}$0"),
                 name("refl"),
-                call("retr", "retr(${1:n})$0"),
-                call("sect", "sect(${1:p})$0"),
-                call("selfloop", "selfloop(${1:x})$0"),
-                call("selfrefl", "selfrefl(${1:x})$0"),
-                call("spin", "spin(${1:n})$0"),
+                call("retr", "retr ${1:n}$0"),
+                call("sect", "sect ${1:p}$0"),
+                call("selfloop", "selfloop ${1:x}$0"),
+                call("selfrefl", "selfrefl ${1:x}$0"),
+                call("spin", "spin ${1:n}$0"),
                 name("sym"),
-                call("unloopOn", "unloopOn(${1:p})$0"),
-                call("up", "up(${1:n})$0"),
-                call("wind", "wind(${1:p})$0"),
+                call("unloopOn", "unloopOn ${1:p}$0"),
+                call("up", "up ${1:n}$0"),
+                call("wind", "wind ${1:p}$0"),
             ],
             "where `up` returns: each name with parameters inserts its call, each \
              parameter's name a tab stop; a name with none inserts itself"
@@ -1396,12 +1455,12 @@ mod tests
             )
             .iter()
             .all(|&(ref label, ref text, snippet)| label == text && !snippet),
-            "at `S` in `S(n)` the call is written, so each name inserts itself"
+            "at `S` in `S n` the call is written, so each name inserts itself"
         );
         assert!(
             table(
                 written.get(.. body).unwrap_or_default(),
-                written.get(body + 4 ..).unwrap_or_default(),
+                written.get(body + 3 ..).unwrap_or_default(),
                 false
             )
             .iter()
@@ -1437,7 +1496,7 @@ mod tests
         };
         let shown = |text: &str| Some(String::from(text));
         assert_eq!(
-            at("))\n  }\n}", LabelsDetailed(true)),
+            at(")\n  }\n}", LabelsDetailed(true)),
             [
                 (
                     String::from("p"),
@@ -1453,7 +1512,7 @@ mod tests
             "a binder carries its type, in the list and beside its label"
         );
         assert_eq!(
-            at("cc(plus", LabelsDetailed(true)),
+            at("cc (plus", LabelsDetailed(true)),
             [(
                 String::from("Succ"),
                 shown("Succ : (n : Nat) --> Nat"),
@@ -1484,7 +1543,7 @@ mod tests
             "a value whose head is its name alone carries nothing beside it"
         );
         assert!(
-            at("))\n  }\n}", LabelsDetailed(false))
+            at(")\n  }\n}", LabelsDetailed(false))
                 .iter()
                 .all(|&(_, ref detail, ref beside)| detail.is_some() && beside.is_none()),
             "a client that shows no label details is given the detail alone"

@@ -132,6 +132,7 @@
 //!   replaces [`rank`] behind the same signature, and the ranking golden
 //!   changes with it.
 
+use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::cell::OnceCell;
@@ -1933,7 +1934,9 @@ impl Labeled<'_>
     /// - requires: nothing.
     /// - ensures: [`Slot::Filled`] when the text ends in a comment, a string or
     ///   a shebang line; otherwise the slot [`ghost`](Self::ghost) reads at the
-    ///   text's end, from the top-level form the text ends molded alone.
+    ///   text's end, from the top-level form the text ends molded alone, with
+    ///   each layout block open at the end left open ([`open_at_end`]), as a
+    ///   written `{` the text has not closed is.
     /// - fails: never.
     /// - panics: none.
     /// - intension: one molding of the form the text ends and one bounded walk
@@ -1941,8 +1944,10 @@ impl Labeled<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the completion witnesses read a value, a computation,
-    ///   a type, a pattern and an item slot, and a binding name's slot filled.
+    ///   a type, a pattern and an item slot, and a binding name's slot filled;
+    ///   a layout body and its braced spelling offer the same names.
     /// - witness: `complete::tests::each_slot_offers_its_own_names`
+    /// - witness: `complete::tests::a_layout_body_offers_as_its_braces_do_4853`
     #[must_use]
     #[spec(ensures: |ret| lead(self.text, self.labeling.tokens()) == Lead::Code || ret == Slot::Filled)]
     pub fn slot(
@@ -1950,10 +1955,11 @@ impl Labeled<'_>
         grammar: &Pbg,
     ) -> Slot
     {
-        let tokens = self.labeling.tokens();
-        if lead(self.text, tokens) != Lead::Code {
+        if lead(self.text, self.labeling.tokens()) != Lead::Code {
             return Slot::Filled;
         }
+        let tokens = open_at_end(self.labeling.tokens());
+        let tokens = tokens.as_ref();
         let mut molder = Molder::new(grammar);
         let mut state = MeldState::new(grammar);
         if let Some(&form) = molder.form_runs(tokens, self.text).last() {
@@ -1968,6 +1974,45 @@ impl Labeled<'_>
             first_slotted(&closings).map(|(_, material)| material),
         )
     }
+}
+
+/// `tokens`, a text's labeling, with each layout block that is open at the
+/// text's end left open: without the zero-width `;` and `}` the layout pass
+/// writes after the text's last written token. A text cut at a cursor goes on
+/// past the cut, so a block open there is not closed there.
+///
+/// # Specification
+/// - requires: `tokens` is a labeling, in text order.
+/// - ensures: `tokens` less each [`Lexeme::LayoutSemi`] and
+///   [`Lexeme::LayoutClose`] after the last token that is neither one of them
+///   nor [`Lexeme::Space`]; borrowed when there is none.
+/// - fails: never.
+/// - panics: none.
+/// - economy: one backward scan; a copy only when a closer is dropped.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Labeled::slot`].
+/// - witness: `complete::tests::a_layout_body_offers_as_its_braces_do_4853`
+fn open_at_end(tokens: &[Token]) -> Cow<'_, [Token]>
+{
+    let closer = |token: &Token| matches!(token.lexeme, Lexeme::LayoutSemi | Lexeme::LayoutClose);
+    let written = tokens
+        .iter()
+        .rposition(|token| !closer(token) && token.lexeme != Lexeme::Space)
+        .map_or(0, |last| last.saturating_add(1));
+    let tail = tokens.get(written ..).unwrap_or_default();
+    if !tail.iter().any(closer) {
+        return Cow::Borrowed(tokens);
+    }
+    Cow::Owned(
+        tokens
+            .get(.. written)
+            .unwrap_or_default()
+            .iter()
+            .chain(tail.iter().filter(|token| !closer(token)))
+            .copied()
+            .collect(),
+    )
 }
 
 /// The ghost texts `grammar`, whose forms are `forms`, offers at byte `at` of

@@ -453,17 +453,19 @@ impl Signature
         self.documentation.as_deref().map(SourceText::from)
     }
 
-    /// A call of `name` with each parameter a tab stop, as a snippet: the stop
-    /// holds the name the parameter declares, or what it writes when it
-    /// declares none.
+    /// A call of `name` with each parameter a tab stop, as a snippet, written
+    /// as `calling` says: the stop holds the name the parameter declares, or
+    /// what it writes when it declares none.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: none for a head with no parameters; otherwise `name`, `(`,
-    ///   one stop per parameter in written order, numbered from 1 and separated
-    ///   by `, `, then `)` and the final stop `$0`. A stop's text is the
-    ///   parameter's text before its first ` : ` when it has one and its whole
-    ///   text otherwise, escaped for the snippet syntax, as `name` is.
+    /// - ensures: none for a head with no parameters; otherwise `name`, then
+    ///   one stop per parameter in written order, numbered from 1 — each after
+    ///   a space when [`Calling::Juxtaposed`], or between `(` and `)` and
+    ///   separated by `, ` when [`Calling::Applied`] — then the final stop
+    ///   `$0`. A stop's text is the parameter's text before its first ` : `
+    ///   when it has one and its whole text otherwise, escaped for the snippet
+    ///   syntax, as `name` is.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -472,11 +474,12 @@ impl Signature
     ///   constructor, the unnamed domains of a thunk, and a head with none.
     /// - witness: `complete::tests::a_call_fills_its_parameters_as_tab_stops`
     #[spec(ensures: |ret| ret.is_none() == self.parameters.is_empty()
-        && ret.as_ref().is_none_or(|snippet| snippet.ends_with(")$0")
+        && ret.as_ref().is_none_or(|snippet| snippet.ends_with("$0")
             && snippet.matches("${").count() >= self.parameters.len()))]
     pub(crate) fn called(
         &self,
         name: SourceText<'_>,
+        calling: Calling,
     ) -> Option<String>
     {
         if self.parameters.is_empty() {
@@ -484,10 +487,14 @@ impl Signature
         }
         let mut snippet = String::new();
         escape_into(&mut snippet, name);
-        snippet.push('(');
+        if calling == Calling::Applied {
+            snippet.push('(');
+        }
         for (stop, parameter) in (1_usize ..).zip(&self.parameters) {
-            if stop > 1 {
-                snippet.push_str(", ");
+            match calling {
+                Calling::Juxtaposed => snippet.push(' '),
+                Calling::Applied if stop > 1 => snippet.push_str(", "),
+                Calling::Applied => {},
             }
             let written = self
                 .label
@@ -500,9 +507,23 @@ impl Signature
             escape_into(&mut snippet, SourceText::from(held));
             snippet.push('}');
         }
-        snippet.push_str(")$0");
+        if calling == Calling::Applied {
+            snippet.push(')');
+        }
+        snippet.push_str("$0");
         Some(snippet)
     }
+}
+
+/// How a call is written: a value's call as a juxtaposed spine, `f x y`, a
+/// family's application in its parentheses, `List(a)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Calling
+{
+    /// `f x y`.
+    Juxtaposed,
+    /// `List(a)`.
+    Applied,
 }
 
 /// One head: the source holding its name and the name's span in that source's
