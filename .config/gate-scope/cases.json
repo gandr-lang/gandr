@@ -399,5 +399,53 @@
       ]
     },
     "output": { "accepted": false, "missing": ["check:claims", "check:prose", "check:tests"] }
+  },
+  {
+    "name": "#5123: a scoped check under the anodized cfg without the workspace feature unification is a finding",
+    "program": "unmapped.jq",
+    "input": {
+      "table": { "groups": { "rust": ["check:clippy-enforcing"] }, "light": [], "paths": [] },
+      "tasks": [
+        {
+          "name": "check:clippy-enforcing",
+          "run": [
+            ".config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets"
+          ],
+          "depends": [],
+          "env": ["RUSTFLAGS=--cfg anodized_panic"]
+        }
+      ]
+    },
+    "output": "check:clippy-enforcing: it builds GATE_SCOPE under --cfg anodized_panic without the workspace feature unification: set CARGO_UNSTABLE_FEATURE_UNIFICATION=true and pass --config 'resolver.feature-unification=\"workspace\"'"
+  },
+  {
+    "name": "#5123: a scoped check under the anodized cfg that unifies over the workspace, and a plain scoped check, are no finding",
+    "program": "unmapped.jq",
+    "input": {
+      "table": {
+        "groups": { "rust": ["check:clippy-enforcing", "check:clippy"] },
+        "light": [],
+        "paths": []
+      },
+      "tasks": [
+        {
+          "name": "check:clippy-enforcing",
+          "run": [
+            ".config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --config 'resolver.feature-unification=\"workspace\"'"
+          ],
+          "depends": [],
+          "env": ["RUSTFLAGS=--cfg anodized_panic", "CARGO_UNSTABLE_FEATURE_UNIFICATION=true"]
+        },
+        {
+          "name": "check:clippy",
+          "run": [
+            ".config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets"
+          ],
+          "depends": [],
+          "env": []
+        }
+      ]
+    },
+    "output": ""
   }
 ]

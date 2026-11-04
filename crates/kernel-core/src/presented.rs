@@ -1668,4 +1668,94 @@ mod tests
             "the identity fold over the words respects both cancellations"
         );
     }
+
+    #[test]
+    fn a_path_that_computes_its_point_is_set_aside_against_its_words_5099()
+    {
+        // `Path(S, x, x)` against the words at `base`: neither endpoint spells
+        // the point, so the walk sets the pair aside for its reader, in either
+        // order. A path over a type the words do not loop in stays apart.
+        let mut environment = point();
+        let words_at = words(
+            &mut environment,
+            Presentation::words(looped(ConstantIndex::from(0_usize))),
+        )
+        .expect("the loop's words admit");
+        let presentations = super::Presentations::of(environment.entries());
+        let mut arena = environment.arena().clone();
+        let carrier = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let open = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let path = arena.value_type_path(carrier, open, open);
+        let word_type = arena.value_type_data(words_at, Vec::new());
+        for (one, other) in [(word_type, path), (path, word_type)] {
+            let mut pending = Vec::new();
+            assert_eq!(
+                crate::conv::pending_endpoints(
+                    &arena,
+                    &presentations,
+                    crate::conv::ConversionGoal::ValueType(one, other),
+                    &mut pending
+                ),
+                crate::conv::Convertibility::Convertible
+            );
+            assert_eq!(pending, [crate::conv::SetAside::AtPoint {
+                words: words_at,
+                from: open,
+                to: open
+            }]);
+        }
+        let unlooped = arena.value_type_path(word_type, open, open);
+        let mut pending = Vec::new();
+        assert_eq!(
+            crate::conv::pending_endpoints(
+                &arena,
+                &presentations,
+                crate::conv::ConversionGoal::ValueType(word_type, unlooped),
+                &mut pending
+            ),
+            crate::conv::Convertibility::Distinct,
+            "no cell loops in the words themselves"
+        );
+
+        // `c = λy. return here(y)` at `(y : S) → F Path(S, y, y)`, then
+        // `λx. return ⟨force c x⟩` at `S → F words`: the path at an open `x`
+        // reads as the words only if `x` reads as `base`, and it does not.
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let carrier = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let y = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let at_y = arena.value_type_path(carrier, y, y);
+        let returns_path = arena.comp_type_returner(at_y);
+        let pi = arena.comp_type_pi(carrier, returns_path);
+        let declared = arena.value_type_thunk(pi);
+        let here = arena.value_here(y);
+        let returned = arena.computation_return(here);
+        let lambda = arena.computation_lambda(returned);
+        let body = arena.value_thunk(lambda);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+        let reflexive = environment
+            .add_decl(staged)
+            .expect("reflexivity at every point admits")
+            .position();
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let carrier = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let word_type = arena.value_type_data(words_at, Vec::new());
+        let named = arena.value_constant(reflexive);
+        let forced = arena.computation_force(named);
+        let x = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let applied = arena.computation_application(forced, x);
+        let path = arena.value_returned(applied);
+        let returned = arena.computation_return(path);
+        let lambda = arena.computation_lambda(returned);
+        let body = arena.value_thunk(lambda);
+        let returns_words = arena.comp_type_returner(word_type);
+        let arrow = arena.comp_type_arrow(carrier, returns_words);
+        let declared = arena.value_type_thunk(arrow);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+        assert!(
+            environment.add_decl(staged).is_err(),
+            "a path at an open point is apart from the words at `base`"
+        );
+    }
 }

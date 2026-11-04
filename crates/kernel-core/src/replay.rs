@@ -1664,14 +1664,15 @@ pub(crate) enum StuckEndpoints
 ///   recursion.
 /// - measure: the budget left, then the size of the pair popped. A pair adds to
 ///   the worklist only after reading a returned code, reading two returned
-///   endpoints, weakening a codomain or taking the quote pairs a conversion
-///   with definitions unfolding owes, each of which charges the budget at least
-///   one step, or after walking two formers. That walk adds only pairs inside
-///   them, since one that would add the pair itself leaves it apart. A former
-///   that is the popped pair's own value cost no charge, and the pairs inside
-///   it are smaller than the pair. The walk over one type or computation, like
-///   one such conversion, adds finitely many pairs. The conversion reads none
-///   of what it owes, so it never calls back here.
+///   endpoints, weakening a codomain, building a words' point or taking the
+///   quote pairs a conversion with definitions unfolding owes, each of which
+///   charges the budget at least one step, or after walking two formers. That
+///   walk adds only pairs inside them, since one that would add the pair itself
+///   leaves it apart. A former that is the popped pair's own value cost no
+///   charge, and the pairs inside it are smaller than the pair. The walk over
+///   one type or computation, like one such conversion, adds finitely many
+///   pairs. The conversion reads none of what it owes, so it never calls back
+///   here.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an endpoint returning its value through a definition
@@ -1856,6 +1857,24 @@ pub(crate) fn read_endpoints(
                     BinderDepth::from(1_u32),
                 );
                 ConversionGoal::CompType(dependent, weakened)
+            },
+            // A path whose endpoints do not spell its words' point reads as the
+            // words when each endpoint reads as the point (#485, #5099).
+            SetAside::AtPoint { words, from, to } => {
+                let Some(point) =
+                    crate::words::point(run.arena, run.unfoldings.presentations(), words)
+                else {
+                    reading = EndpointReading::Apart;
+                    break;
+                };
+                let Ok(()) = run.charge()
+                else {
+                    reading = EndpointReading::Apart;
+                    break;
+                };
+                worklist.push(SetAside::Values(from, point));
+                worklist.push(SetAside::Values(to, point));
+                continue;
             },
         };
         if pending_endpoints(
@@ -6218,9 +6237,23 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     {
         let mut inside = Vec::new();
         while let Some(set_aside) = pending.pop() {
-            let SetAside::Values(left, right) = set_aside
-            else {
-                return Ok(Convertibility::Distinct);
+            let (left, right) = match set_aside {
+                SetAside::Values(left, right) => (left, right),
+                // Each endpoint reads against the words' point (#5099).
+                SetAside::AtPoint { words, from, to } => {
+                    let Some(point) =
+                        crate::words::point(self.arena, self.unfoldings.presentations(), words)
+                    else {
+                        return Ok(Convertibility::Distinct);
+                    };
+                    self.charge()?;
+                    pending.push(SetAside::Values(from, point));
+                    pending.push(SetAside::Values(to, point));
+                    continue;
+                },
+                SetAside::Decoded { .. } | SetAside::Codomains(_) => {
+                    return Ok(Convertibility::Distinct);
+                },
             };
             let mut read = [left, right];
             for side in &mut read {
