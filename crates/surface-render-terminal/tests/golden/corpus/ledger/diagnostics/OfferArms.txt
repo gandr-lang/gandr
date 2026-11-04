@@ -12,4 +12,5 @@ error[OfferArms]: `offer` must handle every label of its protocol exactly once
 7 │ │ }
   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `seat_arms_one_label_of_two` is refused with OfferArms, as its expectation states
+  ├ note: `seat_arms_one_label_of_two` is refused with OfferArms, as its expectation states
+  ╰ help: handle every label of the endpoint's protocol exactly once

@@ -8,4 +8,5 @@ error[NotAHandle]: `let x at w` opens a handle at a world, and this value is non
 39 │ │ }
    │ └─┘ checked against `() => Seat.Report`; while checking the body of this thunk
    │
-   ╰ note: `unhandled` is refused with NotAHandle, as its expectation states
+   ├ note: `unhandled` is refused with NotAHandle, as its expectation states
+   ╰ help: give `let x at w` a value that has a handle type

@@ -11,4 +11,5 @@ error[OpenedElsewhere]: `let x at w` opens a handle at the world it stands at; w
 40 │ │ }
    │ └─┘ checked against `Seat.Report at seat => Seat.Report`; while checking the body of this thunk
    │
-   ╰ note: `openedHere` is refused with OpenedElsewhere, as its expectation states
+   ├ note: `openedHere` is refused with OpenedElsewhere, as its expectation states
+   ╰ help: write the handle's own world after `at`

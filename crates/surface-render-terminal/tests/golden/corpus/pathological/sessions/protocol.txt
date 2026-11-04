@@ -47,7 +47,8 @@ error[OfferArms]: `offer` must handle every label of its protocol exactly once
 20 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `seat_arms_one_label_of_two` is refused with OfferArms, as its expectation states
+   ├ note: `seat_arms_one_label_of_two` is refused with OfferArms, as its expectation states
+   ╰ help: handle every label of the endpoint's protocol exactly once
 
 error[SessionMismatch]: the endpoint's protocol expects an offer here, not a close
    ╭▸ corpus/pathological/sessions/protocol.gandr:27:3
