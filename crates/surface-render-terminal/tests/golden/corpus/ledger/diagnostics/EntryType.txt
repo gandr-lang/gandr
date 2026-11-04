@@ -4,4 +4,5 @@ error[EntryType]: `main` is the program's entry; declare it `def main() -> -F In
 3 │ def main() -> -F String { return "done" }
   │     ━━━━ an entry of another type
   │
-  ╰ note: `main` is refused with EntryType, as its expectation states
+  ├ note: `main` is refused with EntryType, as its expectation states
+  ╰ help: give `main` an allowed entry signature

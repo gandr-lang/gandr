@@ -6,4 +6,5 @@ error[DuplicateSignature]: `x` is given a type twice
 4 │ def x : Unit ;
   │ ━━━━━━━━━━━━━━ written again here
   │
-  ╰ note: `x` is refused with DuplicateSignature, as its expectation states
+  ├ note: `x` is refused with DuplicateSignature, as its expectation states
+  ╰ help: write one type signature for the name

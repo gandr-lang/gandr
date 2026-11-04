@@ -7,4 +7,5 @@ error[DuplicateImportAlias]: two imports are both named `parse`
 4 │ import "file:///lib/list.gandr" as parse;
   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ written again here
   │
-  ╰ note: `import` is refused with DuplicateImportAlias, as its expectation states
+  ├ note: `import` is refused with DuplicateImportAlias, as its expectation states
+  ╰ help: rename one import alias

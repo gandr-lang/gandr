@@ -400,17 +400,20 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::WithoutK { .. } => {
             String::from("use the path through `Path.walk`, `Path.back`, `Path.step` or `Path.ap`")
         },
+        LoweringRefusal::DuplicateSignature { .. } => {
+            String::from("write one type signature for the name")
+        },
+        LoweringRefusal::DuplicateImportAlias { .. } => String::from("rename one import alias"),
+        LoweringRefusal::DuplicateAttribute { .. } => String::from("write the attribute only once"),
+        LoweringRefusal::EntryType { .. } => String::from("give `main` an allowed entry signature"),
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
-        | LoweringRefusal::DuplicateSignature { .. }
-        | LoweringRefusal::DuplicateImportAlias { .. }
         | LoweringRefusal::UnlockedDependency { .. }
         | LoweringRefusal::UnexportedName { .. }
         | LoweringRefusal::OutOfFragment { .. }
         | LoweringRefusal::GradedBridge { .. }
         | LoweringRefusal::MalformedLiteral { .. }
         | LoweringRefusal::NoUniverseAbove { .. }
-        | LoweringRefusal::DuplicateAttribute { .. }
         | LoweringRefusal::PartialField { .. }
         | LoweringRefusal::NotAFunctor { .. }
         | LoweringRefusal::NotAModel { .. }
@@ -419,7 +422,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::UnstatedComponent { .. }
         | LoweringRefusal::UndescribedMember { .. }
         | LoweringRefusal::ImplicitTelescope { .. }
-        | LoweringRefusal::EntryType { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
         | LoweringRefusal::Unreachable { .. }
         | LoweringRefusal::OutsideLoop { .. }
@@ -683,6 +685,14 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::PointwiseDistinct { .. } => {
             String::from("make both functions return the same value at every input")
         },
+        CheckRefusal::UaInequivalent {
+            defect: UaDefect::Cardinality { .. },
+            ..
+        } => String::from("give both descriptions the same number of generators at each corolla"),
+        CheckRefusal::UaInequivalent {
+            defect: UaDefect::Tables { .. },
+            ..
+        } => String::from("give each corolla exactly one translator on each side"),
         CheckRefusal::UaInequivalent {
             defect: UaDefect::NotNatural { .. },
             ..
@@ -1039,6 +1049,20 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             fault: CodataFault::ObservationLevel,
             ..
         } => String::from("lower each observation type to the codata declaration's universe"),
+        CheckRefusal::FamilyArgumentClassifier { .. } => {
+            String::from("give each type operator argument its parameter's kind")
+        },
+        CheckRefusal::CrossBlockReference { .. } => {
+            String::from("declare the referenced datatype before this datatype")
+        },
+        CheckRefusal::Codata {
+            fault: CodataFault::Undeclared,
+            ..
+        } => String::from("declare the codata type before naming it"),
+        CheckRefusal::Codata {
+            fault: CodataFault::WithoutObservations,
+            ..
+        } => String::from("declare at least one codata observation"),
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::Access { .. }
         | CheckRefusal::NotADataType(_)
@@ -1075,11 +1099,9 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::MachineInvariant
         | CheckRefusal::SortMismatch { .. }
         | CheckRefusal::FamilyArity { .. }
-        | CheckRefusal::FamilyArgumentClassifier { .. }
         | CheckRefusal::StaticLambdaArgument { .. }
         | CheckRefusal::StaticClassifierExpected { .. }
         | CheckRefusal::NonUniformOccurrence(_)
-        | CheckRefusal::CrossBlockReference { .. }
         | CheckRefusal::StageNotCarried { .. }
         | CheckRefusal::Linearity { .. }
         | CheckRefusal::Codata { .. }
@@ -1105,7 +1127,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 176] = [
+    const WORDED: [&str; 186] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1283,6 +1305,16 @@ mod tests
         "BoundaryUnrealised.Niche",
         "CapabilityOutsideAuthority",
         "CodataObservationLevel",
+        "CodataUndeclared",
+        "CodataWithoutObservations",
+        "CorollaCardinality",
+        "CorollaTables",
+        "CrossBlockReference",
+        "DuplicateAttribute",
+        "DuplicateImportAlias",
+        "DuplicateSignature",
+        "EntryType",
+        "FamilyArgumentClassifier",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

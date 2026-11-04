@@ -4,4 +4,5 @@ error[CorollaCardinality]: the two descriptions have different numbers of genera
 32 │ def uneven = ua[1, 4](Semi, Rig, #{.mul = widen}, #{.plus = narrow}) ;
    │              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ species of different sizes at a corolla
    │
-   ╰ note: `uneven` is refused with CorollaCardinality, as its expectation states
+   ├ note: `uneven` is refused with CorollaCardinality, as its expectation states
+   ╰ help: give both descriptions the same number of generators at each corolla

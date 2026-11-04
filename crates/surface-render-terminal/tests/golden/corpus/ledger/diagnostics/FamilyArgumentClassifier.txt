@@ -11,4 +11,5 @@ error[FamilyArgumentClassifier]: argument 0 of the type operator has the wrong k
   │           │   formed; while synthesising an argument of this type operator application
   │           formed; while forming the parts of this type
   │
-  ╰ note: `wrong` is refused with FamilyArgumentClassifier, as its expectation states
+  ├ note: `wrong` is refused with FamilyArgumentClassifier, as its expectation states
+  ╰ help: give each type operator argument its parameter's kind
