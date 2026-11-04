@@ -24,3 +24,4 @@ import "../../model/data/injective-index.gandr";
 @[ refuses("NonExhaustiveMatch") ]
 def absurdFin(i : Finite(Zero)) -> Integer =
   match i {}
+

@@ -22,5 +22,5 @@ module Tag : Model(Kit.Labelled) where
 def breadth = Kit.Tools.breadth;
 
 /// The label and the breadth, gathered.
-@[ runs("#{.breadth = 4, .label = \"tag\"}") ]
+@[ runs("*{.breadth = 4, .label = \"tag\"}") ]
 def labelled_breadth = *{label = Tag.label, breadth = breadth};

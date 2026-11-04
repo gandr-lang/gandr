@@ -25,9 +25,11 @@ import "../../model/data/vectors.gandr";
 /// zero, apart from `Succ(n)`, so the case leaves its arm out.
 def head[a : Type, n : Nat](v : Vec(a, Succ(n))) -> a =
   match v
-    VCons(_, h, _) => h
+    | VCons(_, h, _) => h
+
 
 /// The head of the vector two long. The solver does not take apart the `Succ`
 /// that `n` stands under in `head`'s parameter.
 @[ refuses("TypeMismatch") ]
 def firstOfPair() -> Integer { head (pair ()) }
+

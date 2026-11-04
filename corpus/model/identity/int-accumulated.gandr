@@ -19,5 +19,5 @@ def rec count(acc : Int, b : Int) -> Int =
     | P(x) => count[<] (P acc) x
 
 /// One and two by the accumulator: three.
-@[ runs("S(S(S(Z)))") ]
+@[ runs("S (S (S Z))") ]
 def accumulated : () -> Int = count (S Z) (S (S Z));

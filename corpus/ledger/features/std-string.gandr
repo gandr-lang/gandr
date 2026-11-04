@@ -8,5 +8,5 @@
 import std.string (concat, isEmpty);
 
 /// `named` joins a name to a greeting and asks whether the result is empty.
-@[ runs("+{.1 = unit}") ]
+@[ runs("+{.1 = *{}}") ]
 def named() -> Bool { isEmpty (concat "hello, " "ada") }

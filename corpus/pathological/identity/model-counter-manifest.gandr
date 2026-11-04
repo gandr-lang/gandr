@@ -49,7 +49,7 @@ def countsForReadings(m : Model(ReadCounter) with sort C = Integer) -> Model(Rea
 @[ refuses("TypeMismatch") ]
 def unshared(a : Model(Counter), b : Model(Counter), c : a.C) -> Integer =
   match b
-    *{.zero = z, .incr = i, .read = r} => r (i c)
+    | *{.zero = z, .incr = i, .read = r} => r (i c)
 
 /// A counter over the integers where one sharing counting up's counts is
 /// asked: counting up counts modulo three, not in the integers.
@@ -90,4 +90,4 @@ def rightApart(
   n : Model(Pairing) with sort A = Integer
 ) -> Integer =
   match n
-    *{.left = l, .right = r} => leftBeside m r
+    | *{.left = l, .right = r} => leftBeside m r

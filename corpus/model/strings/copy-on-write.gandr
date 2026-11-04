@@ -61,12 +61,12 @@ pub def push(s : Repr, b : Integer) -> Written =
 /// The buffers a write filled anew.
 pub def copies(w : Written) -> Integer =
   match w
-    Written(s, n) => n
+    | Written(s, n) => n
 
 /// The written string.
 pub def written(w : Written) -> Repr =
   match w
-    Written(s, n) => s
+    | Written(s, n) => s
 
 /// A long string, twenty-four bytes and the zero, held once. It is built by
 /// a loop, so it states `Partial`, and so does each run that forces it.

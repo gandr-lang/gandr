@@ -33,5 +33,5 @@ def note = Config.limits.hard.detail.note;
 def soft_limit = Config.limits.soft;
 
 /// The three gathered in a record, spelled by its labels in order.
-@[ runs("#{.hard = 100, .note = \"the innermost component\", .soft = 10}") ]
+@[ runs("*{.hard = 100, .note = \"the innermost component\", .soft = 10}") ]
 def limits = *{hard = hard_limit, soft = soft_limit, note = note};

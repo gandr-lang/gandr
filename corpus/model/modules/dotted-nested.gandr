@@ -25,5 +25,5 @@ module Net.Meter where
   def sibling = Wire.Core.gauge;
 
 /// Both readings.
-@[ runs("#{.shown = 3, .sibling = 3}") ]
+@[ runs("*{.shown = 3, .sibling = 3}") ]
 def readings = *{shown = Net.Meter.shown, sibling = Net.Meter.sibling};

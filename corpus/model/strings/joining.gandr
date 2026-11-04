@@ -26,9 +26,9 @@ def greeted() -> String { concat "hello, " "ada" }
 def paddedLeft() -> String { concat empty "ada" }
 
 /// `blank` asks whether the empty string joined to itself is empty.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def blank() -> Bool { isEmpty (concat empty empty) }
 
 /// `worded` asks whether a word is empty.
-@[ runs("+{.1 = unit}") ]
+@[ runs("+{.1 = *{}}") ]
 def worded() -> Bool { isEmpty "ada" }

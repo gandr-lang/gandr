@@ -29,7 +29,7 @@ import "../../model/effects/tree.gandr" ;
 /// unit. A read hands the initial state to what runs after, and a store runs
 /// what follows from the stored value.
 @[ checks ]
-def incrObserved() -> *{*{Unit, Integer} -> Type, Integer} -> Type =
+def incrObserved() -> ((Unit, Integer) -> Type, Integer) -> Type =
   handle st : StateLaws with sort S = Integer {
     let n = st.get ();
     st.put (n + 1);
@@ -50,7 +50,7 @@ def incrTree : Prog(Either(StateOp, Void), Unit) = Op (Left Get) (fun (n) {
 /// The observation as a fold of the tree.
 def rec wp(
   p : Prog(Either(StateOp, Void), Unit),
-  post : *{Unit, Integer} -> Type,
+  post : (Unit, Integer) -> Type,
   s : Integer
 ) -> Type =
   match p
@@ -81,7 +81,7 @@ def incrSpecified : *{
 @[ checks ]
 def incrSpecifiedEverywhere : *{
   m : Prog(Either(StateOp, Void), Unit),
-  meets : (post : *{Unit, Integer} -> Type, s : Integer, incrSpec(post, s)) -> wp(m, post, s)
+  meets : (post : (Unit, Integer) -> Type, s : Integer, incrSpec(post, s)) -> wp(m, post, s)
 } = *{incrTree, fun (post) { fun (s) { fun (h) { h } } }} ;
 
 /// The return specification: the postcondition at the unit and the initial

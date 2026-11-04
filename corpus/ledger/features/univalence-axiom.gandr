@@ -156,7 +156,7 @@ def uaBeta(
 
 /// `uaβ` run at the loops' record: a loop carried along `ua(winding)` runs to
 /// the record's map at it. The record's laws are carried, never run.
-@[ runs("S(Z)") ]
+@[ runs("S Z") ]
 def uaBetaRun() -> Int { Path.walk (fun (X) { X }) (ua winding) (loop) }
 
 /// A loop carried along the loops' path to the integers is its winding
@@ -169,5 +169,5 @@ def windingBeta(x : Path[.A = Circle](Base, Base)) -> Path[.A = Int](
   Path.here (wind x)
 
 /// A loop carried to the integers runs to its winding number.
-@[ runs("S(Z)") ]
+@[ runs("S Z") ]
 def windingRun() -> Int { Path.walk (fun (X) { X }) loopsAreIntegers (loop) }

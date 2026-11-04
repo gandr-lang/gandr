@@ -128,14 +128,14 @@ pub def relayout(
 pub def oneTwoThree : Tagged = TagCons 1i32 (TagCons 2i32 (TagCons 3i32 TagNil));
 
 /// One, two and three move to the packed layout as one pointer to two elements and the third inline.
-@[ runs("Many(1i32, 2i32, One(3i32))") ]
+@[ runs("Many 1i32 2i32 (One 3i32)") ]
 def moved() -> Packed { relayout taggedPath packedPath oneTwoThree }
 
 /// The tagged layout is the packed one, as types, through the list.
 pub def taggedIsPacked : Path[.A = Type](Tagged, Packed) = Path.step (Path.back taggedPath) packedPath;
 
 /// One, two and three move along the named composite as along the two admissions.
-@[ runs("Many(1i32, 2i32, One(3i32))") ]
+@[ runs("Many 1i32 2i32 (One 3i32)") ]
 def movedNamed() -> Packed { Path.walk (fun (X) { X }) taggedIsPacked oneTwoThree }
 
 /// The length of a list, written once over the list.

@@ -29,7 +29,7 @@ pub def refinedPred(n : Nat) -> (natOr(n)) -> Nat =
     | Succ(_m) => return fun (_u) { return Zero }
 
 /// Two's predecessor at zero's family runs to one.
-@[ runs("Succ(Zero)") ]
+@[ runs("Succ Zero") ]
 def predTwo() -> Nat =
   let pred = refinedPred Zero
   pred two
@@ -50,7 +50,7 @@ pub def occupied(c : UL) -> elL(c) -> Nat =
 def twoAlone : List(Nat) = Cons two Nil;
 
 /// The list that holds two has an entry, so the count is one.
-@[ runs("Succ(Zero)") ]
+@[ runs("Succ Zero") ]
 def twoOccupied() -> Nat =
   let entered = occupied (ListL NatL)
   entered twoAlone

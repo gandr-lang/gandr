@@ -4,4 +4,4 @@
 @[ refuses("UndecidedCoverage") ]
 def classify(n : Integer) -> -F Integer =
   match n
-    ?branch => return 1
+    | ?branch => return 1

@@ -52,22 +52,22 @@ def rec sum(xs : List(Nat)) -> Nat =
 /// so `nodes[<]` takes each child.
 def rec nodes(t : Bush) -> Nat =
   match t
-    Sprout(kids) => Succ (sum (map Bush Nat nodes[<] kids))
+    | Sprout(kids) => Succ (sum (map Bush Nat nodes[<] kids))
 
 /// A map over the tree: every node gains a childless node beside its
 /// children, each child grown through `map` at its stage.
 def rec grow(t : Bush) -> Bush =
   match t
-    Sprout(kids) => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List(Bush))
+    | Sprout(kids) => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List(Bush))
 
 /// The shrub's three nodes, its children counted through `map` at the
 /// children's type.
-@[ runs("Succ(Succ(Succ(Zero)))") ]
+@[ runs("Succ (Succ (Succ Zero))") ]
 def shrub_nodes : () -> Nat = nodes shrub;
 
 /// The shrub grown, then counted: the root gains a childless node and each
 /// of its two children gains one, six nodes in all.
-@[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
+@[ runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))") ]
 def grown_nodes : () -> Nat = nodes (grow shrub);
 
 /// The tree and its forest, one block: each family names the other, and
@@ -90,7 +90,7 @@ rec {
   @[ checks ]
   def rec treeSize(t : Rose) -> Nat {
     match t
-      Node(kids) => { let s = forestSize[<] kids; Succ s }
+      | Node(kids) => { let s = forestSize[<] kids; Succ s }
   }
 
   /// The nodes of a forest: each tree's, summed.
@@ -108,11 +108,11 @@ def leaf : Rose = Node Empty;
 def sapling : Rose = Node (More leaf (More leaf Empty));
 
 /// The sapling's three nodes.
-@[ runs("Succ(Succ(Succ(Zero)))") ]
+@[ runs("Succ (Succ (Succ Zero))") ]
 def sapling_nodes : () -> Nat = treeSize sapling;
 
 /// A forest of a sapling and a leaf: four nodes.
-@[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
+@[ runs("Succ (Succ (Succ (Succ Zero)))") ]
 def forested : () -> Nat = forestSize (More sapling (More leaf Empty));
 
 /// Two measures that pass a weight to each other unchanged, one block. Each
@@ -122,7 +122,7 @@ rec {
   @[ checks ]
   def rec treeWeight(t : Rose, k : Nat) -> Nat {
     match t
-      Node(kids) => plus k (forestWeight[<] kids k)
+      | Node(kids) => plus k (forestWeight[<] kids k)
   }
 
   /// The nodes of a forest, each weighing `k`.
@@ -134,5 +134,5 @@ rec {
 }
 
 /// The sapling's three nodes, each weighing two.
-@[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
+@[ runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))") ]
 def sapling_weight : () -> Nat = treeWeight sapling (Succ (Succ Zero));

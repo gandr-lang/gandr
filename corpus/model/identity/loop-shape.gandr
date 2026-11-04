@@ -55,7 +55,7 @@ pub module Winding : Model(CircleShape) where {
   def unturnTurn(n : Int) -> Path[.A = Int](unturn (turn n), n) =
     Path.here n
 
-  @[ runs("S(S(Z))") ]
+  @[ runs("S (S Z)") ]
   def wound() -> Int =
     turn (turn base)
 }

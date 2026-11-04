@@ -87,5 +87,5 @@ data NatAssoc : Type where {
 }
 
 /// One plus one, plus one, runs to three.
-@[ runs("Succ(Succ(Succ(Zero)))") ]
+@[ runs("Succ (Succ (Succ Zero))") ]
 def three() -> NatAssoc { add (add (Succ Zero) (Succ Zero)) (Succ Zero) }

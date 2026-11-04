@@ -42,5 +42,5 @@ def rec chainLength(c : Chain) -> Nat =
 def judged : () -> Two = judge twice;
 
 /// The chain's two links.
-@[ runs("Succ(Succ(Zero))") ]
+@[ runs("Succ (Succ Zero)") ]
 def measured : () -> Nat = chainLength twice;

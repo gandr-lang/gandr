@@ -130,7 +130,7 @@ pub module Standard : Model(CwF) where
 def flags(_n : Integer) -> Type { return Bool }
 
 /// The newest variable reads the second point of a pair.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def newest() -> Bool =
   let read = Standard.q (Integer) flags
   read (3, true)

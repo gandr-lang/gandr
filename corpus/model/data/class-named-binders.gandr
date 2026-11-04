@@ -13,19 +13,19 @@ data Wrap : Type where
 @[ runs("7") ]
 def unwrapped() -> Integer =
   match (Wrapped 7 : Wrap)
-    Wrapped(number) => number
+    | Wrapped(number) => number
 
 /// The wrapped integer, bound by a binder named `constructor`.
 @[ runs("8") ]
 def constructed() -> Integer =
   match (Wrapped 8 : Wrap)
-    Wrapped(constructor) => constructor
+    | Wrapped(constructor) => constructor
 
 /// The wrapped integer, bound by a binder named `character`.
 @[ runs("9") ]
 def charactered() -> Integer =
   match (Wrapped 9 : Wrap)
-    Wrapped(character) => character
+    | Wrapped(character) => character
 
 /// A literal pattern beside a catch-all binder named `number`: the literal
 /// still reads as a number, the binder as a name.

@@ -26,25 +26,25 @@ module EqPoint : Model(Eq) with sort Carrier = Point where {
 }
 
 /// Two integers alike.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def sameCount() -> Bool { 3 == 3 }
 
 /// One integer below another.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def fewer() -> Bool { 2 < 3 }
 
 /// Two names alike.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def sameLabel() -> Bool { "here" == "here" }
 
 /// One name below another.
-@[ runs("+{.1 = unit}") ]
+@[ runs("+{.1 = *{}}") ]
 def laterLabel() -> Bool { "there" < "here" }
 
 /// Two points alike, through the derived member.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def samePlace() -> Bool { Point 1 2 == Point 1 2 }
 
 /// Two points apart in one coordinate.
-@[ runs("+{.1 = unit}") ]
+@[ runs("+{.1 = *{}}") ]
 def movedPlace() -> Bool { Point 1 2 == Point 1 3 }

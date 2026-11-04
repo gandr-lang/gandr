@@ -37,7 +37,7 @@ def sumBeta : Path[.A = Unit + Int](
 ) = Path.here (+{.1 = S Z});
 
 /// An injection carried along the loops' path carries its payload, by a run.
-@[ runs("+{.1 = S(Z)}") ]
+@[ runs("+{.1 = S Z}") ]
 def sumRun() -> Unit + Int { Path.walk (fun (X) { type(Unit + X) }) (ua winding) (+{.1 = loop}) }
 
 /// A list carried along the loops' path carries every cell, by conversion.
@@ -47,5 +47,5 @@ def listBeta : Path[.A = List(Int)](
 ) = Path.here (cons (S Z) nil);
 
 /// A list carried along the loops' path carries every cell, by a run.
-@[ runs("cons(S(Z), nil)") ]
+@[ runs("cons (S Z) nil") ]
 def listRun() -> List(Int) { Path.walk (fun (X) { List X }) (ua winding) (cons (loop) nil) }

@@ -5,4 +5,4 @@ data Maybe(a : Type) : Type where
 @[ refuses("NonExhaustiveMatch") ]
 def unwrap() -> -F Integer =
   match (None : Maybe(Integer))
-    Some(x) => return x
+    | Some(x) => return x

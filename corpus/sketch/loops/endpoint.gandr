@@ -19,7 +19,7 @@ type Reports = mu open. &{report : ?Integer. open, retire : ?Integer. end};
 def follow(operator : Reports) -> Unit =
   loop over (operator : Reports) {
     offer(operator) {
-      report => { recv(operator) as next; continue },
+      | report => { recv(operator) as next; continue },
       retire => { recv(operator) as last; close(operator); break }
     }
   }
@@ -30,7 +30,7 @@ def tally(operator : Reports) -> Integer =
   var seen = 0
   loop over (operator : Reports) {
     offer(operator) {
-      report => { recv(operator) as next; seen += 1; continue },
+      | report => { recv(operator) as next; seen += 1; continue },
       retire => { recv(operator) as last; close(operator); break }
     }
   }

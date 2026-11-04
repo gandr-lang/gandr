@@ -23,7 +23,7 @@ pub def around(c : Words) -> Words =
   Loop c
 
 /// A run returns the word it builds.
-@[ runs("Loop(Loop(Nil))") ]
+@[ runs("Loop (Loop Nil)") ]
 def built() -> Words { around (Loop Nil) }
 
 /// Conversion reads a word by its normal form: a cancelled loop is a loop.
@@ -65,7 +65,7 @@ def rec mirror(c : Words) -> Words =
     | Unloop(x) => Loop (mirror[<] x)
 
 /// The mirror of a loop is its inverse.
-@[ runs("Unloop(Nil)") ]
+@[ runs("Unloop Nil") ]
 def mirrored() -> Words { mirror (Loop Nil) }
 
 /// Conversion runs an admitted fold at a closed word. Read by its normal

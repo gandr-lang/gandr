@@ -28,11 +28,11 @@ data NatUnits : Type where {
 def zero_plus_zero() -> NatUnits { add Zero Zero }
 
 /// One plus zero, where the right unit overlaps the recursion.
-@[ runs("Succ(Zero)") ]
+@[ runs("Succ Zero") ]
 def one_plus_zero() -> NatUnits { add (Succ Zero) Zero }
 
 /// Two plus one, by the recursion alone.
-@[ runs("Succ(Succ(Succ(Zero)))") ]
+@[ runs("Succ (Succ (Succ Zero))") ]
 def two_plus_one_overlapping() -> NatUnits { add (Succ (Succ Zero)) (Succ Zero) }
 
 /// A semigroup's one law: associativity overlaps itself at

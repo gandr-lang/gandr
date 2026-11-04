@@ -23,14 +23,14 @@ def atMost[g : Model(Graded)](a : g.Carrier, b : g.Carrier) -> Bool =
   if g.below a b { true } else { g.eq a b }
 
 /// A grade is at most itself, by the equality `GradeInteger` includes.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def reflexive() -> Bool { atMost 3 3 }
 
 /// A higher grade is not at most a lower one.
-@[ runs("+{.1 = unit}") ]
+@[ runs("+{.1 = *{}}") ]
 def descending() -> Bool { atMost 4 3 }
 
 /// Equality at the integers: `EqInteger` and `GradeInteger` both answer, as
 /// one elaboration.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def gradesEqual() -> Bool { 3 == 3 }

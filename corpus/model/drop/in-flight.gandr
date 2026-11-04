@@ -15,7 +15,7 @@ import std.process;
 
 /// A read submitted and its completion abandoned in flight: the clause
 /// abandons the rest that would reap it.
-@[ runs("unit") ]
+@[ runs("*{}") ]
 def inFlight() -> Unit =
   handle c : std.process.Exit.Eff {
     let ring = fork (kernel : Ring.Submission) {

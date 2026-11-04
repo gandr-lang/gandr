@@ -39,7 +39,7 @@ def built(a : Integer) -> List(Integer) =
 
 /// An abandoned access whose unwind reads a list the scope reads again after:
 /// the unwind and the rest of the scope each hold the list.
-@[ runs("cons(9, cons(1, cons(2, nil)))") ]
+@[ runs("cons 9 (cons 1 (cons 2 nil))") ]
 def unwound_kept() -> List(Integer) =
   let ys = built 1
   var x = 1

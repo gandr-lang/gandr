@@ -114,13 +114,13 @@ def pureAt(p : Prog(Void, Outcome(Integer))) -> Outcome(Integer) =
 
 /// Exceptions peeled, then state from four, then nothing left: the second
 /// read sees the stored five.
-@[ runs("Returned(50)") ]
+@[ runs("Returned 50") ]
 def handled() -> Outcome(Integer) =
   let p = runExnAt guarded
   pureAt (runStateAt p 4)
 
 /// The raise ends the program with the state it read.
-@[ runs("Raised(4)") ]
+@[ runs("Raised 4") ]
 def handledRaise() -> Outcome(Integer) =
   let p = runExnAt raising
   pureAt (runStateAt p 4)

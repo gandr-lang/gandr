@@ -64,7 +64,7 @@ pub def rest(
   v : args(d, (SigmaC(a, f) : IR(d)), x, t)
 ) -> Unit =
   match v
-    MkSig(y, r) => keep d (f y) x t r
+    | MkSig(y, r) => keep d (f y) x t r
 
 /// Opens the arguments of a delta code. The rest has the arguments of the
 /// code that the first field's decodes pick.
@@ -78,4 +78,4 @@ pub def restDelta(
   v : args(d, (DeltaC(a, f) : IR(d)), x, t)
 ) -> Unit =
   match v
-    MkSig(h, r) => keep d (f (thunk { fun (z) { t (h z) } })) x t r
+    | MkSig(h, r) => keep d (f (thunk { fun (z) { t (h z) } })) x t r

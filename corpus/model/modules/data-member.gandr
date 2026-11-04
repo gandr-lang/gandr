@@ -28,7 +28,7 @@ def three : M.Box = M.Box.B 3;
 
 /// The number a box holds, matched through the module.
 def open(b : M.Box) -> Integer =
-  match b { M.B(x) => x }
+  match b { | M.B(x) => x }
 
 /// A box built and opened through the module.
 @[ runs("5") ]

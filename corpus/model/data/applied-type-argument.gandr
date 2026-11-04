@@ -12,7 +12,7 @@ data Parcel(a : Type) : Type where
 /// The value a parcel holds, at the type given first.
 def unwrap(a : Type, p : Parcel(a)) -> a =
   match p
-    Enclosed(x) => x
+    | Enclosed(x) => x
 
 /// A parcel of an integer opened at a bare type.
 @[ runs("1") ]
@@ -20,7 +20,7 @@ def openedBare() -> Integer { unwrap (Integer) (Enclosed 1 : Parcel(Integer)) }
 
 /// A parcel of a parcel opened at the applied type `Parcel(Integer)`: the
 /// argument is the type, never a constructor applied to nothing.
-@[ runs("Enclosed(1)") ]
+@[ runs("Enclosed 1") ]
 def openedApplied() -> Parcel(Integer) =
   unwrap (Parcel (Integer)) (Enclosed (Enclosed 1 : Parcel(Integer)) : Parcel(Parcel(Integer)))
 

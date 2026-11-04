@@ -12,7 +12,7 @@ import "../../model/include/reduct.gandr";
 /// this answers zero.
 def absorbs(z : Model(LeftZero)) -> Integer =
   match z
-    *{.zero = o} => 0
+    | *{.zero = o} => 0
 
 /// The manifest monoid where a left zero is asked: the monoid includes no
 /// zero, so no map puts its carrier back and restricts to one.

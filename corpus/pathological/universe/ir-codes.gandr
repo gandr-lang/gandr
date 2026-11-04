@@ -27,9 +27,9 @@ def rec decodeArgs(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), v : args(d
   match c
     | Iota(e) => e
     | SigmaC(a, f) => match v
-      MkSig(y, r) => decodeArgs[<] d (f y) x t r
+      | MkSig(y, r) => decodeArgs[<] d (f y) x t r
     | DeltaC(a, f) => match v
-      MkSig(h, r) => decodeArgs[<] d (f (thunk { fun (z) { t (h z) } })) x t r
+      | MkSig(h, r) => decodeArgs[<] d (f (thunk { fun (z) { t (h z) } })) x t r
 
 /// The family a code defines, and its decoder, in one block.
 rec {
@@ -45,5 +45,5 @@ rec {
   @[ refuses("StageNotBelow") ]
   def rec decodeMu(d : Type, c : IR(d), m : Mu(d, c)) -> d =
     match m
-      In(v) => decodeArgs d c (Mu d c) (thunk { fun (n) { decodeMu[<] d c n } }) v
+      | In(v) => decodeArgs d c (Mu d c) (thunk { fun (n) { decodeMu[<] d c n } }) v
 }

@@ -38,11 +38,11 @@ def presentedOps() -> Integer =
     | _ => 0
 
 /// `App` builds a `Bruijn`.
-@[ runs("App(Ix(0), Ix(1))") ]
+@[ runs("App (Ix 0) (Ix 1)") ]
 def applied() -> Bruijn { App (Ix 0) (Ix 1) }
 
 /// `Sort` matches a `Kind`.
 @[ runs("1") ]
 def sorted() -> Integer =
   match Sort
-    Sort => 1
+    | Sort => 1

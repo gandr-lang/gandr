@@ -33,7 +33,7 @@ def report(note : String, seat : !String. end) -> Unit =
   close(seat)
 
 /// A fork's child that hands its end to `finish`, which closes it.
-@[ runs("unit") ]
+@[ runs("*{}") ]
 def handed() -> Unit =
   let desk = fork (seat : end) { finish seat };
   close(desk)
@@ -48,7 +48,7 @@ def asked() -> Integer =
   answer desk
 
 /// The parent hands its end to `report` beside a note, which the child takes.
-@[ runs("unit") ]
+@[ runs("*{}") ]
 def reported() -> Unit =
   let desk = fork (seat : ?String. end) {
     let note = recv(seat);

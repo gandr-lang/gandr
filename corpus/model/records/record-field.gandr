@@ -7,7 +7,7 @@
 def nest = *{tag = "t", inner = *{x = 1, y = 2}};
 
 /// The field `inner` of `nest`, a record.
-@[ runs("#{.x = 1, .y = 2}") ]
+@[ runs("*{.x = 1, .y = 2}") ]
 def innerOf() -> *{x : Integer, y : Integer} { nest.inner }
 
 /// A field of a field: the inner projection runs, and the outer one reads

@@ -8,4 +8,4 @@ data Color : Type where
 @[ refuses("UndecidedCoverage") ]
 def classify(c : Color) -> -F Integer =
   match c
-    ?branch => 1
+    | ?branch => 1

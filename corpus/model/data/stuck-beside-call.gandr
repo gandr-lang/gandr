@@ -24,7 +24,7 @@ pub def rec walk(t : Nat, c : Nat) -> Nat =
 
 /// Two walked from zero: a successor per step over the accumulator `succ`
 /// raised once per step.
-@[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
+@[ runs("Succ (Succ (Succ (Succ Zero)))") ]
 def walkedTwo : () -> Nat = walk two Zero;
 
 /// One step at a variable.

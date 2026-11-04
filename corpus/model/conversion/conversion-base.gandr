@@ -29,7 +29,7 @@ pub def rec monus(n : Nat, m : Nat) -> Nat =
       | Succ(q) => q
 
 /// Four.
-@[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
+@[ runs("Succ (Succ (Succ (Succ Zero)))") ]
 pub def four : Nat = Succ three;
 
 /// Eight.

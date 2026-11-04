@@ -9,5 +9,5 @@ def asked() -> -F Integer =
   handle c : std.process.Exit.Eff {
     pure 1
   } with {
-    pure(x) => pure x
+    | pure(x) => pure x
   }

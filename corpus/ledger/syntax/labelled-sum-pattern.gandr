@@ -2,4 +2,4 @@
 @[ checks ]
 def unwrap(v : +{only : Integer}) -> -F Integer =
   match v
-    +{.only = n} => return n
+    | +{.only = n} => return n

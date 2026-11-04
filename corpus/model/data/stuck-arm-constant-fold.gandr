@@ -27,7 +27,7 @@ def rec wp(e : E, k : Out -> Type) -> Type =
   match e
     | Get => return type(*{w : Nat, post : k(Ends(w))})
     | Br(a, m) => wp[<] a (fun (o) { match o {
-      Ends(v) => match v
+      | Ends(v) => match v
         | Zero => return Void
         | Succ(_x) => wp[<] m k
     } })

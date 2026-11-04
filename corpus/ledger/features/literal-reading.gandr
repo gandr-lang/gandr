@@ -16,14 +16,14 @@ module ExprFromNat : Model(FromNat) with sort Carrier = Expr where
   def fromNat(n : Integer) -> Expr { Lit n }
 
 /// Each literal is read as a leaf where an expression is asked.
-@[ runs("Add(Lit(1), Lit(2))") ]
+@[ runs("Add (Lit 1) (Lit 2)") ]
 def sum() -> Expr { Add 1 2 }
 
 /// An expression doubled.
 def twice(e : Expr) -> Expr { Add e e }
 
 /// An argument is read at its parameter's type.
-@[ runs("Add(Lit(3), Lit(3))") ]
+@[ runs("Add (Lit 3) (Lit 3)") ]
 def doubled() -> Expr { twice 3 }
 
 /// A literal at `Integer` is the literal itself, with no reader applied.
@@ -36,7 +36,7 @@ module ExprFromNeg : Model(FromNeg) with sort Carrier = Expr where
   def fromNeg(n : Integer) -> Expr { Lit (0 - n) }
 
 /// `-2` is one negative literal, read through `fromNeg` at its magnitude.
-@[ runs("Add(Lit(1), Lit(-2))") ]
+@[ runs("Add (Lit 1) (Lit -2)") ]
 def difference() -> Expr { Add 1 (- 2) }
 
 /// A negative literal at `Integer` stays the literal, even in a value definition.
@@ -49,7 +49,7 @@ module ExprFromDecimal : Model(FromDecimal) with sort Carrier = Expr where
   def fromDecimal(mantissa : Integer, exponent : Integer) -> Expr { Add (Lit mantissa) (Lit exponent) }
 
 /// `fromDecimal` reads `1.25` at its exact digits and exponent.
-@[ runs("Add(Lit(1), Add(Lit(125), Lit(-2)))") ]
+@[ runs("Add (Lit 1) (Add (Lit 125) (Lit -2))") ]
 def scaled() -> Expr { Add 1 1.25 }
 
 /// A decimal at `f64` stays the float it rounds to, with no reader applied.

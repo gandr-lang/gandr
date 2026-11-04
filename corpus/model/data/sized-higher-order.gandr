@@ -50,7 +50,7 @@ def rec helped(n : Nat) -> Nat =
     | Succ(p) => Succ (applyAt helped[<] p)
 
 /// Two rebuilt through `applyAt`.
-@[ runs("Succ(Succ(Zero))") ]
+@[ runs("Succ (Succ Zero)") ]
 def helpedTwo : () -> Nat = helped (Succ (Succ Zero));
 
 /// The predecessor of a number at a stage `i`, zero's its own: the result
@@ -70,7 +70,7 @@ def rec halvedAt(n : Nat) -> Nat =
     | Succ(p) => { let q = predAt p; Succ (halvedAt[<] q) }
 
 /// Half of four: two.
-@[ runs("Succ(Succ(Zero))") ]
+@[ runs("Succ (Succ Zero)") ]
 def halvedAtFour : () -> Nat = halvedAt (Succ three);
 
 /// A number below a stage `j` handed back, the stage `k` it stands at bounded
@@ -90,7 +90,7 @@ def rec boundedHelped(n : Nat) -> Nat =
     | Succ(p) => { let q = boundedAt n p; Succ (boundedHelped[<] q) }
 
 /// Two rebuilt through `boundedAt`.
-@[ runs("Succ(Succ(Zero))") ]
+@[ runs("Succ (Succ Zero)") ]
 def boundedTwo : () -> Nat = boundedHelped (Succ (Succ Zero));
 
 /// A function applied to a number at a stage `i` itself, not below it.
@@ -109,7 +109,7 @@ def rec agreed(n : Nat) -> Nat =
     | Succ(p) => Succ (sameAt agreed[<] p)
 
 /// Two rebuilt through `sameAt`.
-@[ runs("Succ(Succ(Zero))") ]
+@[ runs("Succ (Succ Zero)") ]
 def agreedTwo : () -> Nat = agreed (Succ (Succ Zero));
 
 /// A function applied to a number below a stage `j` through `applyAt`, its
@@ -122,7 +122,7 @@ def appliedAt[j : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> Nat =
 /// A function and a number below a stage `j`, handed to a third function
 /// that applies the one to the other.
 def handedAt[j : Size](
-  g : *{Nat[< j] -> Nat, Nat[< j]} -> Nat,
+  g : (Nat[< j] -> Nat, Nat[< j]) -> Nat,
   f : Nat[< j] -> Nat,
   x : Nat[< j]
 ) -> Nat =

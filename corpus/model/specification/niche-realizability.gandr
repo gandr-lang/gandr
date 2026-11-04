@@ -94,17 +94,17 @@ pub def pointsToAt(l : Nat, v : Nat) -> Heap -> Type =
   return fun (h) { pointsTo l v h }
 
 /// `T`'s realisers at the word `v`, as a predicate on heaps.
-pub def realisedAt(vt : *{Nat, Heap} -> Type, v : Nat) -> Heap -> Type =
+pub def realisedAt(vt : (Nat, Heap) -> Type, v : Nat) -> Heap -> Type =
   return fun (h) { vt v h }
 
 /// A reference to a `T`: a non-null word whose cell holds a realiser of `T`.
-pub def vRef(vt : *{Nat, Heap} -> Type, w : Nat, h : Heap) -> Type =
+pub def vRef(vt : (Nat, Heap) -> Type, w : Nat, h : Heap) -> Type =
   match w
     | Zero => return Void
     | Succ(_n) => return type(*{v : Nat, cell : star(pointsToAt(w, v), realisedAt(vt, v), h)})
 
 /// The null niche: null, owning nothing, or a reference.
-pub def vOpt(vt : *{Nat, Heap} -> Type, w : Nat, h : Heap) -> Type =
+pub def vOpt(vt : (Nat, Heap) -> Type, w : Nat, h : Heap) -> Type =
   match w
     | Zero => emp h
     | Succ(_n) => vRef vt w h
@@ -115,7 +115,7 @@ pub data Tagged : Type where
 
 /// The tagged layout: tag zero with a null payload, owning nothing, or tag
 /// one with a reference.
-pub def vTag(vt : *{Nat, Heap} -> Type, r : Tagged, h : Heap) -> Type =
+pub def vTag(vt : (Nat, Heap) -> Type, r : Tagged, h : Heap) -> Type =
   match r
     | Tag(t, p) => match t
       | Zero => match p
@@ -139,7 +139,7 @@ pub def toOpt(r : Tagged) -> Nat =
       | Succ(_s) => p
 
 /// `{V_opt(w)} fromOpt(w) {V_tag}`.
-def fromOptMeets(vt : *{Nat, Heap} -> Type, w : Nat, h : Heap) -> (vOpt(vt, w, h)) -> vTag(
+def fromOptMeets(vt : (Nat, Heap) -> Type, w : Nat, h : Heap) -> (vOpt(vt, w, h)) -> vTag(
   vt,
   fromOpt(w),
   h
@@ -151,7 +151,7 @@ def fromOptMeets(vt : *{Nat, Heap} -> Type, w : Nat, h : Heap) -> (vOpt(vt, w, h
     | Succ(_n) => return fun (r) { r }
 
 /// The tag-zero half of `toOptMeets`: a null payload owning nothing.
-def toOptNone(vt : *{Nat, Heap} -> Type, p : Nat, h : Heap) -> (vTag(vt, Tag(Zero, p), h)) -> vOpt(
+def toOptNone(vt : (Nat, Heap) -> Type, p : Nat, h : Heap) -> (vTag(vt, Tag(Zero, p), h)) -> vOpt(
   vt,
   toOpt(Tag(Zero, p)),
   h
@@ -163,7 +163,7 @@ def toOptNone(vt : *{Nat, Heap} -> Type, p : Nat, h : Heap) -> (vTag(vt, Tag(Zer
     | Succ(_n) => return fun (none) { match (none : Void) {} }
 
 /// The tag-one half of `toOptMeets`: a reference, never null.
-def toOptSome(vt : *{Nat, Heap} -> Type, s : Nat, p : Nat, h : Heap) -> (vTag(
+def toOptSome(vt : (Nat, Heap) -> Type, s : Nat, p : Nat, h : Heap) -> (vTag(
   vt,
   Tag(Succ(s), p),
   h
@@ -175,7 +175,7 @@ def toOptSome(vt : *{Nat, Heap} -> Type, s : Nat, p : Nat, h : Heap) -> (vTag(
     | Succ(_n) => return fun (none) { match (none : Void) {} }
 
 /// `toOptMeets` at a written pair, by its tag.
-def toOptAt(vt : *{Nat, Heap} -> Type, t : Nat, p : Nat, h : Heap) -> vTag(
+def toOptAt(vt : (Nat, Heap) -> Type, t : Nat, p : Nat, h : Heap) -> vTag(
   vt,
   Tag(t, p),
   h
@@ -185,7 +185,7 @@ def toOptAt(vt : *{Nat, Heap} -> Type, t : Nat, p : Nat, h : Heap) -> vTag(
     | Succ(s) => toOptSome vt s p h
 
 /// `{V_tag(r)} toOpt(r) {V_opt}`.
-def toOptMeets(vt : *{Nat, Heap} -> Type, r : Tagged, h : Heap) -> vTag(vt, r, h) -> vOpt(
+def toOptMeets(vt : (Nat, Heap) -> Type, r : Tagged, h : Heap) -> vTag(vt, r, h) -> vOpt(
   vt,
   toOpt(r),
   h
@@ -195,7 +195,7 @@ def toOptMeets(vt : *{Nat, Heap} -> Type, r : Tagged, h : Heap) -> vTag(vt, r, h
 
 /// A niche realiser marshalled: the pair `fromOpt` answers, with the
 /// evidence `fromOptMeets` carries to it.
-def marshalled(vt : *{Nat, Heap} -> Type, h : Heap, w : Nat) -> (vOpt(vt, w, h)) -> *{
+def marshalled(vt : (Nat, Heap) -> Type, h : Heap, w : Nat) -> (vOpt(vt, w, h)) -> *{
   r : Tagged,
   ok : vTag(vt, r, h)
 } =
@@ -218,7 +218,7 @@ def marshalled(vt : *{Nat, Heap} -> Type, h : Heap, w : Nat) -> (vOpt(vt, w, h))
     }
 
 /// The tag-zero half of `unmarshalled`: the null word.
-def unmarshalledNone(vt : *{Nat, Heap} -> Type, h : Heap, p : Nat) -> (vTag(
+def unmarshalledNone(vt : (Nat, Heap) -> Type, h : Heap, p : Nat) -> (vTag(
   vt,
   Tag(Zero, p),
   h
@@ -238,7 +238,7 @@ def unmarshalledNone(vt : *{Nat, Heap} -> Type, h : Heap, p : Nat) -> (vTag(
     | Succ(_n) => return fun (none) { match (none : Void) {} }
 
 /// The tag-one half of `unmarshalled`: the reference itself.
-def unmarshalledSome(vt : *{Nat, Heap} -> Type, h : Heap, s : Nat, p : Nat) -> (vTag(
+def unmarshalledSome(vt : (Nat, Heap) -> Type, h : Heap, s : Nat, p : Nat) -> (vTag(
   vt,
   Tag(Succ(s), p),
   h
@@ -254,7 +254,7 @@ def unmarshalledSome(vt : *{Nat, Heap} -> Type, h : Heap, s : Nat, p : Nat) -> (
     | Succ(_n) => return fun (none) { match (none : Void) {} }
 
 /// `unmarshalled` at a written pair, by its tag.
-def unmarshalledAt(vt : *{Nat, Heap} -> Type, h : Heap, t : Nat, p : Nat) -> vTag(
+def unmarshalledAt(vt : (Nat, Heap) -> Type, h : Heap, t : Nat, p : Nat) -> vTag(
   vt,
   Tag(t, p),
   h
@@ -265,7 +265,7 @@ def unmarshalledAt(vt : *{Nat, Heap} -> Type, h : Heap, t : Nat, p : Nat) -> vTa
 
 /// A tagged realiser marshalled back: the word `toOpt` answers, with the
 /// evidence `toOptMeets` carries to it.
-def unmarshalled(vt : *{Nat, Heap} -> Type, h : Heap, r : Tagged) -> vTag(vt, r, h) -> *{
+def unmarshalled(vt : (Nat, Heap) -> Type, h : Heap, r : Tagged) -> vTag(vt, r, h) -> *{
   w : Nat,
   ok : vOpt(vt, w, h)
 } =
@@ -273,7 +273,7 @@ def unmarshalled(vt : *{Nat, Heap} -> Type, h : Heap, r : Tagged) -> vTag(vt, r,
     | Tag(t, p) => unmarshalledAt vt h t p
 
 /// The niche layout's realisers to the tagged layout's.
-def toTagged(vt : *{Nat, Heap} -> Type, h : Heap, x : *{w : Nat, ok : vOpt(vt, w, h)}) -> *{
+def toTagged(vt : (Nat, Heap) -> Type, h : Heap, x : *{w : Nat, ok : vOpt(vt, w, h)}) -> *{
   r : Tagged,
   ok : vTag(vt, r, h)
 } =
@@ -284,7 +284,7 @@ def toTagged(vt : *{Nat, Heap} -> Type, h : Heap, x : *{w : Nat, ok : vOpt(vt, w
     }
 
 /// The tagged layout's realisers to the niche layout's.
-def fromTagged(vt : *{Nat, Heap} -> Type, h : Heap, y : *{r : Tagged, ok : vTag(vt, r, h)}) -> *{
+def fromTagged(vt : (Nat, Heap) -> Type, h : Heap, y : *{r : Tagged, ok : vTag(vt, r, h)}) -> *{
   w : Nat,
   ok : vOpt(vt, w, h)
 } =
@@ -320,7 +320,7 @@ def nicheSect(vt : *{Nat, Heap} -> Type, h : Heap, x : *{w : Nat, ok : vOpt(vt, 
     }
 
 /// The tag-zero half of `retrTagged`.
-def retrNone(vt : *{Nat, Heap} -> Type, h : Heap, p : Nat) -> (ok : vTag(
+def retrNone(vt : (Nat, Heap) -> Type, h : Heap, p : Nat) -> (ok : vTag(
   vt,
   Tag(Zero, p),
   h
@@ -335,7 +335,7 @@ def retrNone(vt : *{Nat, Heap} -> Type, h : Heap, p : Nat) -> (ok : vTag(
     | Succ(_n) => return fun (none) { match (none : Void) {} }
 
 /// The tag-one half of `retrTagged`.
-def retrSome(vt : *{Nat, Heap} -> Type, h : Heap, s : Nat, p : Nat) -> (ok : vTag(
+def retrSome(vt : (Nat, Heap) -> Type, h : Heap, s : Nat, p : Nat) -> (ok : vTag(
   vt,
   Tag(Succ(s), p),
   h
@@ -350,7 +350,7 @@ def retrSome(vt : *{Nat, Heap} -> Type, h : Heap, s : Nat, p : Nat) -> (ok : vTa
     | Succ(_n) => return fun (none) { match (none : Void) {} }
 
 /// `retrTagged` at a written pair, by its tag.
-def retrAt(vt : *{Nat, Heap} -> Type, h : Heap, t : Nat, p : Nat) -> (ok : vTag(
+def retrAt(vt : (Nat, Heap) -> Type, h : Heap, t : Nat, p : Nat) -> (ok : vTag(
   vt,
   Tag(t, p),
   h
@@ -387,7 +387,7 @@ def taggedRetr(vt : *{Nat, Heap} -> Type, h : Heap, y : *{r : Tagged, ok : vTag(
 
 /// The two layouts' realisers are isomorphic at every heap: the
 /// marshaller and its inverse, with both round trips.
-pub def nicheTagged(vt : *{Nat, Heap} -> Type, h : Heap) -> *{w : Nat, ok : vOpt(vt, w, h)} ≅ *{
+pub def nicheTagged(vt : (Nat, Heap) -> Type, h : Heap) -> *{w : Nat, ok : vOpt(vt, w, h)} ≅ *{
   r : Tagged,
   ok : vTag(vt, r, h)
 } =
@@ -401,7 +401,7 @@ pub def nicheTagged(vt : *{Nat, Heap} -> Type, h : Heap) -> *{w : Nat, ok : vOpt
 
 /// The two layouts' realisers are equivalent at every heap, the
 /// quasi-inverse made bi-invertible as `isoToEquiv` makes it.
-pub def nicheTaggedEquiv(vt : *{Nat, Heap} -> Type, h : Heap) -> *{w : Nat, ok : vOpt(vt, w, h)} ≃ *{
+pub def nicheTaggedEquiv(vt : (Nat, Heap) -> Type, h : Heap) -> *{w : Nat, ok : vOpt(vt, w, h)} ≃ *{
   r : Tagged,
   ok : vTag(vt, r, h)
 } =
@@ -427,7 +427,7 @@ pub def keptOpt(p : Nat, _r : Nat, h : Heap) -> Type =
 /// otherwise `p` points to an int and it answers that int. That the C body
 /// meets this is assumed, not checked: `extern` declarations are not lowered
 /// , so nothing here names the body.
-pub def derefOrWp(w : Nat, d : Nat, q : *{Nat, Nat, Heap} -> Type, h : Heap) -> Type =
+pub def derefOrWp(w : Nat, d : Nat, q : (Nat, Nat, Heap) -> Type, h : Heap) -> Type =
   match w
     | Zero => q w d h
     | Succ(_n) => return type(*{

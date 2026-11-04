@@ -33,5 +33,5 @@ def viaFamily : +U ((x : Nat) -> -F always(x));
 def viaFamily = viaArrow;
 
 /// The function read at the plain arrow applies there.
-@[ runs("Succ(Zero)") ]
+@[ runs("Succ Zero") ]
 def appliedArrow() -> -F Nat { viaArrow (Succ Zero) }

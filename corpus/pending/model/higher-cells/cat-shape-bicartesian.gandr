@@ -30,7 +30,7 @@ data ProdHom(a : PairOb(Integer, String), b : PairOb(Integer, String)) : Type wh
 
 def prod_id(x : PairOb(Integer, String)) -> ProdHom(x, x) =
   match x
-    Pair(l, r) => PairHom 0 0
+    | Pair(l, r) => PairHom 0 0
 
 def coprod_id(x : SumOb(Integer, String)) -> -F HomPlus(Integer, String, x, x) =
   match x

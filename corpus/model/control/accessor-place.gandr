@@ -15,7 +15,7 @@ import std.list (List);
 
 /// The list each access below holds; a list's type is declared, never
 /// inferred.
-@[ runs("cons(1, cons(2, nil))") ]
+@[ runs("cons 1 (cons 2 nil)") ]
 pub def pair : List(Integer) = cons 1 (cons 2 nil);
 
 /// The element at an index, read through a shared view.
@@ -26,7 +26,7 @@ def second() -> Integer =
 
 /// The element at an index written back through an exclusive view, then the
 /// list read whole: only that element moved.
-@[ runs("cons(1, cons(3, nil))") ]
+@[ runs("cons 1 (cons 3 nil)") ]
 def bumped() -> List(Integer) =
   var xs = pair
   access xs.#[1] as v { resume(v, v + 1) };
@@ -39,7 +39,7 @@ def tagged(a : Integer) -> List(Integer * Integer) =
 /// An element written back past the head: the cells before it are copied
 /// and share their elements, the cells after it are shared, and fresh pairs
 /// allocated after the write-back leave both untouched.
-@[ runs("cons((9, 9), cons((1, 1), cons((5, 5), cons((1, 3), nil))))") ]
+@[ runs("cons (9, 9) (cons (1, 1) (cons (5, 5) (cons (1, 3) nil)))") ]
 def rebuilt() -> List(Integer * Integer) =
   let l = tagged 1
   var xs = l
@@ -47,7 +47,7 @@ def rebuilt() -> List(Integer * Integer) =
   pure cons (9, 9) xs
 
 /// An abort writes nothing back: the list stands as it was.
-@[ runs("cons(1, cons(2, nil))") ]
+@[ runs("cons 1 (cons 2 nil)") ]
 def kept() -> List(Integer) =
   var xs = pair
   access xs.#[0] as v { abort(v) } unwind { pure *{} };

@@ -14,7 +14,7 @@
 def one : +{Integer};
 def one = +{.0 = 1};
 
-@[ runs("+{.2 = unit}") ]
+@[ runs("+{.2 = *{}}") ]
 def third : +{Integer, String, Unit};
 def third = +{.2 = *{}};
 
@@ -56,7 +56,7 @@ def signed_picked() -> -F Integer { pick signed }
 @[ checks ]
 def unwrap(v : +{only : Integer}) -> -F Integer =
   match v
-    +{.only = n} => return n
+    | +{.only = n} => return n
 
 @[ checks ]
 def nested(t : *{+{Integer, Integer}, Integer}) -> -F Integer =
@@ -86,7 +86,7 @@ def outer() -> -F Integer { chained (*{+{.1 = 8}, 9}) }
 @[ checks ]
 def split(t : *{+{Integer, Integer}, Integer}) -> -F Integer =
   match t
-    *{s, y} => match s
+    | *{s, y} => match s
       | +{.0 = x} => return y
       | +{.1 = x} => return x
 

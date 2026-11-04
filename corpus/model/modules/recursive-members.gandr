@@ -35,11 +35,11 @@ module Counting where {
 }
 
 /// The double of two.
-@[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
+@[ runs("Succ (Succ (Succ (Succ Zero)))") ]
 def twoDoubled : () -> Nat = Counting.double (Succ (Succ Zero));
 
 /// The half of four.
-@[ runs("Succ(Succ(Zero))") ]
+@[ runs("Succ (Succ Zero)") ]
 def halved : () -> Nat = Counting.half (Succ (Succ (Succ (Succ Zero))));
 
 /// A carrier with a step.

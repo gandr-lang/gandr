@@ -29,7 +29,7 @@ def first(n : Nat) -> [Partial] Nat =
   Succ m
 
 /// The value the `break` left with, one further.
-@[ runs("Succ(Succ(Zero))") ]
+@[ runs("Succ (Succ Zero)") ]
 def first_zero() -> [Partial] Nat { become first Zero }
 
 /// Each arm of a case leaves the loop with its own value.
@@ -42,7 +42,7 @@ def pick(n : Nat) -> [Partial] Nat =
   Succ m
 
 /// The successor arm leaves with the predecessor.
-@[ runs("Succ(Succ(Zero))") ]
+@[ runs("Succ (Succ Zero)") ]
 def pick_two() -> [Partial] Nat { become pick (Succ (Succ Zero)) }
 
 /// A `return` inside the loop leaves the function; `continue` runs the loop again.
@@ -62,7 +62,7 @@ def hand(n : Nat) -> [Partial] Nat =
   loop { become leave (Succ n) }
 
 /// The handed-on call returns at once.
-@[ runs("Succ(Zero)") ]
+@[ runs("Succ Zero") ]
 def hand_one() -> [Partial] Nat { become hand (Succ Zero) }
 
 /// A `while` that returns from its first pass when its condition holds.
@@ -102,7 +102,7 @@ def handled(n : Nat) -> [Partial] Nat =
   }
 
 /// The loop's value, through the `pure` clause.
-@[ runs("Succ(Succ(Zero))") ]
+@[ runs("Succ (Succ Zero)") ]
 def handled_zero() -> [Partial] Nat { become handled Zero }
 
 @[ refuses("OutsideLoop") ]
@@ -132,12 +132,12 @@ def find_succ(xs : List(Nat), otherwise : Nat) -> Nat =
   otherwise
 
 /// The search returns from the second cell.
-@[ runs("Succ(Zero)") ]
+@[ runs("Succ Zero") ]
 def find_one() -> Nat { become find_succ (cons Zero (cons (Succ (Succ Zero)) nil)) Zero }
 
 /// The search reaches the empty list, which leaves the loop with unit, and
 /// returns what it was given.
-@[ runs("Succ(Zero)") ]
+@[ runs("Succ Zero") ]
 def find_none() -> Nat { become find_succ (cons Zero nil) (Succ Zero) }
 
 /// A `for` ending a body runs it on every cell and returns unit.

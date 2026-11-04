@@ -223,16 +223,16 @@ def pick_zero() -> -F Nat { become pick Zero }
 @[ runs("Zero") ]
 def pick_zero_elided() -> -F Nat { pick_elided Zero }
 
-@[ runs("Succ(Zero)") ]
+@[ runs("Succ Zero") ]
 def pick_one() -> -F Nat { become pick (Succ Zero) }
 
-@[ runs("Succ(Zero)") ]
+@[ runs("Succ Zero") ]
 def pick_one_elided() -> -F Nat { pick_elided (Succ Zero) }
 
-@[ runs("Succ(Succ(Zero))") ]
+@[ runs("Succ (Succ Zero)") ]
 def pick_three() -> -F Nat { become pick (Succ (Succ (Succ Zero))) }
 
-@[ runs("Succ(Succ(Zero))") ]
+@[ runs("Succ (Succ Zero)") ]
 def pick_three_elided() -> -F Nat { pick_elided (Succ (Succ (Succ Zero))) }
 
 @[ checks ]

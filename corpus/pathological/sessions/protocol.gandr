@@ -6,13 +6,13 @@ def desk_receives_first() -> Unit =
 
 @[ refuses("UnofferedLabel") ]
 def desk_selects_no_offered_label() -> Unit =
-  let desk = fork (seat : &{next : end}) { offer(seat) { next => close(seat) } };
+  let desk = fork (seat : &{next : end}) { offer(seat) { | next => close(seat) } };
   select(desk, retire)
   close(desk)
 
 @[ refuses("OfferArms") ]
 def seat_arms_one_label_of_two() -> Unit =
-  let desk = fork (seat : &{next : end, retire : end}) { offer(seat) { next => close(seat) } };
+  let desk = fork (seat : &{next : end, retire : end}) { offer(seat) { | next => close(seat) } };
   select(desk, next)
   close(desk)
 

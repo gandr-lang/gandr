@@ -2,4 +2,4 @@
 @[ checks ]
 def swap(p : Integer * String) -> -F (String * Integer) =
   match p
-    *{n, s} => return *{s, n}
+    | (n, s) => return (s, n)

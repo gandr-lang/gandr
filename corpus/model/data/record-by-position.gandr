@@ -8,7 +8,7 @@
 /// The width of a band, its bounds bound by position.
 def width(band : *{low : Integer, high : Integer}) -> Integer =
   match band
-    *{low, high} => high - low
+    | *{low, high} => high - low
 
 /// The band from two to seven is five wide.
 @[ runs("5") ]
@@ -19,7 +19,7 @@ def band_width : () -> Integer = width (*{low = 2, high = 7});
 /// `high`.
 def read_as_digits(band : *{low : Integer, high : Integer}) -> Integer =
   match band
-    *{top, bottom} => top * 10 + bottom
+    | *{top, bottom} => top * 10 + bottom
 
 /// The band from two to seven reads as twenty-seven.
 @[ runs("27") ]

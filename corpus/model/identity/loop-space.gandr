@@ -30,7 +30,7 @@ pub def rec spinWords(n : Int) -> Words =
     | P(x) => Unloop (spinWords[<] x)
 
 /// Two successors spin twice around.
-@[ runs("Loop(Loop(Nil))") ]
+@[ runs("Loop (Loop Nil)") ]
 def spun() -> Words { spinWords (S (S Z)) }
 
 /// Conversion runs spinning at a closed word: two successors are two loops.

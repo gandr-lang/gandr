@@ -66,4 +66,4 @@ def rec sum(xs : List(Nat)) -> Nat =
 @[ refuses("StageNotBelow") ]
 def rec forged(t : Bush) -> Nat =
   match t
-    Sprout(kids) => Succ (sum (map Bush Nat forged[<] (Cons t (Nil : List(Bush)) : List(Bush))))
+    | Sprout(kids) => Succ (sum (map Bush Nat forged[<] (Cons t (Nil : List(Bush)) : List(Bush))))

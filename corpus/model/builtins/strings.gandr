@@ -20,11 +20,11 @@ def slogan = "types are machines";
 
 /// Equality: `==` between strings resolves the prelude's `EqString`, and a
 /// slogan is itself.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def same() -> Bool { slogan == "types are machines" }
 
 /// A slogan is not another.
-@[ runs("+{.1 = unit}") ]
+@[ runs("+{.1 = *{}}") ]
 def different() -> Bool { slogan == "types are types" }
 
 /// Equality across types: the integer fixes the carrier `==` compares at, and

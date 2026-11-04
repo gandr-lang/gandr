@@ -78,13 +78,13 @@ def failing : Prog(Either(ExnOp, Void), Integer) = Op
 /// Exceptions peeled, then state from four, then nothing left: the second
 /// read sees the stored five. Each handler is called at the row it leaves,
 /// an applied type passed for its type parameter.
-@[ runs("Returned(50)") ]
+@[ runs("Returned 50") ]
 def handled() -> Outcome(Integer) =
   let p = runExn (Either StateOp (Void)) (Integer) guarded
   pureOf (Outcome (Integer)) (runState (Void) (Outcome (Integer)) p 4)
 
 /// The raise ends the program with the state it read.
-@[ runs("Raised(4)") ]
+@[ runs("Raised 4") ]
 def handledRaise() -> Outcome(Integer) =
   let p = runExn (Either StateOp (Void)) (Integer) raising
   pureOf (Outcome (Integer)) (runState (Void) (Outcome (Integer)) p 4)

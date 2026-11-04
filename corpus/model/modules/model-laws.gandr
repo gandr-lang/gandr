@@ -62,7 +62,7 @@ module LawfulInteger : Model(Lawful) with sort Carrier = Integer where
   law trans = ~admitted;
 
 /// The admitted model decides by the host: three is three.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def threeIsThree() -> Bool { LawfulInteger.alike 3 3 }
 
 /// A decision with an order beside it: its models restrict to `Lawful`'s,
@@ -81,5 +81,5 @@ def decide[l : Model(Lawful)](a : l.Carrier, b : l.Carrier) -> Bool { l.alike a 
 
 /// The order's model stands where a lawful one is asked, restricted by the
 /// reduct: two is not three.
-@[ runs("+{.1 = unit}") ]
+@[ runs("+{.1 = *{}}") ]
 def twoIsNotThree() -> Bool { decide[.l = LawfulOrderInteger] 2 3 }

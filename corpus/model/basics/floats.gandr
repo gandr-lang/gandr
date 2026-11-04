@@ -25,7 +25,7 @@ def rounded() -> Integer =
   whole
 
 /// A third is less than a half.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def lesser() -> Bool =
   let third = float64.div 1f64 3f64
   let less = float64.lt third 0.5f64

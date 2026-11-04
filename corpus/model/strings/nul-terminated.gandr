@@ -49,11 +49,11 @@ def rec cView(bs : List(Integer)) -> CView =
     }
 
 /// `hi`, owned: its two bytes and the zero.
-@[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
+@[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
 def hi() -> List(Integer) { terminated (Cons 104 (Cons 105 Nil) : List(Integer)) }
 
 /// C reads `hi` as the bytes it is held in: it borrows them whole.
-@[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
+@[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
 def hiForC() -> List(Integer) { let bs = force hi; let v = cView bs; match v {
   | Borrowed(t) => t
   | Interior => Nil

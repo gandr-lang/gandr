@@ -20,14 +20,14 @@ def shorthand = *{n = 3, s = "x"};
 @[ checks ]
 def punned(r : *{n : Integer, s : String}) -> -F String =
   match r
-    *{.n, .s} => return s
+    | *{.n, .s} => return s
 
 @[ checks ]
 def renamed(r : *{n : Integer, s : String}) -> -F Integer =
   match r
-    *{.n = m} => return m
+    | *{.n = m} => return m
 
-@[ runs("#{.n = 3, .s = \"x\"}") ]
+@[ runs("*{.n = 3, .s = \"x\"}") ]
 def whole : *{n : Integer, s : String};
 def whole = *{.s = "x", .n = 3};
 

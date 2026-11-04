@@ -28,7 +28,7 @@ def twice() -> Integer =
   migrate [seat] { pure (n * 2) }
 
 /// The seat holds a record, and a second migration reads it there again.
-@[ entry(*{operator, seat, seat}), runs("#{.done = 3, .left = 4}") ]
+@[ entry(*{operator, seat, seat}), runs("*{.done = 3, .left = 4}") ]
 def reread() -> *{done : Integer, left : Integer} =
   let held : *{done : Integer, left : Integer} at seat = migrate [seat] {
     (hold *{done = 3, left = 4})

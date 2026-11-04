@@ -36,7 +36,7 @@ def readThrough() -> Integer =
 
 /// `!` appended through a view and written back: after the access the held
 /// string's bytes are the written one's.
-@[ runs("Cons(104, Cons(105, Cons(33, Cons(0, Nil))))") ]
+@[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 0 Nil)))") ]
 def writeThrough() -> List(Integer) =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
   access s as v { let w = push v 33; let t = written w; resume(v, t) };
@@ -44,14 +44,14 @@ def writeThrough() -> List(Integer) =
 
 /// An access that aborts writes nothing back: the held string's bytes are as
 /// they were.
-@[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
+@[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
 def abandoned() -> List(Integer) =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
   access s as v { abort(v) } unwind { pure *{} };
   bytes s
 
 /// Two accesses in turn, each seeing the write the one before left.
-@[ runs("Cons(104, Cons(105, Cons(33, Cons(33, Cons(0, Nil)))))") ]
+@[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 33 (Cons 0 Nil))))") ]
 def twiceThrough() -> List(Integer) =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
   access s as v { let w = push v 33; let t = written w; resume(v, t) };

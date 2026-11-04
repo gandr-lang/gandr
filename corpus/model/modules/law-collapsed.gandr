@@ -37,5 +37,5 @@ module CollapsedDot : Model(Collapsed) with sort Loop = Dot where
 def one_loop() -> Path(Spot, Spot) { CollapsedDot.one Spot Spot }
 
 /// The entry returns the unit.
-@[ runs("unit") ]
+@[ runs("*{}") ]
 def main() -> Unit { *{} }

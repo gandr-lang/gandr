@@ -49,7 +49,7 @@ def stated() -> String =
 
 /// Two strings compared with the type stated, which checks and runs: equal
 /// exactly when their bytes are, which these are not.
-@[ runs("+{.1 = unit}") ]
+@[ runs("+{.1 = *{}}") ]
 def compared() -> Bool =
   let equal = string.eq "types are " "machines"
   equal

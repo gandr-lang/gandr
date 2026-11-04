@@ -9,5 +9,5 @@ def named : *{count : String, label : String} = *{cell | count = "three"};
 
 /// `count` given a string and returned: the record's `count` is the string
 /// now.
-@[ runs("#{.count = \"three\", .label = \"start\"}") ]
+@[ runs("*{.count = \"three\", .label = \"start\"}") ]
 def recounted() -> *{count : String, label : String} { *{cell | count = "three"} }

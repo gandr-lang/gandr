@@ -1,4 +1,4 @@
-/// `call_expression`: a call.
+/// `application_expression`: a call written by juxtaposition.
 @[ checks ]
 def max(a : Integer, b : Integer) -> -F Integer =
   return b

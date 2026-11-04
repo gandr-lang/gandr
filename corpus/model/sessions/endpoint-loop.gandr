@@ -43,7 +43,7 @@ def tally(operator : mu open. &{
   pure seen
 
 /// A seat that reports twice and retires, followed by a forked desk.
-@[ runs("unit") ]
+@[ runs("*{}") ]
 def followed() -> Unit =
   let seat = fork (operator : mu open. &{
     report : ?Integer. open,

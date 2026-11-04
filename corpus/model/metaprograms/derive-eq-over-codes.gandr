@@ -28,17 +28,17 @@ def eqNat = Eq.generic Nat;
 def eqTagged = Eq.generic Tagged;
 
 /// Two is two.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def sameNat() -> Bool { eqNat (Succ (Succ Zero)) (Succ (Succ Zero)) }
 
 /// One is not two: the recursion reaches `Zero` on one side only.
-@[ runs("+{.1 = unit}") ]
+@[ runs("+{.1 = *{}}") ]
 def shorterNat() -> Bool { eqNat (Succ Zero) (Succ (Succ Zero)) }
 
 /// Two tagged naturals alike in both leaves.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def sameTagged() -> Bool { eqTagged (Tagged true (Succ Zero)) (Tagged true (Succ Zero)) }
 
 /// Two tagged naturals apart in their count alone.
-@[ runs("+{.1 = unit}") ]
+@[ runs("+{.1 = *{}}") ]
 def recountedTagged() -> Bool { eqTagged (Tagged true (Succ Zero)) (Tagged true Zero) }

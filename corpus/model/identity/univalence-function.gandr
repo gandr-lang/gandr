@@ -29,7 +29,7 @@ def funBeta(f : Path[.A = Circle](Base, Base) -> Path[.A = Circle](
 
 /// Adding a loop, carried along `loopsAreIntegers`, adds one: the integer
 /// spins back to its word, gains a loop and winds to its successor, by a run.
-@[ runs("S(S(S(Z)))") ]
+@[ runs("S (S (S Z))") ]
 def funRun() -> Int =
   let g = Path.walk (fun (X) { X -> X }) loopsAreIntegers (fun (l) { loopOn l })
   g (S (S Z))

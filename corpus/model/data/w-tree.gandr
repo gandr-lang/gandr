@@ -39,9 +39,9 @@ def cherry : Tree = Node leaves;
 def lopsided : Tree = Node (fun (x) { match x -> -F Tree { | L => cherry | R => Leaf } });
 
 /// The cherry's two leaves, counted through its function.
-@[ runs("Succ(Succ(Zero))") ]
+@[ runs("Succ (Succ Zero)") ]
 def cherry_leaves : () -> Nat = size cherry;
 
 /// Three leaves, the left two reached through two functions.
-@[ runs("Succ(Succ(Succ(Zero)))") ]
+@[ runs("Succ (Succ (Succ Zero))") ]
 def deeper : () -> Nat = size lopsided;

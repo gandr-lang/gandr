@@ -75,7 +75,7 @@ def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> Unit + (U
     | *{.start = s, .step = t} => t (s ())
 
 /// Counting modulo three stepped once: the second state.
-@[ runs("+{.1 = +{.0 = unit}}") ]
+@[ runs("+{.1 = +{.0 = *{}}}") ]
 def second() -> Unit + (Unit + Unit) { stepOnce rightward }
 
 /// A counter over the left nesting stepped once from its start.
@@ -86,12 +86,12 @@ def stepOnceLeft(m : Model(Counter) with sort C = (Unit + Unit) + Unit) -> (Unit
 /// The counter carried to the left nesting stepped once, its second
 /// state carried along: the transport moves the record field by field, each
 /// field a function moved along the path.
-@[ runs("+{.0 = +{.1 = unit}}") ]
+@[ runs("+{.0 = +{.1 = *{}}}") ]
 def secondLeft() -> (Unit + Unit) + Unit { stepOnceLeft leftward }
 
 /// The same transport written as the call's argument, not bound by a
 /// definition first, runs to the same state.
-@[ runs("+{.0 = +{.1 = unit}}") ]
+@[ runs("+{.0 = +{.1 = *{}}}") ]
 def inlineLeft() -> (Unit + Unit) + Unit =
   stepOnceLeft (Path.walk (fun (x) { type(Model(Counter) with sort C = x) }) nestings rightward)
 
@@ -108,12 +108,12 @@ module Thirds : Model(Counter) where
 
 /// A counter over the right nesting takes the module, and the module leaves
 /// out the carrier its parameter fixes.
-@[ runs("+{.1 = +{.0 = unit}}") ]
+@[ runs("+{.1 = +{.0 = *{}}}") ]
 def secondThirds() -> Unit + (Unit + Unit) { stepOnce Thirds }
 
 /// The module stands at a signature that fixes its carrier.
 def thirds : Model(Counter) with sort C = Unit + (Unit + Unit) = Thirds;
 
 /// The counter steps once from its start to the second state.
-@[ runs("+{.1 = +{.0 = unit}}") ]
+@[ runs("+{.1 = +{.0 = *{}}}") ]
 def secondPacked() -> Unit + (Unit + Unit) { stepOnce thirds }

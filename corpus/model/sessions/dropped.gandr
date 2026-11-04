@@ -15,7 +15,7 @@
 ]
 def finished() -> Unit =
   let desk = fork (seat : +{done : end}) { select(seat, done); drop(seat) };
-  offer(desk) { done => drop(desk) }
+  offer(desk) { | done => drop(desk) }
 
 /// A drop at one end of a fork and a close at the other, each ending its end
 /// beside the other.

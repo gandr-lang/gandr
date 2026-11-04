@@ -2,4 +2,4 @@
 @[ checks ]
 def ignore(n : Integer) -> -F Integer =
   match n
-    _ => return 0
+    | _ => return 0

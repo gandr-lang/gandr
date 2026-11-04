@@ -70,5 +70,5 @@ def heardRun() -> Run(Ask.Decoded) =
   Path.walk (fun (X) { Run (type(?X. end)) }) codes heard
 
 /// On the machine the carried run hears the yes, as it does by conversion.
-@[ runs("recorded(received(Yes), closed)") ]
+@[ runs("recorded (received Yes) (closed)") ]
 def decodedRun() -> Run(Ask.Decoded) { heardRun () }

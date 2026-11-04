@@ -19,5 +19,5 @@ def toShape(figure : Figure) -> Shape =
 def redrawing : Path[.A = Type](Shape, Figure) = equiv Shapes.toFigure toShape;
 
 /// A rectangle transported along the path is its figure, the sides swapped.
-@[ runs("Box(3, 2)") ]
+@[ runs("Box 3 2") ]
 def boxed() -> Figure { Path.walk (fun (X) { X }) redrawing (Rect 2 3) }

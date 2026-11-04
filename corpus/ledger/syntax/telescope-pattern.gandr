@@ -2,4 +2,4 @@
 @[ checks ]
 def nothing(t : *{}) -> -F Integer =
   match t
-    *{} => return 0
+    | *{} => return 0

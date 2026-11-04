@@ -23,7 +23,7 @@ def negation : Path[.A = Type](Bool, Bool) ;
 
 def negation = equiv not not ;
 
-@[ runs("cons(+{.0 = unit}, cons(+{.1 = unit}, nil))") ]
+@[ runs("cons +{.0 = *{}} (cons +{.1 = *{}} nil)") ]
 def both : List(Bool) ;
 
 def both = cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil) ;
@@ -35,7 +35,7 @@ def keep(xs : List(Bool)) -> -F List(Bool) =
 @[ checks ]
 def flip_flag(entry : Bool * List(Bool)) -> -F (Bool * List(Bool)) =
   match entry
-    *{b, xs} => { let c = not b; *{c, xs} }
+    | *{b, xs} => { let c = not b; *{c, xs} }
 
 @[ checks ]
 def flagged : Path[.A = Type](Bool * List(Bool), Bool * List(Bool)) ;

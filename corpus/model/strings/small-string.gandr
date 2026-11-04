@@ -65,7 +65,7 @@ def spilledPlace() -> [Partial] Place =
   place (own cs)
 
 /// Inline or on the heap, a string reads as its owned bytes.
-@[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
+@[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
 def hiBytes() -> List(Integer) { bytes (own (Cons 104 (Cons 105 Nil) : List(Integer))) }
 
 /// The spilled string's twenty-four bytes and the zero.

@@ -73,7 +73,7 @@ def twice : Path[.A = Path[.A = Circle](Base, Base)](
 ) = Path.here (loop ∷ loop ∷ Path.here Base);
 
 /// Spinning two successors and winding the word counts two.
-@[ runs("S(S(Z))") ]
+@[ runs("S (S Z)") ]
 def counted : () -> Int = wind (spin (S (S Z)));
 
 /// The loops at the point and the presented integers are a quasi-inverse, by

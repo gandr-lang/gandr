@@ -7,4 +7,4 @@ def moved(x : Integer) -> *{x : Integer, y : Integer} { *{ .x, .y = x + 1 } }
 @[ runs("3") ]
 def movedX() -> Integer =
   match moved 3
-    *{ .x, .y } => x
+    | *{ .x, .y } => x

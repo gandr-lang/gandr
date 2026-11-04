@@ -20,12 +20,12 @@ pub def rec windWords(c : Words) -> Int =
     | Unloop(x) => P (windWords[<] x)
 
 /// Two loops wind twice.
-@[ runs("S(S(Z))") ]
+@[ runs("S (S Z)") ]
 def twice_wound() -> Int { windWords (Loop (Loop Nil)) }
 
 /// A run builds the count letter by letter: a cancelled word winds to
 /// `S(P(Z))`, which conversion reads as `Z` (`wound_never`).
-@[ runs("S(P(Z))") ]
+@[ runs("S (P Z)") ]
 def wound_letterwise() -> Int { windWords (Loop (Unloop Nil)) }
 
 /// Conversion runs the fold at a closed word: two loops are two successors.

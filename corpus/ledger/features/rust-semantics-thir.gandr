@@ -31,7 +31,7 @@ def exampleSpecified : *{
 
 /// At false the return inside `identity`'s argument answers zero, whatever a call of `identity` needs.
 def returnsPast(
-  spec : *{Item, Value, Value -> Type} -> Type,
+  spec : (Item, Value, Value -> Type) -> Type,
   post : Value -> Type
 ) -> post(Int(0)) -> wpFn(spec, exampleBody, False, post) =
   exampleReturnsPast spec post

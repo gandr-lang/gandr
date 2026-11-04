@@ -27,7 +27,7 @@ def productSign(a : Integer, b : Integer) -> Integer =
   match *{a, b} with *{Sign, Sign} {
     | *{nil, _} => 0
     | *{_, nil} => 0
-    | (neg(_), neg(_)) => 1,
-    *{pos(_), pos(_)} -> 1,
-    _ => - 1
+    | *{neg(_), neg(_)} => 1
+    | *{pos(_), pos(_)} => 1
+    | _ => - 1
   }

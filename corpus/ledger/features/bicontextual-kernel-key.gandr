@@ -36,6 +36,6 @@ def side(n : Nat, e : Either) -> -F Nat =
     | Mark(_f) => n
 
 /// The flag side answers the natural `side` takes first.
-@[ runs("Succ(Zero)") ]
+@[ runs("Succ Zero") ]
 def marked() -> -F Nat =
   side (Succ Zero) (Mark On)

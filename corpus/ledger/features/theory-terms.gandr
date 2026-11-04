@@ -39,5 +39,5 @@ def rec copy(t : Terms(Mag)) -> Terms(Mag) =
     | Mag.mul(x, y) => Mag.mul (copy[<] x) (copy[<] y)
 
 /// A term with one product, built and folded.
-@[ runs("Mag.mul(Mag.one, Mag.one)") ]
+@[ runs("Mag.mul Mag.one Mag.one") ]
 def copied() -> Terms(Mag) { copy (Mag.mul Mag.one Mag.one) }

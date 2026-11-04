@@ -33,7 +33,7 @@ def follow(operator : Reports) -> [Cost] Batched(Integer) =
     }
   } {
     offer(operator) {
-      report => {
+      | report => {
         recv(operator) as next;
         queue = push queue next;
         continue

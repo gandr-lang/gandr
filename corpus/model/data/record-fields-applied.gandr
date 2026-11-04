@@ -5,7 +5,7 @@
 /// A field bound once and applied twice.
 def twoSteps(m : *{start : () -> Integer, step : Integer -> Integer}) -> Integer =
   match m
-    *{.start = s, .step = t} => {
+    | *{.start = s, .step = t} => {
       let zero = s ();
       t (t zero)
     }
@@ -13,4 +13,4 @@ def twoSteps(m : *{start : () -> Integer, step : Integer -> Integer}) -> Integer
 /// A field bound once and applied once.
 def oneStep(m : *{start : () -> Integer, step : Integer -> Integer}) -> Integer =
   match m
-    *{.start = s, .step = t} => t (s ())
+    | *{.start = s, .step = t} => t (s ())

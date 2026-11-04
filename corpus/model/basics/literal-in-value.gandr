@@ -22,7 +22,7 @@ module ExprFromNat : Model(FromNat) with sort Carrier = Expr where
   def fromNat(n : Integer) -> Expr { Lit n }
 
 /// The literal read in a body, which runs the reader's call.
-@[ runs("Lit(5)") ]
+@[ runs("Lit 5") ]
 def body() -> Expr { 5 }
 
 /// The literal as the definition's own value, where no body runs the call.

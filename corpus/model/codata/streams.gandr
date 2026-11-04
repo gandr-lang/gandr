@@ -90,7 +90,7 @@ def headOfCall() -> Integer { (upward 3).head }
 def tailOfCall() -> Integer { first ((upward 3).1) }
 
 /// Whether the head off a call is positive, read in an operand.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def headAbove() -> Bool { (upward 3).head >= 1 }
 
 /// The head of a stream's tail, read as one chain: the tail is a stream, so

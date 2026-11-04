@@ -51,7 +51,7 @@ def hearing(desk : mu open. &{more : ?Integer. open, done : end}) -> Unit =
   }
 
 /// A desk that follows a seat which has nothing more to report.
-@[ runs("unit") ]
+@[ runs("*{}") ]
 def drained() -> Unit =
   let desk = fork (seat : mu open. +{more : !Integer. open, done : end}) {
     draining seat false

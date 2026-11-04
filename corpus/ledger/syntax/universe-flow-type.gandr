@@ -5,7 +5,7 @@ module Schema where {
   @[ checks ]
   def toNew(old : Old) -> -F New =
     match old
-      *{name, age} => *{age, name}
+      | *{name, age} => *{age, name}
 }
 @[ checks ]
 def shift : Schema.Old ⇝ Schema.New ;

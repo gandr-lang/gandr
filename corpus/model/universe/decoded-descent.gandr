@@ -69,7 +69,7 @@ def lists : List(List(Nat));
 def lists = Cons (Cons (Succ Zero) Nil) (Cons (Cons two Nil) Nil);
 
 /// The lists summed at the list-of-lists code, whose decode they are: three.
-@[ runs("Succ(Succ(Succ(Zero)))") ]
+@[ runs("Succ (Succ (Succ Zero))") ]
 def summed() -> Nat =
   let sum = total (ListL (ListL NatL))
   sum lists

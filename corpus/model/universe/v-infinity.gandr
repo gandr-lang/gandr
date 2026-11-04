@@ -28,13 +28,13 @@ data Ord : Type[+, 1] where
 @[ checks ]
 def rec rank(v : Vinf) -> -F Ord =
   match v
-    Sup(a, f) => Lim a (thunk { fun (x) { rank[<] (f x) } })
+    | Sup(a, f) => Lim a (thunk { fun (x) { rank[<] (f x) } })
 
 /// The type a set's members are picked by.
 @[ checks ]
 def members(v : Vinf) -> -F Type =
   match v
-    Sup(a, f) => return a
+    | Sup(a, f) => return a
 
 /// The type with one element.
 @[ checks ]

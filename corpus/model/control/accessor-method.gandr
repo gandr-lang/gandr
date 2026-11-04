@@ -73,14 +73,14 @@ def readTwice() -> Integer =
 
 /// The element at an index written back through a view the block lends
 /// exclusively: the resume asks it, and only that element moved.
-@[ runs("cons(1, cons(5, nil))") ]
+@[ runs("cons 1 (cons 5 nil)") ]
 def raised() -> List(Integer) =
   var xs = pair
   (xs.nth 1) as w { resume(w, w + 3) };
   pure xs
 
 /// An abort asks an exclusive lend as well and writes nothing back.
-@[ runs("cons(1, cons(2, nil))") ]
+@[ runs("cons 1 (cons 2 nil)") ]
 def abandonedView() -> List(Integer) =
   var xs = pair
   (xs.first ()) as w { abort(w) };

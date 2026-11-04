@@ -2,4 +2,4 @@
 @[ checks ]
 def same(n : Integer) -> -F Integer =
   match n
-    m => return m
+    | m => return m
