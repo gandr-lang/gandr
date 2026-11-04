@@ -194,6 +194,13 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::UnlabelledRequirement { name, .. } => {
             format!("write a label before it, `l : {name} with …`, and perform through `l`")
         },
+        LoweringRefusal::UnfixedParameter {
+            constructor,
+            parameter,
+            ..
+        } => format!(
+            "write the type after the binder, `let x : … = {constructor}(…)`, to fix `{parameter}`"
+        ),
         LoweringRefusal::DerivedComponent { member, theory, .. } => format!(
             "delete `{member}`: the model reads it as `{theory}.{member}`, which the derivation fills"
         ),
@@ -967,7 +974,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 135] = [
+    const WORDED: [&str; 136] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -998,6 +1005,7 @@ mod tests
         "SignatureMismatch.Sort",
         "BridgeAtSealedType",
         "UnlabelledRequirement",
+        "UnfixedParameter",
         "ComposeNotAShape",
         "ComposeDoesNotFill",
         "NoFiller",

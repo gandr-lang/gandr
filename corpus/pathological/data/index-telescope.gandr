@@ -49,3 +49,17 @@ data Graded : (n[1] : Nat) --> Type where {
   /// A mark at zero.
   | AtZero : Graded(Zero)
 }
+
+/// A value of `a` marked at the position `i` below `n`.
+data Pinned(a : Type) : (n : Nat, i : Fin(n)) --> Type where {
+  /// The value `x` at the position `i`.
+  | Pin : (n : Nat, i : Fin(n), x : a) --> Pinned(a, n, i)
+}
+
+/// A `let` with no type binds a constructor of a family with a parameter.
+/// No field fixes the parameter `a`, so the lowering refuses the call.
+@[ refuses("UnfixedParameter") ]
+def pinBare(n : Nat, i : Fin(n), x : Integer) -> Pinned(Integer, n, i) {
+  let p = Pin(n, i, x);
+  p
+}

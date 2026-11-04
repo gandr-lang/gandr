@@ -48,3 +48,12 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │
    ├ note: `Misread` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[UnfixedParameter]: no field of `Pin` fixes the parameter `a`, and the `let` states no type
+   ╭▸ corpus/pathological/data/index-telescope.gandr:63:11
+   │
+63 │   let p = Pin(n, i, x);
+   │           ━━━━━━━━━━━━ a parameter no field fixes
+   │
+   ├ note: `pinBare` is refused with UnfixedParameter, as its expectation states
+   ╰ help: write the type after the binder, `let x : … = Pin(…)`, to fix `a`

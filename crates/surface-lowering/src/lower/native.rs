@@ -1218,6 +1218,11 @@ pub(super) enum Classifier
     /// parameters and the indices before it, with those replaced by the
     /// generator's own parameters and the indices it states before it (#4027).
     Stated(StatedIndex),
+    /// The constructor is bound by a `let` with no type, and its family takes
+    /// indices and no parameters: the family at the indices its generator's
+    /// result states, with the fields replaced by the values the constructor
+    /// is written with (#5050).
+    Resulted(ResultOf),
     /// The family's one classifier, which the lowering inserts: the family
     /// has no parameters.
     Inserted,
@@ -1246,6 +1251,27 @@ pub(super) struct FieldOf
     pub parameters: usize,
     /// The field's place among its constructor's fields.
     pub index: usize,
+}
+
+/// A generator's result read as its constructor's classifier, as
+/// [`Classifier::Resulted`] reads it.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `form` is the family's position in the collection's data list,
+///   and `generator` the constructor's tag among its generators.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Classifier::Resulted`].
+/// - witness: `lower::native::tests::an_untyped_let_reads_its_constructor_s_classifier_off_its_result_5050`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct ResultOf
+{
+    /// The family's position in the collection's data list.
+    pub form: usize,
+    /// The generator's place among the family's generators.
+    pub generator: usize,
 }
 
 /// An index a generator's result states, as [`Classifier::Stated`] reads it.
@@ -3531,7 +3557,9 @@ impl<'source> Lowerer<'_, 'source>
             if let Some(&field) = self.operands.get(position) {
                 self.read(field, Reading::Value(frame));
                 // Only a constructor written in the field, bare or applied,
-                // reads the classifier the field gives.
+                // reads the classifier the field gives. A classifier read off
+                // the generator's result reads the fields, so it gives the
+                // fields no classifier (#5050).
                 let constructed = self.tree.node(field).is_some_and(|node| {
                     matches!(
                         shape_of(self.pbg, node),
@@ -3542,6 +3570,7 @@ impl<'source> Lowerer<'_, 'source>
                     )
                 });
                 if constructed
+                    && !matches!(classifier, Classifier::Resulted(_))
                     && let Generators::Written(form) = constructor.form
                     && let Maybe::Present(inherited) = self.field_classifier(
                         FieldAt {
@@ -9973,6 +10002,12 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(id) => id,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
+            Classifier::Resulted(of) => {
+                match self.resulted_type(of, owner, family, sink, classified) {
+                    Maybe::Present(id) => id,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                }
+            },
             Classifier::Parameter(declared) => {
                 match self.called_parameter_type(declared, sink, classified) {
                     Maybe::Present(id) => id,
@@ -10245,6 +10280,99 @@ impl<'source> Lowerer<'_, 'source>
             environment.push(variable);
         }
         instantiated(declared, &environment, sink, origin)
+    }
+
+    /// The type the generator's result gives the constructor at `owner`, which
+    /// a `let` with no type binds (#5050).
+    ///
+    /// # Specification
+    /// - requires: the indices the generator states and the constructor's
+    ///   fields are minted or absent.
+    /// - ensures: the family `family` applied to each index the generator's
+    ///   result states, read under the generator's fields, with each field
+    ///   replaced by the value the constructor is written with for it; every
+    ///   node the substitution mints recorded at `origin`; nothing when the
+    ///   family takes parameters, the generator states another count of indices
+    ///   than the family's kind, `owner` plans no constructor, or an index or a
+    ///   field did not lower.
+    /// - provides: the classifier of a constructor that a `let` with no type
+    ///   binds.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Here(g, a)` bound by `let x = Here(g, a)` is
+    ///   classified `Var(Extend(g, a), a)`, and `There(g, a, b, x)` reads the
+    ///   index that its result states over its field `a`.
+    /// - witness: `lower::native::tests::an_untyped_let_reads_its_constructor_s_classifier_off_its_result_5050`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn resulted_type(
+        &self,
+        of: ResultOf,
+        owner: NodeIndex,
+        family: ConstantIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let Some(form) = self.collected.data.get(of.form)
+        else {
+            return unminted;
+        };
+        let Some(generator) = form.generators.get(of.generator)
+        else {
+            return unminted;
+        };
+        if !form.parameters.is_empty() || generator.indices.len() != form.indices.len() {
+            return unminted;
+        }
+        let Some(&Plan::Constructor(constructed)) = self.plans.get(owner)
+        else {
+            return unminted;
+        };
+        let mut environment = Vec::with_capacity(
+            constructed
+                .fields
+                .end
+                .saturating_sub(constructed.fields.start),
+        );
+        for position in constructed.fields.start .. constructed.fields.end {
+            let Some(&written) = self.operands.get(position)
+            else {
+                return unminted;
+            };
+            match self.value_at(written) {
+                Maybe::Present(value) => environment.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        // The innermost binder is the last field.
+        environment.reverse();
+        let mut arguments = Vec::with_capacity(generator.indices.len());
+        let mut carried = Vec::new();
+        for index in &generator.indices {
+            let stated = match self.value_at(index.node) {
+                Maybe::Present(value) => value,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+            let mark = sink.arena.watermark();
+            carried.clear();
+            let TermId::Value(read) = gandr_core_term::substitute_environment_traced(
+                sink.arena,
+                TermId::Value(stated),
+                &environment,
+                &mut carried,
+            )
+            else {
+                return unminted;
+            };
+            exits::record_copies(sink, mark, &carried, origin);
+            arguments.push(read);
+        }
+        let id = sink.arena.value_type_data(family, arguments);
+        sink.origins.record_value_type(id, origin);
+        Maybe::Present(id)
     }
 
     /// The type a declaration's parameter gives the argument a call writes for

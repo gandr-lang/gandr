@@ -42,6 +42,19 @@ def lastVar(g : Ctx, a : ObjTy) -> Var(Extend(g, a), a) {
   x
 }
 
+/// The variable of the last entry, bound by a `let` with no type: the
+/// constructor's result gives the type.
+def lastVarBare(g : Ctx, a : ObjTy) -> Var(Extend(g, a), a) {
+  let x = Here(g, a);
+  x
+}
+
+/// The variable `v` past one more entry, bound by a `let` with no type.
+def nextVar(g : Ctx, a : ObjTy, b : ObjTy, v : Var(g, a)) -> Var(Extend(g, b), a) {
+  let x = There(g, a, b, v);
+  x
+}
+
 /// The function this definition returns moves a variable of `d` past one more entry.
 def weaken(d : Ctx, b : ObjTy, a : ObjTy) -> Var(d, a) => Var(Extend(d, b), a) {
   return fun (x) { There(d, a, b, x) }

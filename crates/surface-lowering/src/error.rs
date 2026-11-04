@@ -1363,6 +1363,20 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
+    /// A call of a constructor of a family with parameters, bound by a `let`
+    /// with no type: a generator's result applies its family to the family's
+    /// own parameters, so no field fixes one, and the call states no type for
+    /// the constructor (#5050).
+    UnfixedParameter
+    {
+        /// The bytes of the call.
+        span: ByteSpan,
+        /// The constructor's name.
+        constructor: SurfaceName<'source>,
+        /// The family's first parameter, which no field fixes.
+        parameter: SurfaceName<'source>,
+    },
+
     /// A declaration whose header binds parameters in an implicit telescope
     /// `@[…]` an entry of which is out of shape: an entry is a lower-case name
     /// and its sort, `a : Type` or the stage binder `i : Size`, or a stage's
@@ -2207,6 +2221,15 @@ impl fmt::Display for LoweringRefusal<'_>
                 "the world requires the theory `{name}` under no label, so code at the world has \
                  no capability to perform it through"
             ),
+            Self::UnfixedParameter {
+                constructor,
+                parameter,
+                ..
+            } => write!(
+                f,
+                "no field of `{constructor}` fixes its family's parameter `{parameter}`, and the \
+                 `let` states no type"
+            ),
             Self::ImplicitTelescope { .. } => f.write_str(
                 "this declaration's implicit telescope `@[…]` has an entry out of shape: an entry \
                  is a lower-case name and its sort, `a : Type` or a stage `i : Size`, or a \
@@ -2622,6 +2645,7 @@ impl LoweringRefusal<'_>
             | Self::UndescribedMember { span, .. }
             | Self::FamilyTelescope { span, .. }
             | Self::UnlabelledRequirement { span, .. }
+            | Self::UnfixedParameter { span, .. }
             | Self::ImplicitTelescope { span }
             | Self::TelescopeCycle { span, .. }
             | Self::ImplicitUnsupplied { span, .. }
@@ -2730,7 +2754,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 77_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 78_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2848,6 +2872,11 @@ mod tests
             LoweringRefusal::UnlabelledRequirement {
                 span: s(141_usize, 142_usize),
                 name: SurfaceName::from("Store"),
+            },
+            LoweringRefusal::UnfixedParameter {
+                span: s(147_usize, 148_usize),
+                constructor: SurfaceName::from("B"),
+                parameter: SurfaceName::from("a"),
             },
             LoweringRefusal::UnmarkedSelfReference {
                 span: s(41_usize, 42_usize),
@@ -3114,6 +3143,7 @@ mod tests
             s(34_usize, 35_usize),
             s(36_usize, 37_usize),
             s(141_usize, 142_usize),
+            s(147_usize, 148_usize),
             s(41_usize, 42_usize),
             s(77_usize, 78_usize),
             s(43_usize, 44_usize),
