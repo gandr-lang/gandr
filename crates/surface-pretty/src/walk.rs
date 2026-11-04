@@ -908,6 +908,8 @@ where
         };
         body = inner;
     }
+    // A pruned arm is the case of no branches on one of its equations, the
+    // binders its body stands under innermost.
     let pruned = equations > 0_usize
         && matches!(
             source.read(body),
@@ -916,7 +918,7 @@ where
                     && matches!(
                         source.read(scrutinee),
                         Former::Variable { zone: Zone::Intuitionistic, index }
-                            if index == DeBruijnIndex::from(0_u32)
+                            if u32::from(index) < u32::try_from(equations).unwrap_or(u32::MAX)
                     )
         );
     Arm {

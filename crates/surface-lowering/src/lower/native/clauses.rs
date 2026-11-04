@@ -489,7 +489,10 @@ impl<'source> Lowerer<'_, 'source>
             variables.push(named);
         }
         let guarded = guards.keys().copied().collect();
-        let tests = self.compile(site, &patterns, (rows, Depth(width), guarded))?;
+        // The clauses' columns stand at levels one onward, so no switch
+        // reads a scrutinee's written type at level zero.
+        let unstated = Maybe::Absent(binder_type::Absent::Untyped);
+        let tests = self.compile(site, &patterns, (rows, Depth(width), guarded, unstated))?;
         let eliminates = tests.iter().any(|test| {
             matches!(
                 *test,

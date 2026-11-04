@@ -12,7 +12,6 @@
 // - see: #5065
 // - see: #3403
 // - see: #5034
-// - see: #3402
 
 /// The syntax and the semantic types that the model source declares.
 import "../../model/desc/stlc.gandr";
@@ -86,9 +85,9 @@ def extendEnv(g : Ctx, a : ObjTy, d : Ctx, rho : envs(g, d), v : sem(a, d)) -> e
   d
 ) { (rho, v) }
 
-/// The lookup of a variable in an environment. The inner case does not prune
-/// `ENil`, whose index `Empty` is apart from `Extend(h, b)`.
-@[ refuses("NonExhaustiveMatch") ]
+/// The lookup of a variable in an environment. Each inner case omits `ENil`,
+/// but the arm `ECons` does not learn its indices from its equations.
+@[ refuses("TypeMismatch") ]
 def rec look(g : Ctx, a : ObjTy, x : Var(g, a), d : Ctx, rho : SemEnv(g, d)) -> sem(a, d) {
   match x {
     Here(_h, _b) => match rho {

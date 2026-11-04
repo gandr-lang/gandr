@@ -1584,11 +1584,11 @@ enum Test
     },
     /// The hole that decides whether the first surviving row matches.
     Stuck(HoleId),
-    /// A branch whose constructor no row admits, at a family of one index:
-    /// the case of no branches on its equation, the innermost binder, which
-    /// the checker admits when the constructor's index is apart from the
-    /// scrutinee's.
-    Absurd,
+    /// A branch whose constructor no row admits: the case of no branches on
+    /// one of its equations, which the checker admits when the constructor's
+    /// index there is apart from the scrutinee's. The equation is named by its
+    /// binder, counted from the innermost.
+    Absurd(Depth),
     /// Switch on the native data value at `level`: one child per
     /// constructor, with the constructor's arity.
     Data
@@ -2324,7 +2324,7 @@ struct Switch
 /// # Adequacy
 /// - hypothesis: L3 — as [`Test`].
 /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct Compiling
 {
     /// The tree's nodes.
@@ -2333,6 +2333,9 @@ struct Compiling
     work: Vec<Work>,
     /// The arms whose clause is guarded.
     guarded: BTreeSet<ArmAt>,
+    /// The written type of the scrutinee at level zero, where the match
+    /// states one: the pruning of a constructor reads its indices.
+    stated: Maybe<NodeIndex, binder_type::Absent>,
 }
 
 impl Compiling
@@ -5257,7 +5260,11 @@ impl<'source> Lowerer<'_, 'source>
             variables.push(bound);
         }
         settle_unstated(&mut patterns, &roots)?;
-        let tests = self.compile(site, &patterns, (rows, Depth::default(), BTreeSet::new()))?;
+        let tests = self.compile(
+            site,
+            &patterns,
+            (rows, Depth::default(), BTreeSet::new(), stated),
+        )?;
         let loops = self.loop_arms(site, &tests, looped)?;
         let eliminates = tests.iter().any(|test| {
             matches!(
@@ -7847,7 +7854,8 @@ impl<'source> Lowerer<'_, 'source>
 
     /// Compile `rows` to a decision tree over the scrutinee at level zero, or,
     /// `rooted` under one binder per column, over clauses' columns at levels
-    /// one to their count.
+    /// one to their count. `stated` is the scrutinee's written type at level
+    /// zero, where the match states one.
     ///
     /// # Specification
     /// - requires: every row has one column, its arm's alternative, or one per
@@ -7882,7 +7890,12 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         site: Site,
         patterns: &Written,
-        (rows, rooted, guarded): (Vec<Row>, Depth, BTreeSet<ArmAt>),
+        (rows, rooted, guarded, stated): (
+            Vec<Row>,
+            Depth,
+            BTreeSet<ArmAt>,
+            Maybe<NodeIndex, binder_type::Absent>,
+        ),
     ) -> Result<Vec<Test>, LoweringRefusal<'source>>
     {
         let levels = match rooted {
@@ -7890,8 +7903,10 @@ impl<'source> Lowerer<'_, 'source>
             Depth(columns) => (1 ..= columns).map(TreeLevel).collect(),
         };
         let mut tree = Compiling {
+            tests: Vec::new(),
+            work: Vec::new(),
             guarded,
-            ..Compiling::default()
+            stated,
         };
         let _root = tree.queue(rooted, levels, rows);
         while let Some(item) = tree.work.pop() {
@@ -8163,11 +8178,17 @@ impl<'source> Lowerer<'_, 'source>
                 next.columns = splice(&row.columns, switch.column, &replacement);
                 specialised.push(next);
             }
-            // A constructor no row admits at a family of one index is pruned:
-            // its branch eliminates its one equation, which the checker admits
-            // only when the constructor cannot stand at the scrutinee's index.
-            if specialised.is_empty() && equations == 1 {
-                branches.push((arity, tree.place(Test::Absurd)));
+            // A constructor no row admits is pruned: its branch eliminates one
+            // of its equations, which the checker admits only when the
+            // constructor cannot stand at the scrutinee's index there.
+            if specialised.is_empty()
+                && let Some(equation) = self.apart_equation(
+                    (form, ConstructorTag::from(tag)),
+                    (switch, gandr_kernel_term::EquationCount::from(equations)),
+                    tree,
+                )?
+            {
+                branches.push((arity, tree.place(Test::Absurd(equation))));
                 continue;
             }
             fresh.clear();
@@ -8190,6 +8211,204 @@ impl<'source> Lowerer<'_, 'source>
             eliminated,
             equations,
             branches,
+        })
+    }
+
+    /// The equation that a pruned branch of the constructor `tag` of `form`
+    /// eliminates, by its binder counted from the innermost.
+    ///
+    /// # Specification
+    /// - requires: `equations` is the count of `form`'s indices.
+    /// - ensures: at one equation, that one. At several, of the indices whose
+    ///   stated term a constructor heads, the first whose scrutinee index at
+    ///   level zero another constructor heads; else the first whose scrutinee
+    ///   index no constructor heads or the switch does not read; else the first
+    ///   whose scrutinee index the same constructor heads. Nothing when no
+    ///   constructor heads a stated index, since no such equation is apart, and
+    ///   the constructor keeps its branch.
+    /// - fails: the resolution refusals of a head the walk reads; the
+    ///   allowance, one step per index.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// The loop runs once per stated index of one generator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a family of two indices whose apart index is the
+    ///   first, and one whose apart index is the second.
+    /// - witness: `lower::native::tests::a_case_over_two_indices_prunes_at_the_apart_one_3402`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |chosen| chosen.is_none_or(|Depth(at)| at < usize::from(equations))))]
+    fn apart_equation(
+        &mut self,
+        (form, tag): (Generators, ConstructorTag),
+        (switch, equations): (Switch, gandr_kernel_term::EquationCount),
+        tree: &Compiling,
+    ) -> Result<Option<Depth>, LoweringRefusal<'source>>
+    {
+        let count = usize::from(equations);
+        let innermost = |index: usize| Depth(count.saturating_sub(index).saturating_sub(1));
+        if count == 1 {
+            return Ok(Some(innermost(0)));
+        }
+        let Generators::Written(position) = form
+        else {
+            return Ok(None);
+        };
+        let Some(stated) = self
+            .collected
+            .data
+            .get(position)
+            .and_then(|written| written.generators.get(usize::from(tag)))
+            .map(|generator| generator.indices.clone())
+        else {
+            return Ok(None);
+        };
+        let scrutinee = if switch.level == TreeLevel::default() {
+            self.stated_indices(tree.stated, form)?
+        }
+        else {
+            Vec::new()
+        };
+        let (mut unread, mut alike) = (None, None);
+        for (index, &term) in stated.iter().enumerate() {
+            self.fuel.spend()?;
+            let Some(head) = self.index_head(term)?
+            else {
+                continue;
+            };
+            let other = match scrutinee.get(index) {
+                Some(&written) => self.index_head(written)?,
+                None => None,
+            };
+            match other {
+                Some(other) if other != head => return Ok(Some(innermost(index))),
+                Some(_) => {
+                    alike = alike.or_else(|| Some(innermost(index)));
+                },
+                None => {
+                    unread = unread.or_else(|| Some(innermost(index)));
+                },
+            }
+        }
+
+        Ok(unread.or(alike))
+    }
+
+    /// The index terms the written type `stated` applies the family at `form`
+    /// to, after its parameters.
+    ///
+    /// # Specification
+    /// - requires: `form` names a family of the collected data list.
+    /// - ensures: read through parentheses, the arguments of a type application
+    ///   or a call past as many as the family has parameters; nothing for an
+    ///   unstated type, a family of no written data or any other form.
+    /// - fails: the refusals the tree's molds yield; the allowance, one step
+    ///   per form read.
+    /// - panics: none.
+    /// - executable: none — the result is a list of syntax nodes, and no
+    ///   predicate over it can read whether each is an index argument.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// Every round descends into the type its parentheses hold, a strict
+    /// subtree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::apart_equation`].
+    /// - witness: `lower::native::tests::a_case_over_two_indices_prunes_at_the_apart_one_3402`
+    fn stated_indices(
+        &mut self,
+        stated: Maybe<NodeIndex, binder_type::Absent>,
+        form: Generators,
+    ) -> Result<Vec<Placed>, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(mut at) = stated
+        else {
+            return Ok(Vec::new());
+        };
+        let Generators::Written(position) = form
+        else {
+            return Ok(Vec::new());
+        };
+        let parameters = self
+            .collected
+            .data
+            .get(position)
+            .map_or(0, |written| written.parameters.len());
+        let mut pieces = Pieces::new();
+        loop {
+            self.fuel.spend()?;
+            let Some(tree) = self.tree.node(at)
+            else {
+                return Ok(Vec::new());
+            };
+            let placed = Placed::of(at, tree);
+            let Some((_, former)) = self.form_at(placed)?
+            else {
+                return Ok(Vec::new());
+            };
+            if former != Former::ParenthesizedType
+                && former != Former::TypeApplication
+                && former != Former::Call
+            {
+                return Ok(Vec::new());
+            }
+            read_pieces(self.pbg, self.tree, at, &mut pieces)?;
+            let mut operands = pieces.pieces.iter().filter_map(|piece| match *piece {
+                Piece::Operand(inner) => Some(inner),
+                Piece::Tile { .. } => None,
+            });
+            // A type application's head is a tile, and a call's its first
+            // operand.
+            if former == Former::TypeApplication {
+                return Ok(operands.skip(parameters).collect());
+            }
+            if former == Former::Call {
+                return Ok(operands.skip(parameters.saturating_add(1)).collect());
+            }
+            match (operands.next(), operands.next()) {
+                (Some(inner), None) => at = inner.node,
+                (Some(_) | None, _) => return Ok(Vec::new()),
+            }
+        }
+    }
+
+    /// The constructor that heads the written index term `term`, bare or
+    /// applied, as [`Self::applied_constructor`] reads it.
+    ///
+    /// # Specification
+    /// - requires: `term` is a syntax node of the tree.
+    /// - ensures: the constructor that heads `term`; nothing for any other
+    ///   term, a variable among them.
+    /// - fails: as [`Self::applied_constructor`].
+    /// - panics: none.
+    /// - executable: none — the result is a constructor of the source, and no
+    ///   predicate over it can read whether it heads the written term.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::apart_equation`].
+    /// - witness: `lower::native::tests::a_case_over_two_indices_prunes_at_the_apart_one_3402`
+    fn index_head(
+        &mut self,
+        term: Placed,
+    ) -> Result<Option<Constructor>, LoweringRefusal<'source>>
+    {
+        let site = Site {
+            at: term,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(Frame::Outermost),
+        };
+        Ok(match self.applied_constructor(site, term)? {
+            Maybe::Present(found) => Some(found),
+            Maybe::Absent(_) => None,
         })
     }
 
@@ -11658,7 +11877,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 Test::Pending
                 | Test::Stuck(_)
-                | Test::Absurd
+                | Test::Absurd(_)
                 | Test::Leaf { .. }
                 | Test::Guard { .. }
                 | Test::Boolean { .. }
@@ -11753,7 +11972,7 @@ impl<'source> Lowerer<'_, 'source>
                 Some(&(Test::Split { child, .. } | Test::Record { child, .. })) => {
                     pending.push(child);
                 },
-                Some(&(Test::Pending | Test::Stuck(_) | Test::Absurd)) | None => {},
+                Some(&(Test::Pending | Test::Stuck(_) | Test::Absurd(_))) | None => {},
             }
         }
         let variable = named?;
@@ -12099,7 +12318,7 @@ fn tracked_motives(
             Test::Pending | Test::Stuck(_) | Test::Leaf { .. } => {},
             // The case of no branches on the equation answers the branch's
             // own answer, reading none of its binder.
-            Test::Absurd => {
+            Test::Absurd(_) => {
                 if let Some(slot) = motives.get_mut(position) {
                     *slot = Maybe::Present(
                         gandr_core_term::shift_comp_type(arena, here, Binders::ONE).settle(arena),
@@ -12267,7 +12486,7 @@ fn refinings(tests: &[Test]) -> Refinings
             .copied()
             .unwrap_or(Maybe::Absent(refined::Absent::Unswitched));
         match *test {
-            Test::Pending | Test::Stuck(_) | Test::Absurd | Test::Leaf { .. } => {},
+            Test::Pending | Test::Stuck(_) | Test::Absurd(_) | Test::Leaf { .. } => {},
             Test::Data {
                 level,
                 depth,
@@ -12887,12 +13106,12 @@ fn mint_test(
             let hole = sink.arena.computation_hole(hole);
             Maybe::Present(answered_at(sink, hole, answered))
         },
-        Test::Absurd => {
+        Test::Absurd(eliminated) => {
             let Maybe::Present(motive) = read
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            let equation = variable(sink.arena, Depth::default());
+            let equation = variable(sink.arena, eliminated);
             Maybe::Present(sink.arena.computation_data_case(
                 equation,
                 motive,

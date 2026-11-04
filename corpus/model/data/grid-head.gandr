@@ -1,0 +1,60 @@
+// A case at a family of two indices omits an arm that is apart at one index.
+//
+// Each branch binds one path for each index. The path runs from the index
+// that its constructor states to the index of the scrutinee. An omitted arm
+// must eliminate a path whose two ends are apart.
+//
+// The lowering chooses that path by the constructors at the heads of the two
+// ends. The checker refuses an omitted arm whose ends are apart at no index.
+// The pathological twin holds that case.
+//
+// - see: #3402
+
+// The naturals the dimensions count in.
+import "./data-base.gandr";
+
+/// Grids of integers, indexed by their rows and their columns.
+pub data Grid : (r : Nat, c : Nat) --> Type where {
+  /// The empty grid, at no row and no column.
+  | GNil : Grid(Zero, Zero)
+  /// A grid and one more row, whose last cell is `cell`.
+  | GRow : (r : Nat, c : Nat, cell : Integer, rest : Grid(r, c)) --> Grid(Succ(r), c)
+  /// A grid and one more column, whose last cell is `cell`.
+  | GCol : (r : Nat, c : Nat, cell : Integer, rest : Grid(r, c)) --> Grid(r, Succ(c))
+}
+
+/// The last cell of a grid of at least one row. `GNil` stands at no row, and
+/// the case omits its arm at the first index.
+def rowCell(n : Nat, m : Nat, g : Grid(Succ(n), m)) -> Integer {
+  match g {
+    GRow(r, c, cell, rest) => cell,
+    GCol(r, c, cell, rest) => cell
+  }
+}
+
+/// The last cell of a grid of at least one column. `GNil` stands at no
+/// column, and the case omits its arm at the second index.
+def colCell(n : Nat, m : Nat, g : Grid(m, Succ(n))) -> Integer {
+  match g {
+    GRow(r, c, cell, rest) => cell,
+    GCol(r, c, cell, rest) => cell
+  }
+}
+
+/// A grid of one row and one column.
+def corner() -> Grid(Succ(Zero), Succ(Zero)) {
+  GRow(
+    Zero,
+    Succ(Zero),
+    4,
+    (GCol(Zero, Zero, 7, (GNil : Grid(Zero, Zero))) : Grid(Zero, Succ(Zero)))
+  )
+}
+
+/// The last cell of the corner as a row.
+@[ runs("4") ]
+def cornerRow() -> Integer { rowCell(Zero, Succ(Zero), corner()) }
+
+/// The last cell of the corner as a column.
+@[ runs("4") ]
+def cornerCol() -> Integer { colCell(Zero, Succ(Zero), corner()) }

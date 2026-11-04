@@ -1,8 +1,8 @@
 /// `indexed-data`: Indexed data families.
-/// Implemented: data families over value indices, written as the kind `Nat -> Type` or as a named telescope whose later index types read the earlier ones, whose case checks each arm at its constructor's fields with one equation per index. A constructor written at an index takes the index's type. The solution of an equation with a variable side refines its arm. At a family of one index, the case leaves out an arm whose constructor stands apart.
-/// Not implemented: pruning at several indices and injectivity at a match.
+/// Implemented: data families over value indices, written as the kind `Nat -> Type` or as a named telescope whose later index types read the earlier ones, whose case checks each arm at its constructor's fields with one equation per index. A constructor written at an index takes the index's type. The solution of an equation with a variable side refines its arm. The case omits an arm whose constructor is apart at one of its indices.
+/// Not implemented: injectivity at a match.
 ///
-/// - owes: #1314 — pruning at several indices
+/// - owes: #1314 — injectivity at a match
 /// - owes: #3515 — injectivity at a match
 //! Vectors: lists indexed by their length, a family whose constructors each
 //! state the index their value stands at [Dybjer-1994-inductive_families]. The
