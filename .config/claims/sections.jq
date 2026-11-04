@@ -35,13 +35,14 @@ def row_key:
 # `fixed`, `accepted` or `runner shift`, the last three the statuses a hotpath
 # index settles a row with (#3369). A cell ends at an unescaped `|`, and a
 # `\|` in the first cell reads as `|` (#3371), so a mutant name holding one
-# keys whole. A `## Sources`, `## Readings` or `## Concerns` table is a unit's
-# shape, and a `## Settled` table measures settled rows: none is rows.
+# keys whole. A `## Sources`, `## Readings`, `## Concerns` or `## Engineering`
+# table is a unit's shape, and a `## Settled` table measures settled rows:
+# none is rows.
 def collector_rows:
   def rule: test("^\\s*\\|(\\s*:?-+:?\\s*\\|)+\\s*$");
   (lines
     | reduce .[] as $line ({shape: false, kept: []};
-        (if $line | test("^## ") then .shape = ($line | test("^## (Sources|Readings|Concerns|Settled)\\s*(:.*)?$")) else . end)
+        (if $line | test("^## ") then .shape = ($line | test("^## (Sources|Readings|Concerns|Engineering|Settled)\\s*(:.*)?$")) else . end)
         | if .shape then . else .kept += [$line] end)
     | .kept) as $lines
   | [$lines[] | select(test("^\\s*[-*] \\[ \\]")) | sub("^\\s*[-*] \\[ \\]\\s*"; "") | row_key]
@@ -165,6 +166,23 @@ def concern_marks:
   | .cells as $cells
   | first($cells[] | select(IN(concerns[]))) as $concern
   | {concern: $concern, mark: (first($cells[] | ascii_downcase | capture("^(?<mark>yes|no)\\b").mark) // null)};
+
+# The six rows of a unit's `## Engineering` (`units.md` § units-engineering,
+# #5038), in the order the section states them.
+def engineering_rows: ["change", "complexity", "latency", "parallelism", "memory", "failure"];
+
+# The rows of an `## Engineering` table, from the section's lines and read
+# before its subsections: per row whose first cell names one of the six,
+# {row, answer}, the answer the row's last cell with its HTML comments
+# dropped, or "" when the row has one cell. So a table `| Row | Bound |` and
+# the form's `| Row | Question | Bound |` read alike.
+def engineering:
+  lead
+  | rows
+  | (.cells[0] // "" | gsub("\\*"; "") | ascii_downcase) as $row
+  | select(IN($row; engineering_rows[]))
+  | {row: $row,
+     answer: (if (.cells | length) > 1 then .cells[-1] | gsub("(?s)<!--.*?-->"; "") | gsub("^\\s+|\\s+$"; "") else "" end)};
 
 # Whether a section has content once its HTML comments are dropped.
 def filled: join("\n") | gsub("(?s)<!--.*?-->"; "") | test("\\S");

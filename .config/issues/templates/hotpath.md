@@ -42,6 +42,17 @@ Bisect the series' hotpath reports over `main`, from the last passing report to 
 | `sharing` | {{sharing}} |
 | `nominal` | no |
 
+## Engineering
+
+| Row | Bound |
+| --- | ----- |
+| change | n/a — a budget breach on `main`; the fix states its own incremental path |
+| complexity | `{{function}}`'s count on the series' inputs, at most {{budget}} |
+| latency | `{{function}}` at or under {{budget}} on `main` |
+| parallelism | n/a — the budget reads one function's count on one host class |
+| memory | the fix's pull request states the allocations per call before and after |
+| failure | n/a — a measurement; a crash loses one report, and the next run measures again |
+
 ## Ledger
 
 None: a budget the ledger does not carry.

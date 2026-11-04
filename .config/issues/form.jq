@@ -10,8 +10,8 @@
 # Input: the body, a string. Output: `{body, labels}`, or null.
 
 def fields:
-  ["Kind", "Area", "Brief", "Sources", "Readings", "Concerns", "Ledger", "Surface", "The shape", "Try first",
-   "Not in this slice", "After"];
+  ["Kind", "Area", "Brief", "Sources", "Readings", "Concerns", "Engineering", "Ledger", "Surface", "The shape",
+   "Try first", "Not in this slice", "After"];
 
 split("\n") | map(sub("\r$"; ""))
 | if (map(select(test("\\S"))) | first) != "### Kind" then null

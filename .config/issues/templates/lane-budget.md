@@ -40,6 +40,17 @@ Time the parts of `{{job}}` in its last run's log. Split them into shares by cos
 | `sharing` | no |
 | `nominal` | no |
 
+## Engineering
+
+| Row | Bound |
+| --- | ----- |
+| change | a run reads its share of `{{job}}`'s set, never the whole set |
+| complexity | each run's share costs at most the budget's remainder |
+| latency | `{{workflow}}` sums under {{budget}} s over its jobs |
+| parallelism | the shares spread across runs, and each run holds one share |
+| memory | n/a — a CI schedule holds no resident state |
+| failure | a run that fails mid-share owes its share to the next run, by its date or its seed |
+
 ## Ledger
 
 None (workflow).

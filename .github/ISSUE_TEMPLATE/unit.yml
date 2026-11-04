@@ -117,6 +117,25 @@ body:
     validations:
       required: true
   - type: textarea
+    id: engineering
+    attributes:
+      label: Engineering
+      description: >-
+        Design as for a durable, mission-critical, latency-critical system (`units.md` § units-engineering). Answer
+        every row in its last cell with a bound, a budget or a measured number, or `n/a — <reason>` where the change
+        has no such path. An empty row and a bare `n/a` are refused.
+      value: |
+        | Row | The issue states | Bound |
+        | --- | ---------------- | ----- |
+        | change | what a change to the input recomputes, and its bound | |
+        | complexity | time and space in the input size; the worst case; hostile input | |
+        | latency | the budget of the path the change sits on: a keystroke, a check, a request, a landing | |
+        | parallelism | what runs at once, what serialises, where contention sits, the width left unused | |
+        | memory | allocations and copies per operation, what stays resident | |
+        | failure | a crash mid-operation: what is lost, what resumes, what replays | |
+    validations:
+      required: true
+  - type: textarea
     id: ledger
     attributes:
       label: Ledger

@@ -39,6 +39,17 @@
 | `sharing` | no |
 | `nominal` | no |
 
+## Engineering
+
+| Row | Bound |
+| --- | ----- |
+| change | n/a — a routing event; no code path changes |
+| complexity | n/a — the detector reads one pull request whole |
+| latency | n/a — the coordinator routes the stall; no tool path changes |
+| parallelism | n/a — one report per stall |
+| memory | n/a — no code path changes |
+| failure | `stall:watch` reads the stall again on its next run, so a lost page repeats |
+
 ## Ledger
 
 None (workflow).

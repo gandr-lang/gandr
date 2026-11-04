@@ -33,6 +33,13 @@
 #   scale: 0 names and combinators, 1 a user notation, 2 a reader
 #   `#name{ … }`, 3 an attribute `@[…]`, 4 a clause position bound to a `std`
 #   interface;
+# - `## Engineering` (#5038): a table with one row for each of `change`,
+#   `complexity`, `latency`, `parallelism`, `memory` and `failure`, the
+#   row's name in its first cell and its answer in its last: a bound, a
+#   budget or a measured number, or `n/a — <reason>` where the change has no
+#   such path (`units.md` § units-engineering). An empty answer and a bare
+#   `n/a` are refused. An issue the coordinator signed is not judged, so no
+#   unit signed before the rule becomes unclaimable;
 # - `## The shape` and `## Try first`, when the body says it is new
 #   territory.
 #
@@ -78,6 +85,27 @@ def surface($labels):
       else ($lines | join("\n") | gsub("(?s)<!--.*?-->"; "") | split("\n") | map(select(test("\\S"))) | first | sub("^[-*]\\s+"; "")) as $first
       | if $first | test("^(tier [0-4]|none) —\\s*\\S") then empty
         else "`## Surface` opens `\($first)`, not \($form)"
+        end
+      end
+  end;
+
+# What `## Engineering` lacks (#5038), on an issue the coordinator has not
+# signed: the section, a row of the six, a row's answer, or a reason beside
+# an `n/a`.
+def engineering_findings($labels):
+  if ($labels | index("shape:signed")) != null then empty
+  else
+    "a bound, a budget or a measured number, or `n/a — <reason>` (`units.md` § units-engineering)" as $form
+    | (section("Engineering") // null) as $lines
+    | if $lines == null then
+        "`## Engineering` is missing: write one row for each of `change`, `complexity`, `latency`, `parallelism`, `memory` and `failure`, each \($form)"
+      else [$lines | engineering] as $rows
+      | engineering_rows[] as $row
+      | [$rows[] | select(.row == $row) | .answer] as $answers
+      | if ($answers | length) == 0 then "`## Engineering` has no row for `\($row)`: write \($form)"
+        elif all($answers[]; . == "") then "`## Engineering` leaves `\($row)` empty: write \($form)"
+        elif all($answers[]; test("^n/?a\\.?$"; "i")) then "`## Engineering` answers `\($row)` with a bare `n/a`: write `n/a — <reason>`"
+        else empty
         end
       end
   end;
@@ -164,4 +192,5 @@ def findings($labels):
       | "the line `\(.)` states a dependency in prose: list each issue in `## After` as `- #n — <what it waits for>`, and `unit:check --fix` sets it on GitHub"),
     (if $body | gsub("(?s)<!--.*?-->"; "") | test("new territory"; "i") then need("The shape"), need("Try first") else empty end),
     surface($labels),
+    engineering_findings($labels),
     window($labels);
