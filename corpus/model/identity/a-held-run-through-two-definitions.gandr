@@ -8,8 +8,7 @@
 /// - see: #3789 — the kernel took one step of the run and left it at `zero`
 
 /// The composite of two paths, whose type states its endpoints.
-def joinedPaths(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(
-  A,
+def joinedPaths(A : Type, x : A, y : A, z : A, p : Path(x, y), q : Path(y, z)) -> Path(
   x,
   z
 ) {
@@ -17,18 +16,17 @@ def joinedPaths(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y,
 }
 
 /// Reflexivity, by name.
-def zero(A : Type, x : A) -> Path(A, x, x) {
+def zero(A : Type, x : A) -> Path(x, x) {
   Path.here(x)
 }
 
 /// Reflexivity, through `zero`.
-def zero2(A : Type, x : A) -> Path(A, x, x) {
+def zero2(A : Type, x : A) -> Path(x, x) {
   zero(A, x)
 }
 
 /// A call that runs to reflexivity in two steps, then `p`, is `p`.
-def twoStepsThen(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(
-  Path(A, x, y),
+def twoStepsThen(A : Type, x : A, y : A, p : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](
   joinedPaths(A, x, x, y, zero2(A, x), p),
   p
 ) {

@@ -4224,11 +4224,11 @@ enum Family
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Relating
 {
-    /// `Path(A, a, b)`.
+    /// `Path[.A = A](a, b)`.
     Path,
-    /// `Flow(A, a, b)`.
+    /// `Flow[.A = A](a, b)`.
     Flow,
-    /// `Bridge(A, a, b)`.
+    /// `Bridge[.A = A](a, b)`.
     Bridge,
 }
 

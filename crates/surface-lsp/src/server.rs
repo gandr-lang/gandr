@@ -9808,8 +9808,8 @@ mod tests
         assert_eq!(
             changed("data-maybe.gandr"),
             [
-                "def kept+0:53 `m` variable→parameter",
-                "def kept+0:56 `m` variable→parameter",
+                "def kept+0:37 `m` variable→parameter",
+                "def kept+0:40 `m` variable→parameter",
                 "def kept+1:8 `m` variable→parameter",
                 "def kept+2:22 `m` variable→parameter",
                 "def kept+3:25 `m` variable→parameter",
@@ -9934,8 +9934,8 @@ mod tests
                 "def unwrap_or_zero+3:15 `x` variable value",
                 "def kept+0:4 `kept` function declaration",
                 "def kept+0:9 `m` parameter declaration+value",
-                "def kept+0:53 `m` parameter value",
-                "def kept+0:56 `m` parameter value",
+                "def kept+0:37 `m` parameter value",
+                "def kept+0:40 `m` parameter value",
                 "def kept+1:8 `m` parameter value",
                 "def kept+2:4 `None` enumMember value",
                 "def kept+2:22 `m` parameter value",
@@ -11299,10 +11299,10 @@ mod tests
             rows,
             [
                 "pub data Empty+0: Empty: 0 references",
-                "pub data Circle+0: Circle: 32 references",
+                "pub data Circle+0: Circle: 30 references",
                 "pub data Circle+1: Base: 43 references",
                 "pub data Circle+2: loop: 21 references",
-                "pub data Int+0: Int: 15 references",
+                "pub data Int+0: Int: 14 references",
                 "pub data Int+1: Z: 7 references",
                 "pub data Int+2: S: 4 references",
                 "pub data Int+3: P: 4 references",
@@ -11331,7 +11331,7 @@ mod tests
             (elim.as_str(), "def involutive("),
             (
                 elim.as_str(),
-                "Path.walk(fun (x) { Path(Circle, Base, invLooper(x)) }",
+                "Path.walk(fun (x) { type(Path[.A = Circle](Base, invLooper(x))) }",
             ),
         ]
         .map(|(text, held)| {
@@ -11348,9 +11348,9 @@ mod tests
             Some(
                 serde_json::json!({"title": "3 references", "command": "gandr.showReferences",
                 "arguments": [uri("circle-base.gandr"), at(Line::from(flip_at), Character::from(8_u32)), [
-                    location("circle-elim.gandr", involutive_at, 43, 52),
-                    location("circle-elim.gandr", involutive_at, 53, 62),
-                    location("circle-elim.gandr", flipped_at, 41, 50),
+                    location("circle-elim.gandr", involutive_at, 48, 57),
+                    location("circle-elim.gandr", involutive_at, 58, 67),
+                    location("circle-elim.gandr", flipped_at, 51, 60),
                 ]]})
             ),
             "the flip's command shows the importer's three calls of it: twice in \

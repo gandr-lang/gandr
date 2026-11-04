@@ -86,9 +86,9 @@ def tangled[a : b, b : a](x : a) -> -F a { return x }
 /// `chosen` with its implicit omitted in a declared type with no body: no
 /// body poses a comparison, so nothing determines `x`.
 @[ refuses("ImplicitUnsolved") ]
-def unchosenSigned : Path(Integer, chosen(Integer), 0);
+def unchosenSigned : Path(chosen(Integer), 0);
 
 /// `same(unit)` in a declared type: the argument solves `a` as `Unit`, and
 /// the path's integer carrier then disagrees with it.
 @[ refuses("TypeMismatch") ]
-def disagreeingSigned : Path(Integer, same(unit), 3) = Path.here(3);
+def disagreeingSigned : Path(same(unit), 3) = Path.here(3);

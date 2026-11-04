@@ -59,6 +59,6 @@ def lucasLehmer(p : Nat) -> Bool {
 }
 
 /// Thirty-one is a Mersenne prime.
-def thirtyOneIsPrime() -> Path(Bool, lucasLehmer(Succ(four)), true) {
+def thirtyOneIsPrime() -> Path(lucasLehmer(Succ(four)), true) {
   Path.here(true)
 }

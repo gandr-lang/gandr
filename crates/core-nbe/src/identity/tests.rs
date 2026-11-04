@@ -182,7 +182,7 @@ fn text_type(core: &mut CoreArena) -> ValueTypeId
     core.value_type_base(BaseType::String)
 }
 
-/// The diagonal `y. Path(Text, y, y)`: a motive that reads its binder at
+/// The diagonal `y. Path[.A = Text](y, y)`: a motive that reads its binder at
 /// both endpoints, so no rule moves it along a stuck path.
 ///
 /// # Specification
@@ -272,7 +272,7 @@ fn transport_in_a_constant_motive_returns_the_operand()
     );
 }
 
-/// The telescope motive `Π (y : Text). Π (z : Text). F Path(Text, z, y)`,
+/// The telescope motive `Π (y : Text). Π (z : Text). F Path[.A = Text](z, y)`,
 /// whose fibre at a point is no singleton, so its transport keeps the
 /// operand's own form.
 ///
@@ -356,7 +356,7 @@ fn telescope_transport_along_a_stuck_path_is_stuck()
     );
 }
 
-/// The telescope motive `Π (y : Unit). Π (z : Path(Unit, (), y)). F C` of
+/// The telescope motive `Π (y : Unit). Π (z : Path[.A = Unit]((), y)). F C` of
 /// based path induction at the unit type, returning `body`.
 ///
 /// # Specification
@@ -454,8 +454,8 @@ fn telescope_transport_into_the_unit_fibre_returns_the_unit_1886()
 fn telescope_transport_into_a_unit_fibred_atom_returns_the_unit_1937()
 {
     // At the atom `A` (position 0), the family of paths back to `origin`
-    // (position 1), `(y : A, z : Path(A, origin, y)) => Path(A, y, origin)`,
-    // along rigid evidence (position 2).
+    // (position 1), `(y : A, z : Path[.A = A](origin, y)) => Path[.A = A](y,
+    // origin)`, along rigid evidence (position 2).
     let mut core = CoreArena::new();
     let atom = core.value_type_abstract(ConstantIndex::from(0_usize));
     let origin = core.value_constant(ConstantIndex::from(1_usize));
@@ -530,10 +530,10 @@ fn telescope_transport_into_a_unit_fibred_atom_returns_the_unit_1937()
 fn telescope_transport_into_an_identity_of_the_unit_type_returns_the_unit_1960()
 {
     // At the atom `A` (position 0), along rigid evidence (position 2), the
-    // family of paths back to `origin` (position 1), `(y : A, z : Path(A,
-    // origin, y)) => Path(A, y, origin)`, and the family of the identities of
-    // the singleton's own paths, `(y : A, z : Path(A, origin, y)) =>
-    // Path(Path(A, origin, y), z, z)`.
+    // family of paths back to `origin` (position 1), `(y : A, z : Path[.A = A](
+    // origin, y)) => Path[.A = A](y, origin)`, and the family of the identities of
+    // the singleton's own paths, `(y : A, z : Path[.A = A](origin, y)) =>
+    // Path[.A = Path[.A = A](origin, y)](z, z)`.
     let mut core = CoreArena::new();
     let atom = core.value_type_abstract(ConstantIndex::from(0_usize));
     let origin = core.value_constant(ConstantIndex::from(1_usize));
@@ -2248,7 +2248,7 @@ fn stuck_transports_compare_by_motive_and_operand()
     let path = stuck(&mut core, ConstantIndex::from(0_usize));
     let transported = core.computation_path_transport(motive, path, here);
     let elsewhere = core.computation_path_transport(motive, path, there);
-    // `y. Path(Text, y, five)` also reads its binder and is no singleton.
+    // `y. Path[.A = Text](y, five)` also reads its binder and is no singleton.
     let carrier = text_type(&mut core);
     let moving = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
     let fixed = core.value_type_path(carrier, moving, five);
@@ -2293,7 +2293,7 @@ fn stuck_transports_under_one_motive_over_captures_it_does_not_read_settle_alike
     let here = core.value_here(five);
     let motive = diagonal(&mut core);
     let path = stuck(&mut core, ConstantIndex::from(0_usize));
-    // `λa. λb. transport(y. Path(Text, y, y), p, here(5))`, entered at two
+    // `λa. λb. transport(y. Path[.A = Text](y, y), p, here(5))`, entered at two
     // argument orders: each motive closes over `[a, b]`, which its body never
     // reads, the way a definition's family does at two of its calls.
     let transported = core.computation_path_transport(motive, path, here);

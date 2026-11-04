@@ -2679,7 +2679,7 @@ fn an_included_member_is_refused_at_its_include_2752()
 #[test]
 fn a_law_member_reads_its_statement_2356()
 {
-    let source = "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) => Path(Bool, eq(a, a), true);\n}\ntheory Same where {\n  include Base;\n  law sym : (a : C, b : C) => Path(Bool, eq(a, b), eq(b, a));\n  law flat : (a : C) => Bool;\n  law late : (a : C, p : Path(Bool, eq(a, a), true), b : C) => Path(Bool, eq(a, b), true);\n  law eq : (a : C) => Path(Bool, eq(a, a), true);\n}\n";
+    let source = "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) => Path[.A = Bool](eq(a, a), true);\n}\ntheory Same where {\n  include Base;\n  law sym : (a : C, b : C) => Path[.A = Bool](eq(a, b), eq(b, a));\n  law flat : (a : C) => Bool;\n  law late : (a : C, p : Path[.A = Bool](eq(a, a), true), b : C) => Path[.A = Bool](eq(a, b), true);\n  law eq : (a : C) => Path[.A = Bool](eq(a, a), true);\n}\n";
     let report = described(source);
     let faults = report
         .diagnostics
@@ -2747,7 +2747,7 @@ fn a_law_member_reads_its_statement_2356()
 #[test]
 fn a_stated_law_naming_an_unbound_variable_is_refused_at_its_theory_4115()
 {
-    let source = "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) => Path(Bool, eq(a, a), yes);\n}\ntheory Same where {\n  include Base;\n  law sym : (a : C, b : C) => Path(Bool, eq(a, b), eq(b, a));\n  law odd : (a : C) => Path(Bool, qe(a, a), true);\n}\n";
+    let source = "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) => Path[.A = Bool](eq(a, a), yes);\n}\ntheory Same where {\n  include Base;\n  law sym : (a : C, b : C) => Path[.A = Bool](eq(a, b), eq(b, a));\n  law odd : (a : C) => Path[.A = Bool](qe(a, a), true);\n}\n";
     let report = described(source);
     let faults = report
         .diagnostics
@@ -2767,14 +2767,14 @@ fn a_stated_law_naming_an_unbound_variable_is_refused_at_its_theory_4115()
                 name: Name::from("refl"),
                 fault: crate::model::ModelFault::Unbound,
             },
-            "law refl : (a : C) => Path(Bool, eq(a, a), yes)"
+            "law refl : (a : C) => Path[.A = Bool](eq(a, a), yes)"
         ),
         (
             DescriptionFault::Unstated {
                 name: Name::from("odd"),
                 fault: crate::model::ModelFault::UnknownHead,
             },
-            "law odd : (a : C) => Path(Bool, qe(a, a), true)"
+            "law odd : (a : C) => Path[.A = Bool](qe(a, a), true)"
         ),
     ]);
 }

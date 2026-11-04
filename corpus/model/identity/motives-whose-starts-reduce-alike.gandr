@@ -23,11 +23,11 @@ def fromUnit(
   x : A,
   y : A,
   z : A,
-  f : Path(A, x, y),
-  g : Path(A, y, z),
-  h : Path(A, x, z),
-  s : Path(Path(A, x, z), Path.step(f, g), h)
-) -> Path(Path(A, x, z), Path.step(Path.step(f, g), Path.here(z)), h) {
+  f : Path[.A = A](x, y),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](x, z),
+  s : Path[.A = Path[.A = A](x, z)](Path.step(f, g), h)
+) -> Path[.A = Path[.A = A](x, z)](Path.step(Path.step(f, g), Path.here(z)), h) {
   s
 }
 
@@ -37,14 +37,13 @@ def thenStart(
   x : A,
   y : A,
   z : A,
-  f : Path(A, x, y),
-  g : Path(A, y, z),
-  h : Path(A, x, z),
-  k : Path(A, x, z),
-  s : Path(Path(A, x, z), Path.step(f, g), h),
-  r : Path(Path(A, x, z), h, k)
-) -> Path(
-  Path(Path(A, x, z), Path.step(f, g), k),
+  f : Path[.A = A](x, y),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](x, z),
+  k : Path[.A = A](x, z),
+  s : Path[.A = Path[.A = A](x, z)](Path.step(f, g), h),
+  r : Path[.A = Path[.A = A](x, z)](h, k)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(f, g), k)](
   Path.step(fromUnit(A, x, y, z, f, g, h, s), r),
   Path.step(s, r)
 ) {
@@ -52,21 +51,33 @@ def thenStart(
 }
 
 /// Motives whose fixed endpoints differ by unfolding `itself(A, x)`.
-def unfoldEnd(A : Type, x : A, y : A, k : A, s : Path(A, y, x), r : Path(A, y, k)) -> Path(
-  Path(A, k, x),
-  Path.walk(fun (c) { Path(A, c, itself(A, x)) }, r, s),
-  Path.walk(fun (c) { Path(A, c, x) }, r, s)
+def unfoldEnd(
+  A : Type,
+  x : A,
+  y : A,
+  k : A,
+  s : Path[.A = A](y, x),
+  r : Path[.A = A](y, k)
+) -> Path[.A = Path[.A = A](k, x)](
+  Path.walk(fun (c) { type(Path[.A = A](c, itself(A, x))) }, r, s),
+  Path.walk(fun (c) { type(Path[.A = A](c, x)) }, r, s)
 ) {
-  Path.here(Path.walk(fun (c) { Path(A, c, x) }, r, s))
+  Path.here(Path.walk(fun (c) { type(Path[.A = A](c, x)) }, r, s))
 }
 
 /// Motives whose fixed endpoints differ by a transport along a reflexivity.
-def hereEnd(A : Type, x : A, y : A, k : A, s : Path(A, y, x), r : Path(A, y, k)) -> Path(
-  Path(A, k, x),
-  Path.walk(fun (c) { Path(A, c, Path.walk(fun (d) { A }, Path.here(x), x)) }, r, s),
-  Path.walk(fun (c) { Path(A, c, x) }, r, s)
+def hereEnd(
+  A : Type,
+  x : A,
+  y : A,
+  k : A,
+  s : Path[.A = A](y, x),
+  r : Path[.A = A](y, k)
+) -> Path[.A = Path[.A = A](k, x)](
+  Path.walk(fun (c) { type(Path[.A = A](c, Path.walk(fun (d) { A }, Path.here(x), x))) }, r, s),
+  Path.walk(fun (c) { type(Path[.A = A](c, x)) }, r, s)
 ) {
-  Path.here(Path.walk(fun (c) { Path(A, c, x) }, r, s))
+  Path.here(Path.walk(fun (c) { type(Path[.A = A](c, x)) }, r, s))
 }
 
 /// Motives whose fixed endpoints differ by the right unit of a composite.
@@ -75,18 +86,21 @@ def unitEnd(
   x : A,
   y : A,
   z : A,
-  k : Path(A, x, z),
-  f : Path(A, x, y),
-  g : Path(A, y, z),
-  s : Path(Path(A, x, z), k, Path.step(f, g)),
-  m : Path(A, x, z),
-  r : Path(Path(A, x, z), k, m)
-) -> Path(
-  Path(Path(A, x, z), m, Path.step(f, g)),
-  Path.walk(fun (c) { Path(Path(A, x, z), c, Path.step(Path.step(f, g), Path.here(z))) }, r, s),
-  Path.walk(fun (c) { Path(Path(A, x, z), c, Path.step(f, g)) }, r, s)
+  k : Path[.A = A](x, z),
+  f : Path[.A = A](x, y),
+  g : Path[.A = A](y, z),
+  s : Path[.A = Path[.A = A](x, z)](k, Path.step(f, g)),
+  m : Path[.A = A](x, z),
+  r : Path[.A = Path[.A = A](x, z)](k, m)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](m, Path.step(f, g))](
+  Path.walk(
+    fun (c) { type(Path[.A = Path[.A = A](x, z)](c, Path.step(Path.step(f, g), Path.here(z)))) },
+    r,
+    s
+  ),
+  Path.walk(fun (c) { type(Path[.A = Path[.A = A](x, z)](c, Path.step(f, g))) }, r, s)
 ) {
-  Path.here(Path.walk(fun (c) { Path(Path(A, x, z), c, Path.step(f, g)) }, r, s))
+  Path.here(Path.walk(fun (c) { type(Path[.A = Path[.A = A](x, z)](c, Path.step(f, g))) }, r, s))
 }
 
 /// Motives whose fixed endpoints differ by the right unit of a variable path.
@@ -94,15 +108,14 @@ def unitVariableEnd(
   A : Type,
   x : A,
   z : A,
-  f : Path(A, x, z),
-  k : Path(A, x, z),
-  s : Path(Path(A, x, z), k, f),
-  m : Path(A, x, z),
-  r : Path(Path(A, x, z), k, m)
-) -> Path(
-  Path(Path(A, x, z), m, f),
-  Path.walk(fun (c) { Path(Path(A, x, z), c, Path.step(f, Path.here(z))) }, r, s),
-  Path.walk(fun (c) { Path(Path(A, x, z), c, f) }, r, s)
+  f : Path[.A = A](x, z),
+  k : Path[.A = A](x, z),
+  s : Path[.A = Path[.A = A](x, z)](k, f),
+  m : Path[.A = A](x, z),
+  r : Path[.A = Path[.A = A](x, z)](k, m)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](m, f)](
+  Path.walk(fun (c) { type(Path[.A = Path[.A = A](x, z)](c, Path.step(f, Path.here(z)))) }, r, s),
+  Path.walk(fun (c) { type(Path[.A = Path[.A = A](x, z)](c, f)) }, r, s)
 ) {
-  Path.here(Path.walk(fun (c) { Path(Path(A, x, z), c, f) }, r, s))
+  Path.here(Path.walk(fun (c) { type(Path[.A = Path[.A = A](x, z)](c, f)) }, r, s))
 }

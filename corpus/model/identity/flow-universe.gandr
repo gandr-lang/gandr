@@ -1,5 +1,5 @@
 //! A flow between types written as the relation `A ⇝ B`, also `A ~~> B`: the
-//! type-level spelling of `Flow(Type, A, B)`, introduced by `Flow.into` over a
+//! type-level spelling of `Flow[.A = Type](A, B)`, introduced by `Flow.into` over a
 //! translator. Under directed univalence a flow between types is a function
 //! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory],
 //! Definition 1.2, so `⇝` abbreviates the flow itself and no record of round
@@ -18,7 +18,7 @@ def shift : Schema.Old ⇝ Schema.New = Flow.into(Schema.toNew);
 
 /// The relation is the flow it abbreviates: `shift` stands where the flow is
 /// written out.
-def shifted : Flow(Type, Schema.Old, Schema.New) = shift;
+def shifted : Flow[.A = Type](Schema.Old, Schema.New) = shift;
 
 /// Riding the relation translates a record of the old schema.
 @[ runs("(30, \"ada\", +{.0 = unit})") ]

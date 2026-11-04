@@ -3914,7 +3914,7 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     {
         let mut words = program(
             "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef once : +U (-F \
-             Path(Circle, Base, Base)) ; def once = thunk { loop } ;",
+             Path[.A = Circle](Base, Base)) ; def once = thunk { loop } ;",
         );
         for (spelling, spelled) in [
             (Spelling::Unicode, "loop ∷ Path.here(Base)"),
@@ -4139,8 +4139,8 @@ def lost = missing ; def answer = 42 ;"#,
 def alias : Type ; def alias = small ;
 def again : Type ; def again = alias ;
 def wide : Type ; def wide = String ;
-def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
-  Path.walk(fun (y) { Path(Integer, y, y) }, Path.step(p, p), Path.here(1))
+def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
+  Path.walk(fun (y) { type(Path[.A = Integer](y, y)) }, Path.step(p, p), Path.here(1))
 }",
         );
         assert!(
@@ -4170,11 +4170,11 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
     fn a_body_that_did_not_focus_is_carried_until_reached()
     {
         let mut laws = program(
-            r"def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
-  Path.walk(fun (y) { Path(Integer, y, y) }, Path.step(p, p), Path.here(1))
+            r"def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
+  Path.walk(fun (y) { type(Path[.A = Integer](y, y)) }, Path.step(p, p), Path.here(1))
 }
-def reached : +U (-F Path(Integer, 1, 1)) ; def reached = thunk { law(Path.here(1)) } ;
-def kept : +U (-F (+U (-F Path(Integer, 1, 1)))) ; def kept = thunk { return reached } ;",
+def reached : +U (-F Path[.A = Integer](1, 1)) ; def reached = thunk { law(Path.here(1)) } ;
+def kept : +U (-F (+U (-F Path[.A = Integer](1, 1)))) ; def kept = thunk { return reached } ;",
         );
         for name in ["law", "reached"] {
             let evaluation = run(&mut laws, SurfaceName::from(name));
@@ -4436,8 +4436,8 @@ def bad : Integer ; def bad = "text" ;"#,
         let written = program(
             r#"def answer = 42 ; def later : Integer ;
 def bad : Integer ; def bad = "text" ;
-def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
-  Path.walk(fun (y) { Path(Integer, y, y) }, Path.step(p, p), Path.here(1))
+def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
+  Path.walk(fun (y) { type(Path[.A = Integer](y, y)) }, Path.step(p, p), Path.here(1))
 }"#,
         );
         let defined = written.met(ConstantIndex::from(0_usize));

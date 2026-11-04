@@ -8,8 +8,8 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    │   ┬───────┬───────┬─────────┯━━━━━━━━━━━──────────────────────
    │   │       │       │         │
    │   │       │       │         not both endpoints of the path
-   │   │       │       checked against `(a : Two) -> -F Path(Two, pick(collapse(a)), a)`; while checking the body of this function; binds x : Two
-   │   │       checked against `(a : Two) => Path(Two, pick(collapse(a)), a)`; while checking the body of this thunk
+   │   │       │       checked against `(a : Two) -> -F Path[.A = Two](pick(collapse(a)), a)`; while checking the body of this function; binds x : Two
+   │   │       checked against `(a : Two) => Path[.A = Two](pick(collapse(a)), a)`; while checking the body of this thunk
    │   checked; while checking the next premise of this
    │
    ├ note: `collapsed` is refused with EndpointMismatch, as its expectation states

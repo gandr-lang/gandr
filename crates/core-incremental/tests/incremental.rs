@@ -1144,7 +1144,7 @@ fn agreeing() -> alloc::boxed::Box<dyn gandr_core_checker::tier::EndpointTier>
 }
 
 /// A pass consults the tier its program carries, fresh and after leading
-/// items: a tier meeting every pair checks `here(1)` at `Path(Integer, 1,
+/// items: a tier meeting every pair checks `here(1)` at `Path[.A = Integer](1,
 /// 2)`, which the machine refutes.
 #[test]
 fn a_pass_hands_its_context_the_program_s_tier_2282()

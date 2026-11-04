@@ -25,8 +25,8 @@ def universalPath : Path[.A = Type](Unit, Unit) = Path.here(Unit);
 /// Two equal integers related by their identity, the carrier supplied by name.
 def namedBridge : Bridge[.A = Integer](4, 4) = unit;
 
-/// A bridge that `A` supplies is the bridge that writes `A` first.
-def punnedBridge(A : Type, x : A, b : Bridge[.A](x, x)) -> Bridge(A, x, x) { b }
+/// A bridge that `A` supplies is the bridge whose endpoints fix `A`.
+def punnedBridge(A : Type, x : A, b : Bridge[.A](x, x)) -> Bridge(x, x) { b }
 
 /// The total relation between the unit type and the string type, the
 /// universe supplied by name.

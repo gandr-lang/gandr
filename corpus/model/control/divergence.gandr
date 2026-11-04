@@ -48,8 +48,7 @@ def rec unused(x : Bool) -> Bool {
 /// A call at the empty row returns and nothing observes it but its value, so
 /// a call whose value is never read is the computation that follows it: the
 /// function calling `g` and dropping what it returns is `f`.
-def unreadCall(a : Type, b : Type, f : a => b, g : a => b) -> Path(
-  a => b,
+def unreadCall(a : Type, b : Type, f : a => b, g : a => b) -> Path[.A = a => b](
   fun (x) { let _ = g(x); f(x) },
   f
 ) {
@@ -57,8 +56,7 @@ def unreadCall(a : Type, b : Type, f : a => b, g : a => b) -> Path(
 }
 
 /// Two unread calls in a row are dropped one after the other.
-def unreadTwice(a : Type, b : Type, f : a => b, g : a => b, h : a => b) -> Path(
-  a => b,
+def unreadTwice(a : Type, b : Type, f : a => b, g : a => b, h : a => b) -> Path[.A = a => b](
   fun (x) { let _ = g(x); let _ = h(x); f(x) },
   f
 ) {
@@ -73,8 +71,7 @@ def apply(a : Type, b : Type, h : a => b, x : a) -> b {
 /// The discard is a step of the dialogue the kernel replays from the
 /// certificate: after it the call of `apply` unfolds, which the kernel's own
 /// reading does not do under a binder.
-def unreadApplied(a : Type, b : Type, f : a => b, g : a => b) -> Path(
-  a => b,
+def unreadApplied(a : Type, b : Type, f : a => b, g : a => b) -> Path[.A = a => b](
   fun (x) { let _ = g(x); apply(a, b, f, x) },
   f
 ) {

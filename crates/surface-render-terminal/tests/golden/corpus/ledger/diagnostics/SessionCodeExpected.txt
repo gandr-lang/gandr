@@ -5,6 +5,6 @@ error[SessionCodeExpected]: a session identity relates two session types
   │                  ┬────────┯━━━━━━──────────
   │                  │        │
   │                  │        not a session code
-  │                  checked against `Flow(Type, Integer, Integer)`; while relating the two protocols of this session statement
+  │                  checked against `Flow[.A = Type](Integer, Integer)`; while relating the two protocols of this session statement
   │
   ╰ note: `notSession` is refused with SessionCodeExpected, as its expectation states

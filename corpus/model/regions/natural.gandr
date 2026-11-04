@@ -28,8 +28,7 @@ def passNatural() -> Integer {
   handle outer : std.process.Exit.Eff {
     let k : (() => Integer) at outer = access shared s as w { pure pure w };
     handle inner : std.process.Exit.Eff {
-      let _ : Path(
-        (() => Integer) at outer => (() => Integer) at inner,
+      let _ : Path[.A = (() => Integer) at outer => (() => Integer) at inner](
         fun (x) { let y : (() => Integer) at outer = pass(x); pure y },
         fun (x) { let z : (() => Integer) at inner = x; pass(z) }
       ) = Path.here(fun (x) { let y : (() => Integer) at outer = pass(x); pure y });
@@ -52,8 +51,7 @@ def touchNatural() -> Integer {
   handle outer : std.process.Exit.Eff {
     let k : (() => Integer) at outer = access shared s as w { pure pure w };
     handle inner : std.process.Exit.Eff {
-      let _ : Path(
-        (() => Integer) at outer => (() => Integer) at inner,
+      let _ : Path[.A = (() => Integer) at outer => (() => Integer) at inner](
         fun (x) { let y : (() => Integer) at outer = touch(x); pure y },
         fun (x) { let z : (() => Integer) at inner = x; touch(z) }
       ) = Path.here(fun (x) { let y : (() => Integer) at outer = touch(x); pure y });

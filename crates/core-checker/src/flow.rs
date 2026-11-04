@@ -1,17 +1,17 @@
-//! Directed identity: `Flow(A, a, b)`, the session statements that inhabit it
-//! and its path counterpart, `stay` and `then`, the ride and the table it
+//! Directed identity: `Flow[.A = A](a, b)`, the session statements that inhabit
+//! it and its path counterpart, `stay` and `then`, the ride and the table it
 //! computes by, and the recorded runs that ride it.
 //!
 //! # The statements
 //!
-//! `bisim(A, B)` synthesises `Path(Type, A, B)` and `sim(A, B)` synthesises
-//! `Flow(Type, A, B)` when both operands are closed codes of session types at
-//! their protocols' roots. `gandr-core-session`'s engine decides each:
-//! bisimilarity for the path, Gay and Hole's subtyping for the flow — the
-//! source has no more selections and no fewer offers than the target — and
-//! the judgement's own conversion compares the payload types of every send
-//! and receive pair the engine visited, invariantly. Two sessions the engine
-//! does not relate are [`CheckRefusal::SessionNotEquivalent`] and
+//! `bisim(A, B)` synthesises `Path[.A = Type](A, B)` and `sim(A, B)`
+//! synthesises `Flow[.A = Type](A, B)` when both operands are closed codes of
+//! session types at their protocols' roots. `gandr-core-session`'s engine
+//! decides each: bisimilarity for the path, Gay and Hole's subtyping for the
+//! flow — the source has no more selections and no fewer offers than the target
+//! — and the judgement's own conversion compares the payload types of every
+//! send and receive pair the engine visited, invariantly. Two sessions the
+//! engine does not relate are [`CheckRefusal::SessionNotEquivalent`] and
 //! [`CheckRefusal::SessionNotSubtype`], by the engine's own relation; an
 //! operand that is no session code is [`CheckRefusal::SessionCodeExpected`].
 //!
@@ -21,21 +21,21 @@
 //! a simulation to its `SessionFlow` at `Flow_U`; admission replays the pairs
 //! against the erased graphs and trusts nothing the engine decided.
 //!
-//! `stay(a)` synthesises `Flow(A, a, a)` from the type `a` synthesises, and
-//! checked against `Flow(A, x, y)` meets `a` with both endpoints; `f then g`
-//! synthesises `Flow(A, a, c)` from `f : Flow(A, a, b)` and `g` checked
-//! against `Flow(A, b, c)`. When the carrier is the value universe and the
-//! endpoints are session codes, the engine decides the composite's own
-//! simulation and the judgement records it as it records `sim`, so the kernel
-//! replays a stay or a composite as one simulation. Over any other carrier or
-//! codes the bridge erases a stay to the kernel's own stay and a composite to
-//! its sequence, which admission checks by conversion.
+//! `stay(a)` synthesises `Flow[.A = A](a, a)` from the type `a` synthesises,
+//! and checked against `Flow[.A = A](x, y)` meets `a` with both endpoints; `f
+//! then g` synthesises `Flow[.A = A](a, c)` from `f : Flow[.A = A](a, b)` and
+//! `g` checked against `Flow[.A = A](b, c)`. When the carrier is the value
+//! universe and the endpoints are session codes, the engine decides the
+//! composite's own simulation and the judgement records it as it records `sim`,
+//! so the kernel replays a stay or a composite as one simulation. Over any
+//! other carrier or codes the bridge erases a stay to the kernel's own stay and
+//! a composite to its sequence, which admission checks by conversion.
 //!
 //! # Payload paths
 //!
 //! `bisim(A, B, p)` owes a path for each pair of payload slots whose types
 //! do not convert, once, in the engine's pair order: `p` checks against
-//! `Path(Type, P, Q)` for one, the tuple of the paths for several. Each is
+//! `Path[.A = Type](P, Q)` for one, the tuple of the paths for several. Each is
 //! read as its native certificate, as [`crate::product`] reads a component
 //! ([`CheckRefusal::ShapeMismatch`] for a path naming none), and the bridge
 //! passes them as the `SessionPath`'s payload paths, which admission checks
@@ -64,14 +64,14 @@
 //!
 //! # Riding a flow
 //!
-//! `ride(fun (X) { T }, f, v)` moves `v : T[a]` along `f : Flow(A, a, b)` and
-//! synthesises `F T[b]`. The motive is closed but for `X` and reads `X` only
-//! covariantly: a flow's source and an arrow's or a dependent arrow's domain
-//! reverse the variance, and every other position a code stands at — a path,
-//! a data argument, a session payload — is invariant. A motive that reads `X`
-//! elsewhere is [`CheckRefusal::NonCovariantMotive`], which is how symmetry
-//! is refused: `ride(fun (X) { Flow(Type, X, a) }, f, stay(a))` would turn `f`
-//! into its reverse.
+//! `ride(fun (X) { T }, f, v)` moves `v : T[a]` along `f : Flow[.A = A](a, b)`
+//! and synthesises `F T[b]`. The motive is closed but for `X` and reads `X`
+//! only covariantly: a flow's source and an arrow's or a dependent arrow's
+//! domain reverse the variance, and every other position a code stands at — a
+//! path, a data argument, a session payload — is invariant. A motive that reads
+//! `X` elsewhere is [`CheckRefusal::NonCovariantMotive`], which is how symmetry
+//! is refused: `ride(fun (X) { Flow[.A = Type](X, a) }, f, stay(a))` would turn
+//! `f` into its reverse.
 //!
 //! A motive that does not read `X`, and a flow whose two endpoints convert,
 //! ride as the identity, as does any ride along a flow whose carrier is no
@@ -97,7 +97,7 @@
 //! |---|---|
 //! | `X` decoded, `El X` | a forward flow applies its translator; a function flow wraps the function in its two boundaries; a flow product rides a pair's components along its two flows |
 //! | a product, a sum or a list of such positions | constructorwise, `nil` unchanged |
-//! | `Flow(Type, l, X)`, the singleton | `stay(l)` becomes the flow; any other flow composes with it |
+//! | `Flow[.A = Type](l, X)`, the singleton | `stay(l)` becomes the flow; any other flow composes with it |
 //!
 //! Any other position reading `X` — a record of it, a thunk of an arrow into
 //! it — is [`CheckRefusal::RideUnsupported`]. The kernel's ride reduction,
@@ -108,8 +108,8 @@
 //!
 //! - **Spelling.** `bisim(A, B)` and `sim(A, B)` name the engine's two
 //!   relations, beside `equiv(f, g)` and `ua[n, k](…)` in the lowering's
-//!   identity region; `Flow(A, a, b)`, `stay`, `then` and `ride` follow the
-//!   directed-identity record, `then` the grammar's infix tile read at a
+//!   identity region; `Flow[.A = A](a, b)`, `stay`, `then` and `ride` follow
+//!   the directed-identity record, `then` the grammar's infix tile read at a
 //!   written flow answer. The alternatives were `equiv`-style statements over
 //!   translators, which a session code has none of, and an infix `A <: B`,
 //!   which reads as a judgement rather than a term inhabiting a type. Reversal:
@@ -144,11 +144,11 @@
 //!
 //! A protocol's receipts are runs: `Run(S)` is a complete trace the monitor
 //! of `S` accepts. Compatibility of an old protocol with a new one is a
-//! `Flow(Type, Old, New)` the engine decides and the kernel replays; riding
-//! it moves every old receipt the new protocol admits and refuses, by move,
-//! every one it does not. Equivalence is a `Path(Type, A, B)`, replayed the
-//! same way; without payload paths it identifies the two codes, so every run
-//! of one is a run of the other by conversion alone.
+//! `Flow[.A = Type](Old, New)` the engine decides and the kernel replays;
+//! riding it moves every old receipt the new protocol admits and refuses, by
+//! move, every one it does not. Equivalence is a `Path[.A = Type](A, B)`,
+//! replayed the same way; without payload paths it identifies the two codes, so
+//! every run of one is a run of the other by conversion alone.
 
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
@@ -237,7 +237,7 @@ pub struct Statement
     /// Bisimilarity or simulation.
     relation: SessionRelation,
     /// The native classifier: `Path_U(⌜A⌝, ⌜B⌝)` for a bisimilarity, the
-    /// universe's `Flow(Type, ⌜A⌝, ⌜B⌝)` for a simulation.
+    /// universe's `Flow[.A = Type](⌜A⌝, ⌜B⌝)` for a simulation.
     classifier: ValueTypeId,
     /// The engine's pairs over the two protocols' node positions, with the
     /// slot pairs the payload paths cover.
@@ -704,7 +704,7 @@ pub fn decide(
 }
 
 /// The identity a session statement inhabits over its operands as written:
-/// `Path(Type, A, B)` for a bisimilarity, `Flow(Type, A, B)` for a
+/// `Path[.A = Type](A, B)` for a bisimilarity, `Flow[.A = Type](A, B)` for a
 /// simulation.
 ///
 /// # Specification
@@ -723,8 +723,8 @@ pub fn identity(
     }
 }
 
-/// The paths a bisimilarity owes: `Path(Type, ⌜P⌝, ⌜Q⌝)` for each owed pair of
-/// payload types, in the statement's order.
+/// The paths a bisimilarity owes: `Path[.A = Type](⌜P⌝, ⌜Q⌝)` for each owed
+/// pair of payload types, in the statement's order.
 ///
 /// # Specification
 /// - requires: every type in `owed` lives in `arena`.
@@ -1472,8 +1472,8 @@ pub fn ride(
 /// Check that the directed computation table moves `motive`: each position
 /// that reads the code is the decode of the code itself at `level`, the level
 /// of the universe the flow lives in, a product, a sum or a list of such
-/// positions, or a flow singleton `Flow(Type, l, X)` whose source ignores the
-/// code.
+/// positions, or a flow singleton `Flow[.A = Type](l, X)` whose source ignores
+/// the code.
 ///
 /// # Specification
 /// - requires: `motive` stands under one binder, its code, and passed

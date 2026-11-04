@@ -5,6 +5,6 @@ error[PathCode]: a universe path needs a quoted, closed, first-order code at eac
   │               ┬──────────────────────┯━━━━━━━━━━━━━━───────────────────
   │               │                      │
   │               │                      not a quoted closed first-order code
-  │               checked against `Path(Type, (() => Integer) * Unit, (() => Integer) * Unit)`; while synthesising the first path of this product
+  │               checked against `Path[.A = Type]((() => Integer) * Unit, (() => Integer) * Unit)`; while synthesising the first path of this product
   │
   ╰ note: `thunked` is refused with PathCode, as its expectation states

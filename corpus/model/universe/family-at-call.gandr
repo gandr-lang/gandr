@@ -57,7 +57,7 @@ def fieldAt(
     extend : +U ((g : con) -> -F con),
     q : +U ((g : con) -> -F tm(extend(g))),
     use : +U ((g : con) -> (t : tm(g)) -> -F Unit),
-    law : +U ((g : con) -> -F Path(Unit, use(extend(g), q(g)), unit))
+    law : +U ((g : con) -> -F Path[.A = Unit](use(extend(g), q(g)), unit))
   }
 ) -> -F Unit {
   return unit

@@ -11,5 +11,5 @@ module Point :> #{ type T, origin : T, other : T } where {
   def other = unit;
 }
 @[ refuses("AtomTransport") ]
-def origin_other : Path(Point.T, Point.origin, Point.other) ;
+def origin_other : Path(Point.origin, Point.other) ;
 def origin_other = unit ;

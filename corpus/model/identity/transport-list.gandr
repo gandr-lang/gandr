@@ -16,7 +16,7 @@ import "./funext.gandr";
 import std.list (List);
 
 /// The booleans to themselves by negation, its own inverse.
-pub def negation : Path(Type, Bool, Bool) = equiv(not, not);
+pub def negation : Path[.A = Type](Bool, Bool) = equiv(not, not);
 
 /// A list of booleans transported along negation, in the family of lists.
 def moved_list(xs : List(Bool)) -> List(Bool) {
@@ -30,7 +30,6 @@ def both : List(Bool) = cons(+{.0 = unit}, cons(+{.1 = unit}, nil));
 /// Truth then falsity transported along negation is falsity then truth, by
 /// conversion.
 def flipped_beta : Path(
-  List(Bool),
   Path.walk(fun (X) { List(X) }, negation, cons(+{.0 = unit}, cons(+{.1 = unit}, nil))),
   cons(+{.1 = unit}, cons(+{.0 = unit}, nil))
 ) = Path.here(cons(+{.1 = unit}, cons(+{.0 = unit}, nil)));
@@ -58,7 +57,7 @@ def flipped_inline() -> List(Bool) { moved_inline(both) }
 
 /// Negation and the identity are no equivalence: their round trips differ.
 @[ refuses("RoundTripDistinct") ]
-def collapse_bool : Path(Type, Bool, Bool) = equiv(not, same);
+def collapse_bool : Path[.A = Type](Bool, Bool) = equiv(not, same);
 
 /// The identity on lists of booleans.
 pub def keep(xs : List(Bool)) -> List(Bool) {
@@ -67,10 +66,10 @@ pub def keep(xs : List(Bool)) -> List(Bool) {
 
 /// Lists of booleans to themselves by the identity: its round trip returns
 /// the empty list and each cell over a rigid tail.
-def lists : Path(Type, List(Bool), List(Bool)) = equiv(keep, keep);
+def lists : Path[.A = Type](List(Bool), List(Bool)) = equiv(keep, keep);
 
 /// A list transported along the identity's path is itself, by conversion.
-def kept_beta : Path(List(Bool), Path.walk(fun (X) { X }, lists, both), both) = Path.here(both);
+def kept_beta : Path(Path.walk(fun (X) { X }, lists, both), both) = Path.here(both);
 
 /// A flag beside a list of booleans, negated, the list left as it is.
 def flip_flag(entry : Bool * List(Bool)) -> Bool * List(Bool) {
@@ -81,7 +80,7 @@ def flip_flag(entry : Bool * List(Bool)) -> Bool * List(Bool) {
 
 /// Negating the flag is its own inverse: at each boolean beside the empty
 /// list and beside each cell over a rigid tail.
-def flagged : Path(Type, Bool * List(Bool), Bool * List(Bool)) = equiv(flip_flag, flip_flag);
+def flagged : Path[.A = Type](Bool * List(Bool), Bool * List(Bool)) = equiv(flip_flag, flip_flag);
 
 /// Truth beside `both`, transported along the flag's path by a run: the flag
 /// negates and the list stays.

@@ -34,7 +34,7 @@ theory Glob where {
     f : Hom(a, b),
     g : Hom(b, c),
     h : Hom(c, d)
-  ) => Path(Hom(a, d), comp(comp(f, g), h), comp(f, comp(g, h)));
+  ) => Path[.A = Hom(a, d)](comp(comp(f, g), h), comp(f, comp(g, h)));
 }
 
 /// The one object.
@@ -86,7 +86,7 @@ theory Skipping where {
   /// Store a value.
   oper put : (s : S, k : C) --> C;
   /// A write leaves what follows it as it is.
-  law putSkip : (s : S, k : C) => Path(C, put(s, k), k);
+  law putSkip : (s : S, k : C) => Path[.A = C](put(s, k), k);
 }
 
 /// Every write answers nine and drops what follows it. The cell's left side is

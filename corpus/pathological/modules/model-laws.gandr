@@ -11,8 +11,8 @@
 theory Decided where {
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;
-  law refl : (a : Carrier) => Path(Bool, alike(a, a), true);
-  law sym : (a : Carrier, b : Carrier) => Path(Bool, alike(a, b), alike(b, a));
+  law refl : (a : Carrier) => Path[.A = Bool](alike(a, a), true);
+  law sym : (a : Carrier, b : Carrier) => Path[.A = Bool](alike(a, b), alike(b, a));
 }
 
 /// One value.
@@ -26,7 +26,7 @@ module Overadmitted : Model(Decided) with sort Carrier = Lone where {
   def alike(a : Lone, b : Lone) -> Bool { true }
   @[ refuses("UnprovenLaw.Admitted") ]
   law refl = ~admitted;
-  def sym(a : Lone, b : Lone) -> Path(Bool, alike(a, b), alike(b, a)) { Path.here(true) }
+  def sym(a : Lone, b : Lone) -> Path(alike(a, b), alike(b, a)) { Path.here(true) }
 }
 
 /// Float equality as an `Eq`: its symmetry is the host's, its reflexivity no

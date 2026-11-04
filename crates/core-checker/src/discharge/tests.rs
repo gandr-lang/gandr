@@ -124,8 +124,8 @@ fn decided(
     arena.value_returned(twice)
 }
 
-/// `refl : (a : Integer) => Path(Bool, c(a, a), true)` for the component at
-/// `at`, with `between` standing between the binder and the path.
+/// `refl : (a : Integer) => Path[.A = Bool](c(a, a), true)` for the component
+/// at `at`, with `between` standing between the binder and the path.
 ///
 /// # Specification
 /// trivial.

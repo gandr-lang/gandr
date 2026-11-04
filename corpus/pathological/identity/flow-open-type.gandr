@@ -1,4 +1,4 @@
 @[ refuses("ForwardUnsupported") ]
-def lift(t : Type, f : t => t) -> Flow(Type, t, t) {
+def lift(t : Type, f : t => t) -> Flow[.A = Type](t, t) {
   Flow.into(f)
 }

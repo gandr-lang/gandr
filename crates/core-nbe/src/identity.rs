@@ -1,6 +1,6 @@
 //! Element identity in the evaluator: the recursion that says, carrier by
-//! carrier, what the paths of `Path(A, a, b)` are, and the comparison of two
-//! transport motives.
+//! carrier, what the paths of `Path[.A = A](a, b)` are, and the comparison of
+//! two transport motives.
 //!
 //! # The recursion
 //!
@@ -44,13 +44,13 @@
 //!
 //! # Decisions
 //!
-//! - **The recursion classifies; it does not rewrite.** `Path(A, a, b)` stays a
-//!   type of its own in conversion and in checking, and the recursion is read
-//!   where a rule needs it. The alternative, unfolding the path type into the
-//!   type it names during conversion, needs reflexivity to compute into each
-//!   fibre's canonical inhabitant and transport to compute by the motive's
-//!   structure at every former, the whole of a higher observational theory at
-//!   once. Reversal: when transport computes at every former, the
+//! - **The recursion classifies; it does not rewrite.** `Path[.A = A](a, b)`
+//!   stays a type of its own in conversion and in checking, and the recursion
+//!   is read where a rule needs it. The alternative, unfolding the path type
+//!   into the type it names during conversion, needs reflexivity to compute
+//!   into each fibre's canonical inhabitant and transport to compute by the
+//!   motive's structure at every former, the whole of a higher observational
+//!   theory at once. Reversal: when transport computes at every former, the
 //!   classification becomes the unfolding.
 //! - **Funext covers first-order arguments.** The thunk clause relates inputs
 //!   of a function's domain; a domain that is itself a function is the same
@@ -286,7 +286,7 @@ pub fn clause(
     )
 }
 
-/// What the paths of `Path(carrier, left, right)` are.
+/// What the paths of `Path[.A = carrier](left, right)` are.
 ///
 /// # Specification
 /// - requires: `carrier` is in weak head form, and `left` and `right` are
@@ -579,11 +579,11 @@ fn one_body(
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum TransportFamily
 {
-    /// The singleton `y. Path(D, l, y)` or `y. Flow(D, l, y)`: its right
-    /// endpoint is the binder, and its carrier and left endpoint never read
-    /// it.
+    /// The singleton `y. Path[.A = D](l, y)` or `y. Flow[.A = D](l, y)`: its
+    /// right endpoint is the binder, and its carrier and left endpoint
+    /// never read it.
     Singleton,
-    /// The reversed singleton `y. Path(D, y, r)`: its left endpoint is the
+    /// The reversed singleton `y. Path[.A = D](y, r)`: its left endpoint is the
     /// binder, and its carrier and right endpoint never read it.
     Reversed,
     /// Any other family.
@@ -602,11 +602,11 @@ pub(crate) enum TransportFamily
 ///   whose left endpoint is, and whose carrier and right endpoint read no index
 ///   the binder binds; [`TransportFamily::Other`] otherwise.
 /// - provides: the guard of the singleton row, the kernel's own clause:
-///   transport in `y. Path(D, l, y)` carries `here(l)` to the path itself,
+///   transport in `y. Path[.A = D](l, y)` carries `here(l)` to the path itself,
 ///   which is what lets `J` check its identity over the path, and a ride in `y.
-///   Flow(D, l, y)` composes the ridden flow with the flow it rides along; and
-///   the guard of the rows that hold `back(p)` and `q then p` along a universe
-///   path as the transports that form them.
+///   Flow[.A = D](l, y)` composes the ridden flow with the flow it rides along;
+///   and the guard of the rows that hold `back(p)` and `q then p` along a
+///   universe path as the transports that form them.
 /// - fails: the free-index walk's fault for a dangling node.
 /// - panics: none.
 ///

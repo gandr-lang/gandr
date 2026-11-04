@@ -317,9 +317,9 @@
 //! univalence at a stratum `ua[n, k](a, b, f, g)`, which [`crate::ua`]
 //! derives and the bridge erases to the path product of one `PathEquiv` per
 //! corolla. The directed family's statements — `sim`, `forward`, `arrow` and
-//! `flowProduct` at `Flow(Type, A, B)` — are the rules of [`crate::flow`],
-//! [`crate::forward`] and [`crate::product`]. A bridge `Bridge(A, a, b)` is
-//! read by the bridge fold of [`crate::relatedness`]; higher fields and
+//! `flowProduct` at `Flow[.A = Type](A, B)` — are the rules of [`crate::flow`],
+//! [`crate::forward`] and [`crate::product`]. A bridge `Bridge[.A = A](a, b)`
+//! is read by the bridge fold of [`crate::relatedness`]; higher fields and
 //! guarded List inhabitants stay at their kernel rule-language boundaries;
 //! function extensionality is the element-identity rule below.
 //!
@@ -333,10 +333,10 @@
 //!
 //! # Element identity
 //!
-//! `Path(A, a, b)` forms when its carrier forms and both endpoints check
+//! `Path[.A = A](a, b)` forms when its carrier forms and both endpoints check
 //! against it; it stands at the carrier's level. Reflexivity `here(a)`
-//! synthesises `Path(A, a, a)` from the type its point synthesises, and
-//! checks against `Path(A, l, r)` when its point checks against `A` and is
+//! synthesises `Path[.A = A](a, a)` from the type its point synthesises, and
+//! checks against `Path[.A = A](l, r)` when its point checks against `A` and is
 //! both `l` and `r`: the same syntax with evidence erased, or convertible
 //! with every definition unfolded and the free binders read as rigid
 //! variables. Anything else is [`CheckRefusal::EndpointMismatch`], naming the
@@ -360,23 +360,23 @@
 //! [`CheckRefusal::CompoundEndpoint`] when that is no returner or performs an
 //! effect: an effect has no value to compare.
 //!
-//! Transport `tr(P, p, x)` synthesises. The path synthesises `Path(A, a, b)`,
-//! the motive forms under a binder of `A`, the operand checks against `P[a]`,
-//! and the transport has `F P[b]`. The motive is first order: one value type
-//! under one binder. A motive over a dependent arrow, `y. U((x : B[y]) →
+//! Transport `tr(P, p, x)` synthesises. The path synthesises `Path[.A = A](a,
+//! b)`, the motive forms under a binder of `A`, the operand checks against
+//! `P[a]`, and the transport has `F P[b]`. The motive is first order: one value
+//! type under one binder. A motive over a dependent arrow, `y. U((x : B[y]) →
 //! C[x, y])`, transports the argument back along the path and the result
 //! forward over both binders; that is the dependent-arrow extension, and this
 //! rule does not take it.
 //!
 //! **A path between dependent pairs is a pair of paths.** A pair checked at
-//! `Path(Σ (x : A). B, l, r)` checks at the fibre `Σ (p : Path(A, l₀, r₀)).
-//! Path(B[r₀], ⟨tr(x. B, p, l₁)⟩, r₁)`: a path between the first components
-//! and, over it, a path from the left second component transported along it
-//! to the right one. `l₀` and `l₁` are the components of a written pair and
-//! `⟨l.0⟩`, `⟨l.1⟩` of any other endpoint, and so for `r`. The kernel computes
-//! the same fibre, so a judged path readmits. Transport along such a path is
-//! the rule above: it reduces on reflexivity and in a motive that ignores its
-//! binder, and stays neutral otherwise.
+//! `Path[.A = Σ (x : A). B](l, r)` checks at the fibre `Σ (p : Path[.A = A](l₀,
+//! r₀)). Path[.A = B[r₀]](⟨tr(x. B, p, l₁)⟩, r₁)`: a path between the first
+//! components and, over it, a path from the left second component transported
+//! along it to the right one. `l₀` and `l₁` are the components of a written
+//! pair and `⟨l.0⟩`, `⟨l.1⟩` of any other endpoint, and so for `r`. The kernel
+//! computes the same fibre, so a judged path readmits. Transport along such a
+//! path is the rule above: it reduces on reflexivity and in a motive that
+//! ignores its binder, and stays neutral otherwise.
 //! `judgement::tests::a_pair_of_paths_checks_at_the_identity_of_a_dependent_pair`
 //! and
 //! `judgement::tests::a_transport_along_a_path_at_a_dependent_pair_reads_its_motive_at_the_target`
@@ -391,16 +391,16 @@
 //!   that is not reflexivity componentwise.
 //!
 //! **A path between tuples is a tuple of paths.** A tuple checked at
-//! `Path(A₀ × … × Aₙ, l, r)` checks at `Path(A₀, l₀, r₀) × … × Path(Aₙ, lₙ,
-//! rₙ)`, its components read as the Σ rule reads them; a tuple transported at
-//! a product motive, `⟨tr(x. A₀ × … × Aₙ, p, v)⟩`, is read as its components'
-//! transports `⟨tr(x. Aᵢ, p, vᵢ)⟩`. An endpoint unfolds only through declared
-//! constants, as the kernel reads it, so the fibre is the kernel's and the
-//! dialogues recorded at its endpoints replay there.
+//! `Path[.A = A₀ × … × Aₙ](l, r)` checks at `Path[.A = A₀](l₀, r₀) × … ×
+//! Path[.A = Aₙ](lₙ, rₙ)`, its components read as the Σ rule reads them; a
+//! tuple transported at a product motive, `⟨tr(x. A₀ × … × Aₙ, p, v)⟩`, is read
+//! as its components' transports `⟨tr(x. Aᵢ, p, vᵢ)⟩`. An endpoint unfolds only
+//! through declared constants, as the kernel reads it, so the fibre is the
+//! kernel's and the dialogues recorded at its endpoints replay there.
 //! `judgement::tests::a_tuple_of_paths_checks_at_the_identity_of_a_product`
 //! witnesses it. At the empty product the fibre is the empty tuple of paths:
-//! `()` checks at `Path(Unit, l, r)` between any two points; the law of the
-//! lawful atom below is one.
+//! `()` checks at `Path[.A = Unit](l, r)` between any two points; the law of
+//! the lawful atom below is one.
 //!
 //! **Identity at an open type is a neutral fibre.** A carrier that mentions a
 //! variable bound outside it — the decode of a type variable, a data type at a
@@ -413,7 +413,7 @@
 //! convert structurally. The kernel reads the same neutral fibre, so a judged
 //! identity readmits. A sealed atom past its seal is the fragment's other open
 //! type and its identity is the same neutral fibre, unless its interface
-//! states a law: then an introduction at `Path(atom, l, r)` checks at the
+//! states a law: then an introduction at `Path[.A = atom](l, r)` checks at the
 //! relation between its endpoints, `El(⟨relation l r⟩)`, the atom's identity
 //! system, and the kernel reads the same fibre
 //! (`bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`).
@@ -425,7 +425,7 @@
 //! for type variables computes the fibre this leaves neutral.
 //!
 //! **Function extensionality is decided by computation.** `funext(f, g)`
-//! synthesises `Path(U (A → F B), f, g)` for closed functions over a
+//! synthesises `Path[.A = U (A → F B)](f, g)` for closed functions over a
 //! first-order domain and result when, at every input of the domain's
 //! coverage, both return one value with every admitted definition unfolded
 //! ([`crate::funext`] states the rule, its fragment and its refusals). The
@@ -4751,7 +4751,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   formation; a pair awaits its components' types and has their eager
     ///   product; a static application awaits its head's type and meets each
     ///   argument in turn; reflexivity awaits its point's type `A` and has
-    ///   `Path(A, a, a)` at its point `a`; a compound endpoint awaits its
+    ///   `Path[.A = A](a, a)` at its point `a`; a compound endpoint awaits its
     ///   computation's type, which must be a pure returner `F A`, and has `A`;
     ///   a written run awaits its computation's type, which must be a returner
     ///   `F^e A`, records the run and has `A`; an ascription `(v : A)` awaits
@@ -7506,8 +7506,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Specification
     /// - requires: `first` and `second` are a dependent pair's factors,
     ///   `second` under one binder of `first`; `left` and `right` inhabit it.
-    /// - ensures: `Path(first, l₀, r₀)` and, under one binder `p` of it,
-    ///   `Path(second[r₀], ⟨tr(x. second, p, l₁)⟩, r₁)`, each endpoint's
+    /// - ensures: `Path[.A = first](l₀, r₀)` and, under one binder `p` of it,
+    ///   `Path[.A = second[r₀]](⟨tr(x. second, p, l₁)⟩, r₁)`, each endpoint's
     ///   components read by [`pair_components`].
     /// - fails: as [`pair_components`].
     /// - panics: none.
@@ -7555,8 +7555,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Specification
     /// - requires: `parts` are a product's factors; `left` and `right` inhabit
     ///   it.
-    /// - ensures: `Path(A₀, l₀, r₀) × … × Path(Aₙ, lₙ, rₙ)`, each endpoint's
-    ///   components read by [`tuple_components`].
+    /// - ensures: `Path[.A = A₀](l₀, r₀) × … × Path[.A = Aₙ](lₙ, rₙ)`, each
+    ///   endpoint's components read by [`tuple_components`].
     /// - fails: as [`tuple_components`].
     /// - panics: none.
     ///
@@ -7596,15 +7596,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Specification
     /// - requires: `expected` is formed.
-    /// - ensures: when `expected`'s weak head is `Path(A, left, right)`: `A`
-    ///   itself when `A`'s weak head is the unit type, and `El(⟨relation left
-    ///   right⟩)` at the atom's kind's level when it is an atom whose interface
-    ///   states a law, the fibre of that identity instead when its weak head is
-    ///   itself an identity whose fibre this reading reaches; when `A` is
-    ///   itself an identity, its own fibre read the same way, innermost out,
-    ///   and the unit type when that fibre's weak head is the unit type, an
-    ///   identity of the unit type being the unit type; nothing otherwise, an
-    ///   atom inside its seal reading as its representation.
+    /// - ensures: when `expected`'s weak head is `Path[.A = A](left, right)`:
+    ///   `A` itself when `A`'s weak head is the unit type, and `El(⟨relation
+    ///   left right⟩)` at the atom's kind's level when it is an atom whose
+    ///   interface states a law, the fibre of that identity instead when its
+    ///   weak head is itself an identity whose fibre this reading reaches; when
+    ///   `A` is itself an identity, its own fibre read the same way, innermost
+    ///   out, and the unit type when that fibre's weak head is the unit type,
+    ///   an identity of the unit type being the unit type; nothing otherwise,
+    ///   an atom inside its seal reading as its representation.
     /// - fails: [`CheckRefusal::AtomTransport`] at `term` when an atom on the
     ///   way is one whose interface states no law; the unfolding's refusal;
     ///   [`CheckRefusal::MachineInvariant`] for an atom whose kind is no
@@ -11399,7 +11399,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Specification
     /// - requires: nothing; a classifier of another former is refused.
     /// - ensures: for a weak head `Data(words, [])` whose signature carries
-    ///   free cells, `Path(S, pt, pt)`, `S` the cells' sort and `pt` their
+    ///   free cells, `Path[.A = S](pt, pt)`, `S` the cells' sort and `pt` their
     ///   point ([`crate::loops::point`]), the path type conversion identifies
     ///   the words with ([`CheckingContext::words`]); as
     ///   [`Self::path_expected`] otherwise.

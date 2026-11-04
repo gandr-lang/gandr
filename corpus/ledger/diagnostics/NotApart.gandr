@@ -10,6 +10,6 @@ data Int : Type where {
 }
 
 @[ refuses("NotApart") ]
-def agree(e : Path(Int, S(P(Z)), Z)) -> -F Empty {
+def agree(e : Path(S(P(Z)), Z)) -> -F Empty {
   match e {}
 }

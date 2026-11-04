@@ -26,12 +26,22 @@
 // - see: #3834
 
 /// The composite of two paths, whose type states its endpoints.
-pub def join(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(A, x, z) {
+pub def join(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  p : Path[.A = A](x, y),
+  q : Path[.A = A](y, z)
+) -> Path[.A = A](x, z) {
   Path.step(p, q)
 }
 
 /// A function's action on a path, whose type states its endpoints.
-pub def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {
+pub def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](
+  F(x),
+  F(y)
+) {
   Path.ap(F, p)
 }
 
@@ -41,11 +51,11 @@ pub def whiskerLeft(
   x : A,
   y : A,
   z : A,
-  f : Path(A, x, y),
-  g1 : Path(A, y, z),
-  g2 : Path(A, y, z),
-  b : Path(Path(A, y, z), g1, g2)
-) -> Path(Path(A, x, z), Path.step(f, g1), Path.step(f, g2)) {
+  f : Path[.A = A](x, y),
+  g1 : Path[.A = A](y, z),
+  g2 : Path[.A = A](y, z),
+  b : Path[.A = Path[.A = A](y, z)](g1, g2)
+) -> Path[.A = Path[.A = A](x, z)](Path.step(f, g1), Path.step(f, g2)) {
   compose[4, 9](chain(2, (0, 1)), (f, b))
 }
 
@@ -55,11 +65,11 @@ pub def whiskerRight(
   x : A,
   y : A,
   z : A,
-  f1 : Path(A, x, y),
-  f2 : Path(A, x, y),
-  a : Path(Path(A, x, y), f1, f2),
-  g : Path(A, y, z)
-) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {
+  f1 : Path[.A = A](x, y),
+  f2 : Path[.A = A](x, y),
+  a : Path[.A = Path[.A = A](x, y)](f1, f2),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
   compose[4, 9](chain(2, (1, 0)), (a, g))
 }
 
@@ -70,10 +80,10 @@ pub def apd(
   F : (a : A) => P(a),
   x : A,
   y : A,
-  p : Path(A, x, y)
-) -> Path(P(y), Path.walk(fun (a) { P(a) }, p, F(x)), F(y)) {
+  p : Path[.A = A](x, y)
+) -> Path[.A = P(y)](Path.walk(fun (a) { P(a) }, p, F(x)), F(y)) {
   Path.walk(
-    (v : A, k : Path(A, x, v)) => Path(P(v), Path.walk(fun (a) { P(a) }, k, F(x)), F(v)),
+    (v : A, k : Path[.A = A](x, v)) => Path[.A = P(v)](Path.walk(fun (a) { P(a) }, k, F(x)), F(v)),
     p,
     Path.here(x),
     Path.here(p),
@@ -90,15 +100,13 @@ pub def apComp(
   G : B => C,
   x : A,
   y : A,
-  p : Path(A, x, y)
-) -> Path(
-  Path(C, G(F(x)), G(F(y))),
+  p : Path[.A = A](x, y)
+) -> Path[.A = Path[.A = C](G(F(x)), G(F(y)))](
   ap(A, C, (fun (a : A) { G(F(a)) } : A => C), x, y, p),
   ap(B, C, G, F(x), F(y), ap(A, B, F, x, y, p))
 ) {
   Path.walk(
-    (v : A, k : Path(A, x, v)) => Path(
-      Path(C, G(F(x)), G(F(v))),
+    (v : A, k : Path[.A = A](x, v)) => Path[.A = Path[.A = C](G(F(x)), G(F(v)))](
       ap(A, C, (fun (a : A) { G(F(a)) } : A => C), x, v, k),
       ap(B, C, G, F(x), F(v), ap(A, B, F, x, v, k))
     ),
@@ -116,21 +124,23 @@ pub def assoc(
   y : A,
   z : A,
   w : A,
-  f : Path(A, x, y),
-  g : Path(A, y, z),
-  h : Path(A, z, w)
-) -> Path(Path(A, x, w), Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
+  f : Path[.A = A](x, y),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = A](x, w)](Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
   Path.here(Path.step(Path.step(f, g), h))
 }
 
 /// The left unitor: a reflexivity composed on the left leaves a path, by based path induction on it.
-pub def leftUnit(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(
-  Path(A, x, y),
+pub def leftUnit(A : Type, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = Path[.A = A](x, y)](
   join(A, x, x, y, Path.here(x), p),
   p
 ) {
   Path.walk(
-    (v : A, k : Path(A, x, v)) => Path(Path(A, x, v), join(A, x, x, v, Path.here(x), k), k),
+    (v : A, k : Path[.A = A](x, v)) => Path[.A = Path[.A = A](x, v)](
+      join(A, x, x, v, Path.here(x), k),
+      k
+    ),
     p,
     Path.here(x),
     Path.here(p),
@@ -139,8 +149,7 @@ pub def leftUnit(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(
 }
 
 /// The right unitor: a reflexivity composed on the right leaves a path, by conversion.
-pub def rightUnit(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(
-  Path(A, x, y),
+pub def rightUnit(A : Type, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = Path[.A = A](x, y)](
   join(A, x, y, y, p, Path.here(y)),
   p
 ) {
@@ -153,18 +162,16 @@ pub def natural(
   B : Type,
   F : A => B,
   G : A => B,
-  H : (q : A) => Path(B, F(q), G(q)),
+  H : (q : A) => Path[.A = B](F(q), G(q)),
   a : A,
   b : A,
-  p : Path(A, a, b)
-) -> Path(
-  Path(B, F(a), G(b)),
+  p : Path[.A = A](a, b)
+) -> Path[.A = Path[.A = B](F(a), G(b))](
   join(B, F(a), G(a), G(b), H(a), ap(A, B, G, a, b, p)),
   join(B, F(a), F(b), G(b), ap(A, B, F, a, b, p), H(b))
 ) {
   Path.walk(
-    (v : A, k : Path(A, a, v)) => Path(
-      Path(B, F(a), G(v)),
+    (v : A, k : Path[.A = A](a, v)) => Path[.A = Path[.A = B](F(a), G(v))](
       join(B, F(a), G(a), G(v), H(a), ap(A, B, G, a, v, k)),
       join(B, F(a), F(v), G(v), ap(A, B, F, a, v, k), H(v))
     ),

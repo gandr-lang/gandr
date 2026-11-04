@@ -19,14 +19,14 @@ def _+_(m : Nat, n : Nat) -> Nat {
 
 /// Zero is a left unit for addition. The proof opens addition for its own
 /// block, and a client of the lemma sees only its statement.
-def plusZero(n : Nat) -> Path(Nat, 0 + n, n) {
+def plusZero(n : Nat) -> Path(0 + n, n) {
   unfold _+_;
   Path.here(n)
 }
 
 /// The successor moves out of the left argument. The first step opens
 /// addition, and the rest of the block reasons over the opened body.
-def plusSucc(m : Nat, n : Nat) -> Path(Nat, Succ(m) + n, Succ(m + n)) {
+def plusSucc(m : Nat, n : Nat) -> Path(Succ(m) + n, Succ(m + n)) {
   unfold _+_;
   Path.here(Succ(m + n))
 }

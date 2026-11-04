@@ -390,7 +390,8 @@ enum Reading<'law, 'form>
     Written(&'law Unstated<'form>),
 }
 
-/// A path a stated law writes, `Path(C, l, r)`: its carrier and its two sides.
+/// A path a stated law writes, `Path[.A = C](l, r)`: its carrier and its two
+/// sides.
 ///
 /// # Specification
 /// trivial.
@@ -1189,8 +1190,8 @@ impl Typer<'_>
         self.indices(scope, telescope, declared, raw, sort, &port.sort);
     }
 
-    /// The path type `Path(C, l, r)` under `scope`, from its carrier and its
-    /// two sides as the derivation elaborates them.
+    /// The path type `Path[.A = C](l, r)` under `scope`, from its carrier and
+    /// its two sides as the derivation elaborates them.
     ///
     /// # Specification
     /// trivial.

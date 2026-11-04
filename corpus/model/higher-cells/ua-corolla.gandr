@@ -28,16 +28,14 @@ def opposite = ua[
 ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
 
 /// Transport along it swaps the binary corolla's boolean.
-def moves : Path(
-  Unit * (+{Unit} * Bool),
+def moves : Path[.A = Unit * (+{Unit} * Bool)](
   Path.walk(fun (X) { X }, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
   (unit, (+{.0 = unit}, +{.1 = unit}))
 ) = Path.here((unit, (+{.0 = unit}, +{.1 = unit})));
 
 /// It does not leave the boolean where it was.
 @[ refuses("EndpointMismatch") ]
-def stays : Path(
-  Unit * (+{Unit} * Bool),
+def stays : Path[.A = Unit * (+{Unit} * Bool)](
   Path.walk(fun (X) { X }, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
   (unit, (+{.0 = unit}, +{.0 = unit}))
 ) = Path.here((unit, (+{.0 = unit}, +{.0 = unit})));
@@ -46,8 +44,8 @@ def stays : Path(
 def reopposite = ua[1, 4](Magma, Magma, #{.mul = flip, .one = keep}, #{.mul = flip, .one = keep});
 
 /// The swap and the swap three times agree at every boolean.
-def agree : Path(Bool => Bool, exchange, flip) = Path.funext(exchange, flip);
+def agree : Path[.A = Bool => Bool](exchange, flip) = Path.funext(exchange, flip);
 
 /// The swap and the identity do not.
 @[ refuses("PointwiseDistinct") ]
-def disagree : Path(Bool => Bool, exchange, boolId) = Path.funext(exchange, boolId);
+def disagree : Path[.A = Bool => Bool](exchange, boolId) = Path.funext(exchange, boolId);

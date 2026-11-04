@@ -79,11 +79,11 @@
 //! the tuple `(a, b)` of two components or more; the value-function alias
 //! `A => C`, `() => C` and `(A, B) => C` for a thunk over a chain of
 //! non-dependent arrows ending in a pure returner; and the path composite
-//! `Path.step(p, q)` for the returned transport `Path.walk(fun (y) { Path(A, a,
-//! y) }, q, p)` it derives, the carrier and the fixed endpoint naming no `y`
-//! (#754). A dependent arrow, an effectful returner, a record, a sum or product
-//! of one component and the empty ones keep their explicit spelling. Sugared is
-//! what every reader-facing
+//! `Path.step(p, q)` for the returned transport `Path.walk(fun (y) { Path[.A =
+//! A](a, y) }, q, p)` it derives, the carrier and the fixed endpoint naming no
+//! `y` (#754). A dependent arrow, an effectful returner, a record, a sum or
+//! product of one component and the empty ones keep their explicit spelling.
+//! Sugared is what every reader-facing
 //! face shows — a hover, a diagnostic, the REPL, the terminal face and a
 //! run's value; explicit is what an editor's `gandr.presentation.form` asks
 //! for, and what the golden fixtures of the core's own spellings pin.

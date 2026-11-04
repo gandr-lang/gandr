@@ -45,6 +45,6 @@ def pop[A : Type](q : Queue(A)) -> Maybe(A * Queue(A)) {
 /// Popping a queue of one pushed value gives that value back. The law sees
 /// into the whole group.
 @[unfolds(Rep)]
-def popPush[A : Type](x : A) -> Path(Maybe(A * Queue(A)), pop(push(x, empty())), Just((x, empty()))) {
+def popPush[A : Type](x : A) -> Path(pop(push(x, empty())), Just((x, empty()))) {
   Path.here(Just((x, empty())))
 }

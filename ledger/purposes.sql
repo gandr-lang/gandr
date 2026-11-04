@@ -957,7 +957,7 @@ INSERT INTO purpose VALUES('core-term','syntax::equal_type_folded','function','C
 INSERT INTO purpose VALUES('core-term','syntax::equal_type_reading','function','Compares type syntax as a printed type reads, so the types every checker reads alike compare equal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','syntax::equal_type_syntax','function','Compares signature type syntax without making allocation identity observable, so separately allocated equal signatures compare equal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','syntax::folded_computation','function','The fold a returned composite realises, as the bridge erases it, so every reader that compares terms reads the composite as the kernel replays it.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','syntax::identified_words','function','The type of words the path type Path(carrier, left, right) reads as: the declaration whose free cells loop at a point both endpoints spell.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','syntax::identified_words','function','The type of words the path type Path[.A = carrier](left, right) reads as: the declaration whose free cells loop at a point both endpoints spell.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','tactic::Tactic','struct','The tactic a splice runs at its goal: a count of introductions, then an assumption.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','tactic::TooManyIntros','struct','A count of introductions at or past the limit, which no tactic makes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','ua::Description','struct','A description as a stratum reads it: its name and its generators, in written order.',NULL,'fits','sound',NULL);
@@ -1497,11 +1497,11 @@ INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_BRIDGE','constant','Node
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_COMPUTATION_UNIVERSE','constant','Node tag: the universe of computation types, with an inline level.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_DATA','constant','Node tag: nominal application with a counted argument vector.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_ELEMENT','constant','Node tag: the universe-decoding former, with an inline level and one value child: the code the type is read off.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_FLOW','constant','Node tag: directed element identity `Flow(A, x, y)`, over a value type and two endpoint values.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_FLOW','constant','Node tag: directed element identity `Flow[.A = A](x, y)`, over a value type and two endpoint values.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_FLOW_UNIVERSE','constant','Node tag: forward-only universe flows, over source and target codes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_LIFT','constant','Node tag: the value-type lift, with an inline target level, over one value type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_LIST','constant','Node tag: the strictly positive list code, over one element type.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_PATH','constant','Node tag: element identity `Path(A, a, b)`, over the value type `A` and the endpoint values `a` and `b`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_PATH','constant','Node tag: element identity `Path[.A = A](a, b)`, over the value type `A` and the endpoint values `a` and `b`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_PATH_UNIVERSE','constant','Node tag: universe paths, over source and target codes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_PRODUCT','constant','Node tag: the product former, with an inline component count, over its component value types in order; the unit type is the product of none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_VT_RECORD','constant','Node tag: structural record classifier with counted labels and children.',NULL,'fits','sound',NULL);

@@ -4341,14 +4341,14 @@ fn a_held_elimination_compares_with_a_bind_over_its_call_2326()
 #[test]
 fn a_held_transport_compares_with_a_bind_over_its_call_3800()
 {
-    // `S to q. tr(y. Path(Unit, (), y), q, ())` against `tr(y. Path(Unit, (),
-    // y), ⟨S⟩, ())` for the stuck call `S`: `p then f(a)` against `p then
-    // idq(f(a))` in miniature, where the append runs the held operand `f(a)`
-    // and writes the bind over its call. The kernel reads the transport along
-    // the held path as `S to w. tr(…, w, ())`, so both sides are binds over
-    // `S`: they compare by the calls, then the continuations under one fresh
-    // variable, at the root, under a binder, and moving the held endpoint of
-    // the forced rigid `R`, which the kernel reads at the transport's held
+    // `S to q. tr(y. Path[.A = Unit]((), y), q, ())` against `tr(y. Path[.A =
+    // Unit]((), y), ⟨S⟩, ())` for the stuck call `S`: `p then f(a)` against `p
+    // then idq(f(a))` in miniature, where the append runs the held operand
+    // `f(a)` and writes the bind over its call. The kernel reads the transport
+    // along the held path as `S to w. tr(…, w, ())`, so both sides are binds
+    // over `S`: they compare by the calls, then the continuations under one
+    // fresh variable, at the root, under a binder, and moving the held endpoint
+    // of the forced rigid `R`, which the kernel reads at the transport's held
     // path as well. A continuation moving a pair refutes at that value.
     // Before, every pair declined.
     let build = || {
@@ -4424,8 +4424,8 @@ fn a_held_transport_compares_with_a_bind_over_its_call_3800()
 #[test]
 fn two_transports_along_a_held_call_compare_motives_written_apart_by_their_call_3807()
 {
-    // `λx. S to q. tr(y. Path(Unit, ⟨R x⟩, y), q, ())` against `λx. tr(y.
-    // Path(Unit, ⟨R x⟩, y), ⟨S⟩, ())` for the stuck call `S` and the rigid
+    // `λx. S to q. tr(y. Path[.A = Unit](⟨R x⟩, y), q, ())` against `λx. tr(y.
+    // Path[.A = Unit](⟨R x⟩, y), ⟨S⟩, ())` for the stuck call `S` and the rigid
     // `R`: `cong(g, f(a))` against `cong(g, idq(f(a)))` in miniature. Each
     // side writes its own motive, the bind's under `q` as well, so the two
     // motives are two nodes at two closures. The sides decompose as binds
@@ -4495,7 +4495,7 @@ fn two_transports_along_a_held_call_compare_motives_written_apart_by_their_call_
 #[test]
 fn codes_over_held_values_emit_one_shared_comparison_4005()
 {
-    // #4005: `λg. λp. return thunk(λq. return g) to f. tr(y. Path(Unit, ⟨force
+    // #4005: `λg. λp. return thunk(λq. return g) to f. tr(y. Path[.A = Unit](⟨force
     // f ()⟩, y), p, ())` against the same with the lambda's body written `return
     // g to t. return t`. The two bodies differ as written, so the two motives
     // are α-equal only over the pair of thunks. The machine reads that pair
@@ -4733,7 +4733,7 @@ fn a_returning_call_holds_where_its_continuation_passes_it_on_3824()
 fn a_transport_stuck_on_a_path_holds_against_its_continuation_at_its_endpoint_4011()
 {
     // Under rigid `x`, `g`, `h` and `q` at levels 0 to 3, `m` the motive
-    // `t. Path(Unit, x, t)`: `tr(m, h, ⟨tr(m, g, q)⟩)` against `tr(m, g, q) to
+    // `t. Path[.A = Unit](x, t)`: `tr(m, h, ⟨tr(m, g, q)⟩)` against `tr(m, g, q) to
     // t. tr(m, h, t)`, the composite's body against `a ↦ G(F(a))`'s at `q
     // then g` and `r then h` (#4011). The bound transport is stuck on `g` and
     // returns, so the bind is its continuation at its endpoint, on either
@@ -4867,7 +4867,7 @@ fn a_transport_stuck_on_a_path_holds_against_its_continuation_at_its_endpoint_40
 fn a_transport_on_a_returned_endpoint_refutes_a_bind_along_another_path_4025()
 {
     // Under rigid `x`, `g`, `h` and `q` at levels 0 to 3, `m` the motive
-    // `t. Path(Unit, x, t)`: `tr(m, h, ⟨tr(m, g, q)⟩)` against `tr(m, g, q) to
+    // `t. Path[.A = Unit](x, t)`: `tr(m, h, ⟨tr(m, g, q)⟩)` against `tr(m, g, q) to
     // t. tr(m, g, t)`, #4011's pair with the continuation's path `h` swapped
     // for `g` (#4025). The two transports run along different paths, so the
     // pair is refuted, and the kernel replays the refutation.
@@ -4977,10 +4977,10 @@ fn a_transport_on_a_returned_endpoint_refutes_a_bind_along_another_path_4025()
 fn a_written_transport_converts_with_its_held_endpoint_4038()
 {
     // Under rigid `x`, `f`, `g`, `q` and `p` at levels 0 to 4, `f then g` the
-    // transport `tr(s. Path(Unit, x, s), g, f)`: `tr(t. Path(Unit, ⟨f then g⟩,
-    // t), q, p)` against `(λe. tr(t. Path(Unit, e, t), q, p)) ⟨f then g⟩`
-    // (#4038). The first motive writes the composite's call, and the second
-    // reads it through the environment the application bound, as a
+    // transport `tr(s. Path[.A = Unit](x, s), g, f)`: `tr(t. Path[.A = Unit](⟨f
+    // then g⟩, t), q, p)` against `(λe. tr(t. Path[.A = Unit](e, t), q, p)) ⟨f
+    // then g⟩` (#4038). The first motive writes the composite's call, and the
+    // second reads it through the environment the application bound, as a
     // definition's body does. The two transports along `q` convert, on either
     // side and under either endpoint reading, and the kernel replays it.
     let mut core = CoreArena::new();
@@ -5101,7 +5101,7 @@ fn a_written_call_converts_with_what_it_reduces_to_4179()
 {
     // #4179: under rigid `x`, `y`, `f`, `g`, `q` and `p` at levels 0 to 5,
     // `same = thunk(λa. return a)` and `f then g` the transport `tr(s.
-    // Path(Unit, x, s), g, f)`. Two transports along `q` from `p` whose
+    // Path[.A = Unit](x, s), g, f)`. Two transports along `q` from `p` whose
     // motives start at `⟨same x⟩` and at `x` convert, and so do two starting
     // at `⟨same ⟨f then g⟩⟩` and at `⟨f then g⟩`, a call against a call of
     // another kind: the machine enters each written call against what the
@@ -5388,7 +5388,7 @@ fn two_cases_over_cases_of_one_held_call_compare_level_by_level_3086()
 fn two_held_transports_convert_by_their_computations()
 {
     // `⟨comp(R)⟩` against `⟨other((), R)⟩` for the rigid path `R`, where
-    // `comp = λq. tr(y. Path(Unit, (), y), q, ())` and `other` binds one
+    // `comp = λq. tr(y. Path[.A = Unit]((), y), q, ())` and `other` binds one
     // more parameter before the same transport: `p then q` written in two
     // definitions. Both unfold to a transport stuck on `R` whose motive
     // closes over its own definition's frame, so the walk leaves the two
@@ -5441,14 +5441,14 @@ fn two_held_transports_convert_by_their_computations()
 #[test]
 fn a_transport_of_a_call_s_result_unfolds_the_call_first_3806()
 {
-    // `⟨tr(y. Path(Unit, y, y), R, R)⟩` against `⟨tr(y. Path(Unit, y, y), R,
-    // ⟨ident(R)⟩)⟩` for the rigid path `R`. The kernel runs a returned operand
-    // before it reads the path, so it reads the right side as `ident(R) to x.
-    // tr(…, R, x)` and unfolds `ident` before it meets the transport. Held on
-    // its operand, the transport waits on `ident` in the machine as well, so
-    // the machine unfolds it first and the kernel replays the trace. Held on
-    // the path, the machine compared the transports first, and the kernel
-    // refused the trace.
+    // `⟨tr(y. Path[.A = Unit](y, y), R, R)⟩` against `⟨tr(y. Path[.A = Unit](y, y),
+    // R, ⟨ident(R)⟩)⟩` for the rigid path `R`. The kernel runs a returned
+    // operand before it reads the path, so it reads the right side as `ident(R)
+    // to x. tr(…, R, x)` and unfolds `ident` before it meets the transport.
+    // Held on its operand, the transport waits on `ident` in the machine as
+    // well, so the machine unfolds it first and the kernel replays the trace.
+    // Held on the path, the machine compared the transports first, and the
+    // kernel refused the trace.
     let mut core = CoreArena::new();
     let function = identity(&mut core);
     let unit_type = core.value_type_unit();

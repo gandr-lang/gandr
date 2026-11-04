@@ -18,8 +18,7 @@ def backwards() -> Integer {
   handle outer : std.process.Exit.Eff {
     let k : (() => Integer) at outer = access shared s as w { pure pure w };
     handle inner : std.process.Exit.Eff {
-      let _ : Path(
-        (() => Integer) at inner => (() => Integer) at outer,
+      let _ : Path[.A = (() => Integer) at inner => (() => Integer) at outer](
         thunk { fun (x) { let z : (() => Integer) at outer = x; pass(z) } },
         thunk { fun (x) { let y : (() => Integer) at inner = pass(x); pure y } }
       ) = Path.here(thunk { fun (x) { let z : (() => Integer) at outer = x; pass(z) } });
@@ -42,8 +41,7 @@ def unequal() -> Integer {
   handle outer : std.process.Exit.Eff {
     let k : (() => Integer) at outer = access shared s as w { pure pure w };
     handle inner : std.process.Exit.Eff {
-      let _ : Path(
-        (() => Integer) at outer => (() => Integer) at inner,
+      let _ : Path[.A = (() => Integer) at outer => (() => Integer) at inner](
         thunk { fun (x) { let y : (() => Integer) at outer = pass(x); pure y } },
         thunk { fun (x) { let z : (() => Integer) at inner = x; touch(z) } }
       ) = Path.here(thunk { fun (x) { let y : (() => Integer) at outer = pass(x); pure y } });

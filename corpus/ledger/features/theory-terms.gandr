@@ -27,8 +27,7 @@ theory Mag where {
 
 /// The unit cancels on both sides, so the product converts to the unit.
 @[ checks ]
-def cancelled : Path(
-  Terms(Mag),
+def cancelled : Path[.A = Terms(Mag)](
   Mag.mul(Mag.one, Mag.mul(Mag.one, Mag.one)),
   Mag.one
 ) = Path.here(Mag.one);

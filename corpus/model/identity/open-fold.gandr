@@ -22,20 +22,19 @@ import "./loop-space.gandr";
 
 /// The step case at a variable: the `Loop` arm's bind over `windWords(x)`
 /// reads as `S` over the held call.
-def wind_unfolded(x : Words) -> Path(Int, windWords(Loop(x)), S(windWords(x))) {
+def wind_unfolded(x : Words) -> Path[.A = Int](windWords(Loop(x)), S(windWords(x))) {
   Path.here(S(windWords(x)))
 }
 
 /// Two loops read through two binds, the inner call's first.
-def twice_unfolded(x : Words) -> Path(Int, windWords(Loop(Loop(x))), S(S(windWords(x)))) {
+def twice_unfolded(x : Words) -> Path[.A = Int](windWords(Loop(Loop(x))), S(S(windWords(x)))) {
   Path.here(S(S(windWords(x))))
 }
 
 /// The round trip's step case: `spinWords` waits on the read
 /// `S(windWords(x))`, runs its `S` arm, and that arm's bind over
 /// `spinWords(windWords(x))` reads as `Loop`.
-def round_unfolded(x : Words) -> Path(
-  Words,
+def round_unfolded(x : Words) -> Path[.A = Words](
   spinWords(windWords(Loop(x))),
   Loop(spinWords(windWords(x)))
 ) {
@@ -43,7 +42,7 @@ def round_unfolded(x : Words) -> Path(
 }
 
 /// The round trip's base case, closed: every call runs to its value.
-def base_case() -> Path(Words, spinWords(windWords(Nil)), Nil) {
+def base_case() -> Path[.A = Words](spinWords(windWords(Nil)), Nil) {
   Path.here(Nil)
 }
 
@@ -68,6 +67,6 @@ def rec parity(n : Nat) -> Nat {
 /// the variable, so the endpoint stays the bind over the call and is not
 /// read as a constructor over it.
 @[ refuses("EndpointMismatch") ]
-def parity_stuck(n : Nat) -> Path(Nat, parity(Succ(n)), Succ(parity(n))) {
+def parity_stuck(n : Nat) -> Path[.A = Nat](parity(Succ(n)), Succ(parity(n))) {
   Path.here(Succ(parity(n)))
 }

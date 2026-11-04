@@ -702,10 +702,10 @@ pub enum DomainValue
         face: TermFace,
     },
     /// A path held as the transport that formed it: transport along a
-    /// universe path in `y. Path(U, y, c)` from `here(c)`, which is `back`,
-    /// or in `y. Path(U, c, y)` from a path, which is `then`. Transport
-    /// along it at the universe's decode goes back along `path`, or along
-    /// `value` and then `path`.
+    /// universe path in `y. Path[.A = U](y, c)` from `here(c)`, which is
+    /// `back`, or in `y. Path[.A = U](c, y)` from a path, which is `then`.
+    /// Transport along it at the universe's decode goes back along `path`,
+    /// or along `value` and then `path`.
     HeldTransport
     {
         /// The path family, closed over its environment.

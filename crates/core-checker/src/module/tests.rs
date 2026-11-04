@@ -347,9 +347,9 @@ fn an_ascription_keeps_the_endpoints_it_related()
 {
     // def k : U (Integer -> F Integer) = thunk { \x. return x } ;
     // def j : U (Integer -> F Integer) = k ;
-    // def given : Path(U (…), thunk { force j }, k) = here(k) ;
-    // def law : Path(U (…), k, k) = given ;
-    // def again : Path(U (…), thunk { force j }, k) = given ;
+    // def given : Path[.A = U (…)](thunk { force j }, k) = here(k) ;
+    // def law : Path[.A = U (…)](k, k) = given ;
+    // def again : Path[.A = U (…)](thunk { force j }, k) = given ;
     // `law`'s ascription relates `thunk { force j }` to `k`, unfolding `j`
     // under the thunk; `again`'s endpoints are the same syntax.
     let mut arena = CoreArena::new();
@@ -815,7 +815,8 @@ fn a_variable_s_type_keeps_the_copies_its_reading_mints()
 {
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
-    // `(n : Integer) -> (r : (x : Integer) * Path(Integer, n, x)) -> F Integer`.
+    // `(n : Integer) -> (r : (x : Integer) * Path[.A = Integer](n, x)) -> F
+    // Integer`.
     let [own, outer] = [0_u32, 1].map(|index| {
         arena.value_variable(
             gandr_core_term::Zone::Intuitionistic,
@@ -1301,7 +1302,7 @@ fn a_record_update_in_a_signature_reads_its_record_2159()
         let overlay = arena.value_record(alloc::collections::BTreeMap::from([(label(name), zero)]));
         arena.value_record_update(base, overlay)
     };
-    // `commute : Path(R, #{#{point | x = 0} | y = 0}, #{#{point | y = 0} | x =
+    // `commute : Path[.A = R](#{#{point | x = 0} | y = 0}, #{#{point | y = 0} | x =
     // 0})`.
     let commuted = {
         let first = written(&mut arena, point, "x");
@@ -1311,7 +1312,7 @@ fn a_record_update_in_a_signature_reads_its_record_2159()
         arena.value_type_path(pair_type, left, right)
     };
     let commute = arena.value_here(pair);
-    // `unchanged : Path(R, #{point | x = 0}, point)`.
+    // `unchanged : Path[.A = R](#{point | x = 0}, point)`.
     let unchanged_type = {
         let left = written(&mut arena, point, "x");
         arena.value_type_path(pair_type, left, point)
@@ -2279,7 +2280,7 @@ fn a_pure_run_a_type_reads_stands_as_what_it_returns_444()
     let mut arena = CoreArena::new();
     let (function, identity) = integer_function(&mut arena);
     let integer = arena.value_type_base(BaseType::Integer);
-    // `Σ (y : Integer). Path(Integer, y, y)`.
+    // `Σ (y : Integer). Path[.A = Integer](y, y)`.
     let bound = arena.value_variable(
         gandr_core_term::Zone::Intuitionistic,
         DeBruijnIndex::from(0_u32),
@@ -2356,7 +2357,7 @@ fn a_pure_run_a_type_reads_stands_as_what_it_returns_444()
     );
 }
 
-/// A reflexivity over `carrier`, `U ((y : carrier) -> F Path(carrier, y,
+/// A reflexivity over `carrier`, `U ((y : carrier) -> F Path[.A = carrier](y,
 /// y))`, and its body `λy. return here(y)`.
 ///
 /// # Specification
@@ -3597,8 +3598,8 @@ fn a_decoded_hole_in_a_signature_is_solved_where_it_forms_5026()
     use gandr_core_term::hole::HoleId;
     use gandr_core_term::hole::NominationIndex;
 
-    // def agreed : Path(El ?a, 0, 0) = here(0) ;
-    // def mixed  : Path(El ?b, 0, ()) ;
+    // def agreed : Path[.A = El ?a](0, 0) = here(0) ;
+    // def mixed  : Path[.A = El ?b](0, ()) ;
     // def free   : El ?c ;
     // The carrier is the decode of a hole a call nominated, as `Path(x, y)`
     // lowers it: the first endpoint binds it, so the second meets it bound.

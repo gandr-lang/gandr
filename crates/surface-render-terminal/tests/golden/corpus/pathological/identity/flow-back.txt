@@ -2,11 +2,11 @@ error[NonCovariantMotive]: a flow runs one way: `Flow.ride` may use the moving e
    ╭▸ corpus/pathological/identity/flow-back.gandr:14:5
    │
 12 │ ┌   @[ refuses("NonCovariantMotive") ]
-13 │ │   def downgrade() -> Flow(Type, New, Old) {
+13 │ │   def downgrade() -> Flow[.A = Type](New, Old) {
 14 │ │     Path.back(upgrade)
    │ │     ━━━━━━━━━━━━━━━━━━ the moving endpoint other than covariantly
 15 │ │   }
-   │ └───┘ checked against `() => Flow(Type, Integer * String, String * Integer)`; while checking the body of this thunk
+   │ └───┘ checked against `() => Flow[.A = Type](Integer * String, String * Integer)`; while checking the body of this thunk
    │
    ├ note: `downgrade` is refused with NonCovariantMotive, as its expectation states
    ╰ help: use the moving endpoint only where a run of it is produced

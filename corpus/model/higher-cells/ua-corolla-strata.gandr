@@ -22,8 +22,7 @@ def raised = ua[
 
 /// Transport along it swaps the binary corolla's boolean and carries the
 /// degree-two unit stage.
-def lifts : Path(
-  Unit * (+{Unit} * (Bool * Unit)),
+def lifts : Path[.A = Unit * (+{Unit} * (Bool * Unit))](
   Path.walk(fun (X) { X }, raised, (unit, (+{.0 = unit}, (+{.0 = unit}, unit)))),
   (unit, (+{.0 = unit}, (+{.1 = unit}, unit)))
 ) = Path.here((unit, (+{.0 = unit}, (+{.1 = unit}, unit))));

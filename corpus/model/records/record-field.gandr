@@ -24,8 +24,7 @@ def boundField() -> Integer {
 
 /// The record rebuilt from its fields is the record: η, a path whose
 /// endpoints read the fields off `nest`.
-def rebuilt() -> Path(
-  #{tag : String, inner : #{x : Integer, y : Integer}},
+def rebuilt() -> Path[.A = #{tag : String, inner : #{x : Integer, y : Integer}}](
   #{.tag = nest.tag, .inner = nest.inner},
   nest
 ) {

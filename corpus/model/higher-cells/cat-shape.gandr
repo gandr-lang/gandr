@@ -63,7 +63,6 @@ module SetoidCat : Model(CatShape) where {
 
   /// The left unit law, by conversion.
   def unitL(p : Type, q : Type, f : p => q) -> Path(
-    (p => q),
     comp(p, p, q, id(p), f),
     f
   ) {
@@ -72,7 +71,6 @@ module SetoidCat : Model(CatShape) where {
 
   /// The right unit law, by conversion.
   def unitR(p : Type, q : Type, f : p => q) -> Path(
-    (p => q),
     comp(p, q, q, f, id(q)),
     f
   ) {
@@ -89,7 +87,6 @@ module SetoidCat : Model(CatShape) where {
     g : q => r,
     h : r => s
   ) -> Path(
-    (p => s),
     comp(p, r, s, comp(p, q, r, f, g), h),
     comp(p, q, s, f, comp(q, r, s, g, h))
   ) {
@@ -97,15 +94,13 @@ module SetoidCat : Model(CatShape) where {
   }
 
   /// The left unit law stated by the right one, whose type converts to it.
-  def unitLFromR : (p : Type, q : Type, f : p => q) => Path(
-    (p => q),
+  def unitLFromR : (p : Type, q : Type, f : p => q) => Path[.A = (p => q)](
     comp(p, p, q, id(p), f),
     f
   ) = unitR;
 
   /// The left unit law by either law, chosen by a boolean.
   def unitLEither(p : Type, q : Type, f : p => q, b : Bool) -> Path(
-    (p => q),
     comp(p, p, q, id(p), f),
     f
   ) {

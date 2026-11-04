@@ -233,7 +233,7 @@ fn a_functor_body_never_reaches_the_kernel()
 fn a_type_member_never_reads_its_parameter_s_value()
 {
     let pinned = "module Pinned(S : #{ type T, z : T }) :> #{ type P, q : P } where {\n  type P = \
-                  Path(S.T, S.z, S.z);\n  def q = Path.here(S.z);\n}\n";
+                  Path[.A = S.T](S.z, S.z);\n  def q = Path.here(S.z);\n}\n";
     let found = rows(&lower(pinned));
     let phase = LoweringRefusal::PhaseDependence {
         span: span_of(pinned, "S.z", 0_usize),
@@ -419,13 +419,13 @@ const SEMI: &str = "theory Semi where {\n  sort M : Type;\n  oper mul : (x : M, 
 
 /// Associativity turned round at any model, read off the parameter's law.
 const REASSOCIATING: &str = "module Reassociating(S : Model(Semi)) where {\n  def reassoc(x : S.M, y : \
-                             S.M, z : S.M) -> -F Path(S.M, S.mul(x, S.mul(y, z)), \
+                             S.M, z : S.M) -> -F Path[.A = S.M](S.mul(x, S.mul(y, z)), \
                              S.mul(S.mul(x, y), z)) { Path.back(S.assoc(x, y, z)) }\n}\n";
 
 /// The one-point semigroup, its law by computation.
 const ONE_POINT: &str = "module OnePoint : Model(Semi) where {\n  type M = Unit;\n  def mul(a : Unit, \
                          b : Unit) -> -F Unit { unit }\n  def assoc(x : Unit, y : Unit, z : \
-                         Unit) -> -F Path(Unit, mul(mul(x, y), z), mul(x, mul(y, z))) { \
+                         Unit) -> -F Path[.A = Unit](mul(mul(x, y), z), mul(x, mul(y, z))) { \
                          Path.here(unit) }\n}\n";
 
 #[test]
@@ -464,7 +464,7 @@ fn an_instance_names_its_argument_s_operations_2179()
         REASSOCIATING,
         ONE_POINT,
         "module Turned = Reassociating(OnePoint) ;\ndef written : (x : Unit, y : Unit, z : Unit) \
-         => Path(Unit, OnePoint.mul(x, OnePoint.mul(y, z)), OnePoint.mul(OnePoint.mul(x, y), \
+         => Path[.A = Unit](OnePoint.mul(x, OnePoint.mul(y, z)), OnePoint.mul(OnePoint.mul(x, y), \
          z)) ;\ndef written = Turned.reassoc ;\n",
     ]
     .concat();

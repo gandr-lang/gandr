@@ -3,7 +3,7 @@ error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law 
    │
 27 │ ┏   @[ refuses("UnprovenLaw.Admitted") ]
 28 │ ┃   law refl = ~admitted;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Lone) => Path(Bool, Overadmitted.alike(a, a), true)`
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Lone) => Path[.A = Bool](Overadmitted.alike(a, a), true)`
    │
    ├ note: `refl` is refused with UnprovenLaw.Admitted, as its expectation states
    ╰ help: prove the law
@@ -13,7 +13,7 @@ error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law 
    │
 36 │ ┏   @[ refuses("UnprovenLaw.Admitted") ]
 37 │ ┃   law refl = ~admitted;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : f64) => Path(Bool, FloatEqAdmitted.eq(a, a), true)`
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : f64) => Path[.A = Bool](FloatEqAdmitted.eq(a, a), true)`
    │
    ├ note: `refl` is refused with UnprovenLaw.Admitted, as its expectation states
    ╰ help: prove the law
@@ -25,7 +25,7 @@ error[NoFiller.Omitted]: the module omits this law, and its sides do not convert
 44 │ ┃   def eq(a : f64, b : f64) -> Bool { float64.eq(a, b) }
 45 │ ┃   law sym = ~admitted;
 46 │ ┃ }
-   │ ┗━┛ a law whose sides do not convert: found `(a : f64) => Path(Bool, FloatEqMissing.eq(a, a), true)`
+   │ ┗━┛ a law whose sides do not convert: found `(a : f64) => Path[.A = Bool](FloatEqMissing.eq(a, a), true)`
    │
    ├ note: `refl` is refused with NoFiller.Omitted, as its expectation states
    ╰ help: prove the law by a definition at its type, or admit it where the host asserts it

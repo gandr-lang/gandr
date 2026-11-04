@@ -125,8 +125,8 @@
 //! variables; the relation premise identifies each discrete Base pair, without
 //! sampling literals. A function coordinate of the argument, at a thunk type
 //! `T`, binds the inner fibre itself: two functions and their identity, `f₀
-//! f₁ : T` and `p : Path(T, f₀, f₁)`, with `f₀` the source argument and `f₁`
-//! the target. Nothing is sampled and nothing is split, so a higher-order
+//! f₁ : T` and `p : Path[.A = T](f₀, f₁)`, with `f₀` the source argument and
+//! `f₁` the target. Nothing is sampled and nothing is split, so a higher-order
 //! argument is one generic pattern. A function fibre lowers to the persisted
 //! `Path` at its thunk type in identity mode and to the persisted `Bridge` in
 //! bridge mode, which is what makes both ends checkable: the premise is the
@@ -197,8 +197,8 @@
 //!
 //! # Bridges
 //!
-//! A bridge is the non-fibrant reading of the same fold. `Bridge(A, a₀, a₁)`
-//! is a persisted node formed like `Path`, and its evidence checks against
+//! A bridge is the non-fibrant reading of the same fold. `Bridge[.A = A](a₀,
+//! a₁)` is a persisted node formed like `Path`, and its evidence checks against
 //! the fibre this fold computes in bridge mode, the bridge column of the table
 //! above. At a function code `U (A → F B)` it is the family over argument
 //! bridges, `(a₀ a₁ : A) (ā : Br A a₀ a₁) → Br B (f a₀) (g a₁)`, introduced by

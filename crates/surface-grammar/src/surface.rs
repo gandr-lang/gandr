@@ -74,10 +74,10 @@
 //! application, a type head the lowering resolves as it resolves `Flow`.
 //!
 //! - Alternatives: the relations as type applications alone, `Iso(A, B)` and
-//!   `Flow(Type, A, B)`, which hide the relation in a head and an argument; an
-//!   ASCII tile per alias, a second mold per form whose spelling the printer
-//!   would have to choose; the arrows' band, where `A ≃ B -> C` would nest the
-//!   arrow into the relation.
+//!   `Flow[.A = Type](A, B)`, which hide the relation in a head and an
+//!   argument; an ASCII tile per alias, a second mold per form whose spelling
+//!   the printer would have to choose; the arrows' band, where `A ≃ B -> C`
+//!   would nest the arrow into the relation.
 //! - Reversal: a relation that takes a third operand, a universe or a level, is
 //!   written as an application.
 //!

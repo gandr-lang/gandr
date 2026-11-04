@@ -9,8 +9,8 @@
 //! order, `(x₀, x₁, d₁, …, xₘ, dₘ)`: the first vertex, then each later vertex
 //! and the cell that ends there. The count tells the two apart. `t` is a
 //! curried function of the entries `d` lists into a path type: of dimension
-//! two, `Path(P, u, v)` with its sides `u` and `v` composites of the cells, or
-//! of dimension one, a path between the chain's two ends.
+//! two, `Path[.A = P](u, v)` with its sides `u` and `v` composites of the
+//! cells, or of dimension one, a path between the chain's two ends.
 //!
 //! Each entry is of its domain's type, or a path between two such entries one
 //! path layer deeper: the entries of `X`. The family of `X` is the former of
@@ -35,7 +35,7 @@
 //! 2-cell or none per column, or its pasting context with its points fixed:
 //! per column its first 1-cell, then each later 1-cell and the 2-cell that
 //! ends there. Each column is then a chain one level up, its 1-cells the
-//! vertices and `Path(A, xᵢ₋₁, xᵢ)` their carrier. The generator is of
+//! vertices and `Path[.A = A](xᵢ₋₁, xᵢ)` their carrier. The generator is of
 //! dimension two at the 2-cells. Its sides `u` and `v` compose the columns'
 //! first 1-cells and their last, each lifting as a chain's side lifts.
 //!
@@ -806,9 +806,9 @@ pub fn realise(
 /// # Specification
 /// - requires: `listing` lists a level-two shape; `inhabited` gives the type
 ///   each vertex it numbers inhabits, in order.
-/// - ensures: the carrier `A` of the first column's `Path(A, x₀, x₁)`, and per
-///   column the boundary from `xᵢ₋₁` to `xᵢ`, its first 1-cell's carrier
-///   `Path(A, xᵢ₋₁, xᵢ)`.
+/// - ensures: the carrier `A` of the first column's `Path[.A = A](x₀, x₁)`, and
+///   per column the boundary from `xᵢ₋₁` to `xᵢ`, its first 1-cell's carrier
+///   `Path[.A = A](xᵢ₋₁, xᵢ)`.
 /// - fails: [`CheckRefusal::ShapeMismatch`] for a 1-cell's carrier that is no
 ///   path type; a conversion's own refusal; a machine invariant for a listing
 ///   that is no level-two shape's, or a column it numbers no vertex of.
@@ -1794,12 +1794,13 @@ impl Builder<'_>
     ///
     /// # Specification
     /// - requires: `cells` stand `shift` binders past the fill's context.
-    /// - ensures: `Path(Path(P, u⁻, v⁺), t⁻ then (v ↑ X), (u ↑ X) then t⁺)`: of
-    ///   dimension two, `P` the path between the chain's ends and `u`, `v` the
-    ///   generator's sides; of dimension one, `P` the carrier and `u`, `v` the
-    ///   chain's two ends; over a level-two shape, `P` the path between its
-    ///   first point and its last, and `u`, `v` the generator's sides, each a
-    ///   composite of one 1-cell per column, lifting as each column's lifts.
+    /// - ensures: `Path[.A = Path[.A = P](u⁻, v⁺)](t⁻ then (v ↑ X), (u ↑ X)
+    ///   then t⁺)`: of dimension two, `P` the path between the chain's ends and
+    ///   `u`, `v` the generator's sides; of dimension one, `P` the carrier and
+    ///   `u`, `v` the chain's two ends; over a level-two shape, `P` the path
+    ///   between its first point and its last, and `u`, `v` the generator's
+    ///   sides, each a composite of one 1-cell per column, lifting as each
+    ///   column's lifts.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2234,8 +2235,8 @@ impl Builder<'_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `Path(A, xᵢ, xᵢ₊₁)` for the cell's two vertices, each of `X`
-    ///   at its left end, `A` the type they inhabit.
+    /// - ensures: `Path[.A = A](xᵢ, xᵢ₊₁)` for the cell's two vertices, each of
+    ///   `X` at its left end, `A` the type they inhabit.
     /// - fails: a machine invariant for a position that is no cell of the
     ///   chain.
     /// - panics: none.
@@ -2278,7 +2279,7 @@ impl Builder<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the chain's carrier for a chain's vertex, its column's
-    ///   `Path(A, xᵢ₋₁, xᵢ)` for a level-two shape's 1-cell.
+    ///   `Path[.A = A](xᵢ₋₁, xᵢ)` for a level-two shape's 1-cell.
     /// - fails: a machine invariant for a vertex past the listing.
     /// - panics: none.
     ///

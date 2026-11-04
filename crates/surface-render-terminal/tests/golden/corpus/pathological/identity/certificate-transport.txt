@@ -1,11 +1,11 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/identity/certificate-transport.gandr:13:74
+   ╭▸ corpus/pathological/identity/certificate-transport.gandr:13:84
    │
-13 │ def loopIsHere : Path(Path(Circle, Base, Base), loop, Path.here(Base)) = Path.here(loop);
-   │                                                 ┬───  ┬──────────────    ━━━━━━━━━━━━━━━ not both endpoints of the path
-   │                                                 │     │
-   │                                                 │     an endpoint the point does not convert to
-   │                                                 an endpoint the point does not convert to
+13 │ def loopIsHere : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here(Base)) = Path.here(loop);
+   │                                                           ┬───  ┬──────────────    ━━━━━━━━━━━━━━━ not both endpoints of the path
+   │                                                           │     │
+   │                                                           │     an endpoint the point does not convert to
+   │                                                           an endpoint the point does not convert to
    │
    ├ note: `loopIsHere` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints

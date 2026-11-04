@@ -1,8 +1,8 @@
 error[SessionNotEquivalent]: `Path.bisim` needs the two protocols to behave alike at every step
-  ╭▸ corpus/pathological/sessions/session-payloads-unpaid.gandr:9:52
+  ╭▸ corpus/pathological/sessions/session-payloads-unpaid.gandr:9:57
   │
-9 │ def unpaid : Path(Type, Judge.Right, Judge.Left) = Path.bisim(Judge.Right, Judge.Left);
-  │                                                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ protocols that are not bisimilar
+9 │ def unpaid : Path[.A = Type](Judge.Right, Judge.Left) = Path.bisim(Judge.Right, Judge.Left);
+  │                                                         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ protocols that are not bisimilar
   │
   ├ note: `unpaid` is refused with SessionNotEquivalent, as its expectation states
   ╰ help: make the two protocols bisimilar at every step

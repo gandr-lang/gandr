@@ -518,6 +518,10 @@ pub enum FormFault
     /// An implicit supplied twice in one bracket, by name twice or by position
     /// and by name, `f[T, .a = U]`.
     SuppliedTwice,
+    /// A path-shaped type under this head written over three operands, its
+    /// carrier first, `Path(A, a, b)`. The head takes its carrier by name,
+    /// `Path[.A = A](a, b)`.
+    PositionalCarrier(crate::form::TileName),
 }
 
 impl fmt::Display for FormFault
@@ -569,6 +573,9 @@ impl fmt::Display for FormFault
             },
             Self::CompoundPositional => f.write_str("supplies a compound value by position"),
             Self::SuppliedTwice => f.write_str("supplies one implicit twice"),
+            Self::PositionalCarrier(head) => {
+                write!(f, "writes the carrier of `{}` by position", head.as_ref())
+            },
         }
     }
 }

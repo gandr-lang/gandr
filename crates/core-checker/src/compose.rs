@@ -9,12 +9,12 @@
 //! shape of it: the chain of `m` vertices lies in the catalogue, size
 //! `2m + 1 ≤ k`, and the stratum reaches its degree `2m − 1 ≤ n`. One cell
 //! reads no stratum, since the corolla is its own composite. Each cell
-//! synthesises a path type `Path(A, xᵢ₋₁, xᵢ)`, a cell written as a call
+//! synthesises a path type `Path[.A = A](xᵢ₋₁, xᵢ)`, a cell written as a call
 //! running first as a scrutinee does. Its two endpoints colour the chain's
 //! legs at the cell's vertex, and [`fills`] admits the diagram when each
 //! inner wire's two colours convert. The composite then has the type its
-//! realisation synthesises, the fold the lowering made, `Path(A, x₀, xₘ)`. A
-//! cell of the unknown type colours its legs with no endpoint, which meets
+//! realisation synthesises, the fold the lowering made, `Path[.A = A](x₀, xₘ)`.
+//! A cell of the unknown type colours its legs with no endpoint, which meets
 //! any.
 //!
 //! The bridge erases a returned composite to its realisation, and any other
@@ -443,7 +443,7 @@ pub fn fill(
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CellReading
 {
-    /// `Path(carrier, left, right)`.
+    /// `Path[.A = carrier](left, right)`.
     Known
     {
         /// The type the endpoints inhabit.

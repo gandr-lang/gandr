@@ -12,7 +12,7 @@ rule Involution.invFour : inv(inv(inv(inv(x)))) <=> x;
 module Same : Model(Involution) where {
   type G = Integer;
   def inv(x : Integer) -> Integer { x }
-  def invInv(x : Integer) -> Path(Integer, inv(inv(x)), x) { Path.here(x) }
+  def invInv(x : Integer) -> Path(inv(inv(x)), x) { Path.here(x) }
   @[ refuses("DerivedComponent") ]
-  def invFour(x : Integer) -> Path(Integer, inv(inv(inv(inv(x)))), x) { Path.here(x) }
+  def invFour(x : Integer) -> Path(inv(inv(inv(inv(x)))), x) { Path.here(x) }
 }

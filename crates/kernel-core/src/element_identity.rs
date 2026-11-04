@@ -1,8 +1,8 @@
 //! Element identity as kernel syntax.
 //!
-//! The identity type `Path(A, a, b)`, its reflexivity `here(a)`, the returned
-//! endpoint, transport in a dependent motive, the guarded higher field, higher
-//! evaluation and related application.
+//! The identity type `Path[.A = A](a, b)`, its reflexivity `here(a)`, the
+//! returned endpoint, transport in a dependent motive, the guarded higher
+//! field, higher evaluation and related application.
 //!
 //! Every judgement here reads the one identity fold in
 //! [`crate::identity_recursion`], beside two rules of its own, the identity at
@@ -13,25 +13,25 @@
 //! # Decisions
 //!
 //! **Identity is one former whose fibre is computed.** At a closed type `A`,
-//! `Path(A, a, b)` reads the fold at the quoted `A` and the two endpoints: Unit
-//! is Unit; a Sum is Empty across injections and the summand's fibre within
-//! one; a Product pairs its coordinates' fibres; a Base is discrete equality;
-//! the level-zero universe is the native path classifier `Path_U(a, b)`; a pure
-//! thunk code relates functions by related application. An introduction form
-//! other than `here` inhabits the identity when it inhabits that native fibre.
-//! `here(c)` is the one introduction the fold does not supply, and it checks by
-//! the kernel's own term conversion: `c` must convert with both endpoints by
-//! α-equality or by the rules a conversion is forced to fire, the η laws and
-//! the two laws of bind among them (the crate's trusted-equality section), and
-//! a refusal names both endpoints by content digest. An iterated identity reads
-//! its inner identity's fibre first and treats a `here` endpoint as that
-//! fibre's diagonal evidence. A neutral — a variable, a constant or a returned
-//! endpoint — inhabits an identity by the type it synthesizes: type conversion
-//! stays structural, so a neutral of the fibre type does not inhabit the
-//! identity. `here(c)` synthesizes the diagonal at the type `c` synthesizes,
-//! so like every annotation-free introduction it is inferable only where its
-//! point is; an eliminator whose path is the `here` of an injection or a λ
-//! takes it through a binder or a constant.
+//! `Path[.A = A](a, b)` reads the fold at the quoted `A` and the two endpoints:
+//! Unit is Unit; a Sum is Empty across injections and the summand's fibre
+//! within one; a Product pairs its coordinates' fibres; a Base is discrete
+//! equality; the level-zero universe is the native path classifier `Path_U(a,
+//! b)`; a pure thunk code relates functions by related application. An
+//! introduction form other than `here` inhabits the identity when it inhabits
+//! that native fibre. `here(c)` is the one introduction the fold does not
+//! supply, and it checks by the kernel's own term conversion: `c` must convert
+//! with both endpoints by α-equality or by the rules a conversion is forced to
+//! fire, the η laws and the two laws of bind among them (the crate's
+//! trusted-equality section), and a refusal names both endpoints by content
+//! digest. An iterated identity reads its inner identity's fibre first and
+//! treats a `here` endpoint as that fibre's diagonal evidence. A neutral — a
+//! variable, a constant or a returned endpoint — inhabits an identity by the
+//! type it synthesizes: type conversion stays structural, so a neutral of the
+//! fibre type does not inhabit the identity. `here(c)` synthesizes the diagonal
+//! at the type `c` synthesizes, so like every annotation-free introduction it
+//! is inferable only where its point is; an eliminator whose path is the `here`
+//! of an injection or a λ takes it through a binder or a constant.
 //!
 //! - alternatives: an inductive identity family eliminated by J, which needs a
 //!   computation rule on reflexivity that the fold's Sum and universe fibres do
@@ -44,15 +44,15 @@
 //!   `0x3B` stays reserved for the dependent evaluation.
 //!
 //! **A path between dependent pairs is a pair of paths.** At `Σ (x : A). B`
-//! the identity between `l` and `r` is [`sigma_fibre`]'s `Σ (p : Path(A, l₀,
-//! r₀)). Path(B[r₀], ⟨tr(x. B, p, l₁)⟩, r₁)`. Its components are read from
-//! the written pair an endpoint is, or the one a declared constant's admitted
-//! body is, so a declared endpoint unfolds here as an endpoint at every other
-//! former does; any other endpoint is read as its projections `⟨l.0⟩`,
-//! `⟨l.1⟩`. A pair checked at such an identity checks at that Σ, so the first
-//! path joins the first components and the second ends at the right second
-//! component over it. The rule reads only the Σ's factors, so an open Σ has
-//! the same fibre. Transport along it reduces by the first two rows of the
+//! the identity between `l` and `r` is [`sigma_fibre`]'s `Σ (p : Path[.A =
+//! A](l₀, r₀)). Path[.A = B[r₀]](⟨tr(x. B, p, l₁)⟩, r₁)`. Its components are
+//! read from the written pair an endpoint is, or the one a declared constant's
+//! admitted body is, so a declared endpoint unfolds here as an endpoint at
+//! every other former does; any other endpoint is read as its projections
+//! `⟨l.0⟩`, `⟨l.1⟩`. A pair checked at such an identity checks at that Σ, so
+//! the first path joins the first components and the second ends at the right
+//! second component over it. The rule reads only the Σ's factors, so an open Σ
+//! has the same fibre. Transport along it reduces by the first two rows of the
 //! table below and is neutral otherwise.
 //!
 //! - alternatives: a fold clause for the Σ, whose fibre graph would need a
@@ -64,16 +64,16 @@
 //!
 //! **A path between tuples is a tuple of paths.** A tuple checked at the
 //! identity between `l` and `r` at `A₀ × … × Aₙ` checks at [`product_fibre`]'s
-//! `Path(A₀, l₀, r₀) × … × Path(Aₙ, lₙ, rₙ)`, the components read as the Σ
-//! rule reads them; a tuple transported at a product motive is read as its
-//! components' transports `⟨tr(x. Aᵢ, p, vᵢ)⟩`, the table's product row. The
-//! fold's evidence at a product still checks, each component at its factor's
-//! identity.
+//! `Path[.A = A₀](l₀, r₀) × … × Path[.A = Aₙ](lₙ, rₙ)`, the components read as
+//! the Σ rule reads them; a tuple transported at a product motive is read as
+//! its components' transports `⟨tr(x. Aᵢ, p, vᵢ)⟩`, the table's product row.
+//! The fold's evidence at a product still checks, each component at its
+//! factor's identity.
 //!
 //! **Identity at an open type is a neutral fibre.** A domain that mentions a
 //! bound variable or reaches a sealed atom has no fold clause: its fibre would
 //! depend on a neutral or on a hidden representation, so the identity stays
-//! the type `Path(A, a, b)` itself, as a higher observational type theory
+//! the type `Path[.A = A](a, b)` itself, as a higher observational type theory
 //! leaves the identity of a neutral type. It forms wherever its domain and
 //! endpoints do; `here(c)` synthesizes and checks at it by the same endpoint
 //! conversion as at a closed domain; transport along it is stuck except on
@@ -118,12 +118,12 @@
 //! the identity as written, never redirected to the fold's fibre: it is an
 //! elimination, not an introduction of the fibre, and the checker's value
 //! bridge reads it the same way. So a reflexive transport at a path-type
-//! motive, `Path(Path(A, a, a), ⟨tr(x. Path(A, x, x), here(a), here(a))⟩,
-//! here(a))`, forms: its left endpoint returns `Path(A, a, a)`, the motive at
-//! the path's target, and `here(here(a))` relates its point to that endpoint
-//! by the transport table's first row below. Read as fibre evidence, the
-//! endpoint would be compared with the unit fibre and refused where the checker
-//! accepts it.
+//! motive, `Path[.A = Path[.A = A](a, a)](⟨tr(x. Path[.A = A](x, x), here(a),
+//! here(a))⟩, here(a))`, forms: its left endpoint returns `Path[.A = A](a, a)`,
+//! the motive at the path's target, and `here(here(a))` relates its point to
+//! that endpoint by the transport table's first row below. Read as fibre
+//! evidence, the endpoint would be compared with the unit fibre and refused
+//! where the checker accepts it.
 //!
 //! - alternatives: the checker's reduction of the transport recorded as a
 //!   dialogue the kernel replays, which carries a step the kernel's own
@@ -136,16 +136,16 @@
 //!   for the checker and the kernel together.
 //!
 //! **Reflexivity replays the engine's conversion.** `here(c)` checks at
-//! `Path(A, a, b)` when `c` converts with each endpoint. The forced conversion
-//! is tried first; an endpoint it leaves apart is related by the dialogue the
-//! `here` carries for that side, replayed with the admitted definitions
-//! unfoldable ([`reflexive_endpoints`]). The engine's conversion holds a
-//! returned endpoint at the definition it calls, so every δ-step the endpoint
-//! needs, under a thunk or not, is a decision of the dialogue: the replay
-//! unfolds only the constant it names, at the side it names. A dialogue naming
-//! another constant or side, or fewer unfoldings than the endpoint needs, is
-//! refused as [`IdentityError::EndpointsDiffer`], naming the side and the
-//! replay's verdict.
+//! `Path[.A = A](a, b)` when `c` converts with each endpoint. The forced
+//! conversion is tried first; an endpoint it leaves apart is related by the
+//! dialogue the `here` carries for that side, replayed with the admitted
+//! definitions unfoldable ([`reflexive_endpoints`]). The engine's conversion
+//! holds a returned endpoint at the definition it calls, so every δ-step the
+//! endpoint needs, under a thunk or not, is a decision of the dialogue: the
+//! replay unfolds only the constant it names, at the side it names. A dialogue
+//! naming another constant or side, or fewer unfoldings than the endpoint
+//! needs, is refused as [`IdentityError::EndpointsDiffer`], naming the side and
+//! the replay's verdict.
 //!
 //! - alternatives: the kernel's own reading at reflexivity too, which stops at
 //!   the first thunk because evaluation does not reduce under binders; a δ rule
@@ -157,11 +157,11 @@
 //!
 //! **A definition's conversions replay the dialogues it carries.** A
 //! definition whose declared type and body's type are path types with compound
-//! endpoints, `Path(H, comp(p, p, q, id(p), f), f)` against `Path(H, comp(p,
-//! q, q, f, id(q)), f)`, converts them only through a definition's body under
-//! a binder: the δ-step the reflexivity paragraph above routes through a
-//! dialogue. The definition carries a related pair per endpoint pair the
-//! producer's conversion related, each with its dialogue
+//! endpoints, `Path[.A = H](comp(p, p, q, id(p), f), f)` against `Path[.A =
+//! H](comp(p, q, q, f, id(q)), f)`, converts them only through a definition's
+//! body under a binder: the δ-step the reflexivity paragraph above routes
+//! through a dialogue. The definition carries a related pair per endpoint pair
+//! the producer's conversion related, each with its dialogue
 //! ([`RelatedEndpoints`]), and a mode switch whose forced reading leaves the
 //! types apart reads them ([`related_endpoints`]): the walk sets every path
 //! type's endpoint pair aside, a pair the forced reading relates passes, and
@@ -195,9 +195,9 @@
 //! value binder. Transport's input checks at the motive instantiated at the
 //! source endpoint and its result is a returner of the motive at the target;
 //! instantiation is the rewrite machine's capture-avoiding substitution, so the
-//! substitution law holds of every motive. Its `Path(D, l, x)` row below is
-//! the singleton's computation, transport in `x ↦ Path(A, a, x)` carrying
-//! `here(a)` to the path. The replay reduces:
+//! substitution law holds of every motive. Its `Path[.A = D](l, x)` row below
+//! is the singleton's computation, transport in `x ↦ Path[.A = A](a, x)`
+//! carrying `here(a)` to the path. The replay reduces:
 //!
 //! | path or motive                      | reduct                                     |
 //! | ----------------------------------- | ------------------------------------------ |
@@ -208,7 +208,7 @@
 //! | a List motive at `nil`              | `return nil`                               |
 //! | a List motive at a cell             | the head transported, then the tail        |
 //! | `El(x)` at level zero               | native universe transport                  |
-//! | `Path(D, l, x)` at a `here` value   | `return p`                                 |
+//! | `Path[.A = D](l, x)` at a `here` value   | `return p`                                 |
 //! | a stuck composite `p then q`        | along `p`, bound into along `q`            |
 //!
 //! The last row reads a composite where it sticks, at the replay's weak head,
@@ -234,8 +234,8 @@
 //! it.** The telescope transport `tr₂(M, p, z₀, q, v)` takes the motive
 //! `Π (y : A). Π (z : B). F C`, read by [`telescope`] or refused as a
 //! computation-shape mismatch naming the telescope. `z₀` checks at `B[a]`; `q`
-//! must synthesize `Path(B[b], ⟨tr(y. B, p, z₀)⟩, z₁)` — the identity over the
-//! path from the start transported along it — or is refused as
+//! must synthesize `Path[.A = B[b]](⟨tr(y. B, p, z₀)⟩, z₁)` — the identity over
+//! the path from the start transported along it — or is refused as
 //! [`IdentityError::NotOver`]; `v` checks at `C[a, z₀]` and the result returns
 //! `C[b, z₁]`. Both instances are [`telescope_instance`]'s iterated single
 //! substitution, outer binder first, so the substitution law is the one-binder
@@ -246,12 +246,12 @@
 //! | any, with `C` reading neither entry        | `return v`, the constant row                  |
 //! | both `here(_)`                             | `return v`                                    |
 //! | the path `here(c)`                         | `tr(z. C[c, z], q, v)`, the one-binder rows   |
-//! | any other, with `C` a `Path(Unit, l, r)`   | `return ()`, the unit fibre's one inhabitant  |
+//! | any other, with `C` a `Path[.A = Unit](l, r)`   | `return ()`, the unit fibre's one inhabitant  |
 //!
 //! Anything else stays neutral. `J` is this transport in the singleton,
-//! `tr₂(Π y. Π q : Path(A, a, y). F C, p, here(a), here(p), d)`: the identity
-//! over the path checks because the singleton row carries `here(a)` to `p`,
-//! and on `here(a)` it computes by the first row, so it needs no former of
+//! `tr₂(Π y. Π q : Path[.A = A](a, y). F C, p, here(a), here(p), d)`: the
+//! identity over the path checks because the singleton row carries `here(a)` to
+//! `p`, and on `here(a)` it computes by the first row, so it needs no former of
 //! its own.
 //!
 //! - alternatives: a motive under two binders of the one-binder node, which
@@ -284,7 +284,7 @@
 //! [`crate::identity_recursion::Application::Suspended`].
 //!
 //! **A bridge is the fold's relation, persisted.**
-//! `Bridge(A, a, b)` reads the fold in
+//! `Bridge[.A = A](a, b)` reads the fold in
 //! [`crate::identity_recursion::Mode::Bridge`] at the quoted `A`
 //! ([`bridge_fibre`]); the clause per code is the bridge
 //! column of [`crate::identity_recursion`]'s table. It forms as an identity
@@ -297,20 +297,20 @@
 //! states: a relation `R : A → A → U` and its reflexivity
 //! `(x : A) → R x x`, both checked at the atom's admission over its
 //! representation. A bridge between two elements of an interfaced atom is
-//! `El(R a b)`, and `here a` checks at `Bridge(A, a, a)` by the reflexivity.
-//! A domain reaching an atom stating no interface is refused at formation as
-//! [`IdentityError::BridgeAtSealedType`].
+//! `El(R a b)`, and `here a` checks at `Bridge[.A = A](a, a)` by the
+//! reflexivity. A domain reaching an atom stating no interface is refused at
+//! formation as [`IdentityError::BridgeAtSealedType`].
 //!
 //! **An identity at an atom is its relation once the law makes the relation
 //! an identity system.** The interface may state the law `(a b : Rep) → (r :
-//! R a b) → Path(Σ (y : Rep). R a y, (b, r), (a, refl a))`, checked at the
+//! R a b) → Path[.A = Σ (y : Rep). R a y]((b, r), (a, refl a))`, checked at the
 //! atom's admission ([`law_type`]): every singleton at `a` contracts onto its
 //! centre. A reflexive relation whose singletons contract is an identity
 //! system (_Homotopy Type Theory_, Theorem 5.8.2), so an identity at such an
 //! atom reads `El(R a b)` as its fibre, as a bridge does, and its eliminator
 //! is the one derived in the singleton family: transport along `here`
-//! returns its value, and the telescope transport over `(y : A, z : Path(A,
-//! a, y))` computes to its base case at `here(a)`. An identity at an atom
+//! returns its value, and the telescope transport over `(y : A, z : Path[.A =
+//! A]( a, y))` computes to its base case at `here(a)`. An identity at an atom
 //! whose interface states no law is refused as
 //! [`IdentityError::AtomTransport`].
 //!
@@ -407,9 +407,9 @@ mod tests;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EndpointSide
 {
-    /// The source endpoint, `a` in `Path(A, a, b)`.
+    /// The source endpoint, `a` in `Path[.A = A](a, b)`.
     Left,
-    /// The target endpoint, `b` in `Path(A, a, b)`.
+    /// The target endpoint, `b` in `Path[.A = A](a, b)`.
     Right,
 }
 
@@ -802,7 +802,7 @@ pub(crate) fn interface_types(
 
 /// The type an atom's identity-system law is checked at, over the atom's
 /// representation `R`: `U(Π (a : R). Π (b : R). Π (r : El(⟨relation a b⟩)).
-/// F Path(Σ (y : R). El(⟨relation a y⟩), (b, r), (a, ⟨reflexivity a⟩)))`,
+/// F Path[.A = Σ (y : R). El(⟨relation a y⟩)]((b, r), (a, ⟨reflexivity a⟩)))`,
 /// every element of the singleton at `a` identified with its centre.
 ///
 /// # Specification
@@ -1207,10 +1207,10 @@ pub(crate) fn bridge_fibre(
 /// - requires: `second` stands under one binder of `first`; both endpoints
 ///   inhabit the pair. The checking machine discharges those goals itself.
 ///   `entries` is the admission log the endpoints were checked under.
-/// - ensures: `Σ (p : Path(first, l₀, r₀)). Path(second[r₀], ⟨tr(x. second, p,
-///   l₁)⟩, r₁)`, each endpoint's components read by [`pair_components`].
-///   Nothing about the pair's factors is read beyond their place, so an open
-///   pair has the same fibre.
+/// - ensures: `Σ (p : Path[.A = first](l₀, r₀)). Path[.A = second[r₀]](⟨tr(x.
+///   second, p, l₁)⟩, r₁)`, each endpoint's components read by
+///   [`pair_components`]. Nothing about the pair's factors is read beyond their
+///   place, so an open pair has the same fibre.
 /// - provides: the type the checking machine redirects a pair checked at an
 ///   identity of a dependent pair to.
 /// - fails: never.
@@ -1256,11 +1256,11 @@ where
 /// # Specification
 /// - requires: both endpoints inhabit the product of `parts`; `entries` is the
 ///   admission log the endpoints were checked under.
-/// - ensures: `Path(A₀, l₀, r₀) × … × Path(Aₙ, lₙ, rₙ)`, each endpoint's
-///   components read by [`tuple_components`]. Each factor's identity reads its
-///   own fibre when a component is checked there, so a tuple of fold evidence
-///   inhabits it as it inhabits the fold's product, and a tuple of `here`s or
-///   of paths at the factors' own identities does too.
+/// - ensures: `Path[.A = A₀](l₀, r₀) × … × Path[.A = Aₙ](lₙ, rₙ)`, each
+///   endpoint's components read by [`tuple_components`]. Each factor's identity
+///   reads its own fibre when a component is checked there, so a tuple of fold
+///   evidence inhabits it as it inhabits the fold's product, and a tuple of
+///   `here`s or of paths at the factors' own identities does too.
 /// - provides: the type the checking machine redirects a tuple checked at an
 ///   identity of a product to.
 /// - fails: never.
@@ -2406,9 +2406,10 @@ where
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Held
 {
-    /// `back(p)`: transport along `p` in `y. Path(D, y, c)` from `here(c)`.
+    /// `back(p)`: transport along `p` in `y. Path[.A = D](y, c)` from
+    /// `here(c)`.
     Back,
-    /// `q then p`: transport along `p` in `y. Path(D, c, y)` from `q`.
+    /// `q then p`: transport along `p` in `y. Path[.A = D](c, y)` from `q`.
     Then,
 }
 
@@ -2484,7 +2485,7 @@ fn held(
 /// The two paths of the composite `p then q` that `computation` is, `(p, q)`.
 ///
 /// `p then q` is the transport of `p` along `q` in a **link**, a family `y.
-/// Path(D, l, y)` whose carrier and left endpoint ignore the binder. The
+/// Path[.A = D](l, y)` whose carrier and left endpoint ignore the binder. The
 /// decode rows read it in a held path, and the replay reads it at a stuck
 /// transport: transport along it moves the operand along `p`, then along `q`.
 ///
@@ -2976,7 +2977,7 @@ where
 /// # Specification
 /// - requires: nothing; an ill-typed term sticks without panicking.
 /// - ensures: the unit when the path is no `here` and the motive's returned
-///   type is `Path(A, l, r)` at a carrier `A` whose identities
+///   type is `Path[.A = A](l, r)` at a carrier `A` whose identities
 ///   [`carrier_fibre`] reads as the unit type, so the fibre is the unit type at
 ///   every pair of endpoints; `Stuck` otherwise.
 /// - provides: the replay's telescope transport row at a carrier that is an

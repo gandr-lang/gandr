@@ -37,7 +37,6 @@ def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat {
 
 /// The two definitions agree at fourteen.
 def fibAgrees() -> Path(
-  Nat,
   fib(Succ(Succ(twelve))),
   fibFrom(Succ(Succ(twelve)), Zero, Succ(Zero))
 ) {

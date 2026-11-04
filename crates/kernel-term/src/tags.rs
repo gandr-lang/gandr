@@ -351,8 +351,8 @@
 //!
 //! [`NODE_VT_FLOW_UNIVERSE`] is `Flow_U`, the forward-only twin of
 //! [`NODE_VT_PATH_UNIVERSE`], with the same two value-code children: source
-//! then target. [`NODE_VT_FLOW`] is the element family `Flow(A, x, y)`, framed
-//! as [`NODE_VT_PATH`]: the carrier, then source and target. Neither
+//! then target. [`NODE_VT_FLOW`] is the element family `Flow[.A = A](x, y)`,
+//! framed as [`NODE_VT_PATH`]: the carrier, then source and target. Neither
 //! classifier names a certificate kind, so every forward introduction shares
 //! them. The introductions:
 //!
@@ -666,7 +666,7 @@ pub const NODE_V_PATH_PRODUCT: WireTag = WireTag(0x2D);
 /// Node tag: transport, over a path and its source value.
 pub const NODE_C_TRANSPORT: WireTag = WireTag(0x2E);
 
-/// Node tag: element identity `Path(A, a, b)`, over the value type `A` and
+/// Node tag: element identity `Path[.A = A](a, b)`, over the value type `A` and
 /// the endpoint values `a` and `b`.
 ///
 /// The first byte of the identity range: the higher field and function
@@ -676,7 +676,7 @@ pub const NODE_VT_PATH: WireTag = WireTag(0x30);
 /// Node tag: `here(a)`, the diagonal of element identity, over its point,
 /// with the dialogue relating the point to each endpoint.
 ///
-/// One child rather than three: it inhabits `Path(A, a, b)` exactly when
+/// One child rather than three: it inhabits `Path[.A = A](a, b)` exactly when
 /// both endpoints convert to its point, so storing them again would only
 /// admit a disagreeing copy. The conversion itself travels as two dialogues,
 /// left then right, each a decision count and the decision words of
@@ -770,8 +770,8 @@ pub const NODE_VT_FLOW_UNIVERSE: WireTag = WireTag(0x48);
 /// Node tag: finite session simulation, classifier and payload-proof tuple.
 pub const NODE_V_SESSION_FLOW: WireTag = WireTag(0x49);
 
-/// Node tag: directed element identity `Flow(A, x, y)`, over a value type and
-/// two endpoint values.
+/// Node tag: directed element identity `Flow[.A = A](x, y)`, over a value type
+/// and two endpoint values.
 pub const NODE_VT_FLOW: WireTag = WireTag(0x4A);
 
 /// Node tag: directed reflexivity `stay`, inline endpoint dialogues and one
@@ -848,11 +848,11 @@ pub const KIND_DEF_LAWFUL: WireTag = WireTag(0x09);
 /// zero, comes the sort's admission position, then a cell count and per cell
 /// its source and its target, each a rule side as the rules write theirs. The
 /// kernel re-mints the constructor table and the rules from the cells and
-/// reads `Path(T, a, a)` as the words where the sort `T`'s cells loop at `a`.
-/// A presented datatype with no cell writes [`KIND_DATA_PRESENTED`], so every
-/// other artifact keeps its bytes, and a reader predating this kind refuses it
-/// as an unknown declaration kind rather than misreading it, which is why the
-/// format version holds.
+/// reads `Path[.A = T](a, a)` as the words where the sort `T`'s cells loop at
+/// `a`. A presented datatype with no cell writes [`KIND_DATA_PRESENTED`], so
+/// every other artifact keeps its bytes, and a reader predating this kind
+/// refuses it as an unknown declaration kind rather than misreading it, which
+/// is why the format version holds.
 pub const KIND_DATA_WORDS: WireTag = WireTag(0x0A);
 /// Declaration tag: a sealed abstract type whose segment closes with its
 /// element interface.

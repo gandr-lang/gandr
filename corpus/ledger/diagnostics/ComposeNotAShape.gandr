@@ -1,6 +1,6 @@
 /// `ComposeNotAShape`: a composite whose chain is past its stratum's bound.
 @[ checks ]
-def withinBound(A : Type, x : A, y : A, z : A, w : A, p : Path(A, x, y), q : Path(A, y, z), r : Path(A, z, w)) -> Path(A, x, w) {
+def withinBound(A : Type, x : A, y : A, z : A, w : A, p : Path(x, y), q : Path(y, z), r : Path(z, w)) -> Path(x, w) {
   compose[5, 7](chain(3), (p, q, r))
 }
 
@@ -12,20 +12,20 @@ def pastBound(
   z : A,
   w : A,
   v : A,
-  p : Path(A, x, y),
-  q : Path(A, y, z),
-  r : Path(A, z, w),
-  s : Path(A, w, v)
-) -> Path(A, x, v) {
+  p : Path(x, y),
+  q : Path(y, z),
+  r : Path(z, w),
+  s : Path(w, v)
+) -> Path(x, v) {
   compose[5, 7](chain(4), (p, q, r, s))
 }
 
 @[ checks ]
-def whiskerWithinDegree(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)) {
+def whiskerWithinDegree(A : Type, x : A, y : A, z : A, fm : Path(x, y), fp : Path(x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g)) {
   compose[4, 9](chain(2, (1, 0)), (fa, g))
 }
 
 @[ refuses("ComposeNotAShape") ]
-def whiskerPastDegree(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)) {
+def whiskerPastDegree(A : Type, x : A, y : A, z : A, fm : Path(x, y), fp : Path(x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g)) {
   compose[3, 9](chain(2, (1, 0)), (fa, g))
 }

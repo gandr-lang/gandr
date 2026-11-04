@@ -972,7 +972,7 @@ where
 fn a_value_is_written_in_the_spelling_asked_782()
 {
     let input = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef once : +U (-F \
-                 Path(Circle, Base, Base)) ;\ndef once = thunk { loop } ;\ndef r : Integer ≃ \
+                 Path[.A = Circle](Base, Base)) ;\ndef once = thunk { loop } ;\ndef r : Integer ≃ \
                  String ;\ndef r = 1 ;\n";
     let transcript = |spelling| {
         let mut output = Vec::new();

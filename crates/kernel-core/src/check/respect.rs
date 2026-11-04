@@ -539,7 +539,7 @@ fn pattern_binder(
 
 /// Whether a fold's two sides of a rule are paths in a set with the same
 /// endpoints, re-derived: the codomain of `arrow`, past the rule's
-/// `variables` binders, at `l` and at `r` is `F Path(C, a, b)` for one set
+/// `variables` binders, at `l` and at `r` is `F Path[.A = C](a, b)` for one set
 /// `C`, and the two instances' endpoints convert.
 ///
 /// Two parallel paths in a set are one path, so the fold meets the rule
@@ -553,10 +553,11 @@ fn pattern_binder(
 ///   `variables` pattern variables are built over `l` and `r`, beneath one
 ///   binder per variable.
 /// - ensures: [`Related::Related`] exactly when `arrow` is `A → F P` or `Π (y :
-///   A). F P`, `P` at `l` and at `r` is `Path(C, a, b)` and `Path(C', a', b')`
-///   with `C` converting with `C'`, `C` a set as [`sethood`] decides, and `a`
-///   converting with `a'` and `b` with `b'`, each a returned run read as that
-///   run, under [`crate::replay::convert`]; [`Related::Apart`] otherwise.
+///   A). F P`, `P` at `l` and at `r` is `Path[.A = C](a, b)` and `Path[.A =
+///   C'](a', b')` with `C` converting with `C'`, `C` a set as [`sethood`]
+///   decides, and `a` converting with `a'` and `b` with `b'`, each a returned
+///   run read as that run, under [`crate::replay::convert`]; [`Related::Apart`]
+///   otherwise.
 /// - fails: never.
 /// - panics: none.
 ///

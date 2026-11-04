@@ -12,7 +12,7 @@ import "./circle.gandr";
 import std.list (List);
 
 /// A family that never reads its argument keeps the value, by conversion.
-def constantBeta : Path(Int, Path.walk(fun (X) { Int }, ua(winding), Z), Z) = Path.here(Z);
+def constantBeta : Path[.A = Int](Path.walk(fun (X) { Int }, ua(winding), Z), Z) = Path.here(Z);
 
 /// A family that never reads its argument keeps the value, by a run.
 @[ runs("Z") ]
@@ -20,8 +20,7 @@ def constantRun() -> Int { Path.walk(fun (X) { Int }, ua(winding), Z) }
 
 /// A pair carried along the loops' path carries each component, by
 /// conversion: the book's Theorem 2.6.4.
-def pairBeta : Path(
-  Int * Int,
+def pairBeta : Path[.A = Int * Int](
   Path.walk(fun (X) { type(X * X) }, ua(winding), (loop, loop)),
   (S(Z), S(Z))
 ) = Path.here((S(Z), S(Z)));
@@ -32,8 +31,7 @@ def pairRun() -> Int * Int { Path.walk(fun (X) { type(X * X) }, ua(winding), (lo
 
 /// An injection carried along the loops' path carries its payload in its own
 /// summand, by conversion: the book's § 2.12.
-def sumBeta : Path(
-  Unit + Int,
+def sumBeta : Path[.A = Unit + Int](
   Path.walk(fun (X) { type(Unit + X) }, ua(winding), +{.1 = loop}),
   +{.1 = S(Z)}
 ) = Path.here(+{.1 = S(Z)});
@@ -43,8 +41,7 @@ def sumBeta : Path(
 def sumRun() -> Unit + Int { Path.walk(fun (X) { type(Unit + X) }, ua(winding), +{.1 = loop}) }
 
 /// A list carried along the loops' path carries every cell, by conversion.
-def listBeta : Path(
-  List(Int),
+def listBeta : Path[.A = List(Int)](
   Path.walk(fun (X) { List(X) }, ua(winding), cons(loop, nil)),
   cons(S(Z), nil)
 ) = Path.here(cons(S(Z), nil));

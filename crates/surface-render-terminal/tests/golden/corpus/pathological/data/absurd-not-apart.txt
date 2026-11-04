@@ -1,14 +1,14 @@
 error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
    ╭▸ corpus/pathological/data/absurd-not-apart.gandr:17:3
    │
-16 │   def agree(e : Path(Int, S(P(Z)), Z)) -> Empty {
-   │   │         ─ checked against `Path(Int, S(P(Z)), Z) -> -F Empty`; while checking the body of this function; binds e : Path(Int, S(P(Z)), Z)
+16 │   def agree(e : Path(S(P(Z)), Z)) -> Empty {
+   │   │         ─ checked against `Path[.A = Int](S(P(Z)), Z) -> -F Empty`; while checking the body of this function; binds e : Path[.A = Int](S(P(Z)), Z)
    │ ┌─┘
    │ │
 17 │ │   match e {}
    │ │   ━━━━━━━━━━ a path whose endpoints are not apart
 18 │ │ }
-   │ └─┘ checked against `Path(Int, S(P(Z)), Z) => Empty`; while checking the body of this thunk
+   │ └─┘ checked against `Path[.A = Int](S(P(Z)), Z) => Empty`; while checking the body of this thunk
    │
    ├ note: `agree` is refused with NotApart, as its expectation states
    ╰ help: write an arm for the path, because its endpoints can be equal
@@ -16,42 +16,41 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
 error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
    ╭▸ corpus/pathological/data/absurd-not-apart.gandr:23:3
    │
-22 │   def open(n : Int, e : Path(Int, S(n), Z)) -> Empty {
-   │   │        ┬        ─ checked against `Path(Int, S(n), Z) -> -F Empty`; while checking the body of this function; binds e : Path(Int, S(n), Z)
+22 │   def open(n : Int, e : Path(S(n), Z)) -> Empty {
+   │   │        ┬        ─ checked against `Path[.A = Int](S(n), Z) -> -F Empty`; while checking the body of this function; binds e : Path[.A = Int](S(n), Z)
    │   │        │
-   │ ┌─┘        checked against `(n : Int) -> Path(Int, S(n), Z) -> -F Empty`; while checking the body of this function; binds n : Int
+   │ ┌─┘        checked against `(a : Int) -> Path[.A = Int](S(a), Z) -> -F Empty`; while checking the body of this function; binds n : Int
    │ │
 23 │ │   match e {}
    │ │   ━━━━━━━━━━ a path whose endpoints are not apart
 24 │ │ }
-   │ └─┘ checked against `(n : Int, Path(Int, S(n), Z)) => Empty`; while checking the body of this thunk
+   │ └─┘ checked against `(a : Int, Path[.A = Int](S(a), Z)) => Empty`; while checking the body of this thunk
    │
    ├ note: `open` is refused with NotApart, as its expectation states
    ╰ help: write an arm for the path, because its endpoints can be equal
 
 error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
-   ╭▸ corpus/pathological/data/absurd-not-apart.gandr:38:3
+   ╭▸ corpus/pathological/data/absurd-not-apart.gandr:37:3
    │
-33 │   def cancelled(e : Path(
-   │   │             ─ checked against `Path(Path(Circle, Base, Base), loop ∷ back(loop) ∷ Path.here(Base), Path.here(Base)) -> -F Empty`; while checking the body of this function; binds e : Path(Path(Circle, Base, Base), loop ∷ back(loop) ∷ Path.here(Base), Path.here(Base))
+33 │   def cancelled(e : Path[.A = Path[.A = Circle](Base, Base)](
+   │   │             ─ checked; while checking the body of this function; binds e : Path[.A = Path[.A = Circle](Base, Base)](loop ∷ back(loop) ∷ Path.here(Base), Path.here(Base))
    │ ┌─┘
    │ │
-34 │ │   Path(Circle, Base, Base),
-35 │ │   loop ∷ back(loop) ∷ Path.here(Base),
-36 │ │   Path.here(Base)
-37 │ │ )) -> Empty {
-38 │ │   match e {}
+34 │ │   loop ∷ back(loop) ∷ Path.here(Base),
+35 │ │   Path.here(Base)
+36 │ │ )) -> Empty {
+37 │ │   match e {}
    │ │   ━━━━━━━━━━ a path whose endpoints are not apart
-39 │ │ }
-   │ └─┘ checked against `Path(Path(Circle, Base, Base), loop ∷ back(loop) ∷ Path.here(Base), Path.here(Base)) => Empty`; while checking the body of this thunk
+38 │ │ }
+   │ └─┘ checked; while checking the body of this thunk
    │
    ├ note: `cancelled` is refused with NotApart, as its expectation states
    ╰ help: write an arm for the path, because its endpoints can be equal
 
 error[NonExhaustiveMatch]: this match does not cover every value it can be given
-   ╭▸ corpus/pathological/data/absurd-not-apart.gandr:44:3
+   ╭▸ corpus/pathological/data/absurd-not-apart.gandr:43:3
    │
-44 │   match n {}
+43 │   match n {}
    │   ━━━━━━━━━━ some value matches no arm
    │
    ├ note: `unmatched` is refused with NonExhaustiveMatch, as its expectation states

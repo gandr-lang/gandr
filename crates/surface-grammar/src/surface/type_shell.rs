@@ -359,7 +359,7 @@ fn add_type_rules(
             tile(TileLabel("identifier")),
         ]),
     ));
-    // The identity type `Path(C, e1, e2)` is a production of its own, and the
+    // The identity type `Path(e1, e2)` is a production of its own, and the
     // reason is a **sort** rather than a preference.
     //
     // A generic `type_application` parses every argument at the type sort, so
@@ -370,38 +370,40 @@ fn add_type_rules(
     // written however far the lowering is widened. **Its problem is upstream of
     // the lowering.**
     //
-    // So the carrier stays type-sorted and the two endpoints are
-    // **expression-sorted**, which is what they are: terms occurring in a type.
-    //
-    // Where the carrier is spelled as a universe — `Type`, `Type[+, 1]` — the
-    // endpoints are codes of types, and they parse at the **type** sort:
-    // `Path(Type, Unit + Unit, ?String. end)` reads its endpoints as the sum and
-    // the session type they spell, where the expression sort would read `+` as
-    // addition and refuse the session type. Any other carrier — a name, an
-    // application, a code — keeps expression endpoints.
-    //
-    // The universe is the form's own tiles, not a type hole, so the endpoint
-    // sort is decided at the carrier's first tile; and it is one alternative of
-    // this rule rather than a rule of its own, so `Path` keeps one mold and the
-    // two readings part at the token after `(`. A second rule over the same
-    // `Path (` would tie its opener with this one's at every path type, and a
-    // tie inside a lookahead window keeps the lesser mold, so a path type
-    // nested in another's carrier would mold as the universe form and fail. The
-    // universe alternative comes first, so where both read a carrier spelled
-    // `Type` alike the universe reading is the lesser mold.
-    //
-    // The bridge type `Bridge(C, e1, e2)` relates its endpoints as the path
-    // type identifies them, and is read at the same sorts for the same
-    // reasons, so it is the same production under its own head tile.
-    //
-    // Each head also takes its carrier by name, as a call takes an implicit:
+    // So the two endpoints are **expression-sorted**, which is what they are:
+    // terms occurring in a type. The carrier is the implicit `A` of the head,
+    // as a call takes an implicit: `Path(e1, e2)` leaves it to the endpoints,
     // `Path[.A = C](e1, e2)` supplies it, and `Path[.A](e1, e2)` supplies it
-    // from the variable `A` (#4932). The `[` after the head parts these forms
-    // from the positional one at once. The name is a type operand, so the pun
-    // reads the variable as the carrier. A universe supplied by name reads its
-    // endpoints at the type sort, as the positional universe does. `Flow` is
-    // a type application where it writes its carrier first, so its rule holds
-    // the supplied forms alone.
+    // from the variable `A`. The `[` after the head parts the supplied forms
+    // from the bare one at once. The name is a type operand, so the pun reads
+    // the variable as the carrier.
+    //
+    // Where the supplied carrier is spelled as a universe — `Type`,
+    // `Type[+, 1]` — the endpoints are codes of types, and they parse at the
+    // **type** sort: `Path[.A = Type](Unit + Unit, ?String. end)` reads its
+    // endpoints as the sum and the session type they spell, where the
+    // expression sort would read `+` as addition and refuse the session type.
+    // Any other carrier — a name, an application, a code — keeps expression
+    // endpoints. The universe is the form's own tiles, not a type hole, so the
+    // endpoint sort is decided at the carrier's first tile; and it is one
+    // alternative of this rule rather than a rule of its own, so `Path` keeps
+    // one mold. A second rule over the same `Path [` would tie its opener with
+    // this one's at every path type, and a tie inside a lookahead window keeps
+    // the lesser mold, so a path type nested in another's carrier would mold
+    // as the universe form and fail. The universe alternative comes first, so
+    // where both read a carrier spelled `Type` alike the universe reading is
+    // the lesser mold.
+    //
+    // The bare form holds a third operand too, so a carrier written first,
+    // `Path(A, e1, e2)`, parses and the lowering refuses it with the supplied
+    // form to write in its place. A carrier and an endpoint both open with a
+    // name, so the grammar cannot read the two forms apart by sort.
+    //
+    // The bridge type `Bridge(e1, e2)` relates its endpoints as the path type
+    // identifies them, and is read at the same sorts for the same reasons, so
+    // it is the same production under its own head tile. `Flow` is a type
+    // application where it writes its endpoints alone, so its rule holds the
+    // supplied forms alone.
     let universe = || {
         Regex::seq([
             tile(TileLabel("Type")),
@@ -433,15 +435,14 @@ fn add_type_rules(
             Regex::alt([
                 Regex::seq([
                     tile(TileLabel("=")),
-                    universe(),
-                    tile(TileLabel("]")),
-                    endpoints(ty),
-                ]),
-                Regex::seq([
-                    tile(TileLabel("=")),
-                    Regex::sort(ty),
-                    tile(TileLabel("]")),
-                    endpoints(Sort::Expression),
+                    Regex::alt([
+                        Regex::seq([universe(), tile(TileLabel("]")), endpoints(ty)]),
+                        Regex::seq([
+                            Regex::sort(ty),
+                            tile(TileLabel("]")),
+                            endpoints(Sort::Expression),
+                        ]),
+                    ]),
                 ]),
                 Regex::seq([tile(TileLabel("]")), endpoints(Sort::Expression)]),
             ]),
@@ -457,22 +458,13 @@ fn add_type_rules(
                 Regex::alt([
                     Regex::seq([
                         tile(TileLabel("(")),
-                        Regex::alt([
-                            Regex::seq([
-                                universe(),
-                                tile(TileLabel(",")),
-                                Regex::sort(ty),
-                                tile(TileLabel(",")),
-                                Regex::sort(ty),
-                            ]),
-                            Regex::seq([
-                                Regex::sort(ty),
-                                tile(TileLabel(",")),
-                                Regex::sort(Sort::Expression),
-                                tile(TileLabel(",")),
-                                Regex::sort(Sort::Expression),
-                            ]),
-                        ]),
+                        Regex::sort(Sort::Expression),
+                        tile(TileLabel(",")),
+                        Regex::sort(Sort::Expression),
+                        Regex::optional(Regex::seq([
+                            tile(TileLabel(",")),
+                            Regex::sort(Sort::Expression),
+                        ])),
                         tile(TileLabel(")")),
                     ]),
                     supplied(),
@@ -830,7 +822,7 @@ fn add_type_rules(
         ]),
     ));
     // Identity endpoints: a number literal is a Type-sort atom, so
-    // `Path(Integer, 4, 4)` molds with literal endpoints. The Expression- and
+    // `Path[.A = Integer](4, 4)` molds with literal endpoints. The Expression- and
     // Pattern-sort `number` realisations live in the term lexical forms
     // (`number.expression` / `number.pattern`); this is the Type-sort third
     // realisation of the same provenance, admissible only in a type hole (the

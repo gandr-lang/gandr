@@ -8,12 +8,12 @@
 //!
 //! # `here` comes first
 //!
-//! The law's type is `U(Π x₁ … xₙ. F Path(S, l, r))`, or `Path(S, l, r)` with
-//! no telescope. [`here`] mints `thunk(λx₁ … λxₙ. return here(l))`, the
-//! component a module writes by hand where the sides convert, and the checker
-//! judges it at the declared type as any body. A binder the type reads with a
-//! non-dependent arrow binds in the body too, so the endpoint is read one
-//! binder deeper there.
+//! The law's type is `U(Π x₁ … xₙ. F Path[.A = S](l, r))`, or `Path[.A = S](l,
+//! r)` with no telescope. [`here`] mints `thunk(λx₁ … λxₙ. return here(l))`,
+//! the component a module writes by hand where the sides convert, and the
+//! checker judges it at the declared type as any body. A binder the type reads
+//! with a non-dependent arrow binds in the body too, so the endpoint is read
+//! one binder deeper there.
 //!
 //! # A refusal names no other source yet
 //!

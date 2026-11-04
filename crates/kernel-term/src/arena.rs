@@ -3604,7 +3604,8 @@ impl TermArena
         self.alloc_computation(Computation::Transport(path, value))
     }
 
-    /// Mint element identity `Path(A, a, b)` without claiming that it forms.
+    /// Mint element identity `Path[.A = A](a, b)` without claiming that it
+    /// forms.
     ///
     /// # Specification
     /// trivial.
@@ -3685,7 +3686,7 @@ impl TermArena
         self.alloc_value(Value::Here { point, dialogues })
     }
 
-    /// Mint `Flow(A, x, y)` without claiming that it forms.
+    /// Mint `Flow[.A = A](x, y)` without claiming that it forms.
     ///
     /// # Specification
     /// trivial.

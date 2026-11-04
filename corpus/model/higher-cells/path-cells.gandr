@@ -30,10 +30,13 @@ def associator(
   b : Circle,
   c : Circle,
   d : Circle,
-  f : Path(Circle, a, b),
-  g : Path(Circle, b, c),
-  h : Path(Circle, c, d)
-) -> Path(Path(Circle, a, d), Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
+  f : Path(a, b),
+  g : Path(b, c),
+  h : Path(c, d)
+) -> Path[.A = Path[.A = Circle](a, d)](
+  Path.step(Path.step(f, g), h),
+  Path.step(f, Path.step(g, h))
+) {
   assoc(Circle, a, b, c, d, f, g, h)
 }
 
@@ -61,7 +64,7 @@ theory Glob where {
     f : Hom(a, b),
     g : Hom(b, c),
     h : Hom(c, d)
-  ) => Path(Hom(a, d), comp(comp(f, g), h), comp(f, comp(g, h)));
+  ) => Path[.A = Hom(a, d)](comp(comp(f, g), h), comp(f, comp(g, h)));
 }
 
 /// The circle's points, and the paths between them as the cells.
@@ -69,20 +72,19 @@ module PathCells : Model(Glob) where {
   /// The circle's points.
   type Ob = Circle;
   /// The paths between two points.
-  type Hom(a : Ob, b : Ob) = Path(Circle, a, b);
+  type Hom(a : Ob, b : Ob) = Path[.A = Circle](a, b);
 
   /// The reflexivity.
-  def id(a : Circle) -> Path(Circle, a, a) { Path.here(a) }
+  def id(a : Circle) -> Path(a, a) { Path.here(a) }
 
   /// The composite.
   def comp(
     a : Circle,
     b : Circle,
     c : Circle,
-    f : Path(Circle, a, b),
-    g : Path(Circle, b, c)
-  ) -> Path(
-    Circle,
+    f : Path(a, b),
+    g : Path(b, c)
+  ) -> Path[.A = Circle](
     a,
     c
   ) {
@@ -90,8 +92,7 @@ module PathCells : Model(Glob) where {
   }
 
   /// The right unit law, by conversion.
-  def unitR(a : Circle, b : Circle, f : Path(Circle, a, b)) -> Path(
-    Path(Circle, a, b),
+  def unitR(a : Circle, b : Circle, f : Path(a, b)) -> Path[.A = Path[.A = Circle](a, b)](
     comp(a, b, b, f, id(b)),
     f
   ) {
@@ -104,11 +105,10 @@ module PathCells : Model(Glob) where {
     b : Circle,
     c : Circle,
     d : Circle,
-    f : Path(Circle, a, b),
-    g : Path(Circle, b, c),
-    h : Path(Circle, c, d)
-  ) -> Path(
-    Path(Circle, a, d),
+    f : Path(a, b),
+    g : Path(b, c),
+    h : Path(c, d)
+  ) -> Path[.A = Path[.A = Circle](a, d)](
     comp(a, c, d, comp(a, b, c, f, g), h),
     comp(a, b, d, f, comp(b, c, d, g, h))
   ) {
@@ -121,20 +121,19 @@ module Discharged : Model(Glob) where {
   /// The circle's points.
   type Ob = Circle;
   /// The paths between two points.
-  type Hom(a : Ob, b : Ob) = Path(Circle, a, b);
+  type Hom(a : Ob, b : Ob) = Path(a, b);
 
   /// The reflexivity.
-  def id(a : Circle) -> Path(Circle, a, a) { Path.here(a) }
+  def id(a : Circle) -> Path(a, a) { Path.here(a) }
 
   /// The composite.
   def comp(
     a : Circle,
     b : Circle,
     c : Circle,
-    f : Path(Circle, a, b),
-    g : Path(Circle, b, c)
-  ) -> Path(
-    Circle,
+    f : Path(a, b),
+    g : Path(b, c)
+  ) -> Path[.A = Circle](
     a,
     c
   ) {
@@ -142,8 +141,7 @@ module Discharged : Model(Glob) where {
   }
 
   /// The right unit law, by conversion.
-  def unitR(a : Circle, b : Circle, f : Path(Circle, a, b)) -> Path(
-    Path(Circle, a, b),
+  def unitR(a : Circle, b : Circle, f : Path(a, b)) -> Path[.A = Path[.A = Circle](a, b)](
     comp(a, b, b, f, id(b)),
     f
   ) {

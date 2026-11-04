@@ -1,8 +1,8 @@
 error[PhaseDependence]: the type `Q` depends on the value `count`; a type depends only on types
-  ╭▸ corpus/ledger/diagnostics/PhaseDependence.gandr:6:26
+  ╭▸ corpus/ledger/diagnostics/PhaseDependence.gandr:6:17
   │
-6 │   type Q = Path(Integer, count, 3);
-  │                          ━━━━━ a value a type depends on
+6 │   type Q = Path(count, 3);
+  │                 ━━━━━ a value a type depends on
   │
   ├ note: `Q` is refused with PhaseDependence, as its expectation states
   ╰ help: make the static member's type depend only on static members

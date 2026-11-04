@@ -14,11 +14,11 @@ def congInAType(
   x : A,
   y : A,
   w : A,
-  f1 : Path(A, x, y),
-  f2 : Path(A, x, y),
-  a : Path(Path(A, x, y), f1, f2),
-  F : Path(A, x, y) => Path(A, x, w)
-) -> Path(Path(Path(A, x, w), F(f1), F(f2)), Path.ap(F, a), Path.ap(F, a)) {
+  f1 : Path[.A = A](x, y),
+  f2 : Path[.A = A](x, y),
+  a : Path[.A = Path[.A = A](x, y)](f1, f2),
+  F : Path[.A = A](x, y) => Path[.A = A](x, w)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](F(f1), F(f2))](Path.ap(F, a), Path.ap(F, a)) {
   Path.here(Path.ap(F, a))
 }
 
@@ -28,13 +28,12 @@ def thenCongInAType(
   x : A,
   y : A,
   w : A,
-  f1 : Path(A, x, y),
-  f2 : Path(A, x, y),
-  a : Path(Path(A, x, y), f1, f2),
-  F : Path(A, x, y) => Path(A, x, w),
-  b : Path(Path(A, x, w), F(f1), F(f1))
-) -> Path(
-  Path(Path(A, x, w), F(f1), F(f2)),
+  f1 : Path[.A = A](x, y),
+  f2 : Path[.A = A](x, y),
+  a : Path[.A = Path[.A = A](x, y)](f1, f2),
+  F : Path[.A = A](x, y) => Path[.A = A](x, w),
+  b : Path[.A = Path[.A = A](x, w)](F(f1), F(f1))
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](F(f1), F(f2))](
   Path.step(b, Path.ap(F, a)),
   Path.step(b, Path.ap(F, a))
 ) {
@@ -48,15 +47,18 @@ def inductiveAssociator(
   y : A,
   z : A,
   w : A,
-  f : Path(A, x, y),
-  g : Path(A, y, z),
-  h : Path(A, z, w)
-) -> Path(Path(A, x, w), Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
+  f : Path[.A = A](x, y),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = A](x, w)](Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
   Path.walk(
     (
       v : A,
-      k : Path(A, z, v)
-    ) => Path(Path(A, x, v), Path.step(Path.step(f, g), k), Path.step(f, Path.step(g, k))),
+      k : Path[.A = A](z, v)
+    ) => Path[.A = Path[.A = A](x, v)](
+      Path.step(Path.step(f, g), k),
+      Path.step(f, Path.step(g, k))
+    ),
     h,
     Path.here(z),
     Path.here(h),
@@ -71,11 +73,13 @@ def hereThenAssocInAType(
   y : A,
   z : A,
   w : A,
-  f : Path(A, x, y),
-  g : Path(A, y, z),
-  h : Path(A, z, w)
-) -> Path(
-  Path(Path(A, x, w), Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))),
+  f : Path[.A = A](x, y),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](
+  Path.step(Path.step(f, g), h),
+  Path.step(f, Path.step(g, h))
+)](
   Path.step(Path.here(Path.step(Path.step(f, g), h)), inductiveAssociator(A, x, y, z, w, f, g, h)),
   inductiveAssociator(A, x, y, z, w, f, g, h)
 ) {

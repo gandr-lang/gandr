@@ -923,8 +923,8 @@ fn j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937()
         .position();
     let identified = crate::replay::Unfoldings::default().identifying(environment.entries());
 
-    // In the family of paths back to `a`, `(y : A, z : Path(A, a, y)) =>
-    // Path(A, y, a)`, every fibre is the relation's, the unit type: along the
+    // In the family of paths back to `a`, `(y : A, z : Path[.A = A](a, y)) =>
+    // Path[.A = A](y, a)`, every fibre is the relation's, the unit type: along the
     // evidence the transport returns the unit.
     let mut staging = environment.stage();
     let arena = staging.arena();
@@ -1018,7 +1018,7 @@ fn a_law_is_checked_where_its_atom_is_admitted()
 }
 
 /// The relation relating two points of the unit type by the paths between
-/// them, `thunk (λa. λb. return ⌜Path(Unit, a, b)⌝)`, and its reflexivity,
+/// them, `thunk (λa. λb. return ⌜Path[.A = Unit](a, b)⌝)`, and its reflexivity,
 /// `thunk (λa. return here(a))`.
 ///
 /// # Specification

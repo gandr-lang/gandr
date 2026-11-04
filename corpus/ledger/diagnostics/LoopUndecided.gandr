@@ -24,7 +24,7 @@ data Circle : Type where {
 }
 
 @[ refuses("LoopUndecided") ]
-def costly(x : Circle) -> -F Path(Circle, x, x) {
+def costly(x : Circle) -> -F Path[.A = Circle](x, x) {
   match x {
     Base => match power(power(Succ(Succ(Succ(Zero))))) {
       Zero => Path.here(Base),

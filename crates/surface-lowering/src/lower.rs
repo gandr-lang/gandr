@@ -2155,7 +2155,7 @@ enum Carrier
 {
     /// A type, the node written at the carrier's place or supplied by name.
     Written(NodeIndex),
-    /// A universe spelled by the form's own tiles, `Path(Type, A, B)`: the
+    /// A universe spelled by the form's own tiles, `Path[.A = Type](A, B)`: the
     /// endpoints are written as types.
     Universe(Universe),
     /// No carrier written, `Flow(a, b)`: the decoding of a hole the form
@@ -2170,9 +2170,9 @@ enum Carrier
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Relating
 {
-    /// `Path(A, a, b)`, element identity.
+    /// `Path[.A = A](a, b)`, element identity.
     Path,
-    /// `Bridge(A, a, b)`, relatedness: no reflexivity, transport or J.
+    /// `Bridge[.A = A](a, b)`, relatedness: no reflexivity, transport or J.
     Bridge,
 }
 
@@ -2856,7 +2856,7 @@ enum Plan
     /// written as, the path, and the transported value.
     Transport(NodeIndex, NodeIndex, NodeIndex),
     /// A directed identity type over its carrier and its two endpoints:
-    /// `Flow(A, a, b)`, `Flow[.A = A](a, b)` or `Flow(a, b)`.
+    /// `Flow[.A = A](a, b)` or `Flow(a, b)`.
     Flow(Carrier, NodeIndex, NodeIndex),
     /// A relation between two types written infix, over its two operands:
     /// value types for the equivalence and the quasi-inverse, codes for the
@@ -10368,8 +10368,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a lambda signed `+U (Empty -> -F Integer)` matches no
     ///   arm on its binder, as a parameter of the same type does, written in a
     ///   thunk or bare, and a lambda signed `Empty => Integer`, `(Empty,
-    ///   Integer) => Integer` or the telescope `(a : One) => Path(One, a, a)`
-    ///   lowers as under the thunked arrows the alias stands for.
+    ///   Integer) => Integer` or the telescope `(a : One) => Path[.A = One](a,
+    ///   a)` lowers as under the thunked arrows the alias stands for.
     /// - witness: `lower::native::tests::a_match_of_no_arms_switches_on_a_lambda_binder_its_arrow_types`
     /// - witness: `lower::native::tests::a_bare_signed_lambda_s_binder_is_typed_as_in_its_thunk_1944`
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
@@ -12474,7 +12474,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a static application, or the unquote of a function's call. A descent
     ///   head `f[<]` ([`Self::descent_head`]) applied to the arguments is the
     ///   unquote of its fixpoint's call, as [`Self::staged_descent`] plans it.
-    ///   A head spelling a type former, `Path(A, x, y)`, is that former as
+    ///   A head spelling a type former, `Path[.A = A](x, y)`, is that former as
     ///   [`Self::applied_head`] reads it. Any other head is refused by its
     ///   sort.
     /// - provides: a quoted type's call read as the same type its binder's type
@@ -12525,7 +12525,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             return self.staged_descent(site, named, written);
         }
-        // A type former the expression grammar molds as a call, `Path(A, x,
+        // A type former the expression grammar molds as a call, `Path[.A = A](x,
         // y)`, is the former the type grammar spells (#4508).
         if let Maybe::Present(name) = self.former_head(site, head)? {
             let _head = cursor.operands();
@@ -14983,25 +14983,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   to right, and the last the store holds; `manifests` is each manifest
     ///   sort's name beside the type it is, in written order.
     /// - ensures: the arguments leave the store; a head named `Path` or
-    ///   `Bridge` and applied to three arguments is the path or bridge type
-    ///   [`Self::written_path`] plans, one named `Flow` and applied to three,
-    ///   or to its two endpoints alone, the directed identity type
-    ///   [`Self::flow_type`] plans, one named `Stack` and applied to two the
-    ///   continuation type [`Self::stack_type`] plans, one named `Iso` and
-    ///   applied to two the quasi-inverse `A ≅ B` [`Self::relation_of`] plans,
-    ///   one named `Model` and applied to one the bundled record
-    ///   [`Self::model_type`] plans with its manifest sorts, one named `Terms`
-    ///   and applied to one the theory's terms [`Self::terms_type`] plans; any
-    ///   other head applied to one argument resolves against the unary table,
-    ///   stands at the sort its former produces, reads its argument at the sort
-    ///   the former takes, and is planned over it.
+    ///   `Bridge` and applied to two arguments is the path or bridge type
+    ///   [`Self::written_path`] plans, one named `Flow` and applied to two the
+    ///   directed identity type [`Self::flow_type`] plans, one named `Stack`
+    ///   and applied to two the continuation type [`Self::stack_type`] plans,
+    ///   one named `Iso` and applied to two the quasi-inverse `A ≅ B`
+    ///   [`Self::relation_of`] plans, one named `Model` and applied to one the
+    ///   bundled record [`Self::model_type`] plans with its manifest sorts, one
+    ///   named `Terms` and applied to one the theory's terms
+    ///   [`Self::terms_type`] plans; any other head applied to one argument
+    ///   resolves against the unary table, stands at the sort its former
+    ///   produces, reads its argument at the sort the former takes, and is
+    ///   planned over it.
     /// - provides: the one table of type formers written as an application, in
     ///   a type and where a value is read.
     /// - fails: yields the unresolved-head refusal for a head no former takes
     ///   at the arity it was written with, marking the whole application when
-    ///   the head spells a former and the head alone otherwise; the wrong-sort
-    ///   refusal for a former whose sort does not suit the position; and a
-    ///   misplaced tile at the first manifest sort after any head but `Model`.
+    ///   the head spells a former and the head alone otherwise; the
+    ///   positional-carrier fault at a `Path`, `Bridge` or `Flow` head applied
+    ///   to three arguments; the wrong-sort refusal for a former whose sort
+    ///   does not suit the position; and a misplaced tile at the first manifest
+    ///   sort after any head but `Model`.
     /// - panics: none.
     ///
     /// # Errors
@@ -15019,6 +15021,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
     /// - witness: `lower::identity::tests::an_omitted_carrier_is_a_nominated_hole_4932`
+    /// - witness: `lower::identity::tests::a_carrier_written_first_is_refused_5024`
     #[spec(
         ensures: |ret| {
             self.operands.len() == written.start
@@ -15041,10 +15044,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let start = written.start;
         let count = written.end.saturating_sub(start);
         let first = self.operands.get(start).copied();
-        let triple = self
-            .operands
-            .get(start .. written.end)
-            .and_then(|operands| <[NodeIndex; 3]>::try_from(operands).ok());
+        let written_first = count == 3_usize;
         let pair = self
             .operands
             .get(start .. written.end)
@@ -15063,17 +15063,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             return self.terms_type(site, argument);
         }
-        if let Some(written) = triple
+        let path_shaped = [TileName::PATH, TileName::BRIDGE, TileName::FLOW_TYPE]
+            .into_iter()
+            .find(|shaped| name.as_ref() == shaped.as_ref());
+        if let (Some(shaped), true) = (path_shaped, written_first) {
+            return Err(site.fault(head.span, FormFault::PositionalCarrier(shaped)));
+        }
+        if let Some(written) = pair
             && let Some(relating) = [Relating::Path, Relating::Bridge]
                 .into_iter()
                 .find(|relating| name.as_ref() == relating.head().as_ref())
         {
             return self.written_path(site, written, relating);
         }
-        if name.as_ref() == identity::FLOW
-            && let Some(written) = triple
-                .map(identity::FlowOperands::Three)
-                .or_else(|| pair.map(identity::FlowOperands::Two))
+        if let Some(written) = pair
+            && name.as_ref() == identity::FLOW
         {
             return self.flow_type(site, written);
         }
@@ -26300,7 +26304,7 @@ mod tests
         let mut arena = CoreArena::new();
         let source = crate::fixture::listing(
             "def a = Integer ; def b = -F Integer ; def c = Type ; def d = +U (-F Integer) ; def e \
-             = Path(Integer, 1, 1) ; def f = List(Integer) ;",
+             = Path(1, 1) ; def f = List(Integer) ;",
         );
         let module = crate::fixture::listed(&source, &mut arena);
         let quoted = |declaration: usize| {
@@ -26343,9 +26347,11 @@ mod tests
         let path = quoted(4_usize);
         assert!(
             matches!(path, (Some(ValueType::Path { carrier, .. }), None, provenance)
-                if arena.value_type(carrier) == Some(&ValueType::Base(BaseType::Integer))
+                if matches!(arena.value_type(carrier), Some(&ValueType::Element { code, .. })
+                    if matches!(arena.value(code), Some(&Value::Hole(_))))
                     && provenance == inserted),
-            "a path type written as a call where a value is read is its code (#539): {path:?}"
+            "a path type written as a call where a value is read is its code (#539), its \
+             carrier the hole it nominates: {path:?}"
         );
         let list = quoted(5_usize);
         assert!(
@@ -28052,7 +28058,7 @@ def ended() -> -F [Partial] Unit {
             "def a : (x : Zz) => Integer ;",
             "def a : (x : Integer) => Zz ;",
             "def a : Zz => Integer ;",
-            "def a : Path(Zz, 1, 1) ;",
+            "def a : Path[.A = Zz](1, 1) ;",
             "def a = (1, zz) ;",
             "def a = #[1, zz] ;",
             "def a = thunk { return zz } ;",
@@ -28887,7 +28893,7 @@ def ended() -> -F [Partial] Unit {
     {
         let mut arena = CoreArena::new();
         let text = "def same(a : Type) -> -F Type { return a } def pathSame(a : Type, x : a) -> \
-                    -F Type { return (Path(same(a), x, x)) }";
+                    -F Type { return (type(Path[.A = same(a)](x, x))) }";
         let module = lowered(SourceText::from(text), &mut arena);
         let lowered = outcomes(&module);
         assert!(
@@ -28930,17 +28936,17 @@ def ended() -> -F [Partial] Unit {
     }
 
     /// #3681: a decoder's descent at the carrier of a path type it quotes,
-    /// `Path(el[<](a), x, y)`, was refused by its sort: the expression grammar
-    /// molds it as a call whose head is an instantiation, which no name
-    /// resolves. It is the descent the type grammar spells, the decode of its
-    /// fixpoint's call, as an unmarked call there is (#3573).
+    /// `Path[.A = el[<](a)](x, y)`, was refused by its sort: the expression
+    /// grammar molds it as a call whose head is an instantiation, which no
+    /// name resolves. It is the descent the type grammar spells, the decode
+    /// of its fixpoint's call, as an unmarked call there is (#3573).
     #[test]
     fn a_descent_at_a_quoted_path_carrier_unquotes_as_in_a_type_3681()
     {
         let mut arena = CoreArena::new();
         let text = "data U : Type where { | NatU : U | PathU : (a : U, x : Integer, y : Integer) --> U } \
                     def rec el(u : U) -> -F Type { match u { NatU => return Integer, PathU(a, x, \
-                    y) => return (Path(el[<](a), x, y)) } }";
+                    y) => return (type(Path[.A = el[<](a)](x, y))) } }";
         let module = lowered(SourceText::from(text), &mut arena);
         let lowered = outcomes(&module);
         assert!(
@@ -29611,12 +29617,13 @@ def ended() -> -F [Partial] Unit {
         let pbg = grammar();
         for (source, point, form, ending, why) in [
             (
-                "def four : Path(Integer 4, 4) ;\ndef four = Path.here(4) ;\n",
-                23_usize,
+                "def four : Path[.A = Integer 4](4, 4 ;\ndef four = Path.here(4) ;\n",
+                28_usize,
                 "path_type",
                 crate::form::Ending::Unnamed,
-                "a path type missing the comma after its type is marked at the comma's gap, \
-                 where a second operand stands in a hole that holds one",
+                "a path type left open, whose supplied carrier writes a second operand, is marked \
+                 at the gap after the carrier, where a second operand stands in a hole that holds \
+                 one",
             ),
             (
                 "def either : Integer + String ;\ndef either = +.0 = 1} ;\n",

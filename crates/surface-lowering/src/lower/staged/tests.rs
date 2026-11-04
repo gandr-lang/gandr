@@ -249,7 +249,7 @@ fn a_supplied_stage_crosses_at_the_call_s_head_1227()
 fn a_stage_outside_a_signature_leaves_the_fragment()
 {
     let source = format!(
-        "{NAT}def inside[i : Size](x : Nat[i]) -> -F Nat {{\n  return (x : Nat[i])\n}}\ndef carried[i : Size](a : Nat, q : Path(Nat[i], a, a)) -> -F Nat {{\n  return a\n}}\n"
+        "{NAT}def inside[i : Size](x : Nat[i]) -> -F Nat {{\n  return (x : Nat[i])\n}}\ndef carried[i : Size](a : Nat, q : Path[.A = Nat[i]](a, a)) -> -F Nat {{\n  return a\n}}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);

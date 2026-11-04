@@ -11,5 +11,5 @@ def same(n : Nat) -> -F Nat {
 }
 
 @[ refuses("EquivUnsupported") ]
-def recursive : Path(Type, Nat, Nat) ;
+def recursive : Path[.A = Type](Nat, Nat) ;
 def recursive = equiv(same, same) ;

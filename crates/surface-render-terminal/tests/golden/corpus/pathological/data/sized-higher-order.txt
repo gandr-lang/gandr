@@ -54,10 +54,10 @@ error[OutOfFragment.Stage]: a stage that refines no data type, names no binder o
    ╰ help: write the kernel-visible type without a stage
 
 error[OutOfFragment.staged_type]: the staged type is not supported yet
-   ╭▸ corpus/pathological/data/sized-higher-order.gandr:55:43
+   ╭▸ corpus/pathological/data/sized-higher-order.gandr:55:48
    │
-55 │ def carriedAt[i : Size](a : Nat, q : Path(Nat[i], a, a)) -> -F Nat {
-   │                                           ━━━━━━ a form the fragment does not admit
+55 │ def carriedAt[i : Size](a : Nat, q : Path[.A = Nat[i]](a, a)) -> -F Nat {
+   │                                                ━━━━━━ a form the fragment does not admit
    │
    ├ note: `carriedAt` is refused with OutOfFragment.staged_type, as its expectation states
    ╰ note: tracked by #1502 <https://github.com/gandr-lang/gandr/issues/1502>

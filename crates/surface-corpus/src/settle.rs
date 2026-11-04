@@ -2885,7 +2885,7 @@ mod tests
         let report = settled(
             CorpusRoot::Fixture,
             SourceText::from(
-                "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\nmodule SameInteger : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl = ~admitted;\n}\n",
+                "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), true);\n}\nmodule SameInteger : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl = ~admitted;\n}\n",
             ),
         );
         let refl = report
@@ -2924,7 +2924,7 @@ mod tests
         let report = settled(
             CorpusRoot::Strict,
             SourceText::from(
-                "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
+                "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
             ),
         );
         let cells = report
@@ -3845,7 +3845,7 @@ data NatUnits : Type where {{
                   type T = Bool;
                   def f(x : Bool) -> Bool { match x { true => false, false => true } }
                   @[ refuses("EndpointMismatch") ]
-                  def idem(x : Bool) -> Path(Bool, f(f(x)), f(x)) { Path.here(f(x)) }
+                  def idem(x : Bool) -> Path[.A = Bool](f(f(x)), f(x)) { Path.here(f(x)) }
                 }"#,
                 RefusalName::EndpointMismatch,
             ),

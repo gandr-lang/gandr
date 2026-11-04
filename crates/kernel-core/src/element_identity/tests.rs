@@ -242,7 +242,7 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
     ));
     assert_eq!(error.to_string(), "an identity fibre is neutral");
 
-    // A domain that reads a binder: `Π (x : U). Π (y : El x). F (Path(El x, y,
+    // A domain that reads a binder: `Π (x : U). Π (y : El x). F (Path[.A = El x](y,
     // y))` forms, `here(y)` checks against it and synthesizes at it, and the
     // unit as native evidence refuses as a neutral fibre.
     let mut arena = TermArena::new();
@@ -299,10 +299,10 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
         Err(KernelError::Identity(IdentityError::NeutralFibre))
     ));
 
-    // `Π (x : U). Π (y z : El x). Path(El x, y, z) → F (Path(El x, y, z))`:
-    // a path inhabits its own neutral fibre by structural conversion, never
-    // the reversed one, and transport in the singleton family along it sends
-    // `here(y)` to the path itself.
+    // `Π (x : U). Π (y z : El x). Path[.A = El x](y, z) → F (Path[.A = El x](y,
+    // z))`: a path inhabits its own neutral fibre by structural conversion,
+    // never the reversed one, and transport in the singleton family along it
+    // sends `here(y)` to the path itself.
     let typed = |arena: &mut TermArena, result: ValueTypeId| {
         let x = decoded(arena, 2);
         let y = arena.value_variable(DeBruijnIndex::from(1_u32));
@@ -384,7 +384,7 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
 #[test]
 fn reflexivity_converts_its_endpoints_by_the_laws_of_bind()
 {
-    // Under `g : U (Bool → F Bool)`, `here(r)` at `Path(U (Bool → F Bool),
+    // Under `g : U (Bool → F Bool)`, `here(r)` at `Path[.A = U (Bool → F Bool)](
     // l, r)` for three `l`s against `r = thunk (λ b. force g b)`.
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
@@ -517,7 +517,8 @@ fn native_evidence_checks_against_the_fold_fibre()
     let code = arena.value_quote(boolean.ty);
     let codes = arena.value_type_path(universe_type, code, code);
     let refl = arena.value_path_refl(code);
-    check_closed_value(&mut arena, refl, codes).expect("Path_U evidence at Path(U, Bool, Bool)");
+    check_closed_value(&mut arena, refl, codes)
+        .expect("Path_U evidence at Path[.A = U](Bool, Bool)");
 
     // An identity of identities reads the inner fibre, `here` as its diagonal.
     let iterated = arena.value_type_path(diagonal, here, unit);
@@ -612,7 +613,7 @@ fn a_tuple_at_a_function_identity_is_refused_719()
 #[test]
 fn a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair()
 {
-    // Σ (b : Bool). Path(Bool, b, b), between #{true, here(true)} and itself.
+    // Σ (b : Bool). Path[.A = Bool](b, b), between #{true, here(true)} and itself.
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
     let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -650,7 +651,7 @@ fn a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair()
 #[test]
 fn a_tuple_of_paths_inhabits_the_identity_of_a_product()
 {
-    // Path(Bool × Bool, (true, false), (true, false)) reads the product of
+    // Path[.A = Bool × Bool]((true, false), (true, false)) reads the product of
     // the coordinates' identities: a tuple of reflexivities relates the pair,
     // the fold's evidence still checks, and a component path between other
     // points is refused at its endpoint.
@@ -743,8 +744,9 @@ fn a_declared_pair_relates_by_its_body_s_components_337()
     );
 }
 
-/// Admit `c : Σ (b : Bool). Path(Bool, b, b)` — as `#{true, here(true)}`, or
-/// as an axiom — then `Path(Σ…, c, c)` as `#{here(true), here(here(true))}`.
+/// Admit `c : Σ (b : Bool). Path[.A = Bool](b, b)` — as `#{true, here(true)}`,
+/// or as an axiom — then `Path[.A = Σ…](c, c)` as `#{here(true),
+/// here(here(true))}`.
 ///
 /// # Specification
 /// trivial.
@@ -1182,7 +1184,7 @@ fn a_higher_evaluation_covers_a_higher_order_argument()
     let pair = arena.value_type_product(&[inner, inner]);
     let outer = thunk_type(&mut arena, inner, pair);
     // The kernel's coverage telescope at a function argument: two functions
-    // and their identity, `f₀ f₁ : T, p : Path(T, f₀, f₁)`.
+    // and their identity, `f₀ f₁ : T, p : Path[.A = T](f₀, f₁)`.
     let [first, second, premise] =
         [2_u32, 1, 0].map(|index| arena.value_variable(DeBruijnIndex::from(index)));
     let identity_type = arena.value_type_path(inner, second, premise);
@@ -1300,7 +1302,7 @@ pub(super) fn quantified(
 }
 
 /// The generic higher-order pattern's telescope at the thunk type `inner`:
-/// `f₀ f₁ : inner, p : Path(inner, f₀, f₁)`, with `f₀`, `f₁` beneath it.
+/// `f₀ f₁ : inner, p : Path[.A = inner](f₀, f₁)`, with `f₀`, `f₁` beneath it.
 ///
 /// # Specification
 /// trivial.
@@ -1759,7 +1761,7 @@ fn transport_computes_through_the_fold_clauses()
 #[test]
 fn a_dependent_motive_instantiates_by_substitution()
 {
-    // λx : U. λy : El x. λp : Path(U, x, Bool).
+    // λx : U. λy : El x. λp : Path[.A = U](x, Bool).
     //   transport(e. El e × El x, p, (y, y)) : F (El Bool × El x)
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
@@ -2013,7 +2015,7 @@ fn applied(
     arena.value_returned(computation)
 }
 
-/// Stage `law : U(Π x : Bool. F Path(Bool, ⟨mul a b⟩, x)) = thunk { λx.
+/// Stage `law : U(Π x : Bool. F Path[.A = Bool](⟨mul a b⟩, x)) = thunk { λx.
 /// return here(⟨mul a b⟩) }` at `(a, b) = (neutral, x)` for the left unit, or
 /// at `(x, neutral)` for the right, the `here` relating its point to `x` by
 /// `dialogue`.
@@ -2240,8 +2242,8 @@ fn a_stuck_returned_endpoint_compares_structurally()
     }
 }
 
-/// `law : Path(U(Bool → F Bool), ⟨force delay⟩, k) = here(k)` over `def k :
-/// U(Bool → F Bool) = thunk { λx. return x }`, `j = k` (a definition, or an
+/// `law : Path[.A = U(Bool → F Bool)](⟨force delay⟩, k) = here(k)` over `def k
+/// : U(Bool → F Bool) = thunk { λx. return x }`, `j = k` (a definition, or an
 /// axiom in the control) and `def delay : U(F U(Bool → F Bool)) = thunk {
 /// return thunk { force j } }`, the `here` relating `k` to `⟨force delay⟩` by
 /// `dialogue`. `⟨force delay⟩` reduces to `thunk { force j }`, so relating it
@@ -2408,7 +2410,7 @@ fn a_pair_is_converted_by_the_kernel_s_own_evaluation_3557()
         .add_decl(declaration)
         .expect("identity")
         .position();
-    // `here(point)` at `Path(Bool, point, ⟨not true⟩)`: both sides are
+    // `here(point)` at `Path[.A = Bool](point, ⟨not true⟩)`: both sides are
     // closed, so the kernel runs them and compares what they reach.
     let closed = |environment: &mut Environment, point: ValueId| {
         let mut staging = environment.stage();
@@ -2427,7 +2429,7 @@ fn a_pair_is_converted_by_the_kernel_s_own_evaluation_3557()
         ),
         "`not true` evaluates apart from `true`"
     );
-    // Under `λx`, `here(x)` at `Path(Bool, x, ⟨head x⟩)`: the evaluation
+    // Under `λx`, `here(x)` at `Path[.A = Bool](x, ⟨head x⟩)`: the evaluation
     // reads the binder, which stands for itself.
     let open = |environment: &mut Environment, head: ConstantIndex| {
         let mut staging = environment.stage();
@@ -2455,7 +2457,7 @@ fn a_pair_is_converted_by_the_kernel_s_own_evaluation_3557()
     );
 }
 
-/// Admit `here(point)` at `Path(Bool, point, ⟨not true⟩)`, its right side
+/// Admit `here(point)` at `Path[.A = Bool](point, ⟨not true⟩)`, its right side
 /// carrying the admitted result `Admitted`.
 ///
 /// # Specification
@@ -2594,9 +2596,9 @@ fn a_declaration_that_took_an_admitted_result_keeps_no_verdict_3558()
     );
 }
 
-/// Stage `law : Path(U(Bool → F Bool), k, k) = given` over the definitions of
-/// [`delayed_law`] and `axiom given : Path(U(Bool → F Bool), ⟨force delay⟩,
-/// k)`, every earlier declaration admitted and recorded. The ascription
+/// Stage `law : Path[.A = U(Bool → F Bool)](k, k) = given` over the definitions
+/// of [`delayed_law`] and `axiom given : Path[.A = U(Bool → F Bool)](⟨force
+/// delay⟩, k)`, every earlier declaration admitted and recorded. The ascription
 /// converts the two path types only where `k` converts with `⟨force delay⟩`,
 /// which unfolds `j` under a thunk: the shape of a definition whose declared
 /// type and body's type state compound endpoints related through a
@@ -2890,8 +2892,8 @@ fn a_returned_endpoint_over_a_non_returner_is_refused_by_name()
 #[test]
 fn a_returned_endpoint_reads_at_a_mode_switch()
 {
-    // def switched : U(Π x : Bool. Path(Bool, ⟨mul a x⟩, x) → F Path(Bool, x, x))
-    //   = thunk { λx. λp. return p } ;
+    // def switched : U(Π x : Bool. Path[.A = Bool](⟨mul a x⟩, x) → F Path[.A =
+    // Bool](x, x))   = thunk { λx. λp. return p } ;
     // checks at `a = neutral`, where the endpoint reads as `x`, and refuses at
     // `a = false`, where it reads as `false`.
     let mut environment = Environment::new();
@@ -3049,10 +3051,10 @@ pub(super) fn function(
 #[test]
 fn a_dependent_motive_replays_its_substitution_law()
 {
-    // λa b : Bool. λp : Path(Bool, a, b). λz₀ z₁ : Bool.
-    // λq : Path(Bool, z₀, z₁). λv : Path(Bool, a, z₀).
-    //   transport((y : Bool, z : Bool) => Path(Bool, y, z), p, z₀, q, v)
-    //   : F Path(Bool, b, z₁)
+    // λa b : Bool. λp : Path[.A = Bool](a, b). λz₀ z₁ : Bool.
+    // λq : Path[.A = Bool](z₀, z₁). λv : Path[.A = Bool](a, z₀).
+    //   transport((y : Bool, z : Bool) => Path[.A = Bool](y, z), p, z₀, q, v)
+    //   : F Path[.A = Bool](b, z₁)
     // The path's endpoints instantiate the outer entry and the identity
     // over it the inner one, each by one substitution.
     let mut arena = TermArena::new();
@@ -3120,7 +3122,7 @@ fn a_dependent_motive_replays_its_substitution_law()
 fn a_one_entry_telescope_motive_is_refused_by_its_shape()
 {
     // A motive with one entry is a one-binder transport's, not a telescope.
-    // λp : Path(Bool, T, T). transport(y : Bool => Bool, p, T, p, T)
+    // λp : Path[.A = Bool](T, T). transport(y : Bool => Bool, p, T, p, T)
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
     let returns = arena.comp_type_returner(boolean.ty);
@@ -3155,9 +3157,9 @@ fn a_one_entry_telescope_motive_is_refused_by_its_shape()
 #[test]
 fn telescope_transport_along_here_reduces()
 {
-    // In `(y : Bool, z : Bool) => Path(Bool, y, z)`: `here` along both
+    // In `(y : Bool, z : Bool) => Path[.A = Bool](y, z)`: `here` along both
     // identities returns the value; `here` along the path alone transports
-    // in the fibre `z. Path(Bool, T, z)`; a neutral path sticks.
+    // in the fibre `z. Path[.A = Bool](T, z)`; a neutral path sticks.
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
     let outer = arena.value_variable(DeBruijnIndex::from(1_u32));
@@ -3223,7 +3225,7 @@ fn telescope_transport_along_here_reduces()
 #[test]
 fn telescope_transport_in_a_constant_motive_returns_its_value_along_any_path()
 {
-    // In `(y : Unit, z : Path(Unit, (), y)) => C`, the unit's evidence `()`
+    // In `(y : Unit, z : Path[.A = Unit]((), y)) => C`, the unit's evidence `()`
     // is a closed path that is no reflexivity. A returned type reading neither
     // entry returns the value along it; one reading the endpoint or the
     // identity over it, at a carrier other than the unit, sticks.
@@ -3271,9 +3273,9 @@ fn telescope_transport_in_a_constant_motive_returns_its_value_along_any_path()
 #[test]
 fn telescope_transport_into_the_unit_fibre_returns_the_unit_1886()
 {
-    // In `(y : Unit, z : Path(Unit, (), y)) => Path(Unit, y, ())`, the family
-    // of paths back to the centre, every inhabitant of the returned type is
-    // the unit: along the unit's evidence `()`, a closed path that is no
+    // In `(y : Unit, z : Path[.A = Unit]((), y)) => Path[.A = Unit](y, ())`, the
+    // family of paths back to the centre, every inhabitant of the returned type
+    // is the unit: along the unit's evidence `()`, a closed path that is no
     // reflexivity, along a variable and along a constant the transport
     // returns it.
     let mut arena = TermArena::new();
@@ -3314,10 +3316,10 @@ fn telescope_transport_into_the_unit_fibre_returns_the_unit_1886()
 #[test]
 fn j_derived_in_the_singleton_checks_and_computes()
 {
-    // J := λx : Bool. λp : Path(Bool, T, x). λd : C[T, here(T)].
-    //   transport((y : Bool, z : Path(Bool, T, y)) => C, p, here(T), here(p), d)
-    //   : F C[x, p]
-    // where C(y, z) = Path(Path(Bool, T, y), z, z) reads both entries.
+    // J := λx : Bool. λp : Path[.A = Bool](T, x). λd : C[T, here(T)].
+    //   transport((y : Bool, z : Path[.A = Bool](T, y)) => C, p, here(T), here(p),
+    // d)   : F C[x, p]
+    // where C(y, z) = Path[.A = Path[.A = Bool](T, y)](z, z) reads both entries.
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
     let truth = boolean.truth;
@@ -3518,7 +3520,7 @@ fn boolean_univalence(
 }
 
 /// `⟨q then p⟩` over the booleans' code: the transport along `p` in `y.
-/// Path(U, c, y)` from `q`, returned as a path.
+/// Path[.A = U](c, y)` from `q`, returned as a path.
 ///
 /// # Specification
 /// trivial.

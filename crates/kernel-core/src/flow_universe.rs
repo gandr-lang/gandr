@@ -1,8 +1,8 @@
-//! The directed family: `Flow_U`, `Flow(A, x, y)`, their introductions,
+//! The directed family: `Flow_U`, `Flow[.A = A](x, y)`, their introductions,
 //! composition and `ride`, as native kernel syntax.
 //!
-//! `Flow(A, x, y)` says only that `x` transports into `y`; `Flow_U(a, b)` is
-//! its native classifier at the level-zero value universe, over quoted
+//! `Flow[.A = A](x, y)` says only that `x` transports into `y`; `Flow_U(a, b)`
+//! is its native classifier at the level-zero value universe, over quoted
 //! first-order, function and session codes. Every introduction is a value
 //! node and every eliminator a computation node in `gandr-kernel-term`'s
 //! table, so a declaration stating a flow persists it in an artifact and
@@ -22,19 +22,19 @@
 //! | `ValueType::FlowUniverse(a, b)` | `0x48` | — | both endpoints in the vocabulary ([`endpoints`]) |
 //! | `Value::SessionFlow` | `0x49` | `Flow_U(a, b)` at session codes | the supplied simulation and its payload paths |
 //! | `ValueType::Flow { domain, source, target }` | `0x4A` | — | both endpoints at the domain |
-//! | `Value::Stay { point, dialogues }` | `0x4B` | `Flow(A, c, c)`; checks at `Flow(A, x, y)` and `Flow_U(x, y)` | the point converts with both endpoints, or each side's dialogue replays |
+//! | `Value::Stay { point, dialogues }` | `0x4B` | `Flow[.A = A](c, c)`; checks at `Flow[.A = A](x, y)` and `Flow_U(x, y)` | the point converts with both endpoints, or each side's dialogue replays |
 //! | `Value::ForwardFlow { flow_type, translator, outputs, dialogues }` | `0x4C` | `Flow_U(a, b)` at first-order codes | the closed translator checks; one image per source pattern, leaf-natural, its dialogue replayed |
 //! | `Value::FunctionFlow { flow_type, domain, codomain }` | `0x4D` | `Flow_U(f, g)` at function codes | each boundary flow runs the way its variance fixes |
-//! | `Value::Then { first, second, seam }` | `0x4E` | `Flow(A, x, z)`, or `Flow_U(x, z)` when either side is | the carriers agree, the seam's endpoints meet, the seam is a sequence |
+//! | `Value::Then { first, second, seam }` | `0x4E` | `Flow[.A = A](x, z)`, or `Flow_U(x, z)` when either side is | the carriers agree, the seam's endpoints meet, the seam is a sequence |
 //! | `Value::FlowProduct(first, second)` | `0x69` | `Flow_U(⌜A × B⌝, ⌜A' × B'⌝)` | each component reads as a universe flow, `Flow_U(A, A')` then `Flow_U(B, B')`, under either reading; both pairs are codes of the vocabulary |
 //! | `Computation::Ride { motive, flow, value }` | `0x4F` | `F P[y]` | the motive passes [`check_motive`]; the value checks at `P[x]` |
 //! | `Computation::TelescopeRide { motive, flow, start, over, value }` | `0x68` | `F C[b, end]` | both entries pass the gate; `over` lies over `flow` |
 //!
-//! At the level-zero value universe `Flow(U₀, x, y)` and `Flow_U(x, y)` are
-//! two readings of one classifier: a flow synthesizing either checks at the
+//! At the level-zero value universe `Flow[.A = U₀](x, y)` and `Flow_U(x, y)`
+//! are two readings of one classifier: a flow synthesizing either checks at the
 //! other, and a flow is consumed — by `ride`, by `then`, by a function flow's
 //! boundary — under either. Elsewhere `stay`, composition and neutrals inhabit
-//! `Flow(A, x, y)`.
+//! `Flow[.A = A](x, y)`.
 //!
 //! # Computation
 //!
@@ -46,7 +46,7 @@
 //! flow applies its translator, a function flow wraps the function in its
 //! boundaries and a flow product rides a pair's left component along its
 //! first flow, then its right along its second; at a singleton motive
-//! `Flow(D, l, x)` a `stay` value returns the flow and any other value
+//! `Flow[.A = D](l, x)` a `stay` value returns the flow and any other value
 //! composes with it. A session simulation relates recorded runs, not endpoint
 //! values: a ride along one is stuck, and [`replay_ride`] refuses it as
 //! `RecordedRunRequired`. A telescope ride along `stay` in its carrier rides
@@ -462,7 +462,7 @@ pub(crate) fn function_type(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Reading
 {
-    /// `Flow(A, x, y)`.
+    /// `Flow[.A = A](x, y)`.
     Element,
     /// `Flow_U(x, y)`, whose carrier is the level-zero value universe.
     Universe,
@@ -503,8 +503,8 @@ pub(crate) fn level_zero_universe(
 /// Read a flow classifier's carrier and endpoints.
 ///
 /// # Specification
-/// - ensures: `Flow(A, x, y)` reads as its parts; `Flow_U(x, y)` reads with the
-///   level-zero value universe as its carrier.
+/// - ensures: `Flow[.A = A](x, y)` reads as its parts; `Flow_U(x, y)` reads
+///   with the level-zero value universe as its carrier.
 /// - fails: `FamilyMismatch` for an identity classifier, `ExpectedFlow` for any
 ///   other.
 /// - panics: none.
@@ -551,8 +551,8 @@ pub(crate) fn ends(
 /// Read a flow classifier as a universe flow and decode its endpoints.
 ///
 /// # Specification
-/// - ensures: `Flow_U(x, y)` decodes as [`endpoints`] over `entries`; `Flow(U₀,
-///   x, y)` at the level-zero value universe decodes as `Flow_U(x, y)`.
+/// - ensures: `Flow_U(x, y)` decodes as [`endpoints`] over `entries`; `Flow[.A
+///   = U₀]( x, y)` at the level-zero value universe decodes as `Flow_U(x, y)`.
 /// - fails: `ExpectedFlow` for a flow at any other carrier, otherwise as
 ///   [`ends`] and [`endpoints`].
 /// - panics: none.
@@ -586,7 +586,7 @@ pub(crate) fn universe_reading(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Agreement
 {
-    /// One is `Flow(U₀, x, y)` at the level-zero value universe, the other
+    /// One is `Flow[.A = U₀](x, y)` at the level-zero value universe, the other
     /// `Flow_U(x, y)`, between convertible endpoints.
     Agree,
     /// Anything else, which ordinary conversion decides.
@@ -603,15 +603,15 @@ pub(crate) enum Agreement
 ///   pairwise.
 /// - provides: the checking machine's mode switch for flows; a flow consumed or
 ///   produced under one reading checks under the other, so the singleton row's
-///   composition and a `Flow_U` certificate stated at `Flow(U₀, x, y)` keep
-///   their types.
+///   composition and a `Flow_U` certificate stated at `Flow[.A = U₀](x, y)`
+///   keep their types.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a forward flow checks at `Flow(U₀, a, b)` and a `stay`
-///   composite at `Flow_U(a, a)`, and a flow at the reversed endpoints still
-///   refuses.
+/// - hypothesis: L3 — a forward flow checks at `Flow[.A = U₀](a, b)` and a
+///   `stay` composite at `Flow_U(a, a)`, and a flow at the reversed endpoints
+///   still refuses.
 /// - witness: `flow_universe::tests::stay_and_forward_admit_and_ride`
 /// - witness: `flow_universe::tests::back_has_no_directed_reading`
 #[spec(ensures: |ret| ret == Agreement::Differ || actual != expected)]

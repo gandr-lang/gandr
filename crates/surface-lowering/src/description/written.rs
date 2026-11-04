@@ -523,7 +523,7 @@ pub struct WrittenDerived
     pub right: (FreeTerm, WrittenTerm),
 }
 
-/// Where a path type a law writes is: `Path(C, l, r)`, its carrier and its
+/// Where a path type a law writes is: `Path[.A = C](l, r)`, its carrier and its
 /// two sides.
 ///
 /// # Specification
@@ -541,7 +541,7 @@ pub struct WrittenPath
     pub right: WrittenTerm,
 }
 
-/// Where a stated law is written: `law sym : (a : C, b : C) => Path(Bool,
+/// Where a stated law is written: `law sym : (a : C, b : C) => Path[.A = Bool](
 /// eq(a, b), eq(b, a))`.
 ///
 /// # Specification

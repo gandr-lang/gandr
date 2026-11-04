@@ -536,10 +536,10 @@ fn a_later_label_reading_an_earlier_one_lowers_to_nested_pairs()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def two : #{n : Integer, v : Path(Integer, n, n)} ; def three : #{a : Integer, b : \
-         Integer, c : Path(Integer, a, a)} ; def late : #{a : Integer, b : Integer, c : \
-         Path(Integer, b, b)} ; def plain : #{n : Integer, s : String} ; def pair : #{n : \
-         Integer, v : Path(Integer, n, n)} ; def pair = #{2, Path.here(2)} ;",
+        "def two : #{n : Integer, v : Path[.A = Integer](n, n)} ; def three : #{a : Integer, b : \
+         Integer, c : Path[.A = Integer](a, a)} ; def late : #{a : Integer, b : Integer, c : \
+         Path[.A = Integer](b, b)} ; def plain : #{n : Integer, s : String} ; def pair : #{n : \
+         Integer, v : Path[.A = Integer](n, n)} ; def pair = #{2, Path.here(2)} ;",
         &mut arena,
     );
 
@@ -584,8 +584,8 @@ fn a_nested_record_s_key_is_no_mention_of_an_outer_label_3010()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def keyed : #{d : Integer, s : #{d : String, t : String}} ; def hidden : #{d : \
-         Integer, s : #{d : String, t : Path(String, d, d)}} ; def domain : #{d : Integer, f : \
-         (d : Integer) => Integer} ; def seen : #{d : Integer, s : #{e : Path(Integer, d, d), d : \
+         Integer, s : #{d : String, t : Path[.A = String](d, d)}} ; def domain : #{d : Integer, f : \
+         (d : Integer) => Integer} ; def seen : #{d : Integer, s : #{e : Path[.A = Integer](d, d), d : \
          String}} ;",
         &mut arena,
     );
@@ -627,9 +627,9 @@ fn a_nested_record_s_key_is_no_mention_of_an_outer_label_3010()
 fn each_record_link_keeps_its_labels_3934()
 {
     let mut arena = CoreArena::new();
-    let source = "def two : #{n : Integer, v : Path(Integer, n, n)} ; def three : #{a : Integer, \
-                  b : Integer, c : Path(Integer, a, a)} ; def chain : #{x : Integer, y : \
-                  Path(Integer, x, x), z : Path(Path(Integer, x, x), y, y)} ;";
+    let source = "def two : #{n : Integer, v : Path[.A = Integer](n, n)} ; def three : #{a : Integer, \
+                  b : Integer, c : Path[.A = Integer](a, a)} ; def chain : #{x : Integer, y : \
+                  Path[.A = Integer](x, x), z : Path[.A = Path[.A = Integer](x, x)](y, y)} ;";
     let module = lowered(source, &mut arena);
     let origins = module.origins();
     let written = |origin: crate::origin::Origin| {
@@ -730,9 +730,9 @@ fn a_selection_projects_a_dependent_record_along_its_nesting()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def first(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Integer { return p.n } \
-         def last(t : #{a : Integer, b : Integer, c : Path(Integer, a, a)}) -> -F \
-         Path(Integer, t.a, t.a) { return t.c }",
+        "def first(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return p.n } \
+         def last(t : #{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> -F \
+         Path[.A = Integer](t.a, t.a) { return t.c }",
         &mut arena,
     );
 
@@ -755,7 +755,7 @@ fn a_selection_projects_a_dependent_record_along_its_nesting()
         ],
         "the last of three is the second component of the second link"
     );
-    let source = "def lacks(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Integer { return \
+    let source = "def lacks(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return \
                   p.w }";
     assert!(
         matches!(refused(source), LoweringRefusal::UnresolvedName { .. }),
@@ -879,10 +879,10 @@ fn a_selection_by_position_projects_a_pair_401()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def first(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Integer { return p.0 } \
-         def second(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Path(Integer, p.0, p.0) \
-         { return p.1 } def by_label(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F \
-         Path(Integer, p.n, p.n) { return p.v }",
+        "def first(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return p.0 } \
+         def second(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Path[.A = Integer](p.0, p.0) \
+         { return p.1 } def by_label(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> -F \
+         Path[.A = Integer](p.n, p.n) { return p.v }",
         &mut arena,
     );
 
@@ -1722,7 +1722,7 @@ fn a_telescope_binds_each_entry_in_the_ones_after_it()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def dependent : (a : Type, x : a) => a ; def mixed : (x : Integer, String) => Integer ; \
-         def plain : (Integer, String) => Integer ; def endpoint : (n : Integer) => Path(Integer, \
+         def plain : (Integer, String) => Integer ; def endpoint : (n : Integer) => Path[.A = Integer](\
          n, n) ; def tail(n : Integer) -> -F Integer { return n }\ndef spelled : (n : Integer) \
          => Integer ;",
         &mut arena,
@@ -2275,7 +2275,7 @@ fn each_label_names_what_it_labels()
     let mut arena = CoreArena::new();
     let source = "def point : #{n : Integer} ;\ndef pair = #{m = 3} ;\ndef pick : +U ((y : \
                   Integer) -> -F Integer) ;\ndef dependent : (a : Type, x : a) => a ;\ndef ring \
-                  : #{k : Integer, w : Path(Integer, k, k)} ;";
+                  : #{k : Integer, w : Path[.A = Integer](k, k)} ;";
     let module = lowered(source, &mut arena);
     let written = |label: &Label| {
         source

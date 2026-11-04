@@ -22,10 +22,13 @@ module ReaderSchema where {
   }
   /// The flow from the old schema to the new, by its translator.
   @[ checks ]
-  def upgrade : Flow(Type, Old, New) = Flow.into(toNew);
+  def upgrade : Flow[.A = Type](Old, New) = Flow.into(toNew);
   /// The flow on readers: a reader of the new schema becomes one of the old.
   @[ checks ]
-  def reader : Flow(Type, New => Integer, Old => Integer) = Flow.arrow(upgrade, Flow.stay(Integer));
+  def reader : Flow[.A = Type](New => Integer, Old => Integer) = Flow.arrow(
+    upgrade,
+    Flow.stay(Integer)
+  );
   /// The new schema's reader of ages.
   @[ checks ]
   def age(record : New) -> Integer {

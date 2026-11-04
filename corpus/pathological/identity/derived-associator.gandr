@@ -23,16 +23,16 @@ module Written : Model(Monoid) where {
   /// The product is the signs' product.
   def mul(x : Sign, y : Sign) -> Sign { times(x, y) }
   /// The left unit law, by conversion.
-  def unitL(x : Sign) -> Path(Sign, mul(e, x), x) { Path.here(x) }
+  def unitL(x : Sign) -> Path(mul(e, x), x) { Path.here(x) }
   /// The right unit law, case by case.
-  def unitR(x : Sign) -> Path(Sign, mul(x, e), x) {
+  def unitR(x : Sign) -> Path(mul(x, e), x) {
     match x {
       Plus => Path.here(Plus),
       Minus => Path.here(Minus),
     }
   }
   /// Binary associativity, case by case.
-  def assoc(x : Sign, y : Sign, z : Sign) -> Path(Sign, mul(mul(x, y), z), mul(x, mul(y, z))) {
+  def assoc(x : Sign, y : Sign, z : Sign) -> Path(mul(mul(x, y), z), mul(x, mul(y, z))) {
     match x {
       Plus => Path.here(times(y, z)),
       Minus => match y {
@@ -47,7 +47,6 @@ module Written : Model(Monoid) where {
   /// The associator of four, refused: the derivation fills it.
   @[ refuses("DerivedComponent") ]
   def assoc4(a : Sign, b : Sign, c : Sign, d : Sign) -> Path(
-    Sign,
     mul(mul(mul(a, b), c), d),
     mul(a, mul(b, mul(c, d)))
   ) {

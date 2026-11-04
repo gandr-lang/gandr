@@ -23,7 +23,6 @@ def endoSemigroup : Model(Semigroup) = pack Endo at Model(Semigroup);
 /// The reduct, named: the monoid's record restricted to the semigroup's is the
 /// semigroup's record of the same module, by computation.
 def restricted : Path(
-  Model(Semigroup),
   endoSemigroup,
   Monoid.Semigroup(endoMonoid)
 ) = Path.here(endoSemigroup);

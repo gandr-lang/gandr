@@ -16,7 +16,6 @@ import "./subst-rename.gandr";
 /// Two substitutions at an abstraction are the abstraction of the body
 /// under both lifts, by conversion.
 def substTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> Path(
-  Term,
   subst(subst(Lam(b), s1), s2),
   Lam(subst(subst(b, Lift(s1)), Lift(s2)))
 ) {
@@ -26,12 +25,11 @@ def substTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> Path(
 /// A lookup under one binder, under a lifted substitution, is the
 /// weakened lookup under it.
 def substLookWeakens(s1 : Env, s2 : Env, m : N) -> Path(
-  Term,
   subst(look(m, s1, S(Z)), Lift(s2)),
   subst(wk(look(m, s1, Z)), Lift(s2))
 ) {
   Path.walk(
-    fun (z) { Path(Term, subst(look(m, s1, S(Z)), Lift(s2)), subst(z, Lift(s2))) },
+    fun (z) { type(Path[.A = Term](subst(look(m, s1, S(Z)), Lift(s2)), subst(z, Lift(s2)))) },
     lookWeakens(m, s1, Z),
     Path.here(subst(look(m, s1, S(Z)), Lift(s2)))
   )
@@ -40,7 +38,6 @@ def substLookWeakens(s1 : Env, s2 : Env, m : N) -> Path(
 /// A lookup under one binder, under a lifted substitution, is the
 /// substituted lookup weakened.
 def substLookWeakenLift(s1 : Env, s2 : Env, m : N) -> Path(
-  Term,
   subst(look(m, s1, S(Z)), Lift(s2)),
   wk(subst(look(m, s1, Z), s2))
 ) {
@@ -53,9 +50,9 @@ def weakenedComposites(
   s2 : Env,
   u1 : Env,
   u2 : Env,
-  h : (n : N) => Path(Term, subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2)),
+  h : (n : N) => Path[.A = Term](subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2)),
   m : N
-) -> Path(Term, wk(subst(look(m, s1, Z), s2)), wk(subst(look(m, u1, Z), u2))) {
+) -> Path[.A = Term](wk(subst(look(m, s1, Z), s2)), wk(subst(look(m, u1, Z), u2))) {
   Path.ap(wk, h(m))
 }
 
@@ -65,9 +62,9 @@ def substSquareLift(
   s2 : Env,
   u1 : Env,
   u2 : Env,
-  h : (n : N) => Path(Term, subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2)),
+  h : (n : N) => Path[.A = Term](subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2)),
   n : N
-) -> Path(Term, subst(look(n, Lift(s1), Z), Lift(s2)), subst(look(n, Lift(u1), Z), Lift(u2))) {
+) -> Path[.A = Term](subst(look(n, Lift(s1), Z), Lift(s2)), subst(look(n, Lift(u1), Z), Lift(u2))) {
   match n {
     Z => Path.here(Ix(Z)),
     S(m) => compose[5, 7](chain(3), (
@@ -86,8 +83,8 @@ pub def rec substSquare(
   s2 : Env,
   u1 : Env,
   u2 : Env,
-  h : (n : N) => Path(Term, subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2))
-) -> Path(Term, subst(subst(t, s1), s2), subst(subst(t, u1), u2)) {
+  h : (n : N) => Path[.A = Term](subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2))
+) -> Path[.A = Term](subst(subst(t, s1), s2), subst(subst(t, u1), u2)) {
   match t {
     Ix(n) => h(n),
     Lam(b) => Path.ap(
@@ -102,18 +99,16 @@ pub def rec substSquare(
       )
     ),
     Ap(f, x) => Path.walk(
-      fun (z) { Path(
-        Term,
+      fun (z) { type(Path[.A = Term](
         Ap(subst(subst(f, s1), s2), subst(subst(x, s1), s2)),
         Ap(z, subst(subst(x, u1), u2))
-      ) },
+      )) },
       substSquare[<](f, s1, s2, u1, u2, h),
       Path.walk(
-        fun (z) { Path(
-          Term,
+        fun (z) { type(Path[.A = Term](
           Ap(subst(subst(f, s1), s2), subst(subst(x, s1), s2)),
           Ap(subst(subst(f, s1), s2), z)
-        ) },
+        )) },
         substSquare[<](x, s1, s2, u1, u2, h),
         Path.here(Ap(subst(subst(f, s1), s2), subst(subst(x, s1), s2)))
       )

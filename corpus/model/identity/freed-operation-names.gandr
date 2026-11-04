@@ -26,4 +26,4 @@ def bumped() -> Integer { here(4) }
 def doubled() -> Integer { cong(4) }
 
 /// Reflexivity still stands under its former beside the bound name.
-def stillReflexive : Path(Integer, 5, 5) = Path.here(5);
+def stillReflexive : Path(5, 5) = Path.here(5);

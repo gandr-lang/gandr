@@ -103,7 +103,7 @@
 //! [`derive()`]. A refusal names its defect: a [`StratumDefect`] for the
 //! stratum, a [`UaDefect`] for the translators.
 //!
-//! The statement synthesises `Path(Type, ⌜Telₙ a⌝, ⌜Telₙ b⌝)`, as
+//! The statement synthesises `Path[.A = Type](⌜Telₙ a⌝, ⌜Telₙ b⌝)`, as
 //! `equiv(f, g)` does: the element identity at the universe, whose fibre the
 //! kernel computes as the universe path, so the target stays the certificate
 //! universe and transport along it is element transport in any motive over the
@@ -374,8 +374,8 @@ impl Universal
         self.classifier
     }
 
-    /// The identity the path inhabits at the universe, `Path(Type, ⌜Tel a⌝,
-    /// ⌜Tel b⌝)`, as `equiv(f, g)` inhabits its own.
+    /// The identity the path inhabits at the universe, `Path[.A = Type](⌜Tel
+    /// a⌝, ⌜Tel b⌝)`, as `equiv(f, g)` inhabits its own.
     ///
     /// # Specification
     /// - ensures: a path type over the value universe at level zero whose

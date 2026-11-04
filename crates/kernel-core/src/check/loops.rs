@@ -6,10 +6,10 @@
 //! as the book's dependent eliminator takes a path over the loop beside its
 //! point. `b` is the value the point's branch returns, or the case at the
 //! point where the branch computes ([`answer`]). A case with a loop arm per
-//! loop supplies that path instead, the arm checked at `Path(A[pt],
-//! ⟨transport(A, ℓ, b)⟩, b)`, or at `Path(A, b, b)` for a motive that ignores
-//! its binder ([`arm_type`]), and owes nothing more. The conversion is the
-//! kernel's own unfolding one, [`crate::replay::convert_unfolding`], under
+//! loop supplies that path instead, the arm checked at `Path[.A = A[pt]](
+//! ⟨transport(A, ℓ, b)⟩, b)`, or at `Path[.A = A](b, b)` for a motive that
+//! ignores its binder ([`arm_type`]), and owes nothing more. The conversion is
+//! the kernel's own unfolding one, [`crate::replay::convert_unfolding`], under
 //! which transport along a word computes (`crate::words`) and a definition
 //! a side runs unfolds by the kernel's evaluator; the checker decides the same
 //! obligation by its own unfolding conversion and the kernel re-derives it
@@ -230,7 +230,8 @@ struct Sides
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the sides of the circle's loop decide reflexivity at
-///   `Path(Circle, Base, x)` refused and at `Path(Circle, x, x)` admitted.
+///   `Path[.A = Circle](Base, x)` refused and at `Path[.A = Circle](x, x)`
+///   admitted.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| matches!(arena.computation(found.transported), Some(&Computation::PathTransport { .. })) && matches!(arena.computation(found.stayed), Some(&Computation::PathTransport { .. }))))]
 fn sides(
@@ -301,8 +302,8 @@ fn answer(
 
 /// The type a loop arm checks at: the path over the loop from the case's
 /// answer at the point carried along it to that answer,
-/// `F Path(A[pt], ⟨transport(A, ℓ, b)⟩, b)`, and `F Path(A, b, b)` for a
-/// motive that ignores its binder.
+/// `F Path[.A = A[pt]](⟨transport(A, ℓ, b)⟩, b)`, and `F Path[.A = A](b, b)`
+/// for a motive that ignores its binder.
 ///
 /// # Specification
 /// - requires: `case` is a data case over `datatype`, whose motive is `motive`.
@@ -317,8 +318,8 @@ fn answer(
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `invLooper`'s arm `loop => back(loop)` checks at
-///   `Path(Circle, Base, Base)`, and a dependent arm at the wrong endpoints is
+/// - hypothesis: L3 — `invLooper`'s arm `loop => back(loop)` checks at `Path[.A
+///   = Circle](Base, Base)`, and a dependent arm at the wrong endpoints is
 ///   refused.
 /// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&built| matches!(arena.comp_type(built), Some(&CompType::Returner(_)))))]
@@ -387,11 +388,11 @@ pub(super) fn arm_type(
 /// - measure: the loops left, then the combinations left.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — over the circle, `Base => here(Base)` at `Path(Circle,
-///   Base, x)` is refused at its loop while the same arm at `Path(Circle, x,
-///   x)` is admitted, as the checker refuses and admits them; `rotInv1`'s
-///   obligation over `a` holds at `b = Base`, and the same nesting over a fibre
-///   of paths of paths is refused.
+/// - hypothesis: L3 — over the circle, `Base => here(Base)` at `Path[.A =
+///   Circle]( Base, x)` is refused at its loop while the same arm at `Path[.A =
+///   Circle](x, x)` is admitted, as the checker refuses and admits them;
+///   `rotInv1`'s obligation over `a` holds at `b = Base`, and the same nesting
+///   over a fibre of paths of paths is refused.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 /// - witness: `tests::native_formers::a_nested_loop_obligation_holds_the_other_scrutinee_at_its_point_464`
 /// - witness: `tests::native_formers::a_nested_loop_obligation_owes_its_square_off_a_set_464`
@@ -648,8 +649,8 @@ fn nullary_constructors(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `Some(D)` exactly when `family` is `Path(D, l, r)` for a `D` that
-///   [`nullary_constructors`] reads; `None` otherwise.
+/// - ensures: `Some(D)` exactly when `family` is `Path[.A = D](l, r)` for a `D`
+///   that [`nullary_constructors`] reads; `None` otherwise.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -685,7 +686,7 @@ fn presented_set(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the collapse's motive `F Circle` ignores its binder and
-///   owes no loop, while `F Path(Circle, x, x)` reads it and owes one.
+///   owes no loop, while `F Path[.A = Circle](x, x)` reads it and owes one.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(captures: closed = u32::from(arena.comp_type_support(motive).depth()) == 0,
     ensures: |ret| !closed || ret == BinderUse::Ignored)]

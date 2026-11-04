@@ -62,8 +62,8 @@
 //! # A later label reads an earlier one: the dependent record
 //!
 //! A labelled telescope type binds each label in the entries after it, as a
-//! telescope Π binds its entries: `#{n : Integer, v : Path(Integer, n, n)}`.
-//! Where no later entry names an earlier label it is the record of its
+//! telescope Π binds its entries: `#{n : Integer, v : Path[.A = Integer](n,
+//! n)}`. Where no later entry names an earlier label it is the record of its
 //! fields, so a record's type is unchanged by the labels it binds; where one
 //! does, it is the core's dependent pairs nested to the right, the labels
 //! erased, each link a `Σ` when a later entry names its label and the eager

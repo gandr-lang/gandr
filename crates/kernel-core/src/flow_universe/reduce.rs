@@ -75,9 +75,9 @@ enum Head
 ///   — the argument ridden along the domain flow, the function applied, the
 ///   result ridden along the codomain flow — and a flow product rides a pair's
 ///   components along its two flows, left then right; at a singleton motive
-///   `Flow(D, l, x)` or `Flow_U(l, x)` a `stay` value returns the flow and any
-///   other value composes with it. Otherwise `Stuck`: a session simulation, a
-///   feedback seam, a neutral flow and a flow product at a value that is no
+///   `Flow[.A = D](l, x)` or `Flow_U(l, x)` a `stay` value returns the flow and
+///   any other value composes with it. Otherwise `Stuck`: a session simulation,
+///   a feedback seam, a neutral flow and a flow product at a value that is no
 ///   pair have no endpoint-value action.
 /// - provides: the replay's δ-free directed computation: a named flow leaves
 ///   the ride stuck at its head, and a named translator stands at the head of
@@ -286,8 +286,8 @@ where
 /// The singleton row: a flow from `l` ridden along a flow from its target.
 ///
 /// # Specification
-/// - requires: the motive is `Flow(D, l, x)` or `Flow_U(l, x)` with `D` and `l`
-///   ignoring the binder `x`.
+/// - requires: the motive is `Flow[.A = D](l, x)` or `Flow_U(l, x)` with `D`
+///   and `l` ignoring the binder `x`.
 /// - ensures: the ridden flow when the value is `stay`, else the composition of
 ///   the value then the flow.
 /// - panics: none.

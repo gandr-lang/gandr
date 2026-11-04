@@ -1,4 +1,4 @@
-//! Element identity in the lowering: the path type `Path(A, a, b)`, its
+//! Element identity in the lowering: the path type `Path[.A = A](a, b)`, its
 //! reflexivity `Path.here(a)`, function extensionality `Path.funext(f, g)`,
 //! universe equivalence `equiv(f, g)`, the product of two universe paths
 //! `Path.product(p, q)`, transport `Path.walk(fun (X) { T }, p, v)` and its
@@ -17,11 +17,11 @@
 //! refused: it reaches the position as the value it returns, a compound
 //! endpoint the checker compares by what it computes and admits only when
 //! it is pure. The alternative, refusing every endpoint that is not a value,
-//! is the reading that made `Path(Integer, mul(neutral, x), x)` unwritable; a
-//! statement the author must name first, `let m = mul(neutral, x)`, cannot
-//! stand in a type. Reversal: an endpoint language with its own let, which
-//! would bind the computation once and reuse it in both the type and the
-//! body.
+//! is the reading that made `Path[.A = Integer](mul(neutral, x), x)`
+//! unwritable; a statement the author must name first, `let m = mul(neutral,
+//! x)`, cannot stand in a type. Reversal: an endpoint language with its own
+//! let, which would bind the computation once and reuse it in both the type and
+//! the body.
 //!
 //! An endpoint is a term inside a type, so a parameter it names is read at
 //! its index in the type's telescope and makes the arrow binding it
@@ -62,33 +62,33 @@
 //!
 //! # `transport` states its motive
 //!
-//! `Path.walk(fun (X) { T }, p, v)` moves `v : T[a/X]` along `p : Path(A, a,
-//! b)` to `T[b/X]`. Its motive is written as a static abstraction whose body is
-//! the family over the path's carrier, so `fun (X) { List(X) }` over a universe
-//! path is `y. List(El y)`; the transport stands as a computation. A motive
-//! written any other way is refused as unannotated. The alternative, inferring
-//! the motive from the expected type, is higher-order unification, which the
-//! checker does not do. Reversal: a checker that elaborates the motive from
-//! the operand's and the answer's types.
+//! `Path.walk(fun (X) { T }, p, v)` moves `v : T[a/X]` along `p : Path[.A =
+//! A](a, b)` to `T[b/X]`. Its motive is written as a static abstraction whose
+//! body is the family over the path's carrier, so `fun (X) { List(X) }` over a
+//! universe path is `y. List(El y)`; the transport stands as a computation. A
+//! motive written any other way is refused as unannotated. The alternative,
+//! inferring the motive from the expected type, is higher-order unification,
+//! which the checker does not do. Reversal: a checker that elaborates the
+//! motive from the operand's and the answer's types.
 //!
 //! # A derived operation synthesises its path at the words
 //!
 //! `Path.back(p)`, `Path.step(p, q)` and `Path.ap(f, p)` are transports whose
 //! motive names the carrier and the endpoint that stays fixed
 //! (`gandr_core_term::identity`). Where the position answers a written path
-//! type — the function's result or the match's answer, `-F Path(A, a, b)` or
-//! `Path(A, a, b)` — the lowering reads both off it, relocated to where the
-//! operation stands. Anywhere else, in a type, a constant's value, a call's
+//! type — the function's result or the match's answer, `-F Path[.A = A](a, b)`
+//! or `Path[.A = A](a, b)` — the lowering reads both off it, relocated to where
+//! the operation stands. Anywhere else, in a type, a constant's value, a call's
 //! argument or a thunk, the operation synthesises them from its operands: the
 //! loop, a word of the loop's words, or another derived operation stands at
-//! `Path(F, x, x)` or at the path type recorded against it, `F` the family and
-//! `x` the point its words spell, so `Path.back(p)` at `p : Path(A, a, b)`
-//! stands at `Path(A, b, a)`, `Path.step(p, q)` at `Path(A, a, c)` and
-//! `Path.ap(f, p)` at `Path(B, ⟨f a⟩, ⟨f b⟩)`, `B` the result type `f`'s
-//! definition writes under no binder of its telescope, or the codomain of the
-//! map its signature states. An operation whose motive's path — `back`'s and
-//! `cong`'s path, `then`'s first — is read no such way, or whose function did
-//! not lower, is refused as unannotated, and `cong` at a constructor as
+//! `Path[.A = F](x, x)` or at the path type recorded against it, `F` the family
+//! and `x` the point its words spell, so `Path.back(p)` at `p : Path[.A = A](a,
+//! b)` stands at `Path[.A = A](b, a)`, `Path.step(p, q)` at `Path[.A = A](a,
+//! c)` and `Path.ap(f, p)` at `Path[.A = B](⟨f a⟩, ⟨f b⟩)`, `B` the result type
+//! `f`'s definition writes under no binder of its telescope, or the codomain of
+//! the map its signature states. An operation whose motive's path — `back`'s
+//! and `cong`'s path, `then`'s first — is read no such way, or whose function
+//! did not lower, is refused as unannotated, and `cong` at a constructor as
 //! [`FragmentBoundary::NotAFunction`]. A lambda
 //! `fun (q) { e }` as `cong`'s function takes the carrier its path's written
 //! type states, and the motive reads its body `e` where `⟨f y⟩` would stand.
@@ -142,7 +142,7 @@
 //! Five operands, `Path.walk(+U ((y : A) -> (z : B) -> -F C), p, z₀, q, v)`,
 //! spell the transport whose motive depends on the path's endpoint `y` and on
 //! an element `z` of the family over it (`gandr_core_term::identity`):
-//! `p : Path(A, a, b)`, `z₀ : B[a]`, `q` an identity over `p` from `z₀`
+//! `p : Path[.A = A](a, b)`, `z₀ : B[a]`, `q` an identity over `p` from `z₀`
 //! transported along it to some `z₁ : B[b]`, and `v : C[a, z₀]`; it returns
 //! `C[b, z₁]`. The motive is read as a value type, the thunk of the
 //! computation type `Π (y : A). Π (z : B). -F C` that the telescope alias
@@ -159,7 +159,7 @@
 //! point and an element. Reversal: a type-level lambda in argument position
 //! would write the motive as the family it is. `J` is not a primitive: it is
 //! this transport in the singleton,
-//! `transport(+U ((y : A) -> (q : Path(A, a, y)) -> -F C), p, here(a),
+//! `transport(+U ((y : A) -> (q : Path[.A = A](a, y)) -> -F C), p, here(a),
 //! here(p), d)`, written as an ordinary definition.
 //!
 //! # Reflexivity is not a pattern
@@ -174,12 +174,12 @@
 //! # Session identity names the engine's two relations
 //!
 //! `Path.bisim(A, B)` and `Flow.sim(A, B)` read two session codes as values and
-//! stand as values of `Path(Type, A, B)` and of the directed `Flow(Type, A,
-//! B)`; `Path.bisim(A, B, p)` reads its payload paths `p` as a value too.
-//! `gandr_core_checker`'s flow rules decide both by the session engine and
-//! record the decisions the kernel replays. `Flow(A, a, b)` is read as
-//! `Path(A, a, b)` is. `Flow.stay(a)` is the identity flow, `Flow.then(f, g)`
-//! composes two flows where the position answers a written flow type, and
+//! stand as values of `Path[.A = Type](A, B)` and of the directed `Flow[.A =
+//! Type](A, B)`; `Path.bisim(A, B, p)` reads its payload paths `p` as a value
+//! too. `gandr_core_checker`'s flow rules decide both by the session engine and
+//! record the decisions the kernel replays. `Flow[.A = A](a, b)` is read as
+//! `Path[.A = A](a, b)` is. `Flow.stay(a)` is the identity flow, `Flow.then(f,
+//! g)` composes two flows where the position answers a written flow type, and
 //! `Flow.ride(fun (X) { T }, f, v)` moves `v` along `f` in the family its
 //! static abstraction states, as `Path.walk` does. The alternatives — an infix
 //! `A <: B`, statements over translators as `equiv` takes — are recorded with
@@ -188,19 +188,20 @@
 //! # A flow between data is one translator
 //!
 //! `Flow.into(f)` reads one closed translator as a value and stands as a value
-//! of `Flow(Type, A, B)`, `f : U(A → F B)`; the checker decides it by running
-//! `f` at every input pattern of `A`. `Flow.arrow(d, c)` reads two flows, `d :
-//! Flow(Type, A', A)` into the argument and `c : Flow(Type, B, B')` out of the
-//! result, and stands as a value of `Flow(Type, ⌜U(A → F B)⌝, ⌜U(A' → F
-//! B')⌝)`: the domain flow is written first and runs against the function, as
-//! the arrow's own variance reads. The spelling follows `equiv(f, g)`, one call
-//! per statement; the alternatives, `Flow_U(A, B)` taking a translator or an
-//! infix `d -> c` over flows, would overload a type head or the arrow tile.
-//! Reversal: a type-directed `forward` that reads its endpoints off the
-//! position's answer, once the checker elaborates against expected types.
+//! of `Flow[.A = Type](A, B)`, `f : U(A → F B)`; the checker decides it by
+//! running `f` at every input pattern of `A`. `Flow.arrow(d, c)` reads two
+//! flows, `d : Flow[.A = Type](A', A)` into the argument and `c : Flow[.A =
+//! Type](B, B')` out of the result, and stands as a value of `Flow[.A =
+//! Type](⌜U(A → F B)⌝, ⌜U(A' → F B')⌝)`: the domain flow is written first and
+//! runs against the function, as the arrow's own variance reads. The spelling
+//! follows `equiv(f, g)`, one call per statement; the alternatives, `Flow_U(A,
+//! B)` taking a translator or an infix `d -> c` over flows, would overload a
+//! type head or the arrow tile. Reversal: a type-directed `forward` that reads
+//! its endpoints off the position's answer, once the checker elaborates against
+//! expected types.
 //!
 //! `Path.back(f)` where the position answers a written flow type is the
-//! symmetry ride `Flow.ride(fun (y) { Flow(A, y, b) }, f, Flow.stay(b))`
+//! symmetry ride `Flow.ride(fun (y) { Flow[.A = A](y, b) }, f, Flow.stay(b))`
 //! (`gandr_core_term::identity::back_flow`), which the checker refuses by
 //! its motive; `cong` has no flow reading.
 //!
@@ -228,19 +229,20 @@
 //!
 //! # Three relations between types abbreviate a record or a flow
 //!
-//! Beside `Path(A, a, b)` and `Flow(Type, A, B)`, three infix formers relate
-//! two types, in one band just above the arrow:
+//! Beside `Path[.A = A](a, b)` and `Flow[.A = Type](A, B)`, three infix formers
+//! relate two types, in one band just above the arrow:
 //!
 //! - `A ≅ B`, also written `Iso(A, B)`, the quasi-inverse: the record `#{into :
-//!   +U (A -> -F B), from : +U (B -> -F A), sect : (a : A) => Path(A,
-//!   from(into(a)), a), retr : (b : B) => Path(B, into(from(b)), b)}`.
+//!   +U (A -> -F B), from : +U (B -> -F A), sect : (a : A) => Path[.A = A](
+//!   from(into(a)), a), retr : (b : B) => Path[.A = B](into(from(b)), b)}`.
 //! - `A ≃ B`, also written `A <~> B`, the equivalence as the bi-invertible map:
 //!   `#{into : +U (A -> -F B), linv : #{from : +U (B -> -F A), sect : (a : A)
-//!   => Path(A, from(into(a)), a)}, rinv : #{from : +U (B -> -F A), retr : (b :
-//!   B) => Path(B, into(from(b)), b)}}`. Every pair of translators is named
-//!   `into` and `from`, each inverse's `from` inside its own record.
-//! - `A ⇝ B`, also written `A ~~> B`, the flow `Flow(Type, A, B)` between two
-//!   codes at the universe a bare `Type` names; `Flow.into(f)` introduces it.
+//!   => Path[.A = A](from(into(a)), a)}, rinv : #{from : +U (B -> -F A), retr :
+//!   (b : B) => Path[.A = B](into(from(b)), b)}}`. Every pair of translators is
+//!   named `into` and `from`, each inverse's `from` inside its own record.
+//! - `A ⇝ B`, also written `A ~~> B`, the flow `Flow[.A = Type](A, B)` between
+//!   two codes at the universe a bare `Type` names; `Flow.into(f)` introduces
+//!   it.
 //!
 //! Each mints exactly the core its written record or flow lowers to, so a
 //! value of the one is a value of the other and the kernel gains no node. The
@@ -336,6 +338,7 @@ use super::lowered;
 use super::native::Answer;
 use super::native::record_since;
 use super::native::rooted;
+use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
@@ -387,25 +390,11 @@ pub(super) const BACK: &str = "back";
 pub(super) const NIL: &str = "nil";
 
 /// The directed identity type's head, resolved after every binder and
-/// earlier declaration at two or three arguments.
+/// earlier declaration at two arguments.
 pub(super) const FLOW: &str = "Flow";
 
 /// The implicit that names a path-shaped type's carrier, `Path[.A = C](a, b)`.
 pub(super) const CARRIER: &str = "A";
-
-/// The operands a `Flow` type application writes: its carrier and its two
-/// endpoints, or its two endpoints alone.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum FlowOperands
-{
-    /// `Flow(A, a, b)`.
-    Three([NodeIndex; 3]),
-    /// `Flow(a, b)`, the carrier omitted.
-    Two([NodeIndex; 2]),
-}
 
 /// The quasi-inverse's head, `Iso(A, B)`, the spelling of `A ≅ B` as an
 /// application, resolved after every binder and earlier declaration at two
@@ -882,8 +871,8 @@ impl Codomain
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: the operation's transport returns an element of `Path(carrier,
-///   left, right)`.
+/// - ensures: the operation's transport returns an element of `Path[.A =
+///   carrier]( left, right)`.
 /// - executable: none — the ids hold no arena to check them against.
 ///
 /// # Adequacy
@@ -931,7 +920,7 @@ enum Typed
     /// A call, by its function's written result.
     Called(Callee),
     /// A reflexivity `Path.here(x)` at a binder, by the binder's written type
-    /// `A`: the reflexivity stands at `Path(A, x, x)`.
+    /// `A`: the reflexivity stands at `Path[.A = A](x, x)`.
     Point
     {
         /// The binder's written type.
@@ -1236,9 +1225,9 @@ struct Stood
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Answered
 {
-    /// `Path(A, a, b)`.
+    /// `Path[.A = A](a, b)`.
     Path,
-    /// `Flow(A, a, b)`.
+    /// `Flow[.A = A](a, b)`.
     Flow,
 }
 
@@ -1271,10 +1260,10 @@ pub(super) struct Transported
 
 impl<'source> Lowerer<'_, 'source>
 {
-    /// Classify a path type, `Path(A, a, b)`, `Path(Type, A, B)` at a universe
-    /// its own tiles spell, or `Path[.A = A](a, b)` and `Path[.A](a, b)` with
-    /// the carrier supplied by name; or a bridge type, read alike under its
-    /// own head.
+    /// Classify a path type, `Path(a, b)` with its carrier left to the
+    /// endpoints, `Path[.A = A](a, b)` and `Path[.A](a, b)` with it supplied
+    /// by name, or `Path[.A = Type](A, B)` at a universe its own tiles spell;
+    /// or a bridge type, read alike under its own head.
     ///
     /// # Specification
     /// - requires: `site` is a path or bridge type, as `relating` names, in
@@ -1293,13 +1282,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a closed path type and one whose endpoint is a
     ///   computation, each read back out of the arena; a path at a universe
     ///   between a sum and a session type reads each endpoint as its code; a
-    ///   carrier supplied by name, or from the variable `A`, is the carrier
-    ///   written first.
+    ///   carrier supplied from the variable `A` is the carrier supplied by
+    ///   name, and one left out a nominated hole.
     /// - witness: `lower::identity::tests::a_path_type_and_reflexivity_lower_to_their_formers`
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
     /// - witness: `lower::identity::tests::a_path_at_a_universe_reads_its_endpoints_as_types_402`
     /// - witness: `lower::identity::tests::a_bridge_type_lowers_to_the_core_bridge_3427`
-    /// - witness: `lower::identity::tests::a_carrier_supplied_by_name_is_the_carrier_written_first_4932`
+    /// - witness: `lower::identity::tests::a_carrier_supplied_by_name_is_the_type_it_names_4932`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -1308,8 +1297,7 @@ impl<'source> Lowerer<'_, 'source>
                     Some(&Plan::Path(planned, carrier, left, right))
                         if planned == relating && match carrier {
                             Carrier::Written(carrier) => self.reading(carrier) == Reading::ValueType(site.reading.frame()),
-                            Carrier::Universe(_) => true,
-                            Carrier::Omitted(_) => false,
+                            Carrier::Universe(_) | Carrier::Omitted(_) => true,
                         }
                             && self.reading(left) == Reading::Value(site.reading.frame())
                             && self.reading(right) == Reading::Value(site.reading.frame())
@@ -1350,9 +1338,9 @@ impl<'source> Lowerer<'_, 'source>
     /// The form's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a flow whose carrier is supplied by name is the flow
-    ///   whose carrier is written first.
-    /// - witness: `lower::identity::tests::a_carrier_supplied_by_name_is_the_carrier_written_first_4932`
+    /// - hypothesis: L3 — a flow whose carrier is supplied by name carries the
+    ///   type the supply names.
+    /// - witness: `lower::identity::tests::a_carrier_supplied_by_name_is_the_type_it_names_4932`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -1381,20 +1369,23 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Read the carrier and the two endpoints of a path-shaped type under the
-    /// head `head`: written first, `Path(A, a, b)`; a universe its own tiles
-    /// spell, `Path(Type, A, B)`; or supplied by name, `Path[.A = A](a, b)`,
-    /// or from the variable `A`, `Path[.A](a, b)`.
+    /// head `head`: supplied by name, `Path[.A = A](a, b)`; a universe its own
+    /// tiles spell, `Path[.A = Type](A, B)`; supplied from the variable `A`,
+    /// `Path[.A](a, b)`; or left to the endpoints, `Path(a, b)`.
     ///
     /// # Specification
     /// - requires: `cursor` holds the form's pieces, its head first.
     /// - ensures: each endpoint is read as a value standing inside a type,
-    ///   under `frame`. A written or supplied carrier is read as a value type,
-    ///   the variable `A` where the supply puns. A universe carrier is the
-    ///   universe its tiles spell, and its endpoints, written at the type sort,
-    ///   are read as the codes of the types they spell.
+    ///   under `frame`. A supplied carrier is read as a value type, the
+    ///   variable `A` where the supply puns. A universe carrier is the universe
+    ///   its tiles spell, and its endpoints, written at the type sort, are read
+    ///   as the codes of the types they spell. A carrier the form leaves out is
+    ///   a hole it nominates for the implicit `A` of `head`.
     /// - fails: [`LoweringRefusal::UnresolvedName`] for a supply naming an
-    ///   implicit other than `A`; a misplaced-tile or extra-operand fault for a
-    ///   form out of shape.
+    ///   implicit other than `A`; [`FormFault::PositionalCarrier`] at the head
+    ///   of a bare form over three operands, its carrier written first; a
+    ///   misplaced-tile or extra-operand fault for a form out of shape; the
+    ///   budget refusal once no hole name is left.
     /// - panics: none.
     ///
     /// # Errors
@@ -1402,9 +1393,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::path_type`]; a supply naming `B` is
-    ///   refused at `B`.
-    /// - witness: `lower::identity::tests::a_carrier_supplied_by_name_is_the_carrier_written_first_4932`
-    #[spec(ensures: |ret| ret.as_ref().is_err_and(|refusal| matches!(*refusal, LoweringRefusal::UnresolvedName { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::OutOfFragment { .. }))
+    ///   refused at `B`, and a carrier written first at the head.
+    /// - witness: `lower::identity::tests::a_carrier_supplied_by_name_is_the_type_it_names_4932`
+    /// - witness: `lower::identity::tests::a_carrier_written_first_is_refused_5024`
+    #[spec(ensures: |ret| ret.as_ref().is_err_and(|refusal| matches!(*refusal, LoweringRefusal::UnresolvedName { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::BudgetExceeded { .. }))
         || ret.as_ref().is_ok_and(|&(_, left, right)| self.reading(left) == Reading::Value(frame)
             && self.reading(right) == Reading::Value(frame)
             && self.in_type.contains(&left)
@@ -1419,8 +1411,9 @@ impl<'source> Lowerer<'_, 'source>
         frame: Frame,
     ) -> Result<(Carrier, NodeIndex, NodeIndex), LoweringRefusal<'source>>
     {
+        let written = cursor.here();
         closed(site, cursor, head)?;
-        let carrier = if let Maybe::Present(_) = cursor.at(TileName::BRACKET_OPEN) {
+        let supplied = if let Maybe::Present(_) = cursor.at(TileName::BRACKET_OPEN) {
             closed(site, cursor, TileName::BRACKET_OPEN)?;
             closed(site, cursor, TileName::DOT)?;
             let named = site.one(cursor.operands())?;
@@ -1447,27 +1440,24 @@ impl<'source> Lowerer<'_, 'source>
                 Carrier::Written(named.node)
             };
             closed(site, cursor, TileName::BRACKET_CLOSE)?;
-            closed(site, cursor, TileName::PAREN_OPEN)?;
-            carrier
+            Some(carrier)
         }
         else {
-            closed(site, cursor, TileName::PAREN_OPEN)?;
-            let carrier = if let Maybe::Present(_) = cursor.at(TileName::UNIVERSE) {
-                Carrier::Universe(self.universe_tiles(site, cursor)?)
-            }
-            else {
-                let written = site.one(cursor.operands())?;
-                self.read(written.node, Reading::ValueType(frame));
-                Carrier::Written(written.node)
-            };
-            closed(site, cursor, TileName::COMMA)?;
-            carrier
+            None
         };
+        closed(site, cursor, TileName::PAREN_OPEN)?;
         let left = site.one(cursor.operands())?;
         closed(site, cursor, TileName::COMMA)?;
         let right = site.one(cursor.operands())?;
+        if let (None, Maybe::Present(_)) = (supplied, cursor.at(TileName::COMMA)) {
+            return Err(site.fault(written, FormFault::PositionalCarrier(head)));
+        }
         closed(site, cursor, TileName::PAREN_CLOSE)?;
         exhausted(site, cursor)?;
+        let carrier = match supplied {
+            Some(carrier) => carrier,
+            None => self.omitted_carrier(head)?,
+        };
         self.read(left.node, Reading::Value(frame));
         self.read(right.node, Reading::Value(frame));
         self.in_type.extend([left.node, right.node]);
@@ -1476,20 +1466,21 @@ impl<'source> Lowerer<'_, 'source>
         Ok((carrier, left.node, right.node))
     }
 
-    /// Classify a path or bridge type written as a call, `Path(A, a, b)` or
-    /// `Bridge(A, a, b)` where a value is read, its three operands already
-    /// read off the call.
+    /// Classify a path or bridge type written as a call, `Path(a, b)` or
+    /// `Bridge(a, b)` where a value is read, its two endpoints already read
+    /// off the call.
     ///
     /// # Specification
     /// - requires: `site` is a call headed `Path` or `Bridge`, as `relating`
-    ///   names, which nothing the scope binds answers, written over `carrier`,
-    ///   `left` and `right`.
-    /// - ensures: the form stands as a value type, reads its carrier as a value
-    ///   type and its two endpoints as endpoints standing inside a type, all
-    ///   under its own frame, and is planned over the three, the carrier as
-    ///   written; where a value is read the type is quoted.
+    ///   names, which nothing the scope binds answers, written over the two
+    ///   endpoints `written`.
+    /// - ensures: the form stands as a value type, reads its two endpoints as
+    ///   endpoints standing inside a type under its own frame, and is planned
+    ///   over a hole it nominates for the implicit `A` of its head and the two;
+    ///   where a value is read the type is quoted.
     /// - provides: the path type an argument of a parameter `t : Type` spells.
-    /// - fails: yields the wrong-sort refusal where no value type is read.
+    /// - fails: yields the wrong-sort refusal where no value type is read, and
+    ///   the budget refusal once no hole name is left.
     /// - panics: none.
     ///
     /// # Errors
@@ -1497,17 +1488,16 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a path type written as a declaration's body, read
-    ///   back out of the arena as the quote of the path type over its carrier
-    ///   and endpoints.
+    ///   back out of the arena as the quote of the path type over its
+    ///   endpoints.
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&Plan::Path(planned, Carrier::Written(carrier), left, right))
-                        if planned == relating && [carrier, left, right] == written
-                            && self.reading(carrier) == Reading::ValueType(site.reading.frame())
+                    Some(&Plan::Path(planned, Carrier::Omitted(_), left, right))
+                        if planned == relating && [left, right] == written
                             && self.reading(left) == Reading::Value(site.reading.frame())
                             && self.reading(right) == Reading::Value(site.reading.frame())
                             && self.in_type.contains(&left)
@@ -1520,39 +1510,63 @@ impl<'source> Lowerer<'_, 'source>
     pub(super) fn written_path(
         &mut self,
         site: Site,
-        written: [NodeIndex; 3],
+        written: [NodeIndex; 2],
         relating: Relating,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::ValueType)?;
-        let [carrier, left, right] = written;
-        self.read(carrier, Reading::ValueType(frame));
+        let carrier = self.omitted_carrier(relating.head())?;
+        let [left, right] = written;
         self.read(left, Reading::Value(frame));
         self.read(right, Reading::Value(frame));
         self.in_type.extend([left, right]);
         self.at_endpoint.extend([left, right]);
-        self.plan(
-            site,
-            Plan::Path(relating, Carrier::Written(carrier), left, right),
-        );
+        self.plan(site, Plan::Path(relating, carrier, left, right));
 
         Ok(())
     }
 
+    /// The hole a path-shaped type under the head `head` nominates for the
+    /// implicit `A` of its head, the carrier it leaves out.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: an omitted carrier over a hole nominated for `A` of `head`.
+    /// - fails: the budget refusal once no hole name is left.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::nominate`].
+    /// - witness: `lower::identity::tests::an_omitted_carrier_is_a_nominated_hole_4932`
+    #[spec(ensures: |ret| ret.as_ref().is_err_and(|refusal| matches!(*refusal, LoweringRefusal::BudgetExceeded { .. }))
+        || matches!(ret, Ok(Carrier::Omitted(_))))]
+    fn omitted_carrier(
+        &mut self,
+        head: TileName,
+    ) -> Result<Carrier, LoweringRefusal<'source>>
+    {
+        self.nominate(super::implicit::Nomination::Omitted {
+            function: head.spelling(),
+            implicit: SurfaceName::from(CARRIER),
+        })
+        .map(Carrier::Omitted)
+    }
+
     /// Classify a directed identity type written as a type application,
-    /// `Flow(A, a, b)` or `Flow(a, b)`, its operands already read off the
-    /// application.
+    /// `Flow(a, b)`, its two endpoints already read off the application.
     ///
     /// # Specification
     /// - requires: `site` is a type application headed `Flow`, which nothing
-    ///   the scope binds answers, written over `written`: the carrier and the
-    ///   two endpoints, or the two endpoints alone.
-    /// - ensures: the form stands as a value type, reads a written carrier as a
-    ///   value type and its two endpoints as endpoints standing inside a type,
-    ///   all under its own frame, and is planned over the three. A carrier the
-    ///   form omits is a hole it nominates for the implicit `A` of `Flow`.
+    ///   the scope binds answers, written over the two endpoints `written`.
+    /// - ensures: the form stands as a value type, reads its two endpoints as
+    ///   endpoints standing inside a type under its own frame, and is planned
+    ///   over a hole it nominates for the implicit `A` of `Flow` and the two.
     /// - provides: directed identity's type former.
-    /// - fails: yields the wrong-sort refusal where no value type is read.
+    /// - fails: yields the wrong-sort refusal where no value type is read, and
+    ///   the budget refusal once no hole name is left.
     /// - panics: none.
     ///
     /// # Errors
@@ -1560,8 +1574,8 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a flow between two session codes read back out of the
-    ///   arena with its carrier and endpoints in order; a flow omitting its
-    ///   carrier reads it as the decoding of a nominated hole.
+    ///   arena with its endpoints in order, its carrier the decoding of a
+    ///   nominated hole.
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `lower::identity::tests::an_omitted_carrier_is_a_nominated_hole_4932`
     #[spec(
@@ -1569,14 +1583,8 @@ impl<'source> Lowerer<'_, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&Plan::Flow(carrier, left, right))
-                        if match (carrier, written) {
-                            (Carrier::Written(carrier), FlowOperands::Three([at, from, to])) => [carrier, left, right] == [at, from, to]
-                                && self.reading(carrier) == Reading::ValueType(site.reading.frame()),
-                            (Carrier::Omitted(_), FlowOperands::Two([from, to])) => [left, right] == [from, to],
-                            (Carrier::Written(_) | Carrier::Universe(_), FlowOperands::Two(_))
-                            | (Carrier::Omitted(_) | Carrier::Universe(_), FlowOperands::Three(_)) => false,
-                        }
+                    Some(&Plan::Flow(Carrier::Omitted(_), left, right))
+                        if [left, right] == written
                             && self.reading(left) == Reading::Value(site.reading.frame())
                             && self.reading(right) == Reading::Value(site.reading.frame())
                             && self.at_endpoint.contains(&left)
@@ -1587,23 +1595,12 @@ impl<'source> Lowerer<'_, 'source>
     pub(super) fn flow_type(
         &mut self,
         site: Site,
-        written: FlowOperands,
+        written: [NodeIndex; 2],
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::ValueType)?;
-        let (carrier, [left, right]) = match written {
-            FlowOperands::Three([carrier, left, right]) => {
-                self.read(carrier, Reading::ValueType(frame));
-                (Carrier::Written(carrier), [left, right])
-            },
-            FlowOperands::Two(endpoints) => {
-                let hole = self.nominate(super::implicit::Nomination::Omitted {
-                    function: SurfaceName::from(FLOW),
-                    implicit: SurfaceName::from(CARRIER),
-                })?;
-                (Carrier::Omitted(hole), endpoints)
-            },
-        };
+        let carrier = self.omitted_carrier(TileName::FLOW_TYPE)?;
+        let [left, right] = written;
         self.read(left, Reading::Value(frame));
         self.read(right, Reading::Value(frame));
         self.in_type.extend([left, right]);
@@ -1663,8 +1660,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the form stands as a value type and is planned over its two
     ///   operands. The equivalence and the quasi-inverse read both as value
     ///   types under the form's frame; the flow reads both as endpoints
-    ///   standing inside a type, the codes of the types they spell, as
-    ///   `Flow(Type, A, B)` reads its endpoints.
+    ///   standing inside a type, the codes of the types they spell, as `Flow[.A
+    ///   = Type](A, B)` reads its endpoints.
     /// - provides: the one planning step both spellings of a relation share.
     /// - fails: yields the wrong-sort refusal where no value type is read.
     /// - panics: none.
@@ -1800,11 +1797,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: both operands are already minted or absent.
     /// - ensures: the quasi-inverse as [`quasi_inverse`] mints it, the
-    ///   equivalence as [`bi_invertible`] mints it, and the flow as `Flow(Type,
-    ///   A, B)` lowers; the type carries the written origin and every node
-    ///   minted below it the same origin as [`Insertion::Relation`], and the
-    ///   origin table records the relation against the type. Nothing when an
-    ///   operand did not lower.
+    ///   equivalence as [`bi_invertible`] mints it, and the flow as `Flow[.A =
+    ///   Type]( A, B)` lowers; the type carries the written origin and every
+    ///   node minted below it the same origin as [`Insertion::Relation`], and
+    ///   the origin table records the relation against the type. Nothing when
+    ///   an operand did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -3317,7 +3314,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `abstraction` and `path` are operands of the operation at
     ///   `site`, which stands under `frame`; neither is classified yet.
     /// - ensures: where `path` is a bare name of a binder written at a path
-    ///   type `Path(A, a, b)`, `abstraction` is recorded in
+    ///   type `Path[.A = A](a, b)`, `abstraction` is recorded in
     ///   [`Self::over_points`] with `A`'s node; nothing is recorded for any
     ///   other path.
     /// - fails: the path name's own refusal.
@@ -4403,7 +4400,7 @@ impl<'source> Lowerer<'_, 'source>
                 Some(&Plan::Constructor(constructed)) => {
                     matches!(self.words_at(constructed.family), Maybe::Present(_))
                 },
-                // `Path.here(x)` at a binder of any written type stands at `Path(A,
+                // `Path.here(x)` at a binder of any written type stands at `Path[.A = A](
                 // x, x)`, `A` that type (#3834). At any other point, one
                 // reflexivity is read through to the path the point is.
                 Some(&Plan::Here(point)) if reflexivity.is_none() => {
@@ -4442,10 +4439,11 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `answer` is a node read where a result is read.
     /// - ensures: the path answer exactly when the walk from `answer` through
     ///   parenthesised types and one `-F` reaches a path type, and the flow
-    ///   answer when it reaches a type application headed `Flow` at three
-    ///   arguments or a flow between types written `A ⇝ B`.
+    ///   answer when it reaches a flow type supplying its carrier, a type
+    ///   application headed `Flow` at two arguments, or a flow between types
+    ///   written `A ⇝ B`.
     /// - provides: the classification-time guarantee that a derived operation's
-    ///   answer mints as `F (Path(A, a, b))` or `F (Flow(A, a, b))`.
+    ///   answer mints as `F (Path[.A = A](a, b))` or `F (Flow[.A = A](a, b))`.
     /// - fails: the unannotated refusal at `site` when the walk reaches another
     ///   form; [`LoweringRefusal::BudgetExceeded`] when it outruns the
     ///   allowance; the refusals the tree's molds yield.
@@ -4460,7 +4458,7 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `-F Path(…)`, a parenthesised `-F(Path(…))`, a flow
-    ///   answer written either way, and an integer answer.
+    ///   answer written in each form, and an integer answer.
     /// - witness: `lower::identity::tests::back_then_and_cong_unfold_to_transports`
     /// - witness: `lower::identity::tests::a_derived_operation_needs_a_written_path_answer`
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
@@ -4486,6 +4484,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             let (wrapped, applied) = match former {
                 Former::PathType => return Ok(Answered::Path),
+                Former::FlowType => return Ok(Answered::Flow),
                 Former::ReturnerType if !returned => {
                     returned = true;
                     (true, false)
@@ -4541,7 +4540,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::LazyRecordType
                 | Former::ValueFunctionType
                 | Former::BridgeType
-                | Former::FlowType
                 | Former::CapabilityType
                 | Former::AtType
                 | Former::StagedType
@@ -4599,7 +4597,7 @@ impl<'source> Lowerer<'_, 'source>
                 };
             }
             if applied {
-                let flow = written == 3_usize
+                let flow = written == 2_usize
                     && keyword.is_some_and(|at| self.name_at(at).as_ref() == FLOW);
                 return if flow {
                     Ok(Answered::Flow)
@@ -4625,24 +4623,25 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the operands, the answer and a synthesised `cong`'s codomain
     ///   are already minted or absent.
     /// - ensures: the carrier and the endpoints are the answer's, a returner
-    ///   over `Path(A, a, b)` or `Flow(A, a, b)` relocated to the operation's
-    ///   frame, or, synthesised, the path's own as [`Self::identity_of`] reads
-    ///   it: `Path.back(p)` at `p : Path(A, a, b)` stands at `Path(A, b, a)`,
-    ///   `p then q` at `Path(A, a, c)` for `q : Path(A, b, c)`, and `cong(f,
-    ///   p)` at `Path(B, ⟨f a⟩, ⟨f b⟩)`, `B` the result type `f`'s definition
-    ///   writes. `Path.back(p)` is `tr(y. Path(A, y, b), p, Path.here(b))`,
-    ///   `Path.step(p, q)` is `tr(y. Path(A, a, y), q, p)` and `Path.ap(f, p)`
-    ///   is `tr(y. Path(A, a, ⟨force f y⟩), p, here(a))`, or `tr(y. Path(A, a,
+    ///   over `Path[.A = A](a, b)` or `Flow[.A = A](a, b)` relocated to the
+    ///   operation's frame, or, synthesised, the path's own as
+    ///   [`Self::identity_of`] reads it: `Path.back(p)` at `p : Path[.A = A](a,
+    ///   b)` stands at `Path[.A = A](b, a)`, `p then q` at `Path[.A = A](a, c)`
+    ///   for `q : Path[.A = A](b, c)`, and `cong(f, p)` at `Path[.A = B](⟨f a⟩,
+    ///   ⟨f b⟩)`, `B` the result type `f`'s definition writes. `Path.back(p)`
+    ///   is `tr(y. Path[.A = A](y, b), p, Path.here(b))`, `Path.step(p, q)` is
+    ///   `tr(y. Path[.A = A](a, y), q, p)` and `Path.ap(f, p)` is `tr(y.
+    ///   Path[.A = A](a, ⟨force f y⟩), p, here(a))`, or `tr(y. Path[.A = A](a,
     ///   ⟨e⟩), p, here(a))` for a lambda `fun (q) { e }` [`Self::cong_map`]
     ///   recorded, its body read under the motive's binder; `Path.back(f)`
-    ///   under a flow answer is the symmetry ride `Flow.ride(y. Flow(A, y, b),
-    ///   f, Flow.stay(b))`. The path type an operation stands at is recorded
-    ///   against its transport when both its endpoints are read. The operation
-    ///   carries the written origin, the lift of `cong`'s map under the
-    ///   motive's binder the map's own, as the copy of the one the transport
-    ///   reads, and every other node minted for it the inserted identity
-    ///   origin. Nothing when an operand, the answer or the codomain did not
-    ///   lower.
+    ///   under a flow answer is the symmetry ride `Flow.ride(y. Flow[.A = A](y,
+    ///   b), f, Flow.stay(b))`. The path type an operation stands at is
+    ///   recorded against its transport when both its endpoints are read. The
+    ///   operation carries the written origin, the lift of `cong`'s map under
+    ///   the motive's binder the map's own, as the copy of the one the
+    ///   transport reads, and every other node minted for it the inserted
+    ///   identity origin. Nothing when an operand, the answer or the codomain
+    ///   did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -4776,7 +4775,7 @@ impl<'source> Lowerer<'_, 'source>
             (Answered::Path, Derivation::Cong { function, .. }, _) => {
                 // A lambda's body stands under its one binder, as the motive's
                 // right endpoint stands under the motive's, so the motive
-                // reads the body itself: `tr(y. Path(B↑, start↑, ⟨e⟩), p,
+                // reads the body itself: `tr(y. Path[.A = B↑](start↑, ⟨e⟩), p,
                 // here(start))`, and no lambda stands in a type (#3773).
                 if let Some(body) = self.lambda_body(function, first, sink) {
                     let lifted_codomain =
@@ -5020,10 +5019,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the answer is already minted or absent.
-    /// - ensures: the carrier and the endpoints of the returner over `Path(A,
-    ///   a, b)` or `Flow(A, a, b)` the answer mints, relocated from its frame
-    ///   to `frame`; a loop arm's answer is `Path(B, y, y)`, `y` the answer at
-    ///   the loop's point its arm binds innermost.
+    /// - ensures: the carrier and the endpoints of the returner over `Path[.A =
+    ///   A]( a, b)` or `Flow[.A = A](a, b)` the answer mints, relocated from
+    ///   its frame to `frame`; a loop arm's answer is `Path[.A = B](y, y)`, `y`
+    ///   the answer at the loop's point its arm binds innermost.
     /// - fails: the answer's absence when it did not lower; the other-sort
     ///   absence when it mints no such returner.
     /// - panics: none.
@@ -5114,15 +5113,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the operands, a `cong`'s codomain and the types
     ///   [`Self::synthesised_types`] lists are already minted or absent;
     ///   [`Self::refuse_unsynthesised`] admitted the operation.
-    /// - ensures: for `Path.back(p)` at `p : Path(A, a, b)`, `Path(A, b, a)`;
-    ///   for `p then q`, `Path(A, a, c)` with `c` read when `q : Path(A, b, c)`
-    ///   is, absent otherwise; for `Path.ap(f, p)`, `Path(B, ⟨force f a⟩,
-    ///   ⟨force f b⟩)` with `B` the returner's result the codomain mints:
-    ///   closed for a declared function, carried as [`Self::carried`] carries
-    ///   it for a bound map, and for a lambda the path type its body stands at,
-    ///   read out from under the lambda's binder and a stated binder's bind
-    ///   ([`Self::lambda_codomain`]). Each path's type is read as
-    ///   [`Self::identity_of`] reads it under `frame`.
+    /// - ensures: for `Path.back(p)` at `p : Path[.A = A](a, b)`, `Path[.A =
+    ///   A](b, a)`; for `p then q`, `Path[.A = A](a, c)` with `c` read when `q
+    ///   : Path[.A = A](b, c)` is, absent otherwise; for `Path.ap(f, p)`,
+    ///   `Path[.A = B](⟨force f a⟩, ⟨force f b⟩)` with `B` the returner's
+    ///   result the codomain mints: closed for a declared function, carried as
+    ///   [`Self::carried`] carries it for a bound map, and for a lambda the
+    ///   path type its body stands at, read out from under the lambda's binder
+    ///   and a stated binder's bind ([`Self::lambda_codomain`]). Each path's
+    ///   type is read as [`Self::identity_of`] reads it under `frame`.
     /// - fails: the unminted absence when the motive's path's type is not read;
     ///   the codomain's absence, or the other-sort absence when it mints no
     ///   returner; the unminted absence for a lambda whose body's path type
@@ -5310,10 +5309,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: [`Self::refuse_unsynthesised`] admitted the `cong`, so the
     ///   lambda's body, a synthesised operation, is minted before it.
-    /// - ensures: `Path(A, a, b)` where the body stands at `Path(A, a, b)`
-    ///   under the lambda's binder, and under the bind a typed parameter adds
-    ///   ([`Self::typed_parameter`]), and none of `A`, `a` and `b` names
-    ///   either, lowered out from under both (#3919).
+    /// - ensures: `Path[.A = A](a, b)` where the body stands at `Path[.A =
+    ///   A](a, b)` under the lambda's binder, and under the bind a typed
+    ///   parameter adds ([`Self::typed_parameter`]), and none of `A`, `a` and
+    ///   `b` names either, lowered out from under both (#3919).
     /// - fails: the unminted absence when the body's path type is not recorded
     ///   or names a binder it is lowered out from under; the body's own
     ///   absence.
@@ -5376,13 +5375,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: a parameter at its binder's written type and a call at its
     ///   function's written result at its arguments, each carried to where the
     ///   operation stands; otherwise a loop, or a word of a loop's words,
-    ///   stands at `Path(F, x, x)`, `F` its family and `x` the point the words
-    ///   spell, minted as [`Self::words_point`] mints them, a reflexivity
-    ///   `Path.here(x)` at `Path(A, x, x)` when its point is a binder whose
-    ///   written type `A` carries to where the operation stands, and otherwise
-    ///   at `Path(Path(A, a, b), p, p)` when its point `p` stands at `Path(A,
-    ///   a, b)`, and a derived operation's returned transport at the path type
-    ///   recorded against it.
+    ///   stands at `Path[.A = F](x, x)`, `F` its family and `x` the point the
+    ///   words spell, minted as [`Self::words_point`] mints them, a reflexivity
+    ///   `Path.here(x)` at `Path[.A = A](x, x)` when its point is a binder
+    ///   whose written type `A` carries to where the operation stands, and
+    ///   otherwise at `Path[.A = Path[.A = A](a, b)](p, p)` when its point `p`
+    ///   stands at `Path[.A = A]( a, b)`, and a derived operation's returned
+    ///   transport at the path type recorded against it.
     /// - fails: [`synthesised::Absent::Unread`] for any other value, and for a
     ///   path or a type that did not lower.
     /// - panics: none.

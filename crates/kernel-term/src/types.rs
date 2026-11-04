@@ -310,10 +310,10 @@ pub enum ValueType
     /// endpoints form at level zero; formation checks each code and grants no
     /// inverse.
     FlowUniverse(ValueId, ValueId),
-    /// Element identity `Path(A, a, b)` between two values of one value type.
-    /// Formation checks both endpoints at the domain and refuses an open
-    /// domain; an introduction form other than `here` checks against the
-    /// identity fibre the kernel computes at the closed domain.
+    /// Element identity `Path[.A = A](a, b)` between two values of one value
+    /// type. Formation checks both endpoints at the domain and refuses an
+    /// open domain; an introduction form other than `here` checks against
+    /// the identity fibre the kernel computes at the closed domain.
     Path
     {
         /// The value type the endpoints inhabit.
@@ -323,7 +323,7 @@ pub enum ValueType
         /// The target endpoint.
         right: ValueId,
     },
-    /// Directed element identity `Flow(A, x, y)`: `x` transports into `y`,
+    /// Directed element identity `Flow[.A = A](x, y)`: `x` transports into `y`,
     /// with no inverse. Formation checks both endpoints at the domain, as for
     /// `Path`; at the closed level-zero value universe it and `Flow_U(x, y)`
     /// are two readings of one classifier, and elsewhere `stay`, composition

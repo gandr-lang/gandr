@@ -5799,16 +5799,15 @@ module M : #{ x: Integer, z: Integer } where { def x = 1; }"#,
             CorpusRoot::Strict,
             SourceText::from(
                 r"/// The 2-path `Path.here(Path.step(f, g1))` moved along `b`.
-def liftLeft(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2)) -> Path(Path(A, x, z), Path.step(f, g1), Path.step(f, g2)) {
-  Path.walk(fun (c) { Path(Path(A, x, z), Path.step(f, g1), Path.step(f, c)) }, b, Path.here(Path.step(f, g1)))
+def liftLeft(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A = A](y, z), g2 : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g1, g2)) -> Path[.A = Path[.A = A](x, z)](Path.step(f, g1), Path.step(f, g2)) {
+  Path.walk(fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step(f, g1), Path.step(f, c))) }, b, Path.here(Path.step(f, g1)))
 }
 /// Two lifts composed.
-def two(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2), g3 : Path(A, y, z), c : Path(Path(A, y, z), g2, g3)) -> Path(Path(A, x, z), Path.step(f, g1), Path.step(f, g3)) {
+def two(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A = A](y, z), g2 : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g1, g2), g3 : Path[.A = A](y, z), c : Path[.A = Path[.A = A](y, z)](g2, g3)) -> Path[.A = Path[.A = A](x, z)](Path.step(f, g1), Path.step(f, g3)) {
   Path.step(liftLeft(A, x, y, z, f, g1, g2, b), liftLeft(A, x, y, z, f, g2, g3, c))
 }
 /// `two` then a third lift, against its body then the third lift.
-def unfolded(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2), g3 : Path(A, y, z), c : Path(Path(A, y, z), g2, g3), g4 : Path(A, y, z), d : Path(Path(A, y, z), g3, g4)) -> Path(
-  Path(Path(A, x, z), Path.step(f, g1), Path.step(f, g4)),
+def unfolded(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A = A](y, z), g2 : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g1, g2), g3 : Path[.A = A](y, z), c : Path[.A = Path[.A = A](y, z)](g2, g3), g4 : Path[.A = A](y, z), d : Path[.A = Path[.A = A](y, z)](g3, g4)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(f, g1), Path.step(f, g4))](
   Path.step(two(A, x, y, z, f, g1, g2, b, g3, c), liftLeft(A, x, y, z, f, g3, g4, d)),
   Path.step(Path.step(liftLeft(A, x, y, z, f, g1, g2, b), liftLeft(A, x, y, z, f, g2, g3, c)), liftLeft(A, x, y, z, f, g3, g4, d))
 ) {
@@ -5845,20 +5844,19 @@ def unfolded(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z
             CorpusRoot::Strict,
             SourceText::from(
                 r"/// `Path.ap` as a definition.
-def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {
+def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](F(x), F(y)) {
   Path.ap(F, p)
 }
 /// The 2-path `a` whiskered on the right by `g`.
-def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {
-  ap(Path(A, x, y), Path(A, x, z), (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)), f1, f2, a)
+def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
+  ap(type(Path[.A = A](x, y)), type(Path[.A = A](x, z)), (fun (q : Path[.A = A](x, y)) { Path.step(q, g) } : Path[.A = A](x, y) => Path[.A = A](x, z)), f1, f2, a)
 }
 /// The 2-path `Path.here(Path.step(f1, g))` moved along `a`.
-def liftRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {
-  Path.walk(fun (c) { Path(Path(A, x, z), Path.step(f1, g), Path.step(c, g)) }, a, Path.here(Path.step(f1, g)))
+def liftRight(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
+  Path.walk(fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(c, g))) }, a, Path.here(Path.step(f1, g)))
 }
 /// A lift whiskered by the reflexivity at its end, against the lift.
-def whiskeredByHere(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(
-  Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)),
+def whiskeredByHere(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g))](
   whiskerRight(A, x, z, z, Path.step(f1, g), Path.step(f2, g), liftRight(A, x, y, z, f1, f2, a, g), Path.here(z)),
   liftRight(A, x, y, z, f1, f2, a, g)
 ) {
@@ -5895,19 +5893,19 @@ def whiskeredByHere(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path
             CorpusRoot::Strict,
             SourceText::from(
                 r"/// A path from a point to itself.
-def p(A : Type, x : A) -> Path(A, x, x) {
+def p(A : Type, x : A) -> Path[.A = A](x, x) {
   Path.here(x)
 }
 /// Three of them composed reduce to the reflexivity.
-def three(A : Type, x : A) -> Path(Path(A, x, x), Path.step(Path.step(p(A, x), p(A, x)), p(A, x)), Path.here(x)) {
+def three(A : Type, x : A) -> Path[.A = Path[.A = A](x, x)](Path.step(Path.step(p(A, x), p(A, x)), p(A, x)), Path.here(x)) {
   Path.here(Path.here(x))
 }
 /// A 2-path between reflexivities.
-def r(A : Type, x : A) -> Path(Path(A, x, x), Path.here(x), Path.here(x)) {
+def r(A : Type, x : A) -> Path[.A = Path[.A = A](x, x)](Path.here(x), Path.here(x)) {
   Path.here(Path.here(x))
 }
 /// Three of them composed reduce to the reflexivity's reflexivity.
-def threeTwoPaths(A : Type, x : A) -> Path(Path(Path(A, x, x), Path.here(x), Path.here(x)), Path.step(Path.step(r(A, x), r(A, x)), r(A, x)), Path.here(Path.here(x))) {
+def threeTwoPaths(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](Path.here(x), Path.here(x))](Path.step(Path.step(r(A, x), r(A, x)), r(A, x)), Path.here(Path.here(x))) {
   Path.here(Path.here(Path.here(x)))
 }
 ",
@@ -5940,24 +5938,23 @@ def threeTwoPaths(A : Type, x : A) -> Path(Path(Path(A, x, x), Path.here(x), Pat
             CorpusRoot::Strict,
             SourceText::from(
                 r"/// A function's action on a path.
-def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {
+def ap(A : Type, B : Type, F : A => B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](F(x), F(y)) {
   Path.ap(F, p)
 }
 /// The left whisker, by the action of composing with `f`.
-def whiskerLeft(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2)) -> Path(Path(A, x, z), Path.step(f, g1), Path.step(f, g2)) {
-  ap(Path(A, y, z), Path(A, x, z), (fun (q : Path(A, y, z)) { Path.step(f, q) } : Path(A, y, z) => Path(A, x, z)), g1, g2, b)
+def whiskerLeft(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A = A](y, z), g2 : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g1, g2)) -> Path[.A = Path[.A = A](x, z)](Path.step(f, g1), Path.step(f, g2)) {
+  ap(type(Path[.A = A](y, z)), type(Path[.A = A](x, z)), (fun (q : Path[.A = A](y, z)) { Path.step(f, q) } : Path[.A = A](y, z) => Path[.A = A](x, z)), g1, g2, b)
 }
 /// The right whisker, by the action of composing with `g`.
-def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {
-  ap(Path(A, x, y), Path(A, x, z), (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)), f1, f2, a)
+def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
+  ap(type(Path[.A = A](x, y)), type(Path[.A = A](x, z)), (fun (q : Path[.A = A](x, y)) { Path.step(q, g) } : Path[.A = A](x, y) => Path[.A = A](x, z)), f1, f2, a)
 }
 /// The associator, by conversion.
-def assoc(A : Type, x : A, y : A, z : A, w : A, f : Path(A, x, y), g : Path(A, y, z), h : Path(A, z, w)) -> Path(Path(A, x, w), Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
+def assoc(A : Type, x : A, y : A, z : A, w : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z), h : Path[.A = A](z, w)) -> Path[.A = Path[.A = A](x, w)](Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
   Path.here(Path.step(Path.step(f, g), h))
 }
 /// A whisker, an associator read back and a whisker, at reflexivities.
-def whiskered(A : Type, x : A) -> Path(
-  Path(Path(A, x, x), Path.here(x), Path.here(x)),
+def whiskered(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](Path.here(x), Path.here(x))](
   Path.step(Path.step(whiskerLeft(A, x, x, x, Path.here(x), Path.step(Path.here(x), Path.here(x)), Path.step(Path.here(x), Path.here(x)), Path.here(Path.step(Path.here(x), Path.here(x)))), Path.back(assoc(A, x, x, x, x, Path.here(x), Path.here(x), Path.here(x)))), whiskerRight(A, x, x, x, Path.step(Path.here(x), Path.here(x)), Path.step(Path.here(x), Path.here(x)), Path.here(Path.step(Path.here(x), Path.here(x))), Path.here(x))),
   Path.here(Path.here(x))
 ) {
@@ -5994,24 +5991,23 @@ def whiskered(A : Type, x : A) -> Path(
             CorpusRoot::Strict,
             SourceText::from(
                 r"/// The left whisker, as a level-two composite.
-def whiskerLeft(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2)) -> Path(Path(A, x, z), Path.step(f, g1), Path.step(f, g2)) {
+def whiskerLeft(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A = A](y, z), g2 : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g1, g2)) -> Path[.A = Path[.A = A](x, z)](Path.step(f, g1), Path.step(f, g2)) {
   compose[4, 9](chain(2, (0, 1)), (f, b))
 }
 /// The right whisker, as a level-two composite.
-def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {
+def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
   compose[4, 9](chain(2, (1, 0)), (a, g))
 }
 /// The associator, by conversion.
-def assoc(A : Type, x : A, y : A, z : A, w : A, f : Path(A, x, y), g : Path(A, y, z), h : Path(A, z, w)) -> Path(Path(A, x, w), Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
+def assoc(A : Type, x : A, y : A, z : A, w : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z), h : Path[.A = A](z, w)) -> Path[.A = Path[.A = A](x, w)](Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
   Path.here(Path.step(Path.step(f, g), h))
 }
 /// Two squares side by side compose to a square, through two associators.
-def cylinderComposite2(A : Type, x : A, x2 : A, xs : Path(A, x, x2), y : A, y2 : A, ys : Path(A, y, y2), f : Path(A, x, y), f2 : Path(A, x2, y2), a : Path(Path(A, x, y2), Path.step(f, ys), Path.step(xs, f2)), z : A, g : Path(A, y, z), z2 : A, g2 : Path(A, y2, z2), zs : Path(A, z, z2), b : Path(Path(A, y, z2), Path.step(g, zs), Path.step(ys, g2))) -> Path(Path(A, x, z2), Path.step(Path.step(f, g), zs), Path.step(xs, Path.step(f2, g2))) {
+def cylinderComposite2(A : Type, x : A, x2 : A, xs : Path[.A = A](x, x2), y : A, y2 : A, ys : Path[.A = A](y, y2), f : Path[.A = A](x, y), f2 : Path[.A = A](x2, y2), a : Path[.A = Path[.A = A](x, y2)](Path.step(f, ys), Path.step(xs, f2)), z : A, g : Path[.A = A](y, z), z2 : A, g2 : Path[.A = A](y2, z2), zs : Path[.A = A](z, z2), b : Path[.A = Path[.A = A](y, z2)](Path.step(g, zs), Path.step(ys, g2))) -> Path[.A = Path[.A = A](x, z2)](Path.step(Path.step(f, g), zs), Path.step(xs, Path.step(f2, g2))) {
   Path.step(Path.step(Path.step(Path.step(assoc(A, x, y, z, z2, f, g, zs), whiskerLeft(A, x, y, z2, f, Path.step(g, zs), Path.step(ys, g2), b)), Path.back(assoc(A, x, y, y2, z2, f, ys, g2))), whiskerRight(A, x, y2, z2, Path.step(f, ys), Path.step(xs, f2), a, g2)), assoc(A, x, x2, y2, z2, xs, f2, g2))
 }
 /// Two squares of reflexivities side by side compose to the reflexivity of the reflexivity.
-def cylinderCompositeAtHere(A : Type, x : A) -> Path(
-  Path(Path(A, x, x), Path.here(x), Path.here(x)),
+def cylinderCompositeAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](Path.here(x), Path.here(x))](
   cylinderComposite2(A, x, x, Path.here(x), x, x, Path.here(x), Path.here(x), Path.here(x), Path.here(Path.here(x)), x, Path.here(x), x, Path.here(x), Path.here(x), Path.here(Path.here(x))),
   Path.here(Path.here(x))
 ) {
@@ -6053,28 +6049,27 @@ def cylinderCompositeAtHere(A : Type, x : A) -> Path(
             CorpusRoot::Strict,
             SourceText::from(
                 r"/// The left whisker, as a level-two composite.
-def whiskerLeft(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g1 : Path(A, y, z), g2 : Path(A, y, z), b : Path(Path(A, y, z), g1, g2)) -> Path(Path(A, x, z), Path.step(f, g1), Path.step(f, g2)) {
+def whiskerLeft(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A = A](y, z), g2 : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g1, g2)) -> Path[.A = Path[.A = A](x, z)](Path.step(f, g1), Path.step(f, g2)) {
   compose[4, 9](chain(2, (0, 1)), (f, b))
 }
 /// The right whisker, as a level-two composite.
-def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path(A, x, y), f2 : Path(A, x, y), a : Path(Path(A, x, y), f1, f2), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {
+def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
   compose[4, 9](chain(2, (1, 0)), (a, g))
 }
 /// The associator, by conversion.
-def assoc(A : Type, x : A, y : A, z : A, w : A, f : Path(A, x, y), g : Path(A, y, z), h : Path(A, z, w)) -> Path(Path(A, x, w), Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
+def assoc(A : Type, x : A, y : A, z : A, w : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z), h : Path[.A = A](z, w)) -> Path[.A = Path[.A = A](x, w)](Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
   Path.here(Path.step(Path.step(f, g), h))
 }
 /// Two squares side by side compose to a square, through two associators.
-def cylinderComposite2(A : Type, x : A, y : A, f : Path(A, x, y), x2 : A, y2 : A, f2 : Path(A, x2, y2), xs : Path(A, x, x2), ys : Path(A, y, y2), a : Path(Path(A, x, y2), Path.step(f, ys), Path.step(xs, f2)), z : A, g : Path(A, y, z), z2 : A, g2 : Path(A, y2, z2), zs : Path(A, z, z2), b : Path(Path(A, y, z2), Path.step(g, zs), Path.step(ys, g2))) -> Path(Path(A, x, z2), Path.step(Path.step(f, g), zs), Path.step(xs, Path.step(f2, g2))) {
+def cylinderComposite2(A : Type, x : A, y : A, f : Path[.A = A](x, y), x2 : A, y2 : A, f2 : Path[.A = A](x2, y2), xs : Path[.A = A](x, x2), ys : Path[.A = A](y, y2), a : Path[.A = Path[.A = A](x, y2)](Path.step(f, ys), Path.step(xs, f2)), z : A, g : Path[.A = A](y, z), z2 : A, g2 : Path[.A = A](y2, z2), zs : Path[.A = A](z, z2), b : Path[.A = Path[.A = A](y, z2)](Path.step(g, zs), Path.step(ys, g2))) -> Path[.A = Path[.A = A](x, z2)](Path.step(Path.step(f, g), zs), Path.step(xs, Path.step(f2, g2))) {
   Path.step(Path.step(Path.step(Path.step(assoc(A, x, y, z, z2, f, g, zs), whiskerLeft(A, x, y, z2, f, Path.step(g, zs), Path.step(ys, g2), b)), Path.back(assoc(A, x, y, y2, z2, f, ys, g2))), whiskerRight(A, x, y2, z2, Path.step(f, ys), Path.step(xs, f2), a, g2)), assoc(A, x, x2, y2, z2, xs, f2, g2))
 }
 /// A stack of two squares composes to a square, the composite of their reversed squares reversed.
-def cylinderStack2(A : Type, x : A, y : A, f : Path(A, x, y), x2 : A, y2 : A, f2 : Path(A, x2, y2), xs : Path(A, x, x2), ys : Path(A, y, y2), a : Path(Path(A, x, y2), Path.step(f, ys), Path.step(xs, f2)), x3 : A, y3 : A, f3 : Path(A, x3, y3), xs2 : Path(A, x2, x3), ys2 : Path(A, y2, y3), b : Path(Path(A, x2, y3), Path.step(f2, ys2), Path.step(xs2, f3))) -> Path(Path(A, x, y3), Path.step(f, Path.step(ys, ys2)), Path.step(Path.step(xs, xs2), f3)) {
+def cylinderStack2(A : Type, x : A, y : A, f : Path[.A = A](x, y), x2 : A, y2 : A, f2 : Path[.A = A](x2, y2), xs : Path[.A = A](x, x2), ys : Path[.A = A](y, y2), a : Path[.A = Path[.A = A](x, y2)](Path.step(f, ys), Path.step(xs, f2)), x3 : A, y3 : A, f3 : Path[.A = A](x3, y3), xs2 : Path[.A = A](x2, x3), ys2 : Path[.A = A](y2, y3), b : Path[.A = Path[.A = A](x2, y3)](Path.step(f2, ys2), Path.step(xs2, f3))) -> Path[.A = Path[.A = A](x, y3)](Path.step(f, Path.step(ys, ys2)), Path.step(Path.step(xs, xs2), f3)) {
   Path.back(cylinderComposite2(A, x, x2, xs, y, y2, ys, f, f2, Path.back(a), x3, xs2, y3, ys2, f3, Path.back(b)))
 }
 /// A stack of two squares of reflexivities composes to the reflexivity of the reflexivity.
-def cylinderStackAtHere(A : Type, x : A) -> Path(
-  Path(Path(A, x, x), Path.here(x), Path.here(x)),
+def cylinderStackAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](Path.here(x), Path.here(x))](
   cylinderStack2(A, x, x, Path.here(x), x, x, Path.here(x), Path.here(x), Path.here(x), Path.here(Path.here(x)), x, x, Path.here(x), Path.here(x), Path.here(x), Path.here(Path.here(x))),
   Path.here(Path.here(x))
 ) {
@@ -6118,36 +6113,34 @@ def cylinderStackAtHere(A : Type, x : A) -> Path(
             CorpusRoot::Strict,
             SourceText::from(
                 r"/// The composite of two paths, whose type states its endpoints.
-def join(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(A, x, z) {
+def join(A : Type, x : A, y : A, z : A, p : Path[.A = A](x, y), q : Path[.A = A](y, z)) -> Path[.A = A](x, z) {
   Path.step(p, q)
 }
 /// Two cells' composite, curried over the cells.
-def composedCells(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(A, x, z) {
+def composedCells(A : Type, x : A, y : A, z : A) -> (f : Path[.A = A](x, y)) => (g : Path[.A = A](y, z)) => Path[.A = A](x, z) {
   thunk { fun (f) { thunk { fun (g) { join(A, x, y, z, f, g) } } } }
 }
 /// The composite's reflexivity by `fill`, at its sides.
-def selfFill(A : Type, x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(f, g), Path.step(f, g)) {
+def selfFill(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step(f, g), Path.step(f, g)) {
   fill[5, 7](chain(2), composedCells(A, x, y, z), (Path.here(f), g))
 }
 /// That reflexivity, curried: a generator whose body is a fill.
-def selfFillOver(A : Type, x : A, y : A, z : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => Path(Path(A, x, z), Path.step(f, g), Path.step(f, g)) {
+def selfFillOver(A : Type, x : A, y : A, z : A) -> (f : Path[.A = A](x, y)) => (g : Path[.A = A](y, z)) => Path[.A = Path[.A = A](x, z)](Path.step(f, g), Path.step(f, g)) {
   thunk { fun (f) { thunk { fun (g) { selfFill(A, x, y, z, f, g) } } } }
 }
 /// The right whisker the outer fill lifts by.
-def liftRight(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)) {
-  Path.walk(fun (c) { Path(Path(A, x, z), Path.step(fm, g), Path.step(c, g)) }, fa, Path.here(Path.step(fm, g)))
+def liftRight(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g)) {
+  Path.walk(fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(c, g))) }, fa, Path.here(Path.step(fm, g)))
 }
 /// The outer fill, its generator's body a fill.
-def nestedFill(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Path(A, y, z)) -> Path(
-  Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)),
+def nestedFill(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g))](
   Path.step(selfFill(A, x, y, z, fm, g), liftRight(A, x, y, z, fm, fp, fa, g)),
   Path.step(liftRight(A, x, y, z, fm, fp, fa, g), selfFill(A, x, y, z, fp, g))
 ) {
   fill[5, 7](chain(2), selfFillOver(A, x, y, z), (fa, g))
 }
 /// The nested fill at reflexivities.
-def nestedAtHere(A : Type, x : A) -> Path(
-  Path(Path(Path(A, x, x), Path.step(Path.here(x), Path.here(x)), Path.step(Path.here(x), Path.here(x))), Path.here(Path.step(Path.here(x), Path.here(x))), Path.here(Path.step(Path.here(x), Path.here(x)))),
+def nestedAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = Path[.A = A](x, x)](Path.step(Path.here(x), Path.here(x)), Path.step(Path.here(x), Path.here(x)))](Path.here(Path.step(Path.here(x), Path.here(x))), Path.here(Path.step(Path.here(x), Path.here(x))))](
   nestedFill(A, x, x, x, Path.here(x), Path.here(x), Path.here(Path.here(x)), Path.here(x)),
   Path.here(Path.here(Path.step(Path.here(x), Path.here(x))))
 ) {
@@ -6659,14 +6652,14 @@ def delivered() -> -F Unit {
             format!(
                 "module {name} :> #{{ type T, origin : T, other : T }} where {{ {identity} type T = \
                  Unit ; def origin = unit ; def other = unit ; }}\ndef evidence{name} : \
-                 Path({name}.T, {name}.origin, {name}.other) ;\ndef evidence{name} = unit ;\n"
+                 Path[.A = {name}.T]({name}.origin, {name}.other) ;\ndef evidence{name} = unit ;\n"
             )
         };
         let source = [
             "def related(a : Unit, b : Unit) -> -F Type { return Unit }\n".to_owned(),
             "def reflexive(a : Unit) -> -F related(a, a) { return unit }\n".to_owned(),
-            "def contraction(a : Unit, b : Unit, r : related(a, b)) -> -F Path(#{ y : Unit, s : \
-             related(a, y) }, (b, r), (a, reflexive(a))) { return (unit, unit) }\n"
+            "def contraction(a : Unit, b : Unit, r : related(a, b)) -> -F Path[.A = #{ y : Unit, s : \
+             related(a, y) }]((b, r), (a, reflexive(a))) { return (unit, unit) }\n"
                 .to_owned(),
             sealed("Lawful", "@[ identity((related, reflexive, contraction)) ]"),
             sealed("Lawless", "@[ identity((related, reflexive)) ]"),
@@ -8208,14 +8201,14 @@ def delivered() -> -F Unit {
             (answer.settled, poll.readings.get())
         };
         let (first, read) = judged(SourceText::from(
-            "def one : Integer = 1 ;\ndef two : Path(Integer, one, 1) = Path.here(1) ;\n",
+            "def one : Integer = 1 ;\ndef two : Path[.A = Integer](one, 1) = Path.here(1) ;\n",
         ));
         assert_eq!(
             read, 3,
             "a first revision is judged, polled before each declaration"
         );
         let (commented, read) = judged(SourceText::from(
-            "// one, then a path through it\ndef one : Integer = 1 ;\ndef two : Path(Integer, \
+            "// one, then a path through it\ndef one : Integer = 1 ;\ndef two : Path[.A = Integer](\
              one, 1) = Path.here(1) ;\n",
         ));
         assert_eq!(
@@ -8228,7 +8221,7 @@ def delivered() -> -F Unit {
             "and the settle is made again at the spans the comment moved"
         );
         let (changed, read) = judged(SourceText::from(
-            "// one, then a path through it\ndef one : Integer = 2 ;\ndef two : Path(Integer, \
+            "// one, then a path through it\ndef one : Integer = 2 ;\ndef two : Path[.A = Integer](\
              one, 1) = Path.here(1) ;\n",
         ));
         assert_eq!(read, 3, "a value changed is judged again");

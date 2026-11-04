@@ -15,7 +15,7 @@ module Counted where {
   def count = 3;
   /// A path at that value, which a type cannot read.
   @[ refuses("PhaseDependence") ]
-  type Q = Path(Integer, count, 3);
+  type Q = Path(count, 3);
 }
 
 /// The same member under a transparent ascription: the component's witness
@@ -26,12 +26,12 @@ module Ascribed : #{ three : Integer, type R } where {
   def three = 3;
   /// A path at that value, which a type cannot read.
   @[ refuses("PhaseDependence") ]
-  type R = Path(Integer, three, 3);
+  type R = Path(three, 3);
 }
 
 /// A functor whose type member reads its argument's value.
 module Pointed(S : #{ type T, z : T }) where {
   /// A path at the argument's point.
   @[ refuses("PhaseDependence") ]
-  type At = Path(S.T, S.z, S.z);
+  type At = Path(S.z, S.z);
 }

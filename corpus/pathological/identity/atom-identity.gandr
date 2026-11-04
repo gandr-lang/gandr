@@ -30,14 +30,13 @@ module Lawless :> #{ type T, origin : T, other : T } where {
 /// The relation's evidence between two sealed points, refused: the interface
 /// names no transport law.
 @[ refuses("AtomTransport") ]
-def lawlessOriginOther : Path(Lawless.T, Lawless.origin, Lawless.other) = unit;
+def lawlessOriginOther : Path(Lawless.origin, Lawless.other) = unit;
 
 /// The transport law at the paths of the unit type written as no pair,
 /// refused: an identity in the singleton's total space is a path in the
 /// unit type and one over it.
 @[ refuses("TypeMismatch") ]
 def unpairedContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path(
-  #{y : Unit, s : pathRelated(a, y)},
   (b, r),
   (a, pathReflexivity(a))
 ) { unit }

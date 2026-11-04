@@ -24,7 +24,7 @@ def unwrap_or_zero() -> Integer {
 
 /// A match over a family of parameters whose answer names its scrutinee:
 /// each arm answers the type as written, `m` read as itself.
-def kept(m : Maybe(Integer)) -> Path(Maybe(Integer), m, m) {
+def kept(m : Maybe(Integer)) -> Path(m, m) {
   match m {
     None => Path.here(m),
     Some(x) => Path.here(m)

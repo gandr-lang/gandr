@@ -616,8 +616,8 @@ fn reduced(letters: impl IntoIterator<Item = Letter>) -> Vec<Letter>
     kept
 }
 
-/// Transport along a word in `y. Path(S, l(y), r(y))`, each endpoint fixed,
-/// the binder or a call on it, is conjugation: `l(w)⁻¹ · v · r(w)`, an
+/// Transport along a word in `y. Path[.A = S](l(y), r(y))`, each endpoint
+/// fixed, the binder or a call on it, is conjugation: `l(w)⁻¹ · v · r(w)`, an
 /// endpoint's image of the word as [`imaged`] reads it, and the named `loop`,
 /// as path or as operand, reads as its letter. The answer is checked against
 /// the word the free group computes, and against that word with one more

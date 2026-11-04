@@ -420,9 +420,9 @@ fn an_unread_pair_of_returned_calls_walks_their_computations_3920()
 }
 
 /// Two codes over returned binds over one transport stuck on `g`,
-/// `⌜Path(Unit, x, ⟨tr(m, g, q) to t. N⟩)⌝`, the engine finds shared (#4011).
-/// One continuation calls `r ↦ tr(m, h, r)` at `t` through its ascription's
-/// fold, and the other is that body at `t`. The walk parts the two
+/// `⌜Path[.A = Unit](x, ⟨tr(m, g, q) to t. N⟩)⌝`, the engine finds shared
+/// (#4011). One continuation calls `r ↦ tr(m, h, r)` at `t` through its
+/// ascription's fold, and the other is that body at `t`. The walk parts the two
 /// continuations by syntax, and the kernel's forced rules run the fold and the
 /// call and close the pair. A folded lambda transporting along `g` stays apart.
 #[test]
@@ -433,7 +433,7 @@ fn a_compared_pair_reads_two_binds_by_the_forced_rules_4011()
     let variable =
         |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
     let unit_type = arena.value_type_unit();
-    // `t. Path(Unit, x, t)`, `x` at `x` within the motive's own binder.
+    // `t. Path[.A = Unit](x, t)`, `x` at `x` within the motive's own binder.
     let motive = |arena: &mut TermArena, x: u32| {
         let (x, point) = (variable(arena, x), variable(arena, 0));
         arena.value_type_path(unit_type, x, point)
@@ -1416,7 +1416,7 @@ fn a_held_call_replays_as_its_continuation_at_its_endpoint()
 fn a_held_transport_replays_as_its_continuation_at_its_endpoint_4011()
 {
     // `tr(m, h, ⟨tr(m, g, q)⟩)` against `tr(m, g, q) to t. tr(m, h, t)`, `m`
-    // the motive `t. Path(Unit, x, t)` and `x`, `g`, `h` and `q` free: the
+    // the motive `t. Path[.A = Unit](x, t)` and `x`, `g`, `h` and `q` free: the
     // transport stuck on `g` returns its endpoint, so the bind is the
     // transport along `h` over that endpoint (#4011).
     let mut arena = TermArena::new();
@@ -1469,9 +1469,10 @@ fn a_held_transport_replays_as_its_continuation_at_its_endpoint_4011()
 /// A returned endpoint holding a `cong` chain stuck on a path reads past the
 /// chain to the bind outside it (#4129). `force ⟨(tr(m, p, q) to a. tr(m, a,
 /// r)) to b. return thunk { g(b) }⟩` against the same force over `h(b)`, `m`
-/// the motive `t. Path(Unit, x, t)`, `g`, constant 1, `thunk { λz. h(z) }` for
-/// the opaque `h`, constant 0, and `x`, `p`, `q` and `r` free: the chain stays
-/// whole, and the trace unfolds `g`, the head the endpoint's reading reaches.
+/// the motive `t. Path[.A = Unit](x, t)`, `g`, constant 1, `thunk { λz. h(z) }`
+/// for the opaque `h`, constant 0, and `x`, `p`, `q` and `r` free: the chain
+/// stays whole, and the trace unfolds `g`, the head the endpoint's reading
+/// reaches.
 #[test]
 fn an_endpoint_reads_past_a_cong_chain_to_the_bind_outside_it_4129()
 {
@@ -2595,7 +2596,7 @@ fn an_endpoint_stays_over_the_eta_expansion_of_its_stuck_call_473()
 #[test]
 fn an_endpoint_stays_over_the_run_of_its_transported_operand_473()
 {
-    // `⟨tr(z. Path(N, Z, z), p, ⟨f Z⟩)⟩` against itself, `f` opaque and
+    // `⟨tr(z. Path[.A = N](Z, z), p, ⟨f Z⟩)⟩` against itself, `f` opaque and
     // `p` a variable: the operand runs first, `y ← f Z; tr(P↑, p↑, y)`.
     // Read through, that bind's continuation is the transport of the
     // returned call again, which runs it again until the budget
@@ -3148,7 +3149,7 @@ fn a_run_composing_to_the_identity_reads_as_its_bound_computation_4255()
         let at_base = arena.value_constructor(own, base, Vec::new());
         // `cong(function, v)` for the constant at `function`, `v` the
         // variable at index 0: the transport of `here(base)` along `v` in
-        // the family `c. Path(own, base, function(c))`.
+        // the family `c. Path[.A = own](base, function(c))`.
         let cong = |arena: &mut TermArena, function: usize| {
             let along = arena.value_variable(DeBruijnIndex::from(0_u32));
             let named = arena.value_constant(ConstantIndex::from(function));
@@ -3676,7 +3677,7 @@ fn a_path_transport_unfolds_its_path_where_the_dialogue_names_it()
 #[test]
 fn a_held_path_runs_over_its_operand_as_it_was_3734()
 {
-    // `tr(y. Path(Unit, (), y), ⟨force g⟩, ⟨force d⟩)` against `return ⟨force
+    // `tr(y. Path[.A = Unit]((), y), ⟨force g⟩, ⟨force d⟩)` against `return ⟨force
     // d⟩`, `g = thunk (return here(()))` and `d = thunk (force o)` definitions
     // and `o` opaque: `assoc(f, g, h) then ⟨whiskerRight(…)⟩` in miniature.
     // The append runs `d` through its definition to `o`, where it sticks, so
@@ -3728,8 +3729,8 @@ fn a_held_path_runs_over_its_operand_as_it_was_3734()
 #[test]
 fn a_held_run_reads_on_into_an_endpoint_it_returns_4228()
 {
-    // `tr(y. Path(Unit, (), y), ⟨force g⟩, ⟨force w⟩)`, `g = thunk (return
-    // here(()))` and `w = thunk (return ⟨tr(y. Path(Unit, (), y), here(()),
+    // `tr(y. Path[.A = Unit]((), y), ⟨force g⟩, ⟨force w⟩)`, `g = thunk (return
+    // here(()))` and `w = thunk (return ⟨tr(y. Path[.A = Unit]((), y), here(()),
     // here(()))⟩)` definitions: the level-two whisker at reflexivities, then
     // a composite, in miniature. The append runs `w` to the endpoint it
     // returns and on through the endpoint's transport to `here(())`, the
@@ -3831,7 +3832,7 @@ fn a_held_run_reads_on_into_an_endpoint_it_returns_4228()
         KernelVerdict::Convertible,
         "a bind's run reads on into a transport along a reflexivity it returns"
     );
-    // `⟨y ← force v; return y⟩`, `v = thunk (return ⟨tr(y. Path(Unit, (), y),
+    // `⟨y ← force v; return y⟩`, `v = thunk (return ⟨tr(y. Path[.A = Unit]((), y),
     // ⟨force g⟩, here(()))⟩)`: the endpoint's transport stands along a
     // returned path, which the run holds, so the operand stays as it was and
     // the transport stands on its path, apart from `return ⟨force g⟩`.
@@ -3861,7 +3862,7 @@ fn a_held_run_reads_on_into_an_endpoint_it_returns_4228()
 fn an_operand_s_run_runs_the_call_it_returns_4412()
 {
     // `tr(P, ⟨force r⟩, ⟨tr(P, ⟨force q⟩, ⟨force p⟩)⟩)` in `P = y.
-    // Path(Unit, (), y)`, `p` and `q` each `thunk (return here(()))` and `r`
+    // Path[.A = Unit]((), y)`, `p` and `q` each `thunk (return here(()))` and `r`
     // opaque: `(p then q) then r` in miniature. The outer run reads the
     // inner transport, whose own run takes `p` to `here(())` and returns
     // the path `⟨force q⟩`. The evaluator's append runs that call too, so
@@ -3908,9 +3909,9 @@ fn an_operand_s_run_runs_the_call_it_returns_4412()
 #[test]
 fn a_returned_transport_runs_its_held_path_s_call_4413()
 {
-    // `tr(P, ⟨force r⟩, ⟨y ← force w; return y⟩)` in `P = y. Path(Unit, (),
+    // `tr(P, ⟨force r⟩, ⟨y ← force w; return y⟩)` in `P = y. Path[.A = Unit]((),
     // y)`, `w = thunk (return ⟨tr(Q, ⟨force k⟩, here(()))⟩)` in `Q = y.
-    // Path(Unit, y, ())`, `k = thunk (return here(()))` and `r` opaque:
+    // Path[.A = Unit](y, ())`, `k = thunk (return here(()))` and `r` opaque:
     // `back(assoc(…))` returned by a bind's run, in miniature. The append
     // reads no transport in `Q`, so the evaluator's run stance runs `k`
     // under it and moves `here(())` along `here(())`. The outer transport
@@ -3990,9 +3991,9 @@ fn a_returned_transport_runs_its_held_path_s_call_4413()
 #[test]
 fn a_returned_transport_along_a_reflexivity_reads_on_4419()
 {
-    // `tr(P, ⟨force r⟩, ⟨y ← force w; return y⟩)` in `P = y. Path(Unit, (),
+    // `tr(P, ⟨force r⟩, ⟨y ← force w; return y⟩)` in `P = y. Path[.A = Unit]((),
     // y)`, `w = thunk (return ⟨tr(Q, here(()), here(()))⟩)` in `Q = y.
-    // Path(Unit, y, ())` and `r` opaque: the second whisker of a defined
+    // Path[.A = Unit](y, ())` and `r` opaque: the second whisker of a defined
     // chain at reflexivities, returned by a bind's run, in miniature. The
     // evaluator's run moves `here(())` along the reflexivity, so the outer
     // transport moves the empty word and returns its path.
@@ -4146,7 +4147,7 @@ fn a_returned_transport_along_a_held_reflexivity_reads_on_4435()
 #[test]
 fn two_stuck_path_transports_compare_by_motive_and_value()
 {
-    // `tr(y. Path(Unit, (), y), q, v)` over one variable path `q`, as
+    // `tr(y. Path[.A = Unit]((), y), q, v)` over one variable path `q`, as
     // two definitions' composites `p then q` leave it: the motives,
     // minted apart, compare as codes, then the values.
     let mut arena = TermArena::new();
@@ -4205,7 +4206,7 @@ fn two_stuck_path_transports_compare_by_motive_and_value()
 #[test]
 fn a_transport_along_a_stuck_composite_moves_along_each_path_in_order()
 {
-    // Variable paths `a`…`e` composed in the link `y. Path(Unit, (), y)`,
+    // Variable paths `a`…`e` composed in the link `y. Path[.A = Unit]((), y)`,
     // each nested composite standing as the value it returns: every nesting
     // of one chain converts with its left-nested fold, and a transport along a
     // nesting in a family that is no link with the transports along each path.
@@ -4301,7 +4302,7 @@ fn a_transport_along_a_stuck_composite_moves_along_each_path_in_order()
             "{what}"
         );
     }
-    // A bind into `w. tr(y. Path(Unit, w, y), w, v)`, whose family reads the
+    // A bind into `w. tr(y. Path[.A = Unit](w, y), w, v)`, whose family reads the
     // bound path, keeps its weak head: the path stands in the family too.
     let read = arena.value_variable(DeBruijnIndex::from(1_u32));
     let reading = arena.value_type_path(unit_type, read, endpoint);
@@ -4326,8 +4327,8 @@ fn a_transport_along_a_stuck_composite_moves_along_each_path_in_order()
 #[test]
 fn stuck_transports_read_their_motives_endpoints_by_unfolding_4179()
 {
-    // #4179: over `[x, y, q, v]`, `tr(t. Path(Unit, ⟨same x⟩, t), q, v)`
-    // against `tr(t. Path(Unit, x, t), q, v)`, `same` returning its argument.
+    // #4179: over `[x, y, q, v]`, `tr(t. Path[.A = Unit](⟨same x⟩, t), q, v)`
+    // against `tr(t. Path[.A = Unit](x, t), q, v)`, `same` returning its argument.
     // The motive premise closes on the shared pair once its start reads by
     // unfolding `same`. The two quotes compared as any other pair hold `same`
     // and stay open, and a start reading to `y` does not close.
@@ -4404,7 +4405,7 @@ fn stuck_transports_read_their_motives_endpoints_by_unfolding_4179()
 #[test]
 fn two_stuck_telescope_transports_compare_by_motive_start_over_and_value()
 {
-    // `transport((y : N, z : N) => Path(N, y, z), p, s, o, v)` along one
+    // `transport((y : N, z : N) => Path[.A = N](y, z), p, s, o, v)` along one
     // variable path `p`, as an associator by based path induction leaves
     // it: a family reading both entries keeps it stuck. The motives, minted
     // apart, compare as codes, then the starts, the paths over and the

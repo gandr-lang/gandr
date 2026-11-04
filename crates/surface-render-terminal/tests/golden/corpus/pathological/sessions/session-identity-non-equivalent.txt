@@ -1,8 +1,8 @@
 error[SessionNotEquivalent]: `Path.bisim` needs the two protocols to behave alike at every step
-   ╭▸ corpus/pathological/sessions/session-identity-non-equivalent.gandr:12:46
+   ╭▸ corpus/pathological/sessions/session-identity-non-equivalent.gandr:12:51
    │
-12 │   def same : Path(Type, SeatEnd, SeatEnd′) = Path.bisim(SeatEnd, SeatEnd′);
-   │                                              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ protocols that are not bisimilar
+12 │   def same : Path[.A = Type](SeatEnd, SeatEnd′) = Path.bisim(SeatEnd, SeatEnd′);
+   │                                                   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ protocols that are not bisimilar
    │
    ├ note: `same` is refused with SessionNotEquivalent, as its expectation states
    ╰ help: make the two protocols bisimilar at every step

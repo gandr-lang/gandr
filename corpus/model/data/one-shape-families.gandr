@@ -30,12 +30,12 @@ def toCelsius(f : Fahrenheit) -> Celsius {
 }
 
 /// Back after forward is the identity, constructor by constructor.
-def celsiusRoundTrip(c : Celsius) -> Path(Celsius, toCelsius(toFahrenheit(c)), c) {
+def celsiusRoundTrip(c : Celsius) -> Path(toCelsius(toFahrenheit(c)), c) {
   match c { Cel(x) => Path.here(Cel(x)) }
 }
 
 /// Forward after back is the identity.
-def fahrenheitRoundTrip(f : Fahrenheit) -> Path(Fahrenheit, toFahrenheit(toCelsius(f)), f) {
+def fahrenheitRoundTrip(f : Fahrenheit) -> Path(toFahrenheit(toCelsius(f)), f) {
   match f { Fah(x) => Path.here(Fah(x)) }
 }
 

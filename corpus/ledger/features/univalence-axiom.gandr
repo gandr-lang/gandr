@@ -10,7 +10,7 @@
 // Univalence over the user universe, after the HoTT book's § 2.10 and cubical
 // Agda's `Cubical/Foundations/Univalence.agda`. `ua(e)` makes the
 // bi-invertible map `e : A ≃ B` between two types of `Type` a path
-// `Path(Type, A, B)`, admitted on the record's two laws as its evidence, at any
+// `Path[.A = Type](A, B)`, admitted on the record's two laws as its evidence, at any
 // two codes: two variables, or a path type and a presented type, which no
 // finite round-trip coverage reaches. Transport along it applies the map, by
 // conversion (cubical's `uaβ`) and by a run. Transport along a path between
@@ -27,23 +27,23 @@ import "../../model/identity/circle.gandr" ;
 
 /// Transport forward along a path between types, the map `idtoequiv` packages.
 @[ checks ]
-def fwdAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> b {
+def fwdAlong(a : Type, b : Type, p : Path[.A = Type](a, b), x : a) -> b {
   Path.walk(fun (X) { X }, p, x)
 }
 
 /// Transport back along a path between types: the map the round trips are
 /// stated over.
 @[ checks ]
-def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> a {
+def bwdAlong(a : Type, b : Type, p : Path[.A = Type](a, b), y : b) -> a {
   Path.walk(fun (X) { X }, Path.back(p), y)
 }
 
 /// The transport back written out in a record's field converts, under the
 /// field's binder, with the same transport in the law's type.
 @[ checks ]
-def oneBack(a : Type, b : Type, p : Path(Type, a, b)) -> #{
+def oneBack(a : Type, b : Type, p : Path[.A = Type](a, b)) -> #{
   g : b => a,
-  law : (z : b) => Path(a, g(z), Path.walk(fun (X) { X }, Path.back(p), z))
+  law : (z : b) => Path[.A = a](g(z), Path.walk(fun (X) { X }, Path.back(p), z))
 } {
   (
     fun (z) { Path.walk(fun (X) { X }, Path.back(p), z) },
@@ -54,14 +54,12 @@ def oneBack(a : Type, b : Type, p : Path(Type, a, b)) -> #{
 /// Back after forward is the identity, by `J` on the path: at reflexivity
 /// both transports compute away.
 @[ checks ]
-def sectAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> Path(
-  a,
+def sectAlong(a : Type, b : Type, p : Path[.A = Type](a, b), x : a) -> Path[.A = a](
   bwdAlong(a, b, p, fwdAlong(a, b, p, x)),
   x
 ) {
   Path.walk(
-    (y : Type, z : Path(Type, a, y)) => Path(
-      a,
+    (y : Type, z : Path[.A = Type](a, y)) => Path[.A = a](
       bwdAlong(a, y, z, fwdAlong(a, y, z, x)),
       x
     ),
@@ -74,14 +72,12 @@ def sectAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> Path(
 
 /// Forward after back is the identity at every point, by `J` on the path.
 @[ checks ]
-def retrAll(a : Type, b : Type, p : Path(Type, a, b)) -> (w : b) => Path(
-  b,
+def retrAll(a : Type, b : Type, p : Path[.A = Type](a, b)) -> (w : b) => Path[.A = b](
   fwdAlong(a, b, p, bwdAlong(a, b, p, w)),
   w
 ) {
   Path.walk(
-    (y : Type, z : Path(Type, a, y)) => (w : y) => Path(
-      y,
+    (y : Type, z : Path[.A = Type](a, y)) => (w : y) => Path[.A = y](
       fwdAlong(a, y, z, bwdAlong(a, y, z, w)),
       w
     ),
@@ -94,8 +90,7 @@ def retrAll(a : Type, b : Type, p : Path(Type, a, b)) -> (w : b) => Path(
 
 /// Forward after back is the identity at `y`.
 @[ checks ]
-def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> Path(
-  b,
+def retrAlong(a : Type, b : Type, p : Path[.A = Type](a, b), y : b) -> Path[.A = b](
   fwdAlong(a, b, p, bwdAlong(a, b, p, y)),
   y
 ) {
@@ -108,7 +103,7 @@ def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> Path(
 /// written out, which converts under its field's binder with the named map
 /// its law is stated over, and `univalence`'s laws replay over them.
 @[ checks ]
-def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> a ≃ b {
+def idtoequiv(a : Type, b : Type, p : Path[.A = Type](a, b)) -> a ≃ b {
   (
     fun (x) { fwdAlong(a, b, p, x) },
     (
@@ -132,25 +127,24 @@ def uaLiteral(
   b : Type,
   t : a => b,
   g : b => a,
-  s : (x : a) => Path(a, g(t(x)), x),
+  s : (x : a) => Path[.A = a](g(t(x)), x),
   h : b => a,
-  r : (y : b) => Path(b, t(h(y)), y)
-) -> Path(Type, a, b) {
+  r : (y : b) => Path[.A = b](t(h(y)), y)
+) -> Path[.A = Type](a, b) {
   ua((t, ((g, s), (h, r))))
 }
 
 /// The loops at the point are the integers, as types: `winding`'s laws admit
 /// the path between a path type and a presented type.
 @[ checks ]
-def loopsAreIntegers : Path(Type, Path(Circle, Base, Base), Int) = ua(winding) ;
+def loopsAreIntegers : Path[.A = Type](Path[.A = Circle](Base, Base), Int) = ua(winding) ;
 
 /// The same path ascribed a type whose right end is left as a wildcard:
 /// `ua(winding)` forces that end to the integers, so the elaborator reads the
 /// equivalence's codomain off the path it makes.
 @[ checks ]
-def loopsAreTheirWinding : Path(Type, Path(Circle, Base, Base), Int) = (ua(winding) : Path(
-  Type,
-  Path(Circle, Base, Base),
+def loopsAreTheirWinding : Path[.A = Type](Path[.A = Circle](Base, Base), Int) = (ua(winding) : Path[.A = Type](
+  Path[.A = Circle](Base, Base),
   _
 )) ;
 
@@ -163,11 +157,11 @@ def uaBeta(
   b : Type,
   t : a => b,
   g : b => a,
-  s : (x : a) => Path(a, g(t(x)), x),
+  s : (x : a) => Path[.A = a](g(t(x)), x),
   h : b => a,
-  r : (y : b) => Path(b, t(h(y)), y),
+  r : (y : b) => Path[.A = b](t(h(y)), y),
   x : a
-) -> Path(b, fwdAlong(a, b, ua((t, ((g, s), (h, r)))), x), t(x)) {
+) -> Path[.A = b](fwdAlong(a, b, ua((t, ((g, s), (h, r)))), x), t(x)) {
   Path.here(t(x))
 }
 
@@ -179,8 +173,7 @@ def uaBetaRun() -> Int { Path.walk(fun (X) { X }, ua(winding), loop) }
 /// A loop carried along the loops' path to the integers is its winding
 /// number, by conversion.
 @[ checks ]
-def windingBeta(x : Path(Circle, Base, Base)) -> Path(
-  Int,
+def windingBeta(x : Path[.A = Circle](Base, Base)) -> Path[.A = Int](
   Path.walk(fun (X) { X }, loopsAreIntegers, x),
   wind(x)
 ) {

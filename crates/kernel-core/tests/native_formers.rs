@@ -456,7 +456,7 @@ fn an_indexed_case_prunes_a_constructor_at_an_apart_index()
     let (nat, admitted) = vector(&mut environment, Stated::Successor);
     let family = admitted.expect("a vector over its length").position();
     // `case v { Nil => λe. case e {}; Cons(n, x, xs) => λe. return n }`:
-    // `Nil`'s branch owes `Path(Nat, Z, at)`, absurd exactly where `at` is a
+    // `Nil`'s branch owes `Path[.A = Nat](Z, at)`, absurd exactly where `at` is a
     // successor, and `Cons` at `v = Cons(Z, (), Nil)` answers its length field
     // once the case supplies its equation, read back as `Z` when `answered`.
     let at =
@@ -1227,7 +1227,7 @@ fn an_absurd_case_rests_on_apart_endpoints()
             "`Succ(Succ(Zero))` is `Zero`, so the path is reflexivity",
         ),
     ] {
-        // `λe. case e {}` at `Path(N, Succ^n(Zero), Zero) → F unit`.
+        // `λe. case e {}` at `Path[.A = N](Succ^n(Zero), Zero) → F unit`.
         let mut staging = environment.stage();
         let arena = staging.arena();
         let datatype = arena.value_type_data(nominal, vec![]);
@@ -1774,7 +1774,8 @@ fn build(
 }
 
 /// The one-point sort, the words of one loop at its point, and `loop`, the
-/// word of its one letter at `Path(S, Base, Base)`, admitted in that order.
+/// word of its one letter at `Path[.A = S](Base, Base)`, admitted in that
+/// order.
 ///
 /// # Specification
 /// trivial.
@@ -1830,20 +1831,20 @@ fn one_loop() -> Environment
 #[derive(Clone, Copy, Debug)]
 enum Family
 {
-    /// `Path(S, Base, x)`.
+    /// `Path[.A = S](Base, x)`.
     Joined,
-    /// `Path(S, x, x)`.
+    /// `Path[.A = S](x, x)`.
     Looped,
     /// `S`.
     Kept,
-    /// `Path(S, ⟨f x⟩, Base)`.
+    /// `Path[.A = S](⟨f x⟩, Base)`.
     Collapsed(ConstantIndex),
-    /// `Path(S, ⟨f x⟩, x)`.
+    /// `Path[.A = S](⟨f x⟩, x)`.
     Mapped(ConstantIndex),
-    /// `Path(S, ⟨f ⟨f x⟩⟩, x)`.
+    /// `Path[.A = S](⟨f ⟨f x⟩⟩, x)`.
     Twice(ConstantIndex),
-    /// `Path(S, ⟨f x Base⟩, x)` when the point runs through the first
-    /// argument, `Path(S, ⟨f Base x⟩, x)` through the second.
+    /// `Path[.A = S](⟨f x Base⟩, x)` when the point runs through the first
+    /// argument, `Path[.A = S](⟨f Base x⟩, x)` through the second.
     Paired(ConstantIndex, Argument),
 }
 
@@ -2140,7 +2141,7 @@ fn pick_other(environment: &mut Environment) -> Result<ConstantIndex, KernelErro
         .map(gandr_kernel_core::CheckedId::position)
 }
 
-/// Stage `thunk (λx. case x { Base ⇒ return ε })` at `(x : S) → F Path(S,
+/// Stage `thunk (λx. case x { Base ⇒ return ε })` at `(x : S) → F Path[.A = S](
 /// ⟨f x x⟩, right)`, `right` the binder or the point, and admit it.
 ///
 /// # Specification
@@ -2202,11 +2203,11 @@ fn a_loop_obligation_reads_both_arguments_of_a_diagonal_464()
 #[derive(Clone, Copy, Debug)]
 enum Nested
 {
-    /// `Path(S, a, a)`.
+    /// `Path[.A = S](a, a)`.
     Looped,
-    /// `Path(S, Base, a)`.
+    /// `Path[.A = S](Base, a)`.
     Joined,
-    /// `U (Path(S, a, a) → F Path(S, a, a))`.
+    /// `U (Path[.A = S](a, a) → F Path[.A = S](a, a))`.
     Endomaps,
 }
 
@@ -2318,7 +2319,7 @@ fn a_nested_loop_obligation_owes_its_square_off_a_set_464()
 fn a_composite_along_a_returned_path_cancels_to_the_empty_word()
 {
     let mut environment = one_loop();
-    // `Path(Path(S, Base, Base), ⟨loop then back(loop)⟩, right)` at
+    // `Path[.A = Path[.A = S](Base, Base)](⟨loop then back(loop)⟩, right)` at
     // reflexivity on `right`, the composite running along the inverse's
     // returned transport.
     let mut cancels_to = |right: Built| {
@@ -2366,7 +2367,7 @@ fn a_composite_along_a_returned_path_cancels_to_the_empty_word()
 fn a_word_written_as_a_transport_path_is_that_path()
 {
     let mut environment = one_loop();
-    // `Path(Path(S, Base, Base), ⟨loop then ε⟩, right)` at reflexivity on
+    // `Path[.A = Path[.A = S](Base, Base)](⟨loop then ε⟩, right)` at reflexivity on
     // `right`, the loop transported along the empty word, written as a
     // constructor of the words, whose type is the words' own.
     let mut composes_to = |right: Built| {
@@ -2423,8 +2424,8 @@ fn a_word_appends_on_its_first_word()
         Inverted,
     }
     let mut environment = one_loop();
-    // `(p : Path(S, Base, Base)) → F Path(Path(S, Base, Base), ⟨w then
-    // p⟩, right)` at reflexivity on `right`, `p` moved along nothing.
+    // `(p : Path[.A = S](Base, Base)) → F Path[.A = Path[.A = S](Base, Base)](⟨w
+    // then p⟩, right)` at reflexivity on `right`, `p` moved along nothing.
     let mut states = |case: Case| {
         let mut staging = environment.stage();
         let arena = staging.arena();
@@ -2484,14 +2485,14 @@ fn a_word_of_two_letters_moves_a_path_letter_by_letter()
     #[derive(Clone, Copy, Debug)]
     enum Moving
     {
-        /// `y. Path(S, Base, y)`: the word is appended.
+        /// `y. Path[.A = S](Base, y)`: the word is appended.
         Right,
-        /// `y. Path(S, y, Base)`: the word's inverse is prepended.
+        /// `y. Path[.A = S](y, Base)`: the word's inverse is prepended.
         Left,
     }
     let mut environment = one_loop();
-    // `Path(Path(S, Base, Base), tr(family, loop ∷ loop ∷ ε, ε), right)` at
-    // reflexivity on `right`: the word splits into its first letter and the
+    // `Path[.A = Path[.A = S](Base, Base)](tr(family, loop ∷ loop ∷ ε, ε), right)`
+    // at reflexivity on `right`: the word splits into its first letter and the
     // rest, and the empty path moves along each in turn.
     let mut moves_to = |moving: Moving, tag: usize| {
         let mut staging = environment.stage();
@@ -2549,8 +2550,8 @@ fn a_composite_over_a_call_to_the_empty_word_is_its_second_word_473()
         HeldFirst,
     }
     let mut environment = one_loop();
-    // `zero : U F Path(S, Base, Base)`, `thunk (return ε)`, and `same : U
-    // ((p : Path(S, Base, Base)) → F Path(S, Base, Base))`, `thunk (λp.
+    // `zero : U F Path[.A = S](Base, Base)`, `thunk (return ε)`, and `same : U
+    // ((p : Path[.A = S](Base, Base)) → F Path[.A = S](Base, Base))`, `thunk (λp.
     // return p)`: two definitions only an unfolding reads through.
     let mut define = |body: fn(&mut TermArena, ValueTypeId) -> (ValueTypeId, ValueId)| {
         let mut staging = environment.stage();
@@ -2582,8 +2583,8 @@ fn a_composite_over_a_call_to_the_empty_word_is_its_second_word_473()
         let pi = arena.comp_type_pi(at_point, returner);
         (arena.value_type_thunk(pi), arena.value_thunk(lambda))
     });
-    // `(p : Path(S, Base, Base)) → F Path(Path(S, Base, Base), ⟨w then
-    // q⟩, q)` at reflexivity on `q`.
+    // `(p : Path[.A = S](Base, Base)) → F Path[.A = Path[.A = S](Base, Base)](⟨w
+    // then q⟩, q)` at reflexivity on `q`.
     let mut states = |case: Case| {
         let mut staging = environment.stage();
         let arena = staging.arena();
@@ -2672,7 +2673,7 @@ fn a_held_operand_runs_on_through_the_definitions_it_meets_3789()
         let forced = arena.computation_force(function);
         arena.value_thunk(forced)
     });
-    // `inner = thunk (return here(Base))` and `outer = thunk (tr(v. Path(S, v,
+    // `inner = thunk (return here(Base))` and `outer = thunk (tr(v. Path[.A = S](v,
     // v), ⟨force inner⟩, ε))`: both ends of the motive move, so no append row
     // reads the transport, and it reduces only once the run goes on through
     // `inner`.
@@ -2693,8 +2694,8 @@ fn a_held_operand_runs_on_through_the_definitions_it_meets_3789()
         let transported = arena.computation_path_transport(motive, along, empty);
         arena.value_thunk(transported)
     });
-    // `(p : Path(S, Base, Base)) → F Path(Path(S, Base, Base), ⟨⟨force c⟩
-    // then p⟩, p)` at reflexivity on `p`.
+    // `(p : Path[.A = S](Base, Base)) → F Path[.A = Path[.A = S](Base,
+    // Base)](⟨⟨force c⟩ then p⟩, p)` at reflexivity on `p`.
     let mut states = |case: Case| {
         let mut staging = environment.stage();
         let arena = staging.arena();
@@ -2789,7 +2790,7 @@ fn a_recursive_call_stuck_at_a_variable_reads_as_its_call_473()
     let declared = arena.value_type_thunk(arrow);
     let staged = staging.def(LevelSignature::monomorphic(), declared, body);
     let _spin = environment.add_decl(staged).expect("spin checks");
-    // `stated : (n : N) → F Path(Path(S, Base, Base), loop ∷ ⟨spin(n)⟩,
+    // `stated : (n : N) → F Path[.A = Path[.A = S](Base, Base)](loop ∷ ⟨spin(n)⟩,
     // loop ∷ ⟨spin(n)⟩)`, and its call where `⟨spin(Sc(n))⟩` stands at
     // both ends: the computation types meet at the mode switch, where
     // the forced reading reads both endpoints.
@@ -2951,9 +2952,9 @@ fn a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070()
 #[derive(Clone, Copy, Debug)]
 enum Along
 {
-    /// `Path(N, Z, Z)`: the naturals, a set.
+    /// `Path[.A = N](Z, Z)`: the naturals, a set.
     Naturals,
-    /// `Path(S, Base, Base)`: the one-loop circle, no set.
+    /// `Path[.A = S](Base, Base)`: the one-loop circle, no set.
     Circle,
 }
 

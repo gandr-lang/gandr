@@ -2,6 +2,6 @@
 /// is read: a group closing before `=>` is its domain list, the binder a
 /// later domain reads named, and it stands as a transport's family.
 @[ checks ]
-def back(a : Integer, b : Integer, q : Path(Integer, a, b)) -> Path(Integer, b, a) {
-  Path.walk((y : Integer, Path(Integer, a, y)) => Path(Integer, y, a), q, Path.here(a), Path.here(q), Path.here(a))
+def back(a : Integer, b : Integer, q : Path(a, b)) -> Path(b, a) {
+  Path.walk((y : Integer, Path[.A = Integer](a, y)) => Path[.A = Integer](y, a), q, Path.here(a), Path.here(q), Path.here(a))
 }

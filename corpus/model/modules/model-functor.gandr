@@ -66,7 +66,6 @@ theory Semi where {
 module Reassociating(S : Model(Semi)) where {
   /// Associativity, read right to left.
   def reassoc(x : S.M, y : S.M, z : S.M) -> Path(
-    S.M,
     S.mul(x, S.mul(y, z)),
     S.mul(S.mul(x, y), z)
   ) {
@@ -82,7 +81,6 @@ module OnePoint : Model(Semi) where {
 
   /// Associativity, by computation: both sides are the unit.
   def assoc(x : Unit, y : Unit, z : Unit) -> Path(
-    Unit,
     mul(mul(x, y), z),
     mul(x, mul(y, z))
   ) {
@@ -94,6 +92,6 @@ module OnePoint : Model(Semi) where {
 module OnePointReassociated = Reassociating(OnePoint);
 
 /// The turned law at three units, whose products are all the unit.
-def reassociated() -> Path(Unit, unit, unit) {
+def reassociated() -> Path(unit, unit) {
   OnePointReassociated.reassoc(unit, unit, unit)
 }

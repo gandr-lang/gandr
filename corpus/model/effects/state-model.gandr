@@ -59,7 +59,6 @@ module Overwriting : Model(StatePutPut) with sort S = Integer where {
   }
   /// Storing twice keeps the second value.
   def putPut(s : Integer, u : Integer, k : Integer => Integer) -> Path(
-    Integer => Integer,
     put(s, put(u, k)),
     put(u, k)
   ) {

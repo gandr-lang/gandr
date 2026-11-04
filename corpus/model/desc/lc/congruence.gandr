@@ -24,20 +24,19 @@ pub def lamOf(t : Term) -> Term {
 }
 
 /// Equal indices are equal variables.
-pub def ixCong(x : N, y : N, p : Path(N, x, y)) -> Path(Term, Ix(x), Ix(y)) {
+pub def ixCong(x : N, y : N, p : Path(x, y)) -> Path(Ix(x), Ix(y)) {
   Path.ap(ixOf, p)
 }
 
 /// Equal terms weaken to equal terms.
-pub def wkCong(x : Term, y : Term, p : Path(Term, x, y)) -> Path(Term, wk(x), wk(y)) {
+pub def wkCong(x : Term, y : Term, p : Path(x, y)) -> Path(wk(x), wk(y)) {
   Path.ap(wk, p)
 }
 
 /// Equal terms under one substitution are equal.
-pub def substCong(s : Env, x : Term, y : Term, p : Path(Term, x, y)) -> Path(
-  Term,
+pub def substCong(s : Env, x : Term, y : Term, p : Path(x, y)) -> Path(
   subst(x, s),
   subst(y, s)
 ) {
-  Path.walk(fun (z) { Path(Term, subst(x, s), subst(z, s)) }, p, Path.here(subst(x, s)))
+  Path.walk(fun (z) { type(Path[.A = Term](subst(x, s), subst(z, s))) }, p, Path.here(subst(x, s)))
 }

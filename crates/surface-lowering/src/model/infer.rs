@@ -1675,9 +1675,9 @@ pub(super) fn derive_law(
     })
 }
 
-/// Derive the law a theory states, `law name : (binders) => Path(C, l, r)`:
-/// its written binders bound at their written sorts, then its hypotheses and
-/// its path checked against them.
+/// Derive the law a theory states, `law name : (binders) => Path[.A = C](l,
+/// r)`: its written binders bound at their written sorts, then its hypotheses
+/// and its path checked against them.
 ///
 /// # Specification
 /// - ensures: a [`ModelForm::Law`] whose telescope is the written binders, in

@@ -14,18 +14,22 @@
 import "./circle-base.gandr";
 
 /// One cell, its own reflexivity: the generator over the 1-chain.
-def selfLoop(A : Type, x : A, y : A) -> (f : Path(A, x, y)) => Path(Path(A, x, y), f, f) {
+def selfLoop(A : Type, x : A, y : A) -> (f : Path[.A = A](x, y)) => Path[.A = Path[.A = A](x, y)](
+  f,
+  f
+) {
   thunk { fun (f) { Path.here(f) } }
 }
 
 /// The generator's filler over a `Path.here` cell is `Path.here` of its side, where a
 /// type holds it.
-def generatedIsHere(A : Type, x : A) -> Path(
-  Path(
-    Path(Path(A, x, x), Path.here(x), Path.here(x)),
-    Path.here(Path.here(x)),
-    Path.here(Path.here(x))
-  ),
+def generatedIsHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = Path[.A = A](x, x)](
+  Path.here(x),
+  Path.here(x)
+)](
+  Path.here(Path.here(x)),
+  Path.here(Path.here(x))
+)](
   fill[1, 3](chain(1), selfLoop(A, x, x), (Path.here(Path.here(x)))),
   Path.here(Path.here(Path.here(x)))
 ) {
@@ -37,19 +41,16 @@ def generatedIsHere(A : Type, x : A) -> Path(
 def overGenerated(
   A : Type,
   x : A,
-  v : Path(
-    Path(Path(A, x, x), Path.here(x), Path.here(x)),
+  v : Path[.A = Path[.A = Path[.A = A](x, x)](Path.here(x), Path.here(x))](
     Path.here(Path.here(x)),
     Path.here(Path.here(x))
   )
-) -> Path(
-  Path(
-    Path(Path(A, x, x), Path.here(x), Path.here(x)),
-    Path.here(Path.here(x)),
-    Path.here(Path.here(x))
-  ),
+) -> Path[.A = Path[.A = Path[.A = Path[.A = A](x, x)](Path.here(x), Path.here(x))](
+  Path.here(Path.here(x)),
+  Path.here(Path.here(x))
+)](
   Path.walk(
-    fun (s) { Path(Path(Path(A, x, x), Path.here(x), Path.here(x)), s, s) },
+    fun (s) { type(Path[.A = Path[.A = Path[.A = A](x, x)](Path.here(x), Path.here(x))](s, s)) },
     fill[1, 3](chain(1), selfLoop(A, x, x), (Path.here(Path.here(x)))),
     v
   ),
@@ -59,8 +60,7 @@ def overGenerated(
 }
 
 /// A composite of `Path.here` cells: `Path.walk` over it reduces to its base.
-def overComposite(A : Type, M : A => Type, x : A, v : M(x)) -> Path(
-  M(x),
+def overComposite(A : Type, M : A => Type, x : A, v : M(x)) -> Path[.A = M(x)](
   Path.walk(fun (a) { M(a) }, compose[3, 5](chain(2), (Path.here(x), Path.here(x))), v),
   v
 ) {
@@ -72,6 +72,6 @@ def overComposite(A : Type, M : A => Type, x : A, v : M(x)) -> Path(
 def overCarried(
   M : Circle => Type,
   v : M(Base)
-) -> Path(M(Base), Path.walk(fun (c) { M(c) }, loop, v), v) {
+) -> Path[.A = M(Base)](Path.walk(fun (c) { M(c) }, loop, v), v) {
   Path.here(v)
 }

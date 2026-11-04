@@ -1,9 +1,9 @@
 /// `OpenSessionPayload`: a session type whose payload reads a binder outside it, outside a run's protocol.
 @[ refuses("OpenSessionPayload") ]
-def open_payload : Path(Type, ?String. end, ?String. end) ;
+def open_payload : Path[.A = Type](?String. end, ?String. end) ;
 
 def open_payload = Path.walk(
-  fun (X) { Path(Type, type(?String. end), type(?X. end)) },
+  fun (X) { type(Path[.A = Type](type(?String. end), type(?X. end))) },
   Path.here(String),
   Path.here(type(?String. end))
 ) ;

@@ -611,7 +611,7 @@ impl Source for ContentSource<'_>
                 left,
                 right,
             } => Former::Path {
-                carrier,
+                carrier: Some(carrier),
                 left,
                 right,
             },
@@ -620,7 +620,7 @@ impl Source for ContentSource<'_>
                 left,
                 right,
             } => Former::Bridge {
-                carrier,
+                carrier: Some(carrier),
                 left,
                 right,
             },
@@ -1449,7 +1449,7 @@ mod tests
                 ContentNode::Quote(NodeIndex::from(5)),
                 ContentNode::Base(BaseType::Integer),
             ]),
-            faithful("Path(List(Integer), nil, empty)".into())
+            faithful("Path[.A = List(Integer)](nil, empty)".into())
         );
         assert_eq!(
             spelled(&[

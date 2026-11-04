@@ -127,7 +127,7 @@ fn formers() -> Vec<Former>
             build: |a, c| a.value_stay(c),
         },
         Former {
-            what: "⌜Path(1, c, c)⌝",
+            what: "⌜Path[.A = 1](c, c)⌝",
             rigid: true,
             build: |a, c| {
                 let one = a.value_type_unit();

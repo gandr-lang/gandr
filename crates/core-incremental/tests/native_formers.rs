@@ -311,8 +311,8 @@ fn interfaced_atom(law: Law) -> Program
     let reflexive = arena.comp_type_pi(unit, witnessed);
     let reflexive = arena.value_type_thunk(reflexive);
     let reflexivity_body = thunk(&mut arena, one, 1);
-    // `law : U(Π (a b : Unit). Π (r : El(⟨relation a b⟩)). F Path(Σ (y :
-    // Unit). El(⟨relation a y⟩), (b, r), (a, ⟨reflexivity a⟩))) = λ λ λ
+    // `law : U(Π (a b : Unit). Π (r : El(⟨relation a b⟩)). F Path[.A = Σ (y :
+    // Unit). El(⟨relation a y⟩)]((b, r), (a, ⟨reflexivity a⟩))) = λ λ λ
     // return ((), ())`.
     let (start, end) = (var(&mut arena, 3), var(&mut arena, 0));
     let singleton = related(&mut arena, start, end);

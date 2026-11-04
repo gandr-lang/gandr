@@ -2181,7 +2181,7 @@ mod tests
         let written = std::fs::read_to_string(&path).expect("the corpus source is read");
         let text = SourceText::from(written.as_str());
         let line = written
-            .find("def joined : Path(")
+            .find("def joined : Path[")
             .expect("the source declares `joined`");
         let index = LineIndex::new(written.as_str().into());
         let session = checked(text);
@@ -2201,7 +2201,7 @@ mod tests
             }
         };
         let composite = "Path.step(loop, Path.here(Base))";
-        let ty = format!("Path(Path(Circle, Base, Base), {composite}, loop)");
+        let ty = format!("Path[.A = Path[.A = Circle](Base, Base)]({composite}, loop)");
         let named = at(line.saturating_add("def jo".len()));
         assert!(
             named.starts_with(&fenced(SourceText::from(format!("joined : {ty}").as_str()))),
@@ -2214,7 +2214,7 @@ mod tests
         assert_eq!(
             at(line.saturating_add(stated).saturating_add("Path.s".len())),
             fenced(SourceText::from(
-                format!("{composite} : -F Path(Circle, Base, Base)").as_str()
+                format!("{composite} : -F Path[.A = Circle](Base, Base)").as_str()
             )),
             "the written composite prints the same text"
         );
@@ -2415,10 +2415,10 @@ mod tests
             ),
             (
                 "a declaration written with a dependent record",
-                "def r$0ing : #{n : Integer, v : Path(Integer, n, n)} ;\ndef ring = #{2, Path.here(2)} \
+                "def r$0ing : #{n : Integer, v : Path[.A = Integer](n, n)} ;\ndef ring = #{2, Path.here(2)} \
                  ;\n",
                 Ok(fenced(SourceText::from(
-                    "ring : #{n : Integer, v : Path(Integer, n, n)}",
+                    "ring : #{n : Integer, v : Path[.A = Integer](n, n)}",
                 ))),
             ),
             (
@@ -2558,11 +2558,11 @@ mod tests
         assert_eq!(
             marked(SourceText::from(
                 "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef rec size(p : \
-                 Path(Circle, Base, Base)) -> -F Integer {\n  match p {\n    here => return 0,\n    \
+                 Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    here => return 0,\n    \
                  loop ∷ q => become size[<](q),\n    back$0(loop) ∷ q => become size[<](q)\n  }\n}\n"
             )),
             Ok(fenced(SourceText::from(
-                "back(loop) ∷ q : Path(Circle, Base, Base)"
+                "back(loop) ∷ q : Path[.A = Circle](Base, Base)"
             )))
         );
     }
@@ -2752,21 +2752,21 @@ mod tests
     {
         let text = SourceText::from(
             "theory Lawful where {\n  sort Carrier : Type;\n  oper alike : (a : Carrier, b : Carrier) \
-             --> Bool;\n  law refl : (a : Carrier) => Path(Bool, alike(a, a), true);\n}\nmodule \
+             --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](alike(a, a), true);\n}\nmodule \
              Host : Model(Lawful) with sort Carrier = Integer where {\n  def alike(a : Integer, b : \
              Integer) -> Bool { int.eq(a, b) }\n  law refl = ~admitted;\n}\n",
         );
         assert_eq!(
             shown(text, (7.into(), 7.into())),
             Ok(String::from(
-                "```gandr\nrefl : +U ((a : Integer) -> -F Path(Bool, Host.alike(a, a), true))\n```"
+                "```gandr\nrefl : +U ((a : Integer) -> -F Path[.A = Bool](Host.alike(a, a), true))\n```"
             )),
             "the admitted law"
         );
         assert_eq!(
             shown(text, (3.into(), 7.into())),
             Ok(String::from(
-                "```gandr\nrefl : +U ((a : Carrier) -> -F Path(Bool, alike(a, a), true))\n```"
+                "```gandr\nrefl : +U ((a : Carrier) -> -F Path[.A = Bool](alike(a, a), true))\n```"
             )),
             "the theory's law"
         );

@@ -24,7 +24,7 @@ pub module Schema where {
   }
   /// The flow from the old schema to the new, by its translator.
   @[ checks ]
-  def upgrade : Flow(Type, Old, New) = Flow.into(toNew);
+  def upgrade : Flow[.A = Type](Old, New) = Flow.into(toNew);
   /// One record ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> New {

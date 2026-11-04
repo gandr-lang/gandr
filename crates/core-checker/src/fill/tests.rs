@@ -52,7 +52,7 @@ struct Integers
     carrier: ValueTypeId,
     /// The literal `1`.
     one: ValueId,
-    /// `Path(ℤ, 1, 1)`, every cell's type.
+    /// `Path[.A = ℤ](1, 1)`, every cell's type.
     cell: ValueTypeId,
     /// `here(1)`.
     reflexive: ValueId,
@@ -115,10 +115,10 @@ fn variable(
     arena.value_variable(Zone::Intuitionistic, index)
 }
 
-/// `(c₁ : Path(ℤ, 1, 1)) => (c₂ : Path(ℤ, 1, 1)) => Path(Path(ℤ, 1, 1), s,
-/// s)`, `s` the sides `sides` names, as a computation returning the curried
-/// function `here(s)` ascribed that type; for [`Sides::Composed`], `… =>
-/// Path(ℤ, 1, 1)` returning `c₁ then c₂`.
+/// `(c₁ : Path[.A = ℤ](1, 1)) => (c₂ : Path[.A = ℤ](1, 1)) => Path[.A = Path[.A
+/// = ℤ](1, 1)](s, s)`, `s` the sides `sides` names, as a computation returning
+/// the curried function `here(s)` ascribed that type; for [`Sides::Composed`],
+/// `… => Path[.A = ℤ](1, 1)` returning `c₁ then c₂`.
 ///
 /// # Specification
 /// trivial.
@@ -160,8 +160,8 @@ fn generator(
     arena.computation_ascribe(body, ty)
 }
 
-/// `(x : ℤ) => (y : ℤ) => (c : Path(ℤ, x, y)) => Path(ℤ, x, y)`, the one
-/// cell's pasting context, as a computation returning the curried function
+/// `(x : ℤ) => (y : ℤ) => (c : Path[.A = ℤ](x, y)) => Path[.A = ℤ](x, y)`, the
+/// one cell's pasting context, as a computation returning the curried function
 /// answering `c` ascribed that type.
 ///
 /// # Specification
@@ -202,7 +202,8 @@ fn a_free_cell_fills_its_square_by_induction()
 {
     let mut arena = CoreArena::new();
     let integers = integers(&mut arena);
-    // `p : Path(ℤ, 1, 1)`, then `α : Path(Path(ℤ, 1, 1), here(1), p)`.
+    // `p : Path[.A = ℤ](1, 1)`, then `α : Path[.A = Path[.A = ℤ](1, 1)](here(1),
+    // p)`.
     let moving = variable(&mut arena, DeBruijnIndex::from(0_u32));
     let lifted = arena.value_type_path(integers.cell, integers.reflexive, moving);
     let alpha = variable(&mut arena, DeBruijnIndex::from(0_u32));
@@ -261,7 +262,8 @@ fn a_cell_of_dimension_one_fills_its_square_by_induction()
 {
     let mut arena = CoreArena::new();
     let integers = integers(&mut arena);
-    // `p : Path(ℤ, 1, 1)`, then `α : Path(Path(ℤ, 1, 1), here(1), p)`.
+    // `p : Path[.A = ℤ](1, 1)`, then `α : Path[.A = Path[.A = ℤ](1, 1)](here(1),
+    // p)`.
     let moving = variable(&mut arena, DeBruijnIndex::from(0_u32));
     let lifted = arena.value_type_path(integers.cell, integers.reflexive, moving);
     let alpha = variable(&mut arena, DeBruijnIndex::from(0_u32));
@@ -344,13 +346,13 @@ fn vertex_paths_fill_their_square_by_induction()
     let mut arena = CoreArena::new();
     let integers = integers(&mut arena);
     let index = |arena: &mut CoreArena, at: u32| variable(arena, DeBruijnIndex::from(at));
-    // `x⁺ : ℤ`, `x→ : Path(ℤ, 1, x⁺)`, `y⁺ : ℤ`, `y→ : Path(ℤ, 1, y⁺)`.
+    // `x⁺ : ℤ`, `x→ : Path[.A = ℤ](1, x⁺)`, `y⁺ : ℤ`, `y→ : Path[.A = ℤ](1, y⁺)`.
     let right = index(&mut arena, 0);
     let vertex = arena.value_type_path(integers.carrier, integers.one, right);
-    // `c⁺ : Path(ℤ, x⁺, y⁺)`.
+    // `c⁺ : Path[.A = ℤ](x⁺, y⁺)`.
     let (x, y) = (index(&mut arena, 3), index(&mut arena, 1));
     let ends = arena.value_type_path(integers.carrier, x, y);
-    // `c→ : Path(Path(ℤ, 1, y⁺), here(1) then y→, x→ then c⁺)`.
+    // `c→ : Path[.A = Path[.A = ℤ](1, y⁺)](here(1) then y→, x→ then c⁺)`.
     let (y, y_path) = (index(&mut arena, 2), index(&mut arena, 1));
     let (x_path, c) = (index(&mut arena, 3), index(&mut arena, 0));
     let outer = arena.value_type_path(integers.carrier, integers.one, y);
@@ -423,8 +425,9 @@ fn a_set_that_is_no_pasting_context_is_refused()
     let integers = integers(&mut arena);
     let index = |arena: &mut CoreArena, at: u32| variable(arena, DeBruijnIndex::from(at));
     let generator = one_cell(&mut arena, integers);
-    // `y⁺ : ℤ`, `y→ : Path(ℤ, 1, y⁺)`, `q : Path(ℤ, 1, y⁺)`, `c⁺ : Path(ℤ, 1,
-    // y⁺)`, then `c→ : Path(Path(ℤ, 1, y⁺), here(1) then q, c⁺)`.
+    // `y⁺ : ℤ`, `y→ : Path[.A = ℤ](1, y⁺)`, `q : Path[.A = ℤ](1, y⁺)`, `c⁺ :
+    // Path[.A = ℤ](1, y⁺)`, then `c→ : Path[.A = Path[.A = ℤ](1, y⁺)](here(1)
+    // then q, c⁺)`.
     let right = index(&mut arena, 0);
     let vertex = arena.value_type_path(integers.carrier, integers.one, right);
     let right = index(&mut arena, 1);
@@ -452,7 +455,8 @@ fn a_set_that_is_no_pasting_context_is_refused()
         generator,
         Box::from([integers.one, y_path, c_path]),
     );
-    // Past those, `x⁺ : ℤ` and `x→ : Path(ℤ, 1, x⁺)` beside the cell `here(1)`.
+    // Past those, `x⁺ : ℤ` and `x→ : Path[.A = ℤ](1, x⁺)` beside the cell
+    // `here(1)`.
     let x_path = index(&mut arena, 0);
     let open = arena.value_fill(
         chain(Head(5, 7), Shape(1)),
@@ -625,7 +629,7 @@ fn at(
     variable(arena, DeBruijnIndex::from(index))
 }
 
-/// `f then g` over `Path(ℤ, start, _)`, returned.
+/// `f then g` over `Path[.A = ℤ](start, _)`, returned.
 ///
 /// # Specification
 /// trivial.
@@ -639,10 +643,11 @@ fn composed(
     arena.value_returned(composite)
 }
 
-/// `(f : Path(ℤ, x, y)) => (p : Path(ℤ, x, y)) => (a : Path(Path(ℤ, x, y), f,
-/// p)) => (g : Path(ℤ, y, z)) => (q : Path(ℤ, y, z)) => (b : Path(Path(ℤ, y,
-/// z), g, q)) => Path(Path(ℤ, x, z), f then g, p then q)`, thunked, under
-/// `x`, `y` and `z`: the type of a horizontal composite of two 2-cells.
+/// `(f : Path[.A = ℤ](x, y)) => (p : Path[.A = ℤ](x, y)) => (a : Path[.A =
+/// Path[.A = ℤ](x, y)](f, p)) => (g : Path[.A = ℤ](y, z)) => (q : Path[.A =
+/// ℤ](y, z)) => (b : Path[.A = Path[.A = ℤ](y, z)](g, q)) => Path[.A = Path[.A
+/// = ℤ](x, z)](f then g, p then q)`, thunked, under `x`, `y` and `z`: the type
+/// of a horizontal composite of two 2-cells.
 ///
 /// # Specification
 /// trivial.
@@ -706,7 +711,7 @@ fn horizontal(
 }
 
 /// Example 1.4 of the naturality paper over `ℤ`: the first column of `[2](1,
-/// 1)` lifts, its 1-cells along their own carrier `Path(ℤ, x, y)`, and the
+/// 1)` lifts, its 1-cells along their own carrier `Path[.A = ℤ](x, y)`, and the
 /// second stays.
 #[test]
 fn two_columns_fill_their_cylinders_by_induction()

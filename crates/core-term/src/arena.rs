@@ -2695,7 +2695,7 @@ impl CoreArena
         self.alloc_computation(Computation::Transport(path, value))
     }
 
-    /// Mint the element identity `Path(A, a, b)`.
+    /// Mint the element identity `Path[.A = A](a, b)`.
     ///
     /// # Specification
     /// trivial.
@@ -2714,7 +2714,7 @@ impl CoreArena
         })
     }
 
-    /// Mint the bridge type `Bridge(A, a, b)`.
+    /// Mint the bridge type `Bridge[.A = A](a, b)`.
     ///
     /// # Specification
     /// trivial.
@@ -2981,7 +2981,7 @@ impl CoreArena
         self.alloc_value(Value::Web(pieces))
     }
 
-    /// Mint the directed identity `Flow(A, a, b)`.
+    /// Mint the directed identity `Flow[.A = A](a, b)`.
     ///
     /// # Specification
     /// trivial.

@@ -1010,7 +1010,7 @@ fn check_reports_each_cell_a_source_discharges_4112()
         Path::new("laws.gandr"),
         Text::from(
             "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> \
-             Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\ndata One : \
+             Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), true);\n}\ndata One : \
              Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One where {\n  \
              def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort \
              Carrier = One where {\n  def same(a : One, b : One) -> Bool { false }\n}\n",

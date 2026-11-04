@@ -22,18 +22,17 @@ import "./int-sum.gandr";
 import "./loop-words.gandr";
 
 /// `plusS` read backwards.
-def flipS(x : Int, a : Int) -> Path(Int, S(plus(x, a)), plus(S(x), a)) {
+def flipS(x : Int, a : Int) -> Path[.A = Int](S(plus(x, a)), plus(S(x), a)) {
   Path.back(plusS(x, a))
 }
 
 /// `plusP` read backwards.
-def flipP(x : Int, a : Int) -> Path(Int, P(plus(x, a)), plus(P(x), a)) {
+def flipP(x : Int, a : Int) -> Path[.A = Int](P(plus(x, a)), plus(P(x), a)) {
   Path.back(plusP(x, a))
 }
 
 /// The successor of a commuting pair of sums commutes.
-def upOf(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
-  Int,
+def upOf(a : Int, x : Int, e : Path[.A = Int](plus(a, x), plus(x, a))) -> Path[.A = Int](
   S(plus(a, x)),
   S(plus(x, a))
 ) {
@@ -41,8 +40,7 @@ def upOf(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
 }
 
 /// The predecessor of a commuting pair of sums commutes.
-def downOf(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
-  Int,
+def downOf(a : Int, x : Int, e : Path[.A = Int](plus(a, x), plus(x, a))) -> Path[.A = Int](
   P(plus(a, x)),
   P(plus(x, a))
 ) {
@@ -50,8 +48,7 @@ def downOf(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
 }
 
 /// One successor step of commutativity: the call's image, then the lemma.
-def upAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
-  Int,
+def upAlong(a : Int, x : Int, e : Path[.A = Int](plus(a, x), plus(x, a))) -> Path[.A = Int](
   S(plus(a, x)),
   plus(S(x), a)
 ) {
@@ -59,8 +56,7 @@ def upAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
 }
 
 /// One predecessor step of commutativity: the call's image, then the lemma.
-def downAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
-  Int,
+def downAlong(a : Int, x : Int, e : Path[.A = Int](plus(a, x), plus(x, a))) -> Path[.A = Int](
   P(plus(a, x)),
   plus(P(x), a)
 ) {
@@ -71,7 +67,7 @@ def downAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
 /// `int-sum.gandr`'s `plusComm` written out. At `S(P(x))` the arms compute a
 /// chain through `flipP` and `flipS` against the call at `x`; both are paths
 /// in the integers between the same two sums, so they are one path.
-def rec plusCommAlong(a : Int, b : Int) -> Path(Int, plus(a, b), plus(b, a)) {
+def rec plusCommAlong(a : Int, b : Int) -> Path[.A = Int](plus(a, b), plus(b, a)) {
   match b {
     Z => Path.back(plusZ(a)),
     S(x) => upAlong(a, x, plusCommAlong[<](a, x)),
@@ -83,7 +79,7 @@ def rec plusCommAlong(a : Int, b : Int) -> Path(Int, plus(a, b), plus(b, a)) {
 /// `S(P(x))` it computes `Path.step(turned(x), loop)` against `turned(x)`, two
 /// loops the circle tells apart, so the case is refused.
 @[ refuses("RuleNotRespected") ]
-def rec turned(b : Int) -> Path(Circle, Base, Base) {
+def rec turned(b : Int) -> Path[.A = Circle](Base, Base) {
   match b {
     Z => Path.here(Base),
     S(x) => Path.step(turned[<](x), loop),
@@ -95,7 +91,7 @@ def rec turned(b : Int) -> Path(Circle, Base, Base) {
 /// `Loop(Unloop(x))` the loop arm carries the inverse arm's reflexivity where
 /// the rule's right side reads the path at `x`; the words form a set, so the
 /// two agree by their endpoints and the case respects its rules.
-def rec rewound(w : Words) -> Path(Words, w, w) {
+def rec rewound(w : Words) -> Path[.A = Words](w, w) {
   match w {
     Nil => Path.here(Nil),
     Loop(x) => Path.ap(around, rewound[<](x)),

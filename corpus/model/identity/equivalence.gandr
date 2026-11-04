@@ -33,9 +33,9 @@ def leftRetraction(
   g : b => a,
   h : b => a,
   y : b,
-  sh : Path(a, g(t(h(y))), h(y)),
-  ry : Path(b, t(h(y)), y)
-) -> Path(b, t(g(y)), y) {
+  sh : Path(g(t(h(y))), h(y)),
+  ry : Path(t(h(y)), y)
+) -> Path(t(g(y)), y) {
   Path.step(Path.back(Path.ap(t, Path.step(Path.back(sh), Path.ap(g, ry)))), ry)
 }
 
@@ -53,6 +53,6 @@ def equivToIso(a : Type, b : Type, e : a ≃ b) -> a ≅ b {
 /// A bi-invertible map is a path from itself to itself among the bi-invertible
 /// maps, by reflexivity: the point is checked against `a ≃ b` beneath `e`,
 /// which that type does not read, and the type reads back as written.
-def equivHere(a : Type, b : Type, e : a ≃ b) -> Path(a ≃ b, e, e) {
+def equivHere(a : Type, b : Type, e : a ≃ b) -> Path[.A = a ≃ b](e, e) {
   Path.here(e)
 }

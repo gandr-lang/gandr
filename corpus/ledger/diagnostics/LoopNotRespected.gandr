@@ -5,7 +5,7 @@ data Circle : Type where {
 }
 
 @[ refuses("LoopNotRespected") ]
-def contractible(x : Circle) -> -F Path(Circle, Base, x) {
+def contractible(x : Circle) -> -F Path[.A = Circle](Base, x) {
   match x {
     Base => Path.here(Base)
   }

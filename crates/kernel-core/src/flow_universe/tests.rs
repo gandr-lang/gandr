@@ -1415,7 +1415,8 @@ fn directed_j_rides_the_telescope()
     let string = arena.value_type_base(BaseType::String);
     let here = arena.value_literal(Literal::Text(StringLiteral::new("here".into())));
     let there = arena.value_literal(Literal::Text(StringLiteral::new("there".into())));
-    // Π (y : String). Π (z : Flow(String, here, y)). F Flow(String, here, y).
+    // Π (y : String). Π (z : Flow[.A = String](here, y)). F Flow[.A = String](here,
+    // y).
     let point = arena.value_variable(DeBruijnIndex::from(0_u32));
     let family = arena.value_type_flow(string, here, point);
     let outer = arena.value_variable(DeBruijnIndex::from(1_u32));

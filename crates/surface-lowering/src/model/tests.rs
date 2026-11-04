@@ -170,7 +170,7 @@ where
                 .collect();
             entries.extend(hypotheses.iter().map(|hypothesis| {
                 format!(
-                    "{} : Path({}, {}, {})",
+                    "{} : Path[.A = {}]({}, {})",
                     hypothesis.name,
                     sort(&hypothesis.carrier),
                     hypothesis.left,
@@ -178,7 +178,7 @@ where
                 )
             }));
             format!(
-                "{name} : ({}) => Path({}, {left}, {right})",
+                "{name} : ({}) => Path[.A = {}]({left}, {right})",
                 entries.join(", "),
                 sort(carrier)
             )
@@ -320,7 +320,7 @@ fn a_computation_sort_derives_a_family_into_computation_types()
 fn a_stated_law_binds_its_written_variables_2356()
 {
     let model = derived(
-        "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n  law sym : (a : Carrier, b : Carrier) => Path(Bool, same(a, b), same(b, a));\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true);\n  law loose : (a : Carrier) => Path(Bool, same(a, b), true);\n  law odd : (a : Carrier) => Path(Carrier, a, true);\n}",
+        "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), true);\n  law sym : (a : Carrier, b : Carrier) => Path[.A = Bool](same(a, b), same(b, a));\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path[.A = Bool](same(a, b), true), q : Path[.A = Bool](same(b, c), true)) => Path[.A = Bool](same(a, c), true);\n  law loose : (a : Carrier) => Path[.A = Bool](same(a, b), true);\n  law odd : (a : Carrier) => Path[.A = Carrier](a, true);\n}",
     );
     let names: Vec<&str> = model
         .components
@@ -334,15 +334,15 @@ fn a_stated_law_binds_its_written_variables_2356()
     );
     assert_eq!(
         spelled(&model, "refl"),
-        "refl : (a : Carrier) => Path(Bool, same(a, a), true)"
+        "refl : (a : Carrier) => Path[.A = Bool](same(a, a), true)"
     );
     assert_eq!(
         spelled(&model, "sym"),
-        "sym : (a : Carrier, b : Carrier) => Path(Bool, same(a, b), same(b, a))"
+        "sym : (a : Carrier, b : Carrier) => Path[.A = Bool](same(a, b), same(b, a))"
     );
     assert_eq!(
         spelled(&model, "trans"),
-        "trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true)",
+        "trans : (a : Carrier, b : Carrier, c : Carrier, p : Path[.A = Bool](same(a, b), true), q : Path[.A = Bool](same(b, c), true)) => Path[.A = Bool](same(a, c), true)",
         "the hypotheses follow the variables, each a path over them"
     );
     assert_eq!(spelled(&model, "loose"), "loose refused: Unbound");
@@ -407,18 +407,18 @@ fn the_cat_shape_laws_relate_elaborated_terms()
 
     assert_eq!(
         spelled(&model, "unitL"),
-        "unitL : (a : Ob, b : Ob, f : Hom(a, b)) => Path(Hom(a, b), comp(a, a, b, id(a), f), f)",
+        "unitL : (a : Ob, b : Ob, f : Hom(a, b)) => Path[.A = Hom(a, b)](comp(a, a, b, id(a), f), f)",
         "an index no term writes takes the first letter the rule leaves free"
     );
     assert_eq!(
         spelled(&model, "unitR"),
-        "unitR : (a : Ob, b : Ob, f : Hom(a, b)) => Path(Hom(a, b), comp(a, b, b, f, id(b)), f)",
+        "unitR : (a : Ob, b : Ob, f : Hom(a, b)) => Path[.A = Hom(a, b)](comp(a, b, b, f, id(b)), f)",
         "a written index keeps its name and its place in the walk"
     );
     assert_eq!(
         spelled(&model, "assoc"),
         "assoc : (a : Ob, b : Ob, c : Ob, d : Ob, f : Hom(a, b), g : Hom(b, c), h : Hom(c, d)) \
-         => Path(Hom(a, d), comp(a, c, d, comp(a, b, c, f, g), h), comp(a, b, d, f, comp(b, c, \
+         => Path[.A = Hom(a, d)](comp(a, c, d, comp(a, b, c, f, g), h), comp(a, b, d, f, comp(b, c, \
          d, g, h)))",
         "the indices bind in the order the written variables' sorts meet them"
     );
@@ -628,7 +628,7 @@ fn a_result_sort_indexed_by_an_operation_instantiates_at_each_use()
     );
     assert_eq!(
         spelled(&model, "again"),
-        "again : (a : Ob) => Path(Hom(a, next(a)), step(a), step(a))",
+        "again : (a : Ob) => Path[.A = Hom(a, next(a))](step(a), step(a))",
         "an index the result sort writes as an application instantiates at the call's argument, \
          and the two sides' indices unify application against application"
     );
@@ -655,7 +655,7 @@ fn an_implicit_object_past_the_last_free_letter_is_numbered()
         law.starts_with(
             "chain : (a : Ob, b : Ob, c : Ob, d : Ob, e : Ob, f : Ob, g : Ob, h : Ob, i : Ob, j : \
              Ob, k : Ob, l : Ob, m : Ob, x0 : Ob, n : Hom(a, b)"
-        ) && law.contains("z : Hom(m, x0)) => Path(Hom(a, x0), "),
+        ) && law.contains("z : Hom(m, x0)) => Path[.A = Hom(a, x0)]("),
         "the thirteen letters the morphisms leave free name the first objects, and the \
          fourteenth takes `x0`: {law}"
     );

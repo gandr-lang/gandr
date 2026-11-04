@@ -788,6 +788,18 @@ impl TileName
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     pub const BINDERS: [Self; 3] = [Self::IDENTIFIER, Self::TYPE_VARIABLE, Self::TYPE_IDENTIFIER];
+
+    /// The tile's label as a name: the head a built-in form spells, where a
+    /// hole it nominates names its function.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn spelling(self) -> crate::resolve::SurfaceName<'static>
+    {
+        crate::resolve::SurfaceName::from(self.0)
+    }
 }
 
 impl AsRef<str> for TileName
@@ -951,19 +963,19 @@ pub enum Former
     ValueFunctionType,
     /// A parenthesised type.
     ParenthesizedType,
-    /// The element path type `Path(A, a, b)`: a value type over a carrier
+    /// The element path type `Path[.A = A](a, b)`: a value type over a carrier
     /// and two endpoint terms.
     PathType,
-    /// The bridge type `Bridge(A, a, b)`: a value type over a carrier and two
-    /// endpoint terms, read as the path type is.
+    /// The bridge type `Bridge[.A = A](a, b)`: a value type over a carrier and
+    /// two endpoint terms, read as the path type is.
     BridgeType,
     /// The directed identity type with its carrier supplied by name,
-    /// `Flow[.A = C](a, b)`: the positional `Flow(C, a, b)` is a type
+    /// `Flow[.A = C](a, b)`: the positional `Flow[.A = C](a, b)` is a type
     /// application.
     FlowType,
     /// A relation between two types written infix: the equivalence `A ≃ B`
     /// and the quasi-inverse `A ≅ B`, each the record type it abbreviates,
-    /// and the flow `A ⇝ B`, the directed identity `Flow(Type, A, B)`.
+    /// and the flow `A ⇝ B`, the directed identity `Flow[.A = Type](A, B)`.
     RelationType,
     /// A model type with manifest sorts, `Model(T) with sort x = A`: the
     /// bundled record `Model(T)` with the component `x` fixed as `A`.

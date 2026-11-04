@@ -64,24 +64,26 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/control/divergence.gandr:62:3
+   ╭▸ corpus/pathological/control/divergence.gandr:66:3
    │
-57 │   def unreadDiv(a : Type, b : Type, f : a => b, g : +U (a -> -F [Partial] b)) -> Path(
-   │   │             ┬         ┬         ┬           ─ checked; while checking the body of this function; binds g : +U (a -> -F [Partial] b)
-   │   │             │         │         │
-   │   │             │         │         checked; while checking the body of this function; binds f : a => b
-   │   │             │         checked; while checking the body of this function; binds b : Type
-   │ ┌─┘             checked; while checking the body of this function; binds a : Type
-   │ │
-58 │ │   +U (a -> -F [Partial] b),
-59 │ │   thunk { fun (x) { let _ = g(x); f(x) } },
+57 │ ┌ def unreadDiv(
+58 │ │   a : Type,
+   │ │   ─ checked; while checking the body of this function; binds a : Type
+59 │ │   b : Type,
+   │ │   ─ checked; while checking the body of this function; binds b : Type
+60 │ │   f : a => b,
+   │ │   ─ checked; while checking the body of this function; binds f : a => b
+61 │ │   g : +U (a -> -F [Partial] b)
+   │ │   ─ checked; while checking the body of this function; binds g : +U (a -> -F [Partial] b)
+62 │ │ ) -> Path[.A = +U (a -> -F [Partial] b)](
+63 │ │   thunk { fun (x) { let _ = g(x); f(x) } },
    │ │   ──────────────────────────────────────── an endpoint the point does not convert to
-60 │ │   thunk { fun (x) { f(x) } }
+64 │ │   thunk { fun (x) { f(x) } }
    │ │   ────────────────────────── an endpoint the point does not convert to
-61 │ │ ) {
-62 │ │   Path.here(thunk { fun (x) { f(x) } })
+65 │ │ ) {
+66 │ │   Path.here(thunk { fun (x) { f(x) } })
    │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
-63 │ │ }
+67 │ │ }
    │ └─┘ checked; while checking the body of this thunk
    │
    ├ note: `unreadDiv` is refused with EndpointMismatch, as its expectation states

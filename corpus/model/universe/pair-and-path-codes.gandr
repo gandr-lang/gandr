@@ -88,7 +88,7 @@ rec {
   def rec elPath(u : UPath) -> -F Type {
     match u {
       NatP => return Nat,
-      PathP(a, x, y) => return (Path(elPath[<](a), x, y))
+      PathP(a, x, y) => return (type(Path[.A = elPath[<](a)](x, y)))
     }
   }
 }
