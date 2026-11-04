@@ -298,16 +298,17 @@ const PREC_EDGES: &[(&str, &str)] = &[
     ("expression.application", "expression.unary"),
 ];
 
-/// The label of juxtaposition's tile, `f x`: one space, the gap that writes
-/// an application. The tile is zero bytes wide. No lexeme holds whitespace,
-/// so no lexeme spells the tile, and the melder pushes it between two
-/// expression operands.
+/// The label of juxtaposition's tile, `f x`.
+///
+/// One space, the gap that writes an application. The tile is zero bytes
+/// wide. No lexeme holds whitespace, so no lexeme spells the tile, and the
+/// melder pushes it between two expression operands.
 pub const APPLICATION: &str = " ";
 
 /// The tiles that open a shell form: a shell block, a subshell and a command
 /// substitution. A shell form's words stay flat side by side, so the melder
 /// pushes no juxtaposition tile inside one.
-pub(crate) const FLAT_OPENERS: &[&str] = &["#!{", "subshell_open", "command_substitution_start"];
+pub const FLAT_OPENERS: &[&str] = &["#!{", "subshell_open", "command_substitution_start"];
 
 /// The named node kinds of the surface's tree-sitter grammar, ascending.
 pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[

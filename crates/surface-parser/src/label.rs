@@ -86,6 +86,8 @@ use gandr_surface_syntax::SourceFragment;
 use crate::meld::primitive_copy_wrapper;
 use crate::mold::TokenIndex;
 
+mod layout;
+
 /// The lexical class of one maximal lexeme.
 ///
 /// The class is the labeler's whole output vocabulary; the molder maps each
@@ -166,6 +168,13 @@ pub enum Lexeme
     /// token on its line, or one standing directly in a brace whose first
     /// token is a `|`. Every other `|` stays [`Lexeme::Punct`].
     ArmBar,
+    /// A layout block's opener, which the molder reads as `{`: zero-width, or
+    /// a body's line-final `=` relabeled.
+    LayoutOpen,
+    /// A layout block's zero-width separator, which the molder reads as `;`.
+    LayoutSemi,
+    /// A layout block's zero-width closer, which the molder reads as `}`.
+    LayoutClose,
     /// Insignificant layout: whitespace, newlines, comments, or a shebang.
     Space,
     /// A byte or run the grammar has no tile for (the `UnmoldedTok` path).
@@ -828,7 +837,7 @@ const BYTE_ORDER_MARK_UTF8: [u8; 3] = [0xef, 0xbb, 0xbf];
 #[must_use]
 #[spec(ensures: |ret| ret.first().map_or_else(|| src.as_ref().is_empty(), |first| first.start == 0)
     && ret.last().is_none_or(|last| usize::try_from(last.end).ok() == Some(src.as_ref().len()))
-    && ret.iter().all(|token| token.start < token.end && usize::try_from(token.start).ok().zip(usize::try_from(token.end).ok()).is_some_and(|(start, end)| src.as_ref().get(start .. end).is_some()))
+    && ret.iter().all(|token| (token.start < token.end || matches!(token.lexeme, Lexeme::LayoutOpen | Lexeme::LayoutSemi | Lexeme::LayoutClose)) && usize::try_from(token.start).ok().zip(usize::try_from(token.end).ok()).is_some_and(|(start, end)| src.as_ref().get(start .. end).is_some()))
     && ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| left.end == right.start))]
 pub fn label(src: SourceFragment<'_>) -> Vec<Token>
 {
@@ -842,6 +851,7 @@ pub fn label(src: SourceFragment<'_>) -> Vec<Token>
         pos = next;
     }
     mark_arm_bars(source_bytes, &mut tokens);
+    layout::lay_out(source_bytes, &mut tokens, layout::Next::End);
     tokens
 }
 
@@ -867,16 +877,60 @@ enum Opened
 }
 
 primitive_copy_wrapper!(
+    /// Whether a token resets the passes that read brackets and blocks.
+    struct Resets(bool);
+);
+
+/// Whether `token` is a word or an attribute's opener at column zero: the
+/// first token of a declaration. The layout and the arm-bar marking stand in
+/// their first state there, every block and bracket closed, so an edit
+/// relabels from one such token to another.
+///
+/// # Specification
+/// - requires: `token` is a token of `bytes`.
+/// - ensures: true exactly when `token` is a [`Lexeme::LowerWord`], or a
+///   [`Lexeme::Punct`] spelled `@[` or `@![`, that starts the source or follows
+///   a newline.
+/// - panics: none.
+/// - executable: none — the clause restates the body.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a word at column zero closes the blocks and brackets
+///   before it, and an edit relabels as the edited source labels from one reset
+///   to the next.
+/// - witness: `label::layout::tests::a_word_at_column_zero_closes_every_block`
+/// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
+fn resets(
+    bytes: SourceBytes<'_>,
+    token: Token,
+) -> Resets
+{
+    let start = usize::try_from(token.start).unwrap_or(usize::MAX);
+    let leads = start == 0 || bytes.0.get(start.saturating_sub(1)) == Some(&b'\n');
+    Resets(
+        leads
+            && (token.lexeme == Lexeme::LowerWord
+                || (token.lexeme == Lexeme::Punct
+                    && matches!(
+                        bytes
+                            .0
+                            .get(start .. usize::try_from(token.end).unwrap_or(usize::MAX)),
+                        Some(b"@[" | b"@![")
+                    ))),
+    )
+}
+
+primitive_copy_wrapper!(
     /// Whether an arm's `=>` follows a bar standing among its patterns.
     struct ArrowAhead(bool);
 );
 
 /// Whether a `=>` stands directly in the bracket the token at `from` stands
-/// in, after it and before the next `:`, `;`, line-leading `|` or the
+/// in, after it and before the next `:`, `;`, line-leading `|`, reset or the
 /// bracket's close.
 ///
 /// # Specification
-/// - requires: `tokens` are labeled tokens and `text` reads a token's bytes.
+/// - requires: `tokens` are labeled tokens of `bytes`.
 /// - ensures: true exactly when such a `=>` is found at the starting depth.
 /// - panics: none.
 /// - executable: none — the clause restates the scan.
@@ -884,21 +938,34 @@ primitive_copy_wrapper!(
 /// # Adequacy
 /// - hypothesis: L3 — as [`mark_arm_bars`].
 /// - witness: `label::tests::arm_bars_lead_lines_and_bar_braces`
-fn arrow_ahead<'bytes>(
+fn arrow_ahead(
+    bytes: SourceBytes<'_>,
     tokens: &[Token],
     from: TokenIndex,
-    text: impl Fn(&Token) -> &'bytes [u8],
 ) -> ArrowAhead
 {
+    let text = |token: &Token| {
+        bytes
+            .0
+            .get(
+                usize::try_from(token.start).unwrap_or(usize::MAX)
+                    .. usize::try_from(token.end).unwrap_or(usize::MAX),
+            )
+            .unwrap_or_default()
+    };
     let mut depth = 0_usize;
     let mut line_start = false;
     let after = usize::from(from).saturating_add(1);
-    for token in tokens.get(after ..).unwrap_or_default() {
+    for &token in tokens.get(after ..).unwrap_or_default() {
         if token.lexeme == Lexeme::Space {
-            line_start |= text(token).contains(&b'\n');
+            line_start |= text(&token).contains(&b'\n');
             continue;
         }
-        let spelled = text(token);
+        // A reset closes the bracket the bar stands in.
+        if bool::from(resets(bytes, token)) {
+            return ArrowAhead(false);
+        }
+        let spelled = text(&token);
         if depth == 0 {
             match spelled {
                 b"=>" => return ArrowAhead(true),
@@ -928,8 +995,9 @@ fn arrow_ahead<'bytes>(
 ///   bracket is a brace and the token before the bar is a `,`, or when the
 ///   innermost open bracket is a brace whose first token after it is a `|`,
 ///   unless the brace's current arm has met no `=>` and one follows before the
-///   next `:`, `;`, line-leading `|` or the brace's close, where it is an
-///   or-pattern's; no other token changes.
+///   next `:`, `;`, line-leading `|`, reset or the brace's close, where it is
+///   an or-pattern's; no other token changes. A token that [`resets`] closes
+///   every bracket open before it.
 /// - panics: none.
 /// - executable: none — the clause would walk every token twice per call; the
 ///   witness checks each class.
@@ -957,31 +1025,46 @@ fn mark_arm_bars(
             .unwrap_or_default()
     };
     let is_bar = |token: &Token| {
-        matches!(token.lexeme, Lexeme::Punct | Lexeme::ArmBar) && text(token) == b"|"
+        matches!(token.lexeme, Lexeme::Punct | Lexeme::ArmBar)
+            && token.end.saturating_sub(token.start) == 1
+            && text(token) == b"|"
     };
     let mut opened: Vec<Opened> = Vec::new();
-    let mut line_start = true;
     let mut after_comma = false;
+    // Where the last significant token ends: a bar starts its line when a
+    // newline stands in the space since then.
+    let mut last_end: Option<u32> = None;
     for index in 0 .. tokens.len() {
         let Some(&token) = tokens.get(index)
         else {
             break;
         };
         if token.lexeme == Lexeme::Space {
-            if text(&token).contains(&b'\n') {
-                line_start = true;
-            }
             continue;
+        }
+        let since = last_end.replace(token.end);
+        if bool::from(resets(bytes, token)) {
+            opened.clear();
+            after_comma = false;
         }
         let within = opened.last().copied();
         if is_bar(&token) {
+            let line_start = since.is_none_or(|end| {
+                bytes
+                    .0
+                    .get(
+                        usize::try_from(end).unwrap_or(usize::MAX)
+                            .. usize::try_from(token.start).unwrap_or(usize::MAX),
+                    )
+                    .is_some_and(|gap| gap.contains(&b'\n'))
+            });
             let arm = match within {
                 Some(Opened::Shell) => false,
                 Some(Opened::Bars { written, arrowed }) => {
                     line_start
                         || !written
                         || arrowed
-                        || !bool::from(arrow_ahead(tokens, TokenIndex::from(index), text))
+                        || !bool::from(arrow_ahead(bytes, tokens, TokenIndex::from(index)))
                 },
                 Some(Opened::Brace) => line_start || after_comma,
                 Some(Opened::Plain) | None => line_start,
@@ -998,7 +1081,6 @@ fn mark_arm_bars(
             if let Some(bar) = tokens.get_mut(index) {
                 bar.lexeme = if arm { Lexeme::ArmBar } else { Lexeme::Punct };
             }
-            line_start = false;
             after_comma = false;
             continue;
         }
@@ -1047,8 +1129,9 @@ fn mark_arm_bars(
                 let _closed = opened.pop();
             }
         }
-        line_start = false;
-        after_comma = token.lexeme == Lexeme::Punct && text(&token) == b",";
+        after_comma = token.lexeme == Lexeme::Punct
+            && token.end.saturating_sub(token.start) == 1
+            && text(&token) == b",";
     }
 }
 
@@ -1358,14 +1441,14 @@ impl LabelMode
     }
 }
 
-/// A source's tokens, with the tokens before which the labeler stood within
-/// a mode, so an edit of the source relabels only around itself
+/// A source's tokens, with the places the labeler stood within a mode, so an
+/// edit of the source relabels only around itself
 /// ([`relabel`](Self::relabel)).
 ///
 /// # Specification
 /// - requires: constructed by [`new`](Self::new) or [`relabel`](Self::relabel).
-/// - ensures: the tokens are [`label`]'s; every token index before which the
-///   labeler stood off ground is listed, ascending, and no other.
+/// - ensures: the tokens are [`label`]'s; the start of every token the labeler
+///   scanned off ground is listed, ascending, and no other.
 /// - panics: none.
 /// - executable: none — this data type has no call boundary; its constructors
 ///   carry the executable clauses.
@@ -1379,8 +1462,8 @@ pub struct Labeling
 {
     /// The tokens, as [`label`] returns them.
     tokens: Vec<Token>,
-    /// The tokens before which the labeler stood within a mode, ascending.
-    within: Vec<TokenIndex>,
+    /// The starts of the tokens the labeler scanned off ground, ascending.
+    within: Vec<ByteOffset>,
 }
 
 impl Labeling
@@ -1389,8 +1472,8 @@ impl Labeling
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`label`]'s tokens of `src`, with the tokens before which the
-    ///   labeler stood within a mode.
+    /// - ensures: [`label`]'s tokens of `src`, with the starts of the tokens
+    ///   the labeler scanned within a mode.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1408,15 +1491,14 @@ impl Labeling
         let mut pos = ByteOffset::ZERO;
         while pos < source_bytes.len() {
             if mode.standing() == Standing::Within {
-                labeling
-                    .within
-                    .push(TokenIndex::from(labeling.tokens.len()));
+                labeling.within.push(pos);
             }
             let (token, next) = mode.step(source_bytes, pos);
             labeling.tokens.push(token);
             pos = next;
         }
         mark_arm_bars(source_bytes, &mut labeling.tokens);
+        layout::lay_out(source_bytes, &mut labeling.tokens, layout::Next::End);
         labeling.tokens.shrink_to_fit();
         labeling.within.shrink_to_fit();
         labeling
@@ -1434,35 +1516,38 @@ impl Labeling
     }
 
     /// Relabel `after`, an edit of `before`, from this labeling of `before`,
-    /// scanning only around the edit.
+    /// from the declaration the edit starts in to the first one past it.
     ///
-    /// The scan restarts at the last token boundary at ground that lies on a
+    /// The relabel restarts at the last token that [`resets`] at ground on a
     /// line before the edit's and at least [`RELABEL_MARGIN`] bytes before
-    /// it. No scanner's decision about a token reads further past it than
-    /// that margin, or past a line break, so every token before the restart
-    /// is a token of `after`. The scan stops at the first boundary inside the
-    /// unedited suffix where it stands at ground over a boundary the old
-    /// labeling stood at ground on: the labeler reads the same bytes from
-    /// there in the same mode and never reads behind its cursor, so the old
-    /// tokens past it are the new ones, shifted.
+    /// it. No scanner's decision about a token reads further past it than that
+    /// margin, or past a line break, so every token before the restart is a
+    /// token of `after`. The arm bars and the layout stand in their first
+    /// state at a reset, and no mark before it reads past it, so the marks
+    /// before the restart stay. The scan stops at the first token in the
+    /// unedited suffix that resets, where it stands at ground over a token
+    /// the old labeling stood at ground on. From there the labeler, the arm
+    /// bars and the layout read the same tokens from the same state, so the
+    /// old tokens past it are the new ones, shifted. Only the tokens between
+    /// are scanned, marked and laid out.
     ///
     /// # Specification
     /// - requires: this is the labeling of `before`.
     /// - ensures: the labeling of `after`, as [`new`](Self::new) labels it, and
-    ///   how many of its tokens the scan labeled afresh: the tokens from the
-    ///   restart to the resynchronizing boundary.
+    ///   how many tokens the scan labeled afresh: those from the restart to the
+    ///   resynchronizing token.
     /// - panics: none.
-    /// - economy: scans from the restart to the resynchronizing boundary; the
-    ///   tokens past it are shifted in place, and the arm bars are marked over
-    ///   the whole stream in one pass over its brackets.
+    /// - economy: scans, marks the arm bars and lays out from the restart to
+    ///   the resynchronizing token. The tokens past it are shifted in place, a
+    ///   ceiling linear in the text after the edit that #5041 removes.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — hostile sources replaced at arbitrary byte ranges by
     ///   hostile text, edits inside strings, shell blocks, interpolations,
-    ///   comments, numbers and a long dialect run among them, relabel to the
-    ///   labeling of the edited source; a restart inside the margin or on the
-    ///   edit's line, a restart off ground, or a resync short of the suffix
-    ///   changes a token.
+    ///   comments, numbers, layout blocks and a long dialect run among them,
+    ///   relabel to the labeling of the edited source; a restart inside the
+    ///   margin, on the edit's line or off a reset, a restart off ground, or a
+    ///   resync short of the suffix or off a reset changes a token.
     /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
     /// - witness: `label::tests::a_relabel_restarts_before_what_a_token_read`
     #[inline]
@@ -1471,7 +1556,7 @@ impl Labeling
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "bounded: labels `before` and `after` whole, linear in the source like the split, join and commit every relabeled revision feeds"
+            reason = "ceiling, removed by #5041: labels `before` and `after` whole, linear in the source like the split, join and commit every relabeled revision feeds"
         )
     )]
     #[spec(requires: self == Self::new(before), ensures: |ret| ret.0.eq(&Self::new(after)) && ret.1.0 <= ret.0.tokens().len())]
@@ -1500,64 +1585,89 @@ impl Labeling
             mut tokens,
             mut within,
         } = self;
-        // The restart: the last boundary at ground at or before both the
-        // margin and the line break before the edit.
+        let old_bytes = SourceBytes::from(old);
+        let new_bytes = SourceBytes::from(new);
+        let start = |token: &Token| usize::try_from(token.start).unwrap_or(usize::MAX);
+        let grounded = |within: &[ByteOffset], token: &Token| {
+            token.start < token.end
+                && within
+                    .binary_search(&ByteOffset::from(start(token)))
+                    .is_err()
+        };
+        // The restart: the last reset at ground at or before both the margin
+        // and the line break before the edit, or the source's start.
         let bound = old
             .get(.. prefix)
             .and_then(|head| head.iter().rposition(|&byte| byte == b'\n'))
             .map_or(0, |line_break| {
                 line_break.min(prefix.saturating_sub(RELABEL_MARGIN))
             });
-        let mut restart = tokens.partition_point(|token| {
-            usize::try_from(token.start).is_ok_and(|start| start <= bound)
-        });
-        restart = restart.saturating_sub(1);
-        while restart > 0 && within.binary_search(&TokenIndex::from(restart)).is_ok() {
-            restart = restart.saturating_sub(1);
-        }
-        let resume = tokens.get(restart).map_or(0, |token| {
-            usize::try_from(token.start).unwrap_or(usize::MAX)
-        });
+        let restart = tokens
+            .get(.. tokens.partition_point(|token| start(token) <= bound))
+            .unwrap_or_default()
+            .iter()
+            .rposition(|&token| bool::from(resets(old_bytes, token)) && grounded(&within, &token))
+            .unwrap_or(0);
+        let resume = tokens.get(restart).map_or(0, start);
         // Old offsets past the edit sit `old_tail` bytes before the end of
         // `before`, new ones `new_tail` before the end of `after`.
         let old_tail = old.len().saturating_sub(suffix);
         let new_tail = new.len().saturating_sub(suffix);
-        let source_bytes = SourceBytes::from(new);
         let mut fresh: Vec<Token> = Vec::new();
-        let mut fresh_within: Vec<TokenIndex> = Vec::new();
+        let mut fresh_within: Vec<ByteOffset> = Vec::new();
         let mut mode = LabelMode::default();
         let mut pos = ByteOffset::from(resume);
-        let mut resync = tokens.len();
-        while pos < source_bytes.len() {
+        let mut resync = None;
+        while pos < new_bytes.len() {
             let standing = mode.standing();
+            // A reset in the suffix: its line break is unedited too.
             if standing == Standing::Ground
-                && let Some(old_pos) = usize::from(pos)
-                    .checked_sub(new_tail)
-                    .map(|past| past.saturating_add(old_tail))
-                && let Ok(found) = tokens
-                    .get(restart ..)
-                    .unwrap_or_default()
-                    .binary_search_by_key(&old_pos, |token| {
-                        usize::try_from(token.start).unwrap_or(usize::MAX)
-                    })
+                && usize::from(pos) > new_tail
+                && new_bytes.0.get(usize::from(pos).saturating_sub(1)) == Some(&b'\n')
             {
-                let at = restart.saturating_add(found);
-                if within.binary_search(&TokenIndex::from(at)).is_err() {
-                    resync = at;
+                let old_pos = usize::from(pos)
+                    .saturating_sub(new_tail)
+                    .saturating_add(old_tail);
+                let at = restart.saturating_add(
+                    tokens
+                        .get(restart ..)
+                        .unwrap_or_default()
+                        .partition_point(|token| start(token) < old_pos),
+                );
+                if let Some(&token) = tokens.get(at)
+                    && start(&token) == old_pos
+                    && bool::from(resets(old_bytes, token))
+                    && grounded(&within, &token)
+                {
+                    resync = Some(at);
                     break;
                 }
             }
             if standing == Standing::Within {
-                fresh_within.push(TokenIndex::from(restart.saturating_add(fresh.len())));
+                fresh_within.push(pos);
             }
-            let (token, next) = mode.step(source_bytes, pos);
+            let (token, next) = mode.step(new_bytes, pos);
             fresh.push(token);
             pos = next;
         }
+        let fresh_count = fresh.len();
+        mark_arm_bars(new_bytes, &mut fresh);
+        layout::lay_out(
+            new_bytes,
+            &mut fresh,
+            if resync.is_some() {
+                layout::Next::Reset
+            }
+            else {
+                layout::Next::End
+            },
+        );
+        let resync = resync.unwrap_or(tokens.len());
+        let resynced = tokens.get(resync).map_or(old.len(), start);
         // Shift the kept tail by the edit's change in length, then splice.
         let grown = new.len() >= old.len();
-        let change = u32::try_from(new.len().abs_diff(old.len())).unwrap_or(u32::MAX);
-        let shift = |offset: u32| {
+        let change = new.len().abs_diff(old.len());
+        let shift = |offset: usize| {
             if grown {
                 offset.saturating_add(change)
             }
@@ -1565,33 +1675,27 @@ impl Labeling
                 offset.saturating_sub(change)
             }
         };
+        let shift_u32 = |offset: u32| {
+            u32::try_from(shift(usize::try_from(offset).unwrap_or(usize::MAX))).unwrap_or(u32::MAX)
+        };
         for token in tokens.get_mut(resync ..).unwrap_or_default() {
-            token.start = shift(token.start);
-            token.end = shift(token.end);
+            token.start = shift_u32(token.start);
+            token.end = shift_u32(token.end);
         }
-        let fresh_count = fresh.len();
-        tokens.reserve_exact(fresh_count.saturating_sub(resync.saturating_sub(restart)));
+        tokens.reserve_exact(fresh.len().saturating_sub(resync.saturating_sub(restart)));
         drop(tokens.splice(restart .. resync, fresh));
-        let kept_tail = within.partition_point(|&index| index < TokenIndex::from(resync));
-        let kept_head = within.partition_point(|&index| index < TokenIndex::from(restart));
-        let tail: Vec<TokenIndex> = within
+        let kept_head = within.partition_point(|&offset| usize::from(offset) < resume);
+        let kept_tail = within.partition_point(|&offset| usize::from(offset) < resynced);
+        let tail: Vec<ByteOffset> = within
             .get(kept_tail ..)
             .unwrap_or_default()
             .iter()
-            .map(|&index| {
-                TokenIndex::from(
-                    usize::from(index)
-                        .saturating_sub(resync)
-                        .saturating_add(restart)
-                        .saturating_add(fresh_count),
-                )
-            })
+            .map(|&offset| ByteOffset::from(shift(usize::from(offset))))
             .collect();
         within.truncate(kept_head);
         within.reserve_exact(fresh_within.len().saturating_add(tail.len()));
         within.extend(fresh_within);
         within.extend(tail);
-        mark_arm_bars(source_bytes, &mut tokens);
         (Self { tokens, within }, TokenCount(fresh_count))
     }
 }
@@ -2459,7 +2563,7 @@ fn scan_shell_fd_or_word(
 ///   keeping the dialect after a rejected prefix changes the observation.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 /// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
-#[spec(requires: bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"#!") || tail.starts_with(b"$!")), ensures: |ret| match ret.lexeme { Lexeme::Punct => ret.next.0 >= pos.0.saturating_add(3) && ret.next <= bytes.len() && bytes.0.get(ret.next.0.saturating_sub(1)) == Some(&open.0), Lexeme::Unknown => ret.next.0 == pos.0.saturating_add(1), Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Number | Lexeme::TypedNumber | Lexeme::Character | Lexeme::Quote | Lexeme::StringFragment | Lexeme::ShellStringFragment | Lexeme::EscapeSequence | Lexeme::ShellWord | Lexeme::EnvAssign | Lexeme::SingleQuotedContent | Lexeme::VariableName | Lexeme::SubshellOpen | Lexeme::SubshellClose | Lexeme::FileDescriptor | Lexeme::ArmBar | Lexeme::Space => false })]
+#[spec(requires: bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"#!") || tail.starts_with(b"$!")), ensures: |ret| match ret.lexeme { Lexeme::Punct => ret.next.0 >= pos.0.saturating_add(3) && ret.next <= bytes.len() && bytes.0.get(ret.next.0.saturating_sub(1)) == Some(&open.0), Lexeme::Unknown => ret.next.0 == pos.0.saturating_add(1), Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Number | Lexeme::TypedNumber | Lexeme::Character | Lexeme::Quote | Lexeme::StringFragment | Lexeme::ShellStringFragment | Lexeme::EscapeSequence | Lexeme::ShellWord | Lexeme::EnvAssign | Lexeme::SingleQuotedContent | Lexeme::VariableName | Lexeme::SubshellOpen | Lexeme::SubshellClose | Lexeme::FileDescriptor | Lexeme::ArmBar | Lexeme::LayoutOpen | Lexeme::LayoutSemi | Lexeme::LayoutClose | Lexeme::Space => false })]
 fn scan_shell_start(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -4102,7 +4206,7 @@ mod tests
         ]);
         // A comment's opener ends a run; a number is a token only where its
         // run ends with it; a word may lead with a letter outside ASCII.
-        assert_eq!(lexed("a// c\nb 1 1.5 1x 2+3 αβ Δ"), vec![
+        assert_eq!(lexed("a// c\n b 1 1.5 1x 2+3 αβ Δ"), vec![
             lower("a"),
             lower("b"),
             (Lexeme::Number, "1".to_owned()),
@@ -4585,7 +4689,7 @@ mod tests
     }
 
     /// Hostile text for an edit: fragments that open and close every lexical
-    /// mode, cut anywhere, and byte soup.
+    /// mode and every layout block, cut anywhere, and byte soup.
     ///
     /// # Specification
     /// - ensures: samples UTF-8 byte-soup renderings and whole or cut
@@ -4615,6 +4719,11 @@ mod tests
             "\t \u{a0}\u{200b}",
             "$!{ x }",
             "NAME=\"v w\"",
+            "def f(x : A) -> A =\n  let y = x\n  y\n",
+            "\n  match x\n    | a => b\n",
+            "theory S where\n  sort A : Type\n",
+            "{\n  a\n  b }",
+            "\n    ",
         ];
         prop_oneof![
             prop::collection::vec(any::<u8>(), 0 .. 24)

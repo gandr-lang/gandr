@@ -845,13 +845,13 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
     }
     // The terminator is load-bearing, not merely admitted: an unterminated
     // member flags a repair rather than silently closing against the next
-    // member's lead.
+    // member's lead. Members on their own lines are separated by their
+    // column, so the two share a line here.
     let unterminated = parse(
         pbg,
         SourceText::from(
             r#"theory S where {
-  sort Nat : Type
-  sort T : Type;
+  sort Nat : Type sort T : Type;
 }
 "#,
         ),

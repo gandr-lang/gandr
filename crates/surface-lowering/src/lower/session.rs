@@ -1394,7 +1394,10 @@ impl<'source> Lowerer<'_, 'source>
             closed(site, &mut cursor, TileName::FAT_ARROW)?;
             let body = site.one(cursor.operands())?;
             written.push((pattern, body));
-            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+            // A `,` or the next arm's bar separates arms.
+            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA)
+                && let Maybe::Absent(_) = cursor.at(TileName::ARM_BAR)
+            {
                 closed(site, &mut cursor, TileName::BRACE_CLOSE)?;
                 break;
             }

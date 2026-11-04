@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x26c1031a4215dd71`
+- Grammar fingerprint: `0x62b6841c56ffb06a`
 - Rules: 173 — 171 committed, 2 internal
-- Molds: 2923
+- Molds: 2929
 - Attributes: 17
 
 ## Reading a form
@@ -98,7 +98,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`projection_expression`](../corpus/ledger/syntax/projection-expression.gandr) | `EXPRESSION . ⦅ ‹identifier› ‖ ‹constructor› ‖ ‹number› ⦆` | `expression.postfix` | `projection_expression` | admitted | Other, Member, Constructor, Number |
 | [`record_selection_expression`](../corpus/ledger/syntax/record-selection-expression.gandr) | `EXPRESSION .*{ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦆* ⦅ , ⦆? }` | `expression.postfix` | `record_selection_expression` * | admitted | Other, Member, Number |
 | [`view_expression`](../corpus/ledger/syntax/view-expression.gandr) | `EXPRESSION as ‹identifier› ⟨block⟩` | `expression.postfix` | `view_expression` * | admitted | Keyword, VariableDef, Other, Number, Type, Member |
-| [`index_expression`](../corpus/ledger/syntax/index-expression.gandr) | `EXPRESSION ⦅ .#[ ‖ [ ⦆ EXPRESSION ]` | `expression.postfix` | `index_expression` * | admitted | Other |
+| [`index_expression`](../corpus/ledger/syntax/index-expression.gandr) | `EXPRESSION .#[ EXPRESSION ]` | `expression.postfix` | `index_expression` * | admitted | Other |
 | [`hole`](../corpus/ledger/syntax/hole.gandr) | `? ⦅ ‹hole_name› ⦆?` | `expression.atom` | `hole` | admitted | Hole, Label |
 | [`wildcard.expression`](../corpus/ledger/syntax/wildcard.expression.gandr) | `_` | `expression.atom` | `wildcard` | admitted | Variable |
 | [`parenthesized_expression`](../corpus/ledger/syntax/parenthesized-expression.gandr) | `( ⦅ ) ‖ EXPRESSION ⦅ ) ‖ , ⦅ EXPRESSION ⦅ , EXPRESSION ⦅ , EXPRESSION ⦆* ⦆? ⦅ , ⦆? ⦆? ) ‖ : TYPE ) ⦆ ⦆ ‖ ( . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION ⦆* ⦅ , ⦆? )` | `expression.atom` | `parenthesized_expression` | admitted | Other, Member, Number |
@@ -107,7 +107,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`block`](../corpus/ledger/syntax/block.gandr) | `{ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ module ‹identifier› = EXPRESSION ; ‖ var ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? }` | `expression.atom` | `block` | admitted | Other, Keyword, VariableDef, Number, Type, Member |
 | [`lambda_expression`](../corpus/ledger/syntax/lambda-expression.gandr) | `fun ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) BLOCK ‖ { ⦅ \| PATTERN ⦅ , PATTERN ⦆* ⦅ if EXPRESSION ⦆? => EXPRESSION ⦆* } ‖ [ ‹type_variable› ⦅ , ‹type_variable› ⦆* ⦅ , ⦆? ] BLOCK ⦆` | `expression.atom` | `lambda_expression` | admitted | Keyword, Other, VariableParam, TypeVariable, Type, Operator |
 | [`thunk_expression`](../corpus/ledger/syntax/thunk-expression.gandr) | `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? BLOCK` or `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? BLOCK` | `expression.atom` | `thunk_expression` | admitted | Keyword, Other, Number |
-| [`match_expression`](../corpus/ledger/syntax/match-expression.gandr) | `match EXPRESSION ⦅ with EXPRESSION ⦆? ⦅ -> TYPE ⦆? ⦅ { } ‖ ⦅ { PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ‖ { \| PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `match_expression` | admitted | Keyword, Operator, Other |
+| [`match_expression`](../corpus/ledger/syntax/match-expression.gandr) | `match EXPRESSION ⦅ with EXPRESSION ⦆? ⦅ -> TYPE ⦆? ⦅ { } ‖ ⦅ { PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ‖ \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ‖ { \| PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ‖ \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `match_expression` | admitted | Keyword, Operator, Other |
 | [`handle_expression`](../corpus/ledger/syntax/handle-expression.gandr) | `handle ‹identifier› : ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⟨block⟩ ⦅ with ⦅ { ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦅ , ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦆* ⦅ , ⦆? } ‖ ‹type_identifier› ⦆ ⦆?` | `expression.atom` | `handle_expression` * | admitted | Keyword, VariableDef, Other, Type, Member, Number, VariableParam, Operator, FunctionDef |
 | [`if_expression`](../corpus/ledger/syntax/if-expression.gandr) | `if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦅ BLOCK ‖ if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else BLOCK ⦆` | `expression.atom` | `if_expression` | admitted | Keyword, Operator, Other, VariableDef, Number, Type, Member |
 | [`for_expression`](../corpus/ledger/syntax/for-expression.gandr) | `for ‹identifier› in EXPRESSION ⟨block⟩` | `expression.atom` | `for_expression` * | admitted | Keyword, VariableDef, Other, Number, Type, Member |
@@ -120,7 +120,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`telescope_expression`](../corpus/ledger/syntax/telescope-expression.gandr) | `*{ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ‖ *{ ⦅ } ‖ EXPRESSION ⦅ = EXPRESSION ⦆? ⦅ \| ‹identifier› = EXPRESSION ⦅ , ‹identifier› = EXPRESSION ⦆* ⦅ , ⦆? } ‖ ⦅ , EXPRESSION ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `telescope_expression` * | admitted | Other, Member, Number, Operator |
 | [`labelled_sum_expression`](../corpus/ledger/syntax/labelled-sum-expression.gandr) | `+{ . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION }` | `expression.atom` | `labelled_sum_expression` * | admitted | Other, Member, Number |
 | [`lazy_record_expression`](../corpus/ledger/syntax/lazy-record-expression.gandr) | `&{ ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ => EXPRESSION ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ => EXPRESSION ⦆* ⦅ , ⦆? ⦆? }` | `expression.atom` | `lazy_record_expression` * | admitted | Other, Member, Number, Operator |
-| [`offer_expression`](../corpus/ledger/syntax/offer-expression.gandr) | `offer ( EXPRESSION ) ⦅ { PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ‖ { \| PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ⦆` | `expression.atom` | `offer_expression` | admitted | Keyword, Other, Operator |
+| [`offer_expression`](../corpus/ledger/syntax/offer-expression.gandr) | `offer ( EXPRESSION ) ⦅ { PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ‖ \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ‖ { \| PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ‖ \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ⦆` | `expression.atom` | `offer_expression` | admitted | Keyword, Other, Operator |
 | [`migrate_expression`](../corpus/ledger/syntax/migrate-expression.gandr) | `migrate [ ‹identifier› ] BLOCK` | `expression.atom` | `migrate_expression` | admitted | Keyword, Other, Label |
 | [`send_expression`](../corpus/ledger/syntax/send-expression.gandr) | `send ( EXPRESSION , EXPRESSION )` | `expression.atom` | `send_expression` | admitted | Keyword, Other |
 | [`close_expression`](../corpus/ledger/syntax/close-expression.gandr) | `close ( EXPRESSION )` | `expression.atom` | `close_expression` | admitted | Keyword, Other |
@@ -131,7 +131,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`acquire_expression`](../corpus/ledger/syntax/acquire-expression.gandr) | `acquire ( EXPRESSION )` | `expression.atom` | `acquire_expression` * | reserved | Keyword, Other |
 | [`release_expression`](../corpus/ledger/syntax/release-expression.gandr) | `release ( EXPRESSION )` | `expression.atom` | `release_expression` * | reserved | Keyword, Other |
 | [`fork_expression`](../corpus/ledger/syntax/fork-expression.gandr) | `fork ⦅ ! ⦆? ( ‹identifier› : TYPE ) EXPRESSION` | `expression.atom` | `fork_expression` * | admitted | Keyword, Other, VariableParam |
-| [`access_expression`](../corpus/ledger/syntax/access-expression.gandr) | `access ⦅ shared ‖ exclusive ⦆? ‹identifier› ⦅ ⦅ .#[ ‖ [ ⦆ EXPRESSION ] ⦆? as ‹identifier› BLOCK ⦅ unwind BLOCK ⦆?` | `expression.atom` | `access_expression` * | admitted | Keyword, Other, Variable, VariableDef |
+| [`access_expression`](../corpus/ledger/syntax/access-expression.gandr) | `access ⦅ shared ‖ exclusive ⦆? ‹identifier› ⦅ .#[ EXPRESSION ] ⦆? as ‹identifier› BLOCK ⦅ unwind BLOCK ⦆?` | `expression.atom` | `access_expression` * | admitted | Keyword, Other, Variable, VariableDef |
 | [`resume_expression`](../corpus/ledger/syntax/resume-expression.gandr) | `resume ( ‹identifier› , EXPRESSION )` | `expression.atom` | `resume_expression` * | admitted | Keyword, Other, Variable |
 | [`abort_expression`](../corpus/ledger/syntax/abort-expression.gandr) | `abort ( ‹identifier› )` | `expression.atom` | `abort_expression` * | admitted | Keyword, Other, Variable |
 | [`shell_block`](../corpus/ledger/syntax/shell-block.gandr) | `#!{ ⦅ EXPRESSION ⦆? }` | `expression.atom` | `shell_block` | unadmitted | Other |
@@ -264,7 +264,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
 
-## Decisions — 112 of 173 rules decided at every token
+## Decisions — 113 of 173 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -333,11 +333,11 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `splice_expression` | expression | 1 | `~` | — | 0 |
 | `pack_model_expression` | expression | 2 | `pack` | — | 0 |
 | `call_expression` | expression | 4 | `(` | — | 2 |
-| `instantiation_expression` | expression | 4 | `[` | `index_expression` | 2 |
+| `instantiation_expression` | expression | 4 | `[` | — | 2 |
 | `projection_expression` | expression | 4 | `.` | — | 0 |
 | `record_selection_expression` | expression | 10 | `.*{` | — | 4 |
 | `view_expression` | expression | 33 | `as` | — | 0 |
-| `index_expression` | expression | 3 | `.#[` `[` | `instantiation_expression` | 0 |
+| `index_expression` | expression | 2 | `.#[` | — | 0 |
 | `hole` | expression | 2 | `?` | — | 0 |
 | `wildcard.expression` | expression | 1 | `_` | — | 0 |
 | `parenthesized_expression` | expression | 22 | `(` | — | 6 |
@@ -346,7 +346,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `block` | expression | 31 | `{` | — | 0 |
 | `lambda_expression` | expression | 29 | `fun` | — | 14 |
 | `thunk_expression` | expression | 6 | `thunk` | — | 0 |
-| `match_expression` | expression | 24 | `match` | — | 9 |
+| `match_expression` | expression | 28 | `match` | — | 11 |
 | `handle_expression` | expression | 78 | `handle` | — | 4 |
 | `if_expression` | expression | 68 | `if` | — | 0 |
 | `for_expression` | expression | 34 | `for` | — | 0 |
@@ -359,7 +359,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `telescope_expression` | expression | 27 | `*{` | — | 12 |
 | `labelled_sum_expression` | expression | 6 | `+{` | — | 0 |
 | `lazy_record_expression` | expression | 12 | `&{` | — | 2 |
-| `offer_expression` | expression | 22 | `offer` | — | 7 |
+| `offer_expression` | expression | 26 | `offer` | — | 9 |
 | `migrate_expression` | expression | 4 | `migrate` | — | 0 |
 | `send_expression` | expression | 4 | `send` | — | 0 |
 | `close_expression` | expression | 3 | `close` | — | 0 |
@@ -370,7 +370,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `acquire_expression` | expression | 3 | `acquire` | — | 0 |
 | `release_expression` | expression | 3 | `release` | — | 0 |
 | `fork_expression` | expression | 6 | `fork` | — | 0 |
-| `access_expression` | expression | 10 | `access` | — | 0 |
+| `access_expression` | expression | 9 | `access` | — | 0 |
 | `resume_expression` | expression | 5 | `resume` | — | 0 |
 | `abort_expression` | expression | 4 | `abort` | — | 0 |
 | `shell_block` | expression | 2 | `#!{` | — | 0 |
@@ -462,19 +462,19 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `}` | 78 | 40 | 0 |
 | `type_variable` | 70 | 15 | 3 |
 | `]` | 65 | 39 | 0 |
-| `[` | 57 | 34 | 5 |
 | `number` | 56 | 32 | 3 |
 | `{` | 56 | 26 | 2 |
+| `[` | 55 | 32 | 4 |
+| `=>` | 49 | 10 | 1 |
 | `_` | 48 | 7 | 2 |
-| `=>` | 45 | 10 | 1 |
 | `-->` | 31 | 5 | 0 |
 | `<=>` | 27 | 5 | 0 |
 | `==>` | 27 | 5 | 0 |
+| `arm_bar` | 25 | 8 | 0 |
 | `<->` | 24 | 4 | 0 |
 | `shared` | 23 | 8 | 0 |
 | `type` | 23 | 5 | 1 |
 | `consumed` | 22 | 7 | 0 |
-| `arm_bar` | 21 | 8 | 0 |
 | `where` | 21 | 10 | 0 |
 | `<` | 18 | 9 | 3 |
 | `module` | 17 | 13 | 2 |

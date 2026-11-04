@@ -1203,6 +1203,9 @@ fn typed(tile: TileLabel) -> Spelled
         | Lexeme::SubshellClose
         | Lexeme::FileDescriptor
         | Lexeme::ArmBar
+        | Lexeme::LayoutOpen
+        | Lexeme::LayoutSemi
+        | Lexeme::LayoutClose
         | Lexeme::Space
         | Lexeme::Unknown => false,
     };

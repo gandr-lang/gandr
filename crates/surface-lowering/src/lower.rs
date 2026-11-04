@@ -7667,18 +7667,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             // An extra operand after a word, or a word that heads an
             // application and names nothing: `retur x` either way.
-            let (span, form) = match *refusal {
-                LoweringRefusal::MalformedForm {
-                    span,
-                    form,
-                    fault: FormFault::ExtraOperand,
-                } => (span, Some(form)),
-                LoweringRefusal::UnresolvedName { span, .. }
-                    if applied_word(pbg, tree, span).is_some() =>
-                {
-                    (span, None)
-                },
-                _ => continue,
+            let (span, form) = if let LoweringRefusal::MalformedForm {
+                span,
+                form,
+                fault: FormFault::ExtraOperand,
+            } = *refusal
+            {
+                (span, Some(form))
+            }
+            else if let LoweringRefusal::UnresolvedName { span, .. } = *refusal
+                && applied_word(pbg, tree, span).is_some()
+            {
+                (span, None)
+            }
+            else {
+                continue;
             };
             let Some(half) = [slot.signature, slot.definition]
                 .into_iter()
@@ -7711,37 +7714,38 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 tree.positions()
                     .find(|&outer| tree.children(outer).any(|child| child == inner))
             };
-            let form = match form {
-                Some(form) => form,
-                None => {
-                    let mut at = applied_word(pbg, tree, span);
-                    let mut named = None;
-                    while let Some(outer) = at.and_then(holder) {
-                        match tree.node(outer).map(|node| shape_of(pbg, node)) {
-                            Some(Ok(Shape::Form { name, .. }))
-                                if name != FormName::BLOCK
-                                    && name != FormName::EXPRESSION_STATEMENT =>
-                            {
-                                named = Some(
-                                    if outer == half.declaration.node
-                                        && half.operand == Operand::Function
-                                    {
-                                        FormName::FUNCTION
-                                    }
-                                    else {
-                                        name
-                                    },
-                                );
-                                break;
-                            },
-                            _ => at = Some(outer),
-                        }
+            let form = if let Some(form) = form {
+                form
+            }
+            else {
+                let mut at = applied_word(pbg, tree, span);
+                let mut named = None;
+                while let Some(outer) = at.and_then(holder) {
+                    match tree.node(outer).map(|node| shape_of(pbg, node)) {
+                        Some(Ok(Shape::Form { name, .. }))
+                            if name != FormName::BLOCK
+                                && name != FormName::EXPRESSION_STATEMENT =>
+                        {
+                            named = Some(
+                                if outer == half.declaration.node
+                                    && half.operand == Operand::Function
+                                {
+                                    FormName::FUNCTION
+                                }
+                                else {
+                                    name
+                                },
+                            );
+                            break;
+                        },
+                        _ => at = Some(outer),
                     }
-                    match named {
-                        Some(name) => name,
-                        None => continue,
-                    }
-                },
+                }
+                let Some(name) = named
+                else {
+                    continue;
+                };
+                name
             };
             if let Some((word, keyword)) = misspelt_keyword(pbg, tree, within, extra) {
                 slot.refusal = Maybe::Present((position, LoweringRefusal::MalformedForm {
@@ -28225,6 +28229,33 @@ def ended() -> -F [Partial] Unit {
     }
 
     #[test]
+    fn a_laid_out_body_is_the_braced_body_4853()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "data Two : Type where {\n  | L : Two\n  | R : Two\n}\n\ndef laid(t : Two) -> Two \
+                 =\n  let u = t\n  match u\n    | L => R\n    | R => L\n\ndef braced(t : Two) -> \
+                 Two {\n  let u = t;\n  match u { L => R, R => L }\n}\n",
+            ),
+            &mut arena,
+        );
+        let body = |wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            body_of(declaration.outcome())
+        };
+        assert_eq!(
+            gandr_core_term::equal_certificate_syntax(&arena, body("laid"), body("braced")),
+            gandr_core_term::CertificateEquality::Equal,
+            "a body in layout, its arms led by bars, is the braced body with its `;` and `,`"
+        );
+    }
+
+    #[test]
     fn a_call_of_no_arguments_is_the_call_the_source_wrote_364()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -30005,11 +30036,12 @@ def ended() -> -F [Partial] Unit {
         let pbg = grammar();
         for (source, point, form, tile, why) in [
             (
-                "def a : Integer ;\ndef a = 1\ndef b : Integer ;\ndef b = 2 ;\n",
+                "def a : Integer ;\ndef a = 1 def b : Integer ;\ndef b = 2 ;\n",
                 27_usize,
                 "def_value",
                 crate::form::TileName::SEMICOLON,
-                "a definition missing its `;` before the next is pointed past its value",
+                "a definition missing its `;` before the next on its line is pointed past its \
+                 value",
             ),
             (
                 "def s : String ;\ndef s = \"abc ;\n",
@@ -30140,8 +30172,8 @@ def ended() -> -F [Partial] Unit {
         let handle = "def quiet(n : Integer) -> -F Integer {\n  handle c : Proc {\n    \
                       c.exit(1);\n    return n\n  with {\n    pure(x) => pure x,\n    oper \
                       exit(code, k) => k(unit)\n  }\n}\n";
-        let unopened = "def same(n : Integer) -> -F Integer {\n  match n\n    zero @ 0 => \
-                        return zero,\n    _ => return n\n  }\n}\n";
+        let unopened = "def same(n : Integer) -> -F Integer {\n  if n == 0\n    return 0\n  } \
+                        else {\n    return n\n  }\n}\n";
         let quoted = "def numbers : List((Integer) ;\ndef numbers = cons(1, nil) ;\n";
         let after = |source: &str, written: &str| {
             source
@@ -30175,8 +30207,8 @@ def ended() -> -F [Partial] Unit {
             ),
             (
                 unopened,
-                at(after(unopened, "match n"), after(unopened, "match n")),
-                "match_expression",
+                at(after(unopened, "if n == 0"), after(unopened, "if n == 0")),
+                "if_expression",
                 FormFault::MissingOpen(ClosingClass::Brace),
                 "a `}` beginning a line deeper than every waiting `{` answers one left out at \
                  the end of the line at its indentation",

@@ -428,7 +428,7 @@ impl<'source> Collector<'_, 'source>
                 return Ok(none);
             };
             self.row_labels(result, staged, &mut entries, &mut scratch)?;
-            return self.merged(entries, declaration);
+            return self.merged(&entries, declaration);
         }
         if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
             while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
@@ -497,7 +497,7 @@ impl<'source> Collector<'_, 'source>
         {
             self.row_labels(result, staged, &mut entries, &mut scratch)?;
         }
-        self.merged(entries, declaration)
+        self.merged(&entries, declaration)
     }
 
     /// The merged telescope of `entries`, a declaration's parameters as
@@ -530,7 +530,7 @@ impl<'source> Collector<'_, 'source>
     }))]
     fn merged(
         &self,
-        entries: Vec<TelescopeEntry<'source>>,
+        entries: &[TelescopeEntry<'source>],
         declaration: Placed,
     ) -> Result<Maybe<Vec<TelescopeEntry<'source>>, merged::Absent>, LoweringRefusal<'source>>
     {
@@ -677,7 +677,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a signature whose implicit group stands before a list
     ///   and before one type, each called with the implicit left out.
     /// - witness: `lower::implicit::tests::a_signature_s_implicit_group_is_supplied_by_the_call_4853`
-    #[spec(captures: before = entries.len(), ensures: |ret| ret.as_ref().is_ok_and(|result| result.is_some()) || entries.len() == before)]
+    #[spec(captures: before = entries.len(), ensures: |ret| ret.as_ref().is_ok_and(Option::is_some) || entries.len() == before)]
     fn signature_entries(
         &self,
         typed: Placed,

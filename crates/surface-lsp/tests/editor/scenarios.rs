@@ -1033,7 +1033,8 @@ fn defining_a_missing_name_clears_its_diagnostic()
 #[test]
 fn restoring_a_semicolon_clears_its_diagnostic()
 {
-    let text = "def a = 1 ;\ndef b = a ;\n";
+    // Two definitions on one line: the column rule cannot separate them.
+    let text = "def a = 1 ; def b = a ;\n";
     let mut session = Session::open(
         String::from("file:///strict/semicolon.gandr"),
         Text(text),

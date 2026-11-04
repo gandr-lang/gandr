@@ -917,6 +917,9 @@ impl<'source> FormSplit<'source>
                 Lexeme::Unknown => 17,
                 Lexeme::ShellStringFragment => 18,
                 Lexeme::ArmBar => 19,
+                Lexeme::LayoutOpen => 20,
+                Lexeme::LayoutSemi => 21,
+                Lexeme::LayoutClose => 22,
             });
             spelling.extend_from_slice(&token.end.saturating_sub(origin).to_le_bytes());
         }

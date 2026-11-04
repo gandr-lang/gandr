@@ -1128,6 +1128,9 @@ pub fn candidate_labels<'text>(
         Lexeme::SubshellClose => labels.push(CandidateLabel::from("subshell_close")),
         Lexeme::FileDescriptor => labels.push(CandidateLabel::from("file_descriptor")),
         Lexeme::ArmBar => labels.push(CandidateLabel::from("arm_bar")),
+        Lexeme::LayoutOpen => labels.push(CandidateLabel::from("{")),
+        Lexeme::LayoutSemi => labels.push(CandidateLabel::from(";")),
+        Lexeme::LayoutClose => labels.push(CandidateLabel::from("}")),
         Lexeme::Punct => {
             labels.push(CandidateLabel::from(text));
             // A dialect-bearing shell opener (`#!sh{`, `$!py{`) lexes as one
@@ -1402,7 +1405,11 @@ enum Bracket
 ///   bracket inside a string, and reading the closer by suffix counts `]]` or a
 ///   compound closer that does not exist.
 /// - witness: `mold::tests::brackets_are_classified_by_lexeme_and_text`
-#[spec(ensures: |ret| ret == if !matches!(token.lexeme, Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose) {
+#[spec(ensures: |ret| ret == if token.lexeme == Lexeme::LayoutOpen {
+    Bracket::Open
+} else if token.lexeme == Lexeme::LayoutClose {
+    Bracket::Close
+} else if !matches!(token.lexeme, Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose) {
     Bracket::Neither
 } else if <&str>::from(text).ends_with(['(', '[', '{']) {
     Bracket::Open
@@ -1416,11 +1423,28 @@ fn bracket(
     text: TokenText<'_>,
 ) -> Bracket
 {
-    if !matches!(
-        token.lexeme,
-        Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose
-    ) {
-        return Bracket::Neither;
+    match token.lexeme {
+        Lexeme::LayoutOpen => return Bracket::Open,
+        Lexeme::LayoutClose => return Bracket::Close,
+        Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose => {},
+        Lexeme::LowerWord
+        | Lexeme::UpperWord
+        | Lexeme::Number
+        | Lexeme::TypedNumber
+        | Lexeme::Character
+        | Lexeme::Quote
+        | Lexeme::StringFragment
+        | Lexeme::ShellStringFragment
+        | Lexeme::EscapeSequence
+        | Lexeme::ShellWord
+        | Lexeme::EnvAssign
+        | Lexeme::SingleQuotedContent
+        | Lexeme::VariableName
+        | Lexeme::FileDescriptor
+        | Lexeme::ArmBar
+        | Lexeme::LayoutSemi
+        | Lexeme::Space
+        | Lexeme::Unknown => return Bracket::Neither,
     }
     let text = <&str>::from(text);
     if text.ends_with(['(', '[', '{']) {
@@ -2340,7 +2364,8 @@ impl<'pbg> Molder<'pbg>
                 Bracket::Close => depth = depth.saturating_sub(1),
                 Bracket::Neither => {},
             }
-            after_terminator = matches!(token.lexeme, Lexeme::Punct) && matches!(text, ";" | "}");
+            after_terminator = matches!(token.lexeme, Lexeme::LayoutSemi | Lexeme::LayoutClose)
+                || (matches!(token.lexeme, Lexeme::Punct) && matches!(text, ";" | "}"));
         }
         runs.push(TokenRun::new(
             TokenIndex::from(start),

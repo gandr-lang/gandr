@@ -3272,8 +3272,8 @@ fn handler_clause() -> Regex
     ])
 }
 
-/// Build a braced, comma-separated, nonempty arm list whose every arm may open
-/// with `|`.
+/// Build a braced, nonempty arm list whose every arm may open with `|`, the
+/// arms separated by `,` or by the bar alone.
 ///
 /// A leading `|` lets an arm open with its bar, as a clause does; the labeler
 /// marks it an arm bar after the brace or a comma and at a line's start. A
@@ -3282,12 +3282,14 @@ fn handler_clause() -> Regex
 /// admit `{ A | B => …` as `A` before the arm's bar, a reading that ties with
 /// the or-pattern's. So the bar is never optional after a shared tile: the
 /// opener and every separator come in two occurrences, one a hole follows and
-/// one the bar follows, and the token after the tile tells them apart.
+/// one the bar follows, and the token after the tile tells them apart. A bar
+/// alone after an arm's body separates arms, as a line-leading `|` does under
+/// layout: the bar is its own lexeme, so it ties with no operand.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: two alternatives, `{` then an arm and `{ |` then an arm, each
-///   followed by repetitions of `,` or `, |` before an arm, an optional
+///   followed by repetitions of `,`, `, |` or `|` before an arm, an optional
 ///   trailing `,`, and `}`.
 /// - panics: none.
 ///
@@ -3307,6 +3309,7 @@ fn arm_block() -> Regex
             repeat(alt([
                 seq([t(TileLabel(",")), arm()]),
                 seq([t(TileLabel(",")), bar(), arm()]),
+                seq([bar(), arm()]),
             ])),
             opt(t(TileLabel(","))),
         ])

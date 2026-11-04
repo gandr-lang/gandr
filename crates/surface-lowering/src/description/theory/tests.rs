@@ -2349,7 +2349,7 @@ fn a_terminated_block_is_not_told_it_lacks_terminators()
 #[test]
 fn unseparated_members_are_declined_rather_than_dropped()
 {
-    let source = "theory S where {\n  sort Ob : Type\n  sort Ar : Type\n}\n";
+    let source = "theory S where {\n  sort Ob : Type sort Ar : Type\n}\n";
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -2369,6 +2369,14 @@ fn unseparated_members_are_declined_rather_than_dropped()
             .iter()
             .all(|sort| sort.name.as_ref() != "Ob" && sort.name.as_ref() != "Ar")
     );
+}
+
+#[test]
+fn members_on_their_own_lines_are_separated_by_their_column_4853()
+{
+    let report = described("theory S where {\n  sort Ob : Type\n  sort Ar : Type\n}\n");
+    assert_eq!(report.diagnostics, []);
+    assert_eq!(report.declarations[0].description.sorts.len(), 2);
 }
 
 #[test]
