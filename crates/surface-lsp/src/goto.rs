@@ -210,7 +210,7 @@ impl<'held, 'text> Locator<'held, 'text>
             .siblings
             .entry(referent.source())
             .or_insert_with(|| {
-                let uri = hovering.path(referent).and_then(DocumentUri::of_path)?;
+                let uri = hovering.opened(referent).and_then(DocumentUri::of_path)?;
                 let text = hovering.table().source_text(referent.source())?;
                 Some((uri, LineIndex::new(<&str>::from(text).into())))
             })

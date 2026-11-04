@@ -1712,9 +1712,9 @@ fn diagnostic(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the URI of the path `laid` gives the source holding the span's
-///   start, and the span measured from that source's start; none when the span
-///   leaves the source, splits a character, or its path is no file URI.
+/// - ensures: the URI of the path `laid` opened the source holding the span's
+///   start at, and the span measured from that source's start; none when the
+///   span leaves the source, splits a character, or its path is no file URI.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1743,7 +1743,7 @@ fn imported(
     )
     .ok()?;
     Some(Location {
-        uri: DocumentUri::of_path(laid.paths.get(source)?)?,
+        uri: DocumentUri::of_path(laid.opened.get(source)?)?,
         range,
     })
 }
