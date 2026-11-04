@@ -3023,6 +3023,10 @@ INSERT INTO purpose VALUES('surface-lsp','session_trace::Parted','enum','How a r
 INSERT INTO purpose VALUES('surface-lsp','session_trace::Replayed','struct','How much of a trace a replay met.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','session_trace::TraceLine','struct','A line of a trace, counted from one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','session_trace::replay','function','Hold a fresh connection to a session''s recorded trace, parting at the first line whose answer it does not write.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','site::File','struct','One file of a package''s documentation site: its path under the site''s directory and its contents.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','site::Sourced','struct','One source of a package as the documentation site reads it: its path in the package and its items, each hover in the site''s classes.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','site::site','function','Writes a package''s documentation site: a page per source and per public item, the item index, the source views, the search index and the assets.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','site::sourced','function','Reads one source for the documentation site, so `gandr doc` reports a source it cannot read and goes on.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','tokens::ResultId','struct','What names a full answer to a later request that holds it: for a token stream, the hexadecimal BLAKE3 digest of its integers, each in little-endian bytes; for any other answer, of its JSON text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','tokens::TOKEN_MODIFIERS','constant','The advertised token modifiers, in the order a token''s modifier bits index.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','tokens::TOKEN_TYPES','constant','The advertised token types, in the order a token''s type integer indexes: the standard types, then `unresolvedReference`.',NULL,'fits','sound',NULL);

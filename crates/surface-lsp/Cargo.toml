@@ -28,7 +28,8 @@ path = "tests/lib.rs"
 # seam's serde image is on.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. `hotpath` profiles a recheck for the
-# benchmark report.
+# benchmark report. The documentation site renders its prose through
+# pulldown-cmark.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
@@ -48,6 +49,7 @@ hotpath = { workspace = true, optional = true }
 notify.workspace = true
 pathdiff.workspace = true
 percent-encoding.workspace = true
+pulldown-cmark.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
 serde_json.workspace = true

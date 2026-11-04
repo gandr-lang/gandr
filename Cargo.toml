@@ -1276,6 +1276,19 @@ version = "1.11.0"
 default-features = false
 features = ["std"]
 
+# CommonMark to HTML: the prose of the documentation site that `gandr doc`
+# writes. The choice and its reversal are in surface-lsp's `site` module.
+# Defaults off: they build the binary's `getopts`. `ENABLE_WIKILINKS` stays
+# off, so the 2026 advisories do not apply, and 0.13.6 patches both.
+# features:
+# - html: the HTML writer
+# consumers:
+# - surface-lsp
+[workspace.dependencies.pulldown-cmark]
+version = "0.13.6"
+default-features = false
+features = ["html"]
+
 # Profile-independent arithmetic families; strict operations are the default.
 # features:
 # - none: core-only arithmetic, without unsafe fast mode or instrumentation
