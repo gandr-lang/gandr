@@ -1,0 +1,29 @@
+error[RulesUncompleted]: this rule and an earlier one rewrite one term to two normal forms, and no rule the order can orient joins them, so the block's rules are refused
+   ╭▸ corpus/pathological/desc/cwf.gandr:27:3
+   │
+25 │   rule idl : comp(id(g), s) ==> s;
+   │   ─────────────────────────────── the rule it overlaps
+26 │   /// The identity on the right.
+27 │   rule idr : comp(s, id(d)) ==> s;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term two ways no rule joins
+   │
+   ├ note: `CwFUnits` is refused with RulesUncompleted, as its expectation states
+   ╰ help: add a rule that joins the two normal forms, or remove one of the two rules
+
+error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
+   ╭▸ corpus/pathological/desc/cwf.gandr:36:3
+   │
+36 │   rule tyId : subTy(a, id(g)) ==> a;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
+   │
+   ├ note: `CwFTermIdentity` is refused with UndescribedMember.NestedOperation, as its expectation states
+   ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>
+
+error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
+   ╭▸ corpus/pathological/desc/cwf.gandr:38:3
+   │
+38 │   rule tmId : subTm(t, id(g)) ==> t;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
+   │
+   ├ note: `CwFTermIdentity` is refused with UndescribedMember.NestedOperation, as its expectation states
+   ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>

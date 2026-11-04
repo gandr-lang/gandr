@@ -682,6 +682,7 @@ INSERT INTO work VALUES('doi:10.4230/lipics.fscd.2022.22',2022,NULL);
 INSERT INTO work VALUES('doi:10.4230/lipics.fscd.2023.17',2023,NULL);
 INSERT INTO work VALUES('doi:10.4230/lipics.fscd.2024.10',2024,NULL);
 INSERT INTO work VALUES('doi:10.4230/lipics.fscd.2026.18',2026,NULL);
+INSERT INTO work VALUES('doi:10.4230/lipics.lics.2026.58',2026,NULL);
 INSERT INTO work VALUES('doi:10.4230/lipics.mfcs.2024.49',2025,'doi:10.1145/3837064');
 INSERT INTO work VALUES('doi:10.4230/lipics.mfcs.2024.57',2024,NULL);
 INSERT INTO work VALUES('doi:10.4230/lipics.types.2015.5',2018,'doi:10.46298/lmcs-18(1:28');

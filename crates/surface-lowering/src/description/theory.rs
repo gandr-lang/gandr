@@ -3017,7 +3017,7 @@ fn member_span(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a law naming a variable it does not bind is refused at
-///   the law, and the model of its theory no longer refuses first.
+///   the law, before the model of its theory refuses.
 /// - witness: `description::theory::tests::a_stated_law_naming_an_unbound_variable_is_refused_at_its_theory_4115`
 #[spec(ensures: |ret| ret.len() <= stated.len())]
 fn unstated(

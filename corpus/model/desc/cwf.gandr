@@ -1,0 +1,162 @@
+// A category with families as a theory whose sorts depend on earlier sorts.
+// Contexts and substitutions form a category, a type lives in a context, and
+// a term has a type in a context (Huang and Angiuli, _Fat Cell Structures
+// and Generalized Algebraic Theories_, LICS 2026,
+// doi:10.4230/LIPIcs.LICS.2026.58, § 1.1).
+//
+// Dependent type theory states its syntax and its models through this
+// signature. `Tm(g, a)` reads `a` at the sort `Ty(g)`, so a term's sort
+// names the context of its type. Comprehension extends a context by a type,
+// and substitution moves types and terms between contexts.
+//
+// The standard model reads a context as a type, a type in it as a family
+// over it, and a term as a section of that family. The block's value of
+// `Theory` keeps each index as data, so a program reads it back. The laws
+// are refused in the twin until the units that admit them land.
+//
+// - see: #522
+// - see: #5016
+// - see: #5017
+
+/// The CwF signature: four sorts, each over the sorts before it, and the
+/// operations of a category with families.
+pub theory CwF where {
+  /// Contexts.
+  sort Con : Type;
+  /// Substitutions from `d` to `g`.
+  sort Sub(d : Con, g : Con) : Type;
+  /// Types in a context.
+  sort Ty(g : Con) : Type;
+  /// Terms of a type in a context.
+  sort Tm(g : Con, a : Ty(g)) : Type;
+
+  /// The empty context.
+  oper empty : () --> Con;
+  /// Comprehension: a context extended by a type in it.
+  oper ext : (g : Con, a : Ty(g)) --> Con;
+  /// The identity substitution.
+  oper id : (g : Con) --> Sub(g, g);
+  /// Composition: `s` after `t`.
+  oper comp : (s : Sub(d, g), t : Sub(e, d)) --> Sub(e, g);
+  /// The substitution into the empty context.
+  oper eps : (g : Con) --> Sub(g, empty());
+  /// A type moved along a substitution.
+  oper subTy : (a : Ty(g), s : Sub(d, g)) --> Ty(d);
+  /// A term moved along a substitution, at its moved type.
+  oper subTm : (t : Tm(g, a), s : Sub(d, g)) --> Tm(d, subTy(a, s));
+  /// Weakening by the newest type.
+  oper p : (a : Ty(g)) --> Sub(ext(g, a), g);
+  /// The newest variable.
+  oper q : (a : Ty(g)) --> Tm(ext(g, a), subTy(a, p(a)));
+  /// A substitution extended by a term.
+  oper pair : (s : Sub(d, g), t : Tm(d, subTy(a, s))) --> Sub(d, ext(g, a));
+}
+
+/// The standard model: a context is a type, a type in it a family over it,
+/// and a term a section of the family.
+pub module Standard : Model(CwF) where {
+  /// A context is a type.
+  type Con = Type;
+  /// A substitution is a function between contexts.
+  type Sub(d : Con, g : Con) = d => g;
+  /// A type in a context is a family over it.
+  type Ty(g : Con) = g => Type;
+  /// A term is a section: at each point, a value of the family there.
+  type Tm(g : Con, a : Ty(g)) = (x : g) => a(x);
+
+  /// The empty context has one point.
+  def empty() -> Type { return Unit }
+
+  /// Comprehension pairs a point with a point of its type.
+  def ext(g : Type, a : g => Type) -> Type { return type(#{x : g, y : a(x)}) }
+
+  /// The identity function.
+  def id(g : Type) -> g => g { thunk { fun (x) { x } } }
+
+  /// Composition of two functions.
+  def comp(d : Type, g : Type, e : Type, s : d => g, t : e => d) -> e => g {
+    thunk { fun (x) { s(t(x)) } }
+  }
+
+  /// Every point goes to the one point.
+  def eps(g : Type) -> g => Unit { thunk { fun (_x) { unit } } }
+
+  /// A family read after a function.
+  def subTy(g : Type, d : Type, a : g => Type, s : d => g) -> d => Type {
+    thunk { fun (x) { a(s(x)) } }
+  }
+
+  /// A section read after a function.
+  def subTm(g : Type, a : g => Type, d : Type, t : (x : g) => a(x), s : d => g) -> (
+    x : d
+  ) => a(s(x)) {
+    thunk { fun (x) { t(s(x)) } }
+  }
+
+  /// The first projection.
+  def p(g : Type, a : g => Type) -> #{x : g, y : a(x)} => g { thunk { fun (z) { z.0 } } }
+
+  /// The point a pair holds first.
+  def first(g : Type, a : g => Type, z : #{x : g, y : a(x)}) -> g { z.0 }
+
+  /// The second projection, at the family read at the first.
+  def q(g : Type, a : g => Type) -> (z : #{x : g, y : a(x)}) => a(first(g, a, z)) {
+    thunk { fun (z) { z.1 } }
+  }
+
+  /// A function and a section paired pointwise.
+  def pair(
+    d : Type,
+    g : Type,
+    a : g => Type,
+    s : d => g,
+    t : (x : d) => a(s(x))
+  ) -> d => #{x : g, y : a(x)} {
+    thunk { fun (z) { (s(z), t(z)) } }
+  }
+}
+
+/// A family over the integers that is `Bool` at every point.
+def flags(_n : Integer) -> Type { return Bool }
+
+/// The newest variable reads the second point of a pair.
+@[ runs("+{.0 = unit}") ]
+def newest() -> Bool {
+  let read = Standard.q(Integer, flags);
+  read((3, true))
+}
+
+/// Weakening reads the first point of a pair.
+@[ runs("3") ]
+def weakened() -> Integer {
+  let read = Standard.p(Integer, flags);
+  read((3, false))
+}
+
+/// The links of a sort chain or an index chain.
+def rec links(chain : Theory) -> Integer {
+  match chain {
+    Sort(_name, _indices, rest) => { let r = links[<](rest); r + 1 },
+    Port(_name, _sort, _indices, rest) => { let r = links[<](rest); r + 1 },
+    _ => 0
+  }
+}
+
+/// The index ports of the last sort of a sort chain.
+def rec lastIndices(chain : Theory) -> Integer {
+  match chain {
+    Sort(_name, indices, rest) => match rest {
+      Sort(_n, _i, _r) => lastIndices[<](rest),
+      _ => links(indices)
+    },
+    _ => 0
+  }
+}
+
+/// The CwF declares four sorts.
+@[ runs("4") ]
+def sorts() -> Integer { match CwF { Presents(s, _o, _r) => links(s), _ => 0 } }
+
+/// `Tm` has two index ports: a context and a type in it.
+@[ runs("2") ]
+def termIndices() -> Integer { match CwF { Presents(s, _o, _r) => lastIndices(s), _ => 0 } }
