@@ -596,4 +596,10 @@ pub struct WrittenMembers
     /// For a `theory`, the rules derived rule declarations state over it, in
     /// the order they are collected.
     pub derived: Vec<WrittenDerived>,
+    /// For a `theory`, each inner attribute block `@![ … ]` that only inner
+    /// blocks precede in its body: the blocks that decorate the theory.
+    pub inner: Vec<ByteSpan>,
+    /// For a `theory`, each inner attribute block after one of its members,
+    /// which the lowering refuses as misplaced under the theory's name.
+    pub late_inner: Vec<ByteSpan>,
 }

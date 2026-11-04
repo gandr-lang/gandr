@@ -71,6 +71,7 @@ use crate::TileLabel;
 use crate::model::RegexShape;
 use crate::model::Sym;
 use crate::surface::term::attr_block_inline;
+use crate::surface::term::inner_attr_block_inline;
 
 /// Builds the circuit block form's rules.
 ///
@@ -135,6 +136,12 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// written name does. `where` opens the members, as it opens every declaration
 /// block.
 ///
+/// `@![ … ]` among the members decorates the theory they stand in, where a
+/// member's `@[ … ]` decorates that member. The grammar reads it at
+/// every member slot, as a module body does, so the lowering refuses one
+/// after a member by name. `@![` is its own lead, so the choice at a member
+/// stays one token deep.
+///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: appends the named item rule at `p`, preserving the existing
@@ -165,10 +172,13 @@ fn theory_declaration(
             repeat(seq([t(TileLabel(".")), t(TileLabel("type_identifier"))])),
             t(TileLabel("where")),
             t(TileLabel("{")),
-            repeat(seq([
-                repeat(attr_block_inline()),
-                theory_member(),
-                t(TileLabel(";")),
+            repeat(alt([
+                seq([
+                    repeat(attr_block_inline()),
+                    theory_member(),
+                    t(TileLabel(";")),
+                ]),
+                inner_attr_block_inline(),
             ])),
             t(TileLabel("}")),
         ]),

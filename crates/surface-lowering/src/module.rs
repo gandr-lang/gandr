@@ -5944,6 +5944,8 @@ impl<'source> Collector<'_, 'source>
             return;
         };
         let named = entry.named;
+        let inner = entry.written.inner.clone();
+        let late_inner = entry.written.late_inner.clone();
         let inclusions: Vec<Included> = match entry.presentation {
             Maybe::Present(ref presentation) => presentation.inclusions.clone(),
             Maybe::Absent(_) => Vec::new(),
@@ -5975,6 +5977,12 @@ impl<'source> Collector<'_, 'source>
             if attributed.is_ok() {
                 attributed = self.decoration(block, child.node, &mut attributes);
             }
+        }
+        // The inner blocks leading the body decorate the theory after its
+        // outer blocks, as one list, so an attribute both write is refused as
+        // doubled.
+        if attributed.is_ok() && !inner.is_empty() {
+            attributed = self.inner_decoration(child, &inner, &mut attributes);
         }
         for &block in decorations {
             self.document(position, block.node, block.span.end(), child.node);
@@ -6020,6 +6028,21 @@ impl<'source> Collector<'_, 'source>
                 slot.refuse(child.node, refusal);
             }
         }
+        // An inner block after a member decorates nothing, and is refused as
+        // misplaced under the theory's name.
+        for span in late_inner {
+            let at = Placed {
+                node: child.node,
+                span,
+            };
+            let _held = self.refuse_held(
+                container,
+                name,
+                at,
+                named,
+                misplaced_in(FormName::THEORY, span),
+            );
+        }
         let clean = self
             .collected
             .slots
@@ -6030,6 +6053,56 @@ impl<'source> Collector<'_, 'source>
         if clean {
             self.reducts((position, child), &inclusions);
         }
+    }
+
+    /// Read the inner attribute blocks at `spans`, `@![ … ]` leading the body
+    /// of the theory at `child`, pushing their attributes onto `attributes`
+    /// as decorating it.
+    ///
+    /// # Specification
+    /// - requires: each span covers an inner block of `child`'s body, from its
+    ///   `@![` to its `]`.
+    /// - ensures: each block's attributes are pushed in source order, each
+    ///   decorating `child`.
+    /// - fails: the theory's reading, and the attribute reader's refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`] and [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an inner block leading a theory's body decorates the
+    ///   theory as an outer block before it does.
+    /// - witness: `description::theory::tests::an_inner_attribute_decorates_its_theory_3586`
+    #[spec(
+        captures: before = attributes.len(),
+        ensures: |ret| ret.is_err() || attributes.get(before ..).is_some_and(|appended| {
+            appended.iter().all(|entry| entry.decorates == child.node)
+        }),
+    )]
+    fn inner_decoration(
+        &self,
+        child: Placed,
+        spans: &[ByteSpan],
+        attributes: &mut Vec<WrittenAttribute<'source>>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, child.node, &mut pieces)?;
+        // The pieces stand in source order, so each block's first piece is
+        // the first that does not start before the block.
+        for &span in spans {
+            let start = pieces
+                .pieces
+                .partition_point(|piece| piece.placed().span.start() < span.start());
+            let mut cursor = Cursor::new(pieces.pieces.get(start ..).unwrap_or(&[]), span);
+            if let Maybe::Absent(_) = cursor.tile(TileName::INNER_ATTRIBUTES) {
+                return Err(misplaced(cursor.here()));
+            }
+            self.read_block(&mut cursor, child.node, attributes)?;
+        }
+
+        Ok(())
     }
 
     /// Admit `Theory`, the presentation code, and enter its constructors, at

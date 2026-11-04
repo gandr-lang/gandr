@@ -289,6 +289,8 @@ impl FormName
     pub const INSTANTIATION: Self = Self("instantiation_expression");
     /// The module family `module M …`, its members included.
     pub const MODULE: Self = Self("module_declaration");
+    /// The theory block `theory T where { … }`, its members included.
+    pub const THEORY: Self = Self("theory_declaration");
     /// The pack `pack M at Model(T)`, a module packed at its model type.
     pub const PACK_MODEL: Self = Self("pack_model_expression");
     /// The forgetting `forget[sort C = A, …](m) at Model(T)`, a model whose

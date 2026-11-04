@@ -497,10 +497,29 @@ impl Reader<'_, '_>
         if !run.eat(Spelling("where")).0 || !run.eat(Spelling("{")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
-        // A member's attribute blocks come off its front; only `@[ inert ]`
-        // stands there, on an operation.
+        // A member's inner blocks `@![ … ]` come off its front first:
+        // one that only inner blocks precede decorates the theory, and one
+        // after a member is the lowering's to refuse. Then its attribute
+        // blocks come off; only `@[ inert ]` stands there, on an operation.
         let mut members = Vec::new();
+        let mut inner = Vec::new();
+        let mut late_inner = Vec::new();
+        let mut member_written = false;
         for member in split_members(run.remaining(), MemberEnd::Semicolon) {
+            let (blocks, member) = inner_blocks(member);
+            for block in blocks {
+                let span = member_span(block, at.span);
+                if member_written {
+                    late_inner.push(span);
+                }
+                else {
+                    inner.push(span);
+                }
+            }
+            if member.is_empty() {
+                continue;
+            }
+            member_written = true;
             match self.member_attributes(member, member_span(member, at.span)) {
                 Ok(read) => members.push(read),
                 Err(diagnostic) => diagnostics.push(diagnostic),
@@ -510,7 +529,11 @@ impl Reader<'_, '_>
         let mut parts = TheoryParts::default();
         let mut placement = Placement::default();
         let mut scope = BTreeMap::new();
-        let mut written = WrittenMembers::default();
+        let mut written = WrittenMembers {
+            inner,
+            late_inner,
+            ..WrittenMembers::default()
+        };
         let mut operation_spans = Vec::new();
         let mut circuits = Vec::new();
         let mut presented_circuits = Vec::new();
@@ -2982,6 +3005,56 @@ impl Run<'_>
         }
         Ok(actual)
     }
+}
+
+/// The inner attribute blocks `@![ … ]` at the front of `member`, each up to
+/// its closing `]`, and the member after them. A block its `]` does
+/// not close stays on the member, whose reading refuses it.
+///
+/// # Specification
+/// - ensures: each block is a prefix of what the earlier ones left, opening on
+///   `@![` and ending on the `]` that closes it outside every bracket of its
+///   payload; the member is the suffix after the last.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an inner block before a sort, one after a member and one
+///   doubling an outer block each reach the lowering at their spans.
+/// - witness: `description::theory::tests::an_inner_attribute_decorates_its_theory_3586`
+#[spec(ensures: |(blocks, rest)| blocks.iter().map(|block| block.len()).sum::<usize>().saturating_add(rest.len()) == member.len())]
+fn inner_blocks(member: &[Piece]) -> (Vec<&[Piece]>, &[Piece])
+{
+    let mut blocks = Vec::new();
+    let mut rest = member;
+    while matches!(rest.first(), Some(Piece::Tile { label, .. }) if label.as_ref() == "@![") {
+        let mut depth = 0_usize;
+        let close = rest.iter().enumerate().skip(1).find_map(|(index, piece)| {
+            let Piece::Tile { label, .. } = *piece
+            else {
+                return None;
+            };
+            match label.as_ref() {
+                "(" | "[" | "#[" | ".#[" | "{" | "#{" | ".#{" => {
+                    depth = depth.saturating_add(1);
+                    None
+                },
+                "]" if depth == 0 => Some(index),
+                ")" | "]" | "}" => {
+                    depth = depth.saturating_sub(1);
+                    None
+                },
+                _ => None,
+            }
+        });
+        let Some((block, after)) =
+            close.and_then(|close| rest.split_at_checked(close.saturating_add(1)))
+        else {
+            break;
+        };
+        blocks.push(block);
+        rest = after;
+    }
+    (blocks, rest)
 }
 
 /// A member's precise written interval, excluding its separator.
