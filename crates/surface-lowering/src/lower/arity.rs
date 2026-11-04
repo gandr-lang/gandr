@@ -201,6 +201,7 @@ use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::origin::Origin;
+use crate::resolve::Bound;
 use crate::resolve::Mentioned;
 use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
@@ -3564,7 +3565,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   it, an unnamed entry's under a name no source writes, and its arrow is
     ///   dependent exactly when a later entry or the codomain names it; each
     ///   entry's type is read as a value type under the frames before it and
-    ///   the codomain under all of them; nothing is planned otherwise.
+    ///   the codomain under all of them, as [`Self::box_output`] reads a box's
+    ///   output; nothing is planned otherwise.
     /// - fails: a duplicate definition for a name bound twice; the binder
     ///   policy's refusal; a misplaced key; a hole's own fault.
     /// - panics: none.
@@ -3629,7 +3631,8 @@ impl<'source> Lowerer<'_, 'source>
             });
             inner = Frame::Inner(extended);
         }
-        self.read(codomain.node, Reading::ValueType(inner));
+        let output = self.box_output(codomain, inner)?;
+        self.read(codomain.node, output);
         self.plan(
             site,
             Plan::Telescope(
@@ -3760,20 +3763,22 @@ impl<'source> Lowerer<'_, 'source>
 
     /// The outputs the call `bound` returns, as its callee writes them, read
     /// under `frame` ahead of the walk from `anchor`: those of the earlier
-    /// declaration its head names, when that declaration's result is written
-    /// as a group. An operation of several outputs writes its outputs as
-    /// ports, and its call returns one positional entry for each output.
+    /// declaration or the parameter its head names, when the result the
+    /// callee writes is a group. An operation of several outputs writes its
+    /// outputs as ports, and its call returns one positional entry for each
+    /// output.
     ///
     /// # Specification
     /// - requires: `bound` is `anchor` or under it.
     /// - ensures: the entries of the group the callee's result writes, in
     ///   order, when `bound` is a call whose head is one name resolving to a
     ///   declaration whose result is planned as a [`Plan::Returns`] or written
-    ///   as a group, as [`Self::written_group`] reads it. One positional entry
-    ///   for each output when the name resolves to an operation of several
-    ///   outputs. Nothing for any other form, a head a binder answers, or a
-    ///   callee returning one value. The nodes under `bound` take `anchor`'s
-    ///   owner, as the walk would give them.
+    ///   as a group, as [`Self::written_group`] reads it, or to a declaration
+    ///   or a binder whose written type is a box returning such a group. One
+    ///   positional entry for each output when the name resolves to an
+    ///   operation of several outputs. Nothing for any other form or a callee
+    ///   returning one value. The nodes under `bound` take `anchor`'s owner,
+    ///   as the walk would give them.
     /// - fails: the name's resolution refusal; a foreign mold.
     /// - panics: none.
     ///
@@ -3781,10 +3786,12 @@ impl<'source> Lowerer<'_, 'source>
     /// As [`Self::resolve_name`], and [`LoweringRefusal::UnknownMold`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a call of a function returning two outputs, and one
-    ///   returning a pair.
+    /// - hypothesis: L3 — a call of a function returning two outputs, one
+    ///   returning a pair, one of a box signature and one of a parameter at a
+    ///   box.
     /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_a_call`
     /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_an_operation_4855`
+    /// - witness: `lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
     #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || matches!(self.form_at(bound), Ok(Some((_, Former::Call)))))]
     pub(super) fn called_outputs(
         &mut self,
@@ -3824,24 +3831,38 @@ impl<'source> Lowerer<'_, 'source>
             name,
             reading: Reading::Head(frame),
         };
-        let Maybe::Present(Resolved::Declaration { constant, .. }) =
-            self.resolve_name(site, frame, self.name_at(head))?
-        else {
-            return Ok(None);
+        let callee = match self.resolve_name(site, frame, self.name_at(head))? {
+            // A callee classified ahead of this call gives its result; one
+            // the walk has not reached is read off the box its signature
+            // writes.
+            Maybe::Present(Resolved::Declaration { constant, declared }) => {
+                // An operation of several outputs writes them as ports.
+                if let Some(plan) = self
+                    .collected
+                    .operations
+                    .get(&crate::module::SlotIndex::from(usize::from(constant)))
+                {
+                    let count = usize::from(plan.output_count());
+                    let positional = Entry {
+                        key: Key::Positional,
+                        held: Held::Operand(bound),
+                    };
+                    return Ok((count > 1).then(|| alloc::vec![positional; count]));
+                }
+                match (self.callee_result(constant), declared) {
+                    (Some(at), _) => Some(at),
+                    (None, Maybe::Present(written)) => self.written_output(written)?,
+                    (None, Maybe::Absent(_)) => None,
+                }
+            },
+            // A parameter at a box returns what its box does.
+            Maybe::Present(Resolved::Binder(Bound {
+                declared: Maybe::Present(written),
+                ..
+            })) => self.written_output(written)?,
+            Maybe::Present(Resolved::Binder(_)) | Maybe::Absent(_) => None,
         };
-        if let Some(plan) = self
-            .collected
-            .operations
-            .get(&crate::module::SlotIndex::from(usize::from(constant)))
-        {
-            let count = usize::from(plan.output_count());
-            let positional = Entry {
-                key: Key::Positional,
-                held: Held::Operand(bound),
-            };
-            return Ok((count > 1).then(|| alloc::vec![positional; count]));
-        }
-        let Some(mut at) = self.callee_result(constant)
+        let Some(mut at) = callee
         else {
             return Ok(None);
         };
@@ -3861,6 +3882,48 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(None);
         }
         Ok(Some(self.domain_entries(result, frame)?))
+    }
+
+    /// The output the box written at `written` returns, read off its syntax:
+    /// `B` of `A -> B` or `A => B`.
+    ///
+    /// # Specification
+    /// - requires: nothing beyond a well-formed tree.
+    /// - ensures: the operand after the arrow when `written` is an arrow or a
+    ///   value function type; nothing otherwise.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of a box signature and of a parameter at a box
+    ///   each bind every output.
+    /// - witness: `lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
+    fn written_output(
+        &self,
+        written: NodeIndex,
+    ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
+    {
+        let Some(tree) = self.tree.node(written)
+        else {
+            return Ok(None);
+        };
+        let written = Placed::of(written, tree);
+        if !matches!(
+            self.form_at(written)?,
+            Some((_, Former::ArrowType | Former::ValueFunctionType))
+        ) {
+            return Ok(None);
+        }
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, written.node, &mut pieces)?;
+
+        Ok(match pieces.pieces.last() {
+            Some(&Piece::Operand(output)) => Some(output.node),
+            _ => None,
+        })
     }
 
     /// The outputs of the result the body `site` ends answers, when that
@@ -5225,8 +5288,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: every entry's type and the codomain are already minted or
     ///   absent.
-    /// - ensures: `+U (Π A1. … Π An. -F B)`, an entry's arrow dependent when
-    ///   the telescope names its frame, as [`Self::names_own_binder`] reads it,
+    /// - ensures: `+U (Π A1. … Π An. C)`, `C` the computation type
+    ///   [`Self::box_returns`] gives, an entry's arrow dependent when the
+    ///   telescope names its frame, as [`Self::names_own_binder`] reads it,
     ///   every node with the written origin; nothing when a type did not lower.
     /// - fails: never.
     /// - panics: none.
@@ -5255,12 +5319,10 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
-        let returned = match self.value_type_at(codomain) {
-            Maybe::Present(returned) => returned,
+        let mut arrow = match self.box_returns(codomain, sink, origin) {
+            Maybe::Present(arrow) => arrow,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let mut arrow = sink.arena.comp_type_returner(returned);
-        sink.origins.record_comp_type(arrow, origin);
         for (parameter, &domain) in written.iter().zip(&domains).rev() {
             arrow = if bool::from(self.names_own_binder(codomain, parameter.frame)) {
                 let id = sink.arena.comp_type_pi(domain, arrow);

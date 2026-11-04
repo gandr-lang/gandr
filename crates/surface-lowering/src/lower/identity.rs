@@ -3583,7 +3583,14 @@ impl<'source> Lowerer<'_, 'source>
                 Some(&Plan::ValueFunction(domains, codomain))
                     if !thunked && domains.end.checked_sub(domains.start) == Some(1_usize) =>
                 {
-                    return Some(Codomain::Returned(codomain));
+                    // An output read as a result, a group or a row, mints
+                    // its own computation type, as a returner does.
+                    return Some(if matches!(self.reading(codomain), Reading::Result(_)) {
+                        Codomain::Returner(codomain)
+                    }
+                    else {
+                        Codomain::Returned(codomain)
+                    });
                 },
                 _ => return None,
             }
@@ -4135,13 +4142,13 @@ impl<'source> Lowerer<'_, 'source>
                 entries,
                 entries.end.saturating_sub(entries.start),
                 codomain,
-                false,
+                matches!(self.reading(codomain), Reading::Result(_)),
             ),
             Some(&Plan::ValueFunction(domains, codomain)) => (
                 none,
                 domains.end.saturating_sub(domains.start),
                 codomain,
-                false,
+                matches!(self.reading(codomain), Reading::Result(_)),
             ),
             Some(&Plan::Former(TypeFormer::Thunk, held)) => {
                 let mut at = through(held);

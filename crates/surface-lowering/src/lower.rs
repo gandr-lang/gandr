@@ -16465,9 +16465,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   `codomain` are its operands.
     /// - ensures: a domain list naming a binder, `(x : A, …) -> B`, is the
     ///   telescope; else its domains — each member of a parenthesised list,
-    ///   none for `()`, else the one operand there — and its codomain are each
-    ///   read as value types under `frame`, and it is planned as the thunked
-    ///   arrow over them.
+    ///   none for `()`, else the one operand there — are each read as value
+    ///   types under `frame`, its codomain as [`Self::box_output`] reads it,
+    ///   and it is planned as the thunked arrow over them.
     /// - provides: the one reading of the box `->` and the alias `=>` share.
     /// - fails: either hole's own refusal, and a domain list's refusal.
     /// - panics: none.
@@ -16516,11 +16516,102 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.read(each, Reading::ValueType(frame));
             }
         }
-        self.read(codomain.node, Reading::ValueType(frame));
+        let output = self.box_output(codomain, frame)?;
+        self.read(codomain.node, output);
 
         self.plan(site, Plan::ValueFunction(domains, codomain.node));
 
         Ok(())
+    }
+
+    /// How a box reads its output `codomain` under `frame`: a group of
+    /// outputs, `(q : A, r : B)` or `()`, and a row before a type, `[E] B`, as
+    /// a definition's result is read; any other output as a value type, the
+    /// returner inserted when the box is minted.
+    ///
+    /// # Specification
+    /// - requires: nothing beyond a well-formed tree.
+    /// - ensures: [`Reading::Result`] under `frame` for a written group, as
+    ///   [`Self::written_group`] reads it, and for a returner type whose first
+    ///   piece is `[`; [`Reading::ValueType`] under `frame` otherwise, so a
+    ///   written computation type such as `-F B` is refused as a value type and
+    ///   a staged box `A -> (B -> C)` keeps its output a box.
+    /// - fails: the group's refusal; [`LoweringRefusal::UnknownMold`] for a
+    ///   foreign mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::written_group`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a box returning a group, one under a row, a plain
+    ///   output and a written returner.
+    /// - witness: `lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
+    /// - witness: `lower::tests::a_computation_codomain_of_a_box_is_refused`
+    #[spec(ensures: |ret| matches!(ret, Err(_) | Ok(Reading::Result(_) | Reading::ValueType(_))))]
+    fn box_output(
+        &mut self,
+        codomain: Placed,
+        frame: Frame,
+    ) -> Result<Reading, LoweringRefusal<'source>>
+    {
+        let rowed = if matches!(self.form_at(codomain)?, Some((_, Former::ReturnerType))) {
+            let mut scratch = core::mem::take(&mut self.scratch);
+            let read = read_pieces(self.pbg, self.tree, codomain.node, &mut scratch).map(|()| {
+                matches!(
+                    scratch.pieces.first(),
+                    Some(&Piece::Tile { label, .. }) if label == TileName::BRACKET_OPEN
+                )
+            });
+            self.scratch = scratch;
+            read?
+        }
+        else {
+            false
+        };
+        if rowed || self.written_group(codomain, frame)?.0 {
+            return Ok(Reading::Result(frame));
+        }
+
+        Ok(Reading::ValueType(frame))
+    }
+
+    /// The computation type a box returns, its output `codomain` minted: the
+    /// returner of a value type, and a group or a rowed returner as it stands.
+    ///
+    /// # Specification
+    /// - requires: `codomain` is minted or absent.
+    /// - ensures: `-F B` for an output minted as the value type `B`, with the
+    ///   box's origin; the computation type an output read as a result minted.
+    /// - fails: the output's absence; the other-sort absence for an output
+    ///   minted as neither.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::box_output`].
+    /// - witness: `lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
+    /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(id) => sink.arena.comp_type(id).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn box_returns(
+        &self,
+        codomain: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<CompTypeId, lowered::Absent>
+    {
+        match self.lowered_at(codomain) {
+            Maybe::Present(Lowered::ValueType(returned)) => {
+                let id = sink.arena.comp_type_returner(returned);
+                sink.origins.record_comp_type(id, origin);
+                Maybe::Present(id)
+            },
+            Maybe::Present(Lowered::CompType(id)) => Maybe::Present(id),
+            Maybe::Present(_) => Maybe::Absent(lowered::Absent::OtherSort),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
     }
 
     /// Append the domains a value function space's domain operand writes to
@@ -19145,10 +19236,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: every domain and the codomain are already minted or absent.
-    /// - ensures: `(A1, …, An) => B` mints as `+U (A1 -> … -> An -> -F B)`,
-    ///   every node with the written origin, so the alias and the thunked arrow
-    ///   it names are one core type; nothing is minted when a domain or the
-    ///   codomain did not lower.
+    /// - ensures: `(A1, …, An) -> B` mints as `+U (A1 -> … -> An -> C)`, `C`
+    ///   the computation type [`Self::box_returns`] gives, every node with the
+    ///   written origin, so the box and the thunked arrow it names are one core
+    ///   type; nothing is minted when a domain or the codomain did not lower.
     /// - provides: the value function space.
     /// - fails: never.
     /// - panics: none.
@@ -19186,8 +19277,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Maybe::Present(_) => None,
                     | Maybe::Absent(reason) => Some(reason),
                 })
-                .or_else(|| match self.value_type_at(codomain) {
-                    | Maybe::Present(_) => None,
+                .or_else(|| match self.lowered_at(codomain) {
+                    | Maybe::Present(Lowered::ValueType(_) | Lowered::CompType(_)) => None,
+                    | Maybe::Present(_) => Some(lowered::Absent::OtherSort),
                     | Maybe::Absent(reason) => Some(reason),
                 });
             match missing {
@@ -19212,12 +19304,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Maybe::Absent(reason);
             }
         }
-        let returned = match self.value_type_at(codomain) {
-            Maybe::Present(returned) => returned,
+        let mut arrow = match self.box_returns(codomain, sink, origin) {
+            Maybe::Present(arrow) => arrow,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let mut arrow = sink.arena.comp_type_returner(returned);
-        sink.origins.record_comp_type(arrow, origin);
         for &domain in written.iter().rev() {
             let Maybe::Present(from) = self.value_type_at(domain)
             else {

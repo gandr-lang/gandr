@@ -2348,3 +2348,56 @@ fn each_label_names_what_it_labels()
         "a dependent record's later label under the label it reads: {types:?}"
     );
 }
+
+/// #4853: a box returns what a definition's result does. A group of outputs,
+/// a row before a type and a row before a group each lower to the thunked
+/// arrow into the returner `-F` spells for them, and a box whose output is a
+/// box keeps that output a value type.
+#[test]
+fn a_box_returns_a_group_under_a_row_4853()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def grouped : Integer -> (q : Integer, r : Integer) ; def groupedT : +U (Integer -> -F \
+         (q : Integer, r : Integer)) ; def rowed : Integer -> [Partial] Integer ; def rowedT : +U \
+         (Integer -> -F [Partial] Integer) ; def both : (n : Integer) -> [Partial] (x : Integer, \
+         y : Integer) ; def bothT : +U (Integer -> -F [Partial] (x : Integer, y : Integer)) ; def \
+         none : Integer -> () ; def noneT : +U (Integer -> -F ()) ; def staged : Integer -> \
+         (Integer -> Integer) ; def stagedT : +U (Integer -> -F (+U (Integer -> -F Integer))) ;",
+        &mut arena,
+    );
+    let signature = |name: &str| match outcome(&module, name) {
+        DeclarationOutcome::Uncompleted { declared_type }
+        | DeclarationOutcome::Completed { declared_type, .. } => declared_type,
+        other @ (DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` declares a type, not {other:?}"),
+    };
+    for name in ["grouped", "rowed", "both", "none", "staged"] {
+        assert_eq!(
+            gandr_core_term::equal_type_syntax(
+                &arena,
+                signature(name),
+                signature(&format!("{name}T"))
+            ),
+            gandr_core_term::CertificateEquality::Equal,
+            "`{name}` is the thunked arrow its `-F` spelling writes"
+        );
+    }
+    let module = lowered(
+        "def divmod : (m : Integer, n : Integer) -> (q : Integer, r : Integer) ;\ndef half(n : \
+         Integer) -> Integer { let (q, r) = divmod(n, n); q }\ndef apply(f : (Integer, Integer) -> \
+         (Integer, Integer), x : Integer) -> Integer { let (a, b) = f(x, x); b }",
+        &mut arena,
+    );
+    for name in ["half", "apply"] {
+        let called = body(&arena, &module, name);
+        assert!(
+            called.iter().any(|token| token == "bindall2"),
+            "a call of a box, declared or a parameter, binds each output it returns: {called:?}"
+        );
+    }
+}
