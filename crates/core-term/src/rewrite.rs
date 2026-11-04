@@ -562,6 +562,10 @@ struct Engine<'arena>
     /// The entries an environment substitution replaces free indices by,
     /// innermost first.
     environment: Vec<ValueId>,
+    /// Whether an environment substitution puts a copy of its entry at each
+    /// occurrence it replaces, so each occurrence keeps a node of its own
+    /// (#5092); the substitution shares one node otherwise.
+    copies_entries: bool,
     /// How the checker decided each nested computation.
     nesting: BTreeMap<ValueId, Nesting>,
     /// Each region's runs beside their computations, in written order.
@@ -610,6 +614,7 @@ impl<'arena> Engine<'arena>
             updates: BTreeMap::new(),
             kept: Kept::Projected,
             environment: Vec::new(),
+            copies_entries: false,
             nesting: BTreeMap::new(),
             regions: BTreeMap::new(),
             slots: BTreeMap::new(),
@@ -688,7 +693,22 @@ impl<'arena> Engine<'arena>
                     self.results.push(rewritten);
                 },
                 Task::Record(node, depth, step) => {
-                    if let Some(&rewritten) = self.results.last() {
+                    if let Some(&carried) = self.results.last() {
+                        // A carried entry is copied here, after its carry,
+                        // so each occurrence under a binder keeps its own node.
+                        let rewritten = if let (Rewrite::Environment, Node::Value(entry)) =
+                            (step, carried)
+                            && self.copies_entries
+                        {
+                            let copy = Node::Value(self.occurrence_entry(entry));
+                            if let Some(last) = self.results.last_mut() {
+                                *last = copy;
+                            }
+                            copy
+                        }
+                        else {
+                            carried
+                        };
                         let _previous = self.memo.insert((node, depth, step), rewritten);
                     }
                 },
@@ -2016,7 +2036,7 @@ impl<'arena> Engine<'arena>
                     .and_then(|counted| self.environment.get(counted).copied());
                 match entry {
                     Some(replacement) if depth == Binders::NONE => {
-                        Occurrence::Answered(replacement)
+                        Occurrence::Answered(self.occurrence_entry(replacement))
                     },
                     Some(replacement) => Occurrence::Carried(replacement, depth),
                     None => {
@@ -2035,6 +2055,40 @@ impl<'arena> Engine<'arena>
                     },
                 }
             },
+        }
+    }
+
+    /// The node an environment substitution puts at one occurrence of
+    /// `entry`: a copy of `entry` at a node of its own when the substitution
+    /// copies its entries (#5092), `entry` itself otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a new node equal to `entry` when the engine copies its
+    ///   entries and `entry` is live; `entry` otherwise.
+    /// - provides: the node a reader keeps one entry for, at each occurrence.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two occurrences of one entry, at the top and under a
+    ///   binder, each answer a node of their own, and a shared substitution
+    ///   answers the entry at both.
+    /// - witness: `rewrite::tests::a_copying_substitution_gives_each_occurrence_its_own_node_5092`
+    #[spec(captures: entry_mark = self.arena.watermark(), ensures: |ret| if self.copies_entries && self.arena.value(entry).is_some() {
+        ret != entry && self.arena.value(ret) == self.arena.value(entry)
+    } else { ret == entry && self.arena.watermark() == entry_mark })]
+    fn occurrence_entry(
+        &mut self,
+        entry: ValueId,
+    ) -> ValueId
+    {
+        if !self.copies_entries {
+            return entry;
+        }
+        match self.arena.value(entry).cloned() {
+            Some(value) => self.arena.alloc_value(value),
+            None => entry,
         }
     }
 
@@ -7026,6 +7080,52 @@ pub fn substitute_environment_traced(
     }
     let mut engine = Engine::new(arena);
     engine.environment = environment.to_vec();
+    let substituted = engine.run(term_node(subject), Binders::NONE, Rewrite::Environment);
+    report(&engine.memo, carried);
+    node_term(substituted, subject)
+}
+
+/// [`substitute_environment_traced`], with a copy of the entry at each
+/// occurrence it replaces (#5092).
+///
+/// A refinement reads each rewritten node back to the written node it stands
+/// for, and a node reported from two sources stands for the first. A shared
+/// entry put at two written occurrences therefore reads back as one of them
+/// only. A copy at each occurrence keeps a node for each.
+///
+/// # Specification
+/// - requires: as [`substitute_environment`].
+/// - ensures: a term equal to the one [`substitute_environment`] answers, each
+///   replaced occurrence at a node of its own; `carried` gains one pair per
+///   node of the subject the rewrite changed and per entry carried under a
+///   binder, as [`substitute_environment_traced`] reports them; an empty
+///   environment mints and reports nothing.
+/// - provides: the substitution a refinement reads back through its trace.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two occurrences of one entry, at the top and under a
+///   binder, each answer a node of their own beside their own source.
+/// - witness: `rewrite::tests::a_copying_substitution_gives_each_occurrence_its_own_node_5092`
+#[spec(captures: entry = (arena.watermark(), carried.len()), ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&subject)
+    && carried.len() >= entry.1
+    && (!environment.is_empty() || (ret == subject && arena.watermark() == entry.0 && carried.len() == entry.1)))]
+#[inline]
+#[must_use]
+pub fn substitute_environment_copied_traced(
+    arena: &mut CoreArena,
+    subject: TermId,
+    environment: &[ValueId],
+    carried: &mut Vec<Carried>,
+) -> TermId
+{
+    if environment.is_empty() {
+        return subject;
+    }
+    let mut engine = Engine::new(arena);
+    engine.environment = environment.to_vec();
+    engine.copies_entries = true;
     let substituted = engine.run(term_node(subject), Binders::NONE, Rewrite::Environment);
     report(&engine.memo, carried);
     node_term(substituted, subject)

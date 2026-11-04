@@ -321,6 +321,7 @@ pub use crate::rewrite::strengthen_value_type;
 pub use crate::rewrite::strengthening;
 pub use crate::rewrite::substitute_environment;
 pub use crate::rewrite::substitute_environment_comp_type;
+pub use crate::rewrite::substitute_environment_copied_traced;
 pub use crate::rewrite::substitute_environment_traced;
 pub use crate::rewrite::substitute_environment_value_type;
 pub use crate::rewrite::wrap_marks;

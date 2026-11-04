@@ -57,6 +57,7 @@ use super::strengthen_value_type;
 use super::strengthening;
 use super::substitute_environment;
 use super::substitute_environment_comp_type;
+use super::substitute_environment_copied_traced;
 use super::substitute_environment_traced;
 use super::substitute_environment_value_type;
 use super::wrap_marks;
@@ -3721,6 +3722,108 @@ fn a_traced_substitution_reports_every_node_it_rewrote()
     assert!(
         none.is_empty() && mark == arena.watermark(),
         "an empty environment mints and reports nothing"
+    );
+}
+
+/// #5092: a copying substitution puts a node of its own at each occurrence of
+/// an entry, at the top and under a binder, each reported beside its own
+/// occurrence. A shared substitution puts the one entry at both.
+#[test]
+fn a_copying_substitution_gives_each_occurrence_its_own_node_5092()
+{
+    let mut arena = CoreArena::new();
+    let entry = variable(&mut arena, DeBruijnIndex::from(4_u32));
+    let [first, second] = [0_u32, 0].map(|index| variable(&mut arena, DeBruijnIndex::from(index)));
+    let [inner, again] = [1_u32, 1].map(|index| variable(&mut arena, DeBruijnIndex::from(index)));
+    let pair = arena.value_tuple(&[first, second]);
+    let top = arena.computation_return(pair);
+    let under = arena.value_tuple(&[inner, again]);
+    let lambda_body = arena.computation_return(under);
+    let lambda = arena.computation_lambda(lambda_body);
+    let components = |arena: &CoreArena, computation: ComputationId| {
+        let Some(&Computation::Return(value)) = arena.computation(computation)
+        else {
+            panic!("a substituted return");
+        };
+        let Some(&[left, right]) = arena.value(value).and_then(Value::components)
+        else {
+            panic!("a substituted pair");
+        };
+        [left, right]
+    };
+    let mut shared = Vec::new();
+    let TermId::Computation(kept) =
+        substitute_environment_traced(&mut arena, TermId::Computation(top), &[entry], &mut shared)
+    else {
+        panic!("a substitution keeps the subject's family");
+    };
+    assert_eq!(
+        components(&arena, kept),
+        [entry, entry],
+        "a shared substitution puts the one entry at both occurrences"
+    );
+    let mut carried = Vec::new();
+    let TermId::Computation(copied) = substitute_environment_copied_traced(
+        &mut arena,
+        TermId::Computation(top),
+        &[entry],
+        &mut carried,
+    )
+    else {
+        panic!("a substitution keeps the subject's family");
+    };
+    let [left, right] = components(&arena, copied);
+    assert!(
+        left != right && left != entry && right != entry,
+        "each occurrence at the top has a node of its own"
+    );
+    assert_eq!(
+        (arena.value(left), arena.value(right)),
+        (arena.value(entry), arena.value(entry)),
+        "each copy is the entry"
+    );
+    assert!(
+        carried.contains(&Carried::Value(first, left))
+            && carried.contains(&Carried::Value(second, right)),
+        "each copy is reported beside its own occurrence: {carried:?}"
+    );
+    let mut carried = Vec::new();
+    let TermId::Computation(copied) = substitute_environment_copied_traced(
+        &mut arena,
+        TermId::Computation(lambda),
+        &[entry],
+        &mut carried,
+    )
+    else {
+        panic!("a substitution keeps the subject's family");
+    };
+    let Some(&Computation::Lambda(body)) = arena.computation(copied)
+    else {
+        panic!("a substituted lambda");
+    };
+    let [left, right] = components(&arena, body);
+    assert_ne!(
+        left, right,
+        "each occurrence under a binder has a node of its own"
+    );
+    assert_eq!(
+        (arena.value(left), arena.value(right)),
+        (
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(5_u32),
+            }),
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(5_u32),
+            })
+        ),
+        "each copy is the entry carried under the lambda"
+    );
+    assert!(
+        carried.contains(&Carried::Value(inner, left))
+            && carried.contains(&Carried::Value(again, right)),
+        "each carried copy is reported beside its own occurrence: {carried:?}"
     );
 }
 
