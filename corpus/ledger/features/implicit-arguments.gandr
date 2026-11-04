@@ -8,7 +8,8 @@
 /// - see: #1188 — `twiceRun`
 // Implicit parameters: the telescope `[a : Type]` after a function's name
 // binds parameters a use supplies by name, `same[.a = Integer](3)`, or by
-// position, `same[Integer](3)`.
+// position, `same[Integer](3)`. Each supply is a whole expression, by name or
+// by position, `chosen[3 + 4](Integer)`.
 // The implicit and the explicit parameters merge into one telescope, each
 // after every parameter its type names, ties kept in the written order; which
 // ones are implicit is the declaration's metadata, so the declared type is the
@@ -76,6 +77,11 @@ def chosenRun() -> Integer { chosen[.x = 7](Integer) }
 /// merge binds `t` before it.
 @[ runs("7") ]
 def chosenPositional() -> Integer { chosen[7](Integer) }
+
+/// `chosen` supplied by position with a compound value: a positional entry is
+/// an expression, as the value a name supplies is.
+@[ runs("7") ]
+def chosenCompound() -> Integer { chosen[3 + 4](Integer) }
 
 /// A stage and an implicit in one telescope: the stage quantifies the
 /// signature and binds no value, the implicit binds the first parameter.

@@ -25,15 +25,6 @@ error[MalformedForm]: this implicit is supplied a second time
    ├ note: `suppliedTwice` is refused with MalformedForm, as its expectation states
    ╰ help: remove one of the two entries
 
-error[MalformedForm]: this positional implicit is a compound value, not an atom
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:70:39
-   │
-70 │ def compoundPosition = thunk { chosen[3 + 4](Integer) };
-   │                                       ━━━━━ a compound positional implicit
-   │
-   ├ note: `compoundPosition` is refused with MalformedForm, as its expectation states
-   ╰ help: supply the value by name, as `.n = …` with the implicit's name for `n`
-
 error[ImplicitUnsolved]: the implicit `combine` this call to `twice` omits is determined by neither its arguments nor the type it is checked against
    ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:24:33
    │
@@ -93,18 +84,18 @@ error[UnresolvedName]: `b` is not defined
    ╰ help: define `b`, or import the module that exports it
 
 error[ImplicitUnsupplied]: `same` needs its implicit `a`; supply it by name, `same[a = …](…)`
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:75:17
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:70:17
    │
-75 │ def sameNamed = same;
+70 │ def sameNamed = same;
    │                 ━━━━ an implicit left unsupplied
    │
    ├ note: `sameNamed` is refused with ImplicitUnsupplied, as its expectation states
    ╰ help: supply the implicit by name in square brackets
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:80:52
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:75:52
    │
-80 │ def chosenStanding : Type => Integer = chosen[.x = 7];
+75 │ def chosenStanding : Type => Integer = chosen[.x = 7];
    │                                        ┬───────────┯─
    │                                        │           │
    │                                        │           its type does not convert: expected `?`, found `Integer`
@@ -114,27 +105,27 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TelescopeCycle]: `a` and `b` mention each other in their types, so neither can come first
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:84:1
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:79:1
    │
-84 │ def tangled[a : b, b : a](x : a) -> -F a { return x }
+79 │ def tangled[a : b, b : a](x : a) -> -F a { return x }
    │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parameters mentioning each other
    │
    ├ note: `tangled` is refused with TelescopeCycle, as its expectation states
    ╰ help: order parameters so each type names only earlier parameters
 
 error[ImplicitUnsolved]: the implicit `x` this call to `chosen` omits is determined by neither its arguments nor the type it is checked against
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:89:36
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:84:36
    │
-89 │ def unchosenSigned : Path(Integer, chosen(Integer), 0);
+84 │ def unchosenSigned : Path(Integer, chosen(Integer), 0);
    │                                    ━━━━━━━━━━━━━━━ an implicit left unsolved
    │
    ├ note: `unchosenSigned` is refused with ImplicitUnsolved, as its expectation states
    ╰ help: supply the implicit `x` by name, as `chosen[.x = …](…)`
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:94:39
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:89:39
    │
-94 │ def disagreeingSigned : Path(Integer, same(unit), 3) = Path.here(3);
+89 │ def disagreeingSigned : Path(Integer, same(unit), 3) = Path.here(3);
    │                         ┬────┬────────┯━━━━━━━━━────
    │                         │    │        │
    │                         │    │        its type does not convert: expected `Integer`, found `Unit`

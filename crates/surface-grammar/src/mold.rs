@@ -327,6 +327,12 @@ mold_flag! {
     LabelFollowsForm
 }
 
+mold_flag! {
+    /// Whether a hole of one sort takes a whole form of another: a form of
+    /// its own sort, or of a sort it includes.
+    HoleTakes
+}
+
 /// What the tile automaton reads of one mold off the table's columns: its
 /// bounds, its neighbour and membership flags, and the steps out of its
 /// context to the right.
@@ -453,6 +459,123 @@ impl HoleSorts
             | Sort::ModuleMember
             | Sort::Block => self.0 & Self::of(sort).0 != 0,
         })
+    }
+}
+
+/// The sorts each sort's holes take besides their own. A rule of sort `S`
+/// whose form is a lone hole of sort `T` holds no tile, so it mints no mold:
+/// a hole of `S` takes a whole form of `T` in its place. A parser admits the
+/// molds of `T` at a hole of `S`, below the molds of `S`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct SortInclusion([HoleSorts; 7]);
+
+impl SortInclusion
+{
+    /// Every sort, in grout-tag order.
+    const SORTS: [Sort; 7] = [
+        Sort::Item,
+        Sort::Pattern,
+        Sort::Expression,
+        Sort::Type,
+        Sort::Instantiation,
+        Sort::ModuleMember,
+        Sort::Block,
+    ];
+
+    /// The inclusions `rules` state.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a hole of `S` takes a form of `T` exactly when `S` is `T`, or
+    ///   a rule of sort `S` is a lone hole of sort `T`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the built-in grammar's one lone-hole rule, the
+    ///   instantiation slot's positional entry, and every other pair of sorts;
+    ///   a rule of another shape read as a lone hole, or the sides swapped,
+    ///   changes a pair.
+    /// - witness: `tests::walk::a_hole_takes_a_form_of_its_sort_or_of_a_lone_hole_rule_s_5015`
+    #[spec(ensures: |ret| Self::SORTS.into_iter().all(|slot| Self::SORTS.into_iter().all(|sort| bool::from(ret.takes(slot, sort)) == (slot == sort || rules.iter().any(|rule| rule.sort() == slot && rule.regex().view().shape() == RegexShape::Sym(Sym::Sort(sort)))))))]
+    #[must_use]
+    pub(crate) fn of(rules: &[Rule]) -> Self
+    {
+        let mut held = Self::default();
+        for rule in rules {
+            if let RegexShape::Sym(Sym::Sort(sort)) = rule.regex().view().shape()
+                && let Some(slot) = held.0.get_mut(Self::index(rule.sort()))
+            {
+                *slot = slot.union(HoleSorts::of(sort));
+            }
+        }
+        held
+    }
+
+    /// The position of `sort` in [`Self::SORTS`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn index(sort: Sort) -> usize
+    {
+        match sort {
+            Sort::Item => 0,
+            Sort::Pattern => 1,
+            Sort::Expression => 2,
+            Sort::Type => 3,
+            Sort::Instantiation => 4,
+            Sort::ModuleMember => 5,
+            Sort::Block => 6,
+        }
+    }
+
+    /// Whether a hole of `slot` takes a whole form of `sort`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when `sort` is `slot`, or `slot` includes it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`of`](Self::of).
+    /// - witness: `tests::walk::a_hole_takes_a_form_of_its_sort_or_of_a_lone_hole_rule_s_5015`
+    #[inline]
+    #[must_use]
+    pub(crate) fn takes(
+        self,
+        slot: Sort,
+        sort: Sort,
+    ) -> HoleTakes
+    {
+        HoleTakes::from(
+            slot == sort
+                || self
+                    .0
+                    .get(Self::index(slot))
+                    .is_some_and(|held| held.0 & HoleSorts::of(sort).0 != 0),
+        )
+    }
+
+    /// The sorts other than `sort` whose holes take a whole form of `sort`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: yields, in grout-tag order, each sort other than `sort` that
+    ///   [`takes`](Self::takes) a form of `sort`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`of`](Self::of).
+    /// - witness: `tests::walk::a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213`
+    #[inline]
+    pub(crate) fn includers(
+        self,
+        sort: Sort,
+    ) -> impl Iterator<Item = Sort>
+    {
+        Self::SORTS
+            .into_iter()
+            .filter(move |&slot| slot != sort && bool::from(self.takes(slot, sort)))
     }
 }
 

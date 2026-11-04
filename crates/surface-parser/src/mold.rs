@@ -3001,9 +3001,9 @@ impl<'pbg> Molder<'pbg>
     /// # Specification
     /// - ensures: returns the candidate's [`CandidateKey`] with its delta
     ///   replaced by the empty delta, so the returned key is at most the full
-    ///   key; the sort matches when it is the frontier's expected sort, or the
-    ///   candidate opens a declaration at the top level; reads `state` without
-    ///   changing it.
+    ///   key; the sort matches when the frontier's expected hole takes it
+    ///   ([`Pbg::hole_takes`]), or the candidate opens a declaration at the top
+    ///   level; reads `state` without changing it.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3011,9 +3011,12 @@ impl<'pbg> Molder<'pbg>
     ///   key is what lets [`least_candidates`](Self::least_candidates) skip a
     ///   candidate's dry-run. A floor carrying a nonempty delta, or ranks that
     ///   differ from the key's, changes which candidates are kept; a `let`
-    ///   statement whose lead is read as another form leaves its `=` stranded.
+    ///   statement whose lead is read as another form leaves its `=` stranded;
+    ///   an instantiation entry `x.y` read as `x` beside a supply `.y` shows an
+    ///   included sort ranked below the slot's own.
     /// - witness: `mold::tests::dry_runs_restore_exact_state`
     /// - witness: `tests::acceptance::value_statement_uses_let_keyword`
+    /// - witness: `tests::acceptance::an_instantiation_entry_reads_as_an_expression_or_by_its_own_form_5015`
     #[spec(ensures: |ret| bool::from(ret.delta.is_empty()))]
     fn floor_key(
         &self,
@@ -3024,8 +3027,12 @@ impl<'pbg> Molder<'pbg>
     {
         let continuation = CandidateRank::from(!bool::from(state.would_continue_form(mold)));
         let mold_sort = self.pbg.mold(mold).map_or(Sort::Item, |def| def.sort);
+        // A sort the expected hole takes through a lone-hole rule is as
+        // correct as its own: the operand-continuation rank below then reads
+        // `x.y` in an instantiation slot as a projection, and `.y` after a
+        // separator as a supply, which no other candidate reaches.
         let sort_rank = CandidateRank::from(
-            mold_sort != frontier.expected
+            !bool::from(self.pbg.hole_takes(frontier.expected, mold_sort))
                 && !(bool::from(frontier.boundary) && bool::from(declaration_head(self.pbg, mold))),
         );
         // Operand-continuation tiebreak: with the head an operand, a call `(` /
@@ -5152,17 +5159,17 @@ mod tests
             (DecisionCount(0), DecisionCount(0), DecisionCount(0)),
             "no token of a plain definition needs a window"
         );
-        let (indexed, significant) = census("def h = x[1] ;", MoldVerdicts::Tables);
+        let (record, significant) = census("def p = #{ .a = 1 } ;", MoldVerdicts::Tables);
         assert_eq!(
-            indexed.decisions(),
+            record.decisions(),
             DecisionCount(significant),
             "every token is one decision"
         );
         assert!(
-            indexed.window > DecisionCount(0) && indexed.windows >= indexed.window,
-            "an index's bracket ties with an instantiation's and needs a window: {indexed:?}"
+            record.window > DecisionCount(0) && record.windows >= record.window,
+            "a record's entry needs a window to settle: {record:?}"
         );
-        for src in ["def answer = 42 ;", "def h = x[1] ;"] {
+        for src in ["def answer = 42 ;", "def p = #{ .a = 1 } ;"] {
             assert_eq!(
                 census(src, MoldVerdicts::Differential).0,
                 census(src, MoldVerdicts::Tables).0,

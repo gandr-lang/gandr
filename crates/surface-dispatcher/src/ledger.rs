@@ -2393,9 +2393,9 @@ mod tests
                 Standing::Committed => None,
             })
             .collect();
-        // The type argument's coercion into the instantiation sort: a lone
-        // hole, which no tree names.
-        assert_eq!(internal, [("instantiation.type", Internal::Tileless)]);
+        // A positional entry's inclusion of the expressions into the
+        // instantiation sort: a lone hole, which no tree names.
+        assert_eq!(internal, [("instantiation.positional", Internal::Tileless)]);
     }
 
     #[test]

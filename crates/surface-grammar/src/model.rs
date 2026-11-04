@@ -100,6 +100,7 @@ use crate::check::validate_assumption_3;
 use crate::check::validate_operator_form;
 use crate::mold::FrozenTable;
 use crate::mold::HoleFollows;
+use crate::mold::HoleTakes;
 use crate::mold::LabelFollowsForm;
 use crate::mold::LabelId;
 use crate::mold::MoldDef;
@@ -112,6 +113,7 @@ use crate::mold::MoldTable;
 use crate::mold::MoldsAdjacent;
 use crate::mold::RCtxId;
 use crate::mold::RCtxStep;
+use crate::mold::SortInclusion;
 use crate::parity::NamedKind;
 
 /// Defines a transparent static-text identity with `AsRef<str>`,
@@ -1496,6 +1498,9 @@ pub struct Pbg
     molds: MoldTable,
     /// The tile automaton's tables, derived from the mold table.
     automaton: TileAutomaton,
+    /// The sorts each sort's holes take besides their own, read off the
+    /// lone-hole rules.
+    inclusion: SortInclusion,
 }
 
 impl Pbg
@@ -1656,7 +1661,8 @@ impl Pbg
             .iter()
             .flat_map(|rule| rule.adaptations.iter().copied())
             .collect();
-        let automaton = TileAutomaton::derive(&molds);
+        let inclusion = SortInclusion::of(&rules);
+        let automaton = TileAutomaton::derive(&molds, inclusion);
         Self {
             dag,
             forms,
@@ -1665,6 +1671,7 @@ impl Pbg
             adaptations,
             molds,
             automaton,
+            inclusion,
         }
     }
 
@@ -2024,24 +2031,25 @@ impl Pbg
 
     /// Whether a token labelled `label` can stand right after a whole form of
     /// `sort`: one of its [`candidates`](Self::candidates) faces, on its
-    /// left, a hole of `sort` — of any sort when `sort` is [`Sort::Item`].
+    /// left, a hole that [`takes`](Self::hole_takes) a form of `sort` — a
+    /// hole of any sort when `sort` is [`Sort::Item`].
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: true exactly when some mold of `label` has a context whose
-    ///   [`step`](Self::step) to the left crosses a hole of `sort`, or a hole
-    ///   of any sort when `sort` is [`Sort::Item`]; false for an undeclared
-    ///   label.
+    ///   [`step`](Self::step) to the left crosses a hole of `sort` or of a sort
+    ///   that takes a form of `sort`, or a hole of any sort when `sort` is
+    ///   [`Sort::Item`]; false for an undeclared label.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — every built-in label after a form of each of the six
     ///   sorts, and an undeclared label, compared with the walk over its
     ///   candidates' left steps; a dropped mold, a tile step read as a hole,
-    ///   the right steps read instead or a form of [`Sort::Item`] answered by
-    ///   its own sort alone changes a row. Construction proves each label's
-    ///   left-hole sorts exact once; the predicate checks that a label which
-    ///   follows a form has a mold.
+    ///   the right steps read instead, an included sort left out or a form of
+    ///   [`Sort::Item`] answered by its own sort alone changes a row.
+    ///   Construction proves each label's left-hole sorts exact once; the
+    ///   predicate checks that a label which follows a form has a mold.
     /// - witness: `tests::walk::a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213`
     #[spec(ensures: |ret| !bool::from(ret) || !self.molds.candidates(label).is_empty())]
     #[inline]
@@ -2052,7 +2060,40 @@ impl Pbg
         sort: Sort,
     ) -> LabelFollowsForm
     {
-        self.molds.follows_form(label, sort)
+        LabelFollowsForm::from(
+            bool::from(self.molds.follows_form(label, sort))
+                || self
+                    .inclusion
+                    .includers(sort)
+                    .any(|slot| bool::from(self.molds.follows_form(label, slot))),
+        )
+    }
+
+    /// Whether a hole of `slot` takes a whole form of `sort`: a form of its
+    /// own sort, or of a sort a lone-hole rule of `slot` names. A parser
+    /// admits the molds of such a sort at a hole of `slot`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when `sort` is `slot`, or a rule of sort `slot`
+    ///   is a lone hole of sort `sort`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every pair of sorts over the built-in grammar,
+    ///   compared with its rules; the instantiation slot takes an expression,
+    ///   and no other pair of distinct sorts holds.
+    /// - witness: `tests::walk::a_hole_takes_a_form_of_its_sort_or_of_a_lone_hole_rule_s_5015`
+    #[spec(ensures: |ret| bool::from(ret) == (slot == sort || self.rules.iter().any(|rule| rule.sort() == slot && rule.regex().view().shape() == RegexShape::Sym(Sym::Sort(sort)))))]
+    #[inline]
+    #[must_use]
+    pub fn hole_takes(
+        &self,
+        slot: Sort,
+        sort: Sort,
+    ) -> HoleTakes
+    {
+        self.inclusion.takes(slot, sort)
     }
 
     /// The number of the declared label spelled `spelled`: a token's spelling
@@ -2174,7 +2215,13 @@ impl Pbg
         sort: Sort,
     ) -> LabelFollowsForm
     {
-        self.molds.label_follows_form(id, sort)
+        LabelFollowsForm::from(
+            bool::from(self.molds.label_follows_form(id, sort))
+                || self
+                    .inclusion
+                    .includers(sort)
+                    .any(|slot| bool::from(self.molds.label_follows_form(id, slot))),
+        )
     }
 
     /// Every declared label with how many molds it can take, ascending by

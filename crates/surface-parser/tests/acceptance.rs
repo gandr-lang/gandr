@@ -2443,3 +2443,78 @@ fn run_reads_as_an_inline_run_wherever_it_stands() -> Result<(), Box<dyn Error>>
     }
     Ok(())
 }
+
+/// #5015: an instantiation slot's entry reads as an expression, or by the
+/// slot's own form where one spells it. A supply, a pun and a claim keep
+/// their readings, and a `.` or a `<` after an operand extends the operand.
+#[test]
+fn an_instantiation_entry_reads_as_an_expression_or_by_its_own_form_5015()
+-> Result<(), Box<dyn Error>>
+{
+    let pbg = built();
+    // The rule each entry of the source's one instantiation slot molds as.
+    let entries = |source: SourceText<'static>| -> Result<Vec<&'static str>, Box<dyn Error>> {
+        let result = parse(pbg, source)?;
+        assert!(
+            bool::from(result.is_clean()),
+            "{source:?} molds clean; obligations: {:?}",
+            result.obligations()
+        );
+        let tree = result.tree();
+        let mut pending = vec![tree.root()];
+        let mut read = Vec::new();
+        while let Some(at) = pending.pop() {
+            let slot = matches!(label_of(tree, at), Some(NodeLabel::Meld(mold))
+                if pbg.rule_of(mold).is_ok_and(|rule| rule.name().0 == "instantiation_expression"));
+            if !slot {
+                pending.extend(children(tree, at));
+                continue;
+            }
+            // The head, then the entries between the slot's own tiles.
+            for child in children(tree, at).into_iter().skip(1) {
+                if let Some(NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) = label_of(tree, child) {
+                    let name = pbg.rule_of(mold)?.name().0;
+                    if name != "instantiation_expression" {
+                        read.push(name);
+                    }
+                }
+            }
+        }
+        Ok(read)
+    };
+    for (source, expected) in [
+        ("def a = f[n + 1];", &["binary_expression.add.plus"][..]),
+        (
+            "def a = f[7, Unit];",
+            &["number.expression", "constructor.expression"][..],
+        ),
+        (
+            "def a = f[_, (1, 2)];",
+            &["wildcard.expression", "parenthesized_expression"][..],
+        ),
+        (
+            "def a = f[x.y, x < y];",
+            &["projection_expression", "binary_expression.cmp.lt"][..],
+        ),
+        (
+            "def a = f[.a = 7 + 1, .b];",
+            &["instantiation.explicit", "instantiation.explicit"][..],
+        ),
+        (
+            "def a = f[.i <, <, >, tail];",
+            &[
+                "instantiation.explicit",
+                "instantiation.direction.descent",
+                "instantiation.direction.productivity",
+                "instantiation.tail",
+            ][..],
+        ),
+    ] {
+        assert_eq!(
+            entries(SourceText::from(source))?,
+            expected,
+            "the entries of {source:?}"
+        );
+    }
+    Ok(())
+}

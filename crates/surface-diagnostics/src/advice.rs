@@ -508,9 +508,6 @@ fn malformed(
         FormFault::PositionalPastBlock => {
             String::from("remove the entry, or match it to an implicit of the block")
         },
-        FormFault::CompoundPositional => {
-            String::from("supply the value by name, as `.n = …` with the implicit's name for `n`")
-        },
         FormFault::SuppliedTwice => String::from("remove one of the two entries"),
         FormFault::MissingOpen(close) => {
             format!(

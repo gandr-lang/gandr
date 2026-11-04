@@ -2517,10 +2517,10 @@ impl<'pbg> MeldState<'pbg>
             if bool::from(self.would_continue_form(mold)) {
                 return;
             }
-            let fills_slot =
-                self.pbg.mold(mold).is_ok_and(|def| {
-                    def.sort == expected && !bool::from(is_item_position(def.sort))
-                }) && bool::from(FormTable::is_form_first(self.pbg, mold));
+            let fills_slot = self.pbg.mold(mold).is_ok_and(|def| {
+                bool::from(self.pbg.hole_takes(expected, def.sort))
+                    && !bool::from(is_item_position(def.sort))
+            }) && bool::from(FormTable::is_form_first(self.pbg, mold));
             if fills_slot {
                 return;
             }
@@ -2703,7 +2703,9 @@ impl<'pbg> MeldState<'pbg>
         MoldAdmissibility::from(admissible)
     }
 
-    /// Return whether an operand `mold`'s sort fills the expected slot sort.
+    /// Return whether an operand `mold`'s sort fills the expected slot sort:
+    /// the slot's own sort, or one its hole takes through a lone-hole rule
+    /// ([`Pbg::hole_takes`]).
     ///
     /// Item-sort operands are never sort-filtered: the top-level slot defaults
     /// to [`Sort::Expression`] yet legitimately admits a bare-expression
@@ -2711,19 +2713,21 @@ impl<'pbg> MeldState<'pbg>
     /// a soundness-safe narrowing, never a rejection of a real reading).
     ///
     /// # Specification
-    /// - ensures: admits the expected sort and item-sort molds; a missing mold
-    ///   uses the item fallback.
+    /// - ensures: admits the molds whose sort the expected hole takes and
+    ///   item-sort molds; a missing mold uses the item fallback.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — expression versus pattern slots and an item fallback
-    ///   expose sort filtering. Treating all sorts alike or rejecting the item
-    ///   exception changes admitted candidates and committed forms.
+    /// - hypothesis: L3 — expression versus pattern slots, the instantiation
+    ///   slot's expression entries and an item fallback expose sort filtering.
+    ///   Treating all sorts alike, rejecting the item exception or the included
+    ///   sort changes admitted candidates and committed forms.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `tests::acceptance::an_instantiation_entry_reads_as_an_expression_or_by_its_own_form_5015`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| bool::from(ret) == self.pbg.mold(mold).map_or(true, |def| def.sort == expected || def.sort == Sort::Item))]
+    #[spec(ensures: |ret| bool::from(ret) == self.pbg.mold(mold).map_or(true, |def| bool::from(self.pbg.hole_takes(expected, def.sort)) || def.sort == Sort::Item))]
     fn sort_admits(
         &self,
         mold: MoldId,
@@ -2731,7 +2735,9 @@ impl<'pbg> MeldState<'pbg>
     ) -> SortAdmissibility
     {
         let sort = self.pbg.mold(mold).map_or(Sort::Item, |def| def.sort);
-        SortAdmissibility::from(sort == expected || sort == Sort::Item)
+        SortAdmissibility::from(
+            bool::from(self.pbg.hole_takes(expected, sort)) || sort == Sort::Item,
+        )
     }
 
     /// Return whether `mold` extends the head operand rather than starting a

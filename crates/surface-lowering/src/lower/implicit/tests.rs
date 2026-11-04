@@ -273,7 +273,7 @@ fn a_wildcard_skips_a_position_and_names_follow_positions_4945()
 fn a_misplaced_positional_supply_is_refused_at_its_entry_4945()
 {
     let source = format!(
-        "{FIRST}def after : () => Integer ;\ndef after = thunk {{ become first[.b = Unit, Integer](5, unit) }} ;\ndef past : () => Integer ;\ndef past = thunk {{ become first[Integer, Unit, Unit](5, unit) }} ;\ndef twice : () => Integer ;\ndef twice = thunk {{ become first[Integer, .a = Integer](5, unit) }} ;\ndef renamed : () => Integer ;\ndef renamed = thunk {{ become first[.a = Integer, .a = Integer](5, unit) }} ;\ndef compound : () => Integer ;\ndef compound = thunk {{ become first[Integer, Unit * Unit](5, (unit, unit)) }} ;\n"
+        "{FIRST}def after : () => Integer ;\ndef after = thunk {{ become first[.b = Unit, Integer](5, unit) }} ;\ndef past : () => Integer ;\ndef past = thunk {{ become first[Integer, Unit, Unit](5, unit) }} ;\ndef twice : () => Integer ;\ndef twice = thunk {{ become first[Integer, .a = Integer](5, unit) }} ;\ndef renamed : () => Integer ;\ndef renamed = thunk {{ become first[.a = Integer, .a = Integer](5, unit) }} ;\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -282,7 +282,6 @@ fn a_misplaced_positional_supply_is_refused_at_its_entry_4945()
         ("past", crate::FormFault::PositionalPastBlock),
         ("twice", crate::FormFault::SuppliedTwice),
         ("renamed", crate::FormFault::SuppliedTwice),
-        ("compound", crate::FormFault::CompoundPositional),
     ] {
         assert!(
             matches!(
@@ -293,6 +292,29 @@ fn a_misplaced_positional_supply_is_refused_at_its_entry_4945()
             refusal_of(&module, SurfaceName::from(name))
         );
     }
+}
+
+/// #5015: a positional entry is a whole expression. A compound value and a
+/// parenthesized one each supply their place as the same value supplied by
+/// name does.
+#[test]
+fn a_positional_expression_supplies_its_place_as_its_name_does_5015()
+{
+    let source = "def pick[i : t, u : Type](t : Type, y : u) -> -F t { return i }\ndef named : () => Integer ;\ndef named = thunk { become pick[.i = 7 + 1, .u = Unit](Integer, unit) } ;\ndef positional : () => Integer ;\ndef positional = thunk { become pick[7 + 1, Unit](Integer, unit) } ;\ndef namedScaled : () => Integer ;\ndef namedScaled = thunk { become pick[.i = (7 + 1) * 2, .u = Unit](Integer, unit) } ;\ndef positionalScaled : () => Integer ;\ndef positionalScaled = thunk { become pick[(7 + 1) * 2, Unit](Integer, unit) } ;\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    for (by_name, by_position) in [("named", "positional"), ("namedScaled", "positionalScaled")] {
+        assert_eq!(
+            equal_certificate_syntax(
+                &arena,
+                body_named(&module, SurfaceName::from(by_name)),
+                body_named(&module, SurfaceName::from(by_position)),
+            ),
+            CertificateEquality::Equal,
+            "`{by_position}` applies `pick` as `{by_name}` does"
+        );
+    }
+    assert_checked(&module, &mut arena);
 }
 
 #[test]

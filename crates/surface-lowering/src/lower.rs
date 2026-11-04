@@ -7720,7 +7720,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 FormFault::BareIndex
                     | FormFault::PositionalAfterNamed
                     | FormFault::PositionalPastBlock
-                    | FormFault::CompoundPositional
                     | FormFault::SuppliedTwice
             ) {
                 continue;

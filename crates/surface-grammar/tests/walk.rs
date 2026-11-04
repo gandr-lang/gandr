@@ -734,7 +734,7 @@ fn a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213()
                     pbg.step(def.rctx, Dir::Left).is_ok_and(|steps| {
                         steps.iter().any(|step| {
                             matches!(step.crossed, StepSym::Sort(crossed)
-                                if crossed == sort || sort == Sort::Item)
+                                if bool::from(pbg.hole_takes(crossed, sort)) || sort == Sort::Item)
                         })
                     })
                 })
@@ -754,6 +754,43 @@ fn a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213()
             "an undeclared label follows no form of {sort:?}"
         );
     }
+    Ok(())
+}
+
+/// #5015: a hole takes a whole form of its own sort, or of the sort a
+/// lone-hole rule of its sort names. The built-in grammar's one such rule is
+/// the instantiation slot's positional entry, so the slot takes an
+/// expression, and no other pair of distinct sorts holds.
+#[test]
+fn a_hole_takes_a_form_of_its_sort_or_of_a_lone_hole_rule_s_5015() -> Result<(), Box<dyn Error>>
+{
+    let pbg = built_in()?;
+    let sorts = [
+        Sort::Item,
+        Sort::Pattern,
+        Sort::Expression,
+        Sort::Type,
+        Sort::Instantiation,
+        Sort::ModuleMember,
+        Sort::Block,
+    ];
+    let mut taken = Vec::new();
+    for slot in sorts {
+        for sort in sorts {
+            if slot != sort && bool::from(pbg.hole_takes(slot, sort)) {
+                taken.push((slot, sort));
+            }
+        }
+        assert!(
+            bool::from(pbg.hole_takes(slot, slot)),
+            "a hole of {slot:?} takes its own sort"
+        );
+    }
+    assert_eq!(
+        taken,
+        [(Sort::Instantiation, Sort::Expression)],
+        "only the instantiation slot takes another sort"
+    );
     Ok(())
 }
 
@@ -1005,7 +1042,13 @@ fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Box<dyn
             }
         }
         let expected = match kind {
-            TileKind::Operand | TileKind::Start => vec![TileSet::Fills(def.sort)],
+            // An operand or a start fills its sort's holes, and the holes of
+            // every sort that takes a form of it.
+            TileKind::Operand | TileKind::Start => sorts
+                .into_iter()
+                .filter(|&slot| bool::from(pbg.hole_takes(slot, def.sort)))
+                .map(TileSet::Fills)
+                .collect(),
             TileKind::AbsorbingStart => vec![TileSet::Absorbs(def.sort)],
             TileKind::Prefix => vec![TileSet::Prefixes],
             TileKind::Infix | TileKind::Postfix => vec![TileSet::LeftOperators],

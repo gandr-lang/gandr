@@ -238,7 +238,7 @@ A rule no source can mold, with the reason and what the reason is read from: the
 
 | Rule | Sort | Form | Reason | Read from |
 | ---- | ---- | ---- | ------ | --------- |
-| `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
+| `instantiation.positional` | instantiation | `EXPRESSION` | the form holds no tile, so no tree names the rule | grammar |
 
 ## Attributes — 17 attributes
 
@@ -302,7 +302,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `cons_pattern` | pattern | 5 | `identifier` | `identifier.pattern` | 0 |
 | `or_pattern` | pattern | 1 | `\|` | — | 0 |
 | `as_pattern` | pattern | 2 | `.@` `@` | — | 0 |
-| `instantiation.type` | instantiation | 0 | — | — | 0 |
+| `instantiation.positional` | instantiation | 0 | — | — | 0 |
 | `instantiation.direction.descent` | instantiation | 1 | `<` | — | 0 |
 | `instantiation.direction.productivity` | instantiation | 1 | `>` | — | 0 |
 | `instantiation.explicit` | instantiation | 5 | `.` | — | 0 |

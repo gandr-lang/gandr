@@ -512,9 +512,6 @@ pub enum FormFault
     /// An implicit supplied by position past the last entry of the
     /// declaration's written implicit block.
     PositionalPastBlock,
-    /// An implicit supplied by position as a compound expression, `f[n + 1]`.
-    /// A positional entry is an atom, and a compound value goes by name.
-    CompoundPositional,
     /// An implicit supplied twice in one bracket, by name twice or by position
     /// and by name, `f[T, .a = U]`.
     SuppliedTwice,
@@ -567,7 +564,6 @@ impl fmt::Display for FormFault
             Self::PositionalPastBlock => {
                 f.write_str("supplies an implicit by position past its implicit block")
             },
-            Self::CompoundPositional => f.write_str("supplies a compound value by position"),
             Self::SuppliedTwice => f.write_str("supplies one implicit twice"),
         }
     }

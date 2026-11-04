@@ -97,6 +97,7 @@ use crate::mold::MoldColumns;
 use crate::mold::MoldDef;
 use crate::mold::MoldInSet;
 use crate::mold::MoldTable;
+use crate::mold::SortInclusion;
 use crate::mold::StepSym;
 
 /// How many sorts a hole can hold: the [`Sort`] tags run below it.
@@ -558,24 +559,29 @@ pub struct TileAutomaton
 
 impl TileAutomaton
 {
-    /// Derives the tables of `table`.
+    /// Derives the tables of `table`, whose holes take what `inclusion` says.
     ///
     /// # Specification
     /// - requires: `table` is assembled.
     /// - ensures: one kind and one class per mold; two molds share a class
     ///   exactly when their readings agree, and classes are numbered in order
     ///   of their least mold; each set holds exactly the molds whose reading
-    ///   puts them in it.
+    ///   puts them in it, and the fills of a sort also hold the fills of each
+    ///   sort its holes include.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — over the built-in grammar every mold's kind, class
     ///   and set memberships are compared, through the public queries, with the
-    ///   reading's components; a dropped component merges molds a parser tells
-    ///   apart, and a misplaced bit admits a mold no frontier takes.
+    ///   reading's components and the inclusion; a dropped component merges
+    ///   molds a parser tells apart, and a misplaced bit admits a mold no
+    ///   frontier takes.
     /// - witness: `tests::walk::tile_kinds_observations_and_sets_agree_with_the_table`
     #[spec(ensures: |ret| ret.kinds.len() == table.len().0 && ret.observations.len() == ret.kinds.len() && ret.sets.len() == SET_COUNT.saturating_mul(ret.width) && ret.width.saturating_mul(WORD_BITS) >= ret.kinds.len())]
-    pub(crate) fn derive(table: &MoldTable) -> Self
+    pub(crate) fn derive(
+        table: &MoldTable,
+        inclusion: SortInclusion,
+    ) -> Self
     {
         let count = table.len().0;
         let width = count.div_ceil(WORD_BITS);
@@ -600,7 +606,7 @@ impl TileAutomaton
             // Each set's bits are placed by its index in `SETS`, which is its
             // position: the derivation calls none of the queries a parser's
             // hot paths inline, so this crate instantiates none of them.
-            for set in reading.sets().into_iter().flatten() {
+            let mut place = |set: TileSet| {
                 if let Some(slot) = SETS
                     .iter()
                     .position(|&held| held == set)
@@ -609,6 +615,15 @@ impl TileAutomaton
                     .and_then(|at| sets.get_mut(at))
                 {
                     slot.0 |= bit;
+                }
+            };
+            for set in reading.sets().into_iter().flatten() {
+                place(set);
+                // A hole that includes the mold's sort takes what fills it.
+                if let TileSet::Fills(sort) = set {
+                    for includer in inclusion.includers(sort) {
+                        place(TileSet::Fills(includer));
+                    }
                 }
             }
         }

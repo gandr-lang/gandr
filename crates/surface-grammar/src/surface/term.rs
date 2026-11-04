@@ -1854,16 +1854,18 @@ fn patterns(
 /// Append instantiation-slot resident forms.
 ///
 /// The dedicated sort is the syntax boundary at which name resolution and
-/// checking interpret or decline each resident: type arguments, direction
-/// sigils, supplies and claims by name (the reserved `.size = e`, `.cost = e`
-/// and named-stage `.i <` forms included), and `tail` inhabit only
-/// [`Sort::Instantiation`], an atom-only context for `<` and `>` distinct from
-/// their binary-expression molds. A supply names its implicit with a dot, as a
-/// record entry names its field: `.a = e`, or `.a` alone for `.a = a`. Its
-/// value is a whole expression up to the slot's next `,` or its `]`, `f[.g =
-/// M.h]` and `f[.n = a + 1]` alike: the resident stands at the loosest band,
-/// `explicit`, so no operator or projection after its `=` takes the resident
-/// as its operand.
+/// checking interpret or decline each resident: direction sigils, supplies
+/// and claims by name (the reserved `.size = e`, `.cost = e` and named-stage
+/// `.i <` forms included), and `tail` inhabit only [`Sort::Instantiation`], an
+/// atom-only context for `<` and `>` distinct from their binary-expression
+/// molds. A supply names its implicit with a dot, as a record entry names its
+/// field: `.a = e`, or `.a` alone for `.a = a`. Its value is a whole
+/// expression up to the slot's next `,` or its `]`, `f[.g = M.h]` and `f[.n =
+/// a + 1]` alike: the resident stands at the loosest band, `explicit`, so no
+/// operator or projection after its `=` takes the resident as its operand. A
+/// positional supply is a whole expression too, `f[n + 1]`: its rule is a
+/// lone expression hole, so the slot admits the expression molds below its
+/// own, and a dotted entry keeps its own reading.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1880,7 +1882,7 @@ fn patterns(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 5 && added.iter().zip(["instantiation.type", "instantiation.direction.descent", "instantiation.direction.productivity", "instantiation.explicit", "instantiation.tail"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Instantiation && rule.prec() == if name == "instantiation.explicit" { explicit } else { p } && rule.provenance().0 == "instantiation_expression")))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 5 && added.iter().zip(["instantiation.positional", "instantiation.direction.descent", "instantiation.direction.productivity", "instantiation.explicit", "instantiation.tail"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Instantiation && rule.prec() == if name == "instantiation.explicit" { explicit } else { p } && rule.provenance().0 == "instantiation_expression")))]
 fn instantiations(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -1889,11 +1891,11 @@ fn instantiations(
 {
     let s = Sort::Instantiation;
     out.push(r(
-        RuleName("instantiation.type"),
+        RuleName("instantiation.positional"),
         Provenance("instantiation_expression"),
         s,
         p,
-        h(Sort::Type),
+        h(Sort::Expression),
     ));
     out.push(r(
         RuleName("instantiation.direction.descent"),

@@ -6030,9 +6030,9 @@ impl Walk<'_, '_>
         Ok(writes(
             Production("instantiation_expression"),
             writes(
-                Production("instantiation.type"),
+                Production("instantiation.positional"),
                 writes(
-                    Production("number.type"),
+                    Production("number.expression"),
                     writes(Production("call_expression"), join(head)),
                 ),
             ),

@@ -531,9 +531,6 @@ fn lowered(
                 FormFault::PositionalPastBlock => {
                     f.write_str("this positional implicit has no entry in the implicit block")
                 },
-                FormFault::CompoundPositional => {
-                    f.write_str("this positional implicit is a compound value, not an atom")
-                },
                 FormFault::SuppliedTwice => {
                     f.write_str("this implicit is supplied a second time")
                 },

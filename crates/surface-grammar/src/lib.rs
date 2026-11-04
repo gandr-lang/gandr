@@ -164,6 +164,7 @@ pub use crate::model::Sym;
 pub use crate::model::Tile;
 pub use crate::model::TileLabel;
 pub use crate::mold::HoleFollows;
+pub use crate::mold::HoleTakes;
 pub use crate::mold::LabelFollowsForm;
 pub use crate::mold::LabelId;
 pub use crate::mold::MoldDef;
