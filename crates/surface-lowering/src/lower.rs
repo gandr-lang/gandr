@@ -3434,6 +3434,9 @@ struct Lowerer<'run, 'source>
     grouped: BTreeMap<NodeIndex, Placed>,
     /// Each label written against an entry, in the order planned.
     labels: Vec<LabelSite>,
+    /// Each prefix minus folded onto a number, the operator span beside the
+    /// operand span, in the order planned.
+    covers: Vec<(ByteSpan, ByteSpan)>,
     /// Each type and stated index a data declaration writes, with the frame
     /// of the binders it is read under: a parameter's type under the
     /// parameters before it, an index's under the parameters and the indices
@@ -5504,6 +5507,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             inherited: BTreeMap::new(),
             grouped: BTreeMap::new(),
             labels: Vec::new(),
+            covers: Vec::new(),
             data_frames: Vec::new(),
             stand_ins: BTreeSet::new(),
             fixed_sorts: BTreeMap::new(),
@@ -12539,6 +12543,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let _frame = self.require(site, Produced::Value)?;
             let negative = IntegerLiteral::new(Sign::Negative, natural.magnitude().clone());
             self.plan(site, Plan::Literal(Literal::Integer(negative)));
+            self.covers.push((site.at.span, operand.span));
             return Ok(());
         }
         // `-d` written on a bare fraction is one negative decimal, read at its
@@ -12554,6 +12559,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 decimal.fraction().clone(),
             );
             self.plan(site, Plan::Literal(Literal::Numeric(negative)));
+            self.covers.push((site.at.span, operand.span));
             return Ok(());
         }
         let frame = self.require(site, Produced::Computation)?;
@@ -16948,6 +16954,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         self.record_labels(sink);
+        self.record_covers(sink);
         self.record_framed(sink);
 
         Ok(())
@@ -17007,6 +17014,32 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 span: site.written,
                 labelled,
             });
+        }
+    }
+
+    /// Record each prefix minus the current source folded onto a number.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each cover whose operator starts in the current source is
+    ///   recorded, and no cover of another source is.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `-5` records the operator span beside the digit span.
+    /// - witness: `lower::tests::a_negated_natural_literal_is_one_negative_literal_4732`
+    #[spec(captures: before = sink.origins.covers().len(), ensures: sink.origins.covers().len() >= before)]
+    fn record_covers(
+        &self,
+        sink: &mut Sink<'_>,
+    )
+    {
+        for &(operator, operand) in &self.covers {
+            if self.collected.unit.source_at(operator.start()) != self.current.source {
+                continue;
+            }
+            sink.origins.record_cover(operator, operand);
         }
     }
 
@@ -30844,6 +30877,23 @@ def ended() -> -F [Partial] Unit {
                     .expect("decimal digits"),
             )))),
             "the negation of a natural literal is the negative literal"
+        );
+        let text = "def a : Integer = -5 ;";
+        let covers = module.origins().covers();
+        assert_eq!(covers.len(), 1, "the folded minus records its operand");
+        let Some(&(operator, operand)) = covers.first()
+        else {
+            panic!("the cover is recorded");
+        };
+        assert_eq!(
+            text.get(usize::from(operand.start()) .. usize::from(operand.end())),
+            Some("5"),
+            "the operand span is the digit"
+        );
+        assert_eq!(
+            text.get(usize::from(operator.start()) .. usize::from(operator.end())),
+            Some("-5"),
+            "the operator span is the folded literal"
         );
         let mut arena = CoreArena::new();
         let module = lowered(
