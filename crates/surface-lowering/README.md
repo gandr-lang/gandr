@@ -26,7 +26,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - The static formers, the eager product with its pair, the infix sum, the `=>` alias and the dependent arrow `(x : A) -> C` it abbreviates.
 - `LoweredModule`, `LoweredDeclaration`, `DeclarationOutcome` and `DeclarationCount`: one declaration per name, in admission order.
 - `DataIndex`, `DeclarationOutcome::Data` and `LoweredModule::data`: a data declaration lowered to its native signature, constructors and matches (`lower::native`).
-- `CaseOrigin`, `ArmOrigin`, `PatternSpan`, `OriginTable::case` and `OriginTable::cases`: per match, its pattern table, the syntax nodes of its scrutinee, patterns and bodies, and each pattern's span.
+- `CaseOrigin`, `ArmOrigin`, `PatternSpan`, `OriginTable::case` and `OriginTable::cases`: each match's syntax origins ([`origin`](src/origin.rs)).
 - `def rec` and the descent claim `f[<]`: a recursive function lowered to one fixpoint (`lower::native`), `Insertion::Fixpoint` marking it.
 - `type_atom`, `type_former`, `TypeAtom`, `TypeFormer`, `HeadArity` and `OperandCount`: the type-head tables by arity.
 - `Scope`, `ScopeId`, `Frame`, `Bound`, `Mentioned`, `SurfaceName` and `binder_site::Absent`: the flat binder chain names resolve through ([`resolve`](src/resolve.rs)).
@@ -40,15 +40,15 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - Source `?`, `?name` and the splice `~t` lower to core holes by their term position (`lower`).
 - `Provenance` and `Insertion`: whether a minted node was written by the author or inserted by the lowering, and which bridge an insertion is.
 - `InferredExit`, `Exit`, `Explicitness` and `LoweredModule::inferred_exits`: the exit a tail written without `return` or `become` takes by its polarity, listed at the tail's bytes for a face and the `explicit-exits` lint.
-- `AskedRuns`, `NestedSite`, `RunSpelling`, `RunOperand`, `InferredRun` and `LoweredModule::inferred_runs`: a computation written where a value is read, held for the checker to run or suspend, and each run it inferred, listed for the `explicit-runs` lint.
+- `AskedRuns`, `NestedSite`, `RunSpelling`, `RunOperand`, `InferredRun` and `LoweredModule::inferred_runs`: each run inferred where a value is read ([`lower::runs`](src/lower/runs.rs)).
 - `namespace`: `Trie`, `Modifier`, `Scope`, the events and their handlers, and `Recognition` with its ordered `SeedTable`s and `ShadowPolicy`.
-- `lower_unit`, `Unit`, `SourceIndex`, `ImportTarget` and the `Import*` types: sources lowered into one arena, each reading its siblings through its imports; `ClosureLowering`, `alone`, `resume_onto` and `Onto`: a closure lowered once, resumed per document ([`lower::closure`](src/lower/closure.rs)).
+- `lower_unit`, `Unit`, `SourceIndex`, `ImportTarget` and the `Import*` types: sources lowered into one arena ([`unit`](src/unit.rs)); `ClosureLowering`, `alone`, `resume_onto` and `Onto`: a closure lowered once ([`lower::closure`](src/lower/closure.rs)).
 - `LoweredStructure`, `LoweredModule::structures`, `LoweredModule::path_of` and `LoweredModule::structured_names`: modules flattened to named members, their stratum items and their structured names; [`module`](src/module.rs) names the types they are read through.
 - Type members `type T = τ ;`, type paths `M.T`, abstract components `type T` and `type T : κ`, and `Recognized::ModuleType`: a module's types, named inside it and through its namespace.
 - `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>` declaring one abstract type per abstract component, keyed by its site, and the atoms a sealed module exports.
 - `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived from a theory, checked and packed, and type members with parameters.
 - Binary sessions: session types, actions and the statements binding them, lowered to core session actions ([`lower::session`](src/lower/session.rs)).
-- Worlds: `world w ;` as `DeclarationOutcome::World`, `requires [ … ]` as `LoweredModule::requirement`, `offers [ … ]` as `LoweredModule::offer`, `A at w`, `hold`, `let x at w`, `migrate [w]`, `mobile type T` as `Mark`, `@[ entry(…) ]` as `LoweredModule::worlds`.
+- Worlds: `world`, `requires`, `offers`, `at`, `hold`, `migrate`, `mobile` and `@[ entry(…) ]` ([`module::world`](src/module/world.rs)).
 
 ## Expected features
 
@@ -126,6 +126,8 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — lineage: a renaming mints no constant.
 - `vault:01a156e3-93c7-7e62-9a50-b38b2da60284` — lineage: a decode carries no stage.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: `compose[n, k]` reads its stratum as `ua[n, k]` does.
+- `vault:01a178aa-e578-7e31-8903-9f223de2dd91` — anchor: the ornaments design — a mutual block reads as one description.
+- `vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a` — anchor: the data design — a sibling field is a recursive occurrence.
 
 ## License
 

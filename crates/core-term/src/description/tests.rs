@@ -443,6 +443,89 @@ fn decode_desc_declines_a_multi_sorted_signature()
     );
 }
 
+/// #5018: each sort of an even and odd description decodes to its own
+/// family. A recursive leaf at the sibling sort is the sibling's family, and a
+/// sort the description does not declare is refused.
+#[test]
+fn each_sort_of_a_mutual_description_decodes_to_its_family_5018()
+{
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(
+        Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        Level::zero(),
+    );
+    let (even, odd) = (ConstantIndex::from(5_usize), ConstantIndex::from(6_usize));
+    let types = BTreeMap::from([
+        (Name::from("Even"), TypeBinding::Nominal {
+            declaration: even,
+            arity: TypeArity(0),
+        }),
+        (Name::from("Odd"), TypeBinding::Nominal {
+            declaration: odd,
+            arity: TypeArity(0),
+        }),
+    ]);
+    let desc = TheoryDesc::new(
+        NominalId::new(NominalSerial::from(0_u64), "Even"),
+        Vec::new(),
+        vec![
+            CtorDesc::new("Zero", Code::<()>::unit(), "Even", Attrs::empty()),
+            CtorDesc::new("EvenSucc", Code::var("Odd"), "Even", Attrs::empty()),
+            CtorDesc::new("OddSucc", Code::var("Even"), "Odd", Attrs::empty()),
+        ],
+        Vec::new(),
+        Vec::new(),
+        DeclPolarity::Data,
+        Attrs::empty(),
+    )
+    .with_sorts([
+        SortDesc::new("Even", DeclPolarity::Data),
+        SortDesc::new("Odd", DeclPolarity::Data),
+    ]);
+    let at = |arena: &mut CoreArena, sort: &'static str, declaration| {
+        let carrier = arena.value_type_data(declaration, Vec::new());
+        let context = DecodeContext {
+            self_sort: NameRef::from(sort),
+            self_type: carrier,
+            types: &types,
+            locals: &[],
+            depth: super::ParameterDepth(0),
+        };
+        decode_signature(arena, &desc, context, Vec::new(), kind)
+    };
+    let heads = |arena: &CoreArena, signature: &DataSignature| -> Vec<Vec<ConstantIndex>> {
+        signature
+            .constructors()
+            .iter()
+            .map(|fields| {
+                fields
+                    .iter()
+                    .map(|&field| match arena.value_type(field) {
+                        Some(&ValueType::Data { declaration, .. }) => declaration,
+                        other => panic!("a recursive field is a family: {other:?}"),
+                    })
+                    .collect()
+            })
+            .collect()
+    };
+    let evens = at(&mut arena, "Even", even).expect("`Even` decodes");
+    assert_eq!(
+        heads(&arena, &evens),
+        [Vec::new(), vec![odd]],
+        "`Even` reads `Zero` and `EvenSucc`, whose field is `Odd`"
+    );
+    let odds = at(&mut arena, "Odd", odd).expect("`Odd` decodes");
+    assert_eq!(
+        heads(&arena, &odds),
+        [vec![even]],
+        "`Odd` reads `OddSucc`, whose field is `Even`"
+    );
+    assert_eq!(
+        at(&mut arena, "Other", even),
+        Err(DecodeError::ForeignSort(Name::from("Other")))
+    );
+}
+
 #[test]
 fn decode_respects_code_equality()
 {

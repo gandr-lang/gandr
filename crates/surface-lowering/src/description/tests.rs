@@ -1545,3 +1545,145 @@ fn every_member_fault_renders_its_own_message()
         }
     }
 }
+
+/// The sorts a recursive occurrence in `code` targets, left to right, and
+/// the heads of its fields at a named type.
+///
+/// # Specification
+/// trivial.
+fn occurrences(code: &gandr_theory_levitation::Code<DescriptionGrade>)
+-> (Vec<String>, Vec<String>)
+{
+    let mut pending = alloc::vec![code.to_node()];
+    let (mut sorts, mut heads) = (Vec::new(), Vec::new());
+    while let Some(node) = pending.pop() {
+        match node.view() {
+            CodeView::Var(sort) => sorts.push(String::from(sort.as_ref())),
+            CodeView::Field { ty, .. } => {
+                if let ValueTypeView::Ctor { head, .. } = ty.view() {
+                    heads.push(String::from(head.as_ref()));
+                }
+            },
+            CodeView::Prod(children) | CodeView::Sum(children) => {
+                let mut children: Vec<_> = children.collect();
+                children.reverse();
+                pending.extend(children);
+            },
+            CodeView::Unit | CodeView::Bind { .. } | CodeView::Fun { .. } => {},
+        }
+    }
+    (sorts, heads)
+}
+
+/// #5018: the data families of one mutual block read as one description of
+/// their sorts. A field at a sibling, applied to the shared parameters, is a
+/// recursive occurrence at the sibling's sort, and the universe's check
+/// admits the description.
+#[test]
+fn a_mutual_block_s_data_families_read_as_one_description_5018()
+{
+    let grammar = grammar();
+    let source = r#"rec {
+        data Rose(a : Type) : Type where {
+            | Node : (label : a, kids : Forest(a)) --> Rose(a)
+        }
+        data Forest(a : Type) : Type where {
+            | Empty : Forest(a)
+            | More : (head : Rose(a), tail : Forest(a)) --> Forest(a)
+        }
+    }"#;
+    let tree = parsed(&grammar, source.into());
+    let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
+    assert_eq!(report.diagnostics, Vec::new());
+    let [ref group] = *report.mutuals.as_slice()
+    else {
+        panic!("one group: {:?}", report.mutuals)
+    };
+    let described = &group.description;
+    let sorts: Vec<&str> = described
+        .sorts
+        .iter()
+        .map(|sort| sort.name.as_ref())
+        .collect();
+    assert_eq!(sorts, ["Rose", "Forest"]);
+    let constructors: Vec<(&str, &str)> = described
+        .ctors
+        .iter()
+        .map(|ctor| (ctor.name.as_ref(), ctor.result.as_ref()))
+        .collect();
+    assert_eq!(constructors, [
+        ("Node", "Rose"),
+        ("Empty", "Forest"),
+        ("More", "Forest")
+    ]);
+    let [ref node, ref empty, ref more] = *described.ctors.as_ref()
+    else {
+        panic!("three constructors")
+    };
+    assert_eq!(
+        occurrences(&node.code),
+        (alloc::vec![String::from("Forest")], Vec::new())
+    );
+    assert!(matches!(empty.code.view(), CodeView::Unit));
+    assert_eq!(
+        occurrences(&more.code),
+        (
+            alloc::vec![String::from("Rose"), String::from("Forest")],
+            Vec::new()
+        ),
+        "`head` is an occurrence at `Rose`, and `tail` one at `Forest`"
+    );
+    assert_eq!(
+        gandr_theory_levitation::check_desc(described),
+        Vec::new(),
+        "the universe admits the description"
+    );
+    // Each family keeps its own description, a field at its sibling a field.
+    let forest = report
+        .declarations
+        .iter()
+        .find(|entry| entry.description.id.name.as_ref() == "Forest")
+        .expect("`Forest` is read");
+    let [_, ref own] = *forest.description.ctors.as_ref()
+    else {
+        panic!("two constructors")
+    };
+    assert_eq!(
+        occurrences(&own.code),
+        (alloc::vec![String::from("Forest")], alloc::vec![
+            String::from("Rose")
+        ])
+    );
+}
+
+/// #5018: a mutual block with one data family, or with families whose
+/// parameters differ, reads no group, and each family keeps its own
+/// description.
+#[test]
+fn a_mutual_block_with_one_data_family_reads_no_group_5018()
+{
+    let grammar = grammar();
+    let source = r#"rec {
+        data Nat : Type where {
+            | Zero : Nat
+            | Succ : (n : Nat) --> Nat
+        }
+        def rec twice(n : Nat) -> Nat {
+            match n { Zero => Zero, Succ(m) => Succ(Succ(twice[<](m))) }
+        }
+    }
+    rec {
+        data Left(a : Type) : Type where {
+            | Here : (x : a) --> Left(a)
+            | There : (r : Right) --> Left(a)
+        }
+        data Right : Type where {
+            | Stop : Right
+        }
+    }"#;
+    let tree = parsed(&grammar, source.into());
+    let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
+    assert_eq!(report.diagnostics, Vec::new());
+    assert_eq!(report.mutuals, Vec::new());
+    assert_eq!(report.declarations.len(), 3);
+}

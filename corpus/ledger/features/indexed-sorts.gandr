@@ -114,7 +114,7 @@ module Pointwise : Model(Sections) where {
   type Sec(g : Ctx, a : Fam(g)) = (x : g) => a(x);
 
   /// The family that is `Unit` at every point.
-  def whole(g : Type) -> g => Type { thunk { fun (_x) { return Unit } } }
+  def whole(g : Type) -> g => Type { return fun (_x) { return Unit } }
 }
 
 /// A section of a family over the integers gives, at a point, a value of the
