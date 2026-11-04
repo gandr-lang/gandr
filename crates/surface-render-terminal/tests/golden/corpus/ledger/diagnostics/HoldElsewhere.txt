@@ -7,4 +7,5 @@ error[HoldElsewhere]: `hold` makes a handle at the world it runs at; migrate the
 38 │ │ }
    │ └─┘ checked against `() => Seat.Report at seat`; while checking the body of this thunk
    │
-   ╰ note: `forged` is refused with HoldElsewhere, as its expectation states
+   ├ note: `forged` is refused with HoldElsewhere, as its expectation states
+   ╰ help: migrate to the handle's world before using `hold`

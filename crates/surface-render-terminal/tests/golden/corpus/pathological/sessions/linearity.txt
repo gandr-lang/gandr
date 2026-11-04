@@ -47,7 +47,8 @@ error[EndpointUsedTwice]: one action names the endpoint twice
 18 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `seat_sent_over_itself` is refused with EndpointUsedTwice, as its expectation states
+   ├ note: `seat_sent_over_itself` is refused with EndpointUsedTwice, as its expectation states
+   ╰ help: use the endpoint only once in this action
 
 error[CapturedEndpoint]: the endpoint is used inside a thunk, which may run it other than once
    ╭▸ corpus/pathological/sessions/linearity.gandr:22:40
