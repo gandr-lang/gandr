@@ -9,6 +9,8 @@
 pr_stack_dir="$(git rev-parse --show-toplevel)/.config/pr-stack"
 # shellcheck source=../gh/budget.bash
 source "$pr_stack_dir/../gh/budget.bash"
+# shellcheck source=../mise/host-lock.bash
+source "$pr_stack_dir/../mise/host-lock.bash"
 
 # Refuse while `origin/$trunk` holds a change to the stacking rule the
 # checked-out branch lacks (#1455). A task runs the rule from the branch it is
@@ -597,6 +599,117 @@ restack_past() {
   (( status == 0 )) || return "$status"
   printf 'moved %s\n' "${moved[@]}"
   git fetch --quiet origin "${above[@]}"
+}
+
+# The red reading of pull request `$1` (#5073), as `{check, run}`: the merge
+# queue removed it for `failed_checks`, named by the first failed job of its
+# newest failed merge-group run; else a required check that concluded
+# `failure` at its head (`red.jq`). Prints `null` when it is not red. The
+# caller sets `required` (`required_contexts`).
+red_reading() {
+  local number=$1 view group run
+  view=$(pr_reading "$number") || return 1
+  if [[ $(queue_removal "$number") == failed_checks ]]; then
+    group="gh-readonly-queue/$trunk/pr-$number-"
+    run=$(gh api "repos/$repo/actions/runs?event=merge_group&status=failure&per_page=100" \
+      --jq '[.workflow_runs[] | {id, head_branch, html_url}]' \
+      | jq -c --arg group "$group" 'map(select(.head_branch | startswith($group))) | first // null') || return 1
+    if [[ $run == null ]]; then
+      jq -cn '{check: "the merge queue", run: null}'
+      return
+    fi
+    gh api "repos/$repo/actions/runs/$(jq -r .id <<< "$run")/jobs?filter=latest&per_page=100" \
+      --jq '[.jobs[] | select(.conclusion == "failure") | .name] | first // "the merge queue"' \
+      | jq -cR --arg run "$(jq -r .html_url <<< "$run")" '{check: ., run: $run}'
+    return
+  fi
+  rollup_of <<< "$view" | jq -c --argjson required "$required" -f "$pr_stack_dir/red.jq"
+}
+
+# Cut the red bottom `$1` out of its server stack and place it on the top
+# (#5073). `heal.jq` decides the cut as `pr:watch`'s heal does: no member
+# above changes a path the red one changes, none is red and none is queued.
+# `restack_past` then replays the members above onto the trunk, signed, with
+# #5071's server and ancestry checks. The red one is retargeted onto the new
+# top and linked there, so it lands last once its seat makes it green. Then
+# the runs the cut made stale are cancelled (`cancel_stale`). One cut runs at
+# a time on the host, under the `stack-cut` lock on descriptor 7.
+# Prints nothing when `$1` is not a red bottom with members above it. Prints
+# `<stack before>\t<stack after>\t<check>\t<run>` on a cut. Fails naming the
+# reason on stderr, with nothing moved, when the cut is refused or conflicts.
+cut_bottom() {
+  local root=$1 red stack queued members=() member at=0 flag paths decision chain top status=0 heads=() numbers
+  red=$(red_reading "$root") || return 1
+  [[ $red != null ]] || return 0
+  stack=$(server_stack "$root")
+  [[ $(jq --argjson root "$root" 'length > 1 and .[0].number == $root' <<< "$stack") == true ]] || return 0
+  queued=$(queued_of "$stack")
+  mapfile -t heads < <(jq -r '.[].head' <<< "$stack")
+  git fetch --quiet origin "$trunk" "${heads[@]}"
+  for member in $(jq -r '.[].number' <<< "$stack"); do
+    flag=true
+    if (( member != root )); then
+      [[ $(red_reading "$member") != null ]] || flag=false
+    fi
+    paths=$(member_paths "$stack" "$at")
+    members+=("$(jq -cn --argjson number "$member" --argjson red "$flag" --argjson queued "$queued" --argjson paths "$paths" \
+      '{number: $number, red: $red, queued: ($number | IN($queued[])), paths: $paths}')")
+    at=$((at + 1))
+  done
+  decision=$(jq -cn --argjson own "$(jq '.[-1].number' <<< "$stack")" '{heals: 0, own: $own, members: ($ARGS.positional | map(fromjson))}' --args "${members[@]}" \
+    | jq -c -f "$pr_stack_dir/heal.jq")
+  case $(jq -r .act <<< "$decision") in
+    past) ;;
+    wait)
+      echo "the cut of #$root waits: $(jq -r '.queued | map("#\(.)") | join(" ")' <<< "$decision") in the merge queue never moves" >&2
+      return 1
+      ;;
+    *)
+      echo "the cut of #$root is refused: a member above it is red too, or changes a path #$root changes" >&2
+      return 1
+      ;;
+  esac
+  host_lock --fd 7 stack-cut 1 "cut #$root"
+  restack_past "$stack" "$root" > /dev/null || status=$?
+  if (( status == 0 )); then
+    chain=$(jq -c --argjson root "$root" 'map(select(.number != $root))' <<< "$stack")
+    top=$(jq -r '.[-1].head' <<< "$chain")
+    gh pr edit "$root" -R "$repo" --base "$top" > /dev/null || status=$?
+  fi
+  if (( status == 0 )); then
+    stack_link "$(jq -c --argjson stack "$stack" --argjson root "$root" '. + [$stack[] | select(.number == $root)]' <<< "$chain")" || status=$?
+  fi
+  if (( status == 0 )); then
+    numbers=$(jq -c 'map(.number)' <<< "$stack")
+    cancel_stale "$chain" "$numbers" || :
+  fi
+  host_unlock 7
+  exec 7<&-
+  (( status == 0 )) || return "$status"
+  printf '%s\t%s\t%s\t%s\n' \
+    "$(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")" \
+    "$(jq -r --argjson root "$root" 'map(select(.number != $root) | "#\(.number)") + ["#\($root)"] | join(" ← ")' <<< "$stack")" \
+    "$(jq -r .check <<< "$red")" "$(jq -r '.run // "no run"' <<< "$red")"
+}
+
+# Cancel the runs a cut made stale (#5073, `stale.jq`): a queued or running
+# run of a moved branch of `$1` (`[{number, head}]`) at a head the branch no
+# longer has, and a merge-group run of a group of a cut pull request among
+# `$2` (numbers). Prints one line on stderr per run cancelled.
+cancel_stale() {
+  local heads runs id branch status
+  heads=$(for branch in $(jq -r '.[].head' <<< "$1"); do
+    jq -cn --arg branch "$branch" --arg sha "$(git rev-parse "origin/$branch")" '{($branch): $sha}'
+  done | jq -cs 'add // {}')
+  runs=$(for status in queued in_progress waiting requested pending; do
+    gh api "repos/$repo/actions/runs?status=$status&per_page=100" --jq '.workflow_runs[] | {id, event, head_branch, head_sha, status}'
+  done | jq -cs .) || return 1
+  for id in $(jq -cn --argjson runs "$runs" --argjson heads "$heads" --argjson numbers "$2" --arg trunk "$trunk" \
+    '{runs: $runs, heads: $heads, numbers: $numbers, trunk: $trunk}' | jq -c -f "$pr_stack_dir/stale.jq" | jq -r '.[]'); do
+    if gh api -X POST "repos/$repo/actions/runs/$id/cancel" > /dev/null 2>&1; then
+      echo "cancelled the stale run $id" >&2
+    fi
+  done
 }
 
 # The reason of pull request `$1`'s last removal from the merge queue, in

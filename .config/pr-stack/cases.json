@@ -3686,5 +3686,127 @@
       "held": [4162, 4158]
     },
     "output": "{\"wait\":[4162],\"off\":[{\"number\":4158,\"base\":\"triage-4058-stall-lane\"}]}"
+  },
+  {
+    "name": "#5073: a required check that concluded failure at its newest run is red, and names its run",
+    "program": "red.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-04T06:00:00Z",
+        "detailsUrl": "https://example.invalid/runs/1/job/1"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-04T06:00:00Z",
+        "detailsUrl": "https://example.invalid/runs/1/job/2"
+      }
+    ],
+    "output": "{\"check\":\"test the workspace (linux)\",\"run\":\"https://example.invalid/runs/1/job/2\"}"
+  },
+  {
+    "name": "#5073: a cancelled, a timed-out and a startup-failed required check are not red, and cut nothing; a failure under a newer success is not red either",
+    "program": "red.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)", "lint the pull request title"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "startedAt": "2026-11-04T06:00:00Z",
+        "detailsUrl": "https://example.invalid/runs/1/job/1"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "TIMED_OUT",
+        "startedAt": "2026-11-04T06:00:00Z",
+        "detailsUrl": "https://example.invalid/runs/1/job/2"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-04T05:00:00Z",
+        "detailsUrl": "https://example.invalid/runs/0/job/2"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "STARTUP_FAILURE",
+        "startedAt": "2026-11-04T06:00:00Z",
+        "detailsUrl": "https://example.invalid/runs/2/job/3"
+      }
+    ],
+    "output": "null"
+  },
+  {
+    "name": "#5073: a cut cancels a moved branch's run at its old head and a merge-group run of a cut pull request; a run at the new head, another branch's and another group's stay",
+    "program": "stale.jq",
+    "input": {
+      "runs": [
+        {
+          "id": 11,
+          "event": "pull_request",
+          "head_branch": "upper",
+          "head_sha": "old",
+          "status": "in_progress"
+        },
+        {
+          "id": 12,
+          "event": "merge_group",
+          "head_branch": "gh-readonly-queue/main/pr-2-abc",
+          "head_sha": "abc",
+          "status": "queued"
+        },
+        {
+          "id": 13,
+          "event": "pull_request",
+          "head_branch": "upper",
+          "head_sha": "new",
+          "status": "in_progress"
+        },
+        {
+          "id": 14,
+          "event": "pull_request",
+          "head_branch": "elsewhere",
+          "head_sha": "def",
+          "status": "in_progress"
+        },
+        {
+          "id": 15,
+          "event": "merge_group",
+          "head_branch": "gh-readonly-queue/main/pr-20-abc",
+          "head_sha": "abc",
+          "status": "queued"
+        },
+        {
+          "id": 16,
+          "event": "pull_request",
+          "head_branch": "top",
+          "head_sha": "older",
+          "status": "completed"
+        }
+      ],
+      "heads": { "upper": "new", "top": "newer" },
+      "numbers": [2, 3, 4],
+      "trunk": "main"
+    },
+    "output": "[11,12]"
   }
 ]

@@ -4589,8 +4589,35 @@ release() {
   done
   gh api -X DELETE "repos/$repo/issues/$1/labels/status:stalled" > /dev/null 2>&1 || :
 }
+# Cut each red bottom out of its stack and place it on the top (#5073,
+# `cut_bottom`): a stack's root on the trunk, neither queued nor a draft,
+# that the queue removed for `failed_checks` or a required check failed at
+# with conclusion `failure`. Its seat is told once a head, by a comment under
+# a `<!-- pr-ejected <head> -->` mark naming the check and its run, and the
+# coordinator gets one `STALL ejected-and-cut` line naming the stack before
+# and after. A cut refused or in conflict moves nothing, and the reading's
+# `ejected` and `pile-up` findings report it as before.
+cuts() {
+  local root line before after check run head base mark
+  for root in $(pulls_reading | jq -r --arg trunk "$trunk" '.[] | select(.baseRefName == $trunk and .stack != null and (.isInMergeQueue | not) and (.isDraft | not)) | .number'); do
+    line=$(cut_bottom "$root") || { echo "stall:watch: #$root is not cut" >&2; continue; }
+    [[ -n $line ]] || continue
+    IFS=$'\t' read -r before after check run <<< "$line"
+    echo "stall:watch: #$root cut: $before → $after" >&2
+    read -r head base < <(pr_reading "$root" | jq -r '"\(.headRefOid) \(.baseRefName)"')
+    mark="<!-- pr-ejected $head -->"
+    if [[ $(gh api --paginate "repos/$repo/issues/$root/comments" --jq '.[].body' | jq -sR --arg mark "$mark" 'contains($mark)') == false ]]; then
+      gh pr comment "$root" -R "$repo" --body "$mark
+pr-ejected #$root: the required check \`$check\` failed at ${head::12} ($run). \`stall:watch\` cut #$root out of its stack and placed it on the top: $after. Fix the check, rebase the branch onto \`$base\`, and push. #$root lands last." > /dev/null || :
+    fi
+    "${command[@]}" "${coordinator[@]}" "STALL ejected-and-cut #$root: \`$check\` failed ($run); the stack $before is now $after" || :
+  done
+}
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+source .config/pr-stack/stack.bash
+required=$(required_contexts)
+trap 'drop_scratch' EXIT
 mkdir -p "$(dirname "$stall_state")"
 while :; do
   interval=$(stall_thresholds | jq .interval)
@@ -4640,6 +4667,7 @@ while :; do
     echo "stall:watch: #$number released" >&2
     release "$number" || stalled=$(jq -c --arg n "$number" --argjson now "$(date +%s)" '.[$n] = $now' <<< "$stalled")
   done
+  cuts
   gone=$(sweep "$(stall_memory | jq -c '.gone // {}')")
   reports
   jq -c --argjson paged "$paged" --argjson stalled "$stalled" --argjson gone "$gone" --argjson read "$(date +%s)" \

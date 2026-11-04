@@ -1542,6 +1542,13 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # `.config/pr-stack/heal.bash` runs `pr:watch`'s heal under `set -u`, once
 # per case in `.config/pr-stack/heal.json`: a restack that cuts no member and
 # one past a red member each report `pr-restacked` and return (#4766).
+# `.config/pr-stack/cut.bash` runs `stall:watch`'s cut of a red bottom
+# (`cut_bottom`) over a scratch repository, once per case in
+# `.config/pr-stack/cut.json`: the members above replay onto the trunk, the
+# red one is retargeted onto the new top and linked there, and the stale runs
+# are cancelled; a member above changing the red one's path refuses the cut
+# with nothing moved (#5073). `red.jq` reads which check makes a bottom red,
+# and `stale.jq` which runs a cut made stale.
 # `.config/pr-stack/replays.bash` lands a scratch repository's lower branch,
 # once per case in `.config/pr-stack/replays.json`, and reads the commits of
 # the upper a rebase onto main would replay empty: a lower rewritten before
@@ -1573,6 +1580,7 @@ fi
 .config/pr-stack/own-commits.bash || failed=1
 .config/pr-stack/past.bash || failed=1
 .config/pr-stack/heal.bash || failed=1
+.config/pr-stack/cut.bash || failed=1
 .config/pr-stack/fetched-base.bash || failed=1
 .config/pr-stack/behind-top.bash || failed=1
 .config/pr-stack/replays.bash || failed=1
