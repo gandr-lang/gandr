@@ -1898,13 +1898,12 @@ sketch/web/event-listener.gandr:Dom:78d68b796044d327 uncommented
 sketch/web/event-listener.gandr:Dom:f3f6f969df3f736c uncommented
 sketch/web/event-listener.gandr:Dom:f4a2e51c00f186aa uncommented
 sketch/web/event-listener.gandr:function_type:5b0a3c174751ba1c uncommented
+sketch/web/event-listener.gandr:leaked:4c7b33700c686f0d uncommented
 sketch/web/event-listener.gandr:manifest_sort:733515edbb00b451 uncommented
 sketch/web/event-listener.gandr:manifest_sort:7cfe69c1dd996d00 uncommented
-sketch/web/event-listener.gandr:manifest_sort:93ab378a8acd2c34 uncommented
 sketch/web/event-listener.gandr:moded_type:41ba76d8b923273e uncommented
-sketch/web/event-listener.gandr:revision:7c6e49946a85fdb1 uncommented
-sketch/web/export.gandr:Summary:3eee23bdd72bda29 uncommented
-sketch/web/fetch-list.gandr:revision:1a692cc239cbeba7 uncommented
+sketch/web/export.gandr:Verdict:402cc6512b0b4a80 uncommented
+sketch/web/fetch-list.gandr:revision:c95de57dcbe3d5f1 uncommented
 sketch/web/granularity.gandr:instantiation_expression:44730cbaaac49851 uncommented
 sketch/web/granularity.gandr:module_declaration:d9e0c50b28c1cc93 uncommented
 sketch/web/granularity.gandr:parenthesized_type:622be36e2f51ac6c uncommented
