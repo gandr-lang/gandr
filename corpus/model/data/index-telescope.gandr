@@ -36,6 +36,17 @@ def firstVar(a : ObjTy, b : ObjTy) -> Var(Extend(Extend(Empty, a), b), a) {
   There(Extend(Empty, a), a, b, Here(Empty, a))
 }
 
+/// The variable of the last entry, bound by a `let` at its stated type.
+def lastVar(g : Ctx, a : ObjTy) -> Var(Extend(g, a), a) {
+  let x : Var(Extend(g, a), a) = Here(g, a);
+  x
+}
+
+/// The function this definition returns moves a variable of `d` past one more entry.
+def weaken(d : Ctx, b : ObjTy, a : ObjTy) -> Var(d, a) => Var(Extend(d, b), a) {
+  return fun (x) { There(d, a, b, x) }
+}
+
 /// Positions below a bound.
 data Fin : Nat -> Type where {
   /// The first position below the successor of `n`.

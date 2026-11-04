@@ -768,6 +768,12 @@ pub(super) struct Claimed(pub bool);
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Decoded(pub bool);
 
+/// Whether a constructor's family takes neither parameters nor indices, and
+/// so classifies its constructors alone.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct Alone(pub bool);
+
 /// Whether a type application writes a recursive function's descent where a
 /// type is read, `own[<](…)`.
 #[repr(transparent)]
@@ -3433,17 +3439,7 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
         }
         let frame = self.require(site, Produced::Value)?;
-        // A family of neither parameters nor indices classifies its
-        // constructors alone.
-        let arguments = match constructor.form {
-            Generators::Written(form) => self.collected.data.get(form).map_or(0_usize, |written| {
-                written
-                    .parameters
-                    .len()
-                    .saturating_add(written.indices.len())
-            }),
-            Generators::Presentation | Generators::Words(_) | Generators::Terms(_) => 0_usize,
-        };
+        let Alone(alone) = self.classifies_alone(constructor);
         // A constructor standing where a body ends is the value the body
         // returns, of the type the body answers.
         let answered = self
@@ -3458,7 +3454,7 @@ impl<'source> Lowerer<'_, 'source>
             self.inherited.get(&site.at.node),
         ) {
             (Some(&written), ..) => Classifier::Written(written),
-            (None, ..) if arguments == 0 => Classifier::Inserted,
+            (None, ..) if alone => Classifier::Inserted,
             (None, Some(&answer), ..) => Classifier::Answered { answer, frame },
             (None, None, Some(&argued), ..) => {
                 let _first = self.awaiting.insert(site.at.node);
@@ -3540,6 +3536,26 @@ impl<'source> Lowerer<'_, 'source>
         );
 
         Ok(())
+    }
+
+    /// Whether the family of `constructor` takes neither parameters nor
+    /// indices, and so classifies its constructors alone.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn classifies_alone(
+        &self,
+        constructor: Constructor,
+    ) -> Alone
+    {
+        Alone(match constructor.form {
+            Generators::Written(form) => {
+                self.collected.data.get(form).is_none_or(|written| {
+                    written.parameters.is_empty() && written.indices.is_empty()
+                })
+            },
+            Generators::Presentation | Generators::Words(_) | Generators::Terms(_) => true,
+        })
     }
 
     /// Record, for each argument of the call at `site`, the type the
@@ -4611,12 +4627,13 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// The constructor `inner`, written inside the parentheses at `site`,
-    /// applies: a bare constructor, or a call whose head is one, in the
-    /// spelling of either grammar.
+    /// The constructor `inner`, written inside the parentheses at `site` or
+    /// bound by the typed `let` at `site`, applies: a bare constructor, or a
+    /// call whose head is one, in the spelling of either grammar.
     ///
     /// # Specification
-    /// - requires: `inner` is the operand of the parenthesised form at `site`.
+    /// - requires: `inner` is the operand of the parenthesised form at `site`,
+    ///   or the value the `let` statement at `site` binds.
     /// - ensures: the constructor a constructor name or a call's head names, as
     ///   [`Self::constructor_head`] answers it; the constructor a type name or
     ///   a type application's head names, as [`Self::constructor_named`]
@@ -4632,11 +4649,13 @@ impl<'source> Lowerer<'_, 'source>
     /// [`LoweringRefusal::BudgetExceeded`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::annotated`].
+    /// - hypothesis: L3 — as [`Self::annotated`], and a constructor a typed
+    ///   `let` binds.
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::native::tests::a_type_valued_calls_argument_takes_an_annotation_3633`
+    /// - witness: `lower::native::tests::a_constructor_takes_a_typed_let_s_type_and_a_lambda_s_codomain_5035`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::BudgetExceeded { .. })))]
-    fn applied_constructor(
+    pub(super) fn applied_constructor(
         &mut self,
         site: Site,
         inner: Placed,

@@ -10238,10 +10238,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// arrow a value function space `(A1, …, An) => B` stands for. A binder
     /// the arrow or the space names, `(x : A)`, answers its type `A`. A lambda
     /// a signed definition writes bare, `def f = fun (x) { … }`, answers what
-    /// the thunk the checker inserts around it would hand its body. The
-    /// binder's type takes the declaration its answer belongs to before the
-    /// walk reaches it ([`Self::own_written`]), so a name in it resolves where
-    /// the body reads it.
+    /// the thunk the checker inserts around it would hand its body, and so does
+    /// a lambda a `return` or a tail's `pure` returns where the body answers a
+    /// written value function space. The binder's type takes the declaration
+    /// its answer belongs to before the walk reaches it
+    /// ([`Self::own_written`]), so a name in it resolves where the body reads
+    /// it.
     ///
     /// # Specification
     /// - requires: `site` is a lambda in term position.
@@ -10251,9 +10253,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   frame; for a position answering an alias's arrows past `t` domains,
     ///   its domain `t + 1` — the type a telescope's entry `t + 1` declares —
     ///   and, under the same frame, the arrows past `t + 1` domains, or `B`
-    ///   returning past the last; nothing for an unanswered position, an answer
-    ///   over a loop or a returner, an alias with no domain left and any other
-    ///   type.
+    ///   returning past the last; for a lambda returned where a written value
+    ///   function space is answered, as for that space's arrows past no domain;
+    ///   nothing for an unanswered position, an answer over a loop or a
+    ///   returner, an alias with no domain left and any other type.
     /// - fails: as [`Self::unwrapped`] and [`Self::alias_domains`].
     /// - panics: none.
     ///
@@ -10270,18 +10273,37 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::native::tests::a_bare_signed_lambda_s_binder_is_typed_as_in_its_thunk_1944`
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::native::tests::a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815`
+    /// - witness: `lower::native::tests::a_constructor_takes_a_typed_let_s_type_and_a_lambda_s_codomain_5035`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(_, codomain)| matches!(codomain.over, native::Over::Written | native::Over::Returning | native::Over::Valued { .. }))))]
     fn answered_arrow(
         &mut self,
         site: Site,
     ) -> Result<Option<(NodeIndex, native::Answer)>, LoweringRefusal<'source>>
     {
-        let Some(&answer) = self
-            .answers
-            .get(&site.at.node)
-            .or_else(|| self.thunked.get(&site.at.node))
-        else {
-            return Ok(None);
+        let answer = match (
+            self.answers
+                .get(&site.at.node)
+                .or_else(|| self.thunked.get(&site.at.node)),
+            self.inherited.get(&site.at.node),
+        ) {
+            (Some(&answer), _) => answer,
+            // A returned lambda is the value of the space the body answers,
+            // the thunk the checker inserts around it.
+            (
+                None,
+                Some(&native::Classifier::Answered {
+                    answer:
+                        answer @ native::Answer {
+                            over: native::Over::Written,
+                            ..
+                        },
+                    ..
+                }),
+            ) => native::Answer {
+                over: native::Over::Valued { taken: 0_usize },
+                ..answer
+            },
+            (None, _) => return Ok(None),
         };
         self.arrow_of(answer)
     }
@@ -11444,14 +11466,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let name = self.binder_name(statement, binder)?;
         self.note_binder(binder, name)?;
         let _bound = self.let_bound.insert(bound.node);
+        // The stated type is read first. A constructor of a family with
+        // arguments takes it as its classifier, as under an annotation
+        // `(e : T)`; a family of neither classifies its constructors alone.
+        let binding = match annotation {
+            Some(annotation) => {
+                self.read(annotation.node, Reading::ValueType(frame));
+                if let Maybe::Present(constructor) = self.applied_constructor(statement, bound)?
+                    && self.classifies_alone(constructor) == native::Alone(false)
+                {
+                    let _first = self.classifiers.insert(bound.node, annotation.node);
+                }
+                StatementBinding::TypedLet {
+                    name: binder.node,
+                    annotation: annotation.node,
+                }
+            },
+            None => StatementBinding::Let(binder.node),
+        };
         self.read(bound.node, Reading::Value(frame));
-        let binding = annotation.map_or(StatementBinding::Let(binder.node), |annotation| {
-            self.read(annotation.node, Reading::ValueType(frame));
-            StatementBinding::TypedLet {
-                name: binder.node,
-                annotation: annotation.node,
-            }
-        });
         self.statements.push(Statement {
             origin: lead.node,
             bound: bound.node,
@@ -16764,6 +16797,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .iter()
                 .filter(|&(position, _)| owns(position))
                 .map(|(_, answer)| answer.node),
+        );
+        // A type stated for a constructor, by an annotation or a typed `let`,
+        // classifies it, and the sweep below may reach the constructor first.
+        manifests.extend(
+            self.classifiers
+                .iter()
+                .filter(|&(constructor, _)| owns(constructor))
+                .map(|(_, &stated)| stated),
         );
         // A constructor answering a definition's application reads the
         // definition's body, which the sweep below reaches after it.

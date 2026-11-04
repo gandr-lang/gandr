@@ -2533,6 +2533,43 @@ fn a_parameterized_constructor_needs_its_classifier()
     assert_accepted(&report);
 }
 
+/// #5035: a constructor of a family with arguments was refused `Unannotated`
+/// as a typed `let`'s value and as the body of a returned lambda. The `let`'s
+/// stated type classifies it, as an annotation does, and the lambda's body
+/// takes the codomain of the value function space the definition answers.
+#[test]
+fn a_constructor_takes_a_typed_let_s_type_and_a_lambda_s_codomain_5035()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}data ObjTy : Type where {{ | Base : ObjTy }}\n\
+         data Ctx : Type where {{ | Empty : Ctx | Extend : (gamma : Ctx, a : ObjTy) --> Ctx }}\n\
+         data Var : (gamma : Ctx, a : ObjTy) --> Type where {{\n\
+           | Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a)\n\
+           | There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var(gamma, a)) --> Var(Extend(gamma, b), a)\n\
+         }}\n\
+         def kept() -> Maybe(Integer) {{ let x : Maybe(Integer) = Some(3); x }}\n\
+         def here(g : Ctx, a : ObjTy) -> Var(Extend(g, a), a) {{ let x : Var(Extend(g, a), a) = Here(g, a); x }}\n\
+         def base() -> ObjTy {{ let y : ObjTy = Base; y }}\n\
+         def lifted() -> Integer => Maybe(Integer) {{ return fun (n) {{ Some(n) }} }}\n\
+         def past(d : Ctx, b : ObjTy, a : ObjTy) -> Var(d, a) => Var(Extend(d, b), a) {{\n\
+           return fun (x) {{ There(d, a, b, x) }}\n\
+         }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["kept", "here", "base", "lifted", "past"] {
+        assert!(
+            matches!(
+                outcome_of(&module, SurfaceName::from(name)),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, SurfaceName::from(name))
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// An unsigned definition whose whole value is an annotation is declared at
 /// the annotation's type and checked against it, a value the annotation
 /// misstates refused by the checker rather than by the lowering (#1107).
