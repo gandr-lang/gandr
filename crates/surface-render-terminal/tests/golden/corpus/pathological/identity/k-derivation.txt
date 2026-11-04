@@ -4,4 +4,5 @@ error[WithoutK]: a path cannot be matched against `here`; use it by `Path.walk`,
 7 │   match p { here => match q { here => return Path.here(p) } }
   │             ━━━━ a path matched against reflexivity
   │
-  ╰ note: `uip` is refused with WithoutK, as its expectation states
+  ├ note: `uip` is refused with WithoutK, as its expectation states
+  ╰ help: use the path through `Path.walk`, `Path.back`, `Path.step` or `Path.ap`

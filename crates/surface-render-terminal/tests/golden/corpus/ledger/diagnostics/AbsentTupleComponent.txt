@@ -10,4 +10,5 @@ error[AbsentTupleComponent]: the tuple has no such component
 5 │ │ }
   │ └─┘ checked against `Unit => Unit`; while checking the body of this thunk
   │
-  ╰ note: `none` is refused with AbsentTupleComponent, as its expectation states
+  ├ note: `none` is refused with AbsentTupleComponent, as its expectation states
+  ╰ help: select a component that the tuple has

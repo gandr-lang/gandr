@@ -6,4 +6,5 @@ error[CodataObservationLevel]: an observation's type lives above the universe th
 5 │ ┃ }
   │ ┗━┛ an observation above the declared universe
   │
-  ╰ note: `Holder` is refused with CodataObservationLevel, as its expectation states
+  ├ note: `Holder` is refused with CodataObservationLevel, as its expectation states
+  ╰ help: lower each observation type to the codata declaration's universe

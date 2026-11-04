@@ -4,4 +4,5 @@ error[BoundaryUnrealised.Niche]: a type a member of the block declares keeps its
 12 │ @[ boundary(borrowedRow), refuses("BoundaryUnrealised.Niche") ]
    │    ━━━━━━━━━━━━━━━━━━━━━ a row the block's members do not realise
    │
-   ╰ note: `Niched` is refused with BoundaryUnrealised.Niche, as its expectation states
+   ├ note: `Niched` is refused with BoundaryUnrealised.Niche, as its expectation states
+   ╰ help: make each member type use the niche its boundary row states

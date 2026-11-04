@@ -10,4 +10,5 @@ error[CapabilityOutsideAuthority]: the capability does not grant this operation
 10 │ │ }
    │ └─┘ checked against `+U (Cap {read} -> -F [std.fs.Eff] Unit)`; while checking the body of this thunk
    │
-   ╰ note: `save` is refused with CapabilityOutsideAuthority, as its expectation states
+   ├ note: `save` is refused with CapabilityOutsideAuthority, as its expectation states
+   ╰ help: use an operation the capability grants
