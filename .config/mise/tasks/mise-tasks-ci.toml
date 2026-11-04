@@ -2062,7 +2062,8 @@ while read -r _ issue; do
   echo "blocked: $issue by $(jq -r --arg n "${issue#\#}" '.[$n] | map("#\(.)") | join(", ")' <<< "$live")" >&2
 done < <(awk '/^blocked: /' <<< "$lines")
 awk '/^(observation due|sections due|restate): /' <<< "$lines"
-pick=$(awk '!/^(focus|unattributed|collector|blocked|observation due|sections due|restate): /' <<< "$lines")
+source "$claims/pick.bash"
+pick=$(claim_pick <<< "$lines")
 if [[ -z "$pick" ]]; then
   echo "no claim: $lane" >&2
   exit 1

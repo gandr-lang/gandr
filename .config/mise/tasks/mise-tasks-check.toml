@@ -2049,6 +2049,10 @@ done < <(jq -c '.[]' .config/claims/board.json)
 # below GitHub's 100 sub-issues, or two `refactor:file` runs at once from two
 # clones, over the stub `filed-once-gh.bash` (`filed-once.bash`).
 .config/claims/filed-once.bash || exit 1
+# `pick-cases.bash` reads the pick `claim:next` takes from `next.jq`'s
+# answer (#5178): a held line before the pick leaves it, and held lines
+# alone give none.
+.config/claims/pick-cases.bash || exit 1
 # `observed.bash` hands a transcript of any size to jq (#3871): for each case
 # in `.config/claims/hand-off.json` a scratch repository adds a transcript of
 # the case's size, stopped in a test the body names, and the script prints the
