@@ -1231,7 +1231,8 @@ enum GroupClose
 {
     /// The group is empty: its `)` is the next significant token.
     Empty,
-    /// The group closes, and `=>` is the next significant token past it.
+    /// The group closes, and an arrow, `=>` or `->`, is the next significant
+    /// token past it.
     Arrow,
     /// The group closes before any other token, or before the stream's end.
     Other,
@@ -1248,15 +1249,16 @@ enum GroupClose
 ///   token whose text ends in `(`.
 /// - ensures: [`GroupClose::Empty`] when the next significant token is `)`;
 ///   otherwise, past the `)` that balances the opener, [`GroupClose::Arrow`]
-///   when the next significant token is `=>` and [`GroupClose::Other`]
+///   when the next significant token is `=>` or `->` and [`GroupClose::Other`]
 ///   otherwise; [`GroupClose::Open`] when no `)` balances it.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an empty group, a nested call and quote inside the group,
-///   a group closed before `=>`, before another token and at the stream's end,
-///   and an unbalanced group expose each answer. Counting a string fragment's
-///   `(`, or stopping at a nested `)`, reads the wrong token past the group.
+///   a group closed before `=>`, before `->`, before another token and at the
+///   stream's end, and an unbalanced group expose each answer. Counting a
+///   string fragment's `(`, or stopping at a nested `)`, reads the wrong token
+///   past the group.
 /// - witness: `mold::tests::a_group_closes_past_its_nested_groups_2255`
 #[spec(ensures: |ret| ret != GroupClose::Empty || next_significant(tokens, index).is_some_and(|(_, token)| AsRef::<str>::as_ref(&token.text(source)) == ")"))]
 fn group_close(
@@ -1284,7 +1286,9 @@ fn group_close(
                 depth = depth.saturating_sub(1);
                 if depth == 0 {
                     return match next_significant(tokens, cursor) {
-                        Some((_, next)) if punct(next, "=>") => GroupClose::Arrow,
+                        Some((_, next)) if punct(next, "=>") || punct(next, "->") => {
+                            GroupClose::Arrow
+                        },
                         Some(_) | None => GroupClose::Other,
                     };
                 }
@@ -1325,6 +1329,43 @@ fn next_significant(
         next = next.saturating_add(1);
     }
     None
+}
+
+/// Whether the same-form successor `right` of `mold` stands right after it,
+/// with no hole between: every successor of a mold no hole follows, and of
+/// one a hole follows, a successor whose tile faces it on the right.
+///
+/// # Specification
+/// - requires: `right` is one of `mold`'s same-form successors.
+/// - ensures: true exactly when `mold`'s right bound is the root, or `right`'s
+///   label is a tile step on `mold`'s right.
+/// - panics: none.
+/// - economy: one bounds read and, past a root bound, a walk of the few steps
+///   on `mold`'s right. Nothing is allocated.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Molder::follow`]: the unit `*{` before its `}` and
+///   the argument comma before a closer tell the two branches apart.
+/// - witness: `mold::tests::a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it`
+#[spec(ensures: |ret| ret == (matches!(pbg.bounds(mold), Ok((_, Bound::Root))) || pbg.mold(mold).is_ok_and(|own| pbg.mold(right).is_ok_and(|next| pbg.step(own.rctx, Dir::Right).is_ok_and(|steps| steps.iter().any(|step| step.crossed == StepSym::Tile(next.label)))))))]
+fn direct_successor(
+    pbg: &Pbg,
+    mold: MoldId,
+    right: MoldId,
+) -> bool
+{
+    if matches!(pbg.bounds(mold), Ok((_, Bound::Root))) {
+        return true;
+    }
+    let (Ok(own), Ok(next)) = (pbg.mold(mold), pbg.mold(right))
+    else {
+        return false;
+    };
+    pbg.step(own.rctx, Dir::Right).is_ok_and(|steps| {
+        steps
+            .iter()
+            .any(|step| step.crossed == StepSym::Tile(next.label))
+    })
 }
 
 /// The whole candidate menu of the next significant token after `index`: its
@@ -3576,11 +3617,11 @@ impl<'pbg> Molder<'pbg>
     /// - requires: `frontier` is `state`'s admissibility frontier; `tokens` is
     ///   the labeler output for `source`; `index` names the current token.
     /// - ensures: when the slot is a fresh expression slot, a parenthesized
-    ///   expression's `(` is eligible and the group closes before `=>`, the
-    ///   eligible parenthesized expression's molds give way to the
-    ///   parenthesized type's molds a type slot there admits, in menu order;
-    ///   otherwise, and when no such type mold is admitted, `self.eligible` is
-    ///   unchanged.
+    ///   expression's `(` is eligible and the group closes before an arrow,
+    ///   `=>` or `->`, the eligible parenthesized expression's molds give way
+    ///   to the parenthesized type's molds a type slot there admits, in menu
+    ///   order; otherwise, and when no such type mold is admitted,
+    ///   `self.eligible` is unchanged.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -4168,33 +4209,37 @@ impl<'pbg> Molder<'pbg>
 
     /// Whether a token carrying one of `labels` can stand right after `mold`.
     ///
-    /// A mold a hole follows on its right is followed by what fills the hole,
-    /// which begins with a form's first tile: a token none of whose labels
-    /// can begin a form refutes it. A mold that no hole follows is followed
-    /// by one of its same-form successors or, when it can end its form, by
-    /// what follows the whole form: the form fills a hole, so the next tile is
-    /// one a hole of the form's sort faces on its left, or nothing at all. A
-    /// token carrying none of those refutes it.
+    /// A same-form successor that stands right after `mold`, with no hole
+    /// between, can follow it: the unit `*{` before its `}`. A mold a hole
+    /// follows on its right is also followed by what fills the hole, which
+    /// begins with a form's first tile. A mold that no hole follows is also
+    /// followed, when it can end its form, by what follows the whole form:
+    /// the form fills a hole, so the next tile is one a hole of the form's
+    /// sort faces on its left, or nothing at all. A token carrying none of
+    /// those refutes it.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Follow::Refuted`] exactly when either `mold`'s right bound
-    ///   is not the root and no label in `labels` names a tile that begins a
-    ///   form, or its right bound is the root, none of its same-form successors
-    ///   is labelled with one of `labels`, and either it is not form-last or
-    ///   [`Molder::after_form`] refutes `labels`.
+    /// - ensures: [`Follow::Refuted`] exactly when no same-form successor that
+    ///   [`direct_successor`] admits is labelled with one of `labels`, and
+    ///   either `mold`'s right bound is not the root and no label in `labels`
+    ///   names a tile that begins a form, or its right bound is the root and
+    ///   either it is not form-last or [`Molder::after_form`] refutes `labels`.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a parameter comma read before a name, before a closer
     ///   and before nothing, an argument comma before an argument and before a
-    ///   closer, a call's form-last closer, and the unknown type before `(`
-    ///   expose each branch: dropping the hole check keeps the argument comma
-    ///   before a closer, reading the hole check as the successor check refutes
-    ///   it before an argument, dropping the form-last check refutes the
-    ///   closer, dropping the successor check refutes the parameter comma
-    ///   before a name, and dropping the whole-form check keeps the unknown
-    ///   type before `(`.
+    ///   closer, a call's form-last closer, the unknown type before `(`, and
+    ///   the unit `*{` before its `}` beside the labelled `*{` expose each
+    ///   branch: dropping the hole check keeps the argument comma before a
+    ///   closer, reading the hole check as the successor check refutes it
+    ///   before an argument, dropping the form-last check refutes the closer,
+    ///   dropping the successor check refutes the parameter comma before a
+    ///   name, dropping the whole-form check keeps the unknown type before `(`,
+    ///   reading only a closed mold's successors refutes the unit `*{` before
+    ///   `}`, and reading a successor across a hole keeps the argument comma
+    ///   before a closer.
     /// - witness: `mold::tests::a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -4210,12 +4255,14 @@ impl<'pbg> Molder<'pbg>
             reason = "bounded: `labels` holds one token's candidate labels, at most `LABEL_CAPACITY`"
         )
     )]
-    #[spec(ensures: |ret| (ret == Follow::Refuted) == if matches!(self.pbg.bounds(mold), Ok((_, Bound::Root))) {
-        !self.pbg.mold_successors(mold).iter().any(|&(_, right)| self.pbg.mold_label(right).is_some_and(|label| labels.as_slice().contains(&label)))
-            && (!bool::from(self.pbg.mold_is_form_last(mold)) || self.after_form(mold, labels) == Follow::Refuted)
-    } else {
-        !labels.as_slice().iter().any(|&label| !self.pbg.label_fresh_candidates(label).is_empty())
-    })]
+    #[spec(ensures: |ret| (ret == Follow::Refuted) == (
+        !self.pbg.mold_successors(mold).iter().any(|&(_, right)| direct_successor(self.pbg, mold, right) && self.pbg.mold_label(right).is_some_and(|label| labels.as_slice().contains(&label)))
+            && if matches!(self.pbg.bounds(mold), Ok((_, Bound::Root))) {
+                !bool::from(self.pbg.mold_is_form_last(mold)) || self.after_form(mold, labels) == Follow::Refuted
+            } else {
+                !labels.as_slice().iter().any(|&label| !self.pbg.label_fresh_candidates(label).is_empty())
+            }
+    ))]
     fn follow(
         &self,
         mold: MoldId,
@@ -4224,17 +4271,21 @@ impl<'pbg> Molder<'pbg>
     {
         let pbg = self.pbg;
         let ids = labels.as_slice();
-        let continued = if matches!(pbg.bounds(mold), Ok((_, Bound::Root))) {
-            pbg.mold_successors(mold).iter().any(|&(_, right)| {
-                pbg.mold_label(right)
+        let succeeded = pbg.mold_successors(mold).iter().any(|&(_, right)| {
+            direct_successor(pbg, mold, right)
+                && pbg
+                    .mold_label(right)
                     .is_some_and(|label| ids.contains(&label))
-            }) || (bool::from(pbg.mold_is_form_last(mold))
-                && self.after_form(mold, labels) == Follow::Possible)
-        }
-        else {
-            ids.iter()
-                .any(|&label| !pbg.label_fresh_candidates(label).is_empty())
-        };
+        });
+        let continued = succeeded
+            || if matches!(pbg.bounds(mold), Ok((_, Bound::Root))) {
+                bool::from(pbg.mold_is_form_last(mold))
+                    && self.after_form(mold, labels) == Follow::Possible
+            }
+            else {
+                ids.iter()
+                    .any(|&label| !pbg.label_fresh_candidates(label).is_empty())
+            };
         if continued {
             Follow::Possible
         }
@@ -4745,6 +4796,7 @@ mod tests
         for (text, expected) in [
             ("(y : A, z : P(y)) => B", GroupClose::Arrow),
             ("((A)) => B", GroupClose::Arrow),
+            ("(y : A, P(y)) -> B", GroupClose::Arrow),
             ("(type(T), \"(\") => B", GroupClose::Arrow),
             ("(x : A) , y", GroupClose::Other),
             ("(x, f(y)) => B", GroupClose::Arrow),
@@ -5348,6 +5400,24 @@ mod tests
         assert_eq!(molder.follow(unknown, &open), Follow::Refuted);
         assert_eq!(molder.follow(unknown, &resolve(".")), Follow::Possible);
         assert_eq!(molder.follow(unknown, &close), Follow::Possible);
+        // `*{}` (#4853): the unit's opener faces its first entry's hole and
+        // also its own `}` right after it, which may follow it; the labelled
+        // opener takes only a label's `.`, which a closer refutes.
+        let telescope = RuleName("telescope_expression");
+        let brace = resolve("}");
+        let unit_open = mold_in(&pbg, telescope, TileLabel("*{"), RightSide::Hole, &[
+            TileLabel("}"),
+        ])?;
+        assert_eq!(molder.follow(unit_open, &brace), Follow::Possible);
+        assert_eq!(molder.follow(unit_open, &identifier), Follow::Possible);
+        let labelled_open = mold_in(&pbg, telescope, TileLabel("*{"), RightSide::Closed, &[
+            TileLabel("."),
+        ])?;
+        assert_eq!(molder.follow(labelled_open, &brace), Follow::Refuted);
+        assert_eq!(
+            molder.follow(labelled_open, &resolve(".")),
+            Follow::Possible
+        );
         Ok(())
     }
 

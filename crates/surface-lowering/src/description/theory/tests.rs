@@ -457,6 +457,25 @@ fn the_value_function_alias_reads_as_its_thunk_1329()
         ),
         "next : T --> T; read : T --> Integer; "
     );
+    // The thin arrow writes the same box; the computation arrow is no box.
+    assert_eq!(
+        operations(
+            "theory Counting where { sort T : Type; oper next : T -> T; oper read : T -> Integer; }"
+        ),
+        "next : T --> T; read : T --> Integer; "
+    );
+    let source = "theory Counting where { sort T : Type; oper next : T -> -F T; }";
+    let faults: Vec<_> = described(source)
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.fault.clone(),
+                &source[usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())],
+            )
+        })
+        .collect();
+    assert_eq!(faults, [(DescriptionFault::Malformed, "T -> -F T")]);
 }
 
 #[test]
@@ -2747,6 +2766,26 @@ fn a_law_member_reads_its_statement_2356()
             String::from("eq(b, a)")
         ),
     ]);
+    // The thin arrow states the same law.
+    let thin = described(
+        "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) -> Path(Bool, eq(a, a), true);\n}\n",
+    );
+    assert_eq!(thin.diagnostics, []);
+    let law = &presented(&thin.declarations[0]).laws[0];
+    assert_eq!(
+        (
+            format!("{}", law.name),
+            law.binders.len(),
+            format!("{}", law.left),
+            format!("{}", law.right)
+        ),
+        (
+            String::from("refl"),
+            1,
+            String::from("eq(a, a)"),
+            String::from("true")
+        )
+    );
 }
 
 /// #4115: a stated law naming a variable it does not bind, or a head the

@@ -7,6 +7,9 @@ data Expr : Type where {
 def left : Expr;
 def left = Share(Lit(1)).left;
 
+def grouped : Expr;
+def grouped = (Share(Lit(1))).left;
+
 def both : Expr;
 def both = Add(Share(Lit(1)).left, Share(Lit(1)).right);
 

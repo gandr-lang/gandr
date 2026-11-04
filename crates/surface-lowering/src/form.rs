@@ -1708,6 +1708,154 @@ pub fn shape_of<'source>(
     }
 }
 
+/// Whether a written type classifies codes: a universe, the row kind, or an
+/// arrow between such types.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Kinded(pub bool);
+
+/// Whether a written type is the box, a function value's type: the value
+/// function `=>`, or an arrow `->` whose domain classifies no codes.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Boxed(pub bool);
+
+/// Whether the type written at `at` classifies codes, by its syntax: a
+/// universe, the row kind, or an arrow whose domain classifies codes,
+/// through parentheses. `scratch` is a reused reading buffer.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: kinded for `Type`, `Type[-]`, `Row`, `Type -> Type` and `(Type ->
+///   Type)`. Not kinded for any other type, a name an alias gives a kind
+///   included.
+/// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+/// - panics: none.
+/// - executable: none — the answer is read off the syntax tree, which a
+///   predicate could check only by repeating the walk.
+///
+/// # Errors
+/// [`LoweringRefusal::UnknownMold`].
+///
+/// # Termination
+/// Each round descends to an operand of the finite tree.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a kind arrow over universes stays the static Pi and an
+///   arrow between value types is the box.
+/// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
+/// - witness: `lower::tests::an_arrow_between_value_types_is_the_box_4853`
+pub fn classifies_codes<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    at: Placed,
+    scratch: &mut Pieces,
+) -> Result<Kinded, LoweringRefusal<'source>>
+{
+    let mut at = at;
+    loop {
+        let Some(node) = tree.node(at.node)
+        else {
+            return Ok(Kinded(false));
+        };
+        match shape_of(pbg, node)? {
+            Shape::Form {
+                former: Former::Universe,
+                ..
+            } => return Ok(Kinded(true)),
+            Shape::Form {
+                former: Former::TypeHead,
+                ..
+            } => {
+                let named = tree
+                    .fragment(at.node)
+                    .is_some_and(|text| SurfaceName::from(text).as_ref() == "Row");
+                return Ok(Kinded(named));
+            },
+            Shape::Form {
+                former: Former::ParenthesizedType | Former::ArrowType,
+                ..
+            } => {
+                read_pieces(pbg, tree, at.node, scratch)?;
+                let Some(first) = scratch.pieces.iter().find_map(|piece| match *piece {
+                    Piece::Operand(operand) => Some(operand),
+                    Piece::Tile { .. } => None,
+                })
+                else {
+                    return Ok(Kinded(false));
+                };
+                at = first;
+            },
+            Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+                return Ok(Kinded(false));
+            },
+        }
+    }
+}
+
+/// Whether the type written at `at` is the box, by its syntax: the value
+/// function `A => B`, or the arrow `A -> B` whose domain classifies no codes,
+/// as [`classifies_codes`] reads it. `scratch` is a reused reading buffer.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: boxed for `A => B` and for `A -> B` whose domain is not kinded;
+///   not boxed for a kind arrow such as `Type -> Type`, and for any other type.
+/// - provides: the box test of every reading that reads a function value's
+///   written type off its syntax, whichever arrow writes it.
+/// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+/// - panics: none.
+/// - executable: none — the answer is read off the syntax tree, which a
+///   predicate could check only by repeating the walk.
+///
+/// # Errors
+/// [`LoweringRefusal::UnknownMold`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda passed for a box parameter, an implicit box
+///   applied in a body and a model member at a box, each written with `->`,
+///   lower as their `=>` spelling does.
+/// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
+pub fn writes_box<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    at: NodeIndex,
+    scratch: &mut Pieces,
+) -> Result<Boxed, LoweringRefusal<'source>>
+{
+    let Some(node) = tree.node(at)
+    else {
+        return Ok(Boxed(false));
+    };
+    match shape_of(pbg, node)? {
+        Shape::Form {
+            former: Former::ValueFunctionType,
+            ..
+        } => Ok(Boxed(true)),
+        Shape::Form {
+            former: Former::ArrowType,
+            ..
+        } => {
+            read_pieces(pbg, tree, at, scratch)?;
+            let Some(domain) = scratch.pieces.iter().find_map(|piece| match *piece {
+                Piece::Operand(operand) => Some(operand),
+                Piece::Tile { .. } => None,
+            })
+            else {
+                return Ok(Boxed(false));
+            };
+            Ok(Boxed(!classifies_codes(pbg, tree, domain, scratch)?.0))
+        },
+        Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => Ok(Boxed(false)),
+    }
+}
+
 /// The named kind `mold` resolves to under `pbg`.
 ///
 /// # Specification
@@ -3361,6 +3509,37 @@ pub fn misspelt_keyword(
         }
         pbg.tile_label(LabelText(candidate))
             .map(|label| (span, TileName(label.0)))
+    })
+}
+
+/// Whether the keyword `keyword` opens a form where an expression stands, as
+/// `return` does and `where` does not.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: true exactly when `pbg` spells `keyword` as a tile one of whose
+///   molds opens a form of the expression sort.
+/// - fails: never.
+/// - panics: none.
+/// - economy: one look-up of the label and a scan of its few molds, taken only
+///   for a refused name.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `retur x` is `return` misspelt, and `here x`, one edit
+///   from `where`, which opens no expression, stays an unresolved name.
+/// - witness: `lower::tests::a_keyword_misspelt_is_refused_at_the_word_2259`
+#[must_use]
+pub fn opens_expression(
+    pbg: &Pbg,
+    keyword: TileName,
+) -> bool
+{
+    pbg.tile_label(LabelText(keyword.0)).is_some_and(|label| {
+        pbg.candidates(label).iter().any(|&mold| {
+            pbg.mold(mold)
+                .is_ok_and(|def| def.sort == gandr_surface_grammar::Sort::Expression)
+                && bool::from(pbg.mold_is_form_first(mold))
+        })
     })
 }
 

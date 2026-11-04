@@ -677,6 +677,36 @@ fn a_multi_output_constructor_describes_one_constructor_per_port()
     );
 }
 
+/// #4853: a rule names a port through parentheses, `(Split(t)).l`, as it names
+/// the port without them, `Split(t).l`.
+#[test]
+fn a_rule_names_a_port_through_parentheses_4853()
+{
+    let rules = |side: &str| {
+        let source = alloc::format!(
+            "data Tree : Type where {{ | Leaf : (n : Integer) --> Tree | Split : (t : Tree) --> (l : \
+             Tree, r : Tree) oper prune : (t : Tree) --> Tree; rule : prune({side}) ==> prune(t); }}"
+        );
+        let report = elaborated(SourceText::from(source.as_str()));
+        assert_eq!(report.diagnostics, [], "`{side}` reads as a port");
+        let [ref entry] = *report.declarations.as_slice()
+        else {
+            panic!("one description")
+        };
+        entry
+            .description
+            .rules
+            .iter()
+            .map(|face| (face.lhs.clone(), face.rhs.clone()))
+            .collect::<alloc::vec::Vec<_>>()
+    };
+    assert_eq!(
+        rules("(Split(t)).l"),
+        rules("Split(t).l"),
+        "a port written through parentheses is the port written without them"
+    );
+}
+
 #[test]
 fn a_value_function_field_is_the_function_former()
 {
@@ -737,6 +767,24 @@ fn a_value_function_field_is_the_function_former()
         1,
         "and the family keeps its rule"
     );
+    // The thin arrow writes the same box, so the fields read as the same codes.
+    let thin = "data Prog : Type where { | Done : (x : Integer) --> Prog | Get : (k : Integer -> Prog) --> Prog | \
+                Both : (k : (Integer, String) -> Prog) --> Prog | Twice : (k : Integer -> (Integer -> Prog)) --> \
+                Prog | Pure : (f : Integer -> Integer) --> Prog | Put : (s : Integer, k : Prog) --> Prog rule : \
+                Put(s, Put(u, k)) <=> Put(u, k); }";
+    let thin = elaborated(SourceText::from(thin));
+    assert_eq!(thin.diagnostics, []);
+    let [ref read] = *thin.declarations.as_slice()
+    else {
+        panic!("one description")
+    };
+    let read: Vec<_> = read
+        .description
+        .ctors
+        .iter()
+        .map(|ctor| &ctor.code)
+        .collect();
+    assert_eq!(read, codes);
 }
 
 /// #3194: the formatter spells `Ā => B` explicitly as the thunked arrow

@@ -2382,6 +2382,12 @@ fn a_multi_output_constructor_is_one_port_per_output()
         1_usize,
         "a port takes the constructor's inputs"
     );
+    let (grouped, grouped_fields) = port(body_named(&module, SurfaceName::from("grouped")));
+    assert_eq!(
+        (grouped, grouped_fields.len()),
+        (ConstructorTag::from(1_usize), 1_usize),
+        "a port selected through parentheses is the port selected without them"
+    );
     let (tag, fields) = port(body_named(&module, SurfaceName::from("both")));
     assert_eq!(
         tag,

@@ -2396,8 +2396,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: `Ok` exactly when the operand is a lambda, `fun (X) { T }`,
     ///   filed in [`Self::static_lambdas`] so it lowers as the static lambda
     ///   whose body is the family the operation moves its value in (#4508), or
-    ///   a bare name resolving to a binder whose written type is a thunk or the
-    ///   alias, `P : A => Type`, whose calls are that family (#3786).
+    ///   a bare name resolving to a binder whose written type is a thunk or a
+    ///   box, `P : A -> Type` or `P : A => Type`, whose calls are that family
+    ///   (#3786).
     /// - fails: the unannotated refusal at `site` for any other operand; the
     ///   refusals the tree's molds yield and the name's own refusal from its
     ///   resolution.
@@ -2456,12 +2457,18 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     return Err(unannotated);
                 };
-                match self.tree.node(written).map(|node| shape_of(self.pbg, node)) {
+                let thunked = matches!(
+                    self.tree.node(written).map(|node| shape_of(self.pbg, node)),
                     Some(Ok(Shape::Form {
-                        former: Former::ThunkType | Former::ValueFunctionType,
+                        former: Former::ThunkType,
                         ..
-                    })) => Ok(()),
-                    Some(Ok(_) | Err(_)) | None => Err(unannotated),
+                    }))
+                );
+                if thunked || self.boxes(written)?.0 {
+                    Ok(())
+                }
+                else {
+                    Err(unannotated)
                 }
             },
             Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => Err(unannotated),

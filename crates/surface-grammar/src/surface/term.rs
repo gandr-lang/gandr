@@ -4510,8 +4510,8 @@ fn primary_expressions(
         AdaptationReason("folded into match_expression: the optional `-> T` answer type is an inline slot after the scrutinee and the reserved `with` view, not a standalone form; it is the constant motive `[_. T]`, and the later dependent motive replaces its contents rather than its position"),
     ));
     out.push(matching);
-    // The capability scope `handle c : I { … } with { pure(x) => e, oper
-    // op(p, k) => e, … }`: a deep handler for the interface `I` whose body is
+    // The capability scope `handle c : I { … } with { | pure(x) => e | oper
+    // op(p, k) => e … }`: a deep handler for the interface `I` whose body is
     // handed the capability `c` it introduces, the only form that brings a
     // capability into a body's scope. `I` is the path of a host interface or
     // a theory, `std.io.Console.Eff`, whose value sorts follow it as a model
@@ -4521,8 +4521,11 @@ fn primary_expressions(
     // the body: the return clause, spelled with the returner's own keyword
     // `pure`, binds the body's result, and each operation clause, spelled with
     // the keyword a signature declares an operation with, binds the
-    // operation's payload and its resumption. A clause is keyword-led after a
-    // `{` or `,` this rule owns, so no expression hole competes with it. A
+    // operation's payload and its resumption. Each clause opens with an arm
+    // bar, as a match's arm does, or the clauses are separated by `,`; a
+    // clause is keyword-led after the `{`, the `,` or the bar this rule owns,
+    // so no expression hole competes with it, and the token after the `{`
+    // tells the two spellings apart. A
     // theory's scope may name a model of the theory in place of the clauses,
     // `with M`, or write no `with`, the one model of the theory in scope
     // answering it. The tree-sitter grammar has no handler, so the kind is in
@@ -4553,6 +4556,13 @@ fn primary_expressions(
                         handler_clause(),
                         repeat(seq([t(TileLabel(",")), handler_clause()])),
                         opt(t(TileLabel(","))),
+                        t(TileLabel("}")),
+                    ]),
+                    seq([
+                        t(TileLabel("{")),
+                        t(TileLabel("arm_bar")),
+                        handler_clause(),
+                        repeat(seq([t(TileLabel("arm_bar")), handler_clause()])),
                         t(TileLabel("}")),
                     ]),
                     t(TileLabel("type_identifier")),

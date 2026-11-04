@@ -4130,12 +4130,13 @@ impl<'source> Lowerer<'_, 'source>
 
     /// What the written type `written`, its parentheses stripped, answers a
     /// thunk's body or a bare lambda it types: `C` for `+U C`, `-F B` for
-    /// `() => B` and the arrows any other value function space `(A1, …, An)
-    /// => B` stands for, each read under the outermost frame.
+    /// `() -> B` and the arrows any other box `(A1, …, An) -> B` stands for,
+    /// each read under the outermost frame.
     ///
     /// # Specification
-    /// - ensures: the answer for a thunk type of one operand and for a value
-    ///   function space; nothing for any other type.
+    /// - ensures: the answer for a thunk type of one operand and for a box,
+    ///   either arrow writing it as [`crate::form::writes_box`] reads it;
+    ///   nothing for any other type.
     /// - fails: as [`Self::unwrapped`].
     /// - panics: none.
     ///
@@ -4147,6 +4148,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   [`Self::parameters_classify`].
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::native::tests::an_argument_lambda_s_binder_is_typed_by_its_parameter_1948`
+    /// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |answer| answer.is_none_or(|answer| answer.frame == Frame::Outermost)))]
     fn signed_answer(
         &mut self,
@@ -4157,6 +4159,7 @@ impl<'source> Lowerer<'_, 'source>
             && written.keyword.is_some_and(|at| {
                 type_former(self.name_at(at)) == Maybe::Present(TypeFormer::Thunk)
             });
+        let boxed = self.boxes(written.node)?.0;
         Ok(match *written.operands.as_slice() {
             [body] if thunked => Some(Answer {
                 node: body,
@@ -4164,25 +4167,23 @@ impl<'source> Lowerer<'_, 'source>
                 over: Over::Written,
                 arm: Maybe::Absent(passed::Absent::Unpassed),
             }),
-            [domain, codomain] if written.former == Former::ValueFunctionType => {
-                match self.unwrapped(domain)? {
-                    Maybe::Present(Unwrapped {
-                        former: Former::ParenthesizedType,
-                        ref operands,
-                        ..
-                    }) if operands.is_empty() => Some(Answer {
-                        node: codomain,
-                        frame: Frame::Outermost,
-                        over: Over::Returning,
-                        arm: Maybe::Absent(passed::Absent::Unpassed),
-                    }),
-                    Maybe::Present(_) | Maybe::Absent(_) => Some(Answer {
-                        node: written.node,
-                        frame: Frame::Outermost,
-                        over: Over::Valued { taken: 0_usize },
-                        arm: Maybe::Absent(passed::Absent::Unpassed),
-                    }),
-                }
+            [domain, codomain] if boxed => match self.unwrapped(domain)? {
+                Maybe::Present(Unwrapped {
+                    former: Former::ParenthesizedType,
+                    ref operands,
+                    ..
+                }) if operands.is_empty() => Some(Answer {
+                    node: codomain,
+                    frame: Frame::Outermost,
+                    over: Over::Returning,
+                    arm: Maybe::Absent(passed::Absent::Unpassed),
+                }),
+                Maybe::Present(_) | Maybe::Absent(_) => Some(Answer {
+                    node: written.node,
+                    frame: Frame::Outermost,
+                    over: Over::Valued { taken: 0_usize },
+                    arm: Maybe::Absent(passed::Absent::Unpassed),
+                }),
             },
             _ => None,
         })
@@ -5853,6 +5854,11 @@ impl<'source> Lowerer<'_, 'source>
     {
         let unplanned = Ok(arity::Planned(false));
         let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        else {
+            return unplanned;
+        };
+        // `(C a).l` selects as `C(a).l` does.
+        let Some(target) = self.ungrouped_target(target, site.at.node)?
         else {
             return unplanned;
         };

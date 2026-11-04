@@ -1628,12 +1628,12 @@ impl Reader<'_, '_>
     }
 
     /// The thunk type an operation's judgment writes whole, when it writes one,
-    /// as a thunk or as the value-function alias that stands for one.
+    /// as a thunk or as the box that stands for one.
     ///
     /// # Specification
     /// - ensures: the one piece left in `run` when it is a type whose first
-    ///   tile is `+U`, or whose own tile is `=>`, and nothing otherwise; `run`
-    ///   is not advanced.
+    ///   tile is `+U`, or a box as [`Self::boxed`] reads one, and nothing
+    ///   otherwise; `run` is not advanced.
     /// - fails: the piece's reading refusal.
     /// - panics: none.
     ///
@@ -1657,13 +1657,8 @@ impl Reader<'_, '_>
         };
         let pieces = self.pieces(at)?;
         let thunk = match *pieces.as_slice() {
-            [
-                Piece::Operand(_),
-                Piece::Tile { ref label, .. },
-                Piece::Operand(_),
-            ] => label.as_ref() == "=>",
             [Piece::Tile { ref label, .. }, ..] => label.as_ref() == "+U",
-            _ => false,
+            _ => self.boxed(&pieces)?.is_some(),
         };
         Ok(thunk.then_some(at))
     }
@@ -1748,20 +1743,21 @@ impl Reader<'_, '_>
     }
 
     /// Read a thunk of curried arrows, `+U[ω] (A1 -> … -> An -> -F R)`, or the
-    /// value-function alias `A => R` over one bare domain, as the boundary
+    /// box `A -> R` over one bare domain, as the boundary
     /// `(_ : A1, …, _ : An) --> R`, beside the type formers written: the
-    /// thunk, each arrow and the returner, or the alias alone.
+    /// thunk, each arrow and the returner, or the box alone.
     ///
     /// # Specification
-    /// - requires: `thunk` is a type whose first tile is `+U`, or the alias.
+    /// - requires: `thunk` is a type whose first tile is `+U`, or a box as
+    ///   [`Self::boxed`] reads one.
     /// - ensures: one unnamed input per arrow's domain, in written order, and
     ///   the one output the returner returns, each at its written sort;
     ///   parentheses around the body or a codomain are read through; the grade
     ///   is `ω` or unwritten; the formers are the thunk's node at the value
     ///   sort, then each arrow's and the returner's at the computation sort.
-    ///   The alias reads as its thunk `+U (A -> -F R)`: its domain the one
-    ///   unnamed input, its result the one output, its node the one former, at
-    ///   the value sort.
+    ///   The box, `A -> R` or `A => R`, reads as its thunk `+U (A -> -F R)`:
+    ///   its domain the one unnamed input, its result the one output, its node
+    ///   the one former, at the value sort.
     /// - fails: any other grade, and a body that is not arrows ending in a
     ///   returner, are malformed.
     /// - panics: none.
@@ -1774,7 +1770,8 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — one and two arrows, a builtin result and a grade
     ///   other than `ω` separate the inputs read, the output read and the
-    ///   refusal; the alias and its thunk read as the same operation.
+    ///   refusal; the box in each spelling and its thunk read as the same
+    ///   operation.
     /// - witness: `description::theory::tests::a_thunk_type_reads_as_the_operation_it_curries_1226`
     /// - witness: `description::theory::tests::the_value_function_alias_reads_as_its_thunk_1329`
     fn thunk_boundary(
@@ -1783,13 +1780,7 @@ impl Reader<'_, '_>
     ) -> Result<(Boundary, Vec<(ByteSpan, GroundSort)>), DescriptionDiagnostic>
     {
         let pieces = self.pieces(thunk)?;
-        if let [
-            Piece::Operand(domain),
-            Piece::Tile { ref label, .. },
-            Piece::Operand(result),
-        ] = *pieces.as_slice()
-            && label.as_ref() == "=>"
-        {
+        if let Some((domain, result)) = self.boxed(&pieces)? {
             return Ok((
                 Self::curried(&[domain], result, |sort| self.text(sort).0),
                 Vec::from([(thunk.span, GroundSort::Value)]),
@@ -2025,7 +2016,7 @@ impl Reader<'_, '_>
     ///   [`Self::law_side`] reads one; beside it, the bytes of its name, its
     ///   statement, each binder, each hypothesis and each node of every side.
     /// - fails: [`SignatureFault::LawStatement`] for a statement that is not a
-    ///   value function type from named binders to a path, or a sort binder
+    ///   box ([`Self::boxed`]) from named binders to a path, or a sort binder
     ///   after a hypothesis; a malformed sort or side as its reader refuses it.
     /// - panics: none.
     /// - executable: none — the law read is source syntax.
@@ -2054,13 +2045,10 @@ impl Reader<'_, '_>
             fault: DescriptionFault::Signature(SignatureFault::LawStatement),
         };
         let pieces = self.pieces(statement)?;
-        let mut arrow = Run::new(&pieces, statement.span);
-        let domain = arrow.take()?;
-        if !arrow.eat(Spelling("=>")).0 {
+        let Some((domain, concluded)) = self.boxed(&pieces)?
+        else {
             return Err(refused(statement));
-        }
-        let concluded = arrow.take()?;
-        arrow.end()?;
+        };
         let entries = self.pieces(domain)?;
         let mut entry = Run::new(&entries, domain.span);
         if !entry.eat(Spelling("(")).0 {

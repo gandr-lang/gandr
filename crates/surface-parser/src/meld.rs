@@ -1966,16 +1966,18 @@ impl<'pbg> MeldState<'pbg>
     /// - ensures: the grammar's application mold exactly when `mold` is no
     ///   application, `sort` is the expression sort, `mold` starts an operand
     ///   by itself, the slope's top is a complete expression operand whose
-    ///   source does not end in `}`, a form is open, and the open form is no
-    ///   shell form. `None` otherwise.
+    ///   source does not end in `}` or opens with a connective's opener `*{`,
+    ///   `+{`, `&{` or `#{`, a form is open, and the open form is no shell
+    ///   form. `None` otherwise.
     /// - panics: none.
-    /// - economy: a few comparisons and one binary search of the shell openers.
-    ///   No string is compared.
+    /// - economy: a few comparisons, three byte reads and one binary search of
+    ///   the shell openers. No string is compared.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `f x y` applies twice, a shell block's words stay
-    ///   flat, `if c { a } else { b } x` stays two statements, a call `f(x)`
-    ///   stays a call, and two stray words at the root stay strays.
+    ///   flat, `if c { a } else { b } x` stays two statements, a braced value
+    ///   `*{}` or `+{.l = a}` takes the next argument, a call `f(x)` stays a
+    ///   call, and two stray words at the root stay strays.
     /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
     #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application() && application != mold && sort == Sort::Expression))]
     fn juxtaposed(
@@ -2001,9 +2003,16 @@ impl<'pbg> MeldState<'pbg>
             return None;
         }
         // A block-like statement ends at its brace, as Rust's does: `if c { a }
-        // else { b } x` is two statements.
+        // else { b } x` is two statements. A braced value opens with its
+        // connective's sign, and no statement does.
+        let bytes = self.source.as_bytes();
         let last = usize::try_from(top.end).ok()?.checked_sub(1)?;
-        if self.source.as_bytes().get(last) == Some(&b'}') {
+        let start = usize::try_from(top.start).ok()?;
+        let braced_value = matches!(
+            bytes.get(start .. start.saturating_add(2)),
+            Some(&[b'*' | b'+' | b'&' | b'#', b'{'])
+        );
+        if bytes.get(last) == Some(&b'}') && !braced_value {
             return None;
         }
         // The root holds declarations alone, so two words side by side there

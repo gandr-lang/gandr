@@ -218,6 +218,9 @@ fn juxtaposition_applies_outside_a_shell_form_4853() -> Result<(), Box<dyn Error
         ("def f = g x + h y;", 2),
         ("def f = #!{ echo a b };", 0),
         ("def f() -> Integer { if c { a } else { b } x }", 0),
+        ("def f = g *{} x;", 2),
+        ("def f = g +{.l = a} *{.x = b} y;", 3),
+        ("def f = g &{ .l => a } x;", 2),
     ];
     let grammar = built();
     for (source, expected) in cases {

@@ -307,9 +307,10 @@ impl Reader<'_, '_>
     ///   order; `bind a . t` is the abstraction of the atom `a` over `t`, the
     ///   name `a` inside it that atom's occurrence and outside it a variable; a
     ///   variable spelled in a type hole, as a pinned rewrite endpoint is, is a
-    ///   variable. The written term holds one node per node of the term, in
-    ///   pre-order, each at its own bytes and an application or an abstraction
-    ///   with its head's or its atom's.
+    ///   variable; a port `C(a, …).l`, its call in parentheses or not, is the
+    ///   constructor `C.l` over `a, …`. The written term holds one node per
+    ///   node of the term, in pre-order, each at its own bytes and an
+    ///   application or an abstraction with its head's or its atom's.
     /// - fails: forms outside names, applications, parenthesized lists and
     ///   abstractions are located.
     /// - panics: none.
@@ -330,6 +331,7 @@ impl Reader<'_, '_>
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
     /// - witness: `description::theory::tests::an_applied_left_variable_reads_as_its_instantiation`
     /// - witness: `description::theory::tests::a_rule_term_names_an_atom_inside_its_abstraction`
+    /// - witness: `description::tests::a_rule_names_a_port_through_parentheses_4853`
     #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
     pub(super) fn free_term(
         &self,
@@ -465,7 +467,20 @@ impl Reader<'_, '_>
                         && dot == TileName::DOT
                         && field == TileName::IDENTIFIER
                     {
-                        let called = self.pieces(target)?;
+                        // `(C a).l` names the port `C(a).l` does.
+                        let mut target = target;
+                        let mut called = self.pieces(target)?;
+                        while let [
+                            Piece::Tile { label: open, .. },
+                            Piece::Operand(inner),
+                            Piece::Tile { label: close, .. },
+                        ] = *called.as_slice()
+                            && open == TileName::PAREN_OPEN
+                            && close == TileName::PAREN_CLOSE
+                        {
+                            target = inner;
+                            called = self.pieces(target)?;
+                        }
                         let mut call = Run::new(&called, target.span);
                         let head = call.take()?;
                         if !matches!(self.pieces(head)?.as_slice(), [Piece::Tile { label, .. }] if constructor(label.as_ref()))

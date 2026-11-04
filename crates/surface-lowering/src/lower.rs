@@ -621,6 +621,7 @@ use crate::form::applied_word;
 use crate::form::bare_bracket;
 use crate::form::declined_feature;
 use crate::form::misspelt_keyword;
+use crate::form::opens_expression;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::import::ImportResolution;
@@ -6869,7 +6870,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   unless the collection pass gave it an owner of its own — a signature
     ///   type written inside a member signature it does not type — so a refusal
     ///   anywhere under a declaration reaches the declaration its type or body
-    ///   belongs to.
+    ///   belongs to. Under an application spine `f x y`, which is read as the
+    ///   pieces of one call, each application down its left side and each
+    ///   argument's group also give their children that slot, because the
+    ///   spine's reader reads them as no forms of their own.
     /// - provides: the ownership half of the one-refusal-per-declaration rule.
     /// - fails: never.
     /// - panics: none.
@@ -6880,6 +6884,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   refused.
     /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
+    /// - witness: `lower::tests::a_juxtaposed_call_is_the_call_it_spells_4853`
     #[spec(
         captures: before = (
             usize::from(self.collected.owner.count()),
@@ -6904,6 +6909,42 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return;
         };
+        self.own_children(position, slot);
+        let Some(application) = self.pbg.application()
+        else {
+            return;
+        };
+        let mut spine = position;
+        while self
+            .tree
+            .node(spine)
+            .is_some_and(|node| node.label() == NodeLabel::Meld(application))
+        {
+            let mut parts = self.tree.children(spine).filter(|&child| {
+                self.tree
+                    .node(child)
+                    .is_some_and(|node| !matches!(node.label(), NodeLabel::Space | NodeLabel::Doc))
+            });
+            let (Some(left), Some(_tile), Some(right)) = (parts.next(), parts.next(), parts.next())
+            else {
+                return;
+            };
+            self.own_children(left, slot);
+            self.own_children(right, slot);
+            spine = left;
+        }
+    }
+
+    /// Give every unowned child of `position` the slot `slot`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn own_children(
+        &mut self,
+        position: NodeIndex,
+        slot: SlotIndex,
+    )
+    {
         for child in self.tree.children(position) {
             if let Maybe::Absent(_) = self.collected.owner_of(child) {
                 self.collected.own(child, slot);
@@ -7646,9 +7687,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   has run.
     /// - ensures: each slot of the current source whose refusal is one of the
     ///   two above, inside a half of the slot, is refused at the word instead
-    ///   when [`misspelt_keyword`] reads the word. The refusal keeps its node,
-    ///   names the extra operand's form or the declaration's form, and names
-    ///   the keyword the word misspells. Every other refusal is unchanged.
+    ///   when [`misspelt_keyword`] reads the word, and, for a word that heads
+    ///   an application, when the keyword opens an expression
+    ///   ([`opens_expression`]). The refusal keeps its node, names the extra
+    ///   operand's form or the declaration's form, and names the keyword the
+    ///   word misspells. Every other refusal is unchanged.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause restates the walk over the slots.
@@ -7747,7 +7790,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 };
                 name
             };
-            if let Some((word, keyword)) = misspelt_keyword(pbg, tree, within, extra) {
+            // A word that heads an application stands where an expression
+            // starts, so it misspells only a keyword that opens one there:
+            // `here x` is no `where`.
+            let applied = matches!(refusal, LoweringRefusal::UnresolvedName { .. });
+            if let Some((word, keyword)) = misspelt_keyword(pbg, tree, within, extra)
+                && (!applied || opens_expression(pbg, keyword))
+            {
                 slot.refusal = Maybe::Present((position, LoweringRefusal::MalformedForm {
                     span: word,
                     form,
@@ -10500,9 +10549,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::answered_arrow`], and a lambda passed for
-    ///   a parameter whose type names the parameters before it.
+    ///   a parameter whose type names the parameters before it, its box written
+    ///   with either arrow.
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
+    /// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(_, codomain)| matches!(codomain.over, native::Over::Written | native::Over::Returning | native::Over::Valued { .. }))))]
     fn arrow_of(
         &mut self,
@@ -10516,6 +10567,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         let unwrapped = self.unwrapped(answer.node)?;
         let Maybe::Present(native::Unwrapped {
+            node: written,
             former,
             ref operands,
             ..
@@ -10539,7 +10591,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 ..answer
             })));
         };
-        if former != Former::ValueFunctionType {
+        // A value the parameter takes is typed by the box, either arrow
+        // writing it.
+        if !self.boxes(written)?.0 {
             return Ok(None);
         }
         let Some(domains) = self.alias_domains(domain, answer.frame)?
@@ -11948,15 +12002,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// The component patterns of a tuple pattern standing as a `let`
-    /// statement's binder, in order.
+    /// The component patterns of a tuple pattern `(p, q)` or a product
+    /// pattern `*{p, q}` standing as a `let` statement's binder, in order.
     ///
     /// # Specification
     /// - requires: `binder` is the pattern operand of the statement at
     ///   `statement`.
-    /// - ensures: each component of a tuple pattern, in order, with its label
-    ///   when it is written `.l` or `.l = p`: the label tile itself is the
-    ///   component of a punned `.l`; absent for any other pattern.
+    /// - ensures: each component of a tuple or a product pattern, in order,
+    ///   with its label when it is written `.l` or `.l = p`: the label tile
+    ///   itself is the component of a punned `.l`; the two patterns of the same
+    ///   components give the same components; absent for any other pattern.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold, and a
     ///   fault naming the `let` statement for a repaired pattern or a tile out
     ///   of place among the components.
@@ -11973,6 +12028,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     /// - witness: `lower::tests::a_split_of_three_components_lowers`
     /// - witness: `lower::arity::tests::a_labelled_pattern_binds_each_output_by_its_label`
+    /// - witness: `lower::tests::a_product_binder_splits_as_the_tuple_binder_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |components| match *components { Maybe::Present(ref parts) => parts.len() >= 2, Maybe::Absent(_) => true }))]
     fn tuple_binders(
         &self,
@@ -11988,16 +12044,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(Maybe::Absent(untupled::Absent::OtherPattern));
         };
-        if name != FormName::TUPLE_PATTERN {
-            return Ok(Maybe::Absent(untupled::Absent::OtherPattern));
-        }
+        let (open, close) = match name {
+            FormName::TUPLE_PATTERN => (TileName::PAREN_OPEN, TileName::PAREN_CLOSE),
+            FormName::TELESCOPE_PATTERN => (TileName::RECORD, TileName::BRACE_CLOSE),
+            _ => return Ok(Maybe::Absent(untupled::Absent::OtherPattern)),
+        };
         let mut pieces = Pieces::new();
         read_pieces(self.pbg, self.tree, binder.node, &mut pieces)?;
         if let Maybe::Present(repaired) = pieces.repair {
-            return Err(repaired.refusal(FormName::TUPLE_PATTERN));
+            return Err(repaired.refusal(name));
         }
         let mut cursor = Cursor::new(&pieces.pieces, binder.span);
-        closed(statement, &mut cursor, TileName::PAREN_OPEN)?;
+        closed(statement, &mut cursor, open)?;
         let mut components = Vec::new();
         loop {
             let component = if let Maybe::Present(_dot) = cursor.tile(TileName::DOT) {
@@ -12015,11 +12073,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             components.push(component);
             if let Maybe::Present(_) = cursor.tile(TileName::COMMA)
-                && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
+                && let Maybe::Absent(_) = cursor.at(close)
             {
                 continue;
             }
-            closed(statement, &mut cursor, TileName::PAREN_CLOSE)?;
+            closed(statement, &mut cursor, close)?;
             break;
         }
         if components.len() < 2 {
@@ -13297,6 +13355,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     former: Former::Constructor | Former::Name,
                     ..
                 } => break target,
+                // `(F a).m` is the selection `F(a).m` writes.
+                Shape::Form {
+                    former: Former::Parenthesized,
+                    ..
+                } => {
+                    let Some(inner) = self.ungrouped_target(target, site.at.node)?
+                    else {
+                        return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
+                    };
+                    target = inner;
+                },
                 Shape::Form {
                     former: Former::Call,
                     ..
@@ -15922,13 +15991,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 
     /// Whether a binder whose type is written at `written` holds a function:
-    /// the type is a thunk or the bridge `A => B`, read through each type
-    /// family it names to the type the family stands for.
+    /// the type is a thunk or the box, `A -> B` or the bridge `A => B`, read
+    /// through each type family it names to the type the family stands for.
     ///
     /// # Specification
     /// - requires: `written` is a node of the tree, its plan made.
-    /// - ensures: `true` exactly when the walk meets a thunk type or the bridge
-    ///   before any other form.
+    /// - ensures: `true` exactly when the walk meets a thunk type or a box, as
+    ///   [`crate::form::writes_box`] reads it, before any other form.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
     ///   allowance.
     /// - panics: none.
@@ -15947,6 +16016,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   each called where a type is read and observed through the unquote it
     ///   plans.
     /// - witness: `lower::tests::a_binder_at_a_family_standing_for_a_function_unquotes_its_call_522`
+    /// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
     fn holds_function(
         &mut self,
         written: NodeIndex,
@@ -15967,13 +16037,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 return Ok(HoldsFunction(false));
             };
-            return Ok(HoldsFunction(matches!(
+            let thunked = matches!(
                 shape_of(self.pbg, node),
                 Ok(Shape::Form {
-                    former: Former::ThunkType | Former::ValueFunctionType,
+                    former: Former::ThunkType,
                     ..
                 })
-            )));
+            );
+            return Ok(HoldsFunction(thunked || self.boxes(position)?.0));
         }
     }
 
@@ -16234,11 +16305,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   value type under the arrow's own frame, since the codomain binds
     ///   nothing, and a kind's codomain is a kind; any other arrow standing so
     ///   is the box [`Self::boxed`] plans, the value function `=>` writes, so
-    ///   no arrow at a result is curried. Any other arrow stands as a
-    ///   computation type: one whose domain is one binder is the dependent
-    ///   arrow [`Self::dependent_arrow`] plans, and the rest read their domain
-    ///   as a value type and their codomain as a computation type. Each is
-    ///   planned over both operands.
+    ///   no arrow at a result is curried. An arrow quoted in a term stands so
+    ///   too, unless [`Self::writes_computation`] reads it as written as a
+    ///   computation type: a type operator's argument or a type family's body
+    ///   writes the box as `=>` did. Any other arrow stands as a computation
+    ///   type: one whose domain is one binder is the dependent arrow
+    ///   [`Self::dependent_arrow`] plans, and the rest read their domain as a
+    ///   value type and their codomain as a computation type. Each is planned
+    ///   over both operands.
     /// - provides: the function type of the fragment, the box of a function
     ///   value and the classifier of a type operator.
     /// - fails: yields the wrong-sort refusal where neither sort suits the
@@ -16253,13 +16327,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — an arrow where a computation type is read, where a
     ///   value type is read over universes, nested to the right as an
     ///   operator's classifier, over a computation codomain where a value type
-    ///   is read, a box over value types, and a kind over a type that
-    ///   classifies no codes, each asserted as the exact core node read back
-    ///   out of the arena or the exact refusal.
+    ///   is read, a box over value types, a kind over a type that classifies no
+    ///   codes, and an arrow quoted in a term over a value type and over a
+    ///   returner, each asserted as the exact core node read back out of the
+    ///   arena or the exact refusal.
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
     /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
     /// - witness: `lower::tests::a_computation_codomain_of_a_box_is_refused`
     /// - witness: `lower::tests::an_arrow_between_value_types_is_the_box_4853`
+    /// - witness: `lower::tests::a_quoted_arrow_is_the_box_its_fat_spelling_wrote_4853`
     /// - witness: `lower::arity::tests::a_body_after_equals_is_its_block_4853`
     /// - witness: `lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
     /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
@@ -16267,7 +16343,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| {
             ret.is_err()
                 || match self.plans.get(site.at.node) {
-                    | Some(&(Plan::StaticPi(..) | Plan::ValueFunction(..) | Plan::Telescope(..))) => matches!(site.reading, Reading::ValueType(_) | Reading::Result(_)),
+                    | Some(&(Plan::StaticPi(..) | Plan::ValueFunction(..) | Plan::Telescope(..))) => matches!(site.reading, Reading::ValueType(_) | Reading::Result(_) | Reading::Value(_)),
                     | Some(&(Plan::Arrow(..) | Plan::DependentArrow(..))) => !matches!(site.reading, Reading::ValueType(_) | Reading::Result(_)),
                     | _ => false,
                 }
@@ -16279,7 +16355,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let value_typed = matches!(site.reading, Reading::ValueType(_) | Reading::Result(_));
+        // A type quoted in a term is the box `=>` wrote, unless it is written
+        // as a computation type.
+        let quoted_box =
+            matches!(site.reading, Reading::Value(_)) && !self.writes_computation(site.at)?.0;
+        let value_typed =
+            matches!(site.reading, Reading::ValueType(_) | Reading::Result(_)) || quoted_box;
         let produced = if value_typed {
             Produced::ValueType
         }
@@ -16322,15 +16403,75 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Whether the type written at `domain` classifies codes, by its syntax: a
-    /// universe, the row kind, or an arrow whose domain classifies codes,
-    /// through parentheses.
+    /// Whether the type written at `domain` classifies codes, as
+    /// [`crate::form::classifies_codes`] reads it over this lowering's
+    /// scratch buffer.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: kinded for `Type`, `Type[-]`, `Row`, `Type -> Type` and
-    ///   `(Type -> Type)`. Not kinded for any other type, a name an alias gives
-    ///   a kind included.
+    /// - ensures: as [`crate::form::classifies_codes`].
+    /// - fails: as [`crate::form::classifies_codes`].
+    /// - panics: none.
+    /// - executable: none — the answer is read off the syntax tree, which a
+    ///   predicate could check only by repeating the walk.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::form::classifies_codes`].
+    /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
+    /// - witness: `lower::tests::an_arrow_between_value_types_is_the_box_4853`
+    fn ranges_over_codes(
+        &mut self,
+        domain: Placed,
+    ) -> Result<crate::form::Kinded, LoweringRefusal<'source>>
+    {
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = crate::form::classifies_codes(self.pbg, self.tree, domain, &mut scratch);
+        self.scratch = scratch;
+        read
+    }
+
+    /// Whether the type written at `at` is the box, as
+    /// [`crate::form::writes_box`] reads it over this lowering's scratch
+    /// buffer.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`crate::form::writes_box`].
+    /// - fails: as [`crate::form::writes_box`].
+    /// - panics: none.
+    /// - executable: none — the answer is read off the syntax tree, which a
+    ///   predicate could check only by repeating the walk.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::form::writes_box`].
+    /// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
+    pub(super) fn boxes(
+        &mut self,
+        at: NodeIndex,
+    ) -> Result<crate::form::Boxed, LoweringRefusal<'source>>
+    {
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = crate::form::writes_box(self.pbg, self.tree, at, &mut scratch);
+        self.scratch = scratch;
+        read
+    }
+
+    /// Whether the type written at `at` is written as a computation type, by
+    /// its syntax: a returner, a lazy product or a lazy record, or an arrow
+    /// whose output is written so, through the parentheses of one entry.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: computed for `-F B`, `-F [E] B`, `C & D`, `&{ .l : C }`, `A
+    ///   -> -F B` and `A -> B -> -F C`, and through one pair of parentheses
+    ///   around each; not computed for any other type: `A -> B`, `A -> (B ->
+    ///   C)` and a group of several entries.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
     /// - panics: none.
     /// - executable: none — the answer is read off the syntax tree, which a
@@ -16343,39 +16484,51 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// Each round descends to an operand of the finite tree.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a kind arrow over universes stays the static Pi and
-    ///   an arrow between value types is the box.
-    /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
-    /// - witness: `lower::tests::an_arrow_between_value_types_is_the_box_4853`
-    fn ranges_over_codes(
+    /// - hypothesis: L3 — as [`Self::arrow`]: a quoted arrow over a value type
+    ///   is the box and one over a returner the computation arrow.
+    /// - witness: `lower::tests::a_quoted_arrow_is_the_box_its_fat_spelling_wrote_4853`
+    fn writes_computation(
         &mut self,
-        domain: Placed,
-    ) -> Result<arity::Kinded, LoweringRefusal<'source>>
+        at: Placed,
+    ) -> Result<arity::Computed, LoweringRefusal<'source>>
     {
-        let mut at = domain;
+        let mut at = at;
         loop {
-            match self.form_at(at)? {
-                Some((_, Former::Universe)) => return Ok(arity::Kinded(true)),
-                Some((_, Former::TypeHead)) => {
-                    return Ok(arity::Kinded(self.name_at(at).as_ref() == "Row"));
+            let arrow = match self.form_at(at)? {
+                Some((
+                    _,
+                    Former::ReturnerType | Former::LazyProductType | Former::LazyRecordType,
+                )) => {
+                    return Ok(arity::Computed(true));
                 },
-                Some((_, Former::ParenthesizedType | Former::ArrowType)) => {
-                    let mut scratch = core::mem::take(&mut self.scratch);
-                    let read = read_pieces(self.pbg, self.tree, at.node, &mut scratch).map(|()| {
-                        scratch.pieces.iter().find_map(|piece| match *piece {
-                            Piece::Operand(operand) => Some(operand),
-                            Piece::Tile { .. } => None,
-                        })
-                    });
-                    self.scratch = scratch;
-                    let Some(first) = read?
-                    else {
-                        return Ok(arity::Kinded(false));
-                    };
-                    at = first;
-                },
-                _ => return Ok(arity::Kinded(false)),
-            }
+                Some((_, Former::ArrowType)) => true,
+                Some((_, Former::ParenthesizedType)) => false,
+                _ => return Ok(arity::Computed(false)),
+            };
+            let mut scratch = core::mem::take(&mut self.scratch);
+            let read = read_pieces(self.pbg, self.tree, at.node, &mut scratch).map(|()| {
+                let mut operands = scratch.pieces.iter().filter_map(|piece| match *piece {
+                    Piece::Operand(operand) => Some(operand),
+                    Piece::Tile { .. } => None,
+                });
+                // An arrow's output is its last operand; parentheses group
+                // only around one entry.
+                if arrow {
+                    operands.last()
+                }
+                else {
+                    match (operands.next(), operands.next()) {
+                        (Some(sole), None) => Some(sole),
+                        (Some(_), Some(_)) | (None, _) => None,
+                    }
+                }
+            });
+            self.scratch = scratch;
+            let Some(next) = read?
+            else {
+                return Ok(arity::Computed(false));
+            };
+            at = next;
         }
     }
 
@@ -16886,14 +17039,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 
     /// The domain and the codomain of `classifier` when it is a static arrow:
-    /// its parentheses stripped, an arrow `K -> J` of two operands, the
-    /// classifier of a type operator where a value type is written.
+    /// its parentheses stripped, an arrow `K -> J` of two operands that is no
+    /// box, the classifier of a type operator where a value type is written.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the arrow's two operands for an arrow; nothing for any other
-    ///   form, a thunked arrow `+U (A -> -F B)` and the alias `A => B` among
-    ///   them.
+    /// - ensures: the arrow's two operands for an arrow that
+    ///   [`crate::form::writes_box`] does not read as a box; nothing for any
+    ///   other form, a thunked arrow `+U (A -> -F B)`, the alias `A => B` and
+    ///   the box `A -> B` among them.
     /// - fails: as [`Self::unwrapped`].
     /// - panics: none.
     ///
@@ -16903,6 +17057,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::static_at`].
     /// - witness: `lower::tests::a_lambda_s_position_decides_its_sort_4508`
+    /// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(domain, codomain)| domain != codomain)))]
     fn static_arrow(
         &mut self,
@@ -16910,6 +17065,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<Option<(NodeIndex, NodeIndex)>, LoweringRefusal<'source>>
     {
         let Maybe::Present(native::Unwrapped {
+            node: written,
             former: Former::ArrowType,
             ref operands,
             ..
@@ -16917,10 +17073,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(None);
         };
-        Ok(match *operands.as_slice() {
-            [domain, codomain] => Some((domain, codomain)),
-            _ => None,
-        })
+        let &[domain, codomain] = operands.as_slice()
+        else {
+            return Ok(None);
+        };
+        // A box's argument is a function value, never a type operator.
+        if self.boxes(written)?.0 {
+            return Ok(None);
+        }
+        Ok(Some((domain, codomain)))
     }
 
     /// Classify a static lambda, `fun (A) { T }`: a lambda whose position
@@ -28225,7 +28386,9 @@ def ended() -> -F [Partial] Unit {
             SourceText::from(
                 "def g = thunk { fun (x) { fun (y) { return x } } } ; def h = thunk { become g(1, \
                  2) } ; def j = thunk { become g 1 2 } ; def spelled = thunk { become g(g(1, 2), \
-                 3) } ; def nested = thunk { become g g(1, 2) 3 } ;",
+                 3) } ; def nested = thunk { become g g(1, 2) 3 } ; def first[a : Type, b : \
+                 Type](x : a, y : b) -> -F a { return x } ; def inferred = thunk { become first \
+                 5 7 } ;",
             ),
             &mut arena,
         );
@@ -28247,6 +28410,51 @@ def ended() -> -F [Partial] Unit {
         ] {
             assert_eq!(
                 gandr_core_term::equal_certificate_syntax(&arena, body(juxtaposed), body(called)),
+                gandr_core_term::CertificateEquality::Equal,
+                "{reason}"
+            );
+        }
+        let inferred = module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name().as_ref() == "inferred")
+            .map(|declaration| declaration.outcome());
+        assert!(
+            matches!(inferred, Some(DeclarationOutcome::Bodied { .. })),
+            "a juxtaposed call of two arguments infers the implicits it omits: {inferred:?}"
+        );
+    }
+
+    #[test]
+    fn a_product_binder_splits_as_the_tuple_binder_4853()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def tupled = thunk { let (q, r) = (1, 2) ; return r } ; def braced = thunk { \
+                 let *{q, r} = (1, 2) ; return r } ; def three = thunk { let (a, _, c) = (1, 2, \
+                 3) ; return a } ; def three_braced = thunk { let *{a, _, c} = (1, 2, 3) ; return \
+                 a } ;",
+            ),
+            &mut arena,
+        );
+        let body = |wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            match declaration.outcome() {
+                DeclarationOutcome::Bodied { body } => body,
+                other => panic!("`{wanted}` lowers, not {other:?}"),
+            }
+        };
+        for (braced, tupled, reason) in [
+            ("braced", "tupled", "positional components"),
+            ("three_braced", "three", "three components, one a wildcard"),
+        ] {
+            assert_eq!(
+                gandr_core_term::equal_certificate_syntax(&arena, body(braced), body(tupled)),
                 gandr_core_term::CertificateEquality::Equal,
                 "{reason}"
             );
@@ -28891,6 +29099,106 @@ def ended() -> -F [Partial] Unit {
             },
             "arrows do not chain: the source writes one group or the output in parentheses"
         );
+    }
+
+    #[test]
+    fn a_quoted_arrow_is_the_box_its_fat_spelling_wrote_4853()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def boxed = thunk { return type(Integer -> String) } ; def fat = thunk { return \
+                 type(Integer => String) } ; def grouped = thunk { return type((Integer, String) \
+                 -> (Integer -> String)) } ; def fat_grouped = thunk { return type((Integer, \
+                 String) => Integer => String) } ; def computed = thunk { return type(Integer -> \
+                 -F String) } ;",
+            ),
+            &mut arena,
+        );
+        let body = |wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            match declaration.outcome() {
+                DeclarationOutcome::Bodied { body } => body,
+                other => panic!("`{wanted}` lowers, not {other:?}"),
+            }
+        };
+        for (arrow, fat, reason) in [
+            (
+                "boxed",
+                "fat",
+                "a quoted arrow over a value type is the box",
+            ),
+            (
+                "grouped",
+                "fat_grouped",
+                "a quoted box of a group whose output is a box",
+            ),
+        ] {
+            assert_eq!(
+                gandr_core_term::equal_certificate_syntax(&arena, body(arrow), body(fat)),
+                gandr_core_term::CertificateEquality::Equal,
+                "{reason}"
+            );
+        }
+        assert_ne!(
+            gandr_core_term::equal_certificate_syntax(&arena, body("computed"), body("boxed")),
+            gandr_core_term::CertificateEquality::Equal,
+            "a quoted arrow over a returner stays the computation arrow"
+        );
+    }
+
+    #[test]
+    fn a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853()
+    {
+        let source = |arrow: &str| {
+            alloc::format!(
+                "data Nat : Type where {{ | Zero : Nat | Succ : (n : Nat) --> Nat }}\ndef apply(f : \
+                 Integer {arrow} Integer, x : Integer) -> Integer {{ f x }}\ndef used() -> Integer {{ \
+                 apply (fun (y : Integer) {{ y }}) 1 }}\ndef twice[m : Type, combine : (m, m) {arrow} \
+                 m](x : m) -> m {{ combine x x }}\ndef moved(A : Type, P : A {arrow} Type, x : A, y : \
+                 A, p : Path(A, x, y), v : P(x)) -> P(y) {{ Path.walk P p v }}\ndef rec plus : (Nat, \
+                 Nat) {arrow} Nat where {{\n  | Zero, k => k\n  | Succ(j), k => Succ (plus[<] j k)\n}}\n"
+            )
+        };
+        let mut arena = CoreArena::new();
+        let thin = source("->");
+        let fat = source("=>");
+        let thin = lowered(SourceText::from(thin.as_str()), &mut arena);
+        let fat = lowered(SourceText::from(fat.as_str()), &mut arena);
+        let body = |module: &LoweredModule<'_>, wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            body_of(declaration.outcome())
+        };
+        for (name, reason) in [
+            (
+                "used",
+                "a lambda passed for a box is a function value, never a type operator",
+            ),
+            ("twice", "an implicit box applies as the box"),
+            ("moved", "a family a box states is a motive"),
+            (
+                "plus",
+                "a clause definition over a box matches one column per input",
+            ),
+        ] {
+            assert_eq!(
+                gandr_core_term::equal_certificate_syntax(
+                    &arena,
+                    body(&thin, name),
+                    body(&fat, name)
+                ),
+                gandr_core_term::CertificateEquality::Equal,
+                "{reason}"
+            );
+        }
     }
 
     #[test]
@@ -30395,6 +30703,17 @@ def ended() -> -F [Partial] Unit {
                 name: SurfaceName::from("zebra"),
             },
             "a word that misspells no keyword is the call of a name nothing defines"
+        );
+        let source = "def f(x : Integer) -> -F Integer {\n  here x\n}\n";
+        let start = source.find("here").unwrap_or_default();
+        assert_eq!(
+            refusal(SourceText::from(source)),
+            LoweringRefusal::UnresolvedName {
+                span: at(start, start.saturating_add(4)),
+                name: SurfaceName::from("here"),
+            },
+            "a word one edit from a keyword that opens no expression is the call of a name nothing \
+             defines"
         );
     }
 

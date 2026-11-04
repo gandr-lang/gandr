@@ -1625,7 +1625,8 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
          -> Trio { &{ .a => n, .b => n, .c => n } }\ndef pair(n : Integer) -> &{a : -F Integer, \
          b : -F Integer} { &{ .a => n, .b => n } }\ndef named() -> -F Integer { trio(1).b \
          }\ndef counted() -> -F Integer { trio(1).1 }\ndef recorded() -> -F Integer { \
-         pair(1).b }\ndef above() -> -F Bool { trio(1).c >= 1 }\n",
+         pair(1).b }\ndef above() -> -F Bool { trio(1).c >= 1 }\ndef grouped() -> -F Integer { \
+         (trio(1)).b }\n",
         &mut arena,
     );
     // The projections, forces and applications of a body, in its walk's
@@ -1647,6 +1648,11 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
         observed("counted"),
         observed("named"),
         "an observation by position off a call is the one its label names"
+    );
+    assert_eq!(
+        observed("grouped"),
+        observed("named"),
+        "an observation through parentheses is the one written without them"
     );
     assert_eq!(
         observed("recorded"),
@@ -1684,7 +1690,8 @@ fn a_chain_of_observations_projects_each_link_1106()
          Integer) -> Stream(Integer) { &{ .head => n, .tail => upward[>](n + 1) } }\ndef \
          second(s : +U Stream(Integer)) -> -F Integer { s.tail.head }\ndef third() -> -F Integer \
          { upward(1).tail.tail.head }\ndef counted() -> -F Integer { upward(1).1.tail.0 }\ndef \
-         deeper(s : +U Stream(Integer)) -> -F Integer { s.head.tail }\n",
+         deeper(s : +U Stream(Integer)) -> -F Integer { s.head.tail }\ndef grouped() -> -F Integer \
+         { (upward(1)).tail.tail.head }\n",
         &mut arena,
     );
     // The projections, forces and applications of a body, in its walk's
@@ -1710,6 +1717,11 @@ fn a_chain_of_observations_projects_each_link_1106()
         observed("counted"),
         observed("third"),
         "a chain by position is the chain its labels name"
+    );
+    assert_eq!(
+        observed("grouped"),
+        observed("third"),
+        "a chain off a call through parentheses is the chain written without them"
     );
     assert_eq!(
         observed("deeper"),

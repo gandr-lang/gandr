@@ -1152,6 +1152,27 @@ fn a_scope_handles_its_capability_and_resumes()
     );
 }
 
+/// A scope's clauses each opened by an arm bar lower as the clauses the
+/// comma separates, and a comma inside a clause stays the clause's own.
+#[test]
+fn barred_clauses_read_as_the_comma_separated_ones_4853()
+{
+    let mut arena = CoreArena::new();
+    let text = hosting(concat!(
+        "def commas() -> -F Unit { handle c : std.process.Exit.Eff { c.exit 1 } with { pure(x) => pure x, oper exit(code, k) => k *{} } }\n",
+        "def bars() -> -F Unit { handle c : std.process.Exit.Eff { c.exit 1 } with {\n  | pure(x) => pure x\n  | oper exit(code, k) => k *{}\n} }\n",
+    ));
+    let module = hosted(&text, &mut arena);
+    let body = |name: &str| match outcome_of(&module, name.into()) {
+        DeclarationOutcome::Completed { body, .. } => body,
+        other => panic!("`{name}` lowers: {other:?}"),
+    };
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(&arena, body("bars"), body("commas")),
+        gandr_core_term::CertificateEquality::Equal
+    );
+}
+
 /// The theory `State`, its value sort `S` and its carrier `C`, as a handled
 /// scope reads it.
 const STATE: &str = concat!(

@@ -2320,6 +2320,8 @@ impl<'source> Lowerer<'_, 'source>
             });
         }
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+        // The clauses each open with an arm bar, or are separated by `,`.
+        let barred = matches!(cursor.tile(TileName::ARM_BAR), Maybe::Present(_));
         let mut on_return: Maybe<(NodeIndex, Placed, NodeIndex), clause::Absent> =
             Maybe::Absent(clause::Absent::Unwritten);
         let mut clauses = Vec::new();
@@ -2434,6 +2436,12 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(_) => {
                     return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
                 },
+            }
+            if barred {
+                if let Maybe::Absent(_) = cursor.tile(TileName::ARM_BAR) {
+                    break;
+                }
+                continue;
             }
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
                 break;

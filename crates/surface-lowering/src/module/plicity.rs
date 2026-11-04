@@ -1030,8 +1030,9 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `cursor` stands just past a function's written parameter
     ///   list, or past its name and telescope when it writes none; `bound`
     ///   holds the telescope's names and `earlier` the written parameters'.
-    /// - ensures: for a tail `: T where` with `T` a value function space, one
-    ///   entry per domain `Ai` at its own node, typed `Ai`, or
+    /// - ensures: for a tail `: T where` with `T` a box, `(A1, …) -> B` or its
+    ///   bridge spelling with `=>`, as [`crate::form::writes_box`] reads one,
+    ///   one entry per domain `Ai` at its own node, typed `Ai`, or
     ///   [`unclosed::Absent::Dependent`] when `Ai` names an entry of the
     ///   telescope, and dependent when it names a written parameter; nothing
     ///   for any other tail, or a domain list that does not read.
@@ -1046,6 +1047,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a constructor argument of a call to a function of
     ///   clauses takes its column's type, naming the parameter before it.
     /// - witness: `lower::native::tests::a_clause_column_types_its_call_s_argument`
+    /// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
     fn column_parameters(
         &self,
         mut cursor: Cursor<'_>,
@@ -1065,11 +1067,12 @@ impl<'source> Collector<'_, 'source>
         if let Maybe::Absent(_) = cursor.at(TileName::WHERE) {
             return;
         }
-        let Ok(Maybe::Present(Former::ValueFunctionType)) = self.root_former(stated)
+        let mut arrow = Pieces::new();
+        let Ok(crate::form::Boxed(true)) =
+            crate::form::writes_box(self.pbg, self.tree, stated.node, &mut arrow)
         else {
             return;
         };
-        let mut arrow = Pieces::new();
         if read_pieces(self.pbg, self.tree, stated.node, &mut arrow).is_err() {
             return;
         }

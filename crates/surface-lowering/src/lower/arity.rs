@@ -499,14 +499,14 @@ pub(super) struct Planned(pub bool);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Grouped(pub bool);
 
-/// Whether a written type classifies codes: a universe, the row kind, or an
-/// arrow between such types.
+/// Whether a written type is written as a computation type: a returner, a
+/// lazy product or a lazy record, or an arrow into one of those.
 ///
 /// # Specification
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct Kinded(pub bool);
+pub(super) struct Computed(pub bool);
 
 /// The place of an entry among the entries a type states, counting from
 /// zero.
@@ -2759,6 +2759,11 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
+        // `(f a).l` observes as `f(a).l` does.
+        let Some(target) = self.ungrouped_target(target, site.at.node)?
+        else {
+            return Ok(Planned(false));
+        };
         let numbered = self.text_at(selected).as_ref().parse::<usize>().is_ok();
         let frame = site.reading.frame();
         let Some(subject) = self.observed_subject(site, frame, target)?
@@ -2931,6 +2936,11 @@ impl<'source> Lowerer<'_, 'source>
         };
         self.scratch = scratch;
         walked?;
+        // `(f a).l.m` observes its chain off `f(a)`, as `f(a).l.m` does.
+        let Some(root) = self.ungrouped_target(root, site.at.node)?
+        else {
+            return Ok(None);
+        };
         let mut subject = if matches!(self.form_at(root)?, Some((_, Former::Name))) {
             let named = Site {
                 at: root,
@@ -4252,22 +4262,14 @@ impl<'source> Lowerer<'_, 'source>
         pieces: &Pieces,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
-        let Ok((mut target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
         else {
             return Ok(Planned(false));
         };
-        // `(f(a)).l` selects as `f(a).l` does.
-        while let Some((_, Former::Parenthesized)) = self.form_at(target)? {
-            let mut grouped = Pieces::new();
-            read_pieces(self.pbg, self.tree, target.node, &mut grouped)?;
-            let mut cursor = Cursor::new(&grouped.pieces, target.span);
-            let _open = cursor.tile(TileName::PAREN_OPEN);
-            let Run::One(inner) = cursor.operands()
-            else {
-                return Ok(Planned(false));
-            };
-            target = inner;
-        }
+        let Some(target) = self.ungrouped_target(target, site.at.node)?
+        else {
+            return Ok(Planned(false));
+        };
         let frame = site.reading.frame();
         let Some(outputs) = self.called_outputs(frame, target, site.at.node)?
         else {
@@ -4289,6 +4291,54 @@ impl<'source> Lowerer<'_, 'source>
         });
 
         Ok(Planned(true))
+    }
+
+    /// The form a selection's target `target` writes inside any parentheses
+    /// around it, `f a` of `(f a).l` and of `((f a)).l`, its nodes owned as the
+    /// selection `anchor` is.
+    ///
+    /// # Specification
+    /// - requires: `target` is the target of the selection at `anchor`.
+    /// - ensures: `target` itself when no parentheses hold it; otherwise the
+    ///   one operand the innermost parentheses hold, every unowned node under
+    ///   it given `anchor`'s owner, as the walk reads none of them as a form of
+    ///   its own. Nothing for parentheses that hold no single operand.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor's port and a codata observation off a
+    ///   call, each selected through parentheses, lower as they do without
+    ///   them.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    /// - witness: `lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |inner| inner.is_none_or(|inner| inner.span.start() >= target.span.start() && inner.span.end() <= target.span.end())))]
+    pub(super) fn ungrouped_target(
+        &mut self,
+        mut target: Placed,
+        anchor: NodeIndex,
+    ) -> Result<Option<Placed>, LoweringRefusal<'source>>
+    {
+        let written = target;
+        while let Some((_, Former::Parenthesized)) = self.form_at(target)? {
+            let mut grouped = Pieces::new();
+            read_pieces(self.pbg, self.tree, target.node, &mut grouped)?;
+            let mut cursor = Cursor::new(&grouped.pieces, target.span);
+            let _open = cursor.tile(TileName::PAREN_OPEN);
+            let Run::One(inner) = cursor.operands()
+            else {
+                return Ok(None);
+            };
+            target = inner;
+        }
+        if target.node != written.node {
+            self.own_written(written.node, anchor);
+        }
+
+        Ok(Some(target))
     }
 
     /// Classify a plugging `left |> right`: every output of `left` into the
