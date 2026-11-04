@@ -127,6 +127,15 @@ pub trait Compose
         doc: Doc,
     ) -> Result<Doc, PresentationError>;
 
+    /// `doc`, each of its line breaks indented to the column `doc` starts at.
+    ///
+    /// # Specification
+    /// trivial.
+    fn align(
+        &mut self,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>;
+
     /// `left` or `right`, whichever lays out better; `left` on a tie.
     ///
     /// # Specification
@@ -411,6 +420,19 @@ impl Compose for Paged<'_, '_>
     ) -> Result<Doc, PresentationError>
     {
         let handle = self.builder.nest(amount, self.handle(doc)?)?;
+        self.keep(handle)
+    }
+
+    /// The builder's alignment.
+    ///
+    /// # Specification
+    /// trivial.
+    fn align(
+        &mut self,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let handle = self.builder.align(self.handle(doc)?)?;
         self.keep(handle)
     }
 
@@ -701,6 +723,19 @@ impl Compose for OneLine
             breaks,
             names,
         })
+    }
+
+    /// `doc` itself: a one-line composition keeps no column to align a hard
+    /// line break to, so each keeps the indentation a `nest` gives it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn align(
+        &mut self,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        Ok(doc)
     }
 
     /// The alternative with fewer line breaks, `left` on a tie.

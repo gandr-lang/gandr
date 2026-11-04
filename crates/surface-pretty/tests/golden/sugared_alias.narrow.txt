@@ -1,2 +1,2 @@
-(Integer, Integer * String * Unit) =>
+(Integer, Integer * String * Unit) ->
   String + Unit

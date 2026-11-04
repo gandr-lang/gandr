@@ -693,7 +693,7 @@ fn pair_of_injections_pins_sum_notation()
     let read = normal_form(&mut core, pair);
     pin(&CoreSource::new(&core, &[]), Root::Value(read), Pinned {
         name: "pair_injections",
-        flat: "#{+{.0 = 1}, +{.1 = \"two\"}}",
+        flat: "*{+{.0 = 1}, +{.1 = \"two\"}}",
         fidelity: Fidelity::Faithful,
     });
 }
@@ -737,7 +737,7 @@ fn record_value_breaks_fields_at_the_narrow_page()
     let read = normal_form(&mut core, record);
     pin(&CoreSource::new(&core, &[]), Root::Value(read), Pinned {
         name: "record_value",
-        flat: "#{.engine = \"analytical engine\", .name = \"ada lovelace\", .year = 1843}",
+        flat: "*{.engine = \"analytical engine\", .name = \"ada lovelace\", .year = 1843}",
         fidelity: Fidelity::Faithful,
     });
 }
@@ -835,19 +835,19 @@ fn n_ary_products_and_sums_spell_between_their_braces()
     for (root, spelling) in [
         (CoreNode::ValueType(void), "Void"),
         (CoreNode::ValueType(boolean), "Bool"),
-        (CoreNode::ValueType(lonely), "#{Integer}"),
+        (CoreNode::ValueType(lonely), "*{Integer}"),
         (CoreNode::ValueType(only), "+{Integer}"),
-        (CoreNode::ValueType(triple), "#{Integer, String, Unit}"),
+        (CoreNode::ValueType(triple), "*{Integer, String, Unit}"),
         (CoreNode::ValueType(choice), "+{Integer, String, Void}"),
         (
             CoreNode::ValueType(nested),
-            "#{#{Integer, String}, Integer, #{Integer, String}}",
+            "*{*{Integer, String}, Integer, *{Integer, String}}",
         ),
         (
             CoreNode::ValueType(mixed),
-            "+{#{Integer, String}, +{Integer, String}, #{Integer, String, Unit}}",
+            "+{*{Integer, String}, +{Integer, String}, *{Integer, String, Unit}}",
         ),
-        (CoreNode::ValueType(flags), "#{Bool, Bool}"),
+        (CoreNode::ValueType(flags), "*{Bool, Bool}"),
         (CoreNode::ValueType(not_bool), "+{Unit, Integer}"),
         (
             CoreNode::CompType(returns_choice),
@@ -1048,12 +1048,12 @@ fn a_fork_and_an_offer_keep_the_exits_they_end_in_815()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(returned)),
-        faithful(Written("let a = fork (a : end) { pure unit } ; close(a)"))
+        faithful(Written("let a = fork (a : end) { pure *{} } ; close(a)"))
     );
     assert_eq!(
         spelled(&source, body(offering)),
         faithful(Written(
-            "let a = fork (a : end) { offer(a) { next => close(a), retire => pure unit } } ; close(a)"
+            "let a = fork (a : end) { offer(a) { | next => close(a) | retire => pure *{} } } ; close(a)"
         ))
     );
     for fork in [returned, offering] {
@@ -1079,9 +1079,9 @@ fn n_ary_tuples_and_injections_spell_between_their_braces()
     let values = [single, triple, nested, third].map(|value| normal_form(&mut core, value));
     let source = CoreSource::new(&core, &[]);
     for (root, expected) in values.into_iter().zip([
-        "#{1}",
-        "#{1, \"two\", unit}",
-        "#{#{1}, #{1, \"two\"}}",
+        "*{1}",
+        "*{1, \"two\", *{}}",
+        "*{*{1}, *{1, \"two\"}}",
         "+{.2 = 1}",
     ]) {
         assert_eq!(
@@ -1155,47 +1155,47 @@ fn the_sugared_form_writes_every_sugar_its_shape_admits()
     let values = [single, tuple, nested_tuple].map(|value| normal_form(&mut core, value));
     let source = CoreSource::new(&core, &[]);
     let types = [
-        (nullary, "() => Integer", "+U (-F Integer)"),
-        (unary, "Integer => String", "+U (Integer -> -F String)"),
+        (nullary, "() -> Integer", "+U (-F Integer)"),
+        (unary, "Integer -> String", "+U (Integer -> -F String)"),
         (
             binary,
-            "(Integer, String) => Unit",
+            "(Integer, String) -> Unit",
             "+U (Integer -> String -> -F Unit)",
         ),
         (
             higher,
-            "(Integer => String) => Unit",
+            "(Integer -> String) -> Unit",
             "+U (+U (Integer -> -F String) -> -F Unit)",
         ),
         (
             curried,
-            "Integer => Integer => String",
+            "Integer -> (Integer -> String)",
             "+U (Integer -> -F (+U (Integer -> -F String)))",
         ),
-        (dependent, "(a : Type) => a", "+U ((a : Type) -> -F a)"),
-        (pair, "Integer * String", "#{Integer, String}"),
+        (dependent, "(a : Type) -> a", "+U ((a : Type) -> -F a)"),
+        (pair, "Integer * String", "*{Integer, String}"),
         (
             triple,
             "Integer * String * Unit",
-            "#{Integer, String, Unit}",
+            "*{Integer, String, Unit}",
         ),
-        (lonely, "#{Integer}", "#{Integer}"),
+        (lonely, "*{Integer}", "*{Integer}"),
         (
             nested_pair,
             "(Integer * String) * Unit",
-            "#{#{Integer, String}, Unit}",
+            "*{*{Integer, String}, Unit}",
         ),
         (either, "Integer + String", "+{Integer, String}"),
         (only, "+{Integer}", "+{Integer}"),
         (
             sum_of_pair,
             "Integer * String + Unit",
-            "+{#{Integer, String}, Unit}",
+            "+{*{Integer, String}, Unit}",
         ),
         (
             pair_of_sum,
             "(Integer + String) * Unit",
-            "#{+{Integer, String}, Unit}",
+            "*{+{Integer, String}, Unit}",
         ),
         (
             nested_sum,
@@ -1205,8 +1205,8 @@ fn the_sugared_form_writes_every_sugar_its_shape_admits()
         (boolean, "Bool", "Bool"),
         (
             aliased_pair,
-            "Integer * String => Integer + String",
-            "+U (#{Integer, String} -> -F +{Integer, String})",
+            "Integer * String -> Integer + String",
+            "+U (*{Integer, String} -> -F +{Integer, String})",
         ),
     ]
     .map(|(root, sugared, explicit)| (CoreNode::ValueType(root), sugared, explicit));
@@ -1232,12 +1232,12 @@ fn the_sugared_form_writes_every_sugar_its_shape_admits()
         (
             paired_domain,
             "Integer * String -> -F Unit",
-            "#{Integer, String} -> -F Unit",
+            "*{Integer, String} -> -F Unit",
         ),
         (
             returns_pair,
             "-F (Integer * String)",
-            "-F #{Integer, String}",
+            "-F *{Integer, String}",
         ),
     ]
     .map(|(root, sugared, explicit)| (CoreNode::CompType(root), sugared, explicit));
@@ -1252,9 +1252,9 @@ fn the_sugared_form_writes_every_sugar_its_shape_admits()
         }
     }
     for (root, (sugared, explicit)) in values.into_iter().zip([
-        ("#{1}", "#{1}"),
-        ("(1, \"two\")", "#{1, \"two\"}"),
-        ("(1, (1, \"two\"))", "#{1, #{1, \"two\"}}"),
+        ("*{1}", "*{1}"),
+        ("(1, \"two\")", "*{1, \"two\"}"),
+        ("(1, (1, \"two\"))", "*{1, *{1, \"two\"}}"),
     ]) {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
             let presented = presented_in(&source, Root::Value(root), wide(), form);
@@ -1288,7 +1288,7 @@ fn the_sugared_form_breaks_its_infix_and_lists_at_the_narrow_page()
         Root::Type(CoreNode::ValueType(alias)),
         Pinned {
             name: "sugared_alias",
-            flat: "(Integer, Integer * String * Unit) => String + Unit",
+            flat: "(Integer, Integer * String * Unit) -> String + Unit",
             fidelity: Fidelity::Faithful,
         },
         Form::Sugared,
@@ -1296,9 +1296,9 @@ fn the_sugared_form_breaks_its_infix_and_lists_at_the_narrow_page()
 }
 
 /// A quoted type stands where an expression is read: the sugared form
-/// takes the alias there over a domain list, which the parser reads as the
-/// alias's domains before `=>` (#2255), and writes the one over no domain,
-/// `() => C`, which reads as an expression, as its thunk (#815).
+/// takes the box there over a domain list, which the parser reads as the
+/// box's domains before `->` (#2255), and writes the one over no domain,
+/// `() -> C`, which reads as an expression, as its thunk (#815).
 #[test]
 fn a_quoted_alias_is_written_as_an_expression_reads_it_815()
 {
@@ -1310,8 +1310,8 @@ fn a_quoted_alias_is_written_as_an_expression_reads_it_815()
     let two = core.comp_type_arrow(string, one);
     for (body, expected) in [
         (returns_integer, "+U (-F Integer)"),
-        (one, "Integer => Integer"),
-        (two, "(String, Integer) => Integer"),
+        (one, "Integer -> Integer"),
+        (two, "(String, Integer) -> Integer"),
     ] {
         let thunked = core.value_type_thunk(body);
         let quoted = core.value_quote(thunked);
@@ -1334,7 +1334,7 @@ fn a_quoted_alias_is_written_as_an_expression_reads_it_815()
             Form::Sugared,
         );
         assert!(
-            typed.as_ref().contains("=>"),
+            typed.as_ref().contains(" -> ") && !typed.as_ref().starts_with("+U"),
             "a type position keeps the alias: {}",
             typed.as_ref()
         );
@@ -1369,15 +1369,15 @@ fn records_spell_their_fields_in_label_order()
     for (root, expected) in [
         (
             Root::Type(CoreNode::ValueType(record_type)),
-            faithful(Written("#{a : Integer, b : String}")),
+            faithful(Written("*{a : Integer, b : String}")),
         ),
         (
             Root::Type(CoreNode::CompType(returns_record)),
-            faithful(Written("-F #{a : Integer, b : String}")),
+            faithful(Written("-F *{a : Integer, b : String}")),
         ),
         (
             Root::Value(record),
-            faithful(Written("#{.a = 1, .b = \"two\"}")),
+            faithful(Written("*{.a = 1, .b = \"two\"}")),
         ),
         (
             Root::Type(CoreNode::ValueType(empty_type)),
@@ -1385,7 +1385,7 @@ fn records_spell_their_fields_in_label_order()
         ),
         (
             Root::Value(CoreNode::Value(empty)),
-            faithful(Written("unit")),
+            faithful(Written("*{}")),
         ),
     ] {
         assert_eq!(
@@ -1415,7 +1415,7 @@ fn a_record_update_spells_its_base_and_the_fields_it_writes()
     let source = CoreSource::new(&core, &[]);
     assert_eq!(
         spelled(&source, Root::Value(CoreNode::Value(update))),
-        faithful(Written("#{#{.a = 1} | a = 2, b = \"two\"}")),
+        faithful(Written("*{*{.a = 1} | a = 2, b = \"two\"}")),
         "the update spells its base and the fields it writes"
     );
 }
@@ -1448,7 +1448,7 @@ fn an_ascribed_truth_value_spells_as_its_word_2168()
         (truth, "true"),
         (falsity, "false"),
         (annotated, "(true : Bool)"),
-        (elsewhere, "(+{.0 = unit} : +{Unit, Integer})"),
+        (elsewhere, "(+{.0 = *{}} : +{Unit, Integer})"),
         (other, "(+{.0 = 1} : Bool)"),
     ] {
         assert_eq!(
@@ -1490,8 +1490,8 @@ fn an_ascribed_binary_natural_spells_as_its_numeral_3287()
         (zero, nat, "(0 : Nat)"),
         (five, nat, "(5 : Nat)"),
         (power, nat, "(2147483648 : Nat)"),
-        (five, other, "(Positive(Bit1(Bit0(One))) : Other)"),
-        (unended, nat, "(Positive(Bit0(Zero)) : Nat)"),
+        (five, other, "(Positive (Bit1 (Bit0 One)) : Other)"),
+        (unended, nat, "(Positive (Bit0 Zero) : Nat)"),
     ]
     .map(|(value, ty, expected)| (core.value_ascribe(value, ty), expected));
     let mut constructors = Constructors::default();
@@ -1653,23 +1653,23 @@ fn every_type_former_spells_as_the_grammar_writes_it()
         (CoreNode::CompType(returns_thunk), "-F (+U (-F Unit))"),
         (
             CoreNode::ValueType(right_nested),
-            "#{Integer, #{String, Unit}}",
+            "*{Integer, *{String, Unit}}",
         ),
         (
             CoreNode::ValueType(left_nested),
-            "#{#{Integer, String}, Unit}",
+            "*{*{Integer, String}, Unit}",
         ),
         (
             CoreNode::ValueType(product_then_sum),
-            "+{#{Integer, String}, Unit}",
+            "+{*{Integer, String}, Unit}",
         ),
         (
             CoreNode::ValueType(sum_of_product),
-            "+{Integer, #{String, Unit}}",
+            "+{Integer, *{String, Unit}}",
         ),
         (
             CoreNode::ValueType(sum_then_product),
-            "#{+{Integer, String}, Unit}",
+            "*{+{Integer, String}, Unit}",
         ),
         (
             CoreNode::ValueType(sum_chain),
@@ -1678,7 +1678,7 @@ fn every_type_former_spells_as_the_grammar_writes_it()
         (CoreNode::ValueType(sum_left), "+{+{Integer, String}, Unit}"),
         (
             CoreNode::ValueType(thunk_in_product),
-            "#{+U (-F Integer), Unit}",
+            "*{+U (-F Integer), Unit}",
         ),
         (
             CoreNode::CompType(sum_domain),
@@ -1688,8 +1688,8 @@ fn every_type_former_spells_as_the_grammar_writes_it()
             CoreNode::CompType(thunk_domain),
             "+U (Integer -> -F Unit) -> -F Unit",
         ),
-        (CoreNode::CompType(returns_product), "-F #{Integer, String}"),
-        (CoreNode::CompType(returns_decoded), "-F #{Integer, String}"),
+        (CoreNode::CompType(returns_product), "-F *{Integer, String}"),
+        (CoreNode::CompType(returns_decoded), "-F *{Integer, String}"),
         (CoreNode::CompType(lazy), "&{-F Integer, -F Unit}"),
         (
             CoreNode::CompType(lazy_chain),
@@ -1847,7 +1847,7 @@ fn a_model_type_spells_as_written_2246()
     }
     for (root, spelling) in [
         (quoted, "type(Model(Counter))"),
-        (argument, "Flow.stay(type(Model(Counter)))"),
+        (argument, "Flow.stay type(Model(Counter))"),
     ] {
         for form in [Form::Sugared, Form::Explicit] {
             let presented =
@@ -2139,7 +2139,7 @@ fn a_reduct_the_checker_applies_is_written_in_the_explicit_form_2043()
     let uncrossed = CoreSource::new(&core, &names);
     let page = PageWidth::from(80_u32);
     for (source, form, expected) in [
-        (&source, Form::Explicit, "Monoid.Semigroup(endoMonoid)"),
+        (&source, Form::Explicit, "Monoid.Semigroup endoMonoid"),
         (&source, Form::Sugared, "endoMonoid"),
         (&uncrossed, Form::Explicit, "endoMonoid"),
     ] {
@@ -2169,8 +2169,8 @@ fn a_written_reduct_s_call_is_left_to_the_checker_in_the_sugared_form_2043()
     let page = PageWidth::from(80_u32);
     for (source, form, expected) in [
         (&source, Form::Sugared, "endoMonoid"),
-        (&source, Form::Explicit, "Monoid.Semigroup(endoMonoid)"),
-        (&kept, Form::Sugared, "Monoid.Semigroup(endoMonoid)"),
+        (&source, Form::Explicit, "Monoid.Semigroup endoMonoid"),
+        (&kept, Form::Sugared, "Monoid.Semigroup endoMonoid"),
     ] {
         let presented = present_value(source, CoreNode::Value(call), page, form.into())
             .expect("the value lays out");
@@ -2252,8 +2252,8 @@ fn a_written_forgetting_map_s_call_is_written_as_the_map_2246()
             quoted,
             "forget[sort C = Unit](upManifest) at Model(Counter)",
         ),
-        (&source, unquoted, "Counter(upManifest, upManifest)"),
-        (&unmapped, quoted, "Counter(Unit, upManifest)"),
+        (&source, unquoted, "Counter upManifest upManifest"),
+        (&unmapped, quoted, "Counter Unit upManifest"),
     ] {
         let presented = present_value(source, CoreNode::Value(root), page, Form::Explicit.into())
             .expect("the value lays out");
@@ -2355,25 +2355,25 @@ fn a_dependent_pair_ignoring_its_binder_spells_as_the_product_771()
         (
             ignoring,
             Form::Sugared,
-            "Type * (a => a)",
+            "Type * (a -> a)",
             "a binder no occurrence names",
         ),
         (
             ignoring,
             Form::Explicit,
-            "#{Type, +U (a -> -F a)}",
+            "*{Type, +U (a -> -F a)}",
             "explicitly",
         ),
         (
             nested,
             Form::Sugared,
-            "(a => a) * (a * a)",
+            "(a -> a) * (a * a)",
             "an inner product parenthesized",
         ),
         (
             naming,
             Form::Sugared,
-            "#{a : Type, b : a}",
+            "*{a : Type, b : a}",
             "a binder its second factor names",
         ),
     ] {
@@ -2461,16 +2461,16 @@ fn a_dependent_record_spells_its_written_labels_1613()
         (
             Some("carrier"),
             Some("point"),
-            "#{carrier : Type, point : carrier}",
+            "*{carrier : Type, point : carrier}",
             "both labels as written",
         ),
         (
             Some("carrier"),
             Some("carrier"),
-            "#{carrier : Type, a : carrier}",
+            "*{carrier : Type, a : carrier}",
             "a second label the binder holds falls back",
         ),
-        (None, None, "#{a : Type, b : a}", "no written labels"),
+        (None, None, "*{a : Type, b : a}", "no written labels"),
     ] {
         let pairs: Vec<(ValueTypeId, Name<'_>)> = binder
             .map(|name| (pair, Name::from(name)))
@@ -2704,7 +2704,7 @@ fn an_unlabelled_second_field_takes_a_generated_name_3278()
             &CoreSource::new(&core, &names),
             Root::Type(CoreNode::ValueType(record))
         ),
-        faithful(Written("#{a : Type, b : #{a, #{Integer, Integer}}}")),
+        faithful(Written("*{a : Type, b : *{a, *{Integer, Integer}}}")),
     );
 }
 
@@ -2754,20 +2754,20 @@ fn static_operators_spell_as_the_grammar_writes_them()
         ),
         (
             Root::Value(CoreNode::Value(squaring)),
-            "fun (a) { type(-F #{a, a}) }",
+            "fun (a) { type(-F *{a, a}) }",
         ),
         (
             Root::Value(CoreNode::Value(nested)),
-            "fun (a) { fun (b) { type(#{a, b}) } }",
+            "fun (a) { fun (b) { type(*{a, b}) } }",
         ),
-        (Root::Value(CoreNode::Value(once)), "t(Integer)"),
+        (Root::Value(CoreNode::Value(once)), "t Integer"),
         (
             Root::Value(CoreNode::Value(applied)),
-            "t(fun (a) { type(-F #{a, a}) }, Integer, Integer)",
+            "t (fun (a) { type(-F *{a, a}) }) Integer Integer",
         ),
         (
             Root::Type(CoreNode::ValueType(decoded)),
-            "t(fun (a) { type(-F #{a, a}) }, Integer, Integer)",
+            "t(fun (a) { type(-F *{a, a}) }, Integer, Integer)",
         ),
     ] {
         assert_eq!(
@@ -2802,18 +2802,15 @@ fn a_call_collects_its_arguments_up_to_the_depth_limit()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(twice)),
-        faithful(Written("fun (a) { kept(a, a) }"))
+        faithful(Written("fun (a) { kept a a }"))
     );
     assert_eq!(
         spelled(&source, body(past)),
         (
-            format!(
-                "fun (a) {{ kept(a)({}a,\n    a, a, a, a, a) }}",
-                "a, ".repeat(26)
-            ),
+            format!("fun (a) {{ kept {}a }}", "a ".repeat(32)),
             Fidelity::Faithful
         ),
-        "the innermost application past the limit heads the call"
+        "the application past the limit writes every argument after its head"
     );
 }
 
@@ -2846,11 +2843,11 @@ fn a_call_leaves_out_the_implicits_it_omits_1216()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(same)),
-        faithful(Written("fun (a) { same(3) }"))
+        faithful(Written("fun (a) { same 3 }"))
     );
     assert_eq!(
         spelled(&source, body(pick)),
-        faithful(Written("fun (a) { pick() }"))
+        faithful(Written("fun (a) { pick () }"))
     );
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(decoded))),
@@ -2888,11 +2885,11 @@ fn a_call_writes_the_wildcards_it_holds_528()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(forced)),
-        faithful(Written("fun (a) { idAt(_, 3) }"))
+        faithful(Written("fun (a) { idAt _ 3 }"))
     );
     assert_eq!(
         spelled(&source, body(mixed)),
-        faithful(Written("fun (a) { first(_, 3) }")),
+        faithful(Written("fun (a) { first _ 3 }")),
         "the wildcard is written, the omitted implicit left out"
     );
 }
@@ -2931,15 +2928,15 @@ fn a_call_supplies_its_callee_s_implicits_by_name_2267()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(supplied)),
-        faithful(Written("fun (a) { chosen[.x = 7](3) }"))
+        faithful(Written("fun (a) { chosen[.x = 7] 3 }"))
     );
     assert_eq!(
         spelled(&source, body(left_out)),
-        faithful(Written("fun (a) { chosen(3) }"))
+        faithful(Written("fun (a) { chosen 3 }"))
     );
     assert_eq!(
         spelled(&source, body(plain)),
-        faithful(Written("fun (a) { twin(3, 7) }"))
+        faithful(Written("fun (a) { twin 3 7 }"))
     );
 }
 
@@ -2991,15 +2988,15 @@ fn a_call_supplies_a_model_implicit_by_its_path_2364()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(module)),
-        faithful(Written("fun (a) { stepped[.s = Up](7) }"))
+        faithful(Written("fun (a) { stepped[.s = Up] 7 }"))
     );
     assert_eq!(
         spelled(&source, body(resolved)),
-        faithful(Written("fun (a) { stepped(7) }"))
+        faithful(Written("fun (a) { stepped 7 }"))
     );
     assert_eq!(
         spelled(&source, body(mixed)),
-        approximate(Written("fun (a) { stepped(3, Up.zero, Tens.incr, 7) }"))
+        approximate(Written("fun (a) { stepped 3 Up.zero Tens.incr 7 }"))
     );
 }
 
@@ -3071,11 +3068,11 @@ fn a_static_redex_prints_as_its_reduct_401()
     let source = CoreSource::new(&core, &names);
     for (root, spelling) in [
         (Root::Value(CoreNode::Value(once)), "Integer"),
-        (Root::Value(CoreNode::Value(past)), "t(Integer)"),
-        (Root::Value(CoreNode::Value(paired)), "#{Integer, Unit}"),
+        (Root::Value(CoreNode::Value(past)), "t Integer"),
+        (Root::Value(CoreNode::Value(paired)), "*{Integer, Unit}"),
         (
             Root::Value(CoreNode::Value(half)),
-            "fun (a) { type(#{Integer, a}) }",
+            "fun (a) { type(*{Integer, a}) }",
         ),
     ] {
         assert_eq!(
@@ -3092,7 +3089,7 @@ fn a_static_redex_prints_as_its_reduct_401()
     );
     assert_eq!(
         (presented.as_ref(), presented.fidelity()),
-        ("Integer => Integer * Integer", Fidelity::Faithful),
+        ("Integer -> Integer * Integer", Fidelity::Faithful),
         "the alias reads through the redex its codomain decodes"
     );
 }
@@ -3147,7 +3144,7 @@ fn a_called_function_literal_prints_as_what_it_returns_675()
     }
     assert_eq!(
         spelled(&source, Root::Value(CoreNode::Value(forcing))),
-        approximate(Written("<thunk>(t)")),
+        approximate(Written("<thunk> t")),
         "a body that does more than return stays a call"
     );
 }
@@ -3179,7 +3176,7 @@ fn a_called_nested_literal_prints_as_what_it_returns_2325()
     let calls = core.computation_application(calls, t);
     let calls = core.value_nested(calls);
     let source = CoreSource::new(&core, &names);
-    for (root, spelling) in [(called, "t"), (twice, "t"), (calls, "t(t)")] {
+    for (root, spelling) in [(called, "t"), (twice, "t"), (calls, "t t")] {
         assert_eq!(
             spelled(&source, Root::Value(CoreNode::Value(root))),
             faithful(Written(spelling)),
@@ -3209,8 +3206,8 @@ fn a_run_bound_call_in_a_type_prints_nested_676()
     let two = core.value_returned(two);
     let source = CoreSource::new(&core, &names);
     for (root, spelling) in [
-        (Root::Value(CoreNode::Value(one)), "t(t(u))"),
-        (Root::Value(CoreNode::Value(two)), "t(t(t(u)))"),
+        (Root::Value(CoreNode::Value(one)), "t (t u)"),
+        (Root::Value(CoreNode::Value(two)), "t (t (t u))"),
     ] {
         assert_eq!(
             spelled(&source, root),
@@ -3243,7 +3240,7 @@ fn a_run_bound_by_a_run_in_a_type_prints_nested_3280()
         let presented = presented_in(&source, Root::Value(CoreNode::Value(nested)), wide(), form);
         assert_eq!(
             (presented.as_ref(), presented.fidelity()),
-            ("t(t(t(u)))", Fidelity::Faithful),
+            ("t (t (t u))", Fidelity::Faithful),
             "{form:?}"
         );
     }
@@ -3290,8 +3287,8 @@ fn a_binder_only_a_dropped_argument_names_is_unnamed_736()
     for (root, spelling) in [
         (CoreNode::CompType(dropped), "Unit -> -F Unit"),
         (CoreNode::CompType(kept), "(a : Type) -> -F a"),
-        (CoreNode::ValueType(dropped_thunk), "Unit => Unit"),
-        (CoreNode::ValueType(kept_thunk), "(a : Type) => a"),
+        (CoreNode::ValueType(dropped_thunk), "Unit -> Unit"),
+        (CoreNode::ValueType(kept_thunk), "(a : Type) -> a"),
     ] {
         let presented = presented_in(&source, Root::Type(root), wide(), Form::Sugared);
         assert_eq!(
@@ -3343,14 +3340,14 @@ fn a_type_no_expression_reads_is_quoted_839()
     }
     for (root, sugared, explicit) in [
         (only, "type(+{Integer})", "type(+{Integer})"),
-        (holding, "type(Unit * +{Unit})", "type(#{Unit, +{Unit}})"),
+        (holding, "type(Unit * +{Unit})", "type(*{Unit, +{Unit}})"),
         (boolean, "Bool", "Bool"),
         (integer, "Integer", "Integer"),
         (lazy_one, "type(&{-F Integer})", "type(&{-F Integer})"),
         (
             argument,
-            "Flow.stay(type(+{Integer}))",
-            "Flow.stay(type(+{Integer}))",
+            "Flow.stay type(+{Integer})",
+            "Flow.stay type(+{Integer})",
         ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -3381,8 +3378,8 @@ fn a_quoted_record_type_is_quoted_1459()
     let argument = core.value_stay(record);
     let source = CoreSource::new(&core, &[]);
     for (root, spelling) in [
-        (record, "type(#{start : Unit, step : Integer})"),
-        (argument, "Flow.stay(type(#{start : Unit, step : Integer}))"),
+        (record, "type(*{start : Unit, step : Integer})"),
+        (argument, "Flow.stay type(*{start : Unit, step : Integer})"),
     ] {
         for form in [Form::Sugared, Form::Explicit] {
             let presented = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -3506,13 +3503,9 @@ fn a_quoted_chain_is_quoted_1127()
     let operator = core.value_static_lambda(squared);
     let source = CoreSource::new(&core, &[]);
     for (root, sugared, explicit) in [
-        (pair, "type(Unit * Integer)", "#{Unit, Integer}"),
+        (pair, "type(Unit * Integer)", "*{Unit, Integer}"),
         (either, "type(Integer + Unit)", "type(+{Integer, Unit})"),
-        (
-            pairs,
-            "type(List(Unit * Integer))",
-            "List(#{Unit, Integer})",
-        ),
+        (pairs, "type(List(Unit * Integer))", "List *{Unit, Integer}"),
         (
             lazy,
             "type(-F Integer & -F Unit)",
@@ -3520,13 +3513,13 @@ fn a_quoted_chain_is_quoted_1127()
         ),
         (
             argument,
-            "Flow.stay(type(Unit * Integer))",
-            "Flow.stay(#{Unit, Integer})",
+            "Flow.stay type(Unit * Integer)",
+            "Flow.stay *{Unit, Integer}",
         ),
         (
             operator,
             "fun (a) { type(a * a) }",
-            "fun (a) { type(#{a, a}) }",
+            "fun (a) { type(*{a, a}) }",
         ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -3556,7 +3549,7 @@ fn a_quoted_product_of_values_keeps_its_quote_5060()
     let source = CoreSource::new(&core, &[]);
     for (form, expected) in [
         (Form::Sugared, "fun (a) { pure type(a * a) }"),
-        (Form::Explicit, "fun (a) { pure type(#{a, a}) }"),
+        (Form::Explicit, "fun (a) { pure type(*{a, a}) }"),
     ] {
         let presented = presented_in(
             &source,
@@ -3668,17 +3661,17 @@ fn a_dependent_alias_names_each_binder_its_codomain_reads_800()
     for (root, sugared, explicit) in [
         (
             ignoring,
-            "(a : Type, a) => a",
+            "(a : Type, a) -> a",
             "+U ((a : Type) -> a -> -F a)",
         ),
         (
             reading,
-            "(a : Type, b : a) => b",
+            "(a : Type, b : a) -> b",
             "+U ((a : Type) -> (b : a) -> -F b)",
         ),
         (
             after,
-            "(a : Type, Integer, Type) => a",
+            "(a : Type, Integer, Type) -> a",
             "+U ((a : Type) -> Integer -> Type -> -F a)",
         ),
     ] {
@@ -3737,7 +3730,7 @@ fn every_value_leaf_spells_as_the_surface_writes_it()
         faithful(Written("-3.25")),
         faithful(Written("7")),
         faithful(Written("\"\\r\\0\"")),
-        faithful(Written("unit")),
+        faithful(Written("*{}")),
         faithful(Written("Carry")),
         approximate(Written("<thunk>")),
     ]) {
@@ -3773,20 +3766,20 @@ fn every_value_leaf_spells_as_the_surface_writes_it()
     let named = CoreSource::new(&core, &names).naming(&constructors);
     for (source, root, expected) in [
         (&named, zero, faithful(Written("Zero"))),
-        (&named, one, faithful(Written("Succ(Zero)"))),
-        (&unnamed, one, approximate(Written("?(?)"))),
-        (&named, nil, faithful(Written("Path.here(Base)"))),
+        (&named, one, faithful(Written("Succ Zero"))),
+        (&unnamed, one, approximate(Written("? ?"))),
+        (&named, nil, faithful(Written("Path.here (Base)"))),
         (
             &named,
             word,
-            faithful(Written("back(loop) ∷ loop ∷ Path.here(Base)")),
+            faithful(Written("back (loop) ∷ loop ∷ Path.here (Base)")),
         ),
         (
             &named,
             counted,
-            faithful(Written("Succ(back(loop) ∷ loop ∷ Path.here(Base))")),
+            faithful(Written("Succ (back (loop) ∷ loop ∷ Path.here (Base))")),
         ),
-        (&unnamed, word, approximate(Written("?(?(?))"))),
+        (&unnamed, word, approximate(Written("? (? ?)"))),
     ] {
         assert_eq!(
             spelled(source, Root::Value(CoreNode::Value(root))),
@@ -3922,13 +3915,13 @@ fn misplaced_and_unreadable_nodes_spell_unknown()
         (
             vec![Former::Product(Arity::from(3_usize))],
             Reading::AsType,
-            "#{?, ?, ?}",
+            "*{?, ?, ?}",
         ),
         // A record whose labels the source does not answer.
         (
             vec![Former::Record(Arity::from(2_usize))],
             Reading::AsValue,
-            "#{.? = ?, .? = ?}",
+            "*{.? = ?, .? = ?}",
         ),
         (
             vec![Former::ThunkType(Row(1)), Former::Arrow {
@@ -3999,7 +3992,7 @@ fn here_witness_pins_identity_notation()
         let rendered = presented(&source, root, page);
         assert_eq!(
             rendered.as_ref(),
-            "Path.here(#{2, 2})",
+            "Path.here *{2, 2}",
             "identity notation is `here` around the point, at {page:?}"
         );
         assert_eq!(
@@ -4024,7 +4017,7 @@ fn funext_spells_its_functions_in_order()
     agrees(&core, &names, CoreNode::Value(witness));
     assert_eq!(
         spelled(&source, Root::Value(CoreNode::Value(witness))),
-        faithful(Written("Path.funext(twice, same)")),
+        faithful(Written("Path.funext twice same")),
         "the first function is the path's source"
     );
 }
@@ -4049,8 +4042,8 @@ fn an_equivalence_and_a_list_spell_as_written()
         agrees(&core, &names, CoreNode::Value(root));
     }
     for (root, expected) in [
-        (Root::Value(CoreNode::Value(equivalence)), "equiv(not, not)"),
-        (Root::Value(CoreNode::Value(cell)), "cons(unit, nil)"),
+        (Root::Value(CoreNode::Value(equivalence)), "equiv not not"),
+        (Root::Value(CoreNode::Value(cell)), "cons *{} nil"),
         (Root::Type(CoreNode::ValueType(list)), "List(Unit)"),
     ] {
         assert_eq!(
@@ -4116,7 +4109,7 @@ fn univalence_spells_its_stratum_and_descriptions()
         Root::Value(CoreNode::Value(statement)),
         Pinned {
             name: "ua_corolla",
-            flat: "ua[1, 4](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep})",
+            flat: "ua[1, 4] Magma Magma *{.mul = exchange, .one = keep} *{.mul = exchange, .one = keep}",
             fidelity: Fidelity::Faithful,
         },
     );
@@ -4151,12 +4144,12 @@ fn a_composite_spells_its_stratum_chain_and_cells_3957()
         Name::from("x"),
     ];
     for (node, name, flat) in [
-        (three, "compose_chain", "compose[5, 7](chain(3), (p, q, r))"),
-        (one, "compose_cell", "compose[5, 7](chain(1), p)"),
+        (three, "compose_chain", "compose[5, 7] (chain 3) (p, q, r)"),
+        (one, "compose_cell", "compose[5, 7] (chain 1) p"),
         (
             returned,
             "compose_returned",
-            "compose[5, 7](chain(3), (p, q, r))",
+            "compose[5, 7] (chain 3) (p, q, r)",
         ),
     ] {
         agrees(&core, &names, CoreNode::Value(node));
@@ -4181,7 +4174,7 @@ fn a_composite_spells_its_stratum_chain_and_cells_3957()
         );
         assert_eq!(
             (rendered.as_ref(), rendered.fidelity()),
-            ("compose[5, 7](chain(3), (p, q, r))", Fidelity::Faithful),
+            ("compose[5, 7] (chain 3) (p, q, r)", Fidelity::Faithful),
             "{form:?}"
         );
     }
@@ -4219,8 +4212,8 @@ fn a_fill_spells_its_stratum_chain_generator_and_cells_4075()
         Name::from("t"),
     ];
     for (node, name, flat) in [
-        (three, "fill_chain", "fill[5, 7](chain(3), t(x), (p, q, r))"),
-        (one, "fill_cell", "fill[5, 7](chain(1), t(x), p)"),
+        (three, "fill_chain", "fill[5, 7] (chain 3) (t x) (p, q, r)"),
+        (one, "fill_cell", "fill[5, 7] (chain 1) (t x) p"),
     ] {
         agrees(&core, &names, CoreNode::Value(node));
         pin(
@@ -4271,17 +4264,17 @@ fn a_level_two_pasting_spells_its_columns_3989()
         (
             whisker,
             "compose_columns",
-            "compose[4, 9](chain(2, (1, 0)), (a, g))",
+            "compose[4, 9] (chain 2 (1, 0)) (a, g)",
         ),
         (
             stacked,
             "compose_column",
-            "compose[4, 9](chain(1, (2)), (a, g))",
+            "compose[4, 9] (chain 1 (2)) (a, g)",
         ),
         (
             filled,
             "fill_columns",
-            "fill[4, 9](chain(2, (1, 0)), t(x), (a, g))",
+            "fill[4, 9] (chain 2 (1, 0)) (t x) (a, g)",
         ),
     ] {
         agrees(&core, &names, CoreNode::Value(node));
@@ -4330,7 +4323,7 @@ fn a_pasting_past_level_two_is_notation_4237()
         ),
         (
             (
-                "compose[7, 17](tree(3, [[[[]]], [[[]]]]), (a, b))".to_owned(),
+                "compose[7, 17] (tree 3 [[[[]]], [[[]]]]) (a, b)".to_owned(),
                 Fidelity::Approximate
             ),
             vec![Unspelled::Notation(Notation::Tree)]
@@ -4367,14 +4360,14 @@ fn native_paths_preserve_ordered_endpoints_and_maps()
             Root::Type(CoreNode::ValueType(path_type)),
             "Path_U(Unit, Integer)",
         ),
-        (Root::Value(CoreNode::Value(first)), "refl(Unit)"),
+        (Root::Value(CoreNode::Value(first)), "refl Unit"),
         (
             Root::Value(CoreNode::Value(product)),
-            "Path.product(refl(Unit), refl(Integer))",
+            "Path.product (refl Unit) (refl Integer)",
         ),
         (
             Root::Value(CoreNode::Value(equiv)),
-            "equiv(forward, backward)",
+            "equiv forward backward",
         ),
     ] {
         let rendered = presented(&source, root, wide());
@@ -4405,7 +4398,7 @@ fn a_product_of_written_paths_spells_as_written()
     let rendered = presented(&source, Root::Value(CoreNode::Value(telescope)), wide());
     assert_eq!(
         rendered.as_ref(),
-        "Path.product(Path.here(Unit), Path.product(equiv(keep, keep), equiv(exchange, exchange)))"
+        "Path.product (Path.here Unit) (Path.product (equiv keep keep) (equiv exchange exchange))"
     );
     assert_eq!(rendered.fidelity(), Fidelity::Faithful);
 }
@@ -4431,7 +4424,7 @@ fn a_product_of_flows_spells_as_written()
     let rendered = presented(&source, Root::Value(CoreNode::Value(telescope)), wide());
     assert_eq!(
         rendered.as_ref(),
-        "Flow.product(Flow.stay(Unit), Flow.product(Flow.into(keep), Flow.into(exchange)))"
+        "Flow.product (Flow.stay Unit) (Flow.product (Flow.into keep) (Flow.into exchange))"
     );
     assert_eq!(rendered.fidelity(), Fidelity::Faithful);
 }
@@ -4474,13 +4467,13 @@ fn a_composite_of_flows_spells_as_a_call()
         agrees_naming(&core, &names, &constructors, CoreNode::Value(root));
     }
     for (root, expected) in [
-        (composite, "Flow.then(Flow.into(keep), Flow.into(exchange))"),
+        (composite, "Flow.then (Flow.into keep) (Flow.into exchange)"),
         (
             nested,
-            "Flow.then(Flow.then(Flow.into(keep), Flow.into(exchange)), Flow.into(keep))",
+            "Flow.then (Flow.then (Flow.into keep) (Flow.into exchange)) (Flow.into keep)",
         ),
-        (consed_first, "Flow.then(loop ∷ base, Flow.into(keep))"),
-        (consed_second, "Flow.then(Flow.into(keep), loop ∷ base)"),
+        (consed_first, "Flow.then (loop ∷ base) (Flow.into keep)"),
+        (consed_second, "Flow.then (Flow.into keep) (loop ∷ base)"),
     ] {
         let rendered = presented(&source, Root::Value(CoreNode::Value(root)), wide());
         assert_eq!(
@@ -4517,7 +4510,7 @@ fn a_returned_composite_of_paths_is_written_as_a_step_754()
         agrees(&core, &names, CoreNode::Value(root));
     }
     for (root, form, expected) in [
-        (composite, Form::Sugared, "Path.step(loop, loop)"),
+        (composite, Form::Sugared, "Path.step loop loop"),
         (
             composite,
             Form::Explicit,
@@ -4570,12 +4563,12 @@ fn a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218()
     ];
     let source = CoreSource::new(&core, &names);
     for (root, expected) in [
-        (agreeing, "Path.step(Path.here(base), loop)"),
+        (agreeing, "Path.step (Path.here base) loop"),
         (
             apart,
             "Path.walk(fun (a) { type(Path[.A = Circle](other, a)) }, loop, Path.here(base))",
         ),
-        (squared, "Path.step(Path.here(Path.here(base)), loop)"),
+        (squared, "Path.step (Path.here (Path.here base)) loop"),
     ] {
         let rendered = presented_in(
             &source,
@@ -4636,7 +4629,7 @@ fn a_composite_a_transport_moves_stays_explicit_815()
         wide(),
         Form::Sugared,
     );
-    assert_eq!(rendered.as_ref(), "sect(Path.step(loop, loop))");
+    assert_eq!(rendered.as_ref(), "sect (Path.step loop loop)");
 }
 
 /// A returned inverse and a returned action on a path spell as written in
@@ -4688,19 +4681,19 @@ fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
         agrees(&core, &names, CoreNode::Value(root));
     }
     for (root, form, expected) in [
-        (inverse, Form::Sugared, "Path.back(loop)"),
+        (inverse, Form::Sugared, "Path.back loop"),
         (
             inverse,
             Form::Explicit,
             "Path.walk(fun (a) { type(Path[.A = Circle](a, base)) }, loop, Path.here(base))",
         ),
-        (action, Form::Sugared, "Path.ap(spin, loop)"),
+        (action, Form::Sugared, "Path.ap spin loop"),
         (
             action,
             Form::Explicit,
             "Path.walk(fun (a) { type(Path[.A = Circle](spin(base), spin(a))) }, loop, Path.here(spin(base)))",
         ),
-        (mapped, Form::Sugared, "Path.ap(f, loop)"),
+        (mapped, Form::Sugared, "Path.ap f loop"),
         (
             unmapped,
             Form::Sugared,
@@ -4820,34 +4813,34 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     for (root, expected, fidelity) in [
         (body(identity), "fun (a) { a }", Fidelity::Faithful),
-        (body(calling), "fun (a) { kept(a) }", Fidelity::Faithful),
+        (body(calling), "fun (a) { kept a }", Fidelity::Faithful),
         (body(forced), "force kept", Fidelity::Faithful),
         (body(pure_one), "1", Fidelity::Faithful),
-        (body(suspends), "thunk { (pure 1)(2) }", Fidelity::Faithful),
+        (body(suspends), "thunk { (pure 1) 2 }", Fidelity::Faithful),
         (
             body(analysed),
-            "fun (a) { match a { +{.0 = b} => b, +{.1 = b} => b } }",
+            "fun (a) { match a { | +{.0 = b} => b | +{.1 = b} => b } }",
             Fidelity::Faithful,
         ),
         (
             body(opened),
-            "fun (a) { match a { #{b, c} => c } }",
+            "fun (a) { match a { | *{b, c} => c } }",
             Fidelity::Faithful,
         ),
         (
             body(matched),
-            "fun (a) { match a { Zero => Zero, Succ(b) => b } }",
+            "fun (a) { match a { | Zero => Zero | Succ(b) => b } }",
             Fidelity::Faithful,
         ),
         (body(projected), "fun (a) { a.x }", Fidelity::Faithful),
         (
             body(primitive_call),
-            "fun (a) { prim.id(a) }",
+            "fun (a) { prim.id a }",
             Fidelity::Faithful,
         ),
         (
             body(riding),
-            "fun (a) { Flow.ride(fun (b) { Run(b) }, a, a) }",
+            "fun (a) { Flow.ride (fun (b) { Run b }) a a }",
             Fidelity::Faithful,
         ),
         (
@@ -4877,7 +4870,7 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     assert_eq!(
         spelled(&source, Root::Value(CoreNode::Value(recorded))),
         (
-            "recorded(received(1), selected(report), sent(2), offered(retire), closed)".to_owned(),
+            "recorded (received 1) (selected report) (sent 2) (offered retire) (closed)".to_owned(),
             Fidelity::Faithful
         ),
         "a recorded run spells each move as written"
@@ -4889,7 +4882,7 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     );
     pin(&source, body(sequenced), Pinned {
         name: "elided-body",
-        flat: "fun (a) { let b = { let b = pure 1 ; pure b } ; kept(b) }",
+        flat: "fun (a) { let b = { let b = pure 1 ; pure b } ; kept b }",
         fidelity: Fidelity::Faithful,
     });
     // Written on one line, each body is its layout at a page no line
@@ -4977,7 +4970,7 @@ fn a_pruned_arm_is_left_unwritten_1314()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(matched))),
         (
-            "fun (a) { match a { VCons(b, c, d) => c } }".to_owned(),
+            "fun (a) { match a { | VCons(b, c, d) => c } }".to_owned(),
             Fidelity::Faithful
         ),
         "the pruned `VNil` arm and the equation are not written"
@@ -4999,8 +4992,8 @@ fn a_recorded_run_without_payloads_spells_its_moves_1871()
     let names = [Name::from("kept")];
     let source = CoreSource::new(&core, &names);
     for (recorded, expected) in [
-        (empty, "recorded()"),
-        (chosen, "recorded(selected(report), offered(next), closed)"),
+        (empty, "recorded ()"),
+        (chosen, "recorded (selected report) (offered next) (closed)"),
     ] {
         agrees(&core, &names, CoreNode::Value(recorded));
         assert_eq!(
@@ -5065,20 +5058,20 @@ fn a_dialogue_and_its_web_spell_as_the_surface_writes_them()
     for (root, expected) in [
         (
             value(played),
-            "dialogue(left(sent(\"yes\")), right(received(\"yes\")), right(closed), left(closed))",
+            "dialogue (left (sent \"yes\")) (right (received \"yes\")) (right (closed)) (left (closed))",
         ),
         (
             value(series_parallel),
-            "series(event(left, 0), parallel(event(left, 1), series(event(right, 0), event(right, 1))))",
+            "series (event left 0) (parallel (event left 1) (series (event right 0) (event right 1)))",
         ),
         (
             value(prime),
-            "series(event(left, 0), prime(event(left, 1), event(left, 2), event(right, 0), series(event(right, 1), event(right, 2))))",
+            "series (event left 0) (prime (event left 1) (event left 2) (event right 0) (series (event right 1) (event right 2)))",
         ),
-        (value(cut), "series(event(right, 0))"),
+        (value(cut), "series (event right 0)"),
         (
             Root::Computation(CoreNode::Computation(decomposed)),
-            "decompose(kept)",
+            "decompose kept",
         ),
         (
             Root::Type(CoreNode::ValueType(played_type)),
@@ -5810,17 +5803,17 @@ fn a_thunk_the_checker_inserts_is_left_out_1457()
     let definition = |id| Root::Definition(CoreNode::Value(id));
     assert_eq!(
         spelled(&source, computation(called)),
-        faithful(Written("kept(twice(1))")),
+        faithful(Written("kept (twice 1)")),
         "an argument's thunk over a call is left out"
     );
     assert_eq!(
         spelled(&source, computation(returning)),
-        faithful(Written("kept(thunk { 1 })")),
+        faithful(Written("kept (thunk { 1 })")),
         "an argument's thunk over a returned value is kept"
     );
     assert_eq!(
         spelled(&source, definition(defined)),
-        faithful(Written("fun (a) { kept(a) }")),
+        faithful(Written("fun (a) { kept a }")),
         "a definition's thunk over a function is left out"
     );
     assert_eq!(
@@ -5863,7 +5856,7 @@ fn a_function_argument_leaves_its_thunk_out_where_a_type_is_read_3933()
     );
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(over_call))),
-        faithful(Written("kept(thunk { twice(1) })")),
+        faithful(Written("kept(thunk { twice 1 })")),
         "an argument's thunk over a call is kept where a type is read"
     );
 }
@@ -5907,7 +5900,7 @@ fn no_thunk_is_left_out_below_a_type_3972()
     let source = CoreSource::new(&core, &names);
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(nested))),
-        faithful(Written("kept(pass(thunk { twice(1) }))")),
+        faithful(Written("kept(pass(thunk { twice 1 }))")),
         "a call inside a type's call keeps its argument's thunk"
     );
     assert_eq!(
@@ -5951,14 +5944,12 @@ fn an_ascribed_lambda_is_written_without_its_thunk_3872()
     let computation = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, computation(over_lambda)),
-        faithful(Written(
-            "kept((fun (a) { a } : +U (Integer -> -F Integer)))"
-        )),
+        faithful(Written("kept (fun (a) { a } : +U (Integer -> -F Integer))")),
         "an ascribed thunk over a lambda is written as the lambda"
     );
     assert_eq!(
         spelled(&source, computation(over_call)),
-        faithful(Written("kept((thunk { twice(1) } : +U (-F Integer)))")),
+        faithful(Written("kept (thunk { twice 1 } : +U (-F Integer))")),
         "an ascribed thunk over a call keeps its braces"
     );
 }
@@ -6017,25 +6008,25 @@ fn a_run_only_sequencing_a_call_is_written_at_its_read_1416()
     for (root, sugared, explicit) in [
         (
             in_order,
-            "g(f(1), f(2))",
-            "let a = f(1) ; let b = f(2) ; g(a, b)",
+            "g (f 1) (f 2)",
+            "let a = f 1 ; let b = f 2 ; g a b",
         ),
         (
             swapped,
-            "let a = f(1) ; g(f(2), a)",
-            "let a = f(1) ; let b = f(2) ; g(b, a)",
+            "let a = f 1 ; g (f 2) a",
+            "let a = f 1 ; let b = f 2 ; g b a",
         ),
-        (twice, "let a = f(1) ; g(a, a)", "let a = f(1) ; g(a, a)"),
-        (whole, "let a = f(1) ; a", "let a = f(1) ; a"),
+        (twice, "let a = f 1 ; g a a", "let a = f 1 ; g a a"),
+        (whole, "let a = f 1 ; a", "let a = f 1 ; a"),
         (
             chained,
-            "let a = f(1) ; g(f(a))",
-            "let a = f(1) ; let b = f(a) ; g(b)",
+            "let a = f 1 ; g (f a)",
+            "let a = f 1 ; let b = f a ; g b",
         ),
         (
             branched,
-            "match 1 { +{.0 = a} => g(f(1), f(2)) }",
-            "match 1 { +{.0 = a} => { let b = f(1) ; let c = f(2) ; g(b, c) } }",
+            "match 1 { | +{.0 = a} => g (f 1) (f 2) }",
+            "match 1 { | +{.0 = a} => { let b = f 1 ; let c = f 2 ; g b c } }",
         ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -6235,24 +6226,24 @@ fn a_case_nothing_types_writes_its_motive_815()
     for (root, expected) in [
         (
             running,
-            "fun (a) { let b = match a -> -F Nat { Zero => pure Zero, Succ(b) => pure b } ; b }",
+            "fun (a) { let b = match a -> -F Nat { | Zero => pure Zero | Succ(b) => pure b } ; b }",
         ),
         (
             holding,
-            "Succ(thunk { fun (a) { match a -> -F Nat { Zero => Zero, Succ(b) => b } } })",
+            "Succ (thunk { fun (a) { match a -> -F Nat { | Zero => Zero | Succ(b) => b } } })",
         ),
         (
             matched,
-            "fun (a) { match a { Zero => Zero, Succ(b) => b } }",
+            "fun (a) { match a { | Zero => Zero | Succ(b) => b } }",
         ),
         (
             holding_nested,
-            "Succ(fun (a) { match a -> -F Nat { Zero => Zero, Succ(b) => b } })",
+            "Succ (fun (a) { match a -> -F Nat { | Zero => Zero | Succ(b) => b } })",
         ),
         (returns_nested, "pure (pure Zero)"),
         (
             depending,
-            "fun (a) { let b = match a { Zero => pure Zero, Succ(b) => pure b } ; b }",
+            "fun (a) { let b = match a { | Zero => pure Zero | Succ(b) => pure b } ; b }",
         ),
     ] {
         assert_eq!(
@@ -6293,7 +6284,7 @@ fn a_constructor_at_the_depth_limit_binds_every_field()
     let (text, fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(matched)));
     assert_eq!(Fidelity::Faithful, fidelity, "{text}");
     assert!(
-        text.contains("match a {\n    Wide(b, c, ") && text.contains(", f1, g1) => g1\n"),
+        text.contains("match a {\n    | Wide(b, c, ") && text.contains(", f1, g1) => g1\n"),
         "the branch binds its fields under the constructor: {text}"
     );
 }
@@ -6338,7 +6329,7 @@ fn a_family_spells_by_its_declaration_past_a_namesake_3125()
         (Root::Value(CoreNode::Value(on_heap)), "OnHeap"),
         (
             Root::Computation(CoreNode::Computation(matched)),
-            "fun (a) { match a { Inside => OnHeap, OnHeap => Inside } }",
+            "fun (a) { match a { | Inside => OnHeap | OnHeap => Inside } }",
         ),
     ] {
         assert_eq!(
@@ -6414,7 +6405,7 @@ fn arms_sharing_a_body_bind_distinct_fields_815()
     let (text, fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(matched)));
     assert_eq!(Fidelity::Faithful, fidelity, "{text}");
     assert!(
-        text.contains("Sort(b, c, d) => unit") && text.contains("Bound(b, c, d, e, f) => unit"),
+        text.contains("Sort(b, c, d) => *{}") && text.contains("Bound(b, c, d, e, f) => *{}"),
         "each arm binds distinct fields: {text}"
     );
 }
@@ -6458,9 +6449,9 @@ fn a_case_over_words_writes_each_arm_as_the_surface_does_815()
     let (text, fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(matched)));
     assert_eq!(Fidelity::Faithful, fidelity, "{text}");
     for arm in [
-        "{ here => unit,",
-        "loop ∷ b => unit",
-        "back(loop) ∷ b => unit",
+        "{ | here => *{}",
+        "| loop ∷ b => *{}",
+        "| back(loop) ∷ b => *{}",
     ] {
         assert!(text.contains(arm), "the case writes `{arm}`: {text}");
     }
@@ -6498,7 +6489,7 @@ fn a_loop_arm_is_written_under_its_loop_813()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(matched))),
         faithful(Written(
-            "fun (a) { match a { Base => unit, loop => unit } }"
+            "fun (a) { match a { | Base => *{} | loop => *{} } }"
         ))
     );
 }
@@ -6867,7 +6858,7 @@ fn a_parameterised_constructor_is_written_against_its_family_where_source_reads_
     );
     assert_eq!(
         spelled(&source, body(returns_code)),
-        faithful(Written("pure Vec(MkIx)")),
+        faithful(Written("pure (Vec MkIx)")),
         "a family's argument is classified by the family's parameter"
     );
     assert_eq!(
@@ -6900,7 +6891,7 @@ fn a_definition_writes_its_constructors_against_their_family_815()
     let source = CoreSource::new(&core, &names).naming(&constructors);
     assert_eq!(
         spelled(&source, Root::Definition(CoreNode::Value(pair))),
-        faithful(Written("#{(MkIx : Ix(3)), thunk { 3 }}")),
+        faithful(Written("*{(MkIx : Ix(3)), thunk { 3 }}")),
         "a constructor below the root reads back against its family"
     );
     assert_eq!(
@@ -7234,7 +7225,7 @@ fn a_statement_outside_its_block_is_a_block_3972()
     let source = CoreSource::new(&core, &names);
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(called))).0,
-        "kept({ let a = pure 1 ; pure a })",
+        "kept { let a = pure 1 ; pure a }",
         "a call's argument takes the statements as a block"
     );
     assert_eq!(
@@ -7474,7 +7465,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
         faithful(Written(
-            "handle a : std.process.Exit.Eff { let b : Integer at a = pure a ; b } with { pure(a) => a }"
+            "handle a : std.process.Exit.Eff { let b : Integer at a = pure a ; b } with { | pure(a) => a }"
         ))
     );
     let bound = core.value_type_kept(integer, Region::Bound(RegionBinder::from(0_u32)));
@@ -7490,7 +7481,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
             Root::Computation(CoreNode::Computation(bound_scoped))
         ),
         approximate(Written(
-            "handle a : std.process.Exit.Eff { let b : Integer at ? = pure a ; b } with { pure(a) => a }"
+            "handle a : std.process.Exit.Eff { let b : Integer at ? = pure a ; b } with { | pure(a) => a }"
         ))
     );
 }
@@ -7537,7 +7528,7 @@ fn a_scope_over_a_theory_spells_its_manifest_2382()
         assert_eq!(
             (presented.as_ref(), presented.fidelity()),
             (
-                "handle a : Labelled with sort K = Integer with sort L = String { a } with { \
+                "handle a : Labelled with sort K = Integer with sort L = String { a } with { | \
                  pure(a) => a }",
                 Fidelity::Faithful
             ),
@@ -7595,8 +7586,8 @@ fn a_scope_a_model_answers_spells_the_model_3196()
         ),
         (
             None,
-            "handle a : Labelled with sort K = Integer { a } with { pure(a) => a, oper label(a, \
-             b) => a }",
+            "handle a : Labelled with sort K = Integer { a } with { | pure(a) => a | oper \
+             label(a, b) => a }",
         ),
     ] {
         let answers: Vec<_> = answered
@@ -7652,7 +7643,7 @@ fn a_kept_value_names_the_hold_it_is_kept_in()
     agrees(&core, &[], CoreNode::Computation(holds));
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(holds))),
-        faithful(Written("var a = unit ; let b : Unit at a = pure a ; b"))
+        faithful(Written("var a = *{} ; let b : Unit at a = pure a ; b"))
     );
 }
 
@@ -7681,7 +7672,7 @@ fn a_performed_operation_is_called_through_its_interface_s_name_2304()
     agrees(&core, &[], CoreNode::Computation(performed));
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(performed))),
-        faithful(Written("std.process.Exit.exit(3)"))
+        faithful(Written("std.process.Exit.exit 3"))
     );
 }
 
@@ -7736,14 +7727,14 @@ fn a_continuation_is_resumed_by_its_call_941()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(called))),
         faithful(Written(
-            "handle a : std.process.Exit.Eff { unit } with { pure(a) => a, oper exit(a, b) => b(unit) }"
+            "handle a : std.process.Exit.Eff { *{} } with { | pure(a) => a | oper exit(a, b) => b *{} }"
         )),
         "a resumption with a returned value is the continuation's call"
     );
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(noted))),
         approximate(Written(
-            "handle a : std.process.Exit.Eff { unit } with { pure(a) => a, oper exit(a, b) => resume(b, force a\n  ) }"
+            "handle a : std.process.Exit.Eff { *{} } with { | pure(a) => a | oper exit(a, b) => resume(b, force a\n                                               ) }"
         )),
         "a resumption with any other computation keeps the notation"
     );
@@ -7801,28 +7792,28 @@ fn a_return_leaving_a_handler_prints_as_written_941()
     assert_eq!(
         spelled(&source, body(left)),
         faithful(Written(
-            "handle a : std.process.Exit.Eff { return unit } with { pure(a) => a }"
+            "handle a : std.process.Exit.Eff { return *{} } with { | pure(a) => a }"
         )),
         "a shift over a returner in a subject the reset delimits is `return`"
     );
     assert_eq!(
         spelled(&source, body(looped_out)),
         faithful(Written(
-            "handle a : std.process.Exit.Eff { loop { return unit } } with { pure(a) => a }"
+            "handle a : std.process.Exit.Eff { loop { return *{} } } with { | pure(a) => a }"
         )),
         "a `return` ending a loop's pass in a subject leaves the handler"
     );
     assert_eq!(
         spelled(&source, body(naming)),
         approximate(Written(
-            "handle a : std.process.Exit.Eff { return b } with { pure(a) => a }"
+            "handle a : std.process.Exit.Eff { return b } with { | pure(a) => a }"
         )),
         "a shift naming the stack it captures names the unwritten binder"
     );
     assert_eq!(
         spelled(&source, body(undelimited)),
         approximate(Written(
-            "handle a : std.process.Exit.Eff { shift b { unit } } with { pure(a) => a }"
+            "handle a : std.process.Exit.Eff { shift b { *{} } } with { | pure(a) => a }"
         )),
         "a shift no reset delimits keeps the notation"
     );
@@ -7904,19 +7895,19 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
     );
     assert_eq!(
         spelled(&source, body(ending)),
-        faithful(Written("loop { break(unit) }")),
+        faithful(Written("loop { break(*{}) }")),
         "a returner where the loop ends the body is its break"
     );
     assert_eq!(
         spelled(&source, body(whiled)),
         faithful(Written(
-            "fun (a) {\n  while force a { let e = force a ; match e { +{.0 = f} => continue, +{.1 = f} => return unit } } ;\n  unit\n}"
+            "fun (a) {\n  while force a {\n    let e = force a ;\n    match e { | +{.0 = f} => continue | +{.1 = f} => return *{} }\n  } ;\n  *{}\n}"
         )),
         "a while a rest follows writes its exits"
     );
     assert_eq!(
         spelled(&source, body(becoming)),
-        faithful(Written("fun (a) { loop { become a(unit) } }")),
+        faithful(Written("fun (a) { loop { become (a *{}) } }")),
         "a call ending a pass is written `become`"
     );
     assert_eq!(
@@ -8004,17 +7995,17 @@ fn a_loop_a_rest_follows_writes_its_breaks_bare_3231()
     assert_eq!(
         spelled(&source, body(armed)),
         faithful(Written(
-            "fun (a) { loop { match a { +{.0 = c} => break, +{.1 = c} => continue } } ; a }"
+            "fun (a) { loop { match a { | +{.0 = c} => break | +{.1 = c} => continue } } ; a }"
         )),
         "a break in an arm goes on with the rest under the arm's binder"
     );
     let (text, fidelity) = spelled(&source, body(apart));
     assert!(
-        text.matches("match unit { unit => break(a")
+        text.matches("match *{} { | *{} => break(a")
             .nth(1_usize)
             .is_some()
             && text
-                .matches("match unit { unit => break(a")
+                .matches("match *{} { | *{} => break(a")
                 .nth(2_usize)
                 .is_none()
             && !text.contains("break }")
@@ -8194,7 +8185,7 @@ fn a_threading_loop_prints_as_the_loop_it_lowered_from_941()
     assert_eq!(
         spelled(&source, body(swapping)),
         approximate(Written(
-            "fun (a) { var b = a ; var c = a ; loop { become d(#{c, b}) } }"
+            "fun (a) { var b = a ; var c = a ; loop { become (d *{c, b}) } }"
         )),
         "a pass handing the slots on out of order names the unwritten loop"
     );
@@ -8267,8 +8258,7 @@ fn a_placed_buffer_is_written_by_its_bind_s_name()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
         faithful(Written(
-            "handle a : std.io.Ring.Eff { let b = a.alloc(4096) ; a.free(b\n  ) } with { pure(a) => a, oper \
-             alloc(c, d, b) => b(d), oper free(a, b) => b(unit) }"
+            "handle a : std.io.Ring.Eff { let b = a.alloc 4096 ; a.free\n                               b } with { | pure(a) => a | oper alloc(c, d, b) => b\n                                            d | oper free(a, b) => b *{} }"
         ))
     );
 }
@@ -8348,9 +8338,12 @@ fn an_ascribed_case_writes_its_answer_2089()
     for (root, expected) in [
         (
             analysed,
-            "fun (a) { match a -> -F Integer { +{.0 = b} => 1, +{.1 = b} => 2 } }",
+            "fun (a) { match a -> -F Integer { | +{.0 = b} => 1 | +{.1 = b} => 2 } }",
         ),
-        (opened, "fun (a) { match a -> -F Integer { #{b, c} => 1 } }"),
+        (
+            opened,
+            "fun (a) { match a -> -F Integer { | *{b, c} => 1 } }",
+        ),
     ] {
         agrees(&core, &[], CoreNode::Computation(root));
         assert_eq!(
