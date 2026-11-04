@@ -757,6 +757,111 @@ theory Wheel where {
     );
 }
 
+/// An inner block leading a theory's body, `@![ refuses("…") ]`, decorates
+/// the theory as an outer block before it does: the refused block
+/// states its refusal. One after a member decorates nothing and is refused
+/// at itself under the theory's name, the theory lowering clean. One
+/// writing an attribute an outer block writes is refused as doubled.
+#[test]
+fn an_inner_attribute_decorates_its_theory_3586()
+{
+    let source = r#"theory Wheel where {
+  @![ refuses("BareFeedback") ]
+  sort Nat : Type;
+  oper zip : (s : Nat, t : Nat) --> (u : Nat);
+  rule spin : (data stream : Nat) ==> (out : Nat) {
+    node : zip(stream, state) --> (out);
+    feed : (out) --> (state);
+  };
+}
+theory Late where {
+  sort C : Type;
+  @![ explicit_exits ]
+  oper mark : (k : C) --> C;
+}
+@[ explicit_exits ]
+theory Doubled where {
+  @![ explicit_exits ]
+  sort D : Type;
+}
+"#;
+    let grammar = grammar();
+    let tree = parse(&grammar, SourceText::from(source))
+        .unwrap()
+        .into_tree();
+    let mut arena = gandr_core_term::CoreArena::new();
+    let module = crate::lower_module(
+        &grammar,
+        &tree,
+        &mut arena,
+        crate::LoweringBudget::DEFAULT,
+        crate::namespace::Recognition::default(),
+    )
+    .unwrap();
+    let text = |at: ByteSpan| source.get(usize::from(at.start()) .. usize::from(at.end()));
+    let named = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.name().as_ref() == name)
+            .collect::<Vec<_>>()
+    };
+    let [wheel] = *named("Wheel")
+    else {
+        panic!("`Wheel` is one declaration: {:?}", module.declarations())
+    };
+    assert!(
+        matches!(
+            wheel.outcome(),
+            crate::DeclarationOutcome::Refused(crate::LoweringRefusal::BareFeedback { .. })
+        ),
+        "the block is refused at its member: {:?}",
+        wheel.outcome()
+    );
+    let Maybe::Present(key) = wheel.definition()
+    else {
+        panic!("the block is the declaration's definition")
+    };
+    assert_eq!(
+        module.attributes().entries(key).len(),
+        1_usize,
+        "the inner block states the block's refusal"
+    );
+    let late = named("Late");
+    let declared = late
+        .iter()
+        .filter(|declaration| declaration.role() == crate::module::Role::Declared)
+        .collect::<Vec<_>>();
+    let held = late
+        .iter()
+        .filter(|declaration| declaration.role() == crate::module::Role::Held)
+        .collect::<Vec<_>>();
+    assert!(
+        matches!(declared.as_slice(), [theory] if !matches!(theory.outcome(), crate::DeclarationOutcome::Refused(_))),
+        "`Late` lowers clean beside its late block: {late:?}"
+    );
+    assert!(
+        matches!(
+            held.as_slice(),
+            [block] if matches!(
+                block.outcome(),
+                crate::DeclarationOutcome::Refused(crate::LoweringRefusal::MalformedForm { span, .. })
+                    if text(span) == Some("@![ explicit_exits ]")
+            )
+        ),
+        "the late block is refused at itself under `Late`: {late:?}"
+    );
+    let doubled = named("Doubled");
+    assert!(
+        doubled.iter().any(|declaration| matches!(
+            declaration.outcome(),
+            crate::DeclarationOutcome::Refused(crate::LoweringRefusal::DuplicateAttribute { name, .. })
+                if name.as_ref() == "explicit_exits"
+        )),
+        "an attribute the outer and the inner block both write is refused as doubled: {doubled:?}"
+    );
+}
+
 #[test]
 fn an_ill_formed_theory_is_refused_with_the_checks_reason_1553()
 {
