@@ -25,6 +25,12 @@
 # passed as `GATE_SCOPE`; a change to the workspace's own configuration runs
 # them over the whole workspace. `gate:all` runs every check over the whole
 # workspace.
+#
+# A gate that passes records the tree of the work it read and the checks it
+# ran (`.config/gate-scope/passed.bash`, #5076), and `pr:open` and `pr:land`
+# refuse a head whose tree no gate passed on. The tree is read before the
+# checks run and again after them: when the work changed in between, nothing
+# is recorded.
 [check]
 description = "The gates the change selects, over the packages it touches and their dependents, in one of the host's gate slots"
 tools.jq = "1.8.1"
@@ -40,6 +46,7 @@ hold_gate_slot "mise run check"
 NEXTEST_TEST_THREADS=$(gate_threads)
 export NEXTEST_TEST_THREADS
 echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads" >&2
+tree=$(.config/gate-scope/passed.bash tree)
 selected=$(.config/gate-scope/select.bash)
 mapfile -t checks <<< "$selected"
 echo "check: the change selects ${#checks[@]} of $(mise tasks ls --json | jq '[.[] | select(.name | startswith("check:"))] | length') checks (.config/gate-scope/table.json); \`mise run gate:all\` runs every one over the workspace" >&2
@@ -48,6 +55,7 @@ export GATE_SCOPE
 tasks=()
 for check in "${checks[@]}"; do tasks+=("$check" :::); done
 mise run "${tasks[@]:0:${#tasks[@]}-1}"
+.config/gate-scope/passed.bash record check "$tree" "${checks[@]}"
 {% endraw %}'''
 
 # The whole wall (#5014): every `check:*` task over the whole workspace, in
@@ -57,6 +65,7 @@ mise run "${tasks[@]:0:${#tasks[@]}-1}"
 # it never runs itself.
 ["gate:all"]
 description = "Every check over the whole workspace, about half an hour; the merge group runs it before every landing"
+tools.jq = "1.8.1"
 usage = '''
 flag "--no-wait" help="refuse at once, naming the holders, when the lane's lock or every gate slot on the host is held"
 '''
@@ -70,7 +79,10 @@ NEXTEST_TEST_THREADS=$(gate_threads)
 export NEXTEST_TEST_THREADS
 echo "gate:all: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads" >&2
 unset GATE_SCOPE
+tree=$(.config/gate-scope/passed.bash tree)
+mapfile -t checks < <(mise tasks ls --json | jq -r '.[] | .name | select(startswith("check:"))')
 mise run 'check:*'
+.config/gate-scope/passed.bash record gate:all "$tree" "${checks[@]}"
 {% endraw %}'''
 
 # Every corpus source stays in the gandr formatter's layout (#492): one
@@ -1604,9 +1616,12 @@ run = ".config/mise/host-lock-cases.bash"
 # `select.jq` over the table, a workflow-only change selecting no Rust check, a
 # crate's source the whole wall and an unmapped path every check, and
 # `packages.jq` (#5014), #5007's diff scoping its one package, a `Cargo.lock`
-# change the whole workspace and a change growing by its dependents. Then
-# `unmapped.jq` reads the live tasks: a check that builds or runs the toolchain
-# outside every group of the table, or a group naming no check, fails it.
+# change the whole workspace and a change growing by its dependents, and
+# `passed.jq` (#5076), a gated tree accepted, a changed tree refused, a
+# reworded commit accepted and a gate that skipped a selected check refused.
+# Then `unmapped.jq` reads the live tasks: a check that builds or runs the
+# toolchain outside every group of the table, or a group naming no check,
+# fails it.
 ["check:gate-scope"]
 description = "The table scoping `mise run check` maps a change to its checks, and every check that builds the toolchain sits in one of its groups"
 tools.jq = "1.8.1"

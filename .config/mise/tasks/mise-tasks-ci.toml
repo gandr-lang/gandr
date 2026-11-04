@@ -3347,6 +3347,11 @@ if existing=$(gh pr view "$own" -R "$repo" --json number,state --jq 'select(.sta
   echo "$own already has PR #$existing open; land it with \`pr:land\`" >&2
   exit 2
 fi
+# A head opens only on a tree a gate passed on, with every check its change
+# selects (#5076, `.config/gate-scope/passed.bash`): CI otherwise finds what
+# the gate finds. A reworded commit or a rebase that changes nothing keeps
+# its tree, so its gate counts.
+"$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" require pr:open HEAD || exit 2
 claims=$(git rev-parse --show-toplevel)/.config/claims
 issues=$(jq -Rrs -L "$claims" 'include "targets"; targets(working) | unique[]' "$body" \
   | while IFS= read -r number; do gh api "repos/$repo/issues/$number" --jq '{number, body: (.body // ""), labels: [.labels[].name]}'; done \
@@ -3628,6 +3633,7 @@ fi
 # member's base cannot be edited. The members below it stay queued.
 ["pr:land"]
 description = "Queue the ready prefix of the pull request's stack and wait for the merge queue outcome"
+tools.jq = "1.8.1"
 usage = '''
 arg "[number]" help="pull request number; defaults to the current branch"
 '''
@@ -3778,6 +3784,8 @@ fi
 # which hold the obligations lane.
 own=$(gh pr view --json number --jq .number 2> /dev/null) || own=
 if [[ "$own" == "$number" ]]; then
+  # The head queues only on a tree a gate passed on (#5076, `passed.bash`).
+  "$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" require pr:land "origin/$ledger_head" || exit 2
   base=$(gh pr view "$number" -R "$repo" --json baseRefName --jq .baseRefName)
   git fetch --quiet origin "$base"
   measured=origin/$base

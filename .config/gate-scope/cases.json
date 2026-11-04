@@ -291,5 +291,96 @@
       ]
     },
     "output": "\"workspace\""
+  },
+  {
+    "name": "#5076: a tree a gate passed on is accepted",
+    "program": "passed.jq",
+    "input": {
+      "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "selected": ["check:claims", "check:prose"],
+      "records": [
+        {
+          "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "commit": "1566710c2a0b8f9e1d2c3b4a5968778695a4b3c2",
+          "gate": "check",
+          "checks": ["check:claims", "check:prose"]
+        }
+      ]
+    },
+    "output": { "accepted": true, "missing": [] }
+  },
+  {
+    "name": "#5076: a tree no gate passed on, as #5066's head changed after its gate, is refused",
+    "program": "passed.jq",
+    "input": {
+      "tree": "d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0",
+      "selected": ["check:claims", "check:prose"],
+      "records": [
+        {
+          "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "commit": "1566710c2a0b8f9e1d2c3b4a5968778695a4b3c2",
+          "gate": "check",
+          "checks": ["check:claims", "check:prose"]
+        }
+      ]
+    },
+    "output": { "accepted": false, "missing": ["check:claims", "check:prose"] }
+  },
+  {
+    "name": "#5076: a reworded commit keeps its tree, so the gate on the first commit counts",
+    "program": "passed.jq",
+    "input": {
+      "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "selected": ["check:claims", "check:prose"],
+      "records": [
+        {
+          "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "commit": "77a97c432d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a",
+          "gate": "check",
+          "checks": ["check:claims", "check:prose"]
+        }
+      ]
+    },
+    "output": { "accepted": true, "missing": [] }
+  },
+  {
+    "name": "#5076: a gate that skipped a check the head's change selects does not count",
+    "program": "passed.jq",
+    "input": {
+      "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "selected": ["check:claims", "check:corpus", "check:prose"],
+      "records": [
+        {
+          "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "commit": "1566710c2a0b8f9e1d2c3b4a5968778695a4b3c2",
+          "gate": "check",
+          "checks": ["check:claims", "check:prose"]
+        }
+      ]
+    },
+    "output": { "accepted": false, "missing": ["check:corpus"] }
+  },
+  {
+    "name": "#5076: the checks of two gates on one tree count together",
+    "program": "passed.jq",
+    "input": {
+      "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "selected": ["check:claims", "check:corpus", "check:prose"],
+      "records": [
+        {
+          "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "commit": "1566710c2a0b8f9e1d2c3b4a5968778695a4b3c2",
+          "gate": "check",
+          "checks": ["check:claims", "check:prose"]
+        },
+        {
+          "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "commit": "1566710c2a0b8f9e1d2c3b4a5968778695a4b3c2",
+          "gate": "gate:all",
+          "checks": ["check:claims", "check:corpus", "check:prose", "check:tests"]
+        }
+      ]
+    },
+    "output": { "accepted": true, "missing": [] }
   }
 ]
