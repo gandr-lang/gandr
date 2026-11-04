@@ -124,6 +124,7 @@ use gandr_core_term::Carried;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
+use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::ConstructorTag;
 use gandr_core_term::CoreArena;
@@ -2167,6 +2168,69 @@ impl TypeTable
             if binders.contains(&span) {
                 continue;
             }
+            // A binder a call's outputs bind answers at its output's type in
+            // what the first judgement of the call returns. An output whose
+            // type names an earlier one stands under the earlier binders'
+            // names.
+            if let Some(&Computation::BindAll { bound, .. }) = arena.computation(split) {
+                let Some((TypeNode::Computation(returns), (constant, depth))) =
+                    first_of(TermNode::Computation(bound))
+                else {
+                    continue;
+                };
+                let place = usize::from(component);
+                let Some(&CompType::Returns { ref results, .. }) = arena.comp_type(returns)
+                else {
+                    continue;
+                };
+                let Some(&ty) = results.get(place)
+                else {
+                    continue;
+                };
+                let within = Within {
+                    constant,
+                    node: CoreNode::Computation(bound),
+                    depth: Some(depth),
+                };
+                let earlier = Binders::NONE.deeper_by(ComponentCount::from(place));
+                let (ty, standing) = match strengthen_value_type(&mut arena, ty, earlier) {
+                    Maybe::Present(outside) => {
+                        (outside.settle(&mut arena), Standing::Judged(within))
+                    },
+                    Maybe::Absent(_) => {
+                        let Some(names) = (0_usize .. place)
+                            .map(|before| {
+                                match origins.component(split, SplitComponent::from(before)) {
+                                    Maybe::Present(&ComponentName::Written(origin)) => text
+                                        .get(
+                                            usize::from(origin.span().start())
+                                                .. usize::from(origin.span().end()),
+                                        )
+                                        .map(String::from),
+                                    Maybe::Present(&ComponentName::Labelled(_))
+                                    | Maybe::Absent(_) => None,
+                                }
+                            })
+                            .collect::<Option<Vec<String>>>()
+                        else {
+                            continue;
+                        };
+                        let named = NamedContext(contexts.len());
+                        contexts.push(names);
+                        (ty, Standing::Parted(within, named))
+                    },
+                };
+                let _fresh = binders.insert(span);
+                entries.push(Entry {
+                    span,
+                    subject: Subject::Binder,
+                    provenance: Provenance::Written,
+                    ty: TypeNode::Value(ty),
+                    last: TypeNode::Value(ty),
+                    standing,
+                });
+                continue;
+            }
             let Some(&Computation::Split { scrutinee, .. }) = arena.computation(split)
             else {
                 continue;
@@ -2238,8 +2302,9 @@ impl TypeTable
         // answers at what its bound computation returns, wherever a rewrite
         // of its block moved that computation (#298), and a computation judged
         // at a decode — `force m` with `m` at `+U (T(A))` — returns what the
-        // decode reads as.
-        let mut returned: BTreeMap<NodeIndex, (usize, ValueTypeId, Within)> = BTreeMap::new();
+        // decode reads as. A call returning a group of outputs returns the
+        // group, so the pattern that binds them answers at the call's type.
+        let mut returned: BTreeMap<NodeIndex, (usize, TypeNode, Within)> = BTreeMap::new();
         for &(term, first, _, at, (constant, depth)) in &kept {
             let (TermNode::Computation(id), TypeNode::Computation(ty)) = (term, first)
             else {
@@ -2249,9 +2314,10 @@ impl TypeTable
                 Some(&CompType::Element { .. }) => decoded_comp_reading(&mut arena, ty),
                 Some(_) | None => ty,
             };
-            let Some(&CompType::Returner { result, .. }) = arena.comp_type(ty)
-            else {
-                continue;
+            let result = match arena.comp_type(ty) {
+                Some(&CompType::Returner { result, .. }) => TypeNode::Value(result),
+                Some(&CompType::Returns { .. }) => TypeNode::Computation(ty),
+                Some(_) | None => continue,
             };
             let Maybe::Present(origin) = origins.computation(id)
             else {
@@ -2367,7 +2433,7 @@ impl TypeTable
                     else {
                         continue;
                     };
-                    (TypeNode::Value(result), Standing::Judged(within))
+                    (result, Standing::Judged(within))
                 },
                 Labelled::Kind(_) => continue,
             };
@@ -10228,5 +10294,41 @@ mod tests
             alone.iter().all(Option::is_none) && alone == judged,
             "the match with every arm written is refused in neither table: {alone:?} and {judged:?}"
         );
+    }
+
+    /// #5165: a pattern over a call returning a group of outputs answers at
+    /// the call's type, positional or labelled, and each binder it writes
+    /// answers at its output's type, one nothing reads included. A labelled
+    /// pattern's binders follow its labels, not the order it writes them.
+    #[test]
+    fn a_pattern_over_outputs_answers_at_its_group_and_each_binder_5165()
+    {
+        let source = SourceText::from(
+            "def pair(m : Integer, n : Bool) -> (quot : Integer, rem : Bool) { (m, n) }\n\ndef \
+             placed() -> -F Integer {\n  let (a, b) = pair(1, true);\n  a\n}\n\ndef labelled() \
+             -> -F Integer {\n  let (.rem = r, .quot = q) = pair(1, true);\n  q\n}\n",
+        );
+        let table = table(source);
+        for (needle, ty, reason) in [
+            ("(a, b)", "-F (Integer, Bool)", "the positional group"),
+            ("b) =", "Bool", "a positional binder nothing reads"),
+            ("(.rem = r", "-F (Integer, Bool)", "the labelled group"),
+            (
+                "r, .quot",
+                "Bool",
+                "a labelled binder nothing reads, at its label's output",
+            ),
+            (
+                "q) =",
+                "Integer",
+                "a labelled binder written last, at the first output",
+            ),
+        ] {
+            assert_eq!(
+                answer(&table, source, SourceText::from(needle)),
+                agreed(Subject::Binder, SourceText::from(ty)),
+                "{reason} answers at its type"
+            );
+        }
     }
 }

@@ -3449,6 +3449,10 @@ struct Lowerer<'run, 'source>
     /// outputs, with its outputs' labels in order, none for an unnamed one:
     /// the call stands as the record of its outputs.
     packed: BTreeMap<NodeIndex, Vec<Option<FieldLabel>>>,
+    /// Each tuple pattern over a call returning a group of outputs, with the
+    /// binder it writes for each output, in the order the callee writes them:
+    /// a labelled pattern's binders stand in its labels' order otherwise.
+    output_binders: BTreeMap<NodeIndex, Vec<NodeIndex>>,
     /// Each lambda's binder written with a type, `x` in `fun (x : A) { … }`,
     /// with `A`, the frame it was read under, which the lambda stands in, and
     /// the lambda's own frame, which binds `x`.
@@ -5548,6 +5552,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             annotated_definitions: BTreeMap::new(),
             ascribed: BTreeMap::new(),
             packed: BTreeMap::new(),
+            output_binders: BTreeMap::new(),
             typed_parameters: BTreeMap::new(),
             argued: BTreeMap::new(),
             parameter_typed: BTreeMap::new(),
@@ -11366,7 +11371,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 names.push((
                     label.map(|label| (self.name_at(label), label)),
                     name,
-                    component.span,
+                    component,
                 ));
             }
             let pattern = Site {
@@ -11392,8 +11397,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let Some(outputs) = outputs {
                 // A labelled pattern binds each output by its label, in the
                 // order the callee writes them.
-                let ordered: Vec<(SurfaceName<'source>, ByteSpan)> = if labelled == 0 {
-                    names.iter().map(|&(_, name, span)| (name, span)).collect()
+                let ordered: Vec<(SurfaceName<'source>, Placed)> = if labelled == 0 {
+                    names
+                        .iter()
+                        .map(|&(_, name, component)| (name, component))
+                        .collect()
                 }
                 else {
                     let called: Vec<SurfaceName<'source>> = outputs
@@ -11409,12 +11417,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     }
                     let callable: BTreeSet<SurfaceName<'source>> = called.iter().copied().collect();
                     let mut ordered = Vec::with_capacity(names.len());
-                    // Each label's key, and the name and span it binds.
+                    // Each label's key, and the name and the binder it binds.
                     let mut seen: BTreeMap<
                         SurfaceName<'source>,
-                        (Placed, SurfaceName<'source>, ByteSpan),
+                        (Placed, SurfaceName<'source>, Placed),
                     > = BTreeMap::new();
-                    for &(label, name, span) in &names {
+                    for &(label, name, component) in &names {
                         let Some((written, key)) = label
                         else {
                             continue;
@@ -11429,11 +11437,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 first: first.span,
                             });
                         }
-                        seen.insert(written, (key, name, span));
+                        seen.insert(written, (key, name, component));
                     }
                     for written in called {
-                        if let Some(&(_, name, span)) = seen.get(&written) {
-                            ordered.push((name, span));
+                        if let Some(&(_, name, component)) = seen.get(&written) {
+                            ordered.push((name, component));
                         }
                     }
                     ordered
@@ -11447,9 +11455,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     },
                     rest: exits::Rest::Bound,
                 });
+                // Each output's binder answers where its pattern writes it,
+                // a binder nothing reads included.
+                let _first = self.output_binders.insert(
+                    binder.node,
+                    ordered
+                        .iter()
+                        .map(|&(_, component)| component.node)
+                        .collect(),
+                );
                 let mut inner = frame;
                 for (name, written) in ordered {
-                    inner = Frame::Inner(self.scope.extend(inner, name, Maybe::Present(written)));
+                    inner =
+                        Frame::Inner(self.scope.extend(inner, name, Maybe::Present(written.span)));
                 }
                 return Ok(inner);
             }
@@ -11460,7 +11478,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             let names: Vec<_> = names
                 .into_iter()
-                .map(|(_label, name, written)| (name, written))
+                .map(|(_label, name, written)| (name, written.span))
                 .collect();
             let binding = annotation.map_or_else(
                 || StatementBinding::Split {
@@ -20111,6 +20129,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
             {
                 sink.origins.record_binder(id, name);
             }
+            // Each output's binder names the binder the bind opens for it, so
+            // a binder nothing reads is still where its pattern writes it.
+            if let StatementBinding::Outputs { pattern, .. } = statement.binding
+                && let Some(binders) = self.output_binders.get(&pattern)
+            {
+                for (output, &binder) in binders.iter().enumerate() {
+                    if let Maybe::Present(named) = self.origin_at(binder) {
+                        sink.origins.place_component(
+                            id,
+                            SplitComponent::from(output),
+                            ComponentName::Written(named),
+                        );
+                    }
+                }
+            }
             // A binder, or a tuple pattern, answers at what its bound
             // computation returns, read where the run judged that
             // computation: a rewrite of the block may leave no bind and no
@@ -20125,6 +20158,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 pattern: written, ..
             }
             | StatementBinding::TypedSplit {
+                pattern: written, ..
+            }
+            | StatementBinding::Outputs {
                 pattern: written, ..
             } = statement.binding
                 && let Maybe::Present(written) = self.origin_at(written)
