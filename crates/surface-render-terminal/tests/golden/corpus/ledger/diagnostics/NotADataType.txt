@@ -4,7 +4,8 @@ error[DataKindNotUniverse]: a datatype's kind must be a universe
 3 │ data Odd : Integer where {
   │            ━━━━━━━ not a value universe
   │
-  ╰ note: `Odd` is refused with DataKindNotUniverse, as its expectation states
+  ├ note: `Odd` is refused with DataKindNotUniverse, as its expectation states
+  ╰ help: give the data declaration a universe kind
 
 error[NotADataType]: this is not a datatype
    ╭▸ corpus/ledger/diagnostics/NotADataType.gandr:8:1

@@ -17,4 +17,5 @@ error[ContinuationCaptured]: the continuation is used inside a thunk, which may 
 30 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `leaked` is refused with ContinuationCaptured, as its expectation states
+   ├ note: `leaked` is refused with ContinuationCaptured, as its expectation states
+   ╰ help: move the continuation outside the construct that captures it

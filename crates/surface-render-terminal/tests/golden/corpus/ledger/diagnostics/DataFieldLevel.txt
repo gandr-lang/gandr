@@ -6,4 +6,5 @@ error[DataFieldLevel]: a constructor field lives in a larger universe than its d
 4 │   | Pick : (a : Type, f : +U (a -> -F Small)) --> Small
   │                 ━━━━ above the declared universe
   │
-  ╰ note: `Small` is refused with DataFieldLevel, as its expectation states
+  ├ note: `Small` is refused with DataFieldLevel, as its expectation states
+  ╰ help: lower each constructor field to its datatype's universe

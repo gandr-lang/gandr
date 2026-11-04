@@ -17,4 +17,5 @@ error[ContinuationAsValue]: this continuation holds something that must end, so 
 33 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `handed` is refused with ContinuationAsValue, as its expectation states
+   ├ note: `handed` is refused with ContinuationAsValue, as its expectation states
+   ╰ help: use the continuation only with `resume` or `abandon`
