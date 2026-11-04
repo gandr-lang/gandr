@@ -1,0 +1,12 @@
+[
+  {
+    "name": "#5118: a branch whose commit repeats the subject of a trunk commit older than its fork has not landed, and the sweep keeps it",
+    "branch": "repeat",
+    "output": "keep: not landed"
+  },
+  {
+    "name": "#5118: a branch whose subject the trunk gains after its fork, with another patch and ` (#2)`, has landed, and the sweep deletes it (#4227)",
+    "branch": "landed",
+    "output": "delete: landed: its commits stand on origin/main"
+  }
+]

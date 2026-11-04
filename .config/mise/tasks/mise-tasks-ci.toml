@@ -1430,14 +1430,11 @@ trunk_ref=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD) || trunk_
 git fetch --quiet origin "${trunk_ref#origin/}" || echo "wt:sweep: fetching $trunk_ref failed; sweeping against the last fetch" >&2
 declare -A first_parent=()
 while IFS= read -r commit; do first_parent[$commit]=1; done < <(git rev-list --first-parent "$trunk_ref")
-# The subjects of the commits the trunk holds, a queue merge's ` (#n)`
-# dropped, which a branch Worktrunk reads unmerged is judged landed by
-# (#4227): the queue's merge carries the pull request's title, and its second
-# parent the branch's commits as the queue rebased them.
-subjects=$(mktemp)
-trap 'rm -f "$subjects"' EXIT
-git log --format=%s "$trunk_ref" | sed -E 's/ \(#[0-9]+\)$//' \
-  | jq -R . | jq -s 'map({key: ., value: true}) | from_entries' > "$subjects"
+# A branch Worktrunk reads unmerged is judged landed by the subjects the
+# trunk gains after its fork (#4227, #5118): the queue's merge carries the
+# pull request's title, and its second parent the branch's commits as the
+# queue rebased them (`.config/pr-stack/sweep.bash`).
+source .config/pr-stack/sweep.bash
 # The branches the remote still holds, read once over git, which spends no
 # GitHub API budget. A merged pull request's branch is deleted with it, and a
 # branch never pushed has no pull request, so only a branch that tracked a
@@ -1477,7 +1474,6 @@ kept=()
 pruned=()
 tree() {
   local merged=false moved=false scratch=null holder=null alive=false young=false watched=null commits=null pulls=null idle=false ahead=null gitdir key mark
-  local -a listed=()
   [[ -n "$path" ]] || return 0
   if [[ "$flag" == prunable ]]; then pruned+=("pruned $path${branch:+ ($branch)}: its directory is gone"); return 0; fi
   if [[ -n "$flag" ]]; then kept+=("kept $path${branch:+ ($branch)}: $flag"); return 0; fi
@@ -1488,9 +1484,7 @@ tree() {
   # read by subject. `ahead` counts commits not on origin/main (#5030).
   # Merged pull requests are read when main lacks one subject.
   if [[ -n "$branch" && $merged == false && $primary == false && $branch != wip/* ]]; then
-    mapfile -t listed < <(git cherry "$trunk_ref" "$head" | awk '/^\+/ { print $2 }')
-    commits=$(if ((${#listed[@]} > 0)); then git log --no-walk=unsorted --format=%s "${listed[@]}"; fi \
-      | jq -R . | jq -sc --slurpfile main "$subjects" 'map({subject: ., on_main: ($main[0][.] // false)})')
+    commits=$(own_commits "$trunk_ref" "$head")
     ahead=$(git rev-list --count "$trunk_ref..$head")
     if jq -e 'any(.[]; .on_main | not)' <<< "$commits" > /dev/null \
       && $remote_read && [[ -z ${on_remote[$branch]:-} ]] && git config --get "branch.$branch.remote" > /dev/null; then
