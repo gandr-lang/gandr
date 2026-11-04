@@ -1,0 +1,27 @@
+// A quoted product whose components are values: a variable, a call or a
+// recursive call.
+//
+// An expression reads `#{a, b}` as the tuple of the values `a` and `b`, not
+// as the product's code.
+//
+// Each printing of these definitions keeps the quote, `type(#{a, b})` in the
+// explicit form. So each printing reads back to the same core.
+//
+// - see: #5060
+
+// The naturals and the numerals two and three.
+import "./data-base.gandr";
+
+/// The product of two types.
+def prodOf(a : Type, b : Type) -> Type { return type(a * b) }
+
+/// One integer for each step of `n`, the next step's tower beside it.
+def rec tower(n : Nat) -> Type {
+  match n {
+    Zero => return Unit,
+    Succ(m) => return type(Integer * tower[<](m))
+  }
+}
+
+/// The tower of `n` beside the product of `a` with itself.
+def towered(n : Nat, a : Type) -> Type { return type(tower(n) * prodOf(a, a)) }

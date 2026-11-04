@@ -3522,6 +3522,38 @@ fn a_quoted_chain_is_quoted_1127()
     }
 }
 
+/// #5060: an expression reads `#{a, b}` as the tuple of the values `a` and
+/// `b`, so the explicit form keeps the quote of a product whose component is a
+/// decoded value, `type(#{a, a})`. A product of type formers, `#{Unit,
+/// Integer}`, reads as the product's code and stays bare.
+#[test]
+fn a_quoted_product_of_values_keeps_its_quote_5060()
+{
+    let mut core = CoreArena::new();
+    let variable = bound(&mut core, DeBruijnIndex::from(0_u32));
+    let squared = core.value_type_product(&[variable, variable]);
+    let squared = core.value_quote(squared);
+    let returned = core.computation_return(squared);
+    let answers = core.computation_lambda(returned);
+    let source = CoreSource::new(&core, &[]);
+    for (form, expected) in [
+        (Form::Sugared, "fun (a) { pure type(a * a) }"),
+        (Form::Explicit, "fun (a) { pure type(#{a, a}) }"),
+    ] {
+        let presented = presented_in(
+            &source,
+            Root::Computation(CoreNode::Computation(answers)),
+            wide(),
+            form,
+        );
+        assert_eq!(
+            (presented.as_ref(), presented.fidelity()),
+            (expected, Fidelity::Faithful),
+            "the returned product in the {form:?} form"
+        );
+    }
+}
+
 /// #1102: a call reads its arguments as expressions wherever it stands, so a
 /// quoted chain passed to a call a type writes is written `type(T)`, as it is
 /// in a definition's body: in a thunk a path type's endpoint holds, whose

@@ -7742,10 +7742,12 @@ impl Walk<'_, '_>
     /// - requires: nothing; `source` may be malformed.
     /// - ensures: [`Bare::Unread`] when [`Self::unread_head`] says so of
     ///   `quoted` or of a node reached from it through type slots alone,
-    ///   visited within the walk's remaining visits; a value slot is not
-    ///   entered, since a quote there is written by its own visit. Every node
-    ///   read is one visit spent; none left, the scan stops and answers
-    ///   [`Bare::Reads`].
+    ///   visited within the walk's remaining visits, and, in the explicit
+    ///   `form`, when such a node is a product with a component that a decode
+    ///   of a value fills, other than a binder a static redex substitutes; a
+    ///   value slot is not entered, since a quote there is written by its own
+    ///   visit. Every node read is one visit spent; none left, the scan stops
+    ///   and answers [`Bare::Reads`].
     /// - provides: the quotes the walk writes `type(T)`, which the lowering
     ///   reads back to the same code; every other quote stands bare.
     /// - fails: never.
@@ -7761,6 +7763,8 @@ impl Walk<'_, '_>
     ///   distinguish a scan that stops at the head from one that enters the
     ///   parts.
     /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
+    /// - witness: `tests::goldens::a_quoted_product_of_values_keeps_its_quote_5060`
+    /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
     #[spec(
         captures: [entry = self.remaining, head = Self::unread_head(source, quoted, form)],
         ensures: |ret| self.remaining <= entry && (entry == 0_u32 || head == Bare::Reads || ret == Bare::Unread),
@@ -7785,6 +7789,30 @@ impl Walk<'_, '_>
                 return Bare::Unread;
             }
             let former = source.read(node);
+            // An expression reads `#{a, b}` as the tuple of the values `a` and
+            // `b`, so a component a decode of a value fills, a variable or a
+            // call, keeps the explicit product's quote (#5060). A binder a
+            // static redex substitutes is written as its argument, a code an
+            // expression reads as the type.
+            if form == Form::Explicit
+                && let Former::Product(arity) = former
+                && (0_usize .. usize::from(arity)).any(|index| {
+                    source
+                        .component(node, Component::from(index))
+                        .is_some_and(|part| {
+                            matches!(
+                                source.read(part),
+                                Former::Element(value) if !matches!(
+                                    source.read(value),
+                                    Former::Variable { zone, index }
+                                        if self.opened_at(zone, index).is_some_and(|position| self.substituted.contains_key(&position))
+                                )
+                            )
+                        })
+                })
+            {
+                return Bare::Unread;
+            }
             pending.extend(
                 children(source, node, &former, Admits::ValueType, self.bodies)
                     .into_iter()
