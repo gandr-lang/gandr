@@ -15,4 +15,5 @@ error[CodataUndeclared]: this names no codata declaration
   │          │
   │          formed; while forming the parts of this type
   │
-  ╰ note: `read` is refused with CodataUndeclared, as its expectation states
+  ├ note: `read` is refused with CodataUndeclared, as its expectation states
+  ╰ help: declare the codata type before naming it

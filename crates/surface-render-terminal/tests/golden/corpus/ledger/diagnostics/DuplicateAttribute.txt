@@ -6,4 +6,5 @@ error[DuplicateAttribute]: the attribute `explicit_exits` is written twice
   │                                   │
   │                                   first written here
   │
-  ╰ note: `twice` is refused with DuplicateAttribute, as its expectation states
+  ├ note: `twice` is refused with DuplicateAttribute, as its expectation states
+  ╰ help: write the attribute only once
