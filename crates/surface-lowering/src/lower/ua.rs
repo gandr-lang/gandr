@@ -72,6 +72,7 @@ use super::closed;
 use super::exactly;
 use super::exhausted;
 use super::identity::spelled;
+use super::implicit::ResidentAtom;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
@@ -236,9 +237,9 @@ impl<'source> Lowerer<'_, 'source>
     /// writes, a degree or a catalogue bound, or the cell count of the chain
     /// `chain(m)` names.
     ///
-    /// A resident is read in the instantiation sort, which holds a type where
-    /// a literal is written; a resident whose whole text is decimal digits is
-    /// the literal, since no name or type is spelled with digits alone.
+    /// A resident is read as the atom it spells
+    /// ([`Lowerer::resident_atom`]): a numeral is the count, since no name or
+    /// type is spelled with digits alone.
     ///
     /// # Specification
     /// - ensures: the count of a resident written as decimal digits.
@@ -267,13 +268,18 @@ impl<'source> Lowerer<'_, 'source>
             at: resident,
             ..site
         };
-        let text = self.text_at(resident);
+        let refused = written.out(FragmentBoundary::Unadmitted(Unbuilt::UaCount));
+        let ResidentAtom::Numeral(numeral) = self.resident_atom(resident)?
+        else {
+            return Err(refused);
+        };
+        let text = self.text_at(numeral);
         let spelled: &str = text.as_ref();
         match spelled.parse::<usize>() {
             Ok(value) if spelled.bytes().all(|byte| byte.is_ascii_digit()) => {
                 Ok(Count::from(value))
             },
-            Ok(_) | Err(_) => Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::UaCount))),
+            Ok(_) | Err(_) => Err(refused),
         }
     }
 

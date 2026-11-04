@@ -506,6 +506,18 @@ pub enum FormFault
     /// bracket at this location holds static arguments. An index uses the
     /// selector `xs.#[i]`.
     BareIndex,
+    /// An implicit supplied by position after one supplied by name,
+    /// `f[.n = 3, T]`. Positional entries come first.
+    PositionalAfterNamed,
+    /// An implicit supplied by position past the last entry of the
+    /// declaration's written implicit block.
+    PositionalPastBlock,
+    /// An implicit supplied by position as a compound expression, `f[n + 1]`.
+    /// A positional entry is an atom, and a compound value goes by name.
+    CompoundPositional,
+    /// An implicit supplied twice in one bracket, by name twice or by position
+    /// and by name, `f[T, .a = U]`.
+    SuppliedTwice,
 }
 
 impl fmt::Display for FormFault
@@ -549,6 +561,14 @@ impl fmt::Display for FormFault
             },
             Self::NotAName => f.write_str("binds a pattern where it takes a name"),
             Self::BareIndex => f.write_str("indexes an element with a bare bracket"),
+            Self::PositionalAfterNamed => {
+                f.write_str("supplies an implicit by position after one by name")
+            },
+            Self::PositionalPastBlock => {
+                f.write_str("supplies an implicit by position past its implicit block")
+            },
+            Self::CompoundPositional => f.write_str("supplies a compound value by position"),
+            Self::SuppliedTwice => f.write_str("supplies one implicit twice"),
         }
     }
 }

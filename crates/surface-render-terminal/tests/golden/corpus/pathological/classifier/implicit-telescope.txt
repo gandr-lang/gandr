@@ -1,34 +1,70 @@
-error[ImplicitUnsolved]: the implicit `combine` this call to `twice` omits is determined by neither its arguments nor the type it is checked against
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:21:33
+error[MalformedForm]: this implicit is supplied by position after one supplied by name
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:53:52
    │
-21 │ def undetermined() -> Integer { twice(3) }
+53 │ def positionAfterName = thunk { same[.a = Integer, Integer](3) };
+   │                                                    ━━━━━━━ a positional implicit after a named one
+   │
+   ├ note: `positionAfterName` is refused with MalformedForm, as its expectation states
+   ╰ help: write the positional entries before the named ones
+
+error[MalformedForm]: this positional implicit has no entry in the implicit block
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:58:47
+   │
+58 │ def positionPastBlock = thunk { same[Integer, Integer](3) };
+   │                                               ━━━━━━━ a positional implicit past the block
+   │
+   ├ note: `positionPastBlock` is refused with MalformedForm, as its expectation states
+   ╰ help: remove the entry, or match it to an implicit of the block
+
+error[MalformedForm]: this implicit is supplied a second time
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:63:44
+   │
+63 │ def suppliedTwice = thunk { same[Integer, .a = Integer](3) };
+   │                                            ━ an implicit supplied twice
+   │
+   ├ note: `suppliedTwice` is refused with MalformedForm, as its expectation states
+   ╰ help: remove one of the two entries
+
+error[MalformedForm]: this positional implicit is a compound value, not an atom
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:68:39
+   │
+68 │ def compoundPosition = thunk { chosen[3 + 4](Integer) };
+   │                                       ━━━━━ a compound positional implicit
+   │
+   ├ note: `compoundPosition` is refused with MalformedForm, as its expectation states
+   ╰ help: supply the value by name, as `.n = …` with the implicit's name for `n`
+
+error[ImplicitUnsolved]: the implicit `combine` this call to `twice` omits is determined by neither its arguments nor the type it is checked against
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:22:33
+   │
+22 │ def undetermined() -> Integer { twice(3) }
    │                                 ━━━━━━━━ an implicit left unsolved
    │
    ├ note: `undetermined` is refused with ImplicitUnsolved, as its expectation states
    ╰ help: supply the implicit `combine` by name, as `twice[combine = …](…)`
 
 error[ImplicitUnsolved]: the implicit `x` this call to `chosen` omits is determined by neither its arguments nor the type it is checked against
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:26:29
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:27:29
    │
-26 │ def unchosen() -> Integer { chosen(Integer) }
+27 │ def unchosen() -> Integer { chosen(Integer) }
    │                             ━━━━━━━━━━━━━━━ an implicit left unsolved
    │
    ├ note: `unchosen` is refused with ImplicitUnsolved, as its expectation states
    ╰ help: supply the implicit `x` by name, as `chosen[x = …](…)`
 
 error[ImplicitUnsolved]: the solver cannot determine the implicit `b` this call to `konst` omits: its solution would name a binder the call does not stand under
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:32:29
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:33:29
    │
-32 │ def escaping() -> Integer { konst(fun (t) { fun (y) { y } }) }
+33 │ def escaping() -> Integer { konst(fun (t) { fun (y) { y } }) }
    │                             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an implicit left unsolved
    │
    ├ note: `escaping` is refused with ImplicitUnsolved, as its expectation states
    ╰ help: supply the implicit `b` by name, as `konst[b = …](…)`
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:37:29
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:38:29
    │
-37 │ def disagreeing() -> Unit { same(3) }
+38 │ def disagreeing() -> Unit { same(3) }
    │ ┬────────────────────┬──────┯━━━━━━──
    │ │                    │      │
    │ │                    │      its type does not convert: expected `-F Unit`, found `-F ?`
@@ -39,34 +75,34 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[ImplicitInParentheses]: `same`'s implicit `a` is supplied by name, `same[a = …](…)`, not among the parentheses
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:42:29
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:43:29
    │
-42 │ def inParentheses = thunk { same(Integer, 3) };
+43 │ def inParentheses = thunk { same(Integer, 3) };
    │                             ━━━━━━━━━━━━━━━━ an implicit among the arguments
    │
    ╰ note: `inParentheses` is refused with ImplicitInParentheses, as its expectation states
 
 error[UnresolvedName]: `b` is not defined
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:47:35
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:48:35
    │
-47 │ def strayResident = thunk { same[.b = Integer](3) };
+48 │ def strayResident = thunk { same[.b = Integer](3) };
    │                                   ━ not found in this scope
    │
    ├ note: `strayResident` is refused with UnresolvedName, as its expectation states
    ╰ help: define `b`, or import the module that exports it
 
 error[ImplicitUnsupplied]: `same` needs its implicit `a`; supply it by name, `same[a = …](…)`
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:52:17
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:73:17
    │
-52 │ def sameNamed = same;
+73 │ def sameNamed = same;
    │                 ━━━━ an implicit left unsupplied
    │
    ╰ note: `sameNamed` is refused with ImplicitUnsupplied, as its expectation states
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:57:52
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:78:52
    │
-57 │ def chosenStanding : Type => Integer = chosen[.x = 7];
+78 │ def chosenStanding : Type => Integer = chosen[.x = 7];
    │                                        ┬───────────┯─
    │                                        │           │
    │                                        │           its type does not convert: expected `?`, found `Integer`
@@ -76,9 +112,9 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TelescopeCycle]: `a` and `b` mention each other in their types, so neither can come first
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:61:1
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:82:1
    │
-61 │ def tangled[a : b, b : a](x : a) -> -F a { return x }
+82 │ def tangled[a : b, b : a](x : a) -> -F a { return x }
    │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parameters mentioning each other
    │
    ╰ note: `tangled` is refused with TelescopeCycle, as its expectation states
