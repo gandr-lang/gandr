@@ -115,6 +115,10 @@ pub enum Unbuilt
     /// A recursive call's claim the lowering does not read: two claims at once,
     /// a resident that is no claim, a measure, a stage or a cost.
     RecursiveClaim,
+    /// A call through a mutual block's joint whose member stages a parameter
+    /// after its first, or passes leading parameters unchanged: the joint
+    /// reads one domain, not a telescope.
+    JointTelescope,
     /// The shared fork `fork !(…) { … } ;`.
     SharedFork,
     /// The endpoint copy `dup(e)`.
@@ -273,7 +277,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 80_usize] = [
+    pub const ALL: [Self; 81_usize] = [
         Self::Projection,
         Self::Index,
         Self::PackModel,
@@ -287,6 +291,7 @@ impl Unbuilt
         Self::RestPattern,
         Self::Union,
         Self::RecursiveClaim,
+        Self::JointTelescope,
         Self::SharedFork,
         Self::Dup,
         Self::Acquire,
@@ -391,6 +396,7 @@ impl Unbuilt
             Self::RestPattern => "rest_pattern",
             Self::Union => "union_type",
             Self::RecursiveClaim => "instantiation_expression.computation",
+            Self::JointTelescope => "mutual_block.staged_after_first",
             Self::SharedFork => "fork_expression.shared",
             Self::Dup => "dup_expression",
             Self::Acquire => "acquire_expression",
@@ -489,6 +495,7 @@ impl Unbuilt
             Self::Union => TrackingIssue::UNION,
             Self::PrefixOperator => TrackingIssue::USER_OPERATORS,
             Self::RecursiveClaim => TrackingIssue::RECURSIVE_CLAIM,
+            Self::JointTelescope => TrackingIssue::JOINT_TELESCOPE,
             Self::SharedFork | Self::Dup | Self::Acquire | Self::Release => {
                 TrackingIssue::SHARED_SESSIONS
             },

@@ -373,12 +373,15 @@ pub(super) fn observed(
 }
 
 /// `shape` read through its observations when it is a codata application,
-/// and `shape` itself otherwise.
+/// through the quote its code reads to when it decodes a returned code, and
+/// `shape` itself otherwise.
 ///
 /// # Specification
 /// - requires: `shape` is in `arena`.
-/// - ensures: [`observed`] of a codata application; any other type unchanged.
-/// - provides: the one place a rule reads a codata type's shape.
+/// - ensures: [`observed`] of a codata application; the computation type a
+///   decode of a returned code reads to ([`super::read_returned_comp_decode`]),
+///   itself read so; any other type unchanged.
+/// - provides: the one place a rule reads a computation type's head.
 /// - fails: as [`observed`].
 /// - panics: none.
 ///
@@ -386,10 +389,12 @@ pub(super) fn observed(
 /// As [`observed`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a stream's pairing checks through its observations and a
-///   returner checks unchanged.
+/// - hypothesis: L3 — a stream's pairing checks through its observations, a
+///   lambda checks at a decode of a case on an injection returning an arrow's
+///   quote, and a returner checks unchanged.
 /// - witness: `tests::codata::a_stream_is_admitted_and_observed`
-#[spec(ensures: |ret| matches!(arena.comp_type(shape), Some(CompType::Codata { .. })) || ret.as_ref() == Ok(&shape))]
+/// - witness: `check::tests::a_lambda_checks_at_a_decode_of_a_case_on_an_injection_5036`
+#[spec(ensures: |ret| matches!(arena.comp_type(shape), Some(CompType::Codata { .. } | CompType::Element { .. })) || ret.as_ref() == Ok(&shape))]
 pub(super) fn read(
     arena: &mut TermArena,
     session: &mut SupportContext,
@@ -397,10 +402,11 @@ pub(super) fn read(
     shape: CompTypeId,
 ) -> Result<CompTypeId, KernelError>
 {
-    if matches!(arena.comp_type(shape), Some(CompType::Codata { .. })) {
-        observed(arena, session, judgement, shape)
+    let head = super::read_returned_comp_decode(arena, judgement, shape);
+    if matches!(arena.comp_type(head), Some(CompType::Codata { .. })) {
+        observed(arena, session, judgement, head)
     }
     else {
-        Ok(shape)
+        Ok(head)
     }
 }

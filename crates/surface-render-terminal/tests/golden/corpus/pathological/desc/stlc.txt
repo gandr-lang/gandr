@@ -34,23 +34,23 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ├ note: `liftAt` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[OutOfFragment.instantiation_expression.computation]: the call expression is not supported yet
+error[OutOfFragment.mutual_block.staged_after_first]: the call expression is not supported yet
    ╭▸ corpus/pathological/desc/stlc.gandr:54:18
    │
 54 │         let f2 = renNe[<](h, Arr(b, c), f, d, r);
    │                  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
    │
-   ├ note: `renNe` is refused with OutOfFragment.instantiation_expression.computation, as its expectation states
-   ╰ note: tracked by #1497 <https://github.com/gandr-lang/gandr/issues/1497>
+   ├ note: `renNe` is refused with OutOfFragment.mutual_block.staged_after_first, as its expectation states
+   ╰ note: tracked by #5065 <https://github.com/gandr-lang/gandr/issues/5065>
 
-error[OutOfFragment.instantiation_expression.computation]: the call expression is not supported yet
+error[OutOfFragment.mutual_block.staged_after_first]: the call expression is not supported yet
    ╭▸ corpus/pathological/desc/stlc.gandr:64:31
    │
 64 │       NNe(h, n) => { let n2 = renNe[<](h, Base, n, d, r); NNe(d, n2) },
    │                               ━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
    │
-   ├ note: `renNf` is refused with OutOfFragment.instantiation_expression.computation, as its expectation states
-   ╰ note: tracked by #1497 <https://github.com/gandr-lang/gandr/issues/1497>
+   ├ note: `renNf` is refused with OutOfFragment.mutual_block.staged_after_first, as its expectation states
+   ╰ note: tracked by #5065 <https://github.com/gandr-lang/gandr/issues/5065>
 
 error[ShapeMismatch]: expected an eager product `A * B`
    ╭▸ corpus/pathological/desc/stlc.gandr:87:5
@@ -84,47 +84,3 @@ error[NonExhaustiveMatch]: this match does not cover every value it can be given
    │
    ├ note: `look` is refused with NonExhaustiveMatch, as its expectation states
    ╰ help: add an arm for the values that no arm matches, or a last arm that matches any value
-
-error[ShapeMismatch]: expected a sum type `A + B`
-    ╭▸ corpus/pathological/desc/stlc.gandr:111:35
-    │
-108 │      def rec reflectDepth(a : ObjTy, _v : sem(a, Empty)) -> Integer {
-    │      │                    ┬          ── checked against `sem(a, Empty) -> -F Integer`; while checking the body of this function; binds _v : sem(a, Empty)
-    │      │                    │
-    │ ┌────┘                    checked against `(a : ObjTy) -> sem(a, Empty) -> -F Integer`; while checking the body of this function; binds a : ObjTy
-    │ │
-109 │ │┌     match a {
-110 │ ││       Base => 0,
-111 │ ││       Arr(dom, _cod) => { let n = reifyDepth[<](dom, Empty); n + 1 }
-    │ ││                           ┬──     ━━━━━━━━━━━━━━━━━━━━━━━━━ its type is not of the required shape: found `ObjTy`
-    │ ││                           │
-    │ ││                           checked against `-F Integer`; while synthesising the computation this runs where a value is read
-112 │ ││     }
-    │ │└─────┘ checked against `-F Integer`; while checking the body of this function; binds dom : ObjTy, _cod : ObjTy
-113 │ │    }
-    │ └────┘ checked against `(a : ObjTy, sem(a, Empty)) => Integer`; while checking the body of this function; binds reflectDepth : (a : ObjTy, sem(a, Empty)) => Integer
-    │
-    ├ note: `reflectDepth` is refused with ShapeMismatch, as its expectation states
-    ╰ help: change the term or the type it is checked against, so that the type has the required shape
-
-error[ShapeMismatch]: expected a sum type `A + B`
-    ╭▸ corpus/pathological/desc/stlc.gandr:119:35
-    │
-116 │      def rec reifyDepth(a : ObjTy, g : Ctx) -> Integer {
-    │      │                  ┬          ─ checked against `Ctx -> -F Integer`; while checking the body of this function; binds g : Ctx
-    │      │                  │
-    │ ┌────┘                  checked against `ObjTy -> Ctx -> -F Integer`; while checking the body of this function; binds a : ObjTy
-    │ │
-117 │ │┌     match a {
-118 │ ││       Base => 0,
-119 │ ││       Arr(_dom, cod) => { let n = reifyDepth[<](cod, g); n + 1 }
-    │ ││                           ┬──     ━━━━━━━━━━━━━━━━━━━━━ its type is not of the required shape: found `ObjTy`
-    │ ││                           │
-    │ ││                           checked against `-F Integer`; while synthesising the computation this runs where a value is read
-120 │ ││     }
-    │ │└─────┘ checked against `-F Integer`; while checking the body of this function; binds _dom : ObjTy, cod : ObjTy
-121 │ │    }
-    │ └────┘ checked against `(ObjTy, Ctx) => Integer`; while checking the body of this function; binds reifyDepth : (ObjTy, Ctx) => Integer
-    │
-    ├ note: `reifyDepth` is refused with ShapeMismatch, as its expectation states
-    ╰ help: change the term or the type it is checked against, so that the type has the required shape

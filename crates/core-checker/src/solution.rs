@@ -774,6 +774,66 @@ pub fn refined_case(
     }))
 }
 
+/// The goal of the arm `summand` of a case on `scrutinee`, a sum: `outside`
+/// read under the arm's binder, with the scrutinee read as the arm's injection
+/// of that binder when the scrutinee is the innermost binder.
+///
+/// # Specification
+/// - requires: `outside` is read under the binders open now, and `shifted` is
+///   `outside` raised past the arm's binder.
+/// - ensures: `outside[y := injᵢ x]` read under the arm's binder `x` when
+///   `scrutinee` is the innermost intuitionistic binder `y` and `outside` reads
+///   it, `y` still bound outside `x`; `shifted` otherwise, with no node minted.
+/// - fails: [`CheckRefusal::DanglingNode`] for a node the arena does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an arm of a case on the innermost binder whose goal reads
+///   it checks against the goal at its injection; one whose goal reads no
+///   scrutinee, and one on another binder, check against the goal as it is.
+/// - witness: `tests::native_formers::a_sum_arm_reads_its_goal_at_its_injection_in_both_checkers_5036`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&goal| goal == shifted || context.arena().comp_type(goal).is_some()))]
+pub fn sum_arm_goal(
+    context: &mut CheckingContext<'_>,
+    scrutinee: ValueId,
+    summand: gandr_core_term::Summand,
+    (outside, shifted): (CompTypeId, CompTypeId),
+) -> Result<CompTypeId, CheckRefusal>
+{
+    let innermost = DeBruijnIndex::from(0_u32);
+    if context.arena().value(scrutinee)
+        != Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: innermost,
+        })
+    {
+        return Ok(shifted);
+    }
+    let arena = context.arena_mut();
+    if reads(
+        arena,
+        CoreNode::Type(TypeNode::Computation(outside)),
+        innermost,
+    )? == Reading::Ignores
+    {
+        return Ok(shifted);
+    }
+    // A slot for the arm's binder opens past `y`; `y` is read as its
+    // injection and leaves; `y` is bound again outside the arm's binder.
+    let opened = gandr_core_term::shift_comp_type_under(arena, outside, Binders::ONE, Binders::ONE)
+        .settle(arena);
+    let own = arena.value_variable(Zone::Intuitionistic, innermost);
+    let injected = arena.value_injection(summand, own);
+    let read = gandr_core_term::instantiate_comp_type(arena, opened, injected);
+    Ok(
+        gandr_core_term::shift_comp_type_under(arena, read, Binders::ONE, Binders::ONE)
+            .settle(arena),
+    )
+}
+
 /// The body of the bind of `bound` into `body`, its binder read as the value
 /// `bound` returns: a `let`'s scope, checked where its name stands for its
 /// value.

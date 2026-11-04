@@ -116,6 +116,9 @@ impl TrackingIssue
     pub const UNDECIDED_CONDITION: Self = Self(1934);
     /// A recursive call's claim naming a measure, a stage or a cost.
     pub const RECURSIVE_CLAIM: Self = Self(1497);
+    /// A mutual block member that stages a parameter after its first, or
+    /// passes leading parameters unchanged: a joint over a telescope.
+    pub const JOINT_TELESCOPE: Self = Self(5065);
     /// Shared sessions: `fork !`, `dup`, `acquire` and `release`.
     pub const SHARED_SESSIONS: Self = Self(1501);
     /// A stage written under a form that places none, a path's carrier.

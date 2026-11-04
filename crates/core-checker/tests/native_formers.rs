@@ -2802,6 +2802,146 @@ fn a_binder_after_the_scrutinee_is_read_at_each_arm_in_both_checkers_3483()
     assert!(crossed.audit().axioms().is_empty());
 }
 
+/// #5036: a joint fixpoint's goal at a summand is a decode of a case on an
+/// injection, which each member reads as its own type, in the checker and in
+/// the kernel. `pick` at `Π (y : Unit + Unit). El(⟨case y { return ⌜Unit -> F
+/// Unit⌝ | return ⌜F Unit⌝ }⟩)` at position 0, `member = λx. pick (inj₀ x)`
+/// at `Unit -> Unit -> F Unit` at position 1, and the same call at the other
+/// summand's type `Unit -> F Unit` at position 2, which is refused.
+#[test]
+fn a_member_reads_its_joint_goal_at_its_summand_in_both_checkers_5036()
+{
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let sum = arena.value_type_sum(&[unit, unit]);
+    let returns_unit = arena.comp_type_returner(unit);
+    let takes_unit = arena.comp_type_arrow(unit, returns_unit);
+    let first_code = arena.value_quote_computation(takes_unit);
+    let first_code = arena.computation_return(first_code);
+    let second_code = arena.value_quote_computation(returns_unit);
+    let second_code = arena.computation_return(second_code);
+    let y = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let motive = arena.computation_case(y, &[first_code, second_code]);
+    let codes = arena.value_type_universe(Sort::Ground(GroundSort::Computation), Level::zero());
+    let codes = arena.comp_type_returner(codes);
+    let motive = arena.computation_ascribe(motive, codes);
+    let motive = arena.value_returned(motive);
+    let goal = arena.comp_type_element(motive, Level::zero());
+    let pick_type = arena.comp_type_pi(sum, goal);
+    let pick_type = arena.value_type_thunk(pick_type);
+    let u = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(u);
+    let first_arm = arena.computation_lambda(returned);
+    let second_arm = arena.computation_return(u);
+    let case = arena.computation_case(y, &[first_arm, second_arm]);
+    let pick = arena.computation_lambda(case);
+    let pick = arena.value_thunk(pick);
+    let member_type = arena.comp_type_arrow(unit, takes_unit);
+    let member_type = arena.value_type_thunk(member_type);
+    let other_type = arena.comp_type_arrow(unit, returns_unit);
+    let other_type = arena.value_type_thunk(other_type);
+    let picked = arena.value_constant(ConstantIndex::from(0_usize));
+    let forced = arena.computation_force(picked);
+    let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let injected = arena.value_injection(gandr_core_term::Summand::from(0_usize), x);
+    let applied = arena.computation_application(forced, injected);
+    let member = arena.computation_lambda(applied);
+    let member = arena.value_thunk(member);
+    let (report, crossed) = run(&mut arena, &[
+        definition(ConstantIndex::from(0_usize), pick_type, pick),
+        definition(ConstantIndex::from(1_usize), member_type, member),
+        definition(ConstantIndex::from(2_usize), other_type, member),
+    ]);
+    for (position, what) in [(0, "the joint"), (1, "the member at its own summand")] {
+        assert!(
+            matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+            "{what} checks: {:?}",
+            report.judged()[position].verdict()
+        );
+        assert!(
+            matches!(
+                crossed.readmitted()[position].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "the kernel admits {what}: {:?}",
+            crossed.readmitted()[position].outcome()
+        );
+    }
+    assert!(
+        !matches!(report.judged()[2].verdict(), Verdict::Checked { .. }),
+        "a member at the other summand's type is refused: {:?}",
+        report.judged()[2].verdict()
+    );
+    assert!(crossed.audit().axioms().is_empty());
+}
+
+/// #5036: a case on the innermost binder `y` of a sum checks each arm against
+/// its goal with `y` read as that arm's injection, in the checker and in the
+/// kernel. `Tag(s : Unit + Unit) : Type { Mk : Tag(s) }` at position 0; `pick(y
+/// : Unit + Unit) -> Tag(y) { case y { x => Mk : Tag(inj₀ x) | x => Mk :
+/// Tag(inj₁ x) } }` at position 1 checks; `swapped`, whose arms return each
+/// other's tag, is refused.
+#[test]
+fn a_sum_arm_reads_its_goal_at_its_injection_in_both_checkers_5036()
+{
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let unit = arena.value_type_unit();
+    let sum = arena.value_type_sum(&[unit, unit]);
+    let tags = ConstantIndex::from(0_usize);
+    let family = Declaration::data(
+        tags,
+        DataSignature::new(vec![sum], vec![vec![]], kind).into(),
+        OriginToken::from(0_usize),
+    );
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    let y = variable(&mut arena, 0);
+    let tag_at_y = arena.value_type_data(tags, vec![y]);
+    let answers = arena.comp_type_returner(tag_at_y);
+    let signature = arena.comp_type_pi(sum, answers);
+    let signature = arena.value_type_thunk(signature);
+    // Each arm's `Mk` at the tag of its own injection of the arm's binder.
+    let made = |arena: &mut CoreArena, summand: usize| {
+        let own = variable(arena, 0);
+        let injected = arena.value_injection(gandr_core_term::Summand::from(summand), own);
+        let tag = arena.value_type_data(tags, vec![injected]);
+        let made = arena.value_constructor(tag, ConstructorTag::from(0_usize), vec![]);
+        arena.computation_return(made)
+    };
+    let (first, second) = (made(&mut arena, 0), made(&mut arena, 1));
+    let scrutinee = variable(&mut arena, 0);
+    let body = |arena: &mut CoreArena, arms: &[gandr_core_term::ComputationId]| {
+        let case = arena.computation_case(scrutinee, arms);
+        let lambda = arena.computation_lambda(case);
+        arena.value_thunk(lambda)
+    };
+    let pick = body(&mut arena, &[first, second]);
+    let swapped = body(&mut arena, &[second, first]);
+    let (report, crossed) = run(&mut arena, &[
+        family,
+        definition(ConstantIndex::from(1_usize), signature, pick),
+        definition(ConstantIndex::from(2_usize), signature, swapped),
+    ]);
+    assert!(
+        matches!(report.judged()[1].verdict(), Verdict::Checked { .. }),
+        "each arm checks at the tag of its own injection: {:?}",
+        report.judged()[1].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[1].outcome(), Outcome::Defined { .. }),
+        "the kernel reads each arm's goal at its own injection: {:?}",
+        crossed.readmitted()[1].outcome()
+    );
+    assert!(
+        !matches!(report.judged()[2].verdict(), Verdict::Checked { .. }),
+        "an arm returning the other injection's tag is refused: {:?}",
+        report.judged()[2].verdict()
+    );
+    assert!(crossed.audit().axioms().is_empty());
+}
+
 #[test]
 fn a_refined_arm_elaborates_its_nested_call_where_it_is_written_3483()
 {

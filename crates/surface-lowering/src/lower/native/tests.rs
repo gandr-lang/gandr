@@ -1365,6 +1365,81 @@ fn a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #5036: the members of a mutual block take later parameters that differ,
+/// and the first reads its staged parameter in its type. The joint is
+/// ascribed a dependent arrow whose result decodes a case over the sum, and
+/// the block checks: `count` passes `tally` no later parameter, and `tally`
+/// passes `count` a value at the type its staged parameter reads.
+#[test]
+fn a_mutual_block_member_takes_later_parameters_its_sibling_does_not_5036()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def weight(n : Nat) -> -F Type {{ return Integer }}\nrec {{\n  def rec count(n : Nat, k : weight(n)) -> -F Integer {{ match n {{ Zero => return 0, Succ(p) => tally[<](p) }} }}\n  def rec tally(n : Nat) -> -F Integer {{ match n {{ Zero => return 1, Succ(p) => count[<](p, 2) }} }}\n}}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["count", "tally"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    let Some(&Value::Thunk(member)) = arena.value(body_named(&module, SurfaceName::from("count")))
+    else {
+        panic!("the member lowers to a thunk");
+    };
+    let Some(&Computation::Lambda(call)) = arena.computation(member)
+    else {
+        panic!("the member is a lambda over its parameter");
+    };
+    let Some(&Computation::Application(joint, _)) = arena.computation(call)
+    else {
+        panic!("the member calls the joint");
+    };
+    let Some(&Computation::Ascribe { ty, .. }) = arena.computation(joint)
+    else {
+        panic!("the joint is ascribed");
+    };
+    assert!(
+        matches!(arena.comp_type(ty), Some(&gandr_core_term::CompType::Pi { codomain, .. })
+            if matches!(arena.comp_type(codomain), Some(&gandr_core_term::CompType::Element { code, .. })
+                if matches!(arena.value(code), Some(&Value::Returned(_))))),
+        "the joint's result decodes a case over the sum: {:?}",
+        arena.comp_type(ty)
+    );
+    assert_accepted(&judged(&module, &mut arena));
+    // A call through a sibling is held to the sibling's parameters, not the
+    // caller's: `tally` passes `count` one argument, and `count` takes two.
+    let mut arena = CoreArena::new();
+    let short = alloc::format!(
+        "{NAT}rec {{\n  def rec count(n : Nat, k : Integer) -> -F Integer {{ match n {{ Zero => return k, Succ(p) => tally[<](p) }} }}\n  def rec tally(n : Nat) -> -F Integer {{ match n {{ Zero => return 1, Succ(p) => count[<](p) }} }}\n}}\n"
+    );
+    let module = lowered(SourceText::from(short.as_str()), &mut arena);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("tally")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(count),
+                ..
+            } if usize::from(count) == 1
+        ),
+        "a call passing its sibling too few arguments is refused: {:?}",
+        refusal_of(&module, SurfaceName::from("tally"))
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, SurfaceName::from("count")),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "the caller passing its sibling's parameters lowers: {:?}",
+        outcome_of(&module, SurfaceName::from("count"))
+    );
+}
+
 /// A member of a mutual block whose sibling the lowering refused calls the
 /// sibling's declaration, so the checker meets a constant it has no type for
 /// rather than an injection into a joint that never formed (#2340): refused
