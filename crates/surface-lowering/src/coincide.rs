@@ -1588,7 +1588,9 @@ impl fmt::Display for NormalFormFault
                 | ElaborateError::ResultArity { .. }
                 | ElaborateError::NonLinear(_)
                 | ElaborateError::MixedPolarity(_)
-                | ElaborateError::NoCircuitComposite(_),
+                | ElaborateError::NoCircuitComposite(_)
+                | ElaborateError::IllSorted
+                | ElaborateError::RewrittenIndex,
             ) => f.write_str("no normal form: the call does not elaborate to a command"),
             Self::Exhausted => write!(f, "no normal form within {NORMAL_FORM_STEPS} steps"),
             Self::Uncertified => f.write_str("no normal form: the path does not replay"),
@@ -1599,9 +1601,15 @@ impl fmt::Display for NormalFormFault
             ),
             Self::Unsorted(Unsorted::Nested) => write!(
                 f,
-                "no normal form: an index the call's sorting fixes applies an operation with \
-                 indices of its own; a nested index is tracked by {}",
+                "no normal form: an index the call's sorting fixes applies an operation whose \
+                 own indices no port fixes; a nested index is tracked by {}",
                 TrackingIssue::NESTED_OPERATION
+            ),
+            Self::Unsorted(Unsorted::Rewritten) => write!(
+                f,
+                "no normal form: an index the call's sorting fixes applies an operation a law \
+                 rewrites; a rewritten index is tracked by {}",
+                TrackingIssue::REWRITTEN_INDEX
             ),
             Self::Unsorted(Unsorted::Unread | Unsorted::Clash | Unsorted::Unfixed) => f.write_str(
                 "no normal form: the call is ill sorted, its operations asking one argument at \
@@ -1810,7 +1818,7 @@ where
 ///   rule of a block with a naming port among the conditioned cells, which fire
 ///   after the rest, as [`elaborate_desc`'s presented reading] reads a face;
 ///   over an indexed sort, each rule carrying the indices its sorting fixes
-///   ([`Indexing::face`]), a rule it fixes none of left out.
+///   ([`Indexing::face`]), a rule that [`Indexing::face`] refuses left out.
 /// - provides: the term store a nesting call normalizes under: over a block the
 ///   coincidence check admitted, every left side's arguments are values or
 ///   variables, so its rules overlap only where their sequent cells do.

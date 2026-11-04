@@ -308,6 +308,10 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             fault: MemberFault::LhsNotOperation,
             ..
         } => String::from("write an operation application on the rule's left side"),
+        LoweringRefusal::UndescribedMember {
+            fault: MemberFault::IllSorted,
+            ..
+        } => String::from("state a law at an earlier sort that makes the two sorts one"),
         LoweringRefusal::UnguardedCorecursion { .. } => {
             String::from("write the productive self-call as a copattern arm's whole body")
         },
@@ -1237,7 +1241,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 228] = [
+    const WORDED: [&str; 229] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1308,6 +1312,7 @@ mod tests
         "RulesOverlapSecondOrder",
         "TacticRefused",
         "UndescribedMember.LhsNotOperation",
+        "UndescribedMember.IllSorted",
         "UnguardedCorecursion",
         "UnprovenLaw.Admitted",
         "BufferReturnedTwice",

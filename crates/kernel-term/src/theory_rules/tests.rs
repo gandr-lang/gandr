@@ -1896,3 +1896,148 @@ fn a_cwfs_laws_join_over_every_index_5016()
         "over every index the unit laws' overlap is `id(a)` both ways"
     );
 }
+
+/// #5042: a `CwF`'s terms. `subTm : (t : Tm(g, a), s : Sub(d, g)) --> Tm(d,
+/// subTy(a, s))` states an index that applies `subTy`, which carries the two
+/// contexts `s` stands between. The identity law on terms sorts only modulo
+/// the identity law on types; it reads over every index and joins beside the
+/// `CwF`'s other laws. Without the identity law on types the law sorts apart,
+/// so no reading carries the indices, and the laws stand as written. The
+/// composite law on terms is #5117's.
+#[test]
+fn a_cwfs_laws_on_terms_join_modulo_its_laws_on_types_5042()
+{
+    let literal = |text: &str| StringLiteral::new(String::from(text));
+    let tag = ConstructorTag::from;
+    let (sort, oper, port, rule_tag, rank_tag) = (
+        tag(super::tag::SORT),
+        tag(super::tag::OPER),
+        tag(super::tag::PORT),
+        tag(super::tag::RULE),
+        tag(super::tag::RANK),
+    );
+    let mut code = Code::new();
+    let [
+        con,
+        sub,
+        ty,
+        tm,
+        g_name,
+        d_name,
+        id,
+        comp,
+        ext,
+        sub_ty,
+        sub_tm,
+        unnamed,
+    ] = [
+        "Con", "Sub", "Ty", "Tm", "g", "d", "id", "comp", "ext", "subTy", "subTm", "",
+    ]
+    .map(|name| code.text(literal(name)));
+    let [s_name, t_name, a_name] = ["s", "t", "a"].map(|name| code.text(literal(name)));
+    let [target, middle, origin] = ["g", "d", "e"].map(|name| code.var(literal(name)));
+    let [first, second, third, family, term] =
+        ["s", "t", "u", "a", "x"].map(|name| code.var(literal(name)));
+    let end = code.end();
+    // `Con`, `Sub(d : Con, g : Con)`, `Ty(g : Con)` and `Tm(g : Con, a :
+    // Ty(g))`.
+    let at_g = chain(&mut code, &[target]);
+    let tm_a = code.node(port, vec![a_name, ty, at_g, end]);
+    let tm_indices = code.node(port, vec![g_name, con, end, tm_a]);
+    let tm_sort = code.node(sort, vec![tm, tm_indices, end]);
+    let ty_index = code.node(port, vec![g_name, con, end, end]);
+    let g_index = code.node(port, vec![g_name, con, end, end]);
+    let sub_indices = code.node(port, vec![d_name, con, end, g_index]);
+    let ty_sort = code.node(sort, vec![ty, ty_index, tm_sort]);
+    let sub_sort = code.node(sort, vec![sub, sub_indices, ty_sort]);
+    let sorts = code.node(sort, vec![con, end, sub_sort]);
+    let [gg, dg, ed, eg, at_d, ga] = [
+        &[target, target][..],
+        &[middle, target][..],
+        &[origin, middle][..],
+        &[origin, target][..],
+        &[middle][..],
+        &[target, family][..],
+    ]
+    .map(|terms| chain(&mut code, terms));
+    // `subTm : (t : Tm(g, a), s : Sub(d, g)) --> Tm(d, subTy(a, s))`.
+    let moved = code.app(literal("subTy"), &[family, first]);
+    let moved_at = chain(&mut code, &[middle, moved]);
+    let sub_tm_output = code.node(port, vec![unnamed, tm, moved_at, end]);
+    let sub_tm_s = code.node(port, vec![s_name, sub, dg, end]);
+    let sub_tm_t = code.node(port, vec![t_name, tm, ga, sub_tm_s]);
+    let term_substitution = code.node(oper, vec![sub_tm, sub_tm_t, sub_tm_output, end]);
+    // `subTy : (a : Ty(g), s : Sub(d, g)) --> Ty(d)`.
+    let sub_ty_output = code.node(port, vec![unnamed, ty, at_d, end]);
+    let sub_ty_s = code.node(port, vec![s_name, sub, dg, end]);
+    let sub_ty_a = code.node(port, vec![a_name, ty, at_g, sub_ty_s]);
+    let substitution = code.node(oper, vec![
+        sub_ty,
+        sub_ty_a,
+        sub_ty_output,
+        term_substitution,
+    ]);
+    // `ext : (g : Con, a : Ty(g)) --> Con`.
+    let ext_output = code.node(port, vec![unnamed, con, end, end]);
+    let ext_a = code.node(port, vec![a_name, ty, at_g, end]);
+    let ext_g = code.node(port, vec![g_name, con, end, ext_a]);
+    let extension = code.node(oper, vec![ext, ext_g, ext_output, substitution]);
+    // `comp : (s : Sub(d, g), t : Sub(e, d)) --> Sub(e, g)`.
+    let comp_output = code.node(port, vec![unnamed, sub, eg, end]);
+    let comp_t = code.node(port, vec![t_name, sub, ed, end]);
+    let comp_s = code.node(port, vec![s_name, sub, dg, comp_t]);
+    let composition = code.node(oper, vec![comp, comp_s, comp_output, extension]);
+    // `id : (g : Con) --> Sub(g, g)`.
+    let id_output = code.node(port, vec![unnamed, sub, gg, end]);
+    let id_g = code.node(port, vec![g_name, con, end, end]);
+    let operations = code.node(oper, vec![id, id_g, id_output, composition]);
+    let [at_g_id, at_d_id] = [target, middle].map(|object| code.app(literal("id"), &[object]));
+    let left_unit = code.app(literal("comp"), &[at_g_id, first]);
+    let right_unit = code.app(literal("comp"), &[first, at_d_id]);
+    let [first_second, second_third] =
+        [[first, second], [second, third]].map(|pair| code.app(literal("comp"), &pair));
+    let left_nested = code.app(literal("comp"), &[first_second, third]);
+    let right_nested = code.app(literal("comp"), &[first, second_third]);
+    let along_id = code.app(literal("subTy"), &[family, at_g_id]);
+    let along_first = code.app(literal("subTy"), &[family, first]);
+    let twice = code.app(literal("subTy"), &[along_first, second]);
+    let once = code.app(literal("subTy"), &[family, first_second]);
+    let term_along_id = code.app(literal("subTm"), &[term, at_g_id]);
+    let [unit_left, unit_right, assoc, ty_id, ty_comp, tm_id, one] =
+        ["idl", "idr", "assoc", "tyId", "tyComp", "tmId", "1"].map(|name| code.text(literal(name)));
+    let category = [
+        (rule_tag, vec![unit_left, left_unit, first]),
+        (rule_tag, vec![unit_right, right_unit, first]),
+        (rule_tag, vec![assoc, left_nested, right_nested]),
+        (rule_tag, vec![ty_comp, twice, once]),
+    ];
+    let on_terms = [
+        (rule_tag, vec![tm_id, term_along_id, term]),
+        (rank_tag, vec![sub_ty, one]),
+        (rank_tag, vec![sub_tm, one]),
+    ];
+    let mut members = Vec::from(category.clone());
+    members.push((rule_tag, vec![ty_id, along_id, family]));
+    members.extend(on_terms.clone());
+    let cwf = code.presenting(sorts, operations, members);
+    let read = TheoryRules::read(&code.arena, cwf).expect("the CwF's laws read");
+    assert_ne!(
+        read.decided(),
+        read.rules(),
+        "the identity law on terms reads with the contexts and the type its substitution fixes"
+    );
+    assert_eq!(
+        read.decide(&mut fuel()),
+        Ok(()),
+        "it joins beside the category's laws and the laws on types"
+    );
+    let mut members = Vec::from(category);
+    members.extend(on_terms);
+    let without = code.presenting(sorts, operations, members);
+    let read = TheoryRules::read(&code.arena, without).expect("the laws read");
+    assert_eq!(
+        read.decided(),
+        read.rules(),
+        "without the identity law on types the law sorts apart, so the laws stand as written"
+    );
+}

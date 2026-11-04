@@ -2291,7 +2291,7 @@ const SIGNATURE_FAULTS: [MatchFault; 3_usize] =
     [MatchFault::Missing, MatchFault::Sort, MatchFault::Unstated];
 
 /// Every fault a member the description does not read carries.
-const MEMBER_FAULTS: [MemberFault; 19_usize] = [
+const MEMBER_FAULTS: [MemberFault; 21_usize] = [
     MemberFault::HigherOrderField,
     MemberFault::DependentField,
     MemberFault::TypeShape,
@@ -2308,6 +2308,8 @@ const MEMBER_FAULTS: [MemberFault; 19_usize] = [
     MemberFault::UnrepresentableOperation,
     MemberFault::ResultArity,
     MemberFault::MixedPolarity,
+    MemberFault::IllSorted,
+    MemberFault::RewrittenIndex,
     MemberFault::UnderivedWiring,
     MemberFault::ParallelRedexes,
     MemberFault::OffBoundary,
@@ -2572,6 +2574,8 @@ const fn member_tag(fault: MemberFault) -> Tag
         MemberFault::UnrepresentableOperation => "UnrepresentableOperation",
         MemberFault::ResultArity => "ResultArity",
         MemberFault::MixedPolarity => "MixedPolarity",
+        MemberFault::IllSorted => "IllSorted",
+        MemberFault::RewrittenIndex => "RewrittenIndex",
         MemberFault::UnderivedWiring => "UnderivedWiring",
         MemberFault::ParallelRedexes => "ParallelRedexes",
         MemberFault::OffBoundary => "OffBoundary",

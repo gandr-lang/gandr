@@ -2048,49 +2048,87 @@ impl TheoryRules
         fuel: &mut RewriteFuel,
     ) -> Result<(), Exhausted>
     {
-        let mut cursor = term.len();
-        'rewrite: loop {
-            while let Some(start) = cursor.checked_sub(1) {
-                cursor = start;
-                if !matches!(term.get(start), Some(&Flat::Symbol(..))) {
-                    continue;
-                }
-                for rule in rules
-                    .iter()
-                    .filter(|rule| rule.reading() == Reading::FirstOrder)
-                {
-                    let Some(end) = matched(term, Position(start), rule.left(), bindings, fuel)?
-                    else {
-                        continue;
-                    };
-                    built.clear();
-                    for &node in rule.right() {
-                        fuel.charge()?;
-                        match node {
-                            TheoryNode::Symbol(symbol) => {
-                                built.push(Flat::Symbol(symbol, self.width(symbol).0));
-                            },
-                            TheoryNode::Variable(variable) => {
-                                if let Some(&Some(span)) = bindings.get(ordinal(variable).0) {
-                                    for &copied in term.get(span.from.0 .. span.to.0).unwrap_or(&[])
-                                    {
-                                        fuel.charge()?;
-                                        built.push(copied);
-                                    }
-                                }
-                            },
-                            // The filter above keeps every rule that
-                            // instantiates a variable from firing.
-                            TheoryNode::Instance(..) => {},
-                        }
-                    }
-                    cursor = start.saturating_add(built.len());
-                    let _replaced = term.splice(start .. end.0, built.iter().copied());
-                    continue 'rewrite;
-                }
+        normal_form(
+            rules,
+            term,
+            (bindings, built),
+            |symbol| self.width(symbol),
+            fuel,
+        )
+    }
+}
+
+/// Rewrite `term` to its normal form under the first-order rules of `rules`,
+/// each symbol of a right side over the `width` subterms it states, as
+/// [`TheoryRules::normalize`] states it.
+///
+/// # Specification
+/// - requires: `rules` are well formed and oriented; `term` is one term.
+/// - ensures: as [`TheoryRules::normalize`], each symbol a right side writes
+///   taking its arity from `width`.
+/// - fails: [`Exhausted`] when `fuel` runs out first.
+/// - panics: none.
+/// - executable: none — as [`TheoryRules::normalize`].
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TheoryRules::normalize`]; the indexed reading
+///   normalizes a sort by the laws of lower rank the same way.
+/// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
+/// - witness: `theory_rules::tests::a_cwfs_laws_on_terms_join_modulo_its_laws_on_types_5042`
+fn normal_form<W>(
+    rules: &[TheoryRule],
+    term: &mut Vec<Flat>,
+    (bindings, built): (&mut Vec<Option<Span>>, &mut Vec<Flat>),
+    width: W,
+    fuel: &mut RewriteFuel,
+) -> Result<(), Exhausted>
+where
+    W: Fn(TheorySymbol) -> Position,
+{
+    let mut cursor = term.len();
+    'rewrite: loop {
+        while let Some(start) = cursor.checked_sub(1) {
+            cursor = start;
+            if !matches!(term.get(start), Some(&Flat::Symbol(..))) {
+                continue;
             }
-            return Ok(());
+            for rule in rules
+                .iter()
+                .filter(|rule| rule.reading() == Reading::FirstOrder)
+            {
+                let Some(end) = matched(term, Position(start), rule.left(), bindings, fuel)?
+                else {
+                    continue;
+                };
+                built.clear();
+                for &node in rule.right() {
+                    fuel.charge()?;
+                    match node {
+                        TheoryNode::Symbol(symbol) => {
+                            built.push(Flat::Symbol(symbol, width(symbol).0));
+                        },
+                        TheoryNode::Variable(variable) => {
+                            if let Some(&Some(span)) = bindings.get(ordinal(variable).0) {
+                                for &copied in term.get(span.from.0 .. span.to.0).unwrap_or(&[]) {
+                                    fuel.charge()?;
+                                    built.push(copied);
+                                }
+                            }
+                        },
+                        // The filter above keeps every rule that instantiates
+                        // a variable from firing.
+                        TheoryNode::Instance(..) => {},
+                    }
+                }
+                cursor = start.saturating_add(built.len());
+                let _replaced = term.splice(start .. end.0, built.iter().copied());
+                continue 'rewrite;
+            }
         }
+        return Ok(());
     }
 }
 
