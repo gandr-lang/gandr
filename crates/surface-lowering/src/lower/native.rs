@@ -375,6 +375,10 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::cover::Cases;
+use gandr_core_term::cover::Cover;
+use gandr_core_term::cover::Step;
+use gandr_core_term::cover::StepId;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::TermId;
 use gandr_core_term::pattern::Pattern;
@@ -386,6 +390,7 @@ use gandr_core_term::staged::Part;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
@@ -5230,6 +5235,7 @@ impl<'source> Lowerer<'_, 'source>
             arms: Vec::new(),
             spans: Vec::new(),
             labelled: Vec::new(),
+            cover: Cover::new(),
         };
         let stated = self.scrutinee_type(frame, scrutinee)?;
         let mut roots = Vec::new();
@@ -5271,6 +5277,7 @@ impl<'source> Lowerer<'_, 'source>
             &patterns,
             (rows, Depth::default(), BTreeSet::new(), stated),
         )?;
+        kept.cover = covered(&tests);
         let loops = self.loop_arms(site, &tests, looped)?;
         let eliminates = tests.iter().any(|test| {
             matches!(
@@ -5484,6 +5491,18 @@ impl<'source> Lowerer<'_, 'source>
             self.read(node.node, Reading::Result(frame));
         }
         let index = CaseIndex(self.cases.len());
+        let empty = Test::Data {
+            level: TreeLevel::default(),
+            depth: Depth::default(),
+            family,
+            eliminated: match family {
+                Maybe::Present(family) => Maybe::Present(family),
+                Maybe::Absent(_) => Maybe::Absent(eliminated::Absent::Armless),
+            },
+            equations: 0,
+            branches: Vec::new(),
+        };
+        let cover = covered(core::slice::from_ref(&empty));
         self.cases.push(CaseForm {
             scrutinee: scrutinee.node,
             roots: Roots::Scrutinee,
@@ -5492,17 +5511,7 @@ impl<'source> Lowerer<'_, 'source>
             ascribed,
             bodies: Vec::new(),
             guards: BTreeMap::new(),
-            tests: Vec::from([Test::Data {
-                level: TreeLevel::default(),
-                depth: Depth::default(),
-                family,
-                eliminated: match family {
-                    Maybe::Present(family) => Maybe::Present(family),
-                    Maybe::Absent(_) => Maybe::Absent(eliminated::Absent::Armless),
-                },
-                equations: 0,
-                branches: Vec::new(),
-            }]),
+            tests: Vec::from([empty]),
             loops: Vec::new(),
             origin: CaseOrigin {
                 written: site.at.node,
@@ -5512,6 +5521,7 @@ impl<'source> Lowerer<'_, 'source>
                 arms: Vec::new(),
                 spans: Vec::new(),
                 labelled: Vec::new(),
+                cover,
             },
             variables: Vec::new(),
         });
@@ -12601,6 +12611,160 @@ fn refinings(tests: &[Test]) -> Refinings
     }
 
     refinings
+}
+
+/// The cover derivation `tests` states, its root minted last.
+///
+/// # Specification
+/// - requires: `tests` is a compiled tree, every child after its parent.
+/// - ensures: one step for each node: a `var` for a leaf, a split for each
+///   other node with one branch for each child in the node's order, and one
+///   composition for each child that is no leaf; a data split lists the
+///   eliminated family's constructors by tag with each branch's field count.
+///   The derivation is empty when a leaf is stuck on a hole, a data case names
+///   no family or a node is still pending.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// One pass over the nodes, each node reading its own children once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a nested match over `List(Maybe(Nat))` records a
+///   derivation the signature admits, with one data split for each switch.
+/// - witness: `lower::native::tests::a_nested_match_records_its_cover_5103`
+#[spec(ensures: |ret| ret.steps().count() <= tests.len().saturating_mul(2))]
+fn covered(tests: &[Test]) -> Cover
+{
+    let mut cover = Cover::new();
+    let mut steps: Vec<Option<StepId>> = alloc::vec![None; tests.len()];
+    for (position, test) in tests.iter().enumerate().rev() {
+        let step = match *test {
+            Test::Pending
+            | Test::Stuck(_)
+            | Test::Data {
+                eliminated: Maybe::Absent(_),
+                ..
+            } => None,
+            Test::Leaf { arm, .. } => Some(Step::Var(arm.0)),
+            Test::Absurd(_) => Some(Step::Split {
+                cases: Cases::Absurd,
+                branches: Vec::new(),
+            }),
+            Test::Data {
+                eliminated: Maybe::Present(family),
+                ref branches,
+                ..
+            } => cover_split(
+                &mut cover,
+                (&steps, tests),
+                Cases::Data {
+                    family,
+                    constructors: branches
+                        .iter()
+                        .enumerate()
+                        .map(|(tag, &(arity, _at))| {
+                            (ConstructorTag::from(tag), FieldCount::from(arity))
+                        })
+                        .collect(),
+                },
+                branches.iter().map(|&(_arity, at)| at),
+            ),
+            Test::Boolean { yes, no, .. } => cover_split(
+                &mut cover,
+                (&steps, tests),
+                Cases::Boolean,
+                [yes, no].into_iter(),
+            ),
+            Test::Integer {
+                ref literal,
+                yes,
+                no,
+                ..
+            } => cover_split(
+                &mut cover,
+                (&steps, tests),
+                Cases::Integer(literal.clone()),
+                [yes, no].into_iter(),
+            ),
+            Test::Guard { yes, no, .. } => cover_split(
+                &mut cover,
+                (&steps, tests),
+                Cases::Guard,
+                [yes, no].into_iter(),
+            ),
+            Test::Split { arity, child, .. } => cover_split(
+                &mut cover,
+                (&steps, tests),
+                Cases::Tuple(arity),
+                core::iter::once(child),
+            ),
+            Test::Record {
+                ref labels, child, ..
+            } => cover_split(
+                &mut cover,
+                (&steps, tests),
+                Cases::Record(labels.len()),
+                core::iter::once(child),
+            ),
+            Test::Sum { ref branches, .. } => cover_split(
+                &mut cover,
+                (&steps, tests),
+                Cases::Sum(branches.len()),
+                branches.iter().copied(),
+            ),
+            Test::List { nil, cell, .. } => cover_split(
+                &mut cover,
+                (&steps, tests),
+                Cases::List,
+                [nil, cell].into_iter(),
+            ),
+        };
+        let Some(step) = step
+        else {
+            return Cover::new();
+        };
+        let id = cover.mint(step);
+        if let Some(slot) = steps.get_mut(position) {
+            *slot = Some(id);
+        }
+    }
+    cover
+}
+
+/// The split step over `children` in `cases`, each child that is no leaf
+/// placed under a composition minted first.
+///
+/// # Specification
+/// - requires: `steps` holds the step of each node of `tests` minted so far.
+/// - ensures: one branch for each child, in order. `None` when a child has no
+///   step, since then the tree states no cover.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`covered`].
+/// - witness: `lower::native::tests::a_nested_match_records_its_cover_5103`
+#[spec(captures: [count = children.len()],
+    ensures: |ret| ret.as_ref().is_none_or(|step| step.parts().len() == count))]
+fn cover_split<Children>(
+    cover: &mut Cover,
+    (steps, tests): (&[Option<StepId>], &[Test]),
+    cases: Cases,
+    children: Children,
+) -> Option<Step>
+where
+    Children: ExactSizeIterator<Item = TestAt>,
+{
+    let mut branches = Vec::with_capacity(children.len());
+    for at in children {
+        let inner = steps.get(at.0).copied().flatten()?;
+        branches.push(match tests.get(at.0) {
+            Some(&Test::Leaf { .. }) => inner,
+            Some(_) | None => cover.mint(Step::Compose(inner)),
+        });
+    }
+    Some(Step::Split { cases, branches })
 }
 
 /// Whether the motive [`tracked_motives`] read for each data switch over a

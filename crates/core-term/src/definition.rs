@@ -470,6 +470,52 @@ struct FrameOffset(usize);
 /// parent and its own overrides. A lookup walks outward and takes the innermost
 /// override, so a definition sealed by an enclosing scope is opaque in every
 /// scope beneath it that does not re-open it.
+///
+/// # Examples
+///
+/// Define two definitions and seal the second outside an inner scope:
+///
+/// ```rust
+/// use gandr_core_term::DefinitionChain;
+/// use gandr_core_term::DefinitionError;
+/// use gandr_core_term::DefinitionHeight;
+/// use gandr_core_term::DefinitionalEnvironment;
+/// use gandr_core_term::Transparency;
+/// use gandr_kernel_term::ConstantIndex;
+/// use gandr_kernel_term::GlobalIndex;
+///
+/// fn seal() -> Result<(), DefinitionError>
+/// {
+///     let ground = ConstantIndex::from(0_usize);
+///     let derived = ConstantIndex::from(1_usize);
+///     let mut chain = DefinitionChain::new();
+///     let leaf = chain.define(ground, GlobalIndex::from(0_u32), Transparency::Manifest, &[
+///     ])?;
+///     let above = chain.define(
+///         derived,
+///         GlobalIndex::from(1_u32),
+///         Transparency::Manifest,
+///         &[ground],
+///     )?;
+///     assert_eq!(DefinitionHeight::from(1_u32), leaf);
+///     assert_eq!(DefinitionHeight::from(2_u32), above);
+///
+///     let mut environment = DefinitionalEnvironment::new();
+///     let outside = environment.root();
+///     let inside = environment.open_scope(outside)?;
+///     environment.state(outside, derived, Transparency::Opaque)?;
+///     environment.state(inside, derived, Transparency::Manifest)?;
+///     assert_eq!(
+///         Transparency::Opaque,
+///         environment.transparency(outside, derived, Transparency::Manifest)?
+///     );
+///     assert_eq!(
+///         Transparency::Manifest,
+///         environment.transparency(inside, derived, Transparency::Manifest)?
+///     );
+///     Ok(())
+/// }
+/// ```
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DefinitionalEnvironment
