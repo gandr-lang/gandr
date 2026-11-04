@@ -767,6 +767,8 @@ impl<'source> Lowerer<'_, 'source>
 
     /// Read the entries of a type list up to `closer`: each a bare type, or
     /// `k : T` whose key is a bare word, lowercase or named as a type is.
+    /// Several words before one `:` share its type, `m n : T`, and give one
+    /// entry each, in written order.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the form's opener.
@@ -784,10 +786,12 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — empty, positional and labelled lists, with and
-    ///   without a trailing comma, and a dependent arrow whose binder is named
-    ///   as a type is.
+    ///   without a trailing comma, a dependent arrow whose binder is named as a
+    ///   type is, and words that share one type, the type an earlier entry
+    ///   binds included.
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
     /// - witness: `lower::arity::tests::a_dependent_arrow_binds_a_type_named_binder_2179`
+    /// - witness: `lower::arity::tests::names_that_share_a_type_are_their_entries_written_apart_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| matches!(entry.held, Held::Operand(_)))))]
     pub(super) fn type_entries(
         &self,
@@ -835,23 +839,51 @@ impl<'source> Lowerer<'_, 'source>
         let mut entries = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(closer) {
             let first = site.one(cursor.operands())?;
-            let entry = if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
-                if !matches!(self.form_at(first)?, Some((name, _)) if name == FormName::TYPE_VARIABLE || name == FormName::TYPE_IDENTIFIER)
-                {
-                    return Err(site.fault(first.span, FormFault::MisplacedTile));
-                }
-                Entry {
-                    key: Key::Label(self.name_at(first), first),
-                    held: Held::Operand(site.one(cursor.operands())?),
+            if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
+                let held = Held::Operand(site.one(cursor.operands())?);
+                // Words that share a type, `m n`, mold as a moded type: each
+                // word before the last is a mode tile over the rest.
+                let mut key = first;
+                loop {
+                    match self.form_at(key)? {
+                        Some((name, _))
+                            if name == FormName::TYPE_VARIABLE
+                                || name == FormName::TYPE_IDENTIFIER =>
+                        {
+                            entries.push(Entry {
+                                key: Key::Label(self.name_at(key), key),
+                                held,
+                            });
+                            break;
+                        },
+                        Some((_, Former::ModedType)) => {
+                            let mut moded = Pieces::new();
+                            read_pieces(self.pbg, self.tree, key.node, &mut moded)?;
+                            let (
+                                Maybe::Absent(_),
+                                &[Piece::Tile { at: word, .. }, Piece::Operand(rest)],
+                            ) = (moded.repair, moded.pieces.as_slice())
+                            else {
+                                return Err(site.fault(key.span, FormFault::MisplacedTile));
+                            };
+                            entries.push(Entry {
+                                key: Key::Label(self.name_at(word), word),
+                                held,
+                            });
+                            key = rest;
+                        },
+                        Some(_) | None => {
+                            return Err(site.fault(key.span, FormFault::MisplacedTile));
+                        },
+                    }
                 }
             }
             else {
-                Entry {
+                entries.push(Entry {
                     key: Key::Positional,
                     held: Held::Operand(first),
-                }
-            };
-            entries.push(entry);
+                });
+            }
             separated(site, cursor, closer)?;
         }
 

@@ -1803,6 +1803,61 @@ fn an_implicit_group_is_its_explicit_twin_4853()
 }
 
 #[test]
+fn names_that_share_a_type_are_their_entries_written_apart_4853()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def shared : (m n : Integer) -> Integer ; def apart : (m : Integer, n : Integer) -> \
+         Integer ; def bound : (a : Type, x y : a) -> a ; def bound_apart : (a : Type, x : a, y : \
+         a) -> a ; def three : (k m n : Integer) -> Integer ; def three_apart : (k : Integer, m : \
+         Integer, n : Integer) -> Integer ; def outputs : (m : Integer) -> (q r : Integer) ; def \
+         outputs_apart : (m : Integer) -> (q : Integer, r : Integer) ;",
+        &mut arena,
+    );
+    let signature = |name: &str| match outcome(&module, name) {
+        DeclarationOutcome::Uncompleted { declared_type } => declared_type,
+        other @ (DeclarationOutcome::Completed { .. }
+        | DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature, not {other:?}"),
+    };
+    for (shared, apart, reason) in [
+        ("shared", "apart", "two inputs that share a type"),
+        (
+            "bound",
+            "bound_apart",
+            "two inputs that share a type the group binds",
+        ),
+        ("three", "three_apart", "three inputs that share a type"),
+        ("outputs", "outputs_apart", "two outputs that share a type"),
+    ] {
+        let (shared, apart) = (signature(shared), signature(apart));
+        let (shared, apart) = (arena.value_quote(shared), arena.value_quote(apart));
+        assert_eq!(
+            gandr_core_term::equal_certificate_syntax(&arena, shared, apart),
+            gandr_core_term::CertificateEquality::Equal,
+            "{reason} is the group that writes each entry apart"
+        );
+    }
+    let source = "def typed : (m List(Integer) : Integer) -> Integer ;";
+    assert!(
+        matches!(refused(source), LoweringRefusal::MalformedForm {
+            fault: FormFault::MisplacedTile,
+            ..
+        }),
+        "only bare words share a type"
+    );
+    let source = "def twice : (m m : Integer) -> Integer ;";
+    assert!(
+        matches!(refused(source), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("m")),
+        "a shared binder is written once"
+    );
+}
+
+#[test]
 fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
 {
     let mut arena = CoreArena::new();
