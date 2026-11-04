@@ -18,158 +18,146 @@ import std.io;
 
 /// A line printed through the instance `out`, the capability its label
 /// binds.
-pub def say() -> [out : std.io.Console.Eff] Unit { out.print("said") }
+pub def say() -> [out : std.io.Console.Eff] Unit { out.print "said" }
 
 /// One instance of `std.io.Console.Eff` handled around the call: the call passes it.
 @[ runs("1") ]
-def resolved() -> Integer {
+def resolved() -> Integer =
   handle a : std.io.Console.Eff {
-    say();
+    say ();
     pure 0
   } with {
-    pure(x) => pure x,
-    oper print(line, k) => pure 1
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
   }
-}
 
 /// Two instances handled around the call, the outer named: its clause
 /// answers.
 @[ runs("1") ]
-def namedOuter() -> Integer {
+def namedOuter() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      say[.out = a]();
+      say[.out = a] ();
       pure 0
     } with {
-      pure(x) => pure x,
-      oper print(line, k) => pure 2
+      | pure(x) => pure x
+      | oper print(line, k) => pure 2
     }
   } with {
-    pure(x) => pure x,
-    oper print(line, k) => pure 1
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
   }
-}
 
 /// The same two, the inner named.
 @[ runs("2") ]
-def namedInner() -> Integer {
+def namedInner() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      say[.out = b]();
+      say[.out = b] ();
       pure 0
     } with {
-      pure(x) => pure x,
-      oper print(line, k) => pure 2
+      | pure(x) => pure x
+      | oper print(line, k) => pure 2
     }
   } with {
-    pure(x) => pure x,
-    oper print(line, k) => pure 1
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
   }
-}
 
 /// A caller's own instance answers the call it makes: `say` passes `o`
 /// on.
-def relayed() -> [o : std.io.Console.Eff] Unit { say() }
+def relayed() -> [o : std.io.Console.Eff] Unit { say () }
 
 /// An explicit parameter beside the instance, which comes after it.
-def sayLine(s : String) -> [out : std.io.Console.Eff] Unit { out.print(s) }
+def sayLine(s : String) -> [out : std.io.Console.Eff] Unit { out.print s }
 
 /// The explicit argument written, the instance passed from the scope.
 @[ runs("1") ]
-def sayLineRuns() -> Integer {
+def sayLineRuns() -> Integer =
   handle a : std.io.Console.Eff {
-    sayLine("line");
+    sayLine "line";
     pure 0
   } with {
-    pure(x) => pure x,
-    oper print(line, k) => pure 1
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
   }
-}
 
 /// Steps down to the ground, which a recursion takes apart one by one.
-data Steps : Type where {
+data Steps : Type where
   /// The ground, where the recursion stops.
   | Ground : Steps
   /// One step above the rest.
   | Step : (rest : Steps) --> Steps
-}
 
 /// A recursion under its row: each level prints through `out`, and the
 /// recursive call passes `out` on, as a call that omits its instance does.
-def rec descend(s : Steps) -> [out : std.io.Console.Eff] Unit {
-  match s {
-    Ground => pure unit,
-    Step(rest) => {
-      out.print("step");
-      descend[<](rest)
+def rec descend(s : Steps) -> [out : std.io.Console.Eff] Unit =
+  match s
+    | Ground => pure *{}
+    | Step(rest) => {
+      out.print "step";
+      descend[<] rest
     }
-  }
-}
 
 /// `descend` over three steps, each line counted as it resumes: the
 /// handler answers every level's line.
 @[ runs("3") ]
-def descendRuns() -> Integer {
+def descendRuns() -> Integer =
   handle a : std.io.Console.Eff {
-    descend(Step(Step(Step(Ground))));
+    descend (Step (Step (Step Ground)));
     pure 0
   } with {
-    pure(x) => pure x,
-    oper print(line, k) => {
-      let n = k(unit);
+    | pure(x) => pure x
+    | oper print(line, k) => {
+      let n = k *{};
       pure (n + 1)
     }
   }
-}
 
 /// Two instances of `std.io.Console.Eff` in one row, `first` printed through before
 /// `second`.
-def both() -> [first : std.io.Console.Eff, second : std.io.Console.Eff] Unit {
-  say[.out = first]();
-  say[.out = second]()
-}
+def both() -> [first : std.io.Console.Eff, second : std.io.Console.Eff] Unit =
+  say[.out = first] ()
+  say[.out = second] ()
 
 /// `both` with its first instance the outer scope: the outer clause
 /// answers the first line.
 @[ runs("1") ]
-def outerFirst() -> Integer {
+def outerFirst() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      both[.first = a, .second = b]();
+      both[.first = a, .second = b] ();
       pure 0
     } with {
-      pure(x) => pure x,
-      oper print(line, k) => pure 2
+      | pure(x) => pure x
+      | oper print(line, k) => pure 2
     }
   } with {
-    pure(x) => pure x,
-    oper print(line, k) => pure 1
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
   }
-}
 
 /// The instances swapped: the same `both`, its first instance now the
 /// inner scope, whose clause answers.
 @[ runs("2") ]
-def innerFirst() -> Integer {
+def innerFirst() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      both[.first = b, .second = a]();
+      both[.first = b, .second = a] ();
       pure 0
     } with {
-      pure(x) => pure x,
-      oper print(line, k) => pure 2
+      | pure(x) => pure x
+      | oper print(line, k) => pure 2
     }
   } with {
-    pure(x) => pure x,
-    oper print(line, k) => pure 1
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
   }
-}
 
 /// A suspended computation at the function's own instance, run by it: the
 /// parameter's row names the label the result row binds.
-def runAt(body : +U (-F [o : std.io.Console.Eff] Unit)) -> [o : std.io.Console.Eff] Unit {
+def runAt(body : +U (-F [o : std.io.Console.Eff] Unit)) -> [o : std.io.Console.Eff] Unit =
   force body
-}
 
 /// `both` as the printer writes it: each instance's region binder in the
 /// telescope, its capability an explicit parameter, and each label of the
@@ -177,24 +165,22 @@ def runAt(body : +U (-F [o : std.io.Console.Eff] Unit)) -> [o : std.io.Console.E
 def bothWritten[r : Region, r1 : Region](
   first : Cap { print } at r,
   second : Cap { print } at r1
-) -> [r : std.io.Console.Eff, r1 : std.io.Console.Eff] Unit {
-  say[.out = first]();
-  say[.out = second]()
-}
+) -> [r : std.io.Console.Eff, r1 : std.io.Console.Eff] Unit =
+  say[.out = first] ()
+  say[.out = second] ()
 
 /// `bothWritten` passed the inner scope first: its clause answers.
 @[ runs("2") ]
-def bothWrittenRuns() -> Integer {
+def bothWrittenRuns() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      bothWritten(b, a);
+      bothWritten b a;
       pure 0
     } with {
-      pure(x) => pure x,
-      oper print(line, k) => pure 2
+      | pure(x) => pure x
+      | oper print(line, k) => pure 2
     }
   } with {
-    pure(x) => pure x,
-    oper print(line, k) => pure 1
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
   }
-}

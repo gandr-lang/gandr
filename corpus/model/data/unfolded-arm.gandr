@@ -14,33 +14,27 @@
 import "./data-base.gandr";
 
 /// Two successors over a natural.
-pub def plusTwo(n : Nat) -> Nat {
-  Succ(Succ(n))
-}
+pub def plusTwo(n : Nat) -> Nat =
+  Succ (Succ n)
 
 /// Doubling, its arm handing the recursive call to `plusTwo`.
-pub def rec double(n : Nat) -> Nat {
-  match n {
-    Zero => Zero,
-    Succ(m) => plusTwo(double[<](m))
-  }
-}
+pub def rec double(n : Nat) -> Nat =
+  match n
+    | Zero => Zero
+    | Succ(m) => plusTwo (double[<] m)
 
 /// Two doubled.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
-def doubledTwo : () => Nat = double(two);
+def doubledTwo : () -> Nat = double two;
 
 /// One step of `double` is `plusTwo` of the call, as the arm writes it.
-def doubleStep(n : Nat) -> Path(double(Succ(n)), plusTwo(double(n))) {
-  Path.here(plusTwo(double(n)))
-}
+def doubleStep(n : Nat) -> Path(double (Succ n), plusTwo (double n)) =
+  Path.here (plusTwo (double n))
 
 /// The same step with `plusTwo` unfolded: two successors over the call.
-def doubleStepUnfolded(n : Nat) -> Path(double(Succ(n)), Succ(Succ(double(n)))) {
-  Path.here(Succ(Succ(double(n))))
-}
+def doubleStepUnfolded(n : Nat) -> Path(double (Succ n), Succ (Succ (double n))) =
+  Path.here (Succ (Succ (double n)))
 
 /// Two steps, each arm handing its call on to `plusTwo`.
-def doubleTwoSteps(n : Nat) -> Path(double(Succ(Succ(n))), plusTwo(plusTwo(double(n)))) {
-  Path.here(plusTwo(plusTwo(double(n))))
-}
+def doubleTwoSteps(n : Nat) -> Path(double (Succ (Succ n)), plusTwo (plusTwo (double n))) =
+  Path.here (plusTwo (plusTwo (double n)))

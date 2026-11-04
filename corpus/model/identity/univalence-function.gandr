@@ -18,20 +18,18 @@ import "./univalence.gandr";
 /// A function on the loops at the point, carried along `ua(winding)`, is the
 /// function on the integers that spins its argument back to a loop, applies
 /// `f` and winds the result, by conversion.
-def funBeta(f : Path[.A = Circle](Base, Base) => Path[.A = Circle](
+def funBeta(f : Path[.A = Circle](Base, Base) -> Path[.A = Circle](
   Base,
   Base
-)) -> Path[.A = Int => Int](
-  Path.walk(fun (X) { X => X }, loopsAreIntegers, f),
-  fun (n) { wind(f(spin(n))) }
-) {
-  Path.here(fun (n) { wind(f(spin(n))) })
-}
+)) -> Path[.A = Int -> Int](
+  Path.walk (fun (X) { X -> X }) loopsAreIntegers f,
+  fun (n) { wind (f (spin n)) }
+) =
+  Path.here (fun (n) { wind (f (spin n)) })
 
 /// Adding a loop, carried along `loopsAreIntegers`, adds one: the integer
 /// spins back to its word, gains a loop and winds to its successor, by a run.
 @[ runs("S(S(S(Z)))") ]
-def funRun() -> Int {
-  let g = Path.walk(fun (X) { X => X }, loopsAreIntegers, fun (l) { loopOn(l) });
-  g(S(S(Z)))
-}
+def funRun() -> Int =
+  let g = Path.walk (fun (X) { X -> X }) loopsAreIntegers (fun (l) { loopOn l })
+  g (S (S Z))

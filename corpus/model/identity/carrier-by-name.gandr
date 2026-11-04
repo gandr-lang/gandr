@@ -14,16 +14,16 @@
 // - see: #5026 — a hole in a declared type, solved where the type forms
 
 /// Four identified with itself, the carrier supplied by name.
-def namedPath : Path[.A = Integer](4, 4) = Path.here(4);
+def namedPath : Path[.A = Integer](4, 4) = Path.here 4;
 
 /// A point identified with itself, the carrier supplied from `A`.
-def punnedPath(A : Type, x : A) -> Path[.A](x, x) { Path.here(x) }
+def punnedPath(A : Type, x : A) -> Path[.A](x, x) { Path.here x }
 
 /// The unit type identified with itself, the universe supplied by name.
-def universalPath : Path[.A = Type](Unit, Unit) = Path.here(Unit);
+def universalPath : Path[.A = Type](Unit, Unit) = Path.here (Unit);
 
 /// Two equal integers related by their identity, the carrier supplied by name.
-def namedBridge : Bridge[.A = Integer](4, 4) = unit;
+def namedBridge : Bridge[.A = Integer](4, 4) = *{};
 
 /// A bridge that `A` supplies is the bridge whose endpoints fix `A`.
 def punnedBridge(A : Type, x : A, b : Bridge[.A](x, x)) -> Bridge(x, x) { b }
@@ -35,13 +35,13 @@ def universalBridge : Bridge[.A = Type](Unit, String) = thunk {
 };
 
 /// Four flows to itself, and a supply names the carrier.
-def namedFlow : Flow[.A = Integer](4, 4) = Flow.stay(4);
+def namedFlow : Flow[.A = Integer](4, 4) = Flow.stay 4;
 
 /// A point flows to itself, and `A` supplies the carrier.
-def punnedFlow(A : Type, x : A) -> Flow[.A](x, x) { Flow.stay(x) }
+def punnedFlow(A : Type, x : A) -> Flow[.A](x, x) { Flow.stay x }
 
 /// The unit type flows to itself, and a supply names the universe.
-def universalFlow : Flow[.A = Type](Unit, Unit) = Flow.stay(Unit);
+def universalFlow : Flow[.A = Type](Unit, Unit) = Flow.stay (Unit);
 
 /// Four flows to itself. The source omits the carrier, and the endpoints fix it.
-def omittedFlow : Flow(4, 4) = Flow.stay(4);
+def omittedFlow : Flow(4, 4) = Flow.stay 4;

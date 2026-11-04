@@ -16,9 +16,8 @@
 /// - see: #720 — a call argument's form in a type
 
 /// The action of `F` on `p`, which does not reduce while `p` is a variable.
-def onPath(A : Type, F : A => A, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = A](F(x), F(y)) {
-  Path.ap(F, p)
-}
+def onPath(A : Type, F : A -> A, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = A](F x, F y) =
+  Path.ap F p
 
 /// Reflexivity at the composite of its two parameters.
 def composedHere(
@@ -28,9 +27,8 @@ def composedHere(
   z : A,
   p : Path[.A = A](x, y),
   q : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(p, q), Path.step(p, q)) {
-  Path.here(Path.step(p, q))
-}
+) -> Path[.A = Path[.A = A](x, z)](Path.step p q, Path.step p q) =
+  Path.here (Path.step p q)
 
 /// `composedHere` at two variables.
 def passedVariables(
@@ -40,38 +38,35 @@ def passedVariables(
   z : A,
   r : Path[.A = A](x, y),
   s : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(r, s), Path.step(r, s)) {
-  composedHere(A, x, y, z, r, s)
-}
+) -> Path[.A = Path[.A = A](x, z)](Path.step r s, Path.step r s) =
+  composedHere A x y z r s
 
 /// `composedHere` at one stuck call and one variable.
 def passedOneCall(
   A : Type,
-  F : A => A,
+  F : A -> A,
   x : A,
   y : A,
   z : A,
   r : Path[.A = A](x, y),
-  s : Path[.A = A](F(y), z)
-) -> Path[.A = Path[.A = A](F(x), z)](
-  Path.step(onPath(A, F, x, y, r), s),
-  Path.step(onPath(A, F, x, y, r), s)
-) {
-  composedHere(A, F(x), F(y), z, onPath(A, F, x, y, r), s)
-}
+  s : Path[.A = A](F y, z)
+) -> Path[.A = Path[.A = A](F x, z)](
+  Path.step (onPath A F x y r) s,
+  Path.step (onPath A F x y r) s
+) =
+  composedHere A (F x) (F y) z (onPath A F x y r) s
 
 /// `composedHere` at two stuck calls.
 def passedTwoCalls(
   A : Type,
-  F : A => A,
+  F : A -> A,
   x : A,
   y : A,
   z : A,
   r : Path[.A = A](x, y),
   s : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](F(x), F(z))](
-  Path.step(onPath(A, F, x, y, r), onPath(A, F, y, z, s)),
-  Path.step(onPath(A, F, x, y, r), onPath(A, F, y, z, s))
-) {
-  composedHere(A, F(x), F(y), F(z), onPath(A, F, x, y, r), onPath(A, F, y, z, s))
-}
+) -> Path[.A = Path[.A = A](F x, F z)](
+  Path.step (onPath A F x y r) (onPath A F y z s),
+  Path.step (onPath A F x y r) (onPath A F y z s)
+) =
+  composedHere A (F x) (F y) (F z) (onPath A F x y r) (onPath A F y z s)

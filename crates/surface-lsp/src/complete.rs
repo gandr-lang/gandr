@@ -725,8 +725,8 @@ mod tests
     /// A family, a recursive function matching on it, and a function whose
     /// body is a lambda.
     const BASE: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
-                        plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    Zero => n,\n    \
-                        Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef double : +U (Nat -> -F \
+                        plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    | Zero => n\n    \
+                        | Succ(p) => Succ (plus[<] n p)\n  }\n}\ndef double : +U (Nat -> -F \
                         Nat) ;\ndef double = thunk { fun (x) { return x } } ;\n";
 
     /// What a completion offers: each name with its kind, and each keyword,

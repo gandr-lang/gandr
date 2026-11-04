@@ -14,4 +14,4 @@ import "./run-transport.gandr";
 def oneProtocol : Path[.A = Type](
   Ask.Coded,
   Ask.Decoded
-) = Path.bisim(Ask.Coded, Ask.Decoded, codes);
+) = Path.bisim Ask.Coded Ask.Decoded codes;

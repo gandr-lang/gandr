@@ -21,14 +21,13 @@ def allocModule : Mlir.Module = ~mlir.module(path = "vendor/alloc.c", via = "cla
 
 /// One ClangIR operation folded into the place theory, the dialects this
 /// sketch reads named by their operation names.
-def wpOp(op : Op) -> Spec(Places, Mlir.Value) {
+def wpOp(op : Op) -> Spec(Places, Mlir.Value) =
   match op.name {
-    "cir.load" => Places.load(Mlir.place(op.operands[0])),
-    "cir.store" => Places.store(Mlir.place(op.operands[1]), Mlir.value(op.operands[0])),
-    "cir.call" => Spec.call(op.attributes["callee"], op.operands),
-    _ => Spec.havoc(op.results)
+    "cir.load" -> Places.load(Mlir.place(op.operands[0])),
+    "cir.store" -> Places.store(Mlir.place(op.operands[1]), Mlir.value(op.operands[0])),
+    "cir.call" -> Spec.call(op.attributes["callee"], op.operands),
+    _ -> Spec.havoc(op.results)
   }
-}
 
 /// The module's function `alloc`, which the fold reads op by op.
-def allocWp : Spec(Places, Mlir.Value) = Spec.sequence(map(allocModule.function("alloc").body, wpOp));
+def allocWp : Spec(Places, Mlir.Value) = Spec.sequence (map ((allocModule.function "alloc").body) wpOp);

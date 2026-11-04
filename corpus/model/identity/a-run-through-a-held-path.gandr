@@ -19,24 +19,22 @@ def composedPaths(
 ) -> Path[.A = A](
   x,
   z
-) {
-  Path.step(p, q)
-}
+) =
+  Path.step p q
 
 /// A function's action on a path, whose type states its endpoints.
 def actedOn(
   B : Type,
   C : Type,
-  F : B => C,
+  F : B -> C,
   b1 : B,
   b2 : B,
   p : Path[.A = B](b1, b2)
 ) -> Path[.A = C](
-  F(b1),
-  F(b2)
-) {
-  Path.ap(F, p)
-}
+  F b1,
+  F b2
+) =
+  Path.ap F p
 
 /// The associator by based path induction on `h`.
 def associatedPaths(
@@ -48,21 +46,19 @@ def associatedPaths(
   f : Path[.A = A](x, y),
   g : Path[.A = A](y, z),
   h : Path[.A = A](z, w)
-) -> Path[.A = Path[.A = A](x, w)](Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
-  Path.walk(
-    (
+) -> Path[.A = Path[.A = A](x, w)](Path.step (Path.step f g) h, Path.step f (Path.step g h)) =
+  Path.walk
+    ((
       v : A,
       k : Path[.A = A](z, v)
-    ) => Path[.A = Path[.A = A](x, v)](
-      Path.step(Path.step(f, g), k),
-      Path.step(f, Path.step(g, k))
-    ),
-    h,
-    Path.here(z),
-    Path.here(h),
-    Path.here(Path.step(f, g))
-  )
-}
+    ) -> Path[.A = Path[.A = A](x, v)](
+      Path.step (Path.step f g) k,
+      Path.step f (Path.step g k)
+    ))
+    h
+    (Path.here z)
+    (Path.here h)
+    (Path.here (Path.step f g))
 
 /// The whiskering of a path of paths on the right.
 def whiskeredRight(
@@ -74,16 +70,14 @@ def whiskeredRight(
   f2 : Path[.A = A](x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
   g : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
-  actedOn(
-    type(Path[.A = A](x, y)),
-    type(Path[.A = A](x, z)),
-    (fun (q : Path[.A = A](x, y)) { Path.step(q, g) } : Path[.A = A](x, y) => Path[.A = A](x, z)),
-    f1,
-    f2,
+) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) =
+  actedOn
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path[.A = A](x, y) -> Path[.A = A](x, z))
+    f1
+    f2
     a
-  )
-}
 
 /// A reflexivity whiskered twice, then `k`, is `k`.
 def twiceWhiskeredThen(
@@ -96,29 +90,26 @@ def twiceWhiskeredThen(
   g : Path[.A = A](y, z),
   h : Path[.A = A](z, w),
   r : Path[.A = A](x, w),
-  k : Path[.A = Path[.A = A](x, w)](Path.step(Path.step(fm, g), h), r)
-) -> Path[.A = Path[.A = Path[.A = A](x, w)](Path.step(Path.step(fm, g), h), r)](
-  composedPaths(
-    type(Path[.A = A](x, w)),
-    Path.step(Path.step(fm, g), h),
-    Path.step(Path.step(fm, g), h),
-    r,
-    whiskeredRight(
-      A,
-      x,
-      z,
-      w,
-      Path.step(fm, g),
-      Path.step(fm, g),
-      whiskeredRight(A, x, y, z, fm, fm, Path.here(fm), g),
-      h
-    ),
-    k
-  ),
+  k : Path[.A = Path[.A = A](x, w)](Path.step (Path.step fm g) h, r)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](Path.step (Path.step fm g) h, r)](
+  composedPaths
+    (type(Path[.A = A](x, w)))
+    (Path.step (Path.step fm g) h)
+    (Path.step (Path.step fm g) h)
+    r
+    (whiskeredRight
+      A
+      x
+      z
+      w
+      (Path.step fm g)
+      (Path.step fm g)
+      (whiskeredRight A x y z fm fm (Path.here fm) g)
+      h)
+    k,
   k
-) {
-  Path.here(k)
-}
+) =
+  Path.here k
 
 /// A reflexivity whiskered twice, then the associator, is the associator.
 def twiceWhiskeredThenAssoc(
@@ -131,27 +122,24 @@ def twiceWhiskeredThenAssoc(
   g : Path[.A = A](y, z),
   h : Path[.A = A](z, w)
 ) -> Path[.A = Path[.A = Path[.A = A](x, w)](
-  Path.step(Path.step(fm, g), h),
-  Path.step(fm, Path.step(g, h))
+  Path.step (Path.step fm g) h,
+  Path.step fm (Path.step g h)
 )](
-  composedPaths(
-    type(Path[.A = A](x, w)),
-    Path.step(Path.step(fm, g), h),
-    Path.step(Path.step(fm, g), h),
-    Path.step(fm, Path.step(g, h)),
-    whiskeredRight(
-      A,
-      x,
-      z,
-      w,
-      Path.step(fm, g),
-      Path.step(fm, g),
-      whiskeredRight(A, x, y, z, fm, fm, Path.here(fm), g),
-      h
-    ),
-    associatedPaths(A, x, y, z, w, fm, g, h)
-  ),
-  associatedPaths(A, x, y, z, w, fm, g, h)
-) {
-  Path.here(associatedPaths(A, x, y, z, w, fm, g, h))
-}
+  composedPaths
+    (type(Path[.A = A](x, w)))
+    (Path.step (Path.step fm g) h)
+    (Path.step (Path.step fm g) h)
+    (Path.step fm (Path.step g h))
+    (whiskeredRight
+      A
+      x
+      z
+      w
+      (Path.step fm g)
+      (Path.step fm g)
+      (whiskeredRight A x y z fm fm (Path.here fm) g)
+      h)
+    (associatedPaths A x y z w fm g h),
+  associatedPaths A x y z w fm g h
+) =
+  Path.here (associatedPaths A x y z w fm g h)

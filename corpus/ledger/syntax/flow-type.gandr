@@ -1,4 +1,4 @@
 /// `flow_type`: a flow type, its carrier supplied by name.
 @[ checks ]
 def stayed : Flow[.A = Integer](4, 4) ;
-def stayed = Flow.stay(4) ;
+def stayed = Flow.stay 4 ;

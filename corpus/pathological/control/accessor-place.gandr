@@ -2,37 +2,33 @@
 import std.list (List);
 
 /// The list the accesses below hold.
-def pair : List(Integer) = cons(1, cons(2, nil));
+def pair : List(Integer) = cons 1 (cons 2 nil);
 
 /// An access at a place of a held integer: an integer has no element at an
 /// index.
 @[ refuses("PlaceUnindexed") ]
-def unindexed() -> Integer {
-  var c = 0;
+def unindexed() -> Integer =
+  var c = 0
   access shared c.#[0] as w { pure w }
-}
 
 /// An exclusive access of a held index inside the access at it: the index is
 /// lent shared with its place, so it is frozen for the access's body.
 @[ refuses("HeldLent") ]
-def index_frozen() -> Unit {
-  var i = 0;
-  var xs = pair;
+def index_frozen() -> Unit =
+  var i = 0
+  var xs = pair
   access shared xs.#[i] as w { access i as v { resume(v, w) } }
-}
 
 /// Two views at distinct indices of one list: the list is lent as a whole, so
 /// an exclusive view of one element excludes a view of another.
 @[ refuses("HeldLent") ]
-def two_places() -> Unit {
-  var xs = pair;
+def two_places() -> Unit =
+  var xs = pair
   access xs.#[0] as v { access xs.#[1] as w { resume(w, v) }; resume(v, 0) }
-}
 
 /// An access at a place with a bare bracket. The access takes its place
 /// through the selector `.#[ … ]`.
 @[ refuses("MalformedForm") ]
-def bare_place() -> Integer {
-  var xs = pair;
+def bare_place() -> Integer =
+  var xs = pair
   access shared xs[1] as w { pure w }
-}

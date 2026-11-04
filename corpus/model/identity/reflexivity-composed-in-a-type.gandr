@@ -11,11 +11,10 @@
 /// A reflexivity stands first in the type's composite. The left unit holds
 /// up to a path, not by computation, so the composite stands on both sides.
 def hereFirst(A : Type, x : A, y : A, f : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](
-  Path.step(Path.here(x), f),
-  Path.step(Path.here(x), f)
-) {
-  Path.here(Path.step(Path.here(x), f))
-}
+  Path.step (Path.here x) f,
+  Path.step (Path.here x) f
+) =
+  Path.here (Path.step (Path.here x) f)
 
 /// A composite ending in a reflexivity, first in another.
 def endsInHere(
@@ -26,16 +25,14 @@ def endsInHere(
   f : Path[.A = A](x, y),
   q : Path(y, c)
 ) -> Path[.A = Path[.A = A](x, c)](
-  Path.step(Path.step(f, Path.here(y)), q),
-  Path.step(f, q)
-) {
-  Path.here(Path.step(f, q))
-}
+  Path.step (Path.step f (Path.here y)) q,
+  Path.step f q
+) =
+  Path.here (Path.step f q)
 
 /// Two reflexivities compose to the reflexivity.
 def hereTwice(
   A : Type,
   x : A
-) -> Path[.A = Path[.A = A](x, x)](Path.step(Path.here(x), Path.here(x)), Path.here(x)) {
-  Path.here(Path.here(x))
-}
+) -> Path[.A = Path[.A = A](x, x)](Path.step (Path.here x) (Path.here x), Path.here x) =
+  Path.here (Path.here x)

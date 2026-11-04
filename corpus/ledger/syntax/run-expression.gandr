@@ -1,17 +1,13 @@
 /// `run_expression`: running a computation where a value is read.
 @[ checks ]
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
 @[ checks ]
-def rec down(n : Nat) -> -F Nat {
-  match n {
-    Zero => return n,
-    Succ(p) => down[<](p)
-  }
-}
+def rec down(n : Nat) -> -F Nat =
+  match n
+    | Zero => return n
+    | Succ(p) => down[<] p
 @[ checks ]
-def twice(n : Nat) -> -F Nat {
-  down(run down(n))
-}
+def twice(n : Nat) -> -F Nat =
+  down (run down n)

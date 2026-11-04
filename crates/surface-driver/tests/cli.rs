@@ -493,7 +493,7 @@ fn a_host_interface_needs_the_import_of_its_module_4523()
 {
     let scratch = Scratch::new(Path::new("host-home"));
     let body = "def peek(c : Cap { read, print }) -> [std.io.Console.Eff, std.fs.Eff] String {\n  \
-                c.read(\"notes\")\n}\n";
+                c.read \"notes\"\n}\n";
     let imported_text = format!("import std.fs;\nimport std.io;\n{body}");
     let imported = scratch.file(
         Path::new("imported.gandr"),
@@ -564,7 +564,7 @@ fn a_stated_web_the_run_does_not_produce_is_unsettled_3338()
     let spoke_first = "series(event(left, 0), event(right, 0), event(right, 1), \
                        parallel(series(event(left, 1), event(left, 2)), event(right, 2)))";
     let text = format!(
-        "@[ runs(\"unit\"), traces(decomposes(task, {asked_first})) ]\ndef swapped() -> Unit \
+        "@[ runs(\"unit\"), traces(decomposes task ({asked_first})) ]\ndef swapped() -> Unit \
          {{\n  let asked = fork (task : !String. ?String. end) {{\n    send(task, \"notes\");\n    \
          let answer = recv(task);\n    close(task)\n  }};\n  let told = recv(asked);\n  \
          send(asked, told);\n  close(asked)\n}}\n"
@@ -807,7 +807,7 @@ fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
 {
     let scratch = Scratch::new(Path::new("lint"));
     let elided = "def kept(n: Integer) -> -F Integer { n }\ndef called(n: Integer) -> -F \
-                      Integer { kept(n) }\n";
+                      Integer { kept n }\n";
     let source = scratch.file(Path::new("exits.gandr"), Text::from(elided));
     let check = Path::new("check");
     let lint = [check, Path::new("--lint"), Path::new("explicit-exits")];
@@ -862,7 +862,7 @@ fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
     assert_eq!(
         fixed,
         "def kept(n: Integer) -> -F Integer { return n }\ndef called(n: Integer) -> -F \
-             Integer { become kept(n) }\n"
+             Integer { become kept n }\n"
     );
     std::fs::write(&source, &fixed).expect("the fixed source is written");
     let again = ran(gandr(&[lint[0], lint[1], lint[2], &source]));
@@ -885,7 +885,7 @@ fn check_measures_each_declaration_a_source_writes()
     );
     let _top = scratch.file(
         Path::new("top.gandr"),
-        Text::from("import \"./base.gandr\" ;\ndef two(n: Integer) -> -F Integer { one(n) }\n"),
+        Text::from("import \"./base.gandr\" ;\ndef two(n: Integer) -> -F Integer { one n }\n"),
     );
     // A key and a verdict cache of the test's own: the shared ones hold the
     // receipts other tests leave, so a first run would recall `one`.
@@ -1010,7 +1010,7 @@ fn check_reports_each_cell_a_source_discharges_4112()
         Path::new("laws.gandr"),
         Text::from(
             "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> \
-             Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), true);\n}\ndata One : \
+             Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);\n}\ndata One : \
              Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One where {\n  \
              def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort \
              Carrier = One where {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
@@ -1052,7 +1052,7 @@ fn the_runs_lint_reaches_a_pure_run_unless_its_effects_option_narrows_it()
         Path::new("runs.gandr"),
         Text::from(
             "def id(n: Integer) -> -F Integer { n }\ndef twice(n: Integer) -> -F Integer { \
-                 id(id(n)) }\n",
+                 id (id n) }\n",
         ),
     );
     let check = Path::new("check");
@@ -1269,8 +1269,8 @@ fn fmt_sugars_a_match_over_a_stated_sum_791()
     let source = scratch.file(
         Path::new("pick.gandr"),
         Text::from(
-            "def pair : #{Integer, String} ;\n\ndef pick(t : +{Integer, Integer}) -> -F Integer \
-             {\n  match t {\n    +{.1 = x} => return x,\n    _ => return 0\n  }\n}\n",
+            "def pair : *{Integer, String} ;\n\ndef pick(t : +{Integer, Integer}) -> -F Integer \
+             {\n  match t {\n    | +{.1 = x} => return x\n    | _ => return 0\n  }\n}\n",
         ),
     );
     let (fmt, form) = (Path::new("fmt"), Path::new("--form=sugared"));
@@ -1283,7 +1283,7 @@ fn fmt_sugars_a_match_over_a_stated_sum_791()
     assert_eq!(
         std::fs::read_to_string(&source).expect("the source is readable"),
         "def pair : Integer * String;\n\ndef pick(t : Integer + Integer) -> Integer {\n  match t \
-         {\n    +{.1 = x} => x,\n    _ => 0\n  }\n}\n",
+         {\n    | +{.1 = x} => x\n    | _ => 0\n  }\n}\n",
         "both declarations are sugared"
     );
 }
@@ -4423,7 +4423,7 @@ fn a_script_that_runs_its_main_leaves_successfully()
         &scratch,
         Path::new("main.gandr"),
         Text::from(
-            "import std.io ;\ndef answer = 42 ;\ndef main() -> [std.io.Console.Eff] Unit {\n  std.io.Console.print(\"42\")\n}\n",
+            "import std.io ;\ndef answer = 42 ;\ndef main() -> [std.io.Console.Eff] Unit {\n  std.io.Console.print \"42\"\n}\n",
         ),
     );
     assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
@@ -4443,9 +4443,9 @@ fn a_program_leaves_with_its_entry_s_status_1881()
 {
     let scratch = Scratch::new(Path::new("program-entry"));
     let counted = "import std.list (List);\ndef rec count(xs : List(String)) -> -F Integer {\n  match \
-                   xs {\n    #[] => 0,\n    \
-                   #[x, ..rest] => { let n = count[<](rest); n + 1 }\n  }\n}\ndef main(args : \
-                   List(String)) -> -F Integer { become count(args) }\n";
+                   xs {\n    | #[] => 0\n    \
+                   | #[x, ..rest] => { let n = count[<] rest; n + 1 }\n  }\n}\ndef main(args : \
+                   List(String)) -> -F Integer { become count args }\n";
     for (name, text, arguments, status) in [
         (
             "returned.gandr",
@@ -4455,7 +4455,7 @@ fn a_program_leaves_with_its_entry_s_status_1881()
         ),
         (
             "exited.gandr",
-            "import std.process ;\ndef proc : Cap {exit} ;\ndef main() -> -F [std.process.Exit.Eff] Integer { proc.exit(7) ; return 0 }\n",
+            "import std.process ;\ndef proc : Cap {exit} ;\ndef main() -> -F [std.process.Exit.Eff] Integer { proc.exit 7 ; return 0 }\n",
             &[][..],
             7_i32,
         ),
@@ -4500,7 +4500,7 @@ fn a_program_prints_hello_world_2279()
     let scratch = Scratch::new(Path::new("program-unprovided"));
     let unprovided = scratch.file(
         Path::new("unprovided.gandr"),
-        Text::from("def main() -> -F [Clock] Unit {\n  Clock.print(\"hello, world!\")\n}\n"),
+        Text::from("def main() -> -F [Clock] Unit {\n  Clock.print \"hello, world!\"\n}\n"),
     );
     let output = ran(gandr(&[Path::new("run"), unprovided.as_path()]));
     assert_eq!(
@@ -4685,7 +4685,7 @@ fn a_bare_dash_is_a_path_not_standard_input()
     assert!(stderr(&output).starts_with("gandr: -: "));
     let _path = scratch.file(
         Path::new("-"),
-        Text::from("import std.io ;\ndef main() -> [std.io.Console.Eff] Unit { std.io.Console.print(\"17\") }"),
+        Text::from("import std.io ;\ndef main() -> [std.io.Console.Eff] Unit { std.io.Console.print \"17\" }"),
     );
     let mut present = gandr(&["run", "-"]);
     present.current_dir(&scratch.0);
@@ -4731,7 +4731,7 @@ fn a_failed_diagnostic_stream_stops_later_output()
     let scratch = Scratch::new(Path::new("failed-diagnostic-stream"));
     let source = scratch.file(
         Path::new("value.gandr"),
-        Text::from("import std.io ;\ndef unused : Integer ; def main() -> [std.io.Console.Eff] Unit { std.io.Console.print(\"9\") }"),
+        Text::from("import std.io ;\ndef unused : Integer ; def main() -> [std.io.Console.Eff] Unit { std.io.Console.print \"9\" }"),
     );
     let control = ran(gandr(&[Path::new("run"), &source]));
     assert_eq!(code(&control), Code(0));

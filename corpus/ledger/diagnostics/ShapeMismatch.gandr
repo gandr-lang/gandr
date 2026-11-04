@@ -2,4 +2,4 @@
 @[ refuses("ShapeMismatch") ]
 def single_is_not_its_member : Integer;
 
-def single_is_not_its_member = (1,);
+def single_is_not_its_member = *{1,};

@@ -5,7 +5,6 @@
 
 /// A banner printed on the host, then searched for a word.
 @[ refuses("OutOfFragment.shell_block") ]
-def searched() -> -F Bool {
+def searched() -> -F Bool =
   let banner = #!{ printf 'hello from gandr\n'; };
-  string.contains(banner.stdout, "gandr")
-}
+  string.contains banner.stdout "gandr"

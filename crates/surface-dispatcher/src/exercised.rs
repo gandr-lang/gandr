@@ -1196,7 +1196,7 @@ mod tests
 def identity : +U (Integer -> -F Integer) ;
 def identity = thunk { fun (x) { return x } } ;
 def applied : +U (-F Integer) ;
-def applied = thunk { become (force identity)(answer) } ;
+def applied = thunk { become (force identity) answer } ;
 def konst : +U (Integer -> Integer -> -F Integer) ;
 def konst = thunk { fun (x) { fun (y) { return x } } } ;"#,
                 &[
@@ -1222,7 +1222,7 @@ def konst = thunk { fun (x) { fun (y) { return x } } } ;"#,
                 &[(Row::ShapeRefusal, 1_usize)],
             ),
             (
-                r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { become (fun (x) { return x })(3) } ;"#,
+                r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { become (fun (x) { return x }) 3 } ;"#,
                 &[(Row::NonSynthesisableHead, 1_usize)],
             ),
             (
@@ -1231,7 +1231,7 @@ def konst = thunk { fun (x) { fun (y) { return x } } } ;"#,
             ),
             (
                 r#"@[ checks ] data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-@[ refuses("OutOfFragment.instantiation_expression.computation") ] def rec both(n : Nat) -> -F Nat { match n { Zero => return n, Succ(p) => become both[<, >](p) } }"#,
+@[ refuses("OutOfFragment.instantiation_expression.computation") ] def rec both(n : Nat) -> -F Nat { match n { | Zero => return n | Succ(p) => become both[<, >] p } }"#,
                 &[(Row::ReservedForm, 1_usize)],
             ),
             (r#"@[ owes(1) ] def a : Integer ;"#, &[(

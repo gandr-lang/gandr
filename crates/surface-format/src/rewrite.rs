@@ -443,7 +443,7 @@ pub const REWRITES: [Rewrite; 33] = [
         name: RewriteName::FunctionForm,
         direction: Direction::Sugar,
         mold: MoldName("def_value"),
-        from: Spelling("def f : () => B ; def f = thunk { c } ;"),
+        from: Spelling("def f : () -> B ; def f = thunk { c } ;"),
         to: Spelling("def f() -> -F B { c }"),
         enabled: Enabled::On,
     },

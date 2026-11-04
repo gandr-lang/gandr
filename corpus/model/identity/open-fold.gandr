@@ -22,51 +22,43 @@ import "./loop-space.gandr";
 
 /// The step case at a variable: the `Loop` arm's bind over `windWords(x)`
 /// reads as `S` over the held call.
-def wind_unfolded(x : Words) -> Path[.A = Int](windWords(Loop(x)), S(windWords(x))) {
-  Path.here(S(windWords(x)))
-}
+def wind_unfolded(x : Words) -> Path[.A = Int](windWords (Loop x), S (windWords x)) =
+  Path.here (S (windWords x))
 
 /// Two loops read through two binds, the inner call's first.
-def twice_unfolded(x : Words) -> Path[.A = Int](windWords(Loop(Loop(x))), S(S(windWords(x)))) {
-  Path.here(S(S(windWords(x))))
-}
+def twice_unfolded(x : Words) -> Path[.A = Int](windWords (Loop (Loop x)), S (S (windWords x))) =
+  Path.here (S (S (windWords x)))
 
 /// The round trip's step case: `spinWords` waits on the read
 /// `S(windWords(x))`, runs its `S` arm, and that arm's bind over
 /// `spinWords(windWords(x))` reads as `Loop`.
 def round_unfolded(x : Words) -> Path[.A = Words](
-  spinWords(windWords(Loop(x))),
-  Loop(spinWords(windWords(x)))
-) {
-  Path.here(Loop(spinWords(windWords(x))))
-}
+  spinWords (windWords (Loop x)),
+  Loop (spinWords (windWords x))
+) =
+  Path.here (Loop (spinWords (windWords x)))
 
 /// The round trip's base case, closed: every call runs to its value.
-def base_case() -> Path[.A = Words](spinWords(windWords(Nil)), Nil) {
-  Path.here(Nil)
-}
+def base_case() -> Path[.A = Words](spinWords (windWords Nil), Nil) =
+  Path.here Nil
 
 /// Parity by structural recursion over the free naturals: the successor arm
 /// cases on the parity of the predecessor before it returns. A case on the
 /// presented `Int` is refused before conversion as one its rules do not
 /// admit, so the twin that cases on its call counts here.
-def rec parity(n : Nat) -> Nat {
-  match n {
-    Zero => Zero,
-    Succ(p) => {
-      let q = parity[<](p);
-      match q {
-        Zero => Succ(Zero),
-        Succ(r) => Zero
-      }
+def rec parity(n : Nat) -> Nat =
+  match n
+    | Zero => Zero
+    | Succ(p) => {
+      let q = parity[<] p;
+      match q
+        | Zero => Succ Zero
+        | Succ(r) => Zero
     }
-  }
-}
 
 /// The twin: the successor arm needs `parity(n)`'s value, which is stuck at
 /// the variable, so the endpoint stays the bind over the call and is not
 /// read as a constructor over it.
 @[ refuses("EndpointMismatch") ]
-def parity_stuck(n : Nat) -> Path[.A = Nat](parity(Succ(n)), Succ(parity(n))) {
-  Path.here(Succ(parity(n)))
-}
+def parity_stuck(n : Nat) -> Path[.A = Nat](parity (Succ n), Succ (parity n)) =
+  Path.here (Succ (parity n))

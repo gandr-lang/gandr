@@ -12,4 +12,4 @@ import "../../model/identity/flow-migration.gandr";
 /// from the old to the new, refused: its endpoints are the translator's
 /// reversed.
 @[ refuses("TypeMismatch") ]
-def unshift : Schema.New ⇝ Schema.Old = Flow.into(Schema.toNew);
+def unshift : Schema.New ⇝ Schema.Old = Flow.into Schema.toNew;

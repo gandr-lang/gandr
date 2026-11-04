@@ -2,11 +2,10 @@
 ///
 /// The theory the model derives from.
 @[ checks ]
-theory T where {
+theory T where
   sort Nat : Type;
   oper add : (a : Nat, b : Nat) --> Nat;
-  rule half : add(x) ==> x;
-}
+  rule half : add x ==> x;
 
 @[ refuses("UnstatedComponent.Arity") ]
 def model : Model(T) ;

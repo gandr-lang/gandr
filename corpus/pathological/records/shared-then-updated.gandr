@@ -2,7 +2,7 @@
 // sees it. The cost of the copy is what this source measures.
 
 /// A record of two fields.
-def r = #{x = 1, y = 2};
+def r = *{x = 1, y = 2};
 
 /// A first name for it.
 def a = r;
@@ -11,7 +11,7 @@ def a = r;
 def b = r;
 
 /// The record updated at `x`: a new record, `a` and `b` untouched.
-def updated = #{r | x = 99};
+def updated = *{r | x = 99};
 
 /// The first name again, its `x` still one.
 def first = a;

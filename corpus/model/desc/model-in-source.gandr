@@ -17,33 +17,31 @@ import "./second-order-signatures.gandr";
 
 /// The naturals as data: the syntax model's carrier, its constructors the
 /// operations.
-pub data N : Type where {
+pub data N : Type where
   | Z : N
   | S : (n : N) --> N
-}
 
 /// The syntax model as a `Model(Nat)` module: the carrier is the data and
 /// each operation its constructor.
-module SyntaxNat : Model(Nat) where {
+module SyntaxNat : Model(Nat) where
   type Nat = N;
   def zero() -> N { Z }
-  def succ(n : N) -> N { S(n) }
-}
+  def succ(n : N) -> N { S n }
 
 /// The module packed into the record type of `Nat`'s models: its carrier and
 /// its two operations, in the order `Model(Nat)` mints them.
-def syntaxModel : #{nat : Type, zero : () => nat, succ : nat => nat} = (
+def syntaxModel : *{nat : Type, zero : () -> nat, succ : nat -> nat} = *{
   N,
-  (SyntaxNat.zero, SyntaxNat.succ)
-);
+  *{SyntaxNat.zero, SyntaxNat.succ}
+};
 
 /// A second model, on the integers: zero is `0` and the successor adds one.
-def countingModel : #{nat : Type, zero : () => nat, succ : nat => nat} = (
+def countingModel : *{nat : Type, zero : () -> nat, succ : nat -> nat} = *{
   Integer,
-  (thunk { 0 }, thunk { fun (n) { n + 1 } })
-);
+  *{thunk { 0 }, thunk { fun (n) { n + 1 } }}
+};
 
 /// The syntax model's successor at its zero builds the data's one: the
 /// module's operations run.
 @[ runs("S(Z)") ]
-def one() -> N { SyntaxNat.succ(SyntaxNat.zero()) }
+def one() -> N { SyntaxNat.succ (SyntaxNat.zero ()) }

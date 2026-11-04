@@ -17,29 +17,25 @@ import std.codec (Format, Codec);
 import std.codec.toml (Toml, Table, Value);
 
 /// A semantic version, as a manifest records it.
-pub type Version = #{ major : Nat, minor : Nat, patch : Nat };
+pub type Version = *{ major : Nat, minor : Nat, patch : Nat };
 
 /// The codec between a version and a TOML string, `"1.4.2"`.
-pub def versionToml : Codec(Toml, Version) = #{
-  encode = fun (v) { Value.string(show(v.major) ++ "." ++ show(v.minor) ++ "." ++ show(v.patch)) },
+pub def versionToml : Codec(Toml, Version) = *{
+  encode = fun (v) { Value.string (show v.major ++ "." ++ show v.minor ++ "." ++ show v.patch) },
   decode = fun (doc) {
-    match doc {
-      Value.string(s) => match split(s, ".") {
-        #[a, b, c] => zip3(parseNat(a), parseNat(b), parseNat(c)).map(fun ((x, y, z)) { #{ major = x, minor = y, patch = z } }),
-        _ => none
-      },
-      _ => none
-    }
+    match doc
+      | Value.string(s) => match split s "."
+        | #[a, b, c] => (zip3 (parseNat a) (parseNat b) (parseNat c)).map (fun (*{x, y, z}) { *{ major = x, minor = y, patch = z } })
+        | _ => none
+      | _ => none
   },
   roundTrip = fun (v) { refl }
 };
 
 /// Decoding what `encode` writes gives the version back.
-pub def versionRoundTrip(v : Version) -> versionToml.decode(versionToml.encode(v)) == some(v) {
-  versionToml.roundTrip(v)
-}
+pub def versionRoundTrip(v : Version) -> versionToml.decode(versionToml.encode v) == some v =
+  versionToml.roundTrip v
 
 /// The text `package.gandr.toml` holds for a version, printed by TOML's printer.
-pub def versionLine(v : Version) -> String {
-  Toml.print(Table.of(#[("version", versionToml.encode(v))]))
-}
+pub def versionLine(v : Version) -> String =
+  Toml.print (Table.of (#[*{"version", versionToml.encode v}]))

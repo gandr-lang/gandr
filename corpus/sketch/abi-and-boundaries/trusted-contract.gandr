@@ -26,7 +26,7 @@ import std.abi (|->, **);
 
 /// `deref_or` from the demo library: the word behind `p`, or `d` when `p` is
 /// null. Nobody has checked its body, so the vendor's documentation states it.
-@[trusted(by: assumed, note: "the vendor's documented contract, demo 2.4")]
+@[trusted(by : assumed, note : "the vendor's documented contract, demo 2.4")]
 extern C from "lib:demo" {
   fun deref_or(p : Ptr(i32), d : i32) -> i32 #spec{
     ghost v : i32
@@ -40,7 +40,7 @@ extern C from "lib:demo" {
 
 /// `memcpy`, which the C library's own conformance suite exercises. A suite
 /// is evidence, not proof.
-@[trusted(by: tested("glibc string/test-memcpy"), note: "non-overlapping buffers only")]
+@[trusted(by : tested("glibc string/test-memcpy"), note : "non-overlapping buffers only")]
 extern C from "lib:c" {
   fun memcpy(dst : Ptr(u8), src : Ptr(u8), n : usize) -> Ptr(u8) #spec{
     ghost bytes : Bytes(n)
@@ -55,7 +55,7 @@ extern C from "lib:c" {
 
 /// The midpoint of two bounds, which never overflows. A fold over the Rust
 /// function's THIR proves it, and the certificate sits beside the crate.
-@[trusted(by: verified("corten", "certs/demo-midpoint.thir.cert"), note: "rustc 1.98, THIR fold")]
+@[trusted(by : verified("corten", "certs/demo-midpoint.thir.cert"), note : "rustc 1.98, THIR fold")]
 extern Rust from "crate:demo" {
   fun midpoint(lo : i32, hi : i32) -> i32 #spec{
     requires { lo <= hi }
@@ -67,6 +67,5 @@ extern Rust from "crate:demo" {
 }
 
 /// The word behind a pointer that may be null, zero otherwise.
-pub def readOrZero(p : Ptr(i32)) -> i32 {
+pub def readOrZero(p : Ptr(i32)) -> i32 =
   deref_or(p, 0)
-}

@@ -22,79 +22,67 @@ import "./int-sum.gandr";
 import "./loop-words.gandr";
 
 /// `plusS` read backwards.
-def flipS(x : Int, a : Int) -> Path[.A = Int](S(plus(x, a)), plus(S(x), a)) {
-  Path.back(plusS(x, a))
-}
+def flipS(x : Int, a : Int) -> Path[.A = Int](S (plus x a), plus (S x) a) =
+  Path.back (plusS x a)
 
 /// `plusP` read backwards.
-def flipP(x : Int, a : Int) -> Path[.A = Int](P(plus(x, a)), plus(P(x), a)) {
-  Path.back(plusP(x, a))
-}
+def flipP(x : Int, a : Int) -> Path[.A = Int](P (plus x a), plus (P x) a) =
+  Path.back (plusP x a)
 
 /// The successor of a commuting pair of sums commutes.
-def upOf(a : Int, x : Int, e : Path[.A = Int](plus(a, x), plus(x, a))) -> Path[.A = Int](
-  S(plus(a, x)),
-  S(plus(x, a))
-) {
-  Path.ap(up, e)
-}
+def upOf(a : Int, x : Int, e : Path[.A = Int](plus a x, plus x a)) -> Path[.A = Int](
+  S (plus a x),
+  S (plus x a)
+) =
+  Path.ap up e
 
 /// The predecessor of a commuting pair of sums commutes.
-def downOf(a : Int, x : Int, e : Path[.A = Int](plus(a, x), plus(x, a))) -> Path[.A = Int](
-  P(plus(a, x)),
-  P(plus(x, a))
-) {
-  Path.ap(down, e)
-}
+def downOf(a : Int, x : Int, e : Path[.A = Int](plus a x, plus x a)) -> Path[.A = Int](
+  P (plus a x),
+  P (plus x a)
+) =
+  Path.ap down e
 
 /// One successor step of commutativity: the call's image, then the lemma.
-def upAlong(a : Int, x : Int, e : Path[.A = Int](plus(a, x), plus(x, a))) -> Path[.A = Int](
-  S(plus(a, x)),
-  plus(S(x), a)
-) {
-  Path.step(upOf(a, x, e), flipS(x, a))
-}
+def upAlong(a : Int, x : Int, e : Path[.A = Int](plus a x, plus x a)) -> Path[.A = Int](
+  S (plus a x),
+  plus (S x) a
+) =
+  Path.step (upOf a x e) (flipS x a)
 
 /// One predecessor step of commutativity: the call's image, then the lemma.
-def downAlong(a : Int, x : Int, e : Path[.A = Int](plus(a, x), plus(x, a))) -> Path[.A = Int](
-  P(plus(a, x)),
-  plus(P(x), a)
-) {
-  Path.step(downOf(a, x, e), flipP(x, a))
-}
+def downAlong(a : Int, x : Int, e : Path[.A = Int](plus a x, plus x a)) -> Path[.A = Int](
+  P (plus a x),
+  plus (P x) a
+) =
+  Path.step (downOf a x e) (flipP x a)
 
 /// Addition commutes, through `upAlong` and `downAlong` rather than
 /// `int-sum.gandr`'s `plusComm` written out. At `S(P(x))` the arms compute a
 /// chain through `flipP` and `flipS` against the call at `x`; both are paths
 /// in the integers between the same two sums, so they are one path.
-def rec plusCommAlong(a : Int, b : Int) -> Path[.A = Int](plus(a, b), plus(b, a)) {
-  match b {
-    Z => Path.back(plusZ(a)),
-    S(x) => upAlong(a, x, plusCommAlong[<](a, x)),
-    P(x) => downAlong(a, x, plusCommAlong[<](a, x))
-  }
-}
+def rec plusCommAlong(a : Int, b : Int) -> Path[.A = Int](plus a b, plus b a) =
+  match b
+    | Z => Path.back (plusZ a)
+    | S(x) => upAlong a x (plusCommAlong[<] a x)
+    | P(x) => downAlong a x (plusCommAlong[<] a x)
 
 /// A fold into the circle's loops is held to its arms as written: at
 /// `S(P(x))` it computes `Path.step(turned(x), loop)` against `turned(x)`, two
 /// loops the circle tells apart, so the case is refused.
 @[ refuses("RuleNotRespected") ]
-def rec turned(b : Int) -> Path[.A = Circle](Base, Base) {
-  match b {
-    Z => Path.here(Base),
-    S(x) => Path.step(turned[<](x), loop),
-    P(x) => turned[<](x)
-  }
-}
+def rec turned(b : Int) -> Path[.A = Circle](Base, Base) =
+  match b
+    | Z => Path.here Base
+    | S(x) => Path.step (turned[<] x) (loop)
+    | P(x) => turned[<] x
 
 /// A path at every word whose inverse arm drops its field's path. At
 /// `Loop(Unloop(x))` the loop arm carries the inverse arm's reflexivity where
 /// the rule's right side reads the path at `x`; the words form a set, so the
 /// two agree by their endpoints and the case respects its rules.
-def rec rewound(w : Words) -> Path[.A = Words](w, w) {
-  match w {
-    Nil => Path.here(Nil),
-    Loop(x) => Path.ap(around, rewound[<](x)),
-    Unloop(x) => Path.here(Unloop(x))
-  }
-}
+def rec rewound(w : Words) -> Path[.A = Words](w, w) =
+  match w
+    | Nil => Path.here Nil
+    | Loop(x) => Path.ap around (rewound[<] x)
+    | Unloop(x) => Path.here (Unloop x)

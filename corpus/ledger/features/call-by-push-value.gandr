@@ -4,11 +4,10 @@ def answer = 42 ;
 
 /// A computation returning the answer plus one.
 @[ checks ]
-def next() -> -F Integer {
+def next() -> -F Integer =
   return answer + 1
-}
 
 /// The computation suspended as a value; a run forces it.
 @[ runs("43") ]
-def stepped : () => Integer ;
-def stepped = thunk { become next() } ;
+def stepped : () -> Integer ;
+def stepped = thunk { become next () } ;

@@ -5,29 +5,25 @@
 // - see: #2687
 
 /// A shape three modules deep.
-theory Deep.Mid.Low.Shape where {
+theory Deep.Mid.Low.Shape where
   /// Its size.
   oper size : Integer;
-}
 
 /// Tools in the same three modules.
-module Deep.Mid.Low.Tools where {
+module Deep.Mid.Low.Tools where
   /// A step.
   def step = 1;
-}
 
 /// Tools under a lowercase segment below the top.
-module Top.inner.Tools where {
+module Top.inner.Tools where
   /// A lift.
   def lift = 10;
-}
 
 /// A model of the shape, read by its whole path.
-module Sized : Model(Deep.Mid.Low.Shape) where {
+module Sized : Model(Deep.Mid.Low.Shape) where
   /// Its size.
   def size = 3;
-}
 
 /// Each member, read by its path.
 @[ runs("#{.lift = 10, .size = 3, .step = 1}") ]
-def members = #{step = Deep.Mid.Low.Tools.step, lift = Top.inner.Tools.lift, size = Sized.size};
+def members = *{step = Deep.Mid.Low.Tools.step, lift = Top.inner.Tools.lift, size = Sized.size};

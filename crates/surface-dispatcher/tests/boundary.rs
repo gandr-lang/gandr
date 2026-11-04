@@ -124,7 +124,7 @@ fn refused() -> &'static Laid
     REFUSED.get_or_init(|| {
         laid(
             Path::new("refused.gandr"),
-            SourceText::from("def refused(x : Integer) -> Integer { sub(\"wrong\", x) }"),
+            SourceText::from("def refused(x : Integer) -> Integer { sub \"wrong\" x }"),
         )
     })
 }

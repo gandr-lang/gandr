@@ -10,5 +10,5 @@
 data NatTheory : Type where {
   | Zero : NatTheory
   oper id : (x : NatTheory) --> NatTheory;
-  rule : id(Zero) <=> Zero;
+  rule : id Zero <=> Zero;
 }

@@ -10,24 +10,22 @@
 // - see: #4521
 
 /// A protocol that sends one string and ends.
-module Ask where {
+module Ask where
   /// The protocol sends one string and ends.
   type Asking = !String. end;
-}
 
 /// A run of the protocol, the run type unimported.
 @[ refuses("UnresolvedTypeHead") ]
-def ran : Run(Ask.Asking) = recorded(sent("yes"), closed);
+def ran : Run(Ask.Asking) = recorded (sent "yes") closed;
 
 /// A prefix of the protocol, the prefix type unimported.
 @[ refuses("UnresolvedTypeHead") ]
-def begun : Prefix(Ask.Asking) = recorded(sent("yes"));
+def begun : Prefix(Ask.Asking) = recorded (sent "yes");
 
 /// A dialogue over the protocol, the dialogue type unimported.
 @[ refuses("UnresolvedTypeHead") ]
-def talked : Dialogue(Ask.Asking) = dialogue(
-  left(sent("yes")),
-  right(received("yes")),
-  left(closed),
-  right(closed)
-);
+def talked : Dialogue(Ask.Asking) = dialogue
+  (left (sent "yes"))
+  (right (received "yes"))
+  (left closed)
+  (right closed);

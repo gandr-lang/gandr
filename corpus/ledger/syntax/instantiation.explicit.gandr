@@ -4,6 +4,5 @@
 ///
 /// - owes: #1497
 @[ refuses("OutOfFragment.instantiation_expression.computation") ]
-def rec sized(n : Integer) -> -F Integer {
-  return sized[.size = 1](n)
-}
+def rec sized(n : Integer) -> -F Integer =
+  return sized[.size = 1] n

@@ -7,34 +7,30 @@
 // - see: #2428
 
 /// Trees whose application is named as `Theory`'s is.
-data Tree : Type where {
+data Tree : Type where
   | Var : (n : Integer) --> Tree
   | App : (t : Tree, u : Tree) --> Tree
-}
 
 /// A presentation, so this source reads `Theory`.
-theory Pointed where {
+theory Pointed where
   sort P : Type;
   oper point : () --> (p : P);
-}
 
 /// One for `Theory`'s application link, zero for every other: the pattern
 /// names `Theory`'s `App`, which the bare name does not reach here.
-def isApplication(link : Theory) -> Integer {
-  match link {
-    Theory.App(head, arguments) => 1,
-    _ => 0
-  }
-}
+def isApplication(link : Theory) -> Integer =
+  match link
+    | Theory.App(head, arguments) => 1
+    | _ => 0
 
 /// `Theory`'s `App` built by its qualified name, ending at `Theory.End`.
 @[ runs("1") ]
-def theoryApplied() -> Integer { isApplication(Theory.App("f", Theory.End)) }
+def theoryApplied() -> Integer { isApplication (Theory.App "f" Theory.End) }
 
 /// The bare `App` is this source's.
 @[ runs("App(Var(0), Var(1))") ]
-def bare() -> Tree { App(Var(0), Var(1)) }
+def bare() -> Tree { App (Var 0) (Var 1) }
 
 /// A source's own constructor written qualified is the same constructor.
 @[ runs("App(Var(0), Var(1))") ]
-def qualified() -> Tree { Tree.App(Var(0), Var(1)) }
+def qualified() -> Tree { Tree.App (Var 0) (Var 1) }

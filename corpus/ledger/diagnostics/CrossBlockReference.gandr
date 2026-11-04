@@ -12,7 +12,6 @@ rec {
   }
 
   @[ checks ]
-  data Back : Type where {
+  data Back : Type where
     | Only : Back
-  }
 }

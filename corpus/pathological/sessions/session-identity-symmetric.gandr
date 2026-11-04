@@ -9,9 +9,8 @@ module Evolution where {
     pause : !String. turn
   };
   @[ checks ]
-  def sub : Flow[.A = Type](SeatEnd, SeatEnd′) = Flow.sim(SeatEnd, SeatEnd′);
+  def sub : Flow[.A = Type](SeatEnd, SeatEnd′) = Flow.sim SeatEnd SeatEnd′;
   @[ refuses("NonCovariantMotive") ]
-  def reversed() -> Flow[.A = Type](SeatEnd′, SeatEnd) {
-    Flow.ride(fun (X) { type(Flow[.A = Type](X, SeatEnd)) }, sub, Flow.stay(SeatEnd))
-  }
+  def reversed() -> Flow[.A = Type](SeatEnd′, SeatEnd) =
+    Flow.ride (fun (X) { type(Flow[.A = Type](X, SeatEnd)) }) sub (Flow.stay SeatEnd)
 }

@@ -21,7 +21,7 @@ import std.process;
 
 /// The peer sends both payloads and ends before the clause abandons the rest.
 @[ runs("7") ]
-def cancelled() -> Integer {
+def cancelled() -> Integer =
   handle c : std.process.Exit.Eff {
     let found = fork (peer : !Integer. !Integer. end) {
       send(peer, 1);
@@ -29,12 +29,11 @@ def cancelled() -> Integer {
       close(peer)
     };
     let first = recv(found);
-    c.exit(1);
+    c.exit 1;
     let second = recv(found);
     close(found);
     pure second
   } with {
-    pure(y) => pure y,
-    oper exit(code, k) => { abandon(k); pure 7 }
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
   }
-}

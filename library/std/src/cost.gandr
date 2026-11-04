@@ -22,7 +22,7 @@ import "./grade.gandr";
 
 /// decalf's cost effect: a charge, and the cost monoid's unit and sum. The
 /// theory lives in the module `Cost`, as a host effect does.
-pub theory Cost.Eff where {
+pub theory Cost.Eff where
   /// The costs, a value type the scope fixes.
   sort N : Type+;
   /// The carrier, the answer of the model that handles a scope.
@@ -34,52 +34,44 @@ pub theory Cost.Eff where {
   /// Two costs, one after the other.
   oper plus : (a : N, b : N) --> N;
   /// Charging nothing is the identity.
-  rule chargeZero : charge(zero(), k) <=> k;
+  rule chargeZero : charge (zero ()) k <=> k;
   /// Two charges are one charge of their sum.
-  rule chargeTwice : charge(a, charge(b, k)) <=> charge(plus(a, b), k);
-}
+  rule chargeTwice : charge a (charge b k) <=> charge (plus a b) k;
 
 /// The cost `n`, as the function that adds it to its argument.
-pub def costs(n : Nat) -> Nat => Nat {
-  thunk { fun (m) { Count.plus(n, m) } }
-}
+pub def costs(n : Nat) -> Nat -> Nat =
+  thunk { fun (m) { Count.plus n m } }
 
 /// The counting model: a run's count awaits the cost charged before it.
-pub module Counting : Model(Cost.Eff) with sort N = Nat => Nat where {
+pub module Counting : Model(Cost.Eff) with sort N = Nat -> Nat where
   /// A run's count, from the cost charged before it.
-  type C = (Nat => Nat) => Nat;
+  type C = (Nat -> Nat) -> Nat;
   /// Charge `c` after the earlier charges, then continue.
-  def charge(c : Nat => Nat, k : (Nat => Nat) => Nat) -> (Nat => Nat) => Nat {
-    thunk { fun (before) { k(thunk { fun (n) { before(c(n)) } }) } }
-  }
+  def charge(c : Nat -> Nat, k : (Nat -> Nat) -> Nat) -> (Nat -> Nat) -> Nat =
+    thunk { fun (before) { k (thunk { fun (n) { before (c n) } }) } }
   /// No cost: the identity.
-  def zero : Nat => Nat = thunk { fun (n) { pure n } };
+  def zero : Nat -> Nat = thunk { fun (n) { pure n } };
   /// Two costs: their composition, `b` first.
-  def plus(a : Nat => Nat, b : Nat => Nat) -> Nat => Nat {
-    thunk { fun (n) { a(b(n)) } }
-  }
+  def plus(a : Nat -> Nat, b : Nat -> Nat) -> Nat -> Nat =
+    thunk { fun (n) { a (b n) } }
   /// Charging nothing is the identity, by η.
-  def chargeZero(k : (Nat => Nat) => Nat) -> Path[.A = (Nat => Nat) => Nat](charge(zero, k), k) {
-    Path.here(k)
-  }
+  def chargeZero(k : (Nat -> Nat) -> Nat) -> Path[.A = (Nat -> Nat) -> Nat](charge zero k, k) =
+    Path.here k
   /// Two charges are one, by β and the associativity of `run`.
   def chargeTwice(
-    a : Nat => Nat,
-    b : Nat => Nat,
-    k : (Nat => Nat) => Nat
-  ) -> Path[.A = (Nat => Nat) => Nat](
-    charge(a, charge(b, k)),
-    charge(plus(a, b), k)
-  ) {
-    Path.here(charge(plus(a, b), k))
-  }
-}
+    a : Nat -> Nat,
+    b : Nat -> Nat,
+    k : (Nat -> Nat) -> Nat
+  ) -> Path[.A = (Nat -> Nat) -> Nat](
+    charge a (charge b k),
+    charge (plus a b) k
+  ) =
+    Path.here (charge (plus a b) k)
 
 /// What a scope under `Counting` answers once its subject ends: the cost its
 /// subject charges, counting from none.
-pub def counted : (Nat => Nat) => Nat = fun (before) { before(Zero) };
+pub def counted : (Nat -> Nat) -> Nat = fun (before) { before Zero };
 
 /// The count a run under `Counting` answers, nothing charged before it.
-pub def countOf(r : (Nat => Nat) => Nat) -> Nat {
-  r(fun (n) { pure n })
-}
+pub def countOf(r : (Nat -> Nat) -> Nat) -> Nat =
+  r (fun (n) { pure n })

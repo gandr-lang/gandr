@@ -9,85 +9,76 @@ import "./tree.gandr";
 
 /// `constant`'s subject as a tree: read, store what was read, read again,
 /// and answer the two reads and one.
-def constantTree : Prog(Either(StateOp, Void), Integer) = Op(Left(Get), fun (a) {
-  (Op(Left(Put(a)), fun (_u) {
-    (Op(Left(Get), fun (b) {
-      (Done(a + b + 1) : Prog(Either(StateOp, Void), Integer))
+def constantTree : Prog(Either(StateOp, Void), Integer) = Op (Left Get) (fun (a) {
+  (Op (Left (Put a)) (fun (_u) {
+    (Op (Left Get) (fun (b) {
+      (Done (a + b + 1) : Prog(Either(StateOp, Void), Integer))
     }) : Prog(Either(StateOp, Void), Integer))
   }) : Prog(Either(StateOp, Void), Integer))
 });
 
 /// `constant`'s clauses as a fold: every read is answered four, and a store
 /// is forgotten.
-def rec answeringFour(p : Prog(Either(StateOp, Void), Integer)) -> Integer {
-  match p {
-    Done(x) => x,
-    Op(o, k) => match o {
-      Left(Get) => answeringFour[<](k(4)),
-      Left(Put(_s)) => answeringFour[<](k(0)),
-      Right(none) => match none {}
-    }
-  }
-}
+def rec answeringFour(p : Prog(Either(StateOp, Void), Integer)) -> Integer =
+  match p
+    | Done(x) => x
+    | Op(o, k) => match o
+      | Left(Get) => answeringFour[<] (k 4)
+      | Left(Put(_s)) => answeringFour[<] (k 0)
+      | Right(none) => match none {}
 
 /// Nine, as `constant` runs to.
 @[ runs("9") ]
-def constantByFold() -> Integer { answeringFour(constantTree) }
+def constantByFold() -> Integer { answeringFour constantTree }
 
 /// `answeredByPassing`'s subject as a tree: store four, read twice, and
 /// answer ten times the first read and the second.
-def passingTree : Prog(Either(StateOp, Void), Integer) = Op(Left(Put(4)), fun (_u) {
-  (Op(Left(Get), fun (a) {
-    (Op(Left(Get), fun (b) {
-      (Done(a * 10 + b) : Prog(Either(StateOp, Void), Integer))
+def passingTree : Prog(Either(StateOp, Void), Integer) = Op (Left (Put 4)) (fun (_u) {
+  (Op (Left Get) (fun (a) {
+    (Op (Left Get) (fun (b) {
+      (Done (a * 10 + b) : Prog(Either(StateOp, Void), Integer))
     }) : Prog(Either(StateOp, Void), Integer))
   }) : Prog(Either(StateOp, Void), Integer))
 });
 
 /// The state-passing model as a fold: a read is answered the current state,
 /// and a store replaces it.
-def rec passingState(p : Prog(Either(StateOp, Void), Integer), s : Integer) -> Integer {
-  match p {
-    Done(x) => x,
-    Op(o, k) => match o {
-      Left(Get) => passingState[<](k(s), s),
-      Left(Put(t)) => passingState[<](k(0), t),
-      Right(none) => match none {}
-    }
-  }
-}
+def rec passingState(p : Prog(Either(StateOp, Void), Integer), s : Integer) -> Integer =
+  match p
+    | Done(x) => x
+    | Op(o, k) => match o
+      | Left(Get) => passingState[<] (k s) s
+      | Left(Put(t)) => passingState[<] (k 0) t
+      | Right(none) => match none {}
 
 /// Forty-four from a zero state, as `answeredFromZero` runs to.
 @[ runs("44") ]
-def passingByFold() -> Integer { passingState(passingTree, 0) }
+def passingByFold() -> Integer { passingState passingTree 0 }
 
 /// `State`'s free model at an integer state: the body's result, or one
 /// constructor per operation, each holding its payload and the continuation
 /// awaiting its reply. `get` holds the unit and awaits the state; `put` holds
 /// the state and awaits the unit.
-data StateModel(a : Type) : Type where {
+data StateModel(a : Type) : Type where
   | Answer : (x : a) --> StateModel(a)
-  | Read : (u : Unit, k : Integer => StateModel(a)) --> StateModel(a)
-  | Write : (s : Integer, k : Unit => StateModel(a)) --> StateModel(a)
-}
+  | Read : (u : Unit, k : Integer -> StateModel(a)) --> StateModel(a)
+  | Write : (s : Integer, k : Unit -> StateModel(a)) --> StateModel(a)
 
 /// `constant`'s subject as a program of the model.
-def constantProgram : StateModel(Integer) = Read(unit, fun (a) {
-  (Write(a, fun (_u) {
-    (Read(unit, fun (b) { (Answer(a + b + 1) : StateModel(Integer)) }) : StateModel(Integer))
+def constantProgram : StateModel(Integer) = Read *{} (fun (a) {
+  (Write a (fun (_u) {
+    (Read *{} (fun (b) { (Answer (a + b + 1) : StateModel(Integer)) }) : StateModel(Integer))
   }) : StateModel(Integer))
 });
 
 /// `constant`'s clauses as the model's fold: a read resumes at four, and a
 /// store resumes at the unit.
-def rec constantFold(p : StateModel(Integer)) -> Integer {
-  match p {
-    Answer(x) => x,
-    Read(_u, k) => constantFold[<](k(4)),
-    Write(_s, k) => constantFold[<](k(unit))
-  }
-}
+def rec constantFold(p : StateModel(Integer)) -> Integer =
+  match p
+    | Answer(x) => x
+    | Read(_u, k) => constantFold[<] (k 4)
+    | Write(_s, k) => constantFold[<] (k *{})
 
 /// Nine, as `constant` runs to.
 @[ runs("9") ]
-def constantByModel() -> Integer { constantFold(constantProgram) }
+def constantByModel() -> Integer { constantFold constantProgram }

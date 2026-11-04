@@ -6,28 +6,24 @@
 // - see: #2687
 
 /// A dotted module holding a nested block.
-module Net.Wire where {
+module Net.Wire where
   /// A block inside the dotted module.
-  module Core where {
+  module Core where
     /// A gauge.
     def gauge = 3;
-  }
-}
 
 /// A written block reading into the dotted module.
-module Panel where {
+module Panel where
   /// The gauge, through the dotted module's path.
   def gauge = Net.Wire.Core.gauge;
-}
 
 /// A second module under the prefix.
-module Net.Meter where {
+module Net.Meter where
   /// The panel's gauge, read back out of the block.
   def shown = Panel.gauge;
   /// The sibling's gauge, by its name inside `Net`.
   def sibling = Wire.Core.gauge;
-}
 
 /// Both readings.
 @[ runs("#{.shown = 3, .sibling = 3}") ]
-def readings = #{shown = Net.Meter.shown, sibling = Net.Meter.sibling};
+def readings = *{shown = Net.Meter.shown, sibling = Net.Meter.sibling};

@@ -16,7 +16,7 @@ def leak() -> Cap { exit } {
   handle c : std.process.Exit.Eff {
     return c
   } with {
-    pure(x) => x,
-    oper exit(code, k) => k(unit)
+    | pure(x) => x
+    | oper exit(code, k) => k *{}
   }
 }

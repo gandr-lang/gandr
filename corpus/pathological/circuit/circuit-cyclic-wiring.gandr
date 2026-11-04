@@ -1,5 +1,5 @@
 @[ refuses("MalformedForm") ]
-theory Loop where {
+theory Loop where
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
   oper g : (a : Nat) --> (b : Nat);
@@ -8,4 +8,3 @@ theory Loop where {
     node : f(w) --> (z);
     node : g(z) --> (w);
   };
-}

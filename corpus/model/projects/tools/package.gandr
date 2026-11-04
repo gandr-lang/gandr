@@ -9,10 +9,9 @@
 import "../workspace.gandr";
 
 /// What this package reads of `hello`: its greeting, a string.
-pub theory Greeting where {
+pub theory Greeting where
   /// The greeting `hello` exports.
   oper welcome : String;
-}
 
 // The sibling package that this package depends on. The checker finds it at
 // its coordinate. It reads it through the table of this package in the
@@ -27,7 +26,7 @@ import std.build (Gandr);
 
 /// The package: its name, the version its workspace states, and the rest of
 /// what `package.gandr.toml` records.
-pub module Package : Model(Gandr.Package) where {
+pub module Package : Model(Gandr.Package) where
   /// The name the manifest records.
   def name = "tools";
   /// The version, the workspace's.
@@ -52,7 +51,6 @@ pub module Package : Model(Gandr.Package) where {
   def spelling = "ascii";
   /// The directory the modules sit under: the package's root.
   def sources = ".";
-}
 
 /// hello's greeting, which the alias reads through the lock.
 @[ runs("\"hello, world\"") ]

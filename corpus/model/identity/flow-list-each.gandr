@@ -18,29 +18,25 @@ module Cells where {
   type New = Integer * String;
   /// The records' translator: the fields swapped.
   @[ checks ]
-  def swap(old : Old) -> New {
-    match old {
-      #{name, age} => (age, name)
-    }
-  }
+  def swap(old : Old) -> New =
+    match old
+      | *{name, age} => *{age, name}
   /// The flow between the records, by their translator.
   @[ checks ]
-  def renamed : Flow[.A = Type](Old, New) = Flow.into(swap);
+  def renamed : Flow[.A = Type](Old, New) = Flow.into swap;
   /// The lists' translator: the list ridden along the records' flow.
   @[ checks ]
-  def each(olds : List(Old)) -> List(New) {
-    Flow.ride(fun (X) { List(X) }, renamed, olds)
-  }
+  def each(olds : List(Old)) -> List(New) =
+    Flow.ride (fun (X) { List X }) renamed olds
   /// At one cell the image is the swapped head before the translator's own
   /// image of the tail, so the lists' flow forwards by it.
   @[ checks ]
-  def everyone : Flow[.A = Type](List(Old), List(New)) = Flow.into(each);
+  def everyone : Flow[.A = Type](List(Old), List(New)) = Flow.into each;
   /// A list ridden along the lists' flow.
   @[ checks ]
-  def moved(olds : List(Old)) -> List(New) {
-    Flow.ride(fun (X) { X }, everyone, olds)
-  }
+  def moved(olds : List(Old)) -> List(New) =
+    Flow.ride (fun (X) { X }) everyone olds
   /// Two records migrated by a run.
   @[ runs("cons((36, \"ada\"), cons((41, \"alan\"), nil))") ]
-  def two : () => List(New) = moved(cons(("ada", 36), cons(("alan", 41), nil)));
+  def two : () -> List(New) = moved (cons (*{"ada", 36}) (cons (*{"alan", 41}) nil));
 }

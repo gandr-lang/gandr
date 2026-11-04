@@ -6,17 +6,15 @@
 // - see: #1274
 
 /// A ratio sort and its scale, as the model fixture's `Metering` has them.
-theory Scaled where {
+theory Scaled where
   sort Ratio : Type;
   oper scale : Ratio;
-}
 
 /// A model sealed with no manifest sort: its `Ratio` is a fresh atom.
-module Opaque :> Model(Scaled) where {
+module Opaque :> Model(Scaled) where
   type Ratio = Integer;
   /// The scale.
   def scale = 2;
-}
 
 /// The sealed scale read as an integer: the seal hides that the ratio is
 /// one.
@@ -26,8 +24,7 @@ def leaked : Integer = Opaque.scale;
 /// A model whose manifest names `Rate`, a sort `Scaled` does not present:
 /// refused at its header, by the name it misspells.
 @[ refuses("UnknownMember") ]
-module Misnamed : Model(Scaled) with sort Rate = Integer where {
+module Misnamed : Model(Scaled) with sort Rate = Integer where
   type Ratio = Integer;
   /// The scale.
   def scale = 2;
-}

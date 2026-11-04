@@ -8,7 +8,6 @@
 /// The answer written on the second rung only: the chain's head answers
 /// nothing, so the `run` binding it reads no type off it.
 @[ refuses("NotSynthesisable") ]
-def answered() -> Integer {
+def answered() -> Integer =
   let n = if false { pure 0 } else if true -> -F Integer { pure 1 } else { pure 2 };
   pure n
-}

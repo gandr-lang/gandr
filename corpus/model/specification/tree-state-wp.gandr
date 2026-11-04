@@ -19,9 +19,9 @@ import "../effects/tree.gandr";
 
 /// The increment as a tree: read the counter, store one more, and answer the
 /// unit.
-pub def incrTree : Prog(Either(StateOp, Void), Unit) = Op(Left(Get), fun (n) {
-  (Op(Left(Put(n + 1)), fun (_u) {
-    (Done(unit) : Prog(Either(StateOp, Void), Unit))
+pub def incrTree : Prog(Either(StateOp, Void), Unit) = Op (Left Get) (fun (n) {
+  (Op (Left (Put (n + 1))) (fun (_u) {
+    (Done (*{}) : Prog(Either(StateOp, Void), Unit))
   }) : Prog(Either(StateOp, Void), Unit))
 });
 
@@ -31,59 +31,56 @@ pub def incrTree : Prog(Either(StateOp, Void), Unit) = Op(Left(Get), fun (n) {
 /// value.
 pub def rec wp(
   p : Prog(Either(StateOp, Void), Unit),
-  post : (Unit, Integer) => Type,
+  post : *{Unit, Integer} -> Type,
   s : Integer
-) -> Type {
-  match p {
-    Done(x) => post(x, s),
-    Op(o, k) => match o {
-      Left(Get) => wp[<](k(s), post, s),
-      Left(Put(t)) => wp[<](k(0), post, t),
-      Right(none) => match none {}
-    }
-  }
-}
+) -> Type =
+  match p
+    | Done(x) => post x s
+    | Op(o, k) => match o
+      | Left(Get) => wp[<] (k s) post s
+      | Left(Put(t)) => wp[<] (k 0) post t
+      | Right(none) => match none {}
 
 /// The increment's specification: the postcondition at the unit and the
 /// successor of the initial state.
-pub def incrSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s + 1) }
+pub def incrSpec(post : *{Unit, Integer} -> Type, s : Integer) -> Type { post (*{}) (s + 1) }
 
 /// The counter ends at one.
-pub def isOne(_x : Unit, s : Integer) -> Type { return Path(s, 1) }
+pub def isOne(_x : Unit, s : Integer) -> Type { return Path s 1 }
 
 /// The increment paired with evidence that its transformer is below its
 /// specification at `isOne`: the second entry's type reads the program, and
 /// both sides unfold to `Path[.A = Integer](s + 1, 1)`.
-def incrSpecified : #{
+def incrSpecified : *{
   m : Prog(Either(StateOp, Void), Unit),
-  meets : (s : Integer, incrSpec(isOne, s)) => wp(m, isOne, s)
-} = (incrTree, fun (s) { fun (h) { h } });
+  meets : (s : Integer, incrSpec(isOne, s)) -> wp(m, isOne, s)
+} = *{incrTree, fun (s) { fun (h) { h } }};
 
 /// The increment paired with evidence at every postcondition, the order of
 /// the transformers itself: the specification computes the successor before
 /// it calls `post`, the fold hands `post` the successor its store held, and
 /// the two read as one call.
-def incrSpecifiedEverywhere : #{
+def incrSpecifiedEverywhere : *{
   m : Prog(Either(StateOp, Void), Unit),
-  meets : (post : (Unit, Integer) => Type, s : Integer, incrSpec(post, s)) => wp(m, post, s)
-} = (incrTree, fun (post) { fun (s) { fun (h) { h } } });
+  meets : (post : *{Unit, Integer} -> Type, s : Integer, incrSpec(post, s)) -> wp(m, post, s)
+} = *{incrTree, fun (post) { fun (s) { fun (h) { h } } }};
 
 /// The same evidence unpaired: the specification's run and the fold's both
 /// read as `post`'s call over the successor held.
 def incrSpecBare(
-  post : (Unit, Integer) => Type,
+  post : *{Unit, Integer} -> Type,
   s : Integer,
   h : incrSpec(post, s)
 ) -> wp(incrTree, post, s) { h }
 
 /// The return specification: the postcondition at the unit and the initial
 /// state.
-def retSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s) }
+def retSpec(post : *{Unit, Integer} -> Type, s : Integer) -> Type { post (*{}) s }
 
 /// The stopped program paired with evidence at every postcondition: both
 /// sides unfold to the postcondition's call `post(unit, s)`, and a definition
 /// unfolding to a variable's call converts with it.
-def doneSpecified : #{
+def doneSpecified : *{
   m : Prog(Either(StateOp, Void), Unit),
-  meets : (post : (Unit, Integer) => Type, s : Integer, retSpec(post, s)) => wp(m, post, s)
-} = ((Done(unit) : Prog(Either(StateOp, Void), Unit)), fun (post) { fun (s) { fun (h) { h } } });
+  meets : (post : *{Unit, Integer} -> Type, s : Integer, retSpec(post, s)) -> wp(m, post, s)
+} = *{(Done (*{}) : Prog(Either(StateOp, Void), Unit)), fun (post) { fun (s) { fun (h) { h } } }};

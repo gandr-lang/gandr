@@ -15,17 +15,15 @@
 /// - see: #3807 — the checker refused two actions whose motives each write the call
 
 /// The identity on paths from `x` to `y`.
-def idq(B : Type, x : B, y : B, p : Path[.A = B](x, y)) -> Path[.A = B](x, y) {
+def idq(B : Type, x : B, y : B, p : Path[.A = B](x, y)) -> Path[.A = B](x, y) =
   p
-}
 
 /// A variable function's path, by name.
-def call(A : Type, B : Type, x : B, y : B, f : A => Path[.A = B](x, y), a : A) -> Path[.A = B](
+def call(A : Type, B : Type, x : B, y : B, f : A -> Path[.A = B](x, y), a : A) -> Path[.A = B](
   x,
   y
-) {
-  f(a)
-}
+) =
+  f a
 
 /// `p`, then the path a variable function returns.
 def thenCall(
@@ -35,11 +33,10 @@ def thenCall(
   x : B,
   y : B,
   p : Path[.A = B](w, x),
-  f : A => Path[.A = B](x, y),
+  f : A -> Path[.A = B](x, y),
   a : A
-) -> Path[.A = B](w, y) {
-  Path.step(p, f(a))
-}
+) -> Path[.A = B](w, y) =
+  Path.step p (f a)
 
 /// `p`, then the same path through `idq`.
 def thenCallIdq(
@@ -49,11 +46,10 @@ def thenCallIdq(
   x : B,
   y : B,
   p : Path[.A = B](w, x),
-  f : A => Path[.A = B](x, y),
+  f : A -> Path[.A = B](x, y),
   a : A
-) -> Path[.A = B](w, y) {
-  Path.step(p, idq(B, x, y, f(a)))
-}
+) -> Path[.A = B](w, y) =
+  Path.step p (idq B x y (f a))
 
 /// Two composites along a variable function's path.
 def thenAlongACall(
@@ -63,14 +59,13 @@ def thenAlongACall(
   x : B,
   y : B,
   p : Path[.A = B](w, x),
-  f : A => Path[.A = B](x, y),
+  f : A -> Path[.A = B](x, y),
   a : A
 ) -> Path[.A = Path[.A = B](w, y)](
-  thenCall(A, B, w, x, y, p, f, a),
-  thenCallIdq(A, B, w, x, y, p, f, a)
-) {
-  Path.here(thenCall(A, B, w, x, y, p, f, a))
-}
+  thenCall A B w x y p f a,
+  thenCallIdq A B w x y p f a
+) =
+  Path.here (thenCall A B w x y p f a)
 
 /// `p`, then the variable function's path by name.
 def thenNamed(
@@ -80,11 +75,10 @@ def thenNamed(
   x : B,
   y : B,
   p : Path[.A = B](w, x),
-  f : A => Path[.A = B](x, y),
+  f : A -> Path[.A = B](x, y),
   a : A
-) -> Path[.A = B](w, y) {
-  Path.step(p, call(A, B, x, y, f, a))
-}
+) -> Path[.A = B](w, y) =
+  Path.step p (call A B x y f a)
 
 /// `p`, then the same path by name through `idq`.
 def thenNamedIdq(
@@ -94,11 +88,10 @@ def thenNamedIdq(
   x : B,
   y : B,
   p : Path[.A = B](w, x),
-  f : A => Path[.A = B](x, y),
+  f : A -> Path[.A = B](x, y),
   a : A
-) -> Path[.A = B](w, y) {
-  Path.step(p, idq(B, x, y, call(A, B, x, y, f, a)))
-}
+) -> Path[.A = B](w, y) =
+  Path.step p (idq B x y (call A B x y f a))
 
 /// Two composites along a named call.
 def thenAlongANamedCall(
@@ -108,14 +101,13 @@ def thenAlongANamedCall(
   x : B,
   y : B,
   p : Path[.A = B](w, x),
-  f : A => Path[.A = B](x, y),
+  f : A -> Path[.A = B](x, y),
   a : A
 ) -> Path[.A = Path[.A = B](w, y)](
-  thenNamed(A, B, w, x, y, p, f, a),
-  thenNamedIdq(A, B, w, x, y, p, f, a)
-) {
-  Path.here(thenNamed(A, B, w, x, y, p, f, a))
-}
+  thenNamed A B w x y p f a,
+  thenNamedIdq A B w x y p f a
+) =
+  Path.here (thenNamed A B w x y p f a)
 
 /// `g`'s action on the path a variable function returns.
 def acted(
@@ -124,12 +116,11 @@ def acted(
   C : Type,
   x : B,
   y : B,
-  f : A => Path[.A = B](x, y),
-  g : B => C,
+  f : A -> Path[.A = B](x, y),
+  g : B -> C,
   a : A
-) -> Path[.A = C](g(x), g(y)) {
-  Path.ap(g, f(a))
-}
+) -> Path[.A = C](g x, g y) =
+  Path.ap g (f a)
 
 /// The same action, on the path through `idq`.
 def actedIdq(
@@ -138,12 +129,11 @@ def actedIdq(
   C : Type,
   x : B,
   y : B,
-  f : A => Path[.A = B](x, y),
-  g : B => C,
+  f : A -> Path[.A = B](x, y),
+  g : B -> C,
   a : A
-) -> Path[.A = C](g(x), g(y)) {
-  Path.ap(g, idq(B, x, y, f(a)))
-}
+) -> Path[.A = C](g x, g y) =
+  Path.ap g (idq B x y (f a))
 
 /// Two actions on a variable function's path.
 def congAlongACall(
@@ -152,12 +142,11 @@ def congAlongACall(
   C : Type,
   x : B,
   y : B,
-  f : A => Path[.A = B](x, y),
-  g : B => C,
+  f : A -> Path[.A = B](x, y),
+  g : B -> C,
   a : A
-) -> Path[.A = Path[.A = C](g(x), g(y))](
-  acted(A, B, C, x, y, f, g, a),
-  actedIdq(A, B, C, x, y, f, g, a)
-) {
-  Path.here(acted(A, B, C, x, y, f, g, a))
-}
+) -> Path[.A = Path[.A = C](g x, g y)](
+  acted A B C x y f g a,
+  actedIdq A B C x y f g a
+) =
+  Path.here (acted A B C x y f g a)

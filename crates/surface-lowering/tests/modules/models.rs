@@ -41,7 +41,7 @@ const SIGN: &str = "theory CatShape where {\n  sort Ob : Type;\n  sort Hom(dom: 
 
 /// The category of discrete setoids: types and functions, composition by
 /// sequencing, each law holding by computation.
-const SETOIDS: &str = "type Ob = Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    let y = f(x);\n    become g(y)\n  }\n  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become ident(t) } }\n  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {\n    return thunk { become compose(t, u, v, f, g) }\n  }\n  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path[.A = (+U[ω] (p -> -F q))](comp(p, p, q, id(p), f), f) { return Path.here(f) }\n  def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path[.A = (+U[ω] (p -> -F q))](comp(p, q, q, f, id(q)), f) { return Path.here(f) }\n  def assoc(p : Type, q : Type, r : Type, s : Type, f : +U[ω] (p -> -F q), g : +U[ω] (q -> -F r), h : +U[ω] (r -> -F s)) -> -F Path[.A = (+U[ω] (p -> -F s))](comp(p, r, s, comp(p, q, r, f, g), h), comp(p, q, s, f, comp(q, r, s, g, h))) {\n    return Path.here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })\n  }\n";
+const SETOIDS: &str = "type Ob = Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    let y = f x;\n    become g y\n  }\n  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become ident t } }\n  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {\n    return thunk { become compose t u v f g }\n  }\n  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path[.A = (+U[ω] (p -> -F q))](comp p p q (id p) f, f) { return Path.here f }\n  def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path[.A = (+U[ω] (p -> -F q))](comp p q q f (id q), f) { return Path.here f }\n  def assoc(p : Type, q : Type, r : Type, s : Type, f : +U[ω] (p -> -F q), g : +U[ω] (q -> -F r), h : +U[ω] (r -> -F s)) -> -F Path[.A = (+U[ω] (p -> -F s))](comp p r s (comp p q r f g) h, comp p q s f (comp q r s g h)) {\n    return Path.here (thunk { become compose p q s f (thunk { become compose q r s g h }) })\n  }\n";
 
 /// The signature `Model(CatShape)` derives, written out by hand, its laws
 /// stated over the operations of the module `Derived` so the two signatures
@@ -183,14 +183,14 @@ fn a_manifest_model_stands_where_its_theory_s_model_is_asked()
 {
     let source = "theory Counter where {\n  sort C : Type;\n  oper start : () --> C;\n  oper step : (c \
                   : C) --> C;\n}\ntheory Constant where {\n  oper k : Integer;\n}\ntheory Sg where {\n  sort \
-                  M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule assoc : mul(mul(x, y), \
-                  z) ==> mul(x, mul(y, z));\n}\ndef any(m : Model(Counter)) -> -F \
+                  M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule assoc : mul (mul x y) \
+                  z ==> mul x (mul y z);\n}\ndef any(m : Model(Counter)) -> -F \
                   Model(Counter) { return m }\ndef closed(m : Model(Counter) with sort C = \
-                  Integer) -> -F Model(Counter) {\n  become any(m)\n}\ndef open(x : Type, m : \
+                  Integer) -> -F Model(Counter) {\n  become any m\n}\ndef open(x : Type, m : \
                   Model(Counter) with sort C = x) -> -F Model(Counter) {\n  become \
-                  any(m)\n}\ndef anySg(s : Model(Sg)) -> -F Model(Sg) { return s }\ndef \
+                  any m\n}\ndef anySg(s : Model(Sg)) -> -F Model(Sg) { return s }\ndef \
                   lawful(m : Model(Sg) with sort M = Integer) -> -F Model(Sg) {\n  become \
-                  anySg(m)\n}\n";
+                  anySg m\n}\n";
     let mut lowered = lower(source);
     let forgets: Vec<String> = rows(&lowered)
         .into_iter()
@@ -226,11 +226,11 @@ fn a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132()
     let source = "theory Pairing where {\n  sort A : Type;\n  sort B : Type;\n  oper left : A;\n  oper \
                   right : B;\n}\ndef any(m : Model(Pairing)) -> -F Model(Pairing) { return m \
                   }\ndef both(m : Model(Pairing) with sort A = Integer with sort B = Unit) -> \
-                  -F Model(Pairing) {\n  become any(m)\n}\ndef first(m : Model(Pairing) with \
-                  sort A = Integer) -> -F Model(Pairing) {\n  become any(m)\n}\ndef second(y : \
+                  -F Model(Pairing) {\n  become any m\n}\ndef first(m : Model(Pairing) with \
+                  sort A = Integer) -> -F Model(Pairing) {\n  become any m\n}\ndef second(y : \
                   Type, m : Model(Pairing) with sort B = y) -> -F Model(Pairing) {\n  become \
-                  any(m)\n}\ndef again(m : Model(Pairing) with sort A = Unit) -> -F \
-                  Model(Pairing) {\n  become any(m)\n}\n";
+                  any m\n}\ndef again(m : Model(Pairing) with sort A = Unit) -> -F \
+                  Model(Pairing) {\n  become any m\n}\n";
     let mut lowered = lower(source);
     let forgets: Vec<String> = rows(&lowered)
         .into_iter()
@@ -317,7 +317,7 @@ fn a_written_forgetting_map_takes_the_slot_it_names_2130()
                   right : B;\n}\ntheory Counter where {\n  sort C : Type;\n  oper zero : C;\n}\ndef \
                   any(m : Model(Pairing)) -> -F Model(Pairing) { return m }\ndef inserted(m : \
                   Model(Pairing) with sort A = Integer with sort B = Unit) -> -F Model(Pairing) \
-                  {\n  become any(m)\n}\ndef written(m : Model(Pairing) with sort A = Integer \
+                  {\n  become any m\n}\ndef written(m : Model(Pairing) with sort A = Integer \
                   with sort B = Unit) -> -F Model(Pairing) {\n  become forget[sort B = Unit, \
                   sort A = Integer](m) at Model(Pairing)\n}\ndef unfixed(m : Model(Counter)) \
                   -> -F Model(Counter) {\n  become forget[sort C = Integer](m) at \
@@ -630,7 +630,7 @@ fn a_manifest_sort_is_the_type_the_model_type_names_1226()
     let sealed = |manifest: &str, ratio: &str| {
         format!(
             "theory Metering where {{\n  sort Ratio : Type;\n  oper scale : Ratio;\n}}\nmodule Sealed :> \
-             Model(Metering){manifest} where {{\n  {ratio}\n  def scale = 2;\n}}\ndef read : () => \
+             Model(Metering){manifest} where {{\n  {ratio}\n  def scale = 2;\n}}\ndef read : () -> \
              Integer ;\ndef read = thunk {{ return Sealed.scale }} ;\n"
         )
     };
@@ -703,7 +703,7 @@ fn a_model_missing_an_operation_is_refused_naming_it()
 #[test]
 fn a_stated_law_is_a_component_a_model_proves_2356()
 {
-    let source = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), true);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path[.A = Bool](same(a, b), true), q : Path[.A = Bool](same(b, c), true)) => Path[.A = Bool](same(a, c), true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Proved : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  def refl(a : One) -> Path[.A = Bool](same(a, a), true) { Path.here(true) }\n  def trans(a : One, b : One, c : One, p : Path[.A = Bool](same(a, b), true), q : Path[.A = Bool](same(b, c), true)) -> Path[.A = Bool](same(a, c), true) { Path.here(true) }\n}\nmodule Admitted : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl = ~admitted;\n  law trans = ~admitted;\n}\nmodule Short : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  law refl = ~admitted;\n}\n";
+    let source = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path[.A = Bool](same a b, true), q : Path[.A = Bool](same b c, true)) -> Path[.A = Bool](same a c, true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Proved : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  def refl(a : One) -> Path[.A = Bool](same a a, true) { Path.here true }\n  def trans(a : One, b : One, c : One, p : Path[.A = Bool](same a b, true), q : Path[.A = Bool](same b c, true)) -> Path[.A = Bool](same a c, true) { Path.here true }\n}\nmodule Admitted : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq a b }\n  law refl = ~admitted;\n  law trans = ~admitted;\n}\nmodule Short : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  law refl = ~admitted;\n}\n";
     let mut lowered = lower(source);
     let found = rows(&lowered);
     for (path, role, amounts) in [
@@ -745,7 +745,7 @@ fn a_stated_law_is_a_component_a_model_proves_2356()
 fn a_law_member_admits_only_by_the_splice_of_admitted()
 {
     let theory = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : \
-                  Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), \
+                  Carrier) --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](same a a, \
                   true);\n}\n";
     for (member, out_of_place) in [
         ("law refl = Path.here(true);", "Path.here(true)"),
@@ -790,7 +790,7 @@ fn a_law_member_admits_only_by_the_splice_of_admitted()
 fn an_omitted_law_is_discharged_by_the_checker_4112()
 {
     let source = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : \
-                  Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), \
+                  Carrier) --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](same a a, \
                   true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) \
                   with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true \
                   }\n}\nmodule Parts : Model(Same) with sort Carrier = One where {\n  def same(a : \
@@ -969,7 +969,7 @@ fn a_nested_model_is_a_module_ascribed_its_theory_1226()
         format!(
             "theory Answering where {{\n  oper answer : Integer;\n}}\ntheory Faceted where {{\n  oper inner : \
              Model(Answering);\n}}\nmodule Facts : Model(Faceted) where {{\n  {inner}\n}}\ndef read : () \
-             => Integer ;\ndef read = thunk {{ return Facts.inner.answer }} ;\n"
+             -> Integer ;\ndef read = thunk {{ return Facts.inner.answer }} ;\n"
         )
     };
 
@@ -1116,7 +1116,7 @@ fn a_family_of_the_wrong_telescope_is_refused()
 #[test]
 fn a_written_family_of_the_wrong_telescope_is_refused()
 {
-    let short = "module M : #{ type Hom : (a : Integer) => Type } where { type Hom(a : Integer, b : Integer) \
+    let short = "module M : *{ type Hom : (a : Integer) -> Type } where { type Hom(a : Integer, b : Integer) \
                  = Integer; }";
     let telescope = Amounts::Refused(LoweringRefusal::FamilyTelescope {
         span: span_of(short, "Hom", 1_usize),
@@ -1132,7 +1132,7 @@ fn a_written_family_of_the_wrong_telescope_is_refused()
         "a kind stating one index against a family binding two is refused at the family"
     );
 
-    let mistyped = "module M : #{ type Hom : (a : Integer, b : String) => Type } where { type Hom(a : \
+    let mistyped = "module M : *{ type Hom : (a : Integer, b : String) => Type } where { type Hom(a : \
                     Integer, b : Integer) = Integer; }";
     let index = Amounts::Refused(LoweringRefusal::FamilyTelescope {
         span: span_of(mistyped, "Hom", 1_usize),
@@ -1145,7 +1145,7 @@ fn a_written_family_of_the_wrong_telescope_is_refused()
         "a kind whose second index is at another type than the family's is refused naming it"
     );
 
-    let agreeing = "module M : #{ type Hom : (a : Integer, b : Integer) => Type } where { type Hom(a : \
+    let agreeing = "module M : *{ type Hom : (a : Integer, b : Integer) => Type } where { type Hom(a : \
                     Integer, b : Integer) = Integer; }";
     let mut lowered = lower(agreeing);
     assert_eq!(
@@ -1166,7 +1166,7 @@ fn a_refused_member_of_a_model_is_refused_once_1081()
 {
     let source = "theory Toggle where {\n  sort T : Type;\n  oper flip : (t : T) --> T;\n}\nmodule Bits : \
                   Model(Toggle) where {\n  type T = Bool;\n  def flip(b : Bool) -> -F Bool {\n    match b \
-                  {\n      true => return 0.5f32,\n      false => return true\n    }\n  }\n}\n";
+                  {\n      | true => return 0.5f32\n      | false => return true\n    }\n  }\n}\n";
     let found = rows(&lower(source));
     let refusals: Vec<LoweringRefusal<'_>> = found
         .iter()
@@ -1251,8 +1251,8 @@ fn a_model_type_is_the_record_its_theory_derives()
     states_the_written_types(
         "theory Toggle where {\n  sort T : Type;\n  oper start : T;\n  oper step : (t : T) --> T;\n  \
          oper read : (t : T) --> Bool;\n}\ntheory Based where {\n  oper base : Integer;\n  oper double : \
-         Integer;\n}\ndef derived : Model(Toggle) ;\ndef written : #{t : Type, start : t, step : t \
-         => t, read : t => Bool} ;\ndef based : Model(Based) ;\ndef plain : #{base : Integer, \
+         Integer;\n}\ndef derived : Model(Toggle) ;\ndef written : *{t : Type, start : t, step : t \
+         -> t, read : t -> Bool} ;\ndef based : Model(Based) ;\ndef plain : *{base : Integer, \
          double : Integer} ;\n",
         &[("derived", "written"), ("based", "plain")],
     );
@@ -1265,8 +1265,8 @@ fn a_law_bearing_model_type_reads_its_operations()
 {
     states_the_written_types(
         "theory Unital where {\n  sort M : Type;\n  oper e : M;\n  oper mul : (x : M, y : M) --> M;\n  \
-         rule unitL : mul(e(), x) ==> x;\n}\ndef derived : Model(Unital) ;\ndef written : #{m : \
-         Type, e : m, mul : (x : m, y : m) => m, unitL : (x : m) => Path[.A = m](mul(e, x), x)} ;\n",
+         rule unitL : mul (e ()) x ==> x;\n}\ndef derived : Model(Unital) ;\ndef written : *{m : \
+         Type, e : m, mul : (x : m, y : m) -> m, unitL : (x : m) -> Path[.A = m](mul e x, x)} ;\n",
         &[("derived", "written")],
     );
 }
@@ -1279,8 +1279,8 @@ fn a_family_sort_is_a_function_into_the_universe()
 {
     states_the_written_types(
         "theory Graph where {\n  sort V : Type;\n  sort E(s : V, t : V) : Type;\n  oper loop : (v : V) \
-         --> E(v, v);\n}\ndef derived : Model(Graph) ;\ndef written : #{v : Type, e : (s : v, t : \
-         v) => Type, loop : (x : v) => e(x, x)} ;\n",
+         --> E(v, v);\n}\ndef derived : Model(Graph) ;\ndef written : *{v : Type, e : (s : v, t : \
+         v) -> Type, loop : (x : v) -> e(x, x)} ;\n",
         &[("derived", "written")],
     );
 }
@@ -1391,9 +1391,9 @@ fn a_family_over_an_applied_index_reads_the_call_in_place_5051()
         "theory Scoped where {\n  sort C : Type;\n  sort T(g : C) : Type;\n  sort M(g : C, a : \
          T(g)) : Type;\n  oper ext : (g : C, a : T(g)) --> C;\n  oper wk : (g : C, a : T(g)) --> \
          T(ext(g, a));\n  oper q : (g : C, a : T(g)) --> M(ext(g, a), wk(g, a));\n}\ndef derived \
-         : Model(Scoped) ;\ndef written : #{c : Type, t : (g : c) => Type, m : (g : c, a : t(g)) \
-         => Type, ext : (g : c, a : t(g)) => c, wk : (g : c, a : t(g)) => t(ext(g, a)), q : (g : \
-         c, a : t(g)) => m(ext(g, a), wk(g, a))} ;\n",
+         : Model(Scoped) ;\ndef written : *{c : Type, t : (g : c) -> Type, m : (g : c, a : t(g)) \
+         -> Type, ext : (g : c, a : t(g)) -> c, wk : (g : c, a : t(g)) -> t(ext(g, a)), q : (g : \
+         c, a : t(g)) -> m(ext(g, a), wk(g, a))} ;\n",
         &[("derived", "written")],
     );
 }
@@ -1410,10 +1410,10 @@ fn a_binding_port_is_the_function_from_its_variables_765()
          --> C;\n  oper put : (s : S, k : C) --> C;\n}\ntheory Typed where {\n  sort VTy : Type;\n  sort \
          CTy : Type;\n  sort VTm(a : VTy) : Type+;\n  sort CTm(b : CTy) : Type;\n  oper lam : (t : \
          pi+ (x : VTm(a)) . CTm(b)) --> CTm(b);\n}\ndef state : Model(State) with sort S = Integer \
-         ;\ndef stated : #{c : Type, get : +U (Integer -> -F c) => c, put : (s : Integer, k : c) \
-         => c} ;\ndef typed : Model(Typed) ;\ndef written : #{vty : Type, cty : Type, vtm : (a : \
-         vty) => Type, ctm : (b : cty) => Type, lam : (a : vty, b : cty, t : +U (vtm(a) -> -F \
-         ctm(b))) => ctm(b)} ;\n",
+         ;\ndef stated : *{c : Type, get : +U (Integer -> -F c) -> c, put : (s : Integer, k : c) \
+         -> c} ;\ndef typed : Model(Typed) ;\ndef written : *{vty : Type, cty : Type, vtm : (a : \
+         vty) -> Type, ctm : (b : cty) -> Type, lam : (a : vty, b : cty, t : +U (vtm(a) -> -F \
+         ctm(b))) -> ctm(b)} ;\n",
         &[("state", "stated"), ("typed", "written")],
     );
 }
@@ -1458,7 +1458,7 @@ fn a_manifest_model_type_writes_its_sort_as_its_type()
     states_the_written_types(
         "theory Toggle where {\n  sort T : Type;\n  oper start : T;\n  oper step : (t : T) --> T;\n  \
          oper read : (t : T) --> Integer;\n}\ndef derived : Model(Toggle) with sort T = Integer \
-         ;\ndef written : #{start : Integer, step : Integer => Integer, read : Integer => Integer} \
+         ;\ndef written : *{start : Integer, step : Integer -> Integer, read : Integer -> Integer} \
          ;\n",
         &[("derived", "written")],
     );
@@ -1473,9 +1473,9 @@ fn a_manifest_sort_reads_past_the_links_before_it()
 {
     states_the_written_types(
         "theory Pair where {\n  sort A : Type;\n  sort B : Type;\n  oper a : A;\n  oper b : B;\n}\ndef \
-         derived : (x : Type) => (Model(Pair) with sort B = x) ;\ndef written : (x : Type) => #{a0 \
+         derived : (x : Type) -> (Model(Pair) with sort B = x) ;\ndef written : (x : Type) -> *{a0 \
          : Type, a : a0, b : x} ;\ndef both : Model(Pair) with sort A = Integer with sort B = Unit \
-         + Unit ;\ndef bothWritten : #{a : Integer, b : Unit + Unit} ;\n",
+         + Unit ;\ndef bothWritten : *{a : Integer, b : Unit + Unit} ;\n",
         &[("derived", "written"), ("both", "bothWritten")],
     );
 }
@@ -2052,7 +2052,7 @@ fn a_pack_of_a_module_missing_a_component_is_refused_naming_it()
     for (theory, module, model, missing) in [
         (
             counter,
-            "module Bare : #{ type C = Integer } where {\n  type C = Integer;\n}\n",
+            "module Bare : *{ type C = Integer } where {\n  type C = Integer;\n}\n",
             "Counter",
             "start",
         ),
@@ -2097,11 +2097,11 @@ fn a_pack_of_a_module_missing_a_component_is_refused_naming_it()
 fn a_pattern_at_a_model_type_splits_its_fields()
 {
     let source = format!(
-        "{COUNTER}def observe(m : Model(Counter)) -> -F Integer {{\n  match m {{\n    #{{.start = s, \
-         .step = f, .read = r}} => {{\n      let z = s();\n      let once = f(z);\n      become \
-         r(once)\n    }}\n  }}\n}}\ndef packed : Model(Counter) ;\ndef packed = pack Open at \
-         Model(Counter) ;\ndef observed : () => Integer ;\ndef observed = thunk {{ become \
-         observe(packed) }} ;\n"
+        "{COUNTER}def observe(m : Model(Counter)) -> -F Integer {{\n  match m {{\n    | *{{.start = s, \
+         .step = f, .read = r}} => {{\n      let z = s ();\n      let once = f z;\n      become \
+         r once\n    }}\n  }}\n}}\ndef packed : Model(Counter) ;\ndef packed = pack Open at \
+         Model(Counter) ;\ndef observed : () -> Integer ;\ndef observed = thunk {{ become \
+         observe packed }} ;\n"
     );
     let mut lowered = lower(source.as_str());
     let judgements = verdicts(&mut lowered);
@@ -2118,9 +2118,9 @@ fn a_pattern_at_a_model_type_splits_its_fields()
 /// A group presented by three laws, whose completion derives the inverse of a
 /// product.
 const GROUP: &str = "theory Grp where {\n  sort G : Type;\n  oper e : G;\n  oper inv : (x : G) --> \
-                     G;\n  oper mul : (x : G, y : G) --> G;\n  rule unitL : mul(e(), x) <=> x;\n  \
-                     rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));\n  rule invL : \
-                     mul(inv(x), x) <=> e();\n}\n";
+                     G;\n  oper mul : (x : G, y : G) --> G;\n  rule unitL : mul (e ()) x <=> x;\n  \
+                     rule assoc : mul (mul x y) z <=> mul x (mul y z);\n  rule invL : \
+                     mul (inv x) x <=> e ();\n}\n";
 
 /// `rule Grp.invMul` takes nine slots, one for each of the eight rules
 /// completion derives on the way to it and then its own, each stating its law
@@ -2131,8 +2131,8 @@ const GROUP: &str = "theory Grp where {\n  sort G : Type;\n  oper e : G;\n  oper
 fn a_derived_rule_reads_the_model_it_quantifies_over()
 {
     let source = format!(
-        "{GROUP}rule Grp.invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x));\ndef \
-         uses(m : Model(Grp)) -> -F Unit {{\n  let law = Grp.invMul(m);\n  return unit\n}}\n"
+        "{GROUP}rule Grp.invMul : inv (mul x y) <=> mul (inv y) (inv x);\ndef \
+         uses(m : Model(Grp)) -> -F Unit {{\n  let law = Grp.invMul m;\n  return *{{}}\n}}\n"
     );
     let mut lowered = lower(source.as_str());
     let found = rows(&lowered);
@@ -2176,7 +2176,7 @@ fn a_derived_rule_reads_the_model_it_quantifies_over()
 #[test]
 fn a_rule_the_theory_does_not_derive_is_refused()
 {
-    let written = "rule Grp.comm : mul(x, y) <=> mul(y, x);";
+    let written = "rule Grp.comm : mul x y <=> mul y x;";
     let source = format!("{GROUP}{written}\n");
     let found = rows(&lower(source.as_str()));
     assert_eq!(
@@ -2203,9 +2203,9 @@ fn a_rule_the_theory_does_not_derive_is_refused()
 fn a_model_writing_a_derived_rule_is_refused_naming_it_4106()
 {
     let theory = "theory Mon where {\n  sort M : Type;\n  oper e : M;\n  oper mul : (x : M, y : M) --> \
-                  M;\n  rule unitL : mul(e(), x) <=> x;\n  rule unitR : mul(x, e()) <=> x;\n  rule \
-                  assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));\n}\n";
-    let derivation = "rule Mon.assoc4 : mul(mul(mul(a, b), c), d) <=> mul(a, mul(b, mul(c, d)));";
+                  M;\n  rule unitL : mul (e ()) x <=> x;\n  rule unitR : mul x (e ()) <=> x;\n  rule \
+                  assoc : mul (mul x y) z <=> mul x (mul y z);\n}\n";
+    let derivation = "rule Mon.assoc4 : mul (mul (mul a b) c) d <=> mul a (mul b (mul c d));";
     let model = |module: &str, extra: &str| {
         format!(
             "module {module} : Model(Mon) with sort M = Integer where {{\n  def e = 0;\n  def mul(x : \
@@ -2262,7 +2262,7 @@ fn an_included_model_lends_its_members_2333()
     let source = "theory Pointed where {\n  sort C : Type;\n  oper point : C;\n}\ntheory Doubly where {\n  \
                   include Pointed;\n  oper other : C;\n}\nmodule Seven : Model(Pointed) with sort \
                   C = Integer where {\n  def point = 7;\n}\nmodule Pair : Model(Doubly) with sort C = \
-                  Integer where {\n  include Seven;\n  def other = 8;\n}\ndef read : () => Integer ;\ndef \
+                  Integer where {\n  include Seven;\n  def other = 8;\n}\ndef read : () -> Integer ;\ndef \
                   read = thunk { return Pair.point } ;\n";
     let mut lowered = lower(source);
     let strata = strata(&lowered);
@@ -2378,7 +2378,7 @@ fn an_inert_field_is_read_only_by_another_3029()
 
 /// A unital magma's signature, its two unit laws its rules.
 const MAG: &str = "theory Mag where {\n  sort M : Type;\n  oper one : () --> M;\n  oper mul : (x : M, y \
-                   : M) --> M;\n  rule unitL : mul(one(), x) <=> x;\n  rule unitR : mul(x, one()) \
+                   : M) --> M;\n  rule unitL : mul (one ()) x <=> x;\n  rule unitR : mul x (one ()) \
                    <=> x;\n}\n";
 
 /// #4143: `Terms(S)` mints one data declaration per theory, before the first
@@ -2390,8 +2390,8 @@ const MAG: &str = "theory Mag where {\n  sort M : Type;\n  oper one : () --> M;\
 fn a_theory_s_terms_are_its_operations_over_its_rules_4143()
 {
     let askers = "def neutral : Terms(Mag) = Mag.one;\ndef twice : Terms(Mag) = \
-                  Mag.mul(Mag.one, Mag.one);\ndef again : Terms(Mag) = Mag.one;\n";
-    let by_hand = "data MagTerms : Type where {\n  | One : MagTerms\n  | Mul : (x : MagTerms, y : MagTerms) --> MagTerms\n  rule : Mul(One, x) <=> x;\n  rule : Mul(x, One) <=> x;\n}\n";
+                  Mag.mul Mag.one Mag.one;\ndef again : Terms(Mag) = Mag.one;\n";
+    let by_hand = "data MagTerms : Type where {\n  | One : MagTerms\n  | Mul : (x : MagTerms, y : MagTerms) --> MagTerms\n  rule : Mul One x <=> x;\n  rule : Mul x One <=> x;\n}\n";
     let source = format!("{MAG}{by_hand}{askers}");
     let mut lowered = lower(source.as_str());
     let found = rows(&lowered);
@@ -2506,7 +2506,7 @@ fn the_terms_of_a_theory_outside_one_plain_sort_are_refused_4143()
         ),
         (
             "theory Idem where {\n  sort M : Type;\n  oper twice : (x : M) --> M;\n  law settles : (x : \
-             M) => Path[.A = M](twice(twice(x)), twice(x));\n}\ndef doubled : Terms(Idem) = \
+             M) -> Path[.A = M](twice (twice x), twice x);\n}\ndef doubled : Terms(Idem) = \
              Idem.twice;\n",
             "doubled",
             "Terms(Idem)",

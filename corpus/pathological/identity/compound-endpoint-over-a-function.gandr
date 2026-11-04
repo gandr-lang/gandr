@@ -1,8 +1,6 @@
-def constantly(x : Integer) -> Integer -> -F Integer {
+def constantly(x : Integer) -> Integer -> -F Integer =
   fun (y) { x }
-}
 
 @[ refuses("CompoundEndpoint") ]
-def refuted(x : Integer) -> Path(constantly(x), x) {
-  Path.here(x)
-}
+def refuted(x : Integer) -> Path(constantly x, x) =
+  Path.here x

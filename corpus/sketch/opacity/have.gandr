@@ -10,8 +10,7 @@
 
 /// A bound read once and then only compared. The body checks against the
 /// bound's type and never unfolds the search that produced it.
-def withinBound(xs : List(Nat), x : Nat) -> Bool {
-  have bound = maximum(xs);
-  let slack = 2;
+def withinBound(xs : List(Nat), x : Nat) -> Bool =
+  have bound = maximum xs
+  let slack = 2
   x <= bound + slack
-}

@@ -1,6 +1,6 @@
-module Indexed : #{ type Hom : Integer -> Integer } where {
+module Indexed : *{ type Hom : Integer -> Integer } where {
   @[ refuses("StaticClassifierExpected") ]
   type Hom(n : Integer) = Integer;
 }
 
-module Manifest : #{ type Hom = Integer } where {}
+module Manifest : *{ type Hom = Integer } where {}

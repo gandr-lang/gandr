@@ -15,21 +15,17 @@
 import std.tactic (Tactic, Goal, exact, fail);
 
 /// Closes the goal with the first hypothesis whose type matches it.
-def assumption(hyps : Model(#{ .. })) -> [Tactic] Unit {
-  let goal = Goal.current();
-  match find(hyps, fun (h) { h.type == goal.type }) {
-    Some(h) => exact(h.term),
-    None => fail("no hypothesis matches the goal")
-  }
-}
+def assumption(hyps : Model(*{ .. })) -> [Tactic] Unit =
+  let goal = Goal.current ()
+  match find(hyps, fun (h) { h.type == goal.type })
+    | Some(h) => exact h.term
+    | None => fail "no hypothesis matches the goal"
 
 /// A lemma that `assumption` closes, given only its hypotheses.
-def swap(p : A, q : B) -> (B, A) {
-  (~assumption(~env(only q)), ~assumption(~env(only p)))
-}
+def swap(p : A, q : B) -> *{B, A} =
+  *{~assumption (~env (only q)), ~assumption (~env (only p))}
 
 /// The scope narrowed by ascription to the two bindings a check reads.
-def bounds(lo : Nat, hi : Nat, step : Nat) -> Bool {
-  let e = ~env : Model(#{ lo : Nat; hi : Nat });
+def bounds(lo : Nat, hi : Nat, step : Nat) -> Bool =
+  let e = ~env : Model(*{ lo : Nat; hi : Nat })
   e.lo <= e.hi
-}

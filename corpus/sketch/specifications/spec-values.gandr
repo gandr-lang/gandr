@@ -20,36 +20,32 @@ import std.mem (Heap);
 /// and answer the bound value.
 pub def lookupSpec[k : Type, v : Type](s : Store(k, v), key : k) -> Spec(State(Heap), Maybe(v)) {
   #spec{
-    requires { wellFormed(s) }
+    requires { wellFormed s }
     ensures r {
-      | contents(s) == old(contents(s))
-      | r == find(old(contents(s)), key)
+      | contents(s) == old (contents s)
+      | r == find(old(contents(s)), key
     }
   }
 }
 
 /// What splitting the first element off a nonempty list must do, its result
 /// named by a pattern.
-pub def unconsSpec[a : Type](xs : List(a)) -> Spec(Pure, (a, List(a))) {
+pub def unconsSpec[a : Type](xs : List(a)) -> Spec(Pure, *{a, List(a)}) =
   #spec{
-    requires { length(xs) > 0 }
-    ensures (x, rest) {
+    requires { length xs > 0 }
+    ensures x rest {
       | Cons(x, rest) == xs
-      | length(rest) == length(xs) - 1
+      | length(rest) == length xs - 1
     }
   }
-}
 
 /// A lookup in a hash table, which meets the store's specification.
-pub def tableLookup[k : Type, v : Type](t : Table(k, v), key : k) -> lookupSpec(t.store, key) {
-  let slot = probe(t, hash(key));
-  match slot {
-    Empty => none,
-    Full(stored, value) => if stored == key { some(value) } else { tableLookupFrom(t, key, slot) }
-  }
-}
+pub def tableLookup[k : Type, v : Type](t : Table(k, v), key : k) -> lookupSpec(t.store, key) =
+  let slot = probe t (hash key)
+  match slot
+    | Empty => none
+    | Full(stored, value) => if stored == key { some value } else { tableLookupFrom t key slot }
 
 /// A lookup in an association list, which meets the same specification.
-pub def listLookup[k : Type, v : Type](l : Assoc(k, v), key : k) -> lookupSpec(l.store, key) {
-  find(read(l.pairs), key)
-}
+pub def listLookup[k : Type, v : Type](l : Assoc(k, v), key : k) -> lookupSpec(l.store, key) =
+  find (read l.pairs) key

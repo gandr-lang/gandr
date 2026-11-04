@@ -12,10 +12,9 @@ pub data Empty : Type where {}
 
 /// The circle: one point and a loop at it, bound as `loop : Path[.A = Circle](
 /// Base, Base)`.
-pub data Circle : Type where {
+pub data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
-}
 
 /// The integers as a presented type: a successor and a predecessor that
 /// cancel. Their critical pairs join, so a word normalizes to the successors
@@ -25,56 +24,47 @@ pub data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
   | P : (x : Int) --> Int
-  rule : S(P(x)) <=> x;
-  rule : P(S(x)) <=> x;
+  rule : S (P x) <=> x;
+  rule : P (S x) <=> x;
 }
 
 /// One successor more.
-pub def up(n : Int) -> Int {
-  S(n)
-}
+pub def up(n : Int) -> Int =
+  S n
 
 /// One predecessor more.
-pub def down(n : Int) -> Int {
-  P(n)
-}
+pub def down(n : Int) -> Int =
+  P n
 
 /// The natural numbers, free: every constructor term is its own value.
-pub data Nat : Type where {
+pub data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
 
 /// The winding number (cubical's `winding`): a loop counts one up, its
 /// inverse one down. It respects the cancellations by `Int`'s rules.
-pub def rec wind(p : Path[.A = Circle](Base, Base)) -> Int {
-  match p {
-    here => Z,
-    loop ∷ q => S(wind[<](q)),
-    back(loop) ∷ q => P(wind[<](q))
-  }
-}
+pub def rec wind(p : Path[.A = Circle](Base, Base)) -> Int =
+  match p
+    | here => Z
+    | loop ∷ q => S (wind[<] q)
+    | back(loop) ∷ q => P (wind[<] q)
 
 /// Spinning a count (cubical's `intLoop`): a successor is one more loop, a
 /// predecessor one more inverse. It respects `Int`'s rules by the
 /// cancellations.
-pub def rec spin(n : Int) -> Path[.A = Circle](Base, Base) {
-  match n {
-    Z => Path.here(Base),
-    S(x) => loop ∷ spin[<](x),
-    P(x) => back(loop) ∷ spin[<](x)
-  }
-}
+pub def rec spin(n : Int) -> Path[.A = Circle](Base, Base) =
+  match n
+    | Z => Path.here Base
+    | S(x) => loop ∷ spin[<] x
+    | P(x) => back (loop) ∷ spin[<] x
 
 /// One loop more: the cons a path between words is carried along.
-pub def loopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) {
+pub def loopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) =
   loop ∷ p
-}
 
 /// One inverse loop more.
-pub def unloopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) {
-  back(loop) ∷ p
-}
+pub def unloopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) =
+  back (loop) ∷ p
 
 /// Spinning undoes winding at every loop (cubical's `decodeEncode` at the
 /// point): the round trip at a variable, by induction over the words. The
@@ -87,57 +77,45 @@ pub def unloopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, B
 /// the identity under the words' rules, so the chain is `p` itself, the
 /// answer at `q`.
 pub def rec sect(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
-  spin(wind(p)),
+  spin (wind p),
   p
-) {
-  match p {
-    here => Path.here(Path.here(Base)),
-    loop ∷ q => Path.ap(loopOn, sect[<](q)),
-    back(loop) ∷ q => Path.ap(unloopOn, sect[<](q))
-  }
-}
+) =
+  match p
+    | here => Path.here (Path.here Base)
+    | loop ∷ q => Path.ap loopOn (sect[<] q)
+    | back(loop) ∷ q => Path.ap unloopOn (sect[<] q)
 
 /// Winding undoes spinning at every count (cubical's `windingIntLoop`), by
 /// induction over the presented integers, a successor carried along `up` and
 /// a predecessor along `down`.
-pub def rec retr(n : Int) -> Path[.A = Int](wind(spin(n)), n) {
-  match n {
-    Z => Path.here(Z),
-    S(x) => Path.ap(up, retr[<](x)),
-    P(x) => Path.ap(down, retr[<](x))
-  }
-}
+pub def rec retr(n : Int) -> Path[.A = Int](wind (spin n), n) =
+  match n
+    | Z => Path.here Z
+    | S(x) => Path.ap up (retr[<] x)
+    | P(x) => Path.ap down (retr[<] x)
 
 /// Every point's loop (cubical's `rotLoop`; the book's Lemma 6.4.2 element):
 /// the loop at the point, carried along the loop by conjugation to itself.
-pub def selfloop(x : Circle) -> Path[.A = Circle](x, x) {
-  match x {
-    Base => loop
-  }
-}
+pub def selfloop(x : Circle) -> Path[.A = Circle](x, x) =
+  match x
+    | Base => loop
 
 /// Every point's reflexivity, which conjugation fixes as well.
-pub def selfrefl(x : Circle) -> Path[.A = Circle](x, x) {
-  match x {
-    Base => Path.here(Base)
-  }
-}
+pub def selfrefl(x : Circle) -> Path[.A = Circle](x, x) =
+  match x
+    | Base => Path.here Base
 
 /// The circle's flip (cubical's `invLooper`): the point to itself and the
 /// loop to its inverse, the loop arm choosing the image.
-pub def invLooper(x : Circle) -> Circle {
-  match x {
-    Base => Base,
-    loop => Path.back(loop)
-  }
-}
+pub def invLooper(x : Circle) -> Circle =
+  match x
+    | Base => Base
+    | loop => Path.back (loop)
 
 /// The circle's multiplication (cubical's `_·_`, the book's § 8.5.2 μ): the
 /// point is the unit, and the loop rotates the other argument by its own
 /// loop.
-pub def mul(a : Circle, b : Circle) -> Circle {
-  match a {
-    Base => b,
-    loop => selfloop(b)
-  }
-}
+pub def mul(a : Circle, b : Circle) -> Circle =
+  match a
+    | Base => b
+    | loop => selfloop b

@@ -320,7 +320,7 @@ fn a_computation_sort_derives_a_family_into_computation_types()
 fn a_stated_law_binds_its_written_variables_2356()
 {
     let model = derived(
-        "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), true);\n  law sym : (a : Carrier, b : Carrier) => Path[.A = Bool](same(a, b), same(b, a));\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path[.A = Bool](same(a, b), true), q : Path[.A = Bool](same(b, c), true)) => Path[.A = Bool](same(a, c), true);\n  law loose : (a : Carrier) => Path[.A = Bool](same(a, b), true);\n  law odd : (a : Carrier) => Path[.A = Carrier](a, true);\n}",
+        "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);\n  law sym : (a : Carrier, b : Carrier) -> Path[.A = Bool](same a b, same b a);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path[.A = Bool](same a b, true), q : Path[.A = Bool](same b c, true)) -> Path[.A = Bool](same a c, true);\n  law loose : (a : Carrier) -> Path[.A = Bool](same a b, true);\n  law odd : (a : Carrier) -> Path[.A = Carrier](a, true);\n}",
     );
     let names: Vec<&str> = model
         .components

@@ -1,5 +1,4 @@
 /// `CodataKindNotUniverse`: a codata declaration whose kind is not a computation universe.
 @[ refuses("CodataKindNotUniverse") ]
-codata Scaled : Type where {
+codata Scaled : Type where
   doubled : Integer;
-}

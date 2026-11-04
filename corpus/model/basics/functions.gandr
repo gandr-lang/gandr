@@ -4,38 +4,35 @@
 // - see: #1856 — `chained`
 
 /// One more than its argument.
-def inc(x : Integer) -> Integer {
+def inc(x : Integer) -> Integer =
   x + 1
-}
 
 /// `inc` twice: the first call runs, the second is the tail call.
-def twice(x : Integer) -> Integer {
-  inc(inc(x))
-}
+def twice(x : Integer) -> Integer =
+  inc (inc x)
 
 /// A call nested in an argument, then sixteen calls each on what the last
 /// returned: what follows the nested call lowers once, so the run fits its
 /// region.
 @[ runs("18") ]
-def chained() -> Integer {
-  let a = inc(inc(0));
-  let b = inc(a);
-  let c = inc(b);
-  let d = inc(c);
-  let e = inc(d);
-  let f = inc(e);
-  let g = inc(f);
-  let h = inc(g);
-  let i = inc(h);
-  let j = inc(i);
-  let k = inc(j);
-  let l = inc(k);
-  let m = inc(l);
-  let n = inc(m);
-  let o = inc(n);
-  inc(inc(o))
-}
+def chained() -> Integer =
+  let a = inc (inc 0)
+  let b = inc a
+  let c = inc b
+  let d = inc c
+  let e = inc d
+  let f = inc e
+  let g = inc f
+  let h = inc g
+  let i = inc h
+  let j = inc i
+  let k = inc j
+  let l = inc k
+  let m = inc l
+  let n = inc m
+  let o = inc n
+  inc (inc o)
 
 /// A call of `twice`.
 @[ runs("42") ]
-def answer() -> Integer { twice(40) }
+def answer() -> Integer { twice 40 }

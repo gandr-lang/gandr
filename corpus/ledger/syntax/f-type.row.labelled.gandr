@@ -7,6 +7,5 @@ import std.io;
 
 /// A computation that returns at once under a row open after the bar.
 @[ checks ]
-def idle[r : Row]() -> -F [Partial, d : std.io.Console.Eff | r] Unit {
-  pure unit
-}
+def idle[r : Row]() -> -F [Partial, d : std.io.Console.Eff | r] Unit =
+  pure *{}

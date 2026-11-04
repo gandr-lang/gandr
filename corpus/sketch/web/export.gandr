@@ -24,7 +24,7 @@ import std.list (List);
 import std.codec.json (Json);
 
 // The Fetch specification, which the provider reads from its WebIDL.
-@[provide(std.provide.webidl.specification("fetch", revision = "2026-10-01"))]
+@[provide(std.provide.webidl.specification "fetch" revision (= "2026-10-01"))]
 module Fetch
 
 /// The figures of a sample, an object type to the caller.

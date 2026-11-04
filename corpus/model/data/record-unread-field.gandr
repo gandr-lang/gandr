@@ -6,23 +6,19 @@
 // - see: #1883 — an unread binder answering at its field
 
 /// The lower bound of a span, its upper bound bound by label and unread.
-def lower_bound(span : #{lower : Integer, upper : Integer}) -> Integer {
-  match span {
-    #{.upper = stop, .lower = start} => start
-  }
-}
+def lower_bound(span : *{lower : Integer, upper : Integer}) -> Integer =
+  match span
+    *{.upper = stop, .lower = start} => start
 
 /// The span from three to nine starts at three.
 @[ runs("3") ]
-def span_start : () => Integer = lower_bound(#{lower = 3, upper = 9});
+def span_start : () -> Integer = lower_bound (*{lower = 3, upper = 9});
 
 /// The same bound with both fields bound by position, the second unread.
-def first_bound(span : #{lower : Integer, upper : Integer}) -> Integer {
-  match span {
-    #{start, stop} => start
-  }
-}
+def first_bound(span : *{lower : Integer, upper : Integer}) -> Integer =
+  match span
+    *{start, stop} => start
 
 /// The span from four to six starts at four.
 @[ runs("4") ]
-def span_first : () => Integer = first_bound(#{lower = 4, upper = 6});
+def span_first : () -> Integer = first_bound (*{lower = 4, upper = 6});

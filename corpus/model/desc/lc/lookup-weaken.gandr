@@ -10,34 +10,26 @@ import "./shift-lookup.gandr";
 import "./rename-rename.gandr";
 
 /// A term under `k + 1` binders is the term under `k` weakened.
-def shiftByWeakens(a : Term, k : N) -> Path(shiftBy(a, S(k)), wk(shiftBy(a, k))) {
-  match k {
-    Z => Path.here(wk(a)),
-    S(i) => Path.back(renameRename(
-      a,
-      RShift(S(i)),
-      RShift(S(Z)),
-      RShift(S(S(i))),
-      fun (n) { shiftsCompose(i, n) }
-    ))
-  }
-}
+def shiftByWeakens(a : Term, k : N) -> Path(shiftBy a (S k), wk (shiftBy a k)) =
+  match k
+    | Z => Path.here (wk a)
+    | S(i) => Path.back (renameRename
+      a
+      (RShift (S i))
+      (RShift (S Z))
+      (RShift (S (S i)))
+      (fun (n) { shiftsCompose i n }))
 
 /// A lookup under one binder more is the lookup weakened, by recursion on
 /// the index.
-pub def rec lookWeakens(n : N, s : Env, k : N) -> Path(look(n, s, S(k)), wk(look(n, s, k))) {
-  match s {
-    Shift(j) => match n {
-      Z => Path.back(ixShiftAdds(plusTwo(Z, j, k), S(Z))),
-      S(m) => Path.back(ixShiftAdds(plusTwo(S(m), j, k), S(Z)))
-    },
-    Cons(a, r) => match n {
-      Z => shiftByWeakens(a, k),
-      S(m) => lookWeakens[<](m, r, k)
-    },
-    Lift(r) => match n {
-      Z => Path.back(ixShiftAdds(plus(Z, k), S(Z))),
-      S(m) => lookWeakens[<](m, r, S(k))
-    }
-  }
-}
+pub def rec lookWeakens(n : N, s : Env, k : N) -> Path(look n s (S k), wk (look n s k)) =
+  match s
+    | Shift(j) => match n
+      | Z => Path.back (ixShiftAdds (plusTwo Z j k) (S Z))
+      | S(m) => Path.back (ixShiftAdds (plusTwo (S m) j k) (S Z))
+    | Cons(a, r) => match n
+      | Z => shiftByWeakens a k
+      | S(m) => lookWeakens[<] m r k
+    | Lift(r) => match n
+      | Z => Path.back (ixShiftAdds (plus Z k) (S Z))
+      | S(m) => lookWeakens[<] m r (S k)

@@ -12,34 +12,29 @@
 import "./data-base.gandr";
 
 /// One successor over a natural.
-pub def succ(n : Nat) -> Nat {
-  Succ(n)
-}
+pub def succ(n : Nat) -> Nat =
+  Succ n
 
 /// A walk down its first argument, passing its accumulator through `succ`
 /// at every step.
-pub def rec walk(t : Nat, c : Nat) -> Nat {
-  match t {
-    Zero => c,
-    Succ(m) => Succ(walk[<](m, succ(c)))
-  }
-}
+pub def rec walk(t : Nat, c : Nat) -> Nat =
+  match t
+    | Zero => c
+    | Succ(m) => Succ (walk[<] m (succ c))
 
 /// Two walked from zero: a successor per step over the accumulator `succ`
 /// raised once per step.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
-def walkedTwo : () => Nat = walk(two, Zero);
+def walkedTwo : () -> Nat = walk two Zero;
 
 /// One step at a variable.
-def walkOnce(b : Nat, c : Nat) -> Path(walk(Succ(b), c), Succ(walk(b, succ(c)))) {
-  Path.here(Succ(walk(b, succ(c))))
-}
+def walkOnce(b : Nat, c : Nat) -> Path(walk (Succ b) c, Succ (walk b (succ c))) =
+  Path.here (Succ (walk b (succ c)))
 
 /// One step at another walk's stuck call: the step's recursive call
 /// receives that call beside `succ(c2)`.
 def walkTwice(b : Nat, c1 : Nat, c2 : Nat) -> Path(
-  walk(Succ(walk(b, c1)), c2),
-  Succ(walk(walk(b, c1), succ(c2)))
-) {
-  Path.here(Succ(walk(walk(b, c1), succ(c2))))
-}
+  walk (Succ (walk b c1)) c2,
+  Succ (walk (walk b c1) (succ c2))
+) =
+  Path.here (Succ (walk (walk b c1) (succ c2)))

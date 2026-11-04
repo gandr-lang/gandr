@@ -3787,12 +3787,12 @@ mod tests
         let mut values = program(
             r#"def answer : Integer ; def answer = 42 ;
 def greeting : String ; def greeting = "a \"quoted\"\nline" ;
-def nothing : Unit ; def nothing = unit ;
+def nothing : Unit ; def nothing = *{} ;
 def copy = answer ;
 def identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ;
 def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fun (x) { fun (y) { return x } } } ;
-def applied : +U (-F Integer) ; def applied = thunk { become (force identity)(answer) } ;
-def chosen : +U (-F Integer) ; def chosen = thunk { become (force first)(answer)(7) } ;
+def applied : +U (-F Integer) ; def applied = thunk { become (force identity) answer } ;
+def chosen : +U (-F Integer) ; def chosen = thunk { become ((force first) answer) 7 } ;
 def delayed : +U (-F String) ; def delayed = thunk { return "later" } ;
 def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { return 1 } } ;"#,
         );
@@ -3828,8 +3828,8 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     fn a_printed_line_reaches_the_console_2279()
     {
         let listed = crate::tests::Listed::hosted(
-            "def greet() -> -F [std.io.Console.Eff] Unit {\n  std.io.Console.print(\"a\") ;\n  \
-             std.io.Console.print(\"b\")\n}\n",
+            "def greet() -> -F [std.io.Console.Eff] Unit {\n  std.io.Console.print \"a\" ;\n  \
+             std.io.Console.print \"b\"\n}\n",
         );
         let mut printing = listed_program(&listed);
         let greet = printing
@@ -3974,16 +3974,16 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
         let mut values = program(
             r#"def answer : Integer ; def answer = 42 ;
 def greeting : String ; def greeting = "words" ;
-def nothing : Unit ; def nothing = unit ;
+def nothing : Unit ; def nothing = *{} ;
 def copy = answer ;
 def identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ;
 def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fun (x) { fun (y) { return x } } } ;
-def applied : +U (-F Integer) ; def applied = thunk { become (force identity)(answer) } ;
-def chosen : +U (-F Integer) ; def chosen = thunk { become (force first)(answer)(7) } ;
+def applied : +U (-F Integer) ; def applied = thunk { become (force identity) answer } ;
+def chosen : +U (-F Integer) ; def chosen = thunk { become ((force first) answer) 7 } ;
 def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { return 1 } } ;
 def small : Type ; def small = Integer ;
 def same(a : Type, x : a) -> -F a { return x }
-def instantiated : +U (-F Integer) ; def instantiated = thunk { become same(Integer, 5) } ;"#,
+def instantiated : +U (-F Integer) ; def instantiated = thunk { become same (Integer) 5 } ;"#,
         );
         let declared: Vec<_> = values.declarations.keys().copied().collect();
         for constant in declared {
@@ -4012,7 +4012,7 @@ def copy : Integer ; def copy = later ;
 def suspended : +U (-F Integer) ;
 def forced : +U (-F Integer) ; def forced = thunk { become force suspended } ;
 def function : +U (Integer -> -F Integer) ;
-def applied : +U (-F Integer) ; def applied = thunk { become (force function)(1) } ;
+def applied : +U (-F Integer) ; def applied = thunk { become (force function) 1 } ;
 def untouched : +U (-F Integer) ; def untouched = thunk { return 3 } ;
 def holder : +U (-F Integer) ; def holder = thunk { become force suspended } ;
 def kept : +U (-F (+U (-F Integer))) ; def kept = thunk { return holder } ;"#,
@@ -4140,7 +4140,7 @@ def alias : Type ; def alias = small ;
 def again : Type ; def again = alias ;
 def wide : Type ; def wide = String ;
 def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
-  Path.walk(fun (y) { type(Path[.A = Integer](y, y)) }, Path.step(p, p), Path.here(1))
+  Path.walk (fun (y) { type(Path[.A = Integer](y, y)) }) (Path.step p p) (Path.here 1)
 }",
         );
         assert!(
@@ -4171,9 +4171,9 @@ def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
     {
         let mut laws = program(
             r"def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
-  Path.walk(fun (y) { type(Path[.A = Integer](y, y)) }, Path.step(p, p), Path.here(1))
+  Path.walk (fun (y) { type(Path[.A = Integer](y, y)) }) (Path.step p p) (Path.here 1)
 }
-def reached : +U (-F Path[.A = Integer](1, 1)) ; def reached = thunk { law(Path.here(1)) } ;
+def reached : +U (-F Path[.A = Integer](1, 1)) ; def reached = thunk { law (Path.here 1) } ;
 def kept : +U (-F (+U (-F Path[.A = Integer](1, 1)))) ; def kept = thunk { return reached } ;",
         );
         for name in ["law", "reached"] {
@@ -4238,7 +4238,7 @@ module ZeroPointed : Model(Pointed) where {
   def z = 0;
 }
 def helper(x : Integer) -> -F Integer { x }
-def wrap : Integer => Integer ; def wrap = fun (n) { become helper(n) } ;",
+def wrap : Integer -> Integer ; def wrap = fun (n) { become helper n } ;",
         );
         let evaluation = run(&mut beside, SurfaceName::from("wrap"));
         assert!(
@@ -4259,9 +4259,9 @@ def wrap : Integer => Integer ; def wrap = fun (n) { become helper(n) } ;",
   oper z : T;
 }
 module Stepped : Model(Pointed) where {
-  type T = Integer => Integer;
+  type T = Integer -> Integer;
   def step(x : Integer) -> -F Integer { x }
-  def z : T ; def z = fun (n) { become step(n) } ;
+  def z : T ; def z = fun (n) { become step n } ;
 }",
         );
         assert_eq!(
@@ -4437,7 +4437,7 @@ def bad : Integer ; def bad = "text" ;"#,
             r#"def answer = 42 ; def later : Integer ;
 def bad : Integer ; def bad = "text" ;
 def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
-  Path.walk(fun (y) { type(Path[.A = Integer](y, y)) }, Path.step(p, p), Path.here(1))
+  Path.walk (fun (y) { type(Path[.A = Integer](y, y)) }) (Path.step p p) (Path.here 1)
 }"#,
         );
         let defined = written.met(ConstantIndex::from(0_usize));
@@ -4643,11 +4643,11 @@ def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
     /// The bound statement's loop states its `Partial`, so it checks and its
     /// call runs as the bind the elaboration rebuilds it as.
     const LOOPS: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\
-         def tick(n : Nat) -> -F Unit { return unit }\n\
-         def spin : +U (-F Nat) ;\ndef spin = thunk { loop { tick(Zero); } } ;\n\
-         def bound : +U (-F [Partial] Nat) ;\ndef bound = thunk { loop { let u = tick(Zero) ; continue } } ;\n\
+         def tick(n : Nat) -> -F Unit { return *{} }\n\
+         def spin : +U (-F Nat) ;\ndef spin = thunk { loop { tick Zero; } } ;\n\
+         def bound : +U (-F [Partial] Nat) ;\ndef bound = thunk { loop { let u = tick Zero ; continue } } ;\n\
          def broken : +U (-F Nat) ;\ndef broken = thunk { loop { let u = loop { break } ; continue } } ;\n\
-         def tested : +U (-F Nat) ;\ndef tested = thunk { while 1 > 0 { tick(Zero) } ; return Zero } ;\n";
+         def tested : +U (-F Nat) ;\ndef tested = thunk { while 1 > 0 { tick Zero } ; return Zero } ;\n";
 
     // One test per loop and tier: each spends its whole fuel, so the eight
     // runs together passed the thirty-second bound on a loaded machine
@@ -4704,14 +4704,14 @@ def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
     /// The source of a function whose exits stand one and two matches deep
     /// under a bound statement, and of its runs over three inputs.
     const PICK: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\
-         def pick(n : Nat) -> -F Nat {\n  let m = match n {\n    Zero => return n,\n    \
-         Succ(p) => {\n      let q = match p { Zero => return n, Succ(r) => pure r } ;\n      \
-         pure q\n    },\n  } ;\n  return Succ(m)\n}\n\
-         def bound(n : Nat) -> -F Nat {\n  let m = match n -> -F Nat { Zero => pure n, Succ(p) => pure p } ;\n  \
-         return Succ(m)\n}\n\
-         def zero : +U (-F Nat) ;\ndef zero = thunk { become pick(Zero) } ;\n\
-         def one : +U (-F Nat) ;\ndef one = thunk { become pick(Succ(Zero)) } ;\n\
-         def three : +U (-F Nat) ;\ndef three = thunk { become pick(Succ(Succ(Succ(Zero)))) } ;\n";
+         def pick(n : Nat) -> -F Nat {\n  let m = match n {\n    | Zero => return n\n    \
+         | Succ(p) => {\n      let q = match p { | Zero => return n | Succ(r) => pure r } ;\n      \
+         pure q\n    }\n  } ;\n  return Succ m\n}\n\
+         def bound(n : Nat) -> -F Nat {\n  let m = match n -> -F Nat { | Zero => pure n | Succ(p) => pure p } ;\n  \
+         return Succ m\n}\n\
+         def zero : +U (-F Nat) ;\ndef zero = thunk { become pick Zero } ;\n\
+         def one : +U (-F Nat) ;\ndef one = thunk { become pick (Succ Zero) } ;\n\
+         def three : +U (-F Nat) ;\ndef three = thunk { become pick (Succ (Succ (Succ Zero))) } ;\n";
 
     #[test]
     fn a_nested_return_delivers_its_value_from_its_function()
@@ -4911,12 +4911,12 @@ def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
         format!(
             "data Depth : Type where {{\n  | Zero : Depth\n  | Succ : (p : Depth) --> Depth\n}}\n\
              data Tree : Type where {{\n  | Leaf : (n : Integer) --> Tree\n  | Node : (l : Tree, r : Tree) --> Tree\n}}\n\
-             def rec full(d : Depth) -> Tree {{ match d {{ Zero => Leaf(1), Succ(p) => {{ let l = full[<](p); let r = full[<](p); Node(l, r) }} }} }}\n\
-             def rec sum(t : Tree) -> Integer {{ match t {{ Leaf(n) => n, Node(l, r) => {{ let a = sum[<](l); let b = sum[<](r); a + b }} }} }}\n\
-             def half(d : Depth) -> Integer {{ let t = full(d); sum(t) }}\n\
-             def left : +U (-F Integer) ;\ndef left = thunk {{ half({depth}) }} ;\n\
-             def right : +U (-F Integer) ;\ndef right = thunk {{ half({depth}) }} ;\n\
-             def both : +U (-F Integer) ;\ndef both = thunk {{ let a = half({depth}); let b = half({depth}); a + b }} ;\n"
+             def rec full(d : Depth) -> Tree {{ match d {{ | Zero => Leaf 1 | Succ(p) => {{ let l = full[<] p; let r = full[<] p; Node l r }} }} }}\n\
+             def rec sum(t : Tree) -> Integer {{ match t {{ | Leaf(n) => n | Node(l, r) => {{ let a = sum[<] l; let b = sum[<] r; a + b }} }} }}\n\
+             def half(d : Depth) -> Integer {{ let t = full d; sum t }}\n\
+             def left : +U (-F Integer) ;\ndef left = thunk {{ half ({depth}) }} ;\n\
+             def right : +U (-F Integer) ;\ndef right = thunk {{ half ({depth}) }} ;\n\
+             def both : +U (-F Integer) ;\ndef both = thunk {{ let a = half ({depth}); let b = half ({depth}); a + b }} ;\n"
         )
     }
 

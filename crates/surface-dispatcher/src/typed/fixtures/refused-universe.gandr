@@ -1,6 +1,4 @@
-data Small : Type where {
+data Small : Type where
   | Pick : (a : Type, f : +U (a -> -F Small)) --> Small
-}
-data Flag : Type where {
+data Flag : Type where
   | On : Flag
-}

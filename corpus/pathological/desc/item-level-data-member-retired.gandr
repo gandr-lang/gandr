@@ -1,6 +1,5 @@
 @[ refuses("MalformedForm") ]
-theory Stale where {
+theory Stale where
   sort Nat : Type;
   data Zero : Nat;
   oper add : (Nat, Nat) --> Nat;
-}

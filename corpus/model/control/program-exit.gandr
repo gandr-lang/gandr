@@ -11,4 +11,4 @@ import std.process;
 def proc : Cap { exit };
 
 /// The entry: it exits with 7 before it can return 0.
-def main() -> [std.process.Exit.Eff] Integer { proc.exit(7); 0 }
+def main() -> [std.process.Exit.Eff] Integer { proc.exit 7; 0 }

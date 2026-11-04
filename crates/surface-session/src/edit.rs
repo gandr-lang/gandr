@@ -4497,10 +4497,10 @@ mod tests
     {
         let sources = [
             "def deep = thunk { return thunk { return thunk { return 1 } } } ;\n",
-            "def target(x: Integer) -> -F Integer {\n  return 1\n}\ndef shown : +U (-F Integer) ;\ndef shown = thunk { become (force target)(0) } ;\n",
+            "def target(x: Integer) -> -F Integer {\n  return 1\n}\ndef shown : +U (-F Integer) ;\ndef shown = thunk { become (force target) 0 } ;\n",
             "def a = 1 ;\ndef b = 2 ;\ndef c = 3 ;\n",
             "def owed : Integer ;\ndef reads = owed ;\n",
-            "def f(x: Integer) -> -F Integer { return x }\ndef twice = thunk { become (force f)(\"text\") } ;\n",
+            "def f(x: Integer) -> -F Integer { return x }\ndef twice = thunk { become (force f) \"text\" } ;\n",
             // The tail return the lowering inserts spans the value it returns:
             // a tie the descent breaks by depth.
             "def g(x: Integer) -> -F Integer { x }\n",

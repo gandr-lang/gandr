@@ -16,7 +16,7 @@ import text.tone.kind;
 
 /// The package: its name, its version and the rest of what
 /// `package.gandr.toml` records.
-pub module Package : Model(Gandr.Package) where {
+pub module Package : Model(Gandr.Package) where
   /// The name the manifest records.
   def name = "hello";
   /// The version, the workspace's.
@@ -39,7 +39,6 @@ pub module Package : Model(Gandr.Package) where {
   def spelling = "";
   /// The directory the modules sit under.
   def sources = "src";
-}
 
 /// The greeting, read from the module `text.greet` by its path, at the type
 /// an import at a signature matches it by.

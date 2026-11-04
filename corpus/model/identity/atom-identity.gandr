@@ -17,47 +17,46 @@
 pub def related(a : Unit, b : Unit) -> Type { return Unit }
 
 /// Every point is related to itself.
-pub def reflexivity(a : Unit) -> related(a, a) { unit }
+pub def reflexivity(a : Unit) -> related(a, a) { *{} }
 
 /// The transport law: each point `b` that `a` relates to, with its evidence,
 /// is the centre `a` with its reflexivity (Theorem 5.8.2, (iv)).
-def contraction(a : Unit, b : Unit, r : related(a, b)) -> Path[.A = #{y : Unit, s : related(a, y)}](
-  (b, r),
-  (a, reflexivity(a))
-) { (unit, unit) }
+def contraction(a : Unit, b : Unit, r : related(a, b)) -> Path[.A = *{y : Unit, s : related(a, y)}](
+  *{b, r},
+  *{a, reflexivity a}
+) { *{*{}, *{}} }
 
 /// The unit type sealed, relating its points by `related`.
-pub module Point :> #{ type T, origin : T, other : T } where {
+pub module Point :> *{ type T, origin : T, other : T } where {
   /// The sealed points, whose identity is the relation `related`.
-  @[ identity((related, reflexivity, contraction)) ]
+  @[ identity(*{related, reflexivity, contraction}) ]
   @[ checks ]
   type T = Unit;
 
   /// One point.
   @[ checks ]
-  def origin = unit;
+  def origin = *{};
 
   /// Another point, related to the first.
   @[ checks ]
-  def other = unit;
+  def other = *{};
 }
 
 /// The relation's evidence between two sealed points is a path between them.
-def originOther : Path(Point.origin, Point.other) = unit;
+def originOther : Path(Point.origin, Point.other) = *{};
 
 /// Based path induction along that evidence, in a family that reads neither
 /// the point nor the path: the evidence is no reflexivity, and the transport
 /// returns the element given.
 def carriedAlong : Path(
-  Path.walk(
-    (y : Point.T, Path[.A = Point.T](Point.origin, y)) => Unit,
-    originOther,
-    Path.here(Point.origin),
-    Path.here(originOther),
-    unit
-  ),
-  unit
-) = Path.here(unit);
+  Path.walk
+    ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Unit)
+    originOther
+    (Path.here Point.origin)
+    (Path.here originOther)
+    (*{}),
+  *{}
+) = Path.here (*{});
 
 /// Based path induction at the sealed type (the HoTT book's § 1.12.1): a
 /// path from `origin` reversed by transport in the family of paths back to
@@ -65,29 +64,26 @@ def carriedAlong : Path(
 def backToOrigin(
   b : Point.T,
   q : Path(Point.origin, b)
-) -> Path(b, Point.origin) {
-  Path.walk(
-    (y : Point.T, Path[.A = Point.T](Point.origin, y)) => Path[.A = Point.T](y, Point.origin),
-    q,
-    Path.here(Point.origin),
-    Path.here(q),
-    Path.here(Point.origin)
-  )
-}
+) -> Path(b, Point.origin) =
+  Path.walk
+    ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Path[.A = Point.T](y, Point.origin))
+    q
+    (Path.here Point.origin)
+    (Path.here q)
+    (Path.here Point.origin)
 
 /// Based path induction in the family of paths back to `origin`, along the
 /// relation's evidence: each fibre of the family is the relation's, the unit
 /// type, so the transport is that type's one inhabitant.
 def backAlong : Path[.A = Path[.A = Point.T](Point.other, Point.origin)](
-  Path.walk(
-    (y : Point.T, Path[.A = Point.T](Point.origin, y)) => Path[.A = Point.T](y, Point.origin),
-    originOther,
-    Path.here(Point.origin),
-    Path.here(originOther),
-    Path.here(Point.origin)
-  ),
-  unit
-) = Path.here(unit);
+  Path.walk
+    ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Path[.A = Point.T](y, Point.origin))
+    originOther
+    (Path.here Point.origin)
+    (Path.here originOther)
+    (Path.here Point.origin),
+  *{}
+) = Path.here (*{});
 
 /// Based path induction along the evidence in the family of the identities
 /// of the singleton's own paths: each fibre is an identity of the relation's,
@@ -96,21 +92,20 @@ def overAlong : Path[.A = Path[.A = Path[.A = Point.T](Point.origin, Point.other
   originOther,
   originOther
 )](
-  Path.walk(
-    (y : Point.T, z : Path[.A = Point.T](Point.origin, y)) => Path[.A = Path[.A = Point.T](
+  Path.walk
+    ((y : Point.T, z : Path[.A = Point.T](Point.origin, y)) -> Path[.A = Path[.A = Point.T](
       Point.origin,
       y
     )](
       z,
       z
-    ),
-    originOther,
-    Path.here(Point.origin),
-    Path.here(originOther),
-    Path.here(Path.here(Point.origin))
-  ),
-  unit
-) = Path.here(unit);
+    ))
+    originOther
+    (Path.here Point.origin)
+    (Path.here originOther)
+    (Path.here (Path.here Point.origin)),
+  *{}
+) = Path.here (*{});
 
 /// Two points of the unit type, related by the paths between them: each
 /// fibre of this relation is an identity of the unit type, not the unit type
@@ -118,51 +113,50 @@ def overAlong : Path[.A = Path[.A = Path[.A = Point.T](Point.origin, Point.other
 pub def pathRelated(a : Unit, b : Unit) -> Type { return type(Path[.A = Unit](a, b)) }
 
 /// Every point related to itself by its reflexivity.
-pub def pathReflexivity(a : Unit) -> pathRelated(a, a) { Path.here(a) }
+pub def pathReflexivity(a : Unit) -> pathRelated(a, a) { Path.here a }
 
 /// The transport law at the paths of the unit type: an identity of the
 /// unit type, and one over it, is the unit.
-def pathContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path[.A = #{
+def pathContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path[.A = *{
   y : Unit,
   s : pathRelated(a, y)
 }](
-  (b, r),
-  (a, pathReflexivity(a))
-) { (unit, unit) }
+  *{b, r},
+  *{a, pathReflexivity a}
+) { *{*{}, *{}} }
 
 /// The unit type sealed, relating its points by the paths between them.
-module PathPoint :> #{ type T, origin : T, other : T } where {
+module PathPoint :> *{ type T, origin : T, other : T } where {
   /// The sealed points, whose identity is the relation `pathRelated`.
-  @[ identity((pathRelated, pathReflexivity, pathContraction)) ]
+  @[ identity(*{pathRelated, pathReflexivity, pathContraction}) ]
   @[ checks ]
   type T = Unit;
 
   /// One point.
   @[ checks ]
-  def origin = unit;
+  def origin = *{};
 
   /// Another point, related to the first.
   @[ checks ]
-  def other = unit;
+  def other = *{};
 }
 
 /// The relation's evidence between the two points: a path of the unit type,
 /// which is the unit.
-def pathOriginOther : Path(PathPoint.origin, PathPoint.other) = unit;
+def pathOriginOther : Path(PathPoint.origin, PathPoint.other) = *{};
 
 /// Based path induction along that evidence in the family of paths back to
 /// `origin`: each fibre is the relation's, an identity of the unit type, so
 /// the transport is the unit.
 def pathBack : Path[.A = Path[.A = PathPoint.T](PathPoint.other, PathPoint.origin)](
-  Path.walk(
-    (y : PathPoint.T, Path[.A = PathPoint.T](PathPoint.origin, y)) => Path[.A = PathPoint.T](
+  Path.walk
+    ((y : PathPoint.T, Path[.A = PathPoint.T](PathPoint.origin, y)) -> Path[.A = PathPoint.T](
       y,
       PathPoint.origin
-    ),
-    pathOriginOther,
-    Path.here(PathPoint.origin),
-    Path.here(pathOriginOther),
-    Path.here(PathPoint.origin)
-  ),
-  unit
-) = Path.here(unit);
+    ))
+    pathOriginOther
+    (Path.here PathPoint.origin)
+    (Path.here pathOriginOther)
+    (Path.here PathPoint.origin),
+  *{}
+) = Path.here (*{});

@@ -4,22 +4,19 @@
 // - see: #391 — `classify`
 
 /// Three colours, one arm each.
-data Color : Type where {
+data Color : Type where
   | Red : Color
   | Green : Color
   | Blue : Color
-}
 
 /// The hole stands before `Blue`'s arm.
 @[ refuses("UndecidedCoverage") ]
-def classify(c : Color) -> Integer {
-  match c {
-    Red => 0,
-    ? => 1,
-    Blue => 2
-  }
-}
+def classify(c : Color) -> Integer =
+  match c
+    | Red => 0
+    | ? => 1
+    | Blue => 2
 
 /// `Blue` classified: it checks against `classify`'s signature, whose body is
 /// refused above, so it is not run.
-def blue() -> Integer { classify(Blue) }
+def blue() -> Integer { classify Blue }

@@ -14,75 +14,67 @@
 def three = (3 : Integer);
 
 /// A pair the annotation states the product of.
-def paired = ((3, "three") : Integer * String);
+def paired = (*{3, "three"} : Integer * String);
 
 /// A value run as an annotated `pure`, then annotated where the body ends.
-def ran() -> Integer {
-  let n = (3 : Integer);
+def ran() -> Integer =
+  let n = (3 : Integer)
   (n : Integer)
-}
 
 /// The annotated value a tail takes the `return` of.
-def tailed(n : Integer) -> Integer {
+def tailed(n : Integer) -> Integer =
   (n + 1 : Integer)
-}
 
 /// A pair whose first component alone is annotated: the component is
 /// ascribed `Integer` inside the pair.
 @[ runs("(3, 1)") ]
-def pair = ((3 : Integer), 1);
+def pair = *{(3 : Integer), 1};
 
 /// An annotation beside the signature it agrees with.
 def signed : Integer = (3 : Integer);
 
 /// A scrutinee annotated with the sum it is matched at.
-def chosen(b : Bool) -> Integer {
-  match (b : Bool) {
-    true => 1,
-    false => 2
-  }
-}
+def chosen(b : Bool) -> Integer =
+  match (b : Bool)
+    | true => 1
+    | false => 2
 
 /// A component of a pair a bind runs, annotated where the kernel synthesises
 /// the pair's type.
 @[ runs("2") ]
-def bound() -> Integer {
-  let (b, n) = ((true : Bool), 2);
+def bound() -> Integer =
+  let *{b, n} = *{(true : Bool), 2};
   n
-}
 
 /// An injection annotated where the kernel synthesises the pair's type, its
 /// summand named by a label of the sum the annotation states: the injection
 /// keeps no type, so the annotation ascribes it.
 @[ runs("2") ]
-def injected() -> Integer {
-  let (b, n) = ((+{.yes = unit} : +{yes : Unit, no : Unit}), 2);
+def injected() -> Integer =
+  let *{b, n} = *{(+{.yes = *{}} : +{yes : Unit, no : Unit}), 2};
   n
-}
 
 /// The second summand of `Bool` written as an injection and annotated: it is
 /// ascribed as `(false : Bool)` is, and reads as that word.
 @[ runs("2") ]
-def falsity() -> Integer {
-  let (b, n) = ((+{.1 = unit} : Bool), 2);
+def falsity() -> Integer =
+  let *{b, n} = *{(+{.1 = *{}} : Bool), 2};
   n
-}
 
 /// An integer doubled, the function the annotated argument is passed to.
 def doubled(n : Integer) -> Integer { n + n }
 
 /// An argument annotated with the parameter's type.
 @[ runs("6") ]
-def called() -> Integer { doubled((3 : Integer)) }
+def called() -> Integer { doubled (3 : Integer) }
 
 /// The function an application forces, annotated with its type at the head.
 @[ runs("6") ]
-def headed() -> Integer { (doubled : Integer => Integer)(3) }
+def headed() -> Integer { (doubled : Integer -> Integer) 3 }
 
 /// A pair a bind runs, its two names bound under the product the pattern is
 /// annotated with.
 @[ runs("1") ]
-def split() -> Integer {
-  let (y, z) : Integer * Integer = (1, 2);
+def split() -> Integer =
+  let *{y, z} : Integer * Integer = *{1, 2};
   y
-}

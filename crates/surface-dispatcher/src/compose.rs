@@ -5178,13 +5178,13 @@ mod tests
         // The fold's nested calls and `told`'s are elaborated: the closure's
         // nodes are located before the document's lowering, the document's
         // after it.
-        let closure_text = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x :  Int) --> Int\n  rule : S(P(x)) ==> x;\n  rule : P(S(x)) ==> x;\n}\ndef \
-                            rec tell(n : Int) -> -F Int {\n  match n {\n    Z => Z,\n    S(x) \
-                            => S(tell[<](x)),\n    P(x) => P(tell[<](x))\n  }\n}\ndef one : \
+        let closure_text = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x :  Int) --> Int\n  rule : S (P x) ==> x;\n  rule : P (S x) ==> x;\n}\ndef \
+                            rec tell(n : Int) -> -F Int {\n  match n {\n    | Z => Z\n    | S(x) \
+                            => S (tell[<] x)\n    | P(x) => P (tell[<] x)\n  }\n}\ndef one : \
                             Integer ;\ndef one = 1 ;\ndef owed : Integer ;\ndef lost = nowhere \
                             ;\ndef bad : Integer ;\ndef bad = \"bad\" ;\n";
         let first = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n@[ \
-                     runs(\"1\") ] def ran = one ;\ndef told = S(tell(Z)) ;\n";
+                     runs(\"1\") ] def ran = one ;\ndef told = S (tell Z) ;\n";
         let second = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = \"two\" \
                       ;\ndef three : Integer ;\ndef three = owed ;\n";
         let base = ByteOffset::from(closure_text.len());
@@ -5464,8 +5464,8 @@ def wrong = "text" ;"#,
     fn an_effectful_declaration_stays_on_the_checkers_side()
     {
         let listed = crate::tests::Listed::hosted(concat!(
-            "def peek(c : Cap {read}) -> -F [std.fs.Eff] String { c.read(\"notes\") }\n",
-            "def quit() -> -F Unit { handle c : std.process.Exit.Eff { c.exit(1) } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
+            "def peek(c : Cap {read}) -> -F [std.fs.Eff] String { c.read \"notes\" }\n",
+            "def quit() -> -F Unit { handle c : std.process.Exit.Eff { c.exit 1 } with { | pure(x) => pure x | oper exit(code, k) => k *{} } }\n",
             "def answer : Integer ;\n",
             "def answer = 42 ;\n",
         ));
@@ -6566,7 +6566,7 @@ def delivered() -> -F Unit {
             &grammar,
             CorpusRoot::Fixture,
             SourceText::from(
-                "module Counter :> #{ type T, seed : T } where { type T = Integer ; def seed = 7 ; }\n\
+                "module Counter :> *{ type T, seed : T } where { type T = Integer ; def seed = 7 ; }\n\
                  def held : Counter.T ;\n\
                  def held = Counter.seed ;\n\
                  def leak : Integer ;\n\
@@ -6657,12 +6657,12 @@ def delivered() -> -F Unit {
         };
         let source = [
             "def related(a : Unit, b : Unit) -> -F Type { return Unit }\n".to_owned(),
-            "def reflexive(a : Unit) -> -F related(a, a) { return unit }\n".to_owned(),
-            "def contraction(a : Unit, b : Unit, r : related(a, b)) -> -F Path[.A = #{ y : Unit, s : \
-             related(a, y) }]((b, r), (a, reflexive(a))) { return (unit, unit) }\n"
+            "def reflexive(a : Unit) -> -F related(a, a) { return *{} }\n".to_owned(),
+            "def contraction(a : Unit, b : Unit, r : related(a, b)) -> -F Path[.A = *{ y : Unit, s : \
+             related(a, y) }](*{b, r}, *{a, reflexive a}) { return *{*{}, *{}} }\n"
                 .to_owned(),
-            sealed("Lawful", "@[ identity((related, reflexive, contraction)) ]"),
-            sealed("Lawless", "@[ identity((related, reflexive)) ]"),
+            sealed("Lawful", "@[ identity(*{related, reflexive, contraction}) ]"),
+            sealed("Lawless", "@[ identity(*{related, reflexive}) ]"),
             sealed("Bare", ""),
         ]
         .concat();
@@ -6750,18 +6750,18 @@ def delivered() -> -F Unit {
              def kept_elided(n : Integer) -> -F Integer { n }\n\
              def kept_printed : +U (Integer -> -F Integer) ;\n\
              def kept_printed = thunk { fun (a) { a } } ;\n\
-             def called(n : Integer) -> -F Integer { become kept(n) }\n\
-             def called_elided(n : Integer) -> -F Integer { kept(n) }\n\
+             def called(n : Integer) -> -F Integer { become kept n }\n\
+             def called_elided(n : Integer) -> -F Integer { kept n }\n\
              def called_printed : +U (Integer -> -F Integer) ;\n\
-             def called_printed = thunk { fun (a) { kept(a) } } ;\n\
-             def sequenced(n : Integer) -> -F Integer { let m = kept(n) ; become kept(m) }\n\
-             def sequenced_elided(n : Integer) -> -F Integer { let m = kept(n) ; kept(m) }\n\
+             def called_printed = thunk { fun (a) { kept a } } ;\n\
+             def sequenced(n : Integer) -> -F Integer { let m = kept n ; become kept m }\n\
+             def sequenced_elided(n : Integer) -> -F Integer { let m = kept n ; kept m }\n\
              def sequenced_printed : +U (Integer -> -F Integer) ;\n\
-             def sequenced_printed = thunk { fun (a) { let b = kept(a) ; kept(b) } } ;\n\
-             def suspended(n : Integer) -> -F (+U (-F Integer)) { return thunk { become kept(n) } }\n\
-             def suspended_elided(n : Integer) -> -F (+U (-F Integer)) { thunk { kept(n) } }\n\
+             def sequenced_printed = thunk { fun (a) { let b = kept a ; kept b } } ;\n\
+             def suspended(n : Integer) -> -F (+U (-F Integer)) { return thunk { become kept n } }\n\
+             def suspended_elided(n : Integer) -> -F (+U (-F Integer)) { thunk { kept n } }\n\
              def suspended_printed : +U (Integer -> -F (+U (-F Integer))) ;\n\
-             def suspended_printed = thunk { fun (a) { thunk { kept(a) } } } ;\n",
+             def suspended_printed = thunk { fun (a) { thunk { kept a } } } ;\n",
         );
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, arena } = lower_source(&grammar, source, &mut lowerings)
@@ -6941,12 +6941,12 @@ def delivered() -> -F Unit {
             .collect::<Vec<String>>()
             .concat();
         written.push_str(
-            "def pair : Integer * String ;\ndef pair = #{1, \"a\"} ;\n\
-             def pair_sugared : Integer * String ;\ndef pair_sugared = (1, \"a\") ;\n\
-             def pure_pair : () => Integer * String ;\n\
-             def pure_pair = thunk { return #{1, \"a\"} } ;\n\
-             def pure_pair_sugared : () => Integer * String ;\n\
-             def pure_pair_sugared = thunk { pure (1, \"a\") } ;\n",
+            "def pair : Integer * String ;\ndef pair = *{1, \"a\"} ;\n\
+             def pair_sugared : Integer * String ;\ndef pair_sugared = *{1, \"a\"} ;\n\
+             def pure_pair : () -> Integer * String ;\n\
+             def pure_pair = thunk { return *{1, \"a\"} } ;\n\
+             def pure_pair_sugared : () -> Integer * String ;\n\
+             def pure_pair_sugared = thunk { pure *{1, \"a\"} } ;\n",
         );
         let grammar = grammar();
         let mut lowerings = LoweringCount::default();
@@ -7064,13 +7064,13 @@ def delivered() -> -F Unit {
         let grammar = grammar();
         let source = SourceText::from(
             "def kept(n : Integer) -> -F Integer { n }\n\
-             def bound(n : Integer) -> -F Integer { let m = kept(n) ; kept(m) }\n\
-             def nested(n : Integer) -> -F Integer { kept(kept(n)) }\n\
+             def bound(n : Integer) -> -F Integer { let m = kept n ; kept m }\n\
+             def nested(n : Integer) -> -F Integer { kept (kept n) }\n\
              def nested_printed : +U (Integer -> -F Integer) ;\n\
-             def nested_printed = thunk { fun (a) { kept(kept(a)) } } ;\n\
-             def written(n : Integer) -> -F Integer { kept(run kept(n)) }\n\
+             def nested_printed = thunk { fun (a) { kept (kept a) } } ;\n\
+             def written(n : Integer) -> -F Integer { kept (run kept n) }\n\
              def written_printed : +U (Integer -> -F Integer) ;\n\
-             def written_printed = thunk { fun (a) { kept(run kept(a)) } } ;\n",
+             def written_printed = thunk { fun (a) { kept (run kept a) } } ;\n",
         );
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, mut arena } = lower_source(&grammar, source, &mut lowerings)
@@ -7293,8 +7293,8 @@ def delivered() -> -F Unit {
         assert_eq!(
             unused(
                 "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef pick(n : Nat, \
-                 m : Nat) -> -F Nat {\n  let k = Succ(n) ;\n  match n {\n    Zero => n,\n    \
-                 Succ(p) => n\n  }\n}\ndef id : Nat => Nat ;\ndef id = thunk { fun (y) { Zero } } ;\n"
+                 m : Nat) -> -F Nat {\n  let k = Succ n ;\n  match n {\n    | Zero => n\n    \
+                 | Succ(p) => n\n  }\n}\ndef id : Nat -> Nat ;\ndef id = thunk { fun (y) { Zero } } ;\n"
             ),
             ["5:m", "6:k", "9:p", "13:y"],
             "the unused parameter, `let` binder, pattern variable and lambda binder, the last in \
@@ -7304,7 +7304,7 @@ def delivered() -> -F Unit {
         assert_eq!(
             unused(
                 "def chosen[x : t](t : Type) -> -F t { x }\ndef apply : (Type -> Type) -> Type \
-                 -> Type ;\ndef apply = fun (F) { fun (X) { F(X) } } ;\n"
+                 -> Type ;\ndef apply = fun (F) { fun (X) { F X } } ;\n"
             ),
             [""; 0],
             "a binder read only in a type, or only by a static application, is used"
@@ -7312,7 +7312,7 @@ def delivered() -> -F Unit {
         assert_eq!(
             unused(
                 "def seat_left_open(n : Integer) -> -F Unit {\n  let desk = fork (seat : end) { pure \
-                 unit };\n  close(desk)\n}\n"
+                 *{} };\n  close(desk)\n}\n"
             ),
             ["1:n"],
             "a fork's unused end is the checker's refusal and no lambda's or bind's, but the \
@@ -8201,7 +8201,7 @@ def delivered() -> -F Unit {
             (answer.settled, poll.readings.get())
         };
         let (first, read) = judged(SourceText::from(
-            "def one : Integer = 1 ;\ndef two : Path[.A = Integer](one, 1) = Path.here(1) ;\n",
+            "def one : Integer = 1 ;\ndef two : Path[.A = Integer](one, 1) = Path.here 1 ;\n",
         ));
         assert_eq!(
             read, 3,

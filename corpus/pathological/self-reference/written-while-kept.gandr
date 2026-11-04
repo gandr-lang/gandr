@@ -6,9 +6,8 @@
 
 /// A hold written while its own region keeps a shared view of it.
 @[ refuses("HeldKept") ]
-def writtenWhileKept() -> Integer {
-  var s = 3;
-  let k : (() => Integer) at s = access shared s as w { pure thunk { pure w } };
+def writtenWhileKept() -> Integer =
+  var s = 3
+  let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };
   access s as v { resume(v, 4) };
   force k
-}

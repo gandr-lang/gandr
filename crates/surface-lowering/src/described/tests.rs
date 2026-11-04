@@ -141,7 +141,7 @@ fn a_theory_answers_at_every_member()
     let source = SourceText::from(
         "theory Cat where {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a \
          : Ob) --> Hom(a, a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
-         rule unitL : comp(id(a), f) ==> f;\n}\ntheory Add where {\n  sort Nat : Type;\n  oper add : \
+         rule unitL : comp (id a) f ==> f;\n}\ntheory Add where {\n  sort Nat : Type;\n  oper add : \
          (Nat, Nat) --> Nat;\n  rule cong1 : (rule p : x ==> x′, data x : Nat, data y : Nat) \
          ==> (z : Nat) {\n    node : p(x) ==> (x′);\n    node : add(x′, y) --> (z);\n  };\n}\n",
     );
@@ -244,8 +244,8 @@ fn a_stated_law_answers_at_its_statement_2356()
 {
     let source = SourceText::from(
         "theory Decision where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl \
-         : (a : C) => Path[.A = Bool](eq(a, a), true);\n  law flip : (a : C, b : C, p : Path[.A = Bool](\
-         eq(a, b), true)) => Path[.A = Bool](eq(b, a), true);\n}\n",
+         : (a : C) -> Path[.A = Bool](eq a a, true);\n  law flip : (a : C, b : C, p : Path[.A = Bool](\
+         eq a b, true)) -> Path[.A = Bool](eq b a, true);\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -475,7 +475,7 @@ fn a_nullary_operation_in_a_law_answers_at_its_sort_668()
 {
     let source = SourceText::from(
         "theory Pointed where {\n  sort P : Type;\n  oper pt : P;\n  oper flip : (p : P) --> P;\n  rule \
-         flipPt : flip(pt()) <=> pt();\n}\n",
+         flipPt : flip (pt ()) <=> pt ();\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -509,9 +509,9 @@ fn a_derived_rule_answers_each_side_node_at_its_sort()
 {
     let source = SourceText::from(
         "theory Grp where {\n  sort G : Type;\n  oper e : G;\n  oper inv : (x : G) --> G;\n  oper mul \
-         : (x : G, y : G) --> G;\n  rule unitL : mul(e(), x) <=> x;\n  rule assoc : mul(mul(x, \
-         y), z) <=> mul(x, mul(y, z));\n  rule invL : mul(inv(x), x) <=> e();\n}\nrule \
-         Grp.invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x));\n",
+         : (x : G, y : G) --> G;\n  rule unitL : mul (e ()) x <=> x;\n  rule assoc : mul (mul x \
+         y) z <=> mul x (mul y z);\n  rule invL : mul (inv x) x <=> e ();\n}\nrule \
+         Grp.invMul : inv (mul x y) <=> mul (inv y) (inv x);\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -588,7 +588,7 @@ fn an_indexed_family_s_operation_answers_at_its_index_2940()
 {
     let source = SourceText::from(
         "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\ndata Skip : N -> Type where {\n  | Halt : Skip(Z)\n  oper skip : (k : Skip(Z)) --> Skip(Z);\n  oper climb : (c : Skip(Z)) --> \
-         Skip(S(Z));\n  rule : skip(k) ==> k;\n}\n",
+         Skip(S(Z));\n  rule : skip k ==> k;\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -692,7 +692,7 @@ fn a_data_rule_answers_each_node_at_its_sort()
     let source = SourceText::from(
         "data NatDiv : Type where {\n  | Zero : NatDiv\n  | Succ : (n : NatDiv) --> NatDiv\n  oper \
          divmod : (m : NatDiv, n : NatDiv) --> (quot : NatDiv, rem : NatDiv);\n  oper half : (h : \
-         NatDiv) --> NatDiv;\n  rule : divmod(m, Succ(d)) ==> (Zero, m);\n}\n",
+         NatDiv) --> NatDiv;\n  rule : divmod m (Succ d) ==> (Zero, m);\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -908,7 +908,7 @@ fn a_second_order_law_answers_at_its_written_sorts()
 {
     let source = SourceText::from(
         "theory Let where {\n  sort Tm : Type+;\n  oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> \
-         Tm;\n  rule zeta : let(u, t) <=> t(u);\n}\n",
+         Tm;\n  rule zeta : let u t <=> t u;\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -953,7 +953,7 @@ fn a_variable_under_an_abstraction_answers_at_its_port()
     let source = SourceText::from(
         "theory Scope where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper par : (p : Proc, q : \
          Proc) --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule scope : \
-         par(nu(bind a . p), q) <=> nu(bind a . par(p, q));\n}\n",
+         par (nu (bind a . p)) q <=> nu (bind a . (par p q));\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -1010,7 +1010,7 @@ fn an_occurrence_answers_at_its_port()
     let source = SourceText::from(
         "theory Unheard where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nil : () --> Proc;\n  \
          oper out : (c : Name, p : Proc) --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) \
-         --> Proc;\n  rule unheard : nu(bind a . out(a, p)) ==> nil();\n}\n",
+         --> Proc;\n  rule unheard : nu (bind a . (out a p)) ==> nil ();\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {
         at(source, SourceText::from(around), SourceText::from(inner))
@@ -1047,8 +1047,8 @@ fn a_field_s_variable_and_an_instantiation_under_it_answer_2360()
         "theory Commute where {\n  sort Value : Type;\n  sort Name : Type;\n  sort Digest : Type+;\n  \
          sort Claim : Type+;\n  sort C : Type;\n  oper put : (v : Value, k : pi+ (d : Digest) . \
          C) --> C;\n  oper lookup : (n : Name, k : pi+ (c : Claim) . C) --> C;\n  oper new : \
-         (body : pi+ (x : Digest) . C) --> C;\n  rule commute : put(v, bind d . lookup(n, bind \
-         c . k(d, c))) <=> lookup(n, bind c . put(v, bind d . k(d, c)));\n  rule gc : new(bind \
+         (body : pi+ (x : Digest) . C) --> C;\n  rule commute : put v (bind d . (lookup n (bind \
+         c . (k d c)))) <=> lookup n (bind c . (put v (bind d . (k d c))));\n  rule gc : new (bind \
          x . q) <=> q;\n}\n",
     );
     let span = |around: &'static str, inner: &'static str| {

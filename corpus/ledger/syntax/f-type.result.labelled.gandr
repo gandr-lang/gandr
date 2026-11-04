@@ -7,6 +7,5 @@ import std.io;
 
 /// A line printed through the console instance the row labels `out`.
 @[ checks ]
-def say() -> [out : std.io.Console.Eff] Unit {
-  out.print("said")
-}
+def say() -> [out : std.io.Console.Eff] Unit =
+  out.print "said"

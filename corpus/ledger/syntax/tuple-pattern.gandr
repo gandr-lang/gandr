@@ -1,7 +1,5 @@
 /// `tuple_pattern`: a tuple pattern.
 @[ checks ]
-def swap(p : Integer * String) -> -F (String * Integer) {
-  match p {
-    (n, s) => return (s, n)
-  }
-}
+def swap(p : Integer * String) -> -F (String * Integer) =
+  match p
+    *{n, s} => return *{s, n}

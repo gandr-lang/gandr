@@ -3832,7 +3832,7 @@ mod tests
             "def f() -> -F Integer { return (x * x) }",
             "// comment\n/* nested /* block */ */\n#!/usr/bin/env gandr\nx",
             "1u32 + 2.5f64 - .5e-3 * 42",
-            "@[doc(\"d\")] def x = #{ a = 1 };",
+            "@[doc(\"d\")] def x = *{ a = 1 };",
             "match v { Inl(x) => x, Inr(y) => y }",
             "\u{feff}def a = 1;",
         ] {

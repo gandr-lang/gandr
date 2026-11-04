@@ -13,20 +13,18 @@
 pub def empty : String = "";
 
 /// The string `a` followed by the string `b`.
-pub def concat(a : String, b : String) -> String {
-  string.append(a, b)
-}
+pub def concat(a : String, b : String) -> String =
+  string.append a b
 
 /// Whether `s` is the empty string.
-pub def isEmpty(s : String) -> Bool {
+pub def isEmpty(s : String) -> Bool =
   s == empty
-}
 
 /// The laws of `concat` and `empty`: joining is associative and the empty
 /// string is its unit on both sides. Strings under joining are a monoid.
 /// The coincidence check certifies the three rules, and the row fires them.
 @[ normalizes("concat(concat(empty, empty), concat(empty, empty)) ~> empty") ]
-pub theory Strings where {
+pub theory Strings where
   /// The strings, as the sort the laws range over.
   sort S : Type;
 
@@ -36,9 +34,8 @@ pub theory Strings where {
   oper concat : (a : S, b : S) --> S;
 
   /// The empty string on the left of a join leaves the other string.
-  rule unitLeft : concat(empty(), s) <=> s;
+  rule unitLeft : concat (empty ()) s <=> s;
   /// The empty string on the right of a join leaves the other string.
-  rule unitRight : concat(s, empty()) <=> s;
+  rule unitRight : concat s (empty ()) <=> s;
   /// Joining is associative: a join of three strings is one string.
-  rule assoc : concat(concat(x, y), z) <=> concat(x, concat(y, z));
-}
+  rule assoc : concat (concat x y) z <=> concat x (concat y z);

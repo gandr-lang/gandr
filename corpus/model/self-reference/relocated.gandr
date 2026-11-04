@@ -11,14 +11,13 @@ import std.process;
 /// higher than where they were captured; the view still reads its cell, and
 /// the clause adds its hundred to the handled answer.
 @[ runs("112") ]
-def relocated() -> Integer {
-  var x = 5;
+def relocated() -> Integer =
+  var x = 5
   let r : Integer = handle c : std.process.Exit.Eff {
-    access x as v { c.exit(1); resume(v, v + 7) };
+    access x as v { c.exit 1; resume(v, v + 7) };
     pure 0
   } with {
-    pure(y) => pure y,
-    oper exit(code, k) => { let m = k(unit); pure m + 100 }
+    | pure(y) => pure y
+    | oper exit(code, k) => { let m = k *{}; pure m + 100 }
   };
   pure x + r
-}

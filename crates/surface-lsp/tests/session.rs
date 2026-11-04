@@ -1448,8 +1448,9 @@ fn signature_help_reads_a_sibling_s_head()
     let mut messages = opening();
     messages.push(open(&Source {
         uri: address.clone(),
-        text: "import \"./base.gandr\" ;\ndef two : +U (-F Integer) ;\ndef two = thunk { pick(1, ) } ;\n"
-            .to_owned(),
+        text:
+            "import \"./base.gandr\" ;\ndef two : +U (-F Integer) ;\ndef two = thunk { pick 1 } ;\n"
+                .to_owned(),
     }));
     messages.push(json!({"jsonrpc": "2.0", "id": "signature", "method": "textDocument/signatureHelp", "params": {
         "textDocument": {"uri": address}, "position": {"line": 2_i32, "character": 25_i32},

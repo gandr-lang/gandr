@@ -4,6 +4,5 @@
 ///
 /// - see: #815
 @[ refuses("AbsentRecordField") ]
-def absent_selected(r : #{n : Integer, s : String}) -> Integer {
+def absent_selected(r : *{n : Integer, s : String}) -> Integer =
   r.z
-}

@@ -14,59 +14,49 @@ import "./lookup-weaken.gandr";
 def weakenedVariable(
   s : Env,
   r : Ren,
-  h : (n : N) => Path[.A = Term](look(n, s, Z), Ix(rlook(n, r))),
+  h : (n : N) -> Path[.A = Term](look n s Z, Ix (rlook n r)),
   m : N
-) -> Path[.A = Term](wk(look(m, s, Z)), wk(Ix(rlook(m, r)))) {
-  Path.ap(wk, h(m))
-}
+) -> Path[.A = Term](wk (look m s Z), wk (Ix (rlook m r))) =
+  Path.ap wk (h m)
 
 /// A substitution renaming at every index renames at every index of its
 /// lift.
 def substRenamesLift(
   s : Env,
   r : Ren,
-  h : (n : N) => Path[.A = Term](look(n, s, Z), Ix(rlook(n, r))),
+  h : (n : N) -> Path[.A = Term](look n s Z, Ix (rlook n r)),
   n : N
-) -> Path[.A = Term](look(n, Lift(s), Z), Ix(rlook(n, RLift(r)))) {
-  match n {
-    Z => Path.here(Ix(Z)),
-    S(m) => compose[5, 7](chain(3), (
-      lookWeakens(m, s, Z),
-      weakenedVariable(s, r, h, m),
-      ixShiftAdds(rlook(m, r), S(Z))
-    ))
-  }
-}
+) -> Path[.A = Term](look n (Lift s) Z, Ix (rlook n (RLift r))) =
+  match n
+    | Z => Path.here (Ix Z)
+    | S(m) => compose[5, 7] (chain 3) (*{
+      lookWeakens m s Z,
+      weakenedVariable s r h m,
+      ixShiftAdds (rlook m r) (S Z)
+    })
 
 /// A substitution that renames at every index is that renaming.
 pub def rec substRenames(
   t : Term,
   s : Env,
   r : Ren,
-  h : (n : N) => Path[.A = Term](look(n, s, Z), Ix(rlook(n, r)))
-) -> Path[.A = Term](subst(t, s), rename(t, r)) {
-  match t {
-    Ix(n) => h(n),
-    Lam(b) => Path.ap(
-      lamOf,
-      substRenames[<](b, Lift(s), RLift(r), fun (n) { substRenamesLift(s, r, h, n) })
-    ),
-    Ap(f, x) => Path.walk(
-      fun (z) { type(Path[.A = Term](Ap(subst(f, s), subst(x, s)), Ap(z, rename(x, r)))) },
-      substRenames[<](f, s, r, h),
-      Path.walk(
-        fun (z) { type(Path[.A = Term](Ap(subst(f, s), subst(x, s)), Ap(subst(f, s), z))) },
-        substRenames[<](x, s, r, h),
-        Path.here(Ap(subst(f, s), subst(x, s)))
-      )
-    )
-  }
-}
+  h : (n : N) -> Path[.A = Term](look n s Z, Ix (rlook n r))
+) -> Path[.A = Term](subst t s, rename t r) =
+  match t
+    | Ix(n) => h n
+    | Lam(b) => Path.ap
+      lamOf
+      (substRenames[<] b (Lift s) (RLift r) (fun (n) { substRenamesLift s r h n }))
+    | Ap(f, x) => Path.walk
+      (fun (z) { type(Path[.A = Term](Ap (subst f s) (subst x s), Ap z (rename x r))) })
+      (substRenames[<] f s r h)
+      (Path.walk
+        (fun (z) { type(Path[.A = Term](Ap (subst f s) (subst x s), Ap (subst f s) z)) })
+        (substRenames[<] x s r h)
+        (Path.here (Ap (subst f s) (subst x s))))
 
 /// The substitution shifting by one renames each index by the shift by one.
-pub def shiftOneRenames(i : N) -> Path[.A = Term](look(i, Shift(S(Z)), Z), Ix(rlook(i, RShift(S(Z))))) {
-  match i {
-    Z => Path.here(Ix(S(Z))),
-    S(j) => Path.here(Ix(S(S(j))))
-  }
-}
+pub def shiftOneRenames(i : N) -> Path[.A = Term](look i (Shift (S Z)) Z, Ix (rlook i (RShift (S Z)))) =
+  match i
+    | Z => Path.here (Ix (S Z))
+    | S(j) => Path.here (Ix (S (S j)))

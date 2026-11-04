@@ -14,12 +14,11 @@ def join(
   c : Integer,
   q : Path(a, b),
   r : Path(b, c)
-) -> Path(a, c) {
-  Path.step(q, r)
-}
+) -> Path(a, c) =
+  Path.step q r
 
 /// Reflexivity at seven composed with itself by a run.
-def joined_here() -> Path(7, 7) { join(7, 7, 7, p, p) }
+def joined_here() -> Path(7, 7) { join 7 7 7 p p }
 
 /// `Path.step` is the composite of the 2-chain its two paths fill.
 def joined_unbiased(
@@ -28,6 +27,5 @@ def joined_unbiased(
   c : Integer,
   q : Path[.A = Integer](a, b),
   r : Path(b, c)
-) -> Path[.A = Path[.A = Integer](a, c)](Path.step(q, r), compose[3, 5](chain(2), (q, r))) {
-  Path.here(Path.step(q, r))
-}
+) -> Path[.A = Path[.A = Integer](a, c)](Path.step q r, compose[3, 5] (chain 2) (*{q, r})) =
+  Path.here (Path.step q r)

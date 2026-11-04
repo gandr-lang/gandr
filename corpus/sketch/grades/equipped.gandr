@@ -19,18 +19,17 @@ import std.grade (Grade, Usage, Count);
 /// refresh uses it once more.
 module Cache(g : Model(Grade)) where {
   /// A key and the value it caches.
-  pub data Entry : Type where {
+  pub data Entry : Type where
     /// The key and its value.
     | Make : (key : String, value : String) --> Entry
-  }
 
   /// Loads the value for `key` once.
   pub def load(loader : +U[1] (String -> String), key : String) : Entry = Make(key, loader(key))
 
   /// Loads the value, then loads it again to refresh it.
   pub def refreshed(loader : +U[1 + 1] (String -> String), key : String) : Entry = {
-    let stale = load(loader, key);
-    load(loader, stale.key)
+    let stale = load loader key;
+    load loader stale.key
   }
 }
 
@@ -42,14 +41,14 @@ module UsedCache = Cache(Usage);
 
 /// Reads once outside a block and twice inside it. The block counts its
 /// reads, and `Usage` grades the rest.
-def batch(read : +U[1] (Unit -> String)) : (String, String, String) = {
-  let first = read(unit);
+def batch(read : +U[1] (Unit -> String)) : *{String, String, String} = {
+  let first = read *{};
   let pair = {
     import Count;
     let shout = thunk[2] { first ++ "!" };
-    (force(shout), force(shout))
+    *{force(shout), force(shout)}
   };
-  (first, pair.0, pair.1)
+  *{first, pair.0, pair.1}
 }
 
 /// Writes no grade, so every position takes the default and the function

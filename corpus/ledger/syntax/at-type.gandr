@@ -2,6 +2,5 @@
 @[ checks ]
 world seat ;
 @[ checks ]
-def kept(n : Integer at seat) -> -F (Integer at seat) {
+def kept(n : Integer at seat) -> -F (Integer at seat) =
   pure n
-}

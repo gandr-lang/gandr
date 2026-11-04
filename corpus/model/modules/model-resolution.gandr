@@ -12,8 +12,8 @@ import "./model-resolution-flips.gandr";
 
 /// The integers force `Up`.
 @[ runs("5") ]
-def counted() -> Integer { advanced(4) }
+def counted() -> Integer { advanced 4 }
 
 /// A flag forces `Flips`, a tally through its include.
 @[ runs("1") ]
-def flipped() -> Integer { advanced((false : Bool)) }
+def flipped() -> Integer { advanced (false : Bool) }

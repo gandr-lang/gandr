@@ -14,37 +14,34 @@ import "./data-base.gandr";
 
 /// Binary trees with the branching written as a function: a node picks its
 /// subtree at each branch.
-data Tree : Type where {
+data Tree : Type where
   | Leaf : Tree
-  | Node : (f : Two => Tree) --> Tree
-}
+  | Node : (f : Two -> Tree) --> Tree
 
 /// The number of leaves: each subtree is reached through `f` and counted one
 /// stage below the node.
-def rec size(t : Tree) -> Nat {
-  match t {
-    Leaf => Succ(Zero),
-    Node(f) => {
-      let l = f(L);
-      let r = f(R);
-      plus(size[<](l), size[<](r))
+def rec size(t : Tree) -> Nat =
+  match t
+    | Leaf => Succ Zero
+    | Node(f) => {
+      let l = f L;
+      let r = f R;
+      plus (size[<] l) (size[<] r)
     }
-  }
-}
 
 /// Every branch a leaf.
 def leaves(x : Two) -> Tree { Leaf }
 
 /// A node over two leaves.
-def cherry : Tree = Node(leaves);
+def cherry : Tree = Node leaves;
 
 /// A node whose left branch is a cherry and whose right is a leaf.
-def lopsided : Tree = Node(fun (x) { match x -> -F Tree { L => cherry, R => Leaf } });
+def lopsided : Tree = Node (fun (x) { match x -> -F Tree { | L => cherry | R => Leaf } });
 
 /// The cherry's two leaves, counted through its function.
 @[ runs("Succ(Succ(Zero))") ]
-def cherry_leaves : () => Nat = size(cherry);
+def cherry_leaves : () -> Nat = size cherry;
 
 /// Three leaves, the left two reached through two functions.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def deeper : () => Nat = size(lopsided);
+def deeper : () -> Nat = size lopsided;

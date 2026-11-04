@@ -815,8 +815,8 @@ mod tests
         );
         // A `match` whose head takes its brace opens nothing.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  match x {\n    a => a,\n  }\n}\n"),
-            "def f(x : A) -> A {\n  match x {\n    a => a,\n  }\n}\n"
+            marked("def f(x : A) -> A {\n  match x {\n    | a => a\n  }\n}\n"),
+            "def f(x : A) -> A {\n  match x {\n    | a => a\n  }\n}\n"
         );
         // A `where` ending its line opens a declaration body.
         assert_eq!(
@@ -844,8 +844,8 @@ mod tests
         // past the column continues it; a comment after a statement stays
         // outside the separator.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  if x { a } else { b }\n  g(x,\n    y) // c\n  z\n}\n"),
-            "def f(x : A) -> A {\n  if x { a } else { b }\n  g(x,\n    y)⟪;⟫ // c\n  z\n}\n"
+            marked("def f(x : A) -> A {\n  if x { a } else { b }\n  g x\n    y // c\n  z\n}\n"),
+            "def f(x : A) -> A {\n  if x { a } else { b }\n  g x\n    y⟪;⟫ // c\n  z\n}\n"
         );
         // A line-leading bar and a closer take no separator; a sigil's brace
         // is no statement block.

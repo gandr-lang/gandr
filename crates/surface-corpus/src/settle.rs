@@ -2885,7 +2885,7 @@ mod tests
         let report = settled(
             CorpusRoot::Fixture,
             SourceText::from(
-                "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), true);\n}\nmodule SameInteger : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl = ~admitted;\n}\n",
+                "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);\n}\nmodule SameInteger : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq a b }\n  law refl = ~admitted;\n}\n",
             ),
         );
         let refl = report
@@ -2924,7 +2924,7 @@ mod tests
         let report = settled(
             CorpusRoot::Strict,
             SourceText::from(
-                "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
+                "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
             ),
         );
         let cells = report
@@ -3060,7 +3060,7 @@ mod tests
             "data Rows : Type where { | NoRow : Rows | Named : (r : Row, rest : Rows) --> Rows }\n",
             "data Admission : Type where { | Admitted : Admission }\n",
             "def admitBlock(ss : Signatures, rs : Rows) -> Admission { Admitted }\n",
-            "def addRow : Row = Row(Plain(U32));\n",
+            "def addRow : Row = Row (Plain U32);\n",
         );
         let size = RefusalName::BoundaryUnrealised(crate::refusal::BoundaryClause::Size.tag());
         let rows = [
@@ -3242,21 +3242,21 @@ mod tests
         let rows = [
             (
                 CorpusRoot::Strict,
-                "@[ decomposes(event(left, 0)) ] def a = 3 ;",
+                "@[ decomposes(event left 0) ] def a = 3 ;",
                 web("0"),
                 Settlement::Settled,
                 &[("decompose", 0_usize)][..],
             ),
             (
                 CorpusRoot::Fixture,
-                "@[ decomposes(\n  event(\n    left,\n    0\n  )\n) ] def a = 3 ;",
+                "@[ decomposes(\n  event\n    left\n    0\n) ] def a = 3 ;",
                 web("0"),
                 Settlement::Settled,
                 &[("decompose", 0_usize)][..],
             ),
             (
                 CorpusRoot::Fixture,
-                "@[ decomposes(event(left, 1)) ] def a = 3 ;",
+                "@[ decomposes(event left 1) ] def a = 3 ;",
                 web("0"),
                 Settlement::Unsettled,
                 &[("decompose", 0_usize)][..],
@@ -3270,7 +3270,7 @@ mod tests
             ),
             (
                 CorpusRoot::Fixture,
-                "@[ decomposes(event(left, 0)) ] def a : Integer ;",
+                "@[ decomposes(event left 0) ] def a : Integer ;",
                 Outcome::Checks(ObligationCount::from(1_usize)),
                 Settlement::Unsettled,
                 &[][..],
@@ -3312,7 +3312,7 @@ mod tests
         let rows = [
             (
                 CorpusRoot::Strict,
-                "@[ reads((side, Nat)) ] def a = 3 ;",
+                "@[ reads(*{side, Nat}) ] def a = 3 ;",
                 read("(side, Nat)"),
                 Settlement::Settled,
                 &[("reads", 0_usize)][..],
@@ -3326,7 +3326,7 @@ mod tests
             ),
             (
                 CorpusRoot::Fixture,
-                "@[ reads((Nat, side, Nat)) ] data D : Type where { | E : D }",
+                "@[ reads(*{Nat, side, Nat}) ] data D : Type where { | E : D }",
                 read("(Nat, side, Nat)"),
                 Settlement::Settled,
                 &[("reads", 0_usize)][..],
@@ -3340,7 +3340,7 @@ mod tests
             ),
             (
                 CorpusRoot::Fixture,
-                "@[ reads(f(x)) ] def a = 3 ;",
+                "@[ reads(f x) ] def a = 3 ;",
                 Outcome::Checks(ObligationCount::from(0_usize)),
                 Settlement::Unsettled,
                 &[][..],
@@ -3413,37 +3413,37 @@ mod tests
         let rows = [
             (
                 CorpusRoot::Strict,
-                "@[ runs(\"ran at 0\"), traces(decomposes(c, event(left, 0))) ] def a = 3 ;",
+                "@[ runs(\"ran at 0\"), traces(decomposes c (event left 0)) ] def a = 3 ;",
                 tracing("ran at 0", &[("c", "event(left, 0)")]),
                 Settlement::Settled,
             ),
             (
                 CorpusRoot::Fixture,
-                "@[ runs(\"ran at 0\"), traces(primes(c, 0)) ] def a = 3 ;",
+                "@[ runs(\"ran at 0\"), traces(primes c 0) ] def a = 3 ;",
                 tracing("ran at 0", &[("c", "primes = 0")]),
                 Settlement::Settled,
             ),
             (
                 CorpusRoot::Fixture,
-                "@[ runs(\"ran at 0\"), traces(decomposes(c, event(left, 1))) ] def a = 3 ;",
+                "@[ runs(\"ran at 0\"), traces(decomposes c (event left 1)) ] def a = 3 ;",
                 tracing("ran at 0", &[("c", "event(left, 0)")]),
                 Settlement::Unsettled,
             ),
             (
                 CorpusRoot::Fixture,
-                "@[ runs(\"ran at 0\"), traces(decomposes(d, event(left, 0))) ] def a = 3 ;",
+                "@[ runs(\"ran at 0\"), traces(decomposes d (event left 0)) ] def a = 3 ;",
                 tracing("ran at 0", &[("d", "unplayed")]),
                 Settlement::Unsettled,
             ),
             (
                 CorpusRoot::Fixture,
-                "@[ runs(\"ran at 1\"), traces(decomposes(c, event(left, 0))) ] def a = 3 ;",
+                "@[ runs(\"ran at 1\"), traces(decomposes c (event left 0)) ] def a = 3 ;",
                 tracing("ran at 0", &[("c", "event(left, 0)")]),
                 Settlement::Unsettled,
             ),
             (
                 CorpusRoot::Fixture,
-                "@[ runs(\"ran at 0\"), traces(decomposes(c, event(left, 0))), traces(primes(d, 0)) \
+                "@[ runs(\"ran at 0\"), traces(decomposes c (event left 0)), traces(primes d 0) \
                  ] def a = 3 ;",
                 tracing("ran at 0", &[("c", "event(left, 0)"), ("d", "unplayed")]),
                 Settlement::Unsettled,
@@ -3562,9 +3562,9 @@ data NatUnits : Type where {{
     | Zero : NatUnits
     | Succ : (n : NatUnits) --> NatUnits
     oper add : (m : NatUnits, n : NatUnits) --> NatUnits;
-    rule : add(Zero, n) ==> n;
+    rule : add Zero n ==> n;
     {rules}
-    rule : add(Succ(m), n) ==> Succ(add(m, n));
+    rule : add (Succ m) n ==> Succ (add m n);
 }}"#
             )
         };
@@ -3798,7 +3798,7 @@ data NatUnits : Type where {{
         let report = settled(
             CorpusRoot::Fixture,
             SourceText::from(
-                r#"module Mk(C : #{ zero : Integer }) where { @[ checks ] def seed = C.zero ; } module Bare where { @[ checks ] def other = 1 ; } @[ refuses("UnknownMember") ] module Applied = Mk(Bare) ; @[ refuses("UnresolvedName") ] def b = z ;"#,
+                r#"module Mk(C : *{ zero : Integer }) where { @[ checks ] def seed = C.zero ; } module Bare where { @[ checks ] def other = 1 ; } @[ refuses("UnknownMember") ] module Applied = Mk(Bare) ; @[ refuses("UnresolvedName") ] def b = z ;"#,
             ),
         );
         let unsettled: Vec<_> = report
@@ -3839,13 +3839,13 @@ data NatUnits : Type where {{
                 r#"theory Idem where {
                   sort T : Type;
                   oper f : (x : T) --> T;
-                  rule idem : f(f(x)) <=> f(x);
+                  rule idem : f (f x) <=> f x;
                 }
                 module Bad : Model(Idem) where {
                   type T = Bool;
-                  def f(x : Bool) -> Bool { match x { true => false, false => true } }
+                  def f(x : Bool) -> Bool { match x { | true => false | false => true } }
                   @[ refuses("EndpointMismatch") ]
-                  def idem(x : Bool) -> Path[.A = Bool](f(f(x)), f(x)) { Path.here(f(x)) }
+                  def idem(x : Bool) -> Path[.A = Bool](f (f x), f x) { Path.here (f x) }
                 }"#,
                 RefusalName::EndpointMismatch,
             ),
@@ -4201,9 +4201,9 @@ data NatUnits : Type where {{
           sort M : Type;
           oper one : () --> M;
           oper mul : (x : M, y : M) --> M;
-          rule unitL : mul(one(), x) <=> x;
-          rule unitR : mul(x, one()) <=> x;
-          rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));
+          rule unitL : mul (one ()) x <=> x;
+          rule unitR : mul x (one ()) <=> x;
+          rule assoc : mul (mul x y) z <=> mul x (mul y z);
         }";
         let rows = [
             (RefusalName::RuleNotPresentable, Settlement::Settled),

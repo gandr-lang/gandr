@@ -19,189 +19,173 @@ import std.process;
 /// The operation's clause resumes the body, whose value passes through the
 /// `pure` clause.
 @[ runs("101") ]
-def resumed() -> Integer {
+def resumed() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit(5);
+    c.exit 5;
     pure 1
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => k(unit)
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => k *{}
   }
-}
 
 /// A `return` in the handled body leaves the handler, the `pure` clause
 /// skipped.
-def left(n : Integer) -> Integer {
+def left(n : Integer) -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit(1);
+    c.exit 1;
     return n
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => k(unit)
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => k *{}
   }
-}
 
 /// `left` at five, by a run.
 @[ runs("5") ]
-def left_run() -> Integer { become left(5) }
+def left_run() -> Integer { become left 5 }
 
 /// The operation's clause discards its continuation and answers for the
 /// handler.
 @[ runs("9") ]
-def discarded() -> Integer {
+def discarded() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit(5);
+    c.exit 5;
     return 1
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => pure 9
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => pure 9
   }
-}
 
 /// A `return` inside two handlers leaves both.
 @[ runs("4") ]
-def nested() -> Integer {
+def nested() -> Integer =
   handle a : std.process.Exit.Eff {
     handle b : std.process.Exit.Eff {
       return 4
     } with {
-      pure(x) => pure x + 10,
-      oper exit(code, k) => k(unit)
+      | pure(x) => pure x + 10
+      | oper exit(code, k) => k *{}
     }
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => k(unit)
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => k *{}
   }
-}
 
 /// A `case` whose one arm returns and whose other arm continues the body.
-def branch(n : Integer) -> Integer {
+def branch(n : Integer) -> Integer =
   handle c : std.process.Exit.Eff {
     let m = match n {
-      0 => return 8,
-      _ => pure n,
+      | 0 => return 8
+      | _ => pure n
     };
-    c.exit(2);
+    c.exit 2;
     pure m + 1
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => k(unit)
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => k *{}
   }
-}
 
 /// The returning arm, by a run.
 @[ runs("8") ]
-def branch_zero() -> Integer { become branch(0) }
+def branch_zero() -> Integer { become branch 0 }
 
 /// The continuing arm, through the operation and the `pure` clause.
 @[ runs("102") ]
-def branch_one() -> Integer { become branch(1) }
+def branch_one() -> Integer { become branch 1 }
 
 /// A loop's `break` gives the loop's value to the body, which continues. The
 /// loop may run forever, so the row states `Partial`, and the handler of
 /// `std.process.Exit.Eff` leaves it there.
 @[ runs("105") ]
-def looped() -> [Partial] Integer {
+def looped() -> [Partial] Integer =
   handle c : std.process.Exit.Eff {
     let v = loop {
       break(5)
     };
     pure v
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => k(unit)
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => k *{}
   }
-}
 
 /// A `return` inside a loop leaves the loop and the handler.
 @[ runs("2") ]
-def looped_out() -> [Partial] Integer {
+def looped_out() -> [Partial] Integer =
   handle c : std.process.Exit.Eff {
     loop {
       return 2
     }
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => k(unit)
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => k *{}
   }
-}
 
 /// An operation clause that returns answers for the handler.
 @[ runs("9") ]
-def answered() -> Integer {
+def answered() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit(1);
+    c.exit 1;
     pure 1
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => 9
+    | pure(x) => pure x
+    | oper exit(code, k) => 9
   }
-}
 
 /// A continuation's type is written `Stack(C, D)`, the computation it resumes
 /// from and the one it ends as; a clause hands its continuation on by it.
-def dropped(k : Stack(-F Unit, -F Integer)) -> Integer {
+def dropped(k : Stack(-F Unit, -F Integer)) -> Integer =
   9
-}
 
 /// A clause hands its continuation to a function stating the continuation's
 /// type, and the handled body answers what that function returns.
 @[ runs("9") ]
-def handed_on() -> Integer {
+def handed_on() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit(5);
+    c.exit 5;
     return 1
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => dropped(k)
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => dropped k
   }
-}
 
 /// A function stating a continuation's type resumes the continuation it is
 /// handed, as the clause that bound it would.
-def resume_stack(j : Stack(-F Unit, -F Integer)) -> Integer {
-  j(unit)
-}
+def resume_stack(j : Stack(-F Unit, -F Integer)) -> Integer =
+  j *{}
 
 /// A clause hands its continuation to `resume_stack`, which resumes the body;
 /// the body's value passes through the `pure` clause, as in `resumed`.
 @[ runs("101") ]
-def resumed_on() -> Integer {
+def resumed_on() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit(5);
+    c.exit 5;
     pure 1
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => resume_stack(k)
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => resume_stack k
   }
-}
 
 /// A type member may abbreviate a continuation's type: a function stating the
 /// member resumes the continuation it is handed as one stating the stack does.
-module Conts where {
+module Conts where
   type K = Stack(-F Unit, -F Integer);
 
   /// `resume_stack`, through the member.
-  def aliased(j : K) -> Integer {
-    j(unit)
-  }
-}
+  def aliased(j : K) -> Integer =
+    j *{}
 
 /// A clause hands its continuation to the function stating the member, which
 /// resumes the body.
 @[ runs("101") ]
-def resumed_aliased() -> Integer {
+def resumed_aliased() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit(5);
+    c.exit 5;
     pure 1
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => Conts.aliased(k)
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => Conts.aliased k
   }
-}
 
 /// A continuation runs from a computation, never from a value type.
 @[ refuses("OutOfFragment.WrongSort") ]
-def from_a_value(k : Stack(Integer, -F Integer)) -> -F Integer {
+def from_a_value(k : Stack(Integer, -F Integer)) -> -F Integer =
   return 9
-}

@@ -16,28 +16,28 @@ import std.list (List);
 
 /// Reflexivity at a bridge is refused, because a bridge has no reflexivity.
 @[ refuses("ShapeMismatch") ]
-def fourHere : Bridge(4, 4) = Path.here(4);
+def fourHere : Bridge(4, 4) = Path.here 4;
 
 /// Two lists of different digits are refused, because their fibre is empty.
 @[ refuses("TypeMismatch") ]
-def otherDigits : Bridge[.A = List(Integer)](#[1], #[2]) = (unit, unit);
+def otherDigits : Bridge[.A = List(Integer)](#[1], #[2]) = *{*{}, *{}};
 
 /// `Hidden` seals the unit type and states no identity system.
-module Hidden :> #{ type T, one : T } where {
+module Hidden :> *{ type T, one : T } where {
   /// The sealed points.
   @[ checks ]
   type T = Unit;
 
   /// The one point.
   @[ checks ]
-  def one = unit;
+  def one = *{};
 }
 
 /// A bridge at the sealed type is refused, because the seal hides its
 /// representation.
 @[ refuses("BridgeAtSealedType") ]
-def hiddenOne : Bridge(Hidden.one, Hidden.one) = unit;
+def hiddenOne : Bridge(Hidden.one, Hidden.one) = *{};
 
 /// A bridge at a sum of three summands is refused, because the fold reads two.
 @[ refuses("OutsideFold") ]
-def threeWay : Bridge(+{.0 = unit}, +{.0 = unit}) = unit;
+def threeWay : Bridge(+{.0 = *{}}, +{.0 = *{}}) = *{};

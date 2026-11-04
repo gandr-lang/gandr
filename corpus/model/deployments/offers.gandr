@@ -19,7 +19,7 @@ import std.io;
 
 /// What a role at `far` reads and writes: values held by key. Each operation
 /// hands what it reads to what runs after, so a model answers it.
-pub theory Store where {
+pub theory Store where
   /// The store holds values of this sort.
   sort V : Type+;
   /// What a computation over the store answers.
@@ -28,7 +28,6 @@ pub theory Store where {
   oper get : (key : V, k : pi+ (v : V). C) --> C;
   /// Holds `value` at `key`.
   oper put : (key : V, value : V, k : C) --> C;
-}
 
 /// The world the entry runs at.
 pub world near;
@@ -38,7 +37,6 @@ pub world near;
 pub world far requires [std.io.Console.Eff, store : Store with sort V = String];
 
 /// `far` computes forty-two and hands it back.
-@[ entry((near, far)), runs("42") ]
-def main() -> Integer {
+@[ entry(*{near, far}), runs("42") ]
+def main() -> Integer =
   migrate [far] { pure (6 * 7) }
-}

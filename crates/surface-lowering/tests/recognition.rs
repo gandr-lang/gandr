@@ -706,7 +706,7 @@ fn a_module_or_functor_shadowing_a_builtin_is_rejected_under_policy()
     for (written, at) in [
         ("module Prim where { def x = 1 ; }", site(7_usize, 11_usize)),
         (
-            "module Prim(S : #{ x : Integer }) :> #{ y : Integer } where { def y = S.x ; }",
+            "module Prim(S : *{ x : Integer }) :> *{ y : Integer } where { def y = S.x ; }",
             site(7_usize, 11_usize),
         ),
     ] {

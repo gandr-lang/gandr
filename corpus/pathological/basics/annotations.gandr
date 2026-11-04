@@ -10,17 +10,16 @@ def misstated = ("three" : Integer);
 
 /// A returned value its annotation misstates.
 @[ refuses("TypeMismatch") ]
-def misreturned() -> Integer {
+def misreturned() -> Integer =
   ("three" : Integer)
-}
 
 /// A lambda whose parameter states a type the arrow it answers does not take.
 @[ refuses("TypeMismatch") ]
-def mistyped : Integer => Integer = thunk { fun (x : String) { 1 } };
+def mistyped : Integer -> Integer = thunk { fun (x : String) { 1 } };
 
 /// An annotation inside a pair that misstates its component.
 @[ refuses("TypeMismatch") ]
-def inner = (("three" : Integer), 1);
+def inner = *{("three" : Integer), 1};
 
 /// An annotation its definition's signature disagrees with.
 @[ refuses("TypeMismatch") ]
@@ -29,10 +28,9 @@ def disagreeing : String = (3 : Integer);
 /// A pair a bind runs, its pattern annotated with a product the pair does not
 /// have.
 @[ refuses("TypeMismatch") ]
-def splitWrong() -> Integer {
-  let (y, z) : Integer * String = (1, 2);
+def splitWrong() -> Integer =
+  let *{y, z} : Integer * String = *{1, 2};
   y
-}
 
 /// An annotated value written as a statement, where no value stands.
 @[ refuses("OutOfFragment.WrongSort") ]

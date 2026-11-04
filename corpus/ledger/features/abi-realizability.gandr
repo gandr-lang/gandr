@@ -28,33 +28,27 @@ import "../../model/interop/boundary/function-row.gandr";
 
 /// The niche at a reference to an int and the tagged layout: equivalent at
 /// every heap.
-def intLayouts(h : Heap) -> #{w : Nat, ok : vOpt(vInt, w, h)} ≃ #{
+def intLayouts(h : Heap) -> *{w : Nat, ok : vOpt(vInt, w, h)} ≃ *{
   r : Tagged,
   ok : vTag(vInt, r, h)
-} {
-  nicheTaggedEquiv(vInt, h)
-}
+} =
+  nicheTaggedEquiv vInt h
 
 /// `Option<&int>` passed to `deref_or`: `{V_opt(w)} deref_or(w, d)
 /// {V_opt(w)}`.
-def passed(w : Nat, d : Nat, h : Heap) -> vOpt(vInt, w, h) => derefOrWp(w, d, keptOpt, h) {
-  derefOrMeets(w, d, h)
-}
+def passed(w : Nat, d : Nat, h : Heap) -> vOpt(vInt, w, h) -> derefOrWp(w, d, keptOpt, h) =
+  derefOrMeets w d h
 
 /// `fn f(x: Option<&u32>, n: u32) -> u32` as rustc built it, admitted
 /// against its row.
 @[ runs("Admitted") ]
-def rowAdmitted() -> Admission {
-  admit(
-    Declared(
-      Param("x", Printed(8, 8, true, false), Param("n", Printed(4, 4, false, false), NoParam)),
-      Printed(
-        4,
-        4,
-        false,
+def rowAdmitted() -> Admission =
+  admit
+    (Declared
+      (Param "x" (Printed 8 8 true false) (Param "n" (Printed 4 4 false false) NoParam))
+      (Printed
+        4
+        4
         false
-      )
-    ),
+        false))
     fRow
-  )
-}

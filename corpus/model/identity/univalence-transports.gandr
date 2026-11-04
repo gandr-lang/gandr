@@ -14,35 +14,32 @@ import "./univalence.gandr";
 
 /// `ua` after `idtoequiv` transports forward as the path does: one function,
 /// at every path.
-def uaEtaForward(a : Type, b : Type, p : Path[.A = Type](a, b)) -> Path[.A = a => b](
-  fun (x) { fwdAlong(a, b, ua(idtoequiv(a, b, p)), x) },
-  fun (x) { fwdAlong(a, b, p, x) }
-) {
-  Path.here(fun (x) { fwdAlong(a, b, p, x) })
-}
+def uaEtaForward(a : Type, b : Type, p : Path[.A = Type](a, b)) -> Path[.A = a -> b](
+  fun (x) { fwdAlong a b (ua (idtoequiv a b p)) x },
+  fun (x) { fwdAlong a b p x }
+) =
+  Path.here (fun (x) { fwdAlong a b p x })
 
 /// `ua` after `idtoequiv` transports back as the path does: one function, at
 /// every path.
-def uaEtaBackward(a : Type, b : Type, p : Path[.A = Type](a, b)) -> Path[.A = b => a](
-  fun (y) { bwdAlong(a, b, ua(idtoequiv(a, b, p)), y) },
-  fun (y) { bwdAlong(a, b, p, y) }
-) {
-  Path.here(fun (y) { bwdAlong(a, b, p, y) })
-}
+def uaEtaBackward(a : Type, b : Type, p : Path[.A = Type](a, b)) -> Path[.A = b -> a](
+  fun (y) { bwdAlong a b (ua (idtoequiv a b p)) y },
+  fun (y) { bwdAlong a b p y }
+) =
+  Path.here (fun (y) { bwdAlong a b p y })
 
 /// `idtoequiv` after `ua` transports forward as the record's map: one
 /// function, at every record.
 def idtoequivUaForward(
   a : Type,
   b : Type,
-  t : a => b,
-  g : b => a,
-  s : (x : a) => Path[.A = a](g(t(x)), x),
-  h : b => a,
-  r : (y : b) => Path[.A = b](t(h(y)), y)
-) -> Path[.A = a => b](
-  fun (x) { fwdAlong(a, b, ua((t, ((g, s), (h, r)))), x) },
+  t : a -> b,
+  g : b -> a,
+  s : (x : a) -> Path[.A = a](g (t x), x),
+  h : b -> a,
+  r : (y : b) -> Path[.A = b](t (h y), y)
+) -> Path[.A = a -> b](
+  fun (x) { fwdAlong a b (ua (*{t, *{*{g, s}, *{h, r}}})) x },
   t
-) {
-  Path.here(t)
-}
+) =
+  Path.here t

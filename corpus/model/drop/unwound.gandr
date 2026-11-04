@@ -17,40 +17,37 @@ import std.process;
 
 /// A declaration owed its body: a run that calls it is blamed.
 @[ owes(1) ]
-def later : Integer => Unit;
+def later : Integer -> Unit;
 
 /// The rest of the scope abandoned while an access's view is open: the
 /// access's unwind runs, and its call of `later` blames the run.
 @[ runs("blame: `later` is owed its body") ]
-def unwound() -> Integer {
-  var x = 1;
+def unwound() -> Integer =
+  var x = 1
   let r : Integer = handle c : std.process.Exit.Eff {
-    access x as v { let _ = c.exit(1); resume(v, 5) } unwind { later(1) };
+    access x as v { let _ = c.exit 1; resume(v, 5) } unwind { later 1 };
     pure 0
   } with {
-    pure(y) => pure y,
-    oper exit(code, k) => { abandon(k); pure 7 }
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
   };
   pure x
-}
 
 /// A list built where it runs.
-def built(a : Integer) -> List(Integer) {
-  pure cons(a, cons(2, nil))
-}
+def built(a : Integer) -> List(Integer) =
+  pure cons a (cons 2 nil)
 
 /// An abandoned access whose unwind reads a list the scope reads again after:
 /// the unwind and the rest of the scope each hold the list.
 @[ runs("cons(9, cons(1, cons(2, nil)))") ]
-def unwound_kept() -> List(Integer) {
-  let ys = built(1);
-  var x = 1;
+def unwound_kept() -> List(Integer) =
+  let ys = built 1
+  var x = 1
   let r : Integer = handle c : std.process.Exit.Eff {
-    access x as v { let _ = c.exit(1); resume(v, 5) } unwind { let _ = ys; pure unit };
+    access x as v { let _ = c.exit 1; resume(v, 5) } unwind { let _ = ys; pure *{} };
     pure 0
   } with {
-    pure(y) => pure y,
-    oper exit(code, k) => { abandon(k); pure 7 }
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
   };
-  pure cons(9, ys)
-}
+  pure cons 9 ys

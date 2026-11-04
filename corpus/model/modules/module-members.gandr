@@ -9,7 +9,7 @@ def seed = 40;
 
 /// The facts, with one nested module; the signature hides `hidden_reply`,
 /// `base` and `inner.hidden`.
-module Facts : #{ inner : #{answer : Integer}, total : Integer } where {
+module Facts : *{ inner : *{answer : Integer}, total : Integer } where {
   /// A shell command's reply; the lowering admits no shell block yet.
   @[ refuses("OutOfFragment.shell_block") ]
   def hidden_reply = #!{ printf 'hidden module member ran\n'; };
@@ -19,7 +19,7 @@ module Facts : #{ inner : #{answer : Integer}, total : Integer } where {
   @[ refuses("NotSynthesisable") ]
   def base = seed + hidden_reply.exit_code + 1;
   /// A nested module whose `hidden` the signature leaves out.
-  module inner : #{ answer : Integer } where {
+  module inner : *{ answer : Integer } where {
     /// The enclosing module's base, whose type is unknown while `base` is
     /// refused.
     @[ refuses("UnknownConstant") ]
@@ -44,4 +44,4 @@ def after = Facts.total + 1;
 /// Both gathered in a record; `after` is refused above, so it names a
 /// declaration whose type is not known.
 @[ refuses("UnknownConstant") ]
-def gathered = #{after = after, total = Facts.total};
+def gathered = *{after = after, total = Facts.total};

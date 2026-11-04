@@ -2,5 +2,5 @@ data NatPred : Type where {
   | Zero : NatPred
   | Succ : (n : NatPred) --> NatPred
   oper pred : (n : NatPred) --> NatPred;
-  rule : pred(Succ(m)) ==> m;
+  rule : pred (Succ m) ==> m;
 }

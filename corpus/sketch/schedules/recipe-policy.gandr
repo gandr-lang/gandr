@@ -13,14 +13,14 @@ import std.build (Recipe, Program);
 import std.par (sequential, latent);
 
 /// A tool built with its cuts free to run apart under `latent`.
-def tool : Recipe = #{
-  .programs = #[Program.of(main)],
+def tool : Recipe = *{
+  .programs = #[Program.of main],
   .schedule = latent
 }
 
 /// The same tool built for a deterministic timing profile. Its cuts run in
 /// order, and nothing spawns.
-def toolSequential : Recipe = #{
-  .programs = #[Program.of(main)],
+def toolSequential : Recipe = *{
+  .programs = #[Program.of main],
   .schedule = sequential
 }

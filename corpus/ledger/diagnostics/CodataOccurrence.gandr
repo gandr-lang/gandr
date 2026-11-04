@@ -2,7 +2,6 @@
 ///
 /// - see: #2188
 @[ refuses("CodataOccurrence") ]
-codata Swap(a : Type, b : Type) : Type[-] where {
+codata Swap(a : Type, b : Type) : Type[-] where
   head : a;
   tail : Swap(b, a);
-}

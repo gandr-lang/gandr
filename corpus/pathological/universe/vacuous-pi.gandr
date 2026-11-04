@@ -7,20 +7,17 @@
 
 /// Natural numbers, free: every constructor term is its own value.
 @[ checks, form(explicit) ]
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
 
 /// A family that reads its argument: the naturals at zero, and the functions
 /// on them at every successor.
 @[ checks ]
-def pick(n : Nat) -> -F Type {
-  match n {
-    Zero => return Nat,
-    Succ(m) => return (+U (Nat -> -F Nat))
-  }
-}
+def pick(n : Nat) -> -F Type =
+  match n
+    | Zero => return Nat
+    | Succ(m) => return (+U (Nat -> -F Nat))
 
 /// A function over `pick` is no function to the naturals: `pick(x)` names
 /// `x`, so the dependent arrow is not the plain one.

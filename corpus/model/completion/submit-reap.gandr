@@ -7,13 +7,12 @@
 import "./ring-base.gandr";
 
 /// A read submitted to the mock kernel and its one completion reaped.
-def submitThenReap() -> Unit {
+def submitThenReap() -> Unit =
   let ring = fork (kernel : Ring.Submission) {
     let sqe = recv(kernel);
     send(kernel, Ring.done);
     close(kernel)
   };
-  send(ring, Ring.read);
-  let cqe = recv(ring);
+  send(ring, Ring.read)
+  let cqe = recv(ring)
   close(ring)
-}

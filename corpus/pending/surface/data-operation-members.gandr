@@ -7,7 +7,7 @@ data NatOp : Type where {
 data NatRule : Type where {
   | Zero : NatRule
   | Succ : (n : NatRule) --> NatRule
-  rule : id(Zero) ==> Zero;
+  rule : id Zero ==> Zero;
 }
 
 data NatRetired : Type where {

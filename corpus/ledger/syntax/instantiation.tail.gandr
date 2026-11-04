@@ -3,6 +3,5 @@
 ///
 /// - owes: #1497
 @[ refuses("OutOfFragment.instantiation_expression.computation") ]
-def rec tailing(n : Integer) -> -F Integer {
-  return tailing[tail](n)
-}
+def rec tailing(n : Integer) -> -F Integer =
+  return tailing[tail] n

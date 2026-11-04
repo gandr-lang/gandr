@@ -11,24 +11,20 @@
 def joinedPaths(A : Type, x : A, y : A, z : A, p : Path(x, y), q : Path(y, z)) -> Path(
   x,
   z
-) {
-  Path.step(p, q)
-}
+) =
+  Path.step p q
 
 /// Reflexivity, by name.
-def zero(A : Type, x : A) -> Path(x, x) {
-  Path.here(x)
-}
+def zero(A : Type, x : A) -> Path(x, x) =
+  Path.here x
 
 /// Reflexivity, through `zero`.
-def zero2(A : Type, x : A) -> Path(x, x) {
-  zero(A, x)
-}
+def zero2(A : Type, x : A) -> Path(x, x) =
+  zero A x
 
 /// A call that runs to reflexivity in two steps, then `p`, is `p`.
 def twoStepsThen(A : Type, x : A, y : A, p : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](
-  joinedPaths(A, x, x, y, zero2(A, x), p),
+  joinedPaths A x x y (zero2 A x) p,
   p
-) {
-  Path.here(p)
-}
+) =
+  Path.here p

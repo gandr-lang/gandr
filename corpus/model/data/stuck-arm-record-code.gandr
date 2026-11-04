@@ -12,60 +12,47 @@ import "./data-base.gandr";
 import "./stuck-arm-call.gandr";
 
 /// The record type over a call that pairs a natural with evidence that `h` is empty.
-def evidenced(h : Heap) -> Type {
-  return type(#{v : Nat, ok : emp(h)})
-}
+def evidenced(h : Heap) -> Type =
+  return type(*{v : Nat, ok : emp(h)})
 
 /// What a natural owes of a heap: nothing at zero, `evidenced` at a successor.
-def owe(h : Heap, x : Nat) -> Type {
-  match x {
-    Zero => return Unit,
-    Succ(_s) => evidenced(h)
-  }
-}
+def owe(h : Heap, x : Nat) -> Type =
+  match x
+    | Zero => return Unit
+    | Succ(_s) => evidenced h
 
 /// The dependent record this definition names, which pairs each natural with what it owes of `h`.
-def wpR(h : Heap) -> Type {
-  return type(#{w : Nat, ok : owe(h, w)})
-}
+def wpR(h : Heap) -> Type =
+  return type(*{w : Nat, ok : owe(h, w)})
 
 /// Zero and the unit check against the definition's record type.
-def proof(u : Unit) -> wpR(Emp) {
-  (Zero, u)
-}
+def proof(u : Unit) -> wpR(Emp) =
+  *{Zero, u}
 
 /// A write: a natural, evidence that `h` is empty, and the continuation at the natural.
-def write(h : Heap, k : Nat => Type) -> Type {
-  return type(#{v : Nat, ok : emp(h), next : k(v)})
-}
+def write(h : Heap, k : Nat -> Type) -> Type =
+  return type(*{v : Nat, ok : emp(h), next : k(v)})
 
 /// What a read owes at the natural it reads: the rest at zero, a write at a successor.
-def matchRead(h : Heap, rest : Type, w : Nat) -> Type {
-  match w {
-    Zero => rest,
-    Succ(_s) => write(h, fun (_v) { return Unit })
-  }
-}
+def matchRead(h : Heap, rest : Type, w : Nat) -> Type =
+  match w
+    | Zero => rest
+    | Succ(_s) => write h (fun (_v) { return Unit })
 
 /// A read: a natural and what it owes.
-def read(h : Heap, rest : Type) -> Type {
-  return type(#{w : Nat, ok : matchRead(h, rest, w)})
-}
+def read(h : Heap, rest : Type) -> Type =
+  return type(*{w : Nat, ok : matchRead(h, rest, w)})
 
 /// `n` reads in turn, a recursive fold.
-def rec fold(n : Nat, h : Heap) -> Type {
-  match n {
-    Zero => return Unit,
-    Succ(m) => read(h, fold[<](m, h))
-  }
-}
+def rec fold(n : Nat, h : Heap) -> Type =
+  match n
+    | Zero => return Unit
+    | Succ(m) => read h (fold[<] m h)
 
 /// Two reads, each zero, check against the reads written out.
-def twoReads(u : Unit) -> read(Emp, read(Emp, Unit)) {
-  (Zero, (Zero, u))
-}
+def twoReads(u : Unit) -> read(Emp, read(Emp, Unit)) =
+  *{Zero, *{Zero, u}}
 
 /// The fold of two reads converts with the reads written out.
-def foldedReads(_u : Unit) -> (read(Emp, read(Emp, Unit))) => fold(Succ(Succ(Zero)), Emp) {
+def foldedReads(_u : Unit) -> (read(Emp, read(Emp, Unit))) -> fold(Succ(Succ(Zero)), Emp) =
   return fun (h) { h }
-}

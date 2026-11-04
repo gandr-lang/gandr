@@ -17,28 +17,26 @@
 def hasty(operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
-}) -> [Partial] Unit {
+}) -> [Partial] Unit =
   loop {
     offer(operator) {
-      report => { continue },
-      retire => { let last = recv(operator); close(operator); break }
+      | report => { continue }
+      | retire => { let last = recv(operator); close(operator); break }
     }
   }
-}
 
 /// A desk that leaves the loop with the endpoint open.
 @[ refuses("ArmsDisagree") ]
 def abandoned(operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
-}) -> [Partial] Unit {
+}) -> [Partial] Unit =
   loop {
     offer(operator) {
-      report => { let next = recv(operator); continue },
-      retire => { let last = recv(operator); break }
+      | report => { let next = recv(operator); continue }
+      | retire => { let last = recv(operator); break }
     }
   }
-}
 
 /// A desk that runs its next pass without acting on the endpoint when told
 /// to wait.
@@ -46,14 +44,12 @@ def abandoned(operator : mu open. &{
 def idle(waiting : Bool, operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
-}) -> Unit {
+}) -> Unit =
   loop {
-    match waiting {
-      true => continue,
-      false => offer(operator) {
-        report => { let next = recv(operator); continue },
-        retire => { let last = recv(operator); close(operator); break }
+    match waiting
+      | true => continue
+      | false => offer(operator) {
+        | report => { let next = recv(operator); continue }
+        | retire => { let last = recv(operator); close(operator); break }
       }
-    }
   }
-}

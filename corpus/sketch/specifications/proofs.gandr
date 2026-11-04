@@ -20,30 +20,30 @@ import std.math.nat (sumAppend, sumNonNegative);
 pub def total(xs : List(Nat)) -> Nat #spec{
   ensures s {
     | s == sum(xs) with {
-        sumAppend(take(length(xs), xs), Nil)
+        sumAppend (take (length xs) xs) Nil
       }
     | s >= 0 with sumNonNegative(xs)
   }
 } {
-  fold(xs, 0, fun (acc, x) { acc + x })
+  fold xs 0 (fun (acc, x) { acc + x })
 }
 
 /// Sorts a list and keeps its length and elements, which one lemma proves.
 pub def sortKeeps(xs : List(Integer)) -> List(Integer) #spec{
   ensures ys {
-    | length(ys) == length(xs)
-    | permutation(ys, xs)
+    | length(ys) == length xs
+    | permutation(ys, xs
   } with mergeSortPermutes(xs)
 } {
-  mergeSort(xs)
+  mergeSort xs
 }
 
 /// The first failure of a validation, under the theory of exceptions, which
 /// has no entry state, so a ghost binding names the input's length.
 pub def firstInvalid(rows : List(Row)) -> [Raise(Invalid)] Unit #spec{
-  ghost n = length(rows)
+  ghost n = length rows
   requires { n > 0 }
-  ensures _ { n == length(rows) }
+  ensures _ { n == length rows }
 } {
-  forEach(rows, fun (row) { if !valid(row) { raise(Invalid(row)) } })
+  forEach(rows, fun (row) { if !valid(row) { raise (Invalid row) } })
 }

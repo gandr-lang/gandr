@@ -28,7 +28,7 @@ import std.spec (Spec);
 import std.mem (Heap);
 
 /// The word behind a pointer that may be null, or a default.
-pub def derefOr(p : Ptr(i32), d : i32) -> Spec(State(Heap), i32) {
+pub def derefOr(p : Ptr(i32), d : i32) -> Spec(State(Heap), i32) =
   #spec{
     ghost v : i32
     requires { p |-> v }
@@ -37,17 +37,16 @@ pub def derefOr(p : Ptr(i32), d : i32) -> Spec(State(Heap), i32) {
       | p |-> v
     }
   }
-}
 
 /// The vendor's implementation of `derefOr`.
 @[realizes(derefOr)]
-@[trusted(by: assumed, note: "the vendor's documented contract, demo 2.4")]
+@[trusted(by : assumed, note : "the vendor's documented contract, demo 2.4")]
 extern C from "lib:demo" {
   fun deref_or(p : Ptr(i32), d : i32) -> i32;
 }
 
 /// A value held between two bounds.
-pub def clamped(x : i32, lo : i32, hi : i32) -> Spec(Pure, i32) {
+pub def clamped(x : i32, lo : i32, hi : i32) -> Spec(Pure, i32) =
   #spec{
     requires { lo <= hi }
     ensures r {
@@ -55,16 +54,14 @@ pub def clamped(x : i32, lo : i32, hi : i32) -> Spec(Pure, i32) {
       | r <= hi
     }
   }
-}
 
 /// A Rust crate's clamp, until the gandr one below replaces it.
 @[realizes(clamped)]
-@[trusted(by: tested("demo::tests::clamp"), note: "the crate's property tests")]
+@[trusted(by : tested("demo::tests::clamp"), note : "the crate's property tests")]
 extern Rust from "crate:demo" {
   fun clamp(x : i32, lo : i32, hi : i32) -> i32;
 }
 
 /// The same clamp written in gandr, with no foreign body left to trust.
-pub def clampLocal(x : i32, lo : i32, hi : i32) -> clamped(x, lo, hi) {
-  max(lo, min(x, hi))
-}
+pub def clampLocal(x : i32, lo : i32, hi : i32) -> clamped(x, lo, hi) =
+  max lo (min x hi)

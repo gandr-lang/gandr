@@ -1,6 +1,5 @@
 /// `HeldCaptured`: a held value named where its holding may run other than once.
 @[ runs("0"), refuses("HeldCaptured") ]
-def stash() -> -F Integer {
-  var c = 0;
+def stash() -> -F Integer =
+  var c = 0
   force thunk { pure c }
-}

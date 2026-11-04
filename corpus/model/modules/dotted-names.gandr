@@ -4,26 +4,23 @@
 // member, and a model reads the theory by its path.
 
 /// A shape with a label, declared in `Kit`.
-theory Kit.Labelled where {
+theory Kit.Labelled where
   /// The label.
   oper label : String;
-}
 
 /// Tools beside the shape, in the same `Kit`.
-module Kit.Tools where {
+module Kit.Tools where
   /// A breadth.
   def breadth = 4;
-}
 
 /// A model of the shape, read by its path.
-module Tag : Model(Kit.Labelled) where {
+module Tag : Model(Kit.Labelled) where
   /// Its label.
   def label : String = "tag";
-}
 
 /// The breadth, through the opened module's path.
 def breadth = Kit.Tools.breadth;
 
 /// The label and the breadth, gathered.
 @[ runs("#{.breadth = 4, .label = \"tag\"}") ]
-def labelled_breadth = #{label = Tag.label, breadth = breadth};
+def labelled_breadth = *{label = Tag.label, breadth = breadth};

@@ -6,12 +6,11 @@
 def greeting = "the value zone";
 
 /// The string paired with itself.
-def pair = (greeting, greeting);
+def pair = *{greeting, greeting};
 
 /// The identity on integers.
-def identity(x : Integer) -> Integer {
+def identity(x : Integer) -> Integer =
   x
-}
 
 /// A number at a stated width.
 def wide = 1u32;

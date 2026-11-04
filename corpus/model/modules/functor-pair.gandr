@@ -9,7 +9,7 @@
 
 /// A counter sealed by its signature: an abstract type, its zero, a step and
 /// a reader.
-pub module Seed :> #{ type T, zero : T, next : T => T, read : T => Integer } where {
+pub module Seed :> *{ type T, zero : T, next : T -> T, read : T -> Integer } where {
   type T = Integer;
   /// The counter's zero.
   @[ runs("0") ]
@@ -24,17 +24,16 @@ pub module Seed :> #{ type T, zero : T, next : T => T, read : T => Integer } whe
 
 /// A functor from any counter to a sealed counter of its own: its seed,
 /// step and reader are the argument's.
-module MkCounter(S : #{
+module MkCounter(S : *{
   type T,
   zero : T,
-  next : T => T,
-  read : T => Integer
-}) :> #{ type T, seed : T, step : T => T, read : T => Integer } where {
+  next : T -> T,
+  read : T -> Integer
+}) :> *{ type T, seed : T, step : T -> T, read : T -> Integer } where
   type T = S.T;
   def seed = S.zero;
   def step = S.next;
   def read = S.read;
-}
 
 /// The functor's first application.
 module A = MkCounter(Seed);
@@ -44,8 +43,8 @@ module B = MkCounter(Seed);
 /// One step of the first application, at its own abstract type, which a run
 /// answers opaque at the application's seal.
 @[ runs("⟨opaque at A⟩ : () => A.T") ]
-def a_once() -> A.T { A.step(A.seed) }
+def a_once() -> A.T { A.step A.seed }
 
 /// Two steps of the second application, read back as an integer.
 @[ runs("2") ]
-def b_twice() -> Integer { let one = B.step(B.seed); B.read(B.step(one)) }
+def b_twice() -> Integer { let one = B.step B.seed; B.read (B.step one) }

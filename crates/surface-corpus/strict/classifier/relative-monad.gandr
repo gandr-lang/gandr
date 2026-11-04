@@ -9,10 +9,10 @@ def raw_rel_monad_elided : (Type -> Type[-]) -> Type -> Type -> Type = fun (T) {
   fun (A) { fun (B) { type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } }
 };
 
-def unit_and_bind : raw_rel_monad(fun (X) { type(-F (X * X)) }, Integer, Integer) = (
-  fun (a) { (a, a) },
-  fun (m) { fun (k) { let p = force m; become (force k)(1) } }
-);
+def unit_and_bind : raw_rel_monad(fun (X) { type(-F (X * X)) }, Integer, Integer) = *{
+  fun (a) { *{a, a} },
+  fun (m) { fun (k) { let p = force m; become (force k) 1 } }
+};
 
 def unit_and_bind_elided : raw_rel_monad_elided(
   fun (X) { type(-F (X * X)) },
@@ -20,7 +20,7 @@ def unit_and_bind_elided : raw_rel_monad_elided(
   Integer
 ) = unit_and_bind;
 
-def unit_and_bind_spelled : (Integer => Integer * Integer) * ((
-  () => Integer * Integer,
-  Integer => Integer * Integer
-) => Integer * Integer) = unit_and_bind_elided;
+def unit_and_bind_spelled : (Integer -> Integer * Integer) * ((
+  () -> Integer * Integer,
+  Integer -> Integer * Integer
+) -> Integer * Integer) = unit_and_bind_elided;

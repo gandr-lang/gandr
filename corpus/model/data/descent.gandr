@@ -18,100 +18,82 @@ import "./data-base.gandr";
 
 /// Addition by recursion on the first argument, the second an accumulator
 /// each call grows: `plus(Succ(p), n) = plus(p, Succ(n))`.
-def rec plusFirst(m : Nat, n : Nat) -> Nat {
-  match m {
-    Zero => n,
-    Succ(p) => plusFirst[<](p, Succ(n))
-  }
-}
+def rec plusFirst(m : Nat, n : Nat) -> Nat =
+  match m
+    | Zero => n
+    | Succ(p) => plusFirst[<] p (Succ n)
 
 /// Half a number, rounded down: the inner match takes apart the outer one's
 /// field, so the call on its field still descends on `n`.
-def rec half(n : Nat) -> Nat {
-  match n {
-    Zero => Zero,
-    Succ(m) => match m {
-      Zero => Zero,
-      Succ(q) => Succ(half[<](q))
-    }
-  }
-}
+def rec half(n : Nat) -> Nat =
+  match n
+    | Zero => Zero
+    | Succ(m) => match m
+      | Zero => Zero
+      | Succ(q) => Succ (half[<] q)
 
 /// Fibonacci numbers: the first call rebuilds `Succ(q)` from the inner
 /// match's field, a value below `n` though not one of its fields.
-def rec fib(n : Nat) -> Nat {
-  match n {
-    Zero => Zero,
-    Succ(m) => match m {
-      Zero => Succ(Zero),
-      Succ(q) => plusFirst(fib[<](Succ(q)), fib[<](q))
-    }
-  }
-}
+def rec fib(n : Nat) -> Nat =
+  match n
+    | Zero => Zero
+    | Succ(m) => match m
+      | Zero => Succ Zero
+      | Succ(q) => plusFirst (fib[<] (Succ q)) (fib[<] q)
 
 /// A list reversed onto an accumulator, the element type passed unchanged:
 /// the accumulator each call grows is a constructor written bare, its type
 /// read off the parameter it fills, the element type standing for itself.
-def rec reverseOnto(a : Type, xs : List(a), acc : List(a)) -> List(a) {
-  match xs {
-    Nil => acc,
-    Cons(x, rest) => reverseOnto[<](a, rest, Cons(x, acc))
-  }
-}
+def rec reverseOnto(a : Type, xs : List(a), acc : List(a)) -> List(a) =
+  match xs
+    | Nil => acc
+    | Cons(x, rest) => reverseOnto[<] a rest (Cons x acc)
 
 /// Two lists summed pairwise, a zero in the first skipped: the walk descends
 /// on `xs` and consumes `ys` alongside it, so the call under the match on
 /// `ys` still descends on `xs`, the parameter a match above it takes apart.
-def rec pairwise(xs : List(Integer), ys : List(Integer)) -> List(Integer) {
-  match xs {
-    Nil => Nil,
-    Cons(x, rest) => match x == 0 {
-      true => pairwise[<](rest, ys),
-      false => match ys {
-        Nil => Nil,
-        Cons(y, more) => Cons(x + y, pairwise[<](rest, more))
-      }
-    }
-  }
-}
+def rec pairwise(xs : List(Integer), ys : List(Integer)) -> List(Integer) =
+  match xs
+    | Nil => Nil
+    | Cons(x, rest) => match x == 0
+      | true => pairwise[<] rest ys
+      | false => match ys
+        | Nil => Nil
+        | Cons(y, more) => Cons (x + y) (pairwise[<] rest more)
 
 /// Four.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
-def four : Nat = Succ(three);
+def four : Nat = Succ three;
 
 /// Two and three by the accumulator: five.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
-def five_accumulated : () => Nat = plusFirst(two, three);
+def five_accumulated : () -> Nat = plusFirst two three;
 
 /// Half of four.
 @[ runs("Succ(Succ(Zero))") ]
-def halved : () => Nat = half(four);
+def halved : () -> Nat = half four;
 
 /// The fourth Fibonacci number, three.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def fibbed : () => Nat = fib(four);
+def fibbed : () -> Nat = fib four;
 
 /// Two and three reversed: three, then two.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Nil))") ]
-def reversed : () => List(Nat) = reverseOnto(Nat, Cons(two, Cons(three, Nil)), Nil);
+def reversed : () -> List(Nat) = reverseOnto Nat (Cons two (Cons three Nil)) Nil;
 
 /// One, zero and two summed with ten and twenty: the zero is skipped.
 @[ runs("Cons(11, Cons(22, Nil))") ]
-def sumsSkippingZero : () => List(Integer) = pairwise(
-  Cons(1, Cons(0, Cons(2, Nil))),
-  Cons(10, Cons(20, Nil))
-);
+def sumsSkippingZero : () -> List(Integer) = pairwise
+  (Cons 1 (Cons 0 (Cons 2 Nil)))
+  (Cons 10 (Cons 20 Nil));
 
 /// A recursive definition that makes no recursive call: nothing to descend
 /// on, so it is a definition, and a type naming it unfolds at a constructor.
-def rec isZero(n : Nat) -> Type {
-  match n {
-    Zero => return Unit,
-    Succ(_m) => return Void
-  }
-}
+def rec isZero(n : Nat) -> Type =
+  match n
+    | Zero => return Unit
+    | Succ(_m) => return Void
 
 /// `isZero(Zero)` unfolds to `Unit` in the checker and the kernel alike.
-def isZeroAtZero() -> (isZero(Zero)) => Unit {
+def isZeroAtZero() -> (isZero(Zero)) -> Unit =
   return fun (e) { e }
-}

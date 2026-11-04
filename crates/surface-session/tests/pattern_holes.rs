@@ -497,7 +497,7 @@ fn a_case_whose_first_arm_is_indeterminate_is_one_hole()
 fn the_sum_eliminator_stops_at_an_indeterminate_arm()
 {
     let mut written = Written::new(
-        "def pick(b : Bool) -> -F Integer { match b { true => return 1, ? => return 0 } }\n",
+        "def pick(b : Bool) -> -F Integer { match b { | true => return 1 | ? => return 0 } }\n",
         "pick",
     );
     let yes = written.boolean(Side::Left);
@@ -517,7 +517,7 @@ fn the_sum_eliminator_stops_at_an_indeterminate_arm()
 fn an_uncompiled_arm_is_declined_and_a_hole_is_not()
 {
     let text =
-        "def pick(s : String) -> -F Integer { match s { \"a\" => return 1, _ => return 2 } }\n";
+        "def pick(s : String) -> -F Integer { match s { | \"a\" => return 1 | _ => return 2 } }\n";
     assert!(
         refusal(text, "pick").is_some(),
         "a text column has no test this lowering compiles, and is declined by name"

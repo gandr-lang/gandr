@@ -12,24 +12,21 @@
 
 /// The older signature, as this importer wrote it.
 @[ refuses("SignatureMismatch.Missing") ]
-theory Older where {
+theory Older where
   /// The answer.
   oper answer : Integer;
-}
 
 /// A newer signature with a label, which the newer source does not keep.
 @[ refuses("SignatureMismatch.Missing") ]
-theory Tagged where {
+theory Tagged where
   /// The reply.
   oper reply : Integer;
   /// The label.
   oper label : String;
-}
 
 /// A flow that reads the tagged version at the older signature.
-flow retagged : Tagged ~~> Older where {
+flow retagged : Tagged ~~> Older where
   def answer = reply;
-}
 
 // The newer version, which publishes `reply` and no `label`.
 import "../../model/modules/translated-newer.gandr" as newer : Older via retagged;

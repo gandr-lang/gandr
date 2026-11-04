@@ -12,41 +12,35 @@
 //! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
 
 /// A box of any type: its field names the parameter.
-data Box(a : Type) : Type where {
+data Box(a : Type) : Type where
   | Boxed : (x : a) --> Box(a)
-}
 
 /// The naturals: the successor's field holds the type itself.
-pub data Nat : Type where {
+pub data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
 
 /// A box of integers repacked as itself.
 module Repack where {
   /// The translator: the field moved back into its constructor.
-  def rebox(box : Box(Integer)) -> Box(Integer) {
-    match box {
-      Boxed(x) => Boxed(x)
-    }
-  }
+  def rebox(box : Box(Integer)) -> Box(Integer) =
+    match box
+      | Boxed(x) => Boxed x
   /// A field naming a parameter is covered at the parameters' instance only
   /// once that cover lands, so no flow forwards by it yet.
   @[ refuses("ForwardUnsupported") ]
-  def repacked : Flow[.A = Type](Box(Integer), Box(Integer)) = Flow.into(rebox);
+  def repacked : Flow[.A = Type](Box(Integer), Box(Integer)) = Flow.into rebox;
 }
 
 /// The naturals renumbered as themselves.
 pub module Renumber where {
   /// The translator: each constructor to itself, the predecessor moved.
-  def step(n : Nat) -> Nat {
-    match n {
-      Zero => Zero,
-      Succ(m) => Succ(m)
-    }
-  }
+  def step(n : Nat) -> Nat =
+    match n
+      | Zero => Zero
+      | Succ(m) => Succ m
   /// A type holding itself is covered as a list is, its own field a tail,
   /// only once that cover lands, so no flow forwards by it yet.
   @[ refuses("ForwardUnsupported") ]
-  def renumbered : Flow[.A = Type](Nat, Nat) = Flow.into(step);
+  def renumbered : Flow[.A = Type](Nat, Nat) = Flow.into step;
 }

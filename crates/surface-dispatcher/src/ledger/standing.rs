@@ -778,7 +778,7 @@ fn slot(
         Sort::Expression => format!("def probe = {text} ;"),
         Sort::Pattern => format!("def probe = match x {{ {text} => 1 }} ;"),
         Sort::Type => format!("def probe : {text} ;"),
-        Sort::Instantiation => format!("def probe = f[{text}](1) ;"),
+        Sort::Instantiation => format!("def probe = f[{text}] 1 ;"),
         Sort::Block => format!("def probe = thunk {text} ;"),
     }
 }

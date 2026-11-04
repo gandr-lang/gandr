@@ -1512,7 +1512,7 @@ mod tests
     #[test]
     fn a_deprecated_declaration_is_tagged()
     {
-        let source = "@[ deprecated ] def bare = 1 ;\n@[ checks ]\n@[ doc(\"x\"), deprecated(#{ \
+        let source = "@[ deprecated ] def bare = 1 ;\n@[ checks ]\n@[ doc(\"x\"), deprecated(*{ \
                       since = \"0.2\" }) ] def recorded = 2 ;\n@[ respects(deprecated) ] def \
                       named = 3 ;\nmodule Holder where {\n  @[ deprecated ] def member = 4 ;\n}\ndef \
                       plain = 5 ;\n";
@@ -1590,8 +1590,8 @@ mod tests
     fn a_theory_holds_its_members()
     {
         let source = "theory Shapes where {\n  sort M : Type;\n  data Unit : M;\n  oper mul : (x : M, y \
-                      : M) --> M;\n  obs size : (m : M) --> M;\n  rule assoc : mul(mul(x, y), z) \
-                      ==> mul(x, mul(y, z));\n  boundary Square { tl, tr, bl, br };\n  face \
+                      : M) --> M;\n  obs size : (m : M) --> M;\n  rule assoc : mul (mul x y) z \
+                      ==> mul x (mul y z);\n  boundary Square { tl, tr, bl, br };\n  face \
                       left = { tl, bl };\n  ext Cell = M on left is zero;\n}\ntheory Monoid where {\n  \
                       include Shapes;\n  oper \
                       one : () --> M;\n}\ncodata Stream : Type where {\n  head : M;\n  tail : \
@@ -1685,7 +1685,7 @@ mod tests
     #[test]
     fn a_selection_grows_from_the_innermost_form()
     {
-        let source = SourceText::from("def f = g(10) ;\n");
+        let source = SourceText::from("def f = g 10 ;\n");
         let answered = Reading::of(source).selections(&LineIndex::new(source.as_ref().into()), &[
             at(Line::from(0), Character::from(11)),
             at(Line::from(0), Character::from(5)),

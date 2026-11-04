@@ -12,25 +12,23 @@
 import std.process;
 
 @[ refuses("AcrossHandler") ]
-def broke() -> -F Integer {
+def broke() -> -F Integer =
   loop {
     handle c : std.process.Exit.Eff {
       break(1)
     } with {
-      pure(x) => pure x,
-      oper exit(code, k) => k(unit)
+      | pure(x) => pure x
+      | oper exit(code, k) => k *{}
     }
   }
-}
 
 @[ refuses("AcrossHandler") ]
-def again() -> -F Integer {
+def again() -> -F Integer =
   loop {
     handle c : std.process.Exit.Eff {
       continue
     } with {
-      pure(x) => pure x,
-      oper exit(code, k) => k(unit)
+      | pure(x) => pure x
+      | oper exit(code, k) => k *{}
     }
   }
-}

@@ -21,14 +21,14 @@ data Shrub : Type where {
   oper left : (t : Shrub) --> Shrub;
   oper twice : (t : Shrub) --> Shrub;
   oper thrice : (t : Shrub) --> Shrub;
-  rule : mirror(Leaf) ==> Leaf;
-  rule : mirror(Node(l, r)) ==> Node(r, l);
-  rule : left(Leaf) ==> Leaf;
-  rule : left(Node(l, r)) ==> l;
-  rule : twice(t) ==> Node(t, t);
-  rule : thrice(t) ==> Node(t, Node(t, t));
+  rule : mirror Leaf ==> Leaf;
+  rule : mirror (Node l r) ==> Node r l;
+  rule : left Leaf ==> Leaf;
+  rule : left (Node l r) ==> l;
+  rule : twice t ==> Node t t;
+  rule : thrice t ==> Node t (Node t t);
 }
 
 /// A leaf written twice.
 @[ runs("Node(Leaf, Leaf)") ]
-def twice_leaf() -> Shrub { twice(Leaf) }
+def twice_leaf() -> Shrub { twice Leaf }

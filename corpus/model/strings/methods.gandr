@@ -19,79 +19,65 @@ import "./copy-on-write.gandr";
 import "./unique-write.gandr";
 
 /// A string's methods, one per receiver mode.
-pub module Str where {
+pub module Str where
   /// The number of bytes the string holds, its zero included, read from a
   /// string lent for reading.
-  def len(self : shared Repr) -> Integer {
-    match self {
-      Inline(bs) => count(bs),
-      Shared(n, bs) => count(bs)
-    }
-  }
+  def len(self : shared Repr) -> Integer =
+    match self
+      | Inline(bs) => count bs
+      | Shared(n, bs) => count bs
   /// A byte written before the zero of a string lent to the write, which
   /// writes it back.
-  def push(self : Repr, b : Integer) -> Unit {
-    access self as v { let w = pushInPlace(v, b); let t = written(w); resume(v, t) }
-  }
+  def push(self : Repr, b : Integer) -> Unit =
+    access self as v { let w = pushInPlace v b; let t = written w; resume(v, t) }
   /// The bytes of a string taken: nothing reads the string after.
-  def bytes(self : consumed Repr) -> List(Integer) {
-    match self {
-      Inline(bs) => bs,
-      Shared(n, bs) => bs
-    }
-  }
-}
+  def bytes(self : consumed Repr) -> List(Integer) =
+    match self
+      | Inline(bs) => bs
+      | Shared(n, bs) => bs
 
 /// `hi`'s length before and after `!` is pushed onto it: three bytes, then
 /// four.
 @[ runs("7") ]
-def lengths() -> Integer {
-  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  let n = s.len();
-  s.push(33);
-  let m = s.len();
+def lengths() -> Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  let n = s.len ()
+  s.push 33
+  let m = s.len ()
   pure n + m
-}
 
 /// `hi` with `!` pushed, then taken: the bytes the string ended with.
 @[ runs("Cons(104, Cons(105, Cons(33, Cons(0, Nil))))") ]
-def taken() -> List(Integer) {
-  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  s.push(33);
-  s.bytes()
-}
+def taken() -> List(Integer) =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  s.push 33
+  s.bytes ()
 
 /// A string taken in one arm of a match and kept in the other: each arm
 /// starts from the hold as the match found it, and the hold ends after the
 /// match.
-def takenInOneArm(t : Repr) -> List(Integer) {
-  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  match t {
-    Inline(bs) => s.bytes(),
-    Shared(n, bs) => bs
-  }
-}
+def takenInOneArm(t : Repr) -> List(Integer) =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  match t
+    | Inline(bs) => s.bytes ()
+    | Shared(n, bs) => bs
 
 /// The arm that takes the string runs: `hi`'s bytes.
 @[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
-def takenOnInline() -> List(Integer) {
-  takenInOneArm(Inline((Nil : List(Integer))))
-}
+def takenOnInline() -> List(Integer) =
+  takenInOneArm (Inline (Nil : List(Integer)))
 
 /// The arm that keeps the string runs: the matched string's bytes, and the
 /// hold's end drops `hi`.
 @[ runs("Cons(33, Nil)") ]
-def keptOnShared() -> List(Integer) {
-  takenInOneArm(Shared(1, (Cons(33, Nil) : List(Integer))))
-}
+def keptOnShared() -> List(Integer) =
+  takenInOneArm (Shared 1 (Cons 33 Nil : List(Integer)))
 
 /// A string taken in one arm and read in the other: the reading arm finds
 /// the string the match found, not the one the other arm took.
 @[ runs("3") ]
-def readWhereNotTaken() -> Integer {
-  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  match Shared(1, (Nil : List(Integer))) {
-    Inline(bs) => { count(s.bytes()) },
-    Shared(n, bs) => s.len()
-  }
-}
+def readWhereNotTaken() -> Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  match Shared 1 (Nil : List(Integer))
+    | Inline(bs) => { count (s.bytes ()) }
+    | Shared(n, bs) => s.len ()

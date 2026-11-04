@@ -20,82 +20,76 @@ import std.process;
 /// A thunk kept in the scope's region reads the held value through a shared
 /// view after the access that lent the view has ended.
 @[ runs("3") ]
-def keptView() -> Integer {
-  var s = 3;
+def keptView() -> Integer =
+  var s = 3
   handle c : std.process.Exit.Eff {
-    let k : (() => Integer) at c = access shared s as w { pure pure w };
+    let k : (() -> Integer) at c = access shared s as w { pure pure w };
     force k
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
   }
-}
 
 /// A value kept in the region stays kept when it is bound again at the type
 /// that keeps it, and forces as the thunk it keeps.
 @[ runs("3") ]
-def keptAgain() -> Integer {
-  var s = 3;
+def keptAgain() -> Integer =
+  var s = 3
   handle c : std.process.Exit.Eff {
-    let k : (() => Integer) at c = access shared s as w { pure pure w };
-    let j : (() => Integer) at c = k;
+    let k : (() -> Integer) at c = access shared s as w { pure pure w };
+    let j : (() -> Integer) at c = k;
     force j
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
   }
-}
 
 /// Once the scope ends, its region releases the held value, and an exclusive
 /// access writes it back.
 @[ runs("4") ]
-def released() -> Integer {
-  var s = 3;
+def released() -> Integer =
+  var s = 3
   let n : Integer = handle c : std.process.Exit.Eff {
-    let k : (() => Integer) at c = access shared s as w { pure pure w };
+    let k : (() -> Integer) at c = access shared s as w { pure pure w };
     force k
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
   };
   access s as v { resume(v, n + 1) };
   pure s
-}
 
 /// A value read out of a view enters the region as any value does: the read
 /// copies it, so it needs no keep.
 @[ runs("3") ]
-def keptRead() -> Integer {
-  var s = 3;
+def keptRead() -> Integer =
+  var s = 3
   handle c : std.process.Exit.Eff {
     let n : Integer at c = access shared s as w { pure w };
     access s as v { resume(v, v + 1) };
     pure 3
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
   }
-}
 
 /// A hold opens a region too: a view of its own value kept there lives until
 /// the hold ends.
 @[ runs("3") ]
-def keptInHold() -> Integer {
-  var s = 3;
-  let k : (() => Integer) at s = access shared s as w { pure pure w };
+def keptInHold() -> Integer =
+  var s = 3
+  let k : (() -> Integer) at s = access shared s as w { pure pure w };
   force k
-}
 
 /// A view of an outer hold kept in an inner hold's region frees the outer
 /// value when the inner hold ends, so an exclusive access writes it back.
 @[ runs("4") ]
-def keptInInner() -> Integer {
-  var s = 3;
+def keptInInner() -> Integer =
+  var s = 3
   let n : Integer = {
     var r = 0;
-    let k : (() => Integer) at r = access shared s as w { pure pure w };
+    let k : (() -> Integer) at r = access shared s as w { pure pure w };
     force k
   };
   access s as v { resume(v, n + 1) };
   pure s
-}

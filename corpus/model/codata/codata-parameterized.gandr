@@ -8,19 +8,17 @@
 /// A number observed doubled. A codata declaration's kind is a computation
 /// universe, and `Type` is none.
 @[ refuses("CodataKindNotUniverse") ]
-codata Scaled : Type where {
+codata Scaled : Type where
   doubled : Integer;
-}
 
 /// Doubles its argument; a bare copattern after a parameter list is out of
 /// place in a `def rec`.
 @[ refuses("MalformedForm") ]
-def rec scaled(n : Integer) -> Scaled {
+def rec scaled(n : Integer) -> Scaled =
   .doubled => n + n
-}
 
 /// The doubled value observed off the call; `scaled` is refused above, so its
 /// result names no codata to observe, and the selection stays an unadmitted
 /// projection.
 @[ refuses("OutOfFragment.projection_expression") ]
-def observed = scaled(21).doubled;
+def observed = (scaled 21).doubled;

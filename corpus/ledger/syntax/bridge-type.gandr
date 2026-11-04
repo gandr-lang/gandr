@@ -6,4 +6,4 @@ import std.list (List);
 /// A list related to itself, cell by cell.
 @[ checks ]
 def lifted : Bridge[.A = List(Integer)](#[1, 2], #[1, 2]) ;
-def lifted = (unit, (unit, unit)) ;
+def lifted = *{*{}, *{*{}, *{}}} ;

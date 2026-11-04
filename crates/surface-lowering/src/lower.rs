@@ -26515,7 +26515,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def endo(a : Type, n : Integer) -> -F Type { return (a => a) } def lifted(a : \
+                "def endo(a : Type, n : Integer) -> -F Type { return (a -> a) } def lifted(a : \
                  Type, n : Integer) -> -F Type[-] { return (a -> -F a) }",
             ),
             &mut arena,
@@ -26680,7 +26680,7 @@ mod tests
             SourceText::from(
                 "data U : Type where { | NatC : U | Arrow : (a : U, b : U) --> U } def pick(n : \
                  Integer) -> -F Type { return Integer } def twice(n : Integer) -> -F Type { \
-                 let x = pick(n); return (x => x) } def el(u : U) -> -F Type { return Integer \
+                 let x = pick n; return (x -> x) } def el(u : U) -> -F Type { return Integer \
                  } def one : el(Arrow(NatC, NatC)) ;",
             ),
             &mut arena,
@@ -26869,7 +26869,7 @@ mod tests
         let mut arena = CoreArena::new();
         let source = crate::fixture::listing(
             "def a = Integer ; def b = -F Integer ; def c = Type ; def d = +U (-F Integer) ; def e \
-             = Path(1, 1) ; def f = List(Integer) ;",
+             = Path 1 1 ; def f = List (Integer) ;",
         );
         let module = crate::fixture::listed(&source, &mut arena);
         let quoted = |declaration: usize| {
@@ -27255,7 +27255,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def x : Unit ; def x = unit ;"),
+            SourceText::from("def x : Unit ; def x = *{} ;"),
             &mut arena,
         );
         let lowered = outcomes(&module);
@@ -27281,8 +27281,8 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(concat!(
-                "def g(x : Unit) -> -F Integer { match x { unit => return 1 } }\n",
-                "def h(x : Unit) -> -F Integer { match x { #{} => return 1 } }\n",
+                "def g(x : Unit) -> -F Integer { match x { | *{} => return 1 } }\n",
+                "def h(x : Unit) -> -F Integer { match x { | *{} => return 1 } }\n",
             )),
             &mut arena,
         );
@@ -27453,7 +27453,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def g = 3 ; def a = thunk { become (force g)(3) } ;"),
+            SourceText::from("def g = 3 ; def a = thunk { become (force g) 3 } ;"),
             &mut arena,
         );
         let body = body_of(outcomes(&module)[1]);
@@ -27541,13 +27541,13 @@ mod tests
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         for (source, start, end, form) in [
             (
-                "def a = thunk { become (return 1)(2) } ;",
+                "def a = thunk { become (return 1) 2 } ;",
                 24_usize,
                 32_usize,
                 "return_expression",
             ),
             (
-                "def a = thunk { become (become pure 1)(2) } ;",
+                "def a = thunk { become (become pure 1) 2 } ;",
                 24_usize,
                 37_usize,
                 "become_expression",
@@ -27888,9 +27888,9 @@ mod tests
             SourceText::from(
                 "def f(n: Integer) -> -F Integer { return n } \
                  def a = thunk { let x = 1 ; let y = x ; return y } ; \
-                 def b = thunk { let m = f(1) ; return m } ; \
+                 def b = thunk { let m = f 1 ; return m } ; \
                  def c = thunk { let x : Integer = 1 ; return x } ; \
-                 def d = thunk { let (x, y) = (1, 2) ; return y } ;",
+                 def d = thunk { let *{x, y} = *{1, 2} ; return y } ;",
             ),
             &mut arena,
         );
@@ -28115,7 +28115,7 @@ def ended() -> -F [Partial] Unit {
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def a = thunk { let (q, r) = (1, 2) ; return (r, q) } ;"),
+            SourceText::from("def a = thunk { let *{q, r} = *{1, 2} ; return *{r, q} } ;"),
             &mut arena,
         );
         let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[0]))
@@ -28172,7 +28172,7 @@ def ended() -> -F [Partial] Unit {
         use crate::origin::ComponentName;
         use crate::origin::SplitComponent;
 
-        let source = SourceText::from("def a = thunk { let (q, _, r) = (1, 2, 3) ; return r } ;");
+        let source = SourceText::from("def a = thunk { let *{q, _, r} = *{1, 2, 3} ; return r } ;");
         let mut arena = CoreArena::new();
         let module = lowered(source, &mut arena);
         let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[0]))
@@ -28249,7 +28249,7 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def a = thunk { let (y, z) : Integer * Integer = (1, 2) ; return y } ;",
+                "def a = thunk { let *{y, z} : Integer * Integer = *{1, 2} ; return y } ;",
             ),
             &mut arena,
         );
@@ -28335,8 +28335,8 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def g = thunk { fun (x) { fun (y) { return x } } } ; def h = thunk { become g(1, 2) } ; \
-                 def k = thunk { become g() } ;",
+                "def g = thunk { fun (x) { fun (y) { return x } } } ; def h = thunk { become g 1 2 } ; \
+                 def k = thunk { become g () } ;",
             ),
             &mut arena,
         );
@@ -28431,9 +28431,9 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def tupled = thunk { let (q, r) = (1, 2) ; return r } ; def braced = thunk { \
-                 let *{q, r} = (1, 2) ; return r } ; def three = thunk { let (a, _, c) = (1, 2, \
-                 3) ; return a } ; def three_braced = thunk { let *{a, _, c} = (1, 2, 3) ; return \
+                "def tupled = thunk { let *{q, r} = *{1, 2} ; return r } ; def braced = thunk { \
+                 let *{q, r} = *{1, 2} ; return r } ; def three = thunk { let *{a, _, c} = *{1, 2, \
+                 3} ; return a } ; def three_braced = thunk { let *{a, _, c} = *{1, 2, 3} ; return \
                  a } ;",
             ),
             &mut arena,
@@ -28537,7 +28537,7 @@ def ended() -> -F [Partial] Unit {
             SourceText::from(
                 "data Two : Type where {\n  | L : Two\n  | R : Two\n}\n\ndef laid(t : Two) -> Two \
                  =\n  let u = t\n  match u\n    | L => R\n    | R => L\n\ndef braced(t : Two) -> \
-                 Two {\n  let u = t;\n  match u { L => R, R => L }\n}\n",
+                 Two {\n  let u = t;\n  match u { | L => R | R => L }\n}\n",
             ),
             &mut arena,
         );
@@ -28565,9 +28565,9 @@ def ended() -> -F [Partial] Unit {
         // its head at 137..140.
         let module = lowered(
             SourceText::from(
-                "def g = thunk { return 1 } ; def k = thunk { become g() } ; \
+                "def g = thunk { return 1 } ; def k = thunk { become g () } ; \
                  module M where { def z() -> -F Integer { return 0 } } \
-                 def m = thunk { become M.z() } ;",
+                 def m = thunk { become M.z () } ;",
             ),
             &mut arena,
         );
@@ -28618,7 +28618,7 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def g = thunk { fun (x) { return x } } ; def h = thunk { become g(1) } ;",
+                "def g = thunk { fun (x) { return x } } ; def h = thunk { become g 1 } ;",
             ),
             &mut arena,
         );
@@ -28658,7 +28658,7 @@ def ended() -> -F [Partial] Unit {
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def g = 3 ; def a = thunk { become (force g)(3) } ;"),
+            SourceText::from("def g = 3 ; def a = thunk { become (force g) 3 } ;"),
             &mut arena,
         );
         let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[1]))
@@ -28792,22 +28792,22 @@ def ended() -> -F [Partial] Unit {
     fn a_name_nothing_declares_refuses_through_every_former_around_it()
     {
         let rows = [
-            "def a : #{x : Zz} ;",
-            "def a : #{x : Integer, y : Zz} ;",
+            "def a : *{x : Zz} ;",
+            "def a : *{x : Integer, y : Zz} ;",
             "def a : Integer * Zz ;",
             "def a : List(Zz) ;",
             "def a : +U (Zz -> -F Integer) ;",
             "def a : +U (Integer -> -F Zz) ;",
-            "def a : (x : Zz) => Integer ;",
-            "def a : (x : Integer) => Zz ;",
-            "def a : Zz => Integer ;",
+            "def a : (x : Zz) -> Integer ;",
+            "def a : (x : Integer) -> Zz ;",
+            "def a : Zz -> Integer ;",
             "def a : Path[.A = Zz](1, 1) ;",
-            "def a = (1, zz) ;",
+            "def a = *{1, zz} ;",
             "def a = #[1, zz] ;",
             "def a = thunk { return zz } ;",
             "def a = thunk { let x = zz ; return x } ;",
             "def a = thunk { fun (x) { return zz } } ;",
-            "def a = thunk { match 1 { 1 => return zz, _ => return 0 } } ;",
+            "def a = thunk { match 1 { | 1 => return zz | _ => return 0 } } ;",
         ];
         for source in rows {
             // `List` is listed from its home, so only `Zz` goes unresolved.
@@ -29003,10 +29003,10 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def a : Integer => String ; def b : +U (Integer -> -F String) ; def c : \
-                 (Integer, String) => Unit ; def d : +U (Integer -> String -> -F Unit) ; def e \
-                 : Integer => Integer => String ; def f : +U (Integer -> -F (+U (Integer -> -F \
-                 String))) ; def g : () => String ; def h : +U (-F String) ; def i : Unit => \
+                "def a : Integer -> String ; def b : +U (Integer -> -F String) ; def c : \
+                 (Integer, String) -> Unit ; def d : +U (Integer -> String -> -F Unit) ; def e \
+                 : Integer -> (Integer -> String) ; def f : +U (Integer -> -F (+U (Integer -> -F \
+                 String))) ; def g : () -> String ; def h : +U (-F String) ; def i : Unit -> \
                  String ;",
             ),
             &mut arena,
@@ -29067,10 +29067,10 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def a : Integer -> String ; def b : Integer => String ; def c : (Integer, String) \
-                 -> Unit ; def d : (Integer, String) => Unit ; def e : Integer -> (Integer -> \
-                 String) ; def f : Integer => Integer => String ; def g : () -> String ; def h : \
-                 () => String ;",
+                "def a : Integer -> String ; def b : Integer -> String ; def c : (Integer, String) \
+                 -> Unit ; def d : (Integer, String) -> Unit ; def e : Integer -> (Integer -> \
+                 String) ; def f : Integer -> (Integer -> String) ; def g : () -> String ; def h : \
+                 () -> String ;",
             ),
             &mut arena,
         );
@@ -29108,9 +29108,9 @@ def ended() -> -F [Partial] Unit {
         let module = lowered(
             SourceText::from(
                 "def boxed = thunk { return type(Integer -> String) } ; def fat = thunk { return \
-                 type(Integer => String) } ; def grouped = thunk { return type((Integer, String) \
+                 type(Integer -> String) } ; def grouped = thunk { return type((Integer, String) \
                  -> (Integer -> String)) } ; def fat_grouped = thunk { return type((Integer, \
-                 String) => Integer => String) } ; def computed = thunk { return type(Integer -> \
+                 String) -> (Integer -> String)) } ; def computed = thunk { return type(Integer -> \
                  -F String) } ;",
             ),
             &mut arena,
@@ -29315,7 +29315,7 @@ def ended() -> -F [Partial] Unit {
         };
 
         assert_eq!(
-            refusal(SourceText::from("def code = Flow.stay(type({Unit})) ;")),
+            refusal(SourceText::from("def code = Flow.stay (type({Unit})) ;")),
             block_as_type(at(21_usize, 33_usize)),
             "a labelled sum with its `+` left out quotes a block, refused at the quote, which \
              touches where the `+` stood, not at the statement inside it"
@@ -29346,9 +29346,9 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def p : Integer * String ; def q = (1, \"a\") ; def r : Integer * Unit * String ; \
-                 def s = (1, unit, \"a\") ; def l : (Integer * Unit) * String ; def m : Integer \
-                 * (Unit * String) ; def o = (1,) ;",
+                "def p : Integer * String ; def q = *{1, \"a\"} ; def r : Integer * Unit * String ; \
+                 def s = *{1, *{}, \"a\"} ; def l : (Integer * Unit) * String ; def m : Integer \
+                 * (Unit * String) ; def o = *{1,} ;",
             ),
             &mut arena,
         );
@@ -29424,7 +29424,7 @@ def ended() -> -F [Partial] Unit {
             "a product is a value type, not a computation type"
         );
         assert_eq!(
-            refusal(SourceText::from("def u = thunk { (1, 2) ; return 0 } ;")),
+            refusal(SourceText::from("def u = thunk { *{1, 2} ; return 0 } ;")),
             LoweringRefusal::OutOfFragment {
                 span: at(16_usize, 22_usize),
                 form: FormName::TUPLE,
@@ -29567,7 +29567,7 @@ def ended() -> -F [Partial] Unit {
         let module = lowered(
             SourceText::from(
                 "def t : Type -> Type[-, 1] ; def a : +U (t(Integer)) ; def w : Type -> Type[-, 1] ; \
-                 def w = fun (X) { t(X) } ; def k : (Type -> Type[-]) -> Type -> Type ; def k = fun \
+                 def w = fun (X) { t X } ; def k : (Type -> Type[-]) -> Type -> Type ; def k = fun \
                  (G) { fun (A) { type(+U (G(A)) * A) } } ;",
             ),
             &mut arena,
@@ -29829,7 +29829,7 @@ def ended() -> -F [Partial] Unit {
     {
         let mut arena = CoreArena::new();
         let text = "data U : Type where { | NatU : U | PathU : (a : U, x : Integer, y : Integer) --> U } \
-                    def rec el(u : U) -> -F Type { match u { NatU => return Integer, PathU(a, x, \
+                    def rec el(u : U) -> -F Type { match u { | NatU => return Integer | PathU(a, x, \
                     y) => return (type(Path[.A = el[<](a)](x, y))) } }";
         let module = lowered(SourceText::from(text), &mut arena);
         let lowered = outcomes(&module);
@@ -29949,7 +29949,7 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "type Fam(g : Type) = g => Type ; def take(g : Type, a : Fam(g), x : g, v : \
+                "type Fam(g : Type) = g -> Type ; def take(g : Type, a : Fam(g), x : g, v : \
                  a(x)) -> -F Integer { return 1 }",
             ),
             &mut arena,
@@ -30161,7 +30161,7 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def pick(a : Type) -> -F Integer { 0 }\ndef chosen = thunk { become pick(f64) } ;",
+                "def pick(a : Type) -> -F Integer { 0 }\ndef chosen = thunk { become pick (f64) } ;",
             ),
             &mut arena,
         );
@@ -30566,8 +30566,8 @@ def ended() -> -F [Partial] Unit {
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let pbg = grammar();
-        let case = "def same(n : Integer) -> -F Integer {\n  match n {{\n    zero @ 0 => return \
-                    zero,\n    _ => return n\n  }\n}\n";
+        let case = "def same(n : Integer) -> -F Integer {\n  match n {{\n    | zero @ 0 => return \
+                    zero\n    | _ => return n\n  }\n}\n";
         let access = "def bump() -> -F Integer {\n  var c = 0;\n  access c as v { resume(v, v + \
                       1) ;\n  pure c\n}\n";
         let handle = "def quiet(n : Integer) -> -F Integer {\n  handle c : Proc {\n    \
@@ -31089,7 +31089,7 @@ def ended() -> -F [Partial] Unit {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         for (source, payload) in [
             (
-                "def p : Integer ;\n@[ respects((p, 1)) ] def r = 1 ;\n",
+                "def p : Integer ;\n@[ respects(*{p, 1}) ] def r = 1 ;\n",
                 at(30_usize, 36_usize),
             ),
             (
@@ -31212,7 +31212,7 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "@[ decomposes(series(event(right, 0),\n    parallel( event(left, 1),  event(right, 1) ))) ]\ndef a : Integer ;\ndef b : Integer ;",
+                "@[ decomposes(series (event right 0)\n    (parallel (event left 1) (event right 1))) ]\ndef a : Integer ;\ndef b : Integer ;",
             ),
             &mut arena,
         );
@@ -31336,7 +31336,7 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "@[ traces(decomposes(a, event(left, 0))), traces(primes(b,\n 1)) ]\ndef a : Integer ;",
+                "@[ traces(decomposes a (event left 0)), traces(primes b\n 1) ]\ndef a : Integer ;",
             ),
             &mut arena,
         );
@@ -31374,7 +31374,7 @@ def ended() -> -F [Partial] Unit {
         assert!(
             matches!(
                 refusal(SourceText::from(
-                    "@[ decomposes(event(left, 0)), decomposes(event(left, 1)) ] def a = 3 ;"
+                    "@[ decomposes(event left 0), decomposes(event left 1) ] def a = 3 ;"
                 )),
                 LoweringRefusal::DuplicateAttribute { name, .. } if name == SurfaceName::from("decomposes")
             ),
@@ -31471,7 +31471,7 @@ def ended() -> -F [Partial] Unit {
     #[test]
     fn each_use_of_a_deprecated_declaration_is_listed()
     {
-        let text = "@[ deprecated(#{ since = \"0.2\", note = \"use cube\" }) ] def square = 1 \
+        let text = "@[ deprecated(*{ since = \"0.2\", note = \"use cube\" }) ] def square = 1 \
                     ;\n@[ deprecated ] def old : Integer ;\ndef old = 2 ;\ndef cube = 3 ;\ndef \
                     a = square ;\ndef b = old ;\ndef c = cube ;\ndef d = square ;\nmodule Holder \
                     where {\n  @[ deprecated ] def member = 4 ;\n}\ndef e = Holder.member ;";
@@ -31562,7 +31562,7 @@ def ended() -> -F [Partial] Unit {
         let module = lowered(
             SourceText::from(
                 "def p : Integer ; def q : Integer ; \
-                 @[ respects((q, p)) ] def r(n : Integer) -> -F Integer { return n } \
+                 @[ respects(*{q, p}) ] def r(n : Integer) -> -F Integer { return n } \
                  @[ respects(p) ] def s : +U (Integer -> -F Integer) ; \
                  def s = thunk { fun (n) { return n } } ; \
                  def t(n : Integer) -> -F Integer { return n }",
@@ -31673,7 +31673,7 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def p : Integer ; def q : Integer ; @[ respects((q, p)) ] def r(n : Integer) -> \
+                "def p : Integer ; def q : Integer ; @[ respects(*{q, p}) ] def r(n : Integer) -> \
                  -F Integer { return b }",
             ),
             &mut arena,
@@ -32100,7 +32100,7 @@ def ended() -> -F [Partial] Unit {
     fn an_unread_pattern_names_its_feature()
     {
         let source =
-            "def f(p : Integer * Integer) -> -F Integer { match p { (a, ..?) => return 0 } }";
+            "def f(p : Integer * Integer) -> -F Integer { match p { | *{a, ..?} => return 0 } }";
         let refused = refusal(SourceText::from(source));
         assert!(
             matches!(refused, LoweringRefusal::OutOfFragment {
@@ -32132,7 +32132,7 @@ def ended() -> -F [Partial] Unit {
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def a = thunk { let (x, y, z) = (1, 2, 3) ; return x } ;"),
+            SourceText::from("def a = thunk { let *{x, y, z} = *{1, 2, 3} ; return x } ;"),
             &mut arena,
         );
         assert!(
@@ -32304,7 +32304,7 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def t : Type -> Type ; def w : Type -> Type ; def w = fun (x) { t(x) } ;",
+                "def t : Type -> Type ; def w : Type -> Type ; def w = fun (x) { t x } ;",
             ),
             &mut arena,
         );
@@ -32325,7 +32325,7 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def apply : (Type -> Type) -> Type -> Type ; def apply = fun (F) { fun (X) { F(X) } \
+                "def apply : (Type -> Type) -> Type -> Type ; def apply = fun (F) { fun (X) { F X } \
                  } ; def pairs : apply(fun (Y) { type(Y * Y) }, Integer) ; def id : +U (Integer -> \
                  -F Integer) ; def id = thunk { fun (x) { return x } } ; def two : Type -> Type -> \
                  Type ; def two = fun (A, B) { A } ; def held : Type -> Type ; def held = fun (A) { \
@@ -32495,8 +32495,8 @@ def ended() -> -F [Partial] Unit {
     #[test]
     fn a_type_head_answers_at_what_it_stands_for()
     {
-        let text = "module NatAdd : #{ type M = Integer, zero : M } where {\n  type M = Integer;\n  def \
-                    zero = 0;\n}\n\nmodule MkCounter(S : #{ type T, zero : T }) :> #{ type T, \
+        let text = "module NatAdd : *{ type M = Integer, zero : M } where {\n  type M = Integer;\n  def \
+                    zero = 0;\n}\n\nmodule MkCounter(S : *{ type T, zero : T }) :> *{ type T, \
                     seed : T } where {\n  type T = S.T;\n  def seed = S.zero;\n}\n\nmodule Seed where {\n  \
                     type T = Integer;\n  def zero = 0;\n}\n\nmodule A = MkCounter(Seed) ;\n";
         let mut arena = CoreArena::new();
@@ -33171,9 +33171,9 @@ def ended() -> -F [Partial] Unit {
         let module = lowered(
             SourceText::from(
                 "data L(a : Type) : Type where { | N : L(a) } codata S(a : Type) : Type[-] where { head : a; } \
-                 def listOf(p : Type) -> -F Type { return (L(p)) } def firstOf(a : Type, b : \
-                 Type) -> -F Type { return (L(a)) } def secondOf(a : Type, b : Type) -> -F Type { \
-                 return (L(b)) } def streamOf(p : Type) -> -F Type[-] { return (S(p)) }",
+                 def listOf(p : Type) -> -F Type { return (L p) } def firstOf(a : Type, b : \
+                 Type) -> -F Type { return (L a) } def secondOf(a : Type, b : Type) -> -F Type { \
+                 return (L b) } def streamOf(p : Type) -> -F Type[-] { return (S p) }",
             ),
             &mut arena,
         );
@@ -33238,7 +33238,7 @@ def ended() -> -F [Partial] Unit {
             SourceText::from(
                 "data Both(a : Type, b : Type) : Type where { | MkBoth : (x : a, y : b) --> Both(a, b) } \
                  def same(a : Type) -> -F Type { return a } def pairSame(a : Type) -> -F Type { \
-                 return (Both(same(a), a)) }",
+                 return (Both (same a) a) }",
             ),
             &mut arena,
         );
@@ -33292,9 +33292,9 @@ def ended() -> -F [Partial] Unit {
             SourceText::from(
                 "def idf(d : Type, c : Type, x : d) -> -F d { return x } def fam(d : Type, c : \
                  Type, f : +U (d -> -F d)) -> -F Type { return d } def k10(d : Type, c : Type, w \
-                 : d, v : fam(d, c, thunk { fun (a) { idf(d, c, w) } })) -> -F Unit { return unit \
+                 : d, v : fam(d, c, thunk { fun (a) { idf d c w } })) -> -F Unit { return *{} \
                  } def k11(d : Type, c : Type, w : d, v : fam(d, c, thunk { fun (a) { return w } \
-                 })) -> -F Unit { return unit }",
+                 })) -> -F Unit { return *{} }",
             ),
             &mut arena,
         );
@@ -33383,10 +33383,10 @@ def ended() -> -F [Partial] Unit {
         let module = lowered(
             SourceText::from(
                 "data Sig(a : Type, b : +U (a -> -F Type)) : Type where { | MkSig : (x : a, y : b(x)) --> Sig(a, b) } data IR(d : Type) : Type[+, 1] where { | Iota : (e : d) --> IR(d) | SigmaC : (a : Type, f : +U (a -> -F IR(d))) --> IR(d) } def rec argsU(c : IR(Unit)) -> \
-                 -F Type { match c { Iota(e) => return Unit, SigmaC(a, f) => return (Sig(a, thunk \
-                 { fun (y) { argsU[<](f(y)) } })) } } def rec argsD(d : Type, c : IR(d)) -> -F Type \
-                 { match c { Iota(e) => return Unit, SigmaC(a, f) => return (Sig(a, thunk { fun (y) \
-                 { argsD[<](d, f(y)) } })) } }",
+                 -F Type { match c { | Iota(e) => return Unit | SigmaC(a, f) => return (Sig a (thunk \
+                 { fun (y) { argsU[<] (f y) } })) } } def rec argsD(d : Type, c : IR(d)) -> -F Type \
+                 { match c { | Iota(e) => return Unit | SigmaC(a, f) => return (Sig a (thunk { fun (y) \
+                 { argsD[<] d (f y) } })) } }",
             ),
             &mut arena,
         );

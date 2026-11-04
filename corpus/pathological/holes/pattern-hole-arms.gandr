@@ -6,34 +6,28 @@
 // - see: #391 — `classify`, `unwrap`
 
 /// Three colours, one arm each.
-data Color : Type where {
+data Color : Type where
   | Red : Color
   | Green : Color
   | Blue : Color
-}
 
 /// A colour, or none.
-data Chosen : Type where {
+data Chosen : Type where
   | Unchosen : Chosen
   | Chose : (c : Color) --> Chosen
-}
 
 /// `Green` reaches the hole between `Red` and `Blue`: possibly covered, and
 /// refused.
 @[ refuses("UndecidedCoverage") ]
-def classify(c : Color) -> Integer {
-  match c {
-    Red => 0,
-    ? => 1,
-    Blue => 2
-  }
-}
+def classify(c : Color) -> Integer =
+  match c
+    | Red => 0
+    | ? => 1
+    | Blue => 2
 
 /// A hole in a constructor's field leaves the arm for `Chose` undecided too.
 @[ refuses("UndecidedCoverage") ]
-def unwrap(m : Chosen) -> Integer {
-  match m {
-    Unchosen => 0,
-    Chose(?) => 1
-  }
-}
+def unwrap(m : Chosen) -> Integer =
+  match m
+    | Unchosen => 0
+    | Chose(?) => 1

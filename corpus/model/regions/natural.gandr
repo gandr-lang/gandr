@@ -15,53 +15,50 @@ import "./passed.gandr";
 import std.process;
 
 /// Forces the thunk it is lent, then hands it back in the same region.
-pub def touch[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r) {
-  let _ = force k;
+pub def touch[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) =
+  let _ = force k
   pure k
-}
 
 /// `pass` at the outer region with its answer widened to the inner one is
 /// `pass` at the inner region after its argument is widened.
 @[ runs("5") ]
-def passNatural() -> Integer {
-  var s = 5;
+def passNatural() -> Integer =
+  var s = 5
   handle outer : std.process.Exit.Eff {
-    let k : (() => Integer) at outer = access shared s as w { pure pure w };
+    let k : (() -> Integer) at outer = access shared s as w { pure pure w };
     handle inner : std.process.Exit.Eff {
-      let _ : Path[.A = (() => Integer) at outer => (() => Integer) at inner](
-        fun (x) { let y : (() => Integer) at outer = pass(x); pure y },
-        fun (x) { let z : (() => Integer) at inner = x; pass(z) }
-      ) = Path.here(fun (x) { let y : (() => Integer) at outer = pass(x); pure y });
+      let _ : Path[.A = (() -> Integer) at outer -> (() -> Integer) at inner](
+        fun (x) { let y : (() -> Integer) at outer = pass x; pure y },
+        fun (x) { let z : (() -> Integer) at inner = x; pass z }
+      ) = Path.here (fun (x) { let y : (() -> Integer) at outer = pass x; pure y });
       force k
     } with {
-      pure(y) => pure y,
-      oper exit(code, rest) => pure 0
+      | pure(y) => pure y
+      | oper exit(code, rest) => pure 0
     }
   } with {
-    pure(x) => pure x,
-    oper exit(code, rest) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, rest) => pure 0
   }
-}
 
 /// The same square for `touch`, whose two sides nest its binds apart: the
 /// conversion reassociates them.
 @[ runs("5") ]
-def touchNatural() -> Integer {
-  var s = 5;
+def touchNatural() -> Integer =
+  var s = 5
   handle outer : std.process.Exit.Eff {
-    let k : (() => Integer) at outer = access shared s as w { pure pure w };
+    let k : (() -> Integer) at outer = access shared s as w { pure pure w };
     handle inner : std.process.Exit.Eff {
-      let _ : Path[.A = (() => Integer) at outer => (() => Integer) at inner](
-        fun (x) { let y : (() => Integer) at outer = touch(x); pure y },
-        fun (x) { let z : (() => Integer) at inner = x; touch(z) }
-      ) = Path.here(fun (x) { let y : (() => Integer) at outer = touch(x); pure y });
+      let _ : Path[.A = (() -> Integer) at outer -> (() -> Integer) at inner](
+        fun (x) { let y : (() -> Integer) at outer = touch x; pure y },
+        fun (x) { let z : (() -> Integer) at inner = x; touch z }
+      ) = Path.here (fun (x) { let y : (() -> Integer) at outer = touch x; pure y });
       force k
     } with {
-      pure(y) => pure y,
-      oper exit(code, rest) => pure 0
+      | pure(y) => pure y
+      | oper exit(code, rest) => pure 0
     }
   } with {
-    pure(x) => pure x,
-    oper exit(code, rest) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, rest) => pure 0
   }
-}

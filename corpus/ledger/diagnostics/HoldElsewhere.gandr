@@ -1,5 +1,5 @@
 /// `HoldElsewhere`: a hold checked against a handle at another world.
-module Seat :> #{
+module Seat :> *{
   type Dispatch,
   mobile type Report,
   type Handoff,
@@ -33,6 +33,5 @@ world seat ;
 
 @[ refuses("HoldElsewhere") ]
 @[ entry(operator) ]
-def forged() -> -F (Seat.Report at seat) {
+def forged() -> -F (Seat.Report at seat) =
   (hold Seat.progress)
-}

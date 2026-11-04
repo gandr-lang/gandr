@@ -128,11 +128,11 @@ fn a_telescope_names_its_implicits_in_the_merged_order_2267()
 fn a_binder_of_an_implicit_s_type_mentions_no_parameter_1350()
 {
     let source = "\
-def named[m : Type, combine : (x : m) => m](x : m) -> -F m { become combine(x) }
-def bare[m : Type, combine : m => m](x : m) -> -F m { become combine(x) }
-def twin(m : Type, combine : m => m, x : m) -> -F m { become combine(x) }
-def keyed[c : (y : t) => t](t : Type, v : t) -> -F t { become c(v) }
-def keyedTwin(t : Type, c : t => t, v : t) -> -F t { become c(v) }
+def named[m : Type, combine : (x : m) -> m](x : m) -> -F m { become combine x }
+def bare[m : Type, combine : m -> m](x : m) -> -F m { become combine x }
+def twin(m : Type, combine : m -> m, x : m) -> -F m { become combine x }
+def keyed[c : (y : t) -> t](t : Type, v : t) -> -F t { become c v }
+def keyedTwin(t : Type, c : t -> t, v : t) -> -F t { become c v }
 ";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
@@ -170,7 +170,7 @@ fn a_telescope_cycle_is_refused_naming_the_cycle()
 #[test]
 fn a_stage_telescope_merges_nothing()
 {
-    let source = "def staged[i : Size](x : Integer) -> -F Integer { return x }\ndef stagedRun : () => Integer ;\ndef stagedRun = thunk { become staged(1) } ;\ndef kept[i : Size, a : Type](n : Integer, y : a) -> -F a { return y }\ndef twin(a : Type, n : Integer, y : a) -> -F a { return y }\n";
+    let source = "def staged[i : Size](x : Integer) -> -F Integer { return x }\ndef stagedRun : () -> Integer ;\ndef stagedRun = thunk { become staged 1 } ;\ndef kept[i : Size, a : Type](n : Integer, y : a) -> -F a { return y }\ndef twin(a : Type, n : Integer, y : a) -> -F a { return y }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert_eq!(
@@ -221,7 +221,7 @@ fn a_positional_supply_follows_the_written_block_4945()
 {
     // `i : t` names the explicit `t`, so the merged telescope binds `u`, then
     // `t`, then `i`. A position still counts the block as written: `7` is `i`.
-    let source = "def pick[i : t, u : Type](t : Type, y : u) -> -F t { return i }\ndef named : () => Integer ;\ndef named = thunk { become pick[.i = 7, .u = Unit](Integer, unit) } ;\ndef positional : () => Integer ;\ndef positional = thunk { become pick[7, Unit](Integer, unit) } ;\n";
+    let source = "def pick[i : t, u : Type](t : Type, y : u) -> -F t { return i }\ndef named : () -> Integer ;\ndef named = thunk { become pick[.i = 7, .u = Unit] (Integer) *{} } ;\ndef positional : () -> Integer ;\ndef positional = thunk { become pick[7, Unit] (Integer) *{} } ;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert_eq!(
@@ -395,8 +395,8 @@ fn a_signature_s_implicit_group_is_supplied_by_the_call_4853()
     let source = "def pick : [a : Type, b : Type] (x : a, y : b) -> a ;\ndef pick = thunk { fun \
                   (a) { fun (b) { fun (x) { fun (y) { return x } } } } } ;\ndef single : [a : \
                   Type] a -> a ;\ndef single = thunk { fun (a) { fun (x) { return x } } } ;\ndef \
-                  omitted : () -> Integer ;\ndef omitted = thunk { become pick(5, unit) } ;\ndef \
-                  once : () -> Integer ;\ndef once = thunk { become single(5) } ;\n";
+                  omitted : () -> Integer ;\ndef omitted = thunk { become pick 5 *{} } ;\ndef \
+                  once : () -> Integer ;\ndef once = thunk { become single 5 } ;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let implicit = |function: &str, name: &str| Omitted::Implicit {
@@ -480,9 +480,9 @@ fn a_wildcard_emits_the_body_written_by_hand_528()
     // `idAt(_, 3)` and `idAt(Integer, 3)`: the checker writes the term the
     // wildcard's comparison forces in its place, so the body it accepts is
     // the one the author could have written, the wildcard adding nothing.
-    let source = "def idAt(a : Type, y : a) -> -F a { return y }\ndef forced : () => Integer \
-                  ;\ndef forced = thunk { become idAt(_, 3) } ;\ndef written : () => Integer ;\n\
-                  def written = thunk { become idAt(Integer, 3) } ;\n";
+    let source = "def idAt(a : Type, y : a) -> -F a { return y }\ndef forced : () -> Integer \
+                  ;\ndef forced = thunk { become idAt _ 3 } ;\ndef written : () -> Integer ;\n\
+                  def written = thunk { become idAt (Integer) 3 } ;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let report = judged(&module, &mut arena);
@@ -564,7 +564,7 @@ fn a_standing_supply_opens_a_lambda_per_explicit_before_it_1498()
     // `g`'s type names `s`, so `swapAt[.g = …]` opens `λ s. λ t.`, `s`
     // outermost: the supply stands at the type binding `s` first and `v` at
     // `s`, and not at the one whose `v` is at `t`.
-    let swap = "def swapAt[g : (y : s) => s](s : Type, t : Type, v : s) -> -F s { become g(v) }\n";
+    let swap = "def swapAt[g : (y : s) -> s](s : Type, t : Type, v : s) -> -F s { become g v }\n";
     // Whether every declaration checks with `standing` stated at `v : result`.
     let all_check = |result: &str| {
         let source = format!(
@@ -594,7 +594,7 @@ fn a_standing_stage_supply_stands_as_its_call_1498()
 {
     // A stage crosses only at a call's head: `applyAt[.i = k]` passed as a
     // value is `λ f. λ x. applyAt[.i = k](f, x)`.
-    let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\ndef applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat { f(x) }\ndef apply2[j : Size](g : (f : Nat[<j] => Nat, x : Nat[<j]) => Nat, f : Nat[<j] => Nat, x : Nat[<j]) -> -F Nat { become g(f, x) }\ndef passAt[k : Size](f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat { become apply2[.j = k](applyAt[.i = k], f, x) }\n";
+    let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\ndef applyAt[i : Size](f : Nat[<i] -> Nat, x : Nat[<i]) -> -F Nat { f x }\ndef apply2[j : Size](g : (f : Nat[<j] -> Nat, x : Nat[<j]) -> Nat, f : Nat[<j] -> Nat, x : Nat[<j]) -> -F Nat { become g f x }\ndef passAt[k : Size](f : Nat[<k] -> Nat, x : Nat[<k]) -> -F Nat { become apply2[.j = k] applyAt[.i = k] f x }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let report = judged(&module, &mut arena);
@@ -631,7 +631,7 @@ module Tens : Model(ResetCounter) where {
   def read(c : Integer) -> -F Integer { c }
   def reset(c : Integer) -> -F Integer { 0 }
 }
-def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read(s.incr(c)) }
+def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read (s.incr c) }
 ";
 
 /// Each parameter the declared type `declared` binds, outermost first: its
@@ -1087,13 +1087,13 @@ module Up : Model(Counter) where {
 module Flips : Model(ResetCounter) where {
   type C = Bool;
   def zero = false;
-  def incr(c : Bool) -> -F Bool { match c { true => false, false => true } }
-  def read(c : Bool) -> -F Integer { match c { true => 1, false => 0 } }
+  def incr(c : Bool) -> -F Bool { match c { | true => false | false => true } }
+  def read(c : Bool) -> -F Integer { match c { | true => 1 | false => 0 } }
   def reset(c : Bool) -> -F Bool { false }
 }
-def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read(s.incr(c)) }
-def counted() -> -F Integer { stepped(4) }
-def flipped() -> -F Integer { stepped((false : Bool)) }
+def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read (s.incr c) }
+def counted() -> -F Integer { stepped 4 }
+def flipped() -> -F Integer { stepped (false : Bool) }
 ";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
@@ -1118,11 +1118,11 @@ module Up : Model(Counter) where {
 module Flips : Model(Counter) where {
   type C = Bool;
   def zero = false;
-  def incr(c : Bool) -> -F Bool { match c { true => false, false => true } }
-  def read(c : Bool) -> -F Integer { match c { true => 1, false => 0 } }
+  def incr(c : Bool) -> -F Bool { match c { | true => false | false => true } }
+  def read(c : Bool) -> -F Integer { match c { | true => 1 | false => 0 } }
 }
-def fromZero[s : Model(Counter) with sort C = Integer]() -> -F Integer { s.read(s.incr(s.zero)) }
-def counted() -> -F Integer { fromZero() }
+def fromZero[s : Model(Counter) with sort C = Integer]() -> -F Integer { s.read (s.incr s.zero) }
+def counted() -> -F Integer { fromZero () }
 ";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
@@ -1153,8 +1153,8 @@ module Up : Model(Counter) where {
   def incr(c : Integer) -> -F Integer { c + 1 }
   def read(c : Integer) -> -F Integer { c }
 }
-def fromZero[s : Model(Counter) with sort C = Integer]() -> -F Integer { s.read(s.incr(s.zero)) }
-def deeper() -> -F Integer { let a = 1; let b = a; let c = b; match c { _ => match c { _ => fromZero() } } }
+def fromZero[s : Model(Counter) with sort C = Integer]() -> -F Integer { s.read (s.incr s.zero) }
+def deeper() -> -F Integer { let a = 1; let b = a; let c = b; match c { _ => match c { _ => fromZero () } } }
 ";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
@@ -1208,7 +1208,7 @@ fn a_model_implicit_supplied_by_a_value_is_refused_739()
 }
 
 /// A line printed through the instance `out` its row names.
-const SAY: &str = "def say() -> -F [out : std.io.Console.Eff] Unit { out.print(\"x\") }\n";
+const SAY: &str = "def say() -> -F [out : std.io.Console.Eff] Unit { out.print \"x\" }\n";
 
 /// A handler of `Console` answering 1, around `body`.
 ///
@@ -1231,7 +1231,7 @@ fn a_row_label_is_an_instance_after_every_parameter_2271()
     // its row, each at a region binder of its own: the type its explicit twin
     // writes. Its row's tail reads `r` past both instances, which no type
     // names, as the twin's reads it past `x` and `y`.
-    let source = "def both[r : Row](s : String) -> -F [x : std.io.Console.Eff, y : std.io.Console.Eff | r] Unit { y.print(s) }\ndef twin[r : Row, q : Region, q1 : Region](s : String, x : Cap {print} at q, y : Cap {print} at q1) -> -F [q : std.io.Console.Eff, q1 : std.io.Console.Eff | r] Unit { y.print(s) }\n";
+    let source = "def both[r : Row](s : String) -> -F [x : std.io.Console.Eff, y : std.io.Console.Eff | r] Unit { y.print s }\ndef twin[r : Row, q : Region, q1 : Region](s : String, x : Cap {print} at q, y : Cap {print} at q1) -> -F [q : std.io.Console.Eff, q1 : std.io.Console.Eff | r] Unit { y.print s }\n";
     let mut arena = CoreArena::new();
     let text = hosting(source);
     let module = hosted(&text, &mut arena);
@@ -1259,7 +1259,7 @@ fn a_row_label_naming_a_region_binder_is_its_instance_2271()
 {
     // `twin`'s labels name its region binders: they bind no parameter, and
     // every parameter it takes is written.
-    let source = "def twin[r : Region](x : Cap {print} at r) -> -F [r : std.io.Console.Eff] Unit { x.print(\"x\") }\n";
+    let source = "def twin[r : Region](x : Cap {print} at r) -> -F [r : std.io.Console.Eff] Unit { x.print \"x\" }\n";
     let mut arena = CoreArena::new();
     let text = hosting(source);
     let module = hosted(&text, &mut arena);

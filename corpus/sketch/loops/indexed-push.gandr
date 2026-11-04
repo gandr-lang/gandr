@@ -14,31 +14,28 @@
 
 /// The first `n` values of `f`, in order. The checker infers the family
 /// `Vec(A, i)` over the counter, so `v` leaves the loop at `Vec(A, n)`.
-def tabulate[A : Type](n : Nat, f : Fin(n) -> A) -> Vec(A, n) {
-  let v = Vec.empty();
+def tabulate[A : Type](n : Nat, f : Fin(n) -> A) -> Vec(A, n) =
+  let v = Vec.empty ()
   for i in 0 .. n {
-    v.push(f(i))
+    v.push (f i)
   }
   v
-}
 
 /// The same loop with its family written at the head. The head names the
 /// state's type at the start of every pass.
-def tabulateStated[A : Type](n : Nat, f : Fin(n) -> A) -> Vec(A, n) {
-  let v = Vec.empty();
+def tabulateStated[A : Type](n : Nat, f : Fin(n) -> A) -> Vec(A, n) =
+  let v = Vec.empty ()
   for i in 0 .. n over (v : Vec(A, i)) {
-    v.push(f(i))
+    v.push (f i)
   }
   v
-}
 
 /// Each pass pushes a value and its image, so the length grows by two. The
 /// head states the family `Vec(A, 2 * i)`.
-def interleave[A : Type](n : Nat, xs : Vec(A, n), g : A -> A) -> Vec(A, 2 * n) {
-  let v = Vec.empty();
+def interleave[A : Type](n : Nat, xs : Vec(A, n), g : A -> A) -> Vec(A, 2 * n) =
+  let v = Vec.empty ()
   for i in 0 .. n over (v : Vec(A, 2 * i)) {
-    v.push(xs.#[i]);
-    v.push(g(xs.#[i]))
+    v.push xs.#[i];
+    v.push (g xs.#[i])
   }
   v
-}

@@ -3,18 +3,16 @@
 ///
 /// - see: #1132 — `stash`
 @[ refuses("ViewEscaped") ]
-def leak() -> Integer {
-  var c = 0;
+def leak() -> Integer =
+  var c = 0
   access c as v { force thunk { resume(v, 1) } };
   pure c
-}
 
 /// A held value captured by a thunk would outlive its hold the same way. The
 /// thunk here is forced inside the hold, so the refused body still runs to the
 /// value it read: the refusal is the checker's caution, not a fault the run
 /// meets.
 @[ runs("0"), refuses("HeldCaptured") ]
-def stash() -> Integer {
-  var c = 0;
+def stash() -> Integer =
+  var c = 0
   force thunk { pure c }
-}

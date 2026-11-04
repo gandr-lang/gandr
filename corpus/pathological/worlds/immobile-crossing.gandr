@@ -10,27 +10,24 @@ import "../../model/worlds/seat-and-operator.gandr";
 /// The dispatch taken back from the seat, refused: `Dispatch` is not marked,
 /// so its representation stays with the seal.
 @[ refuses("Immobile") ]
-@[ entry((operator, seat)) ]
-def unmarkedBack() -> Seat.Dispatch {
+@[ entry(*{operator, seat}) ]
+def unmarkedBack() -> Seat.Dispatch =
   migrate [seat] { pure Seat.task }
-}
 
 /// A handle to the dispatch taken back from the seat, refused: a handle
 /// crosses only when what it holds is open, and an unmarked abstract type is
 /// not.
 @[ refuses("NotOpen") ]
-@[ entry((operator, seat)) ]
-def unmarkedHandle() -> -F (Seat.Dispatch at seat) {
+@[ entry(*{operator, seat}) ]
+def unmarkedHandle() -> -F (Seat.Dispatch at seat) =
   migrate [seat] { (hold Seat.task) }
-}
 
 /// A thunk over the dispatch taken back from the seat, refused at the
 /// capture: the dispatch stays with its seal, so the thunk does.
 @[ refuses("Immobile.Capture") ]
-@[ entry((operator, seat)) ]
-def suspendedBack() -> () => Seat.Dispatch {
+@[ entry(*{operator, seat}) ]
+def suspendedBack() -> () -> Seat.Dispatch =
   migrate [seat] {
     let task = Seat.task;
     pure thunk { pure task }
   }
-}

@@ -346,9 +346,9 @@ fn a_script_runs_through_what_it_imports_2970()
 #[test]
 fn a_script_passes_its_arguments_to_its_entry_1881()
 {
-    let counted = "import std.list (List);\ndef rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    #[] => 0,\n    \
-                   #[x, ..rest] => { let n = count[<](rest); n + 1 }\n  }\n}\ndef main(args : \
-                   List(String)) -> -F Integer { become count(args) }\n";
+    let counted = "import std.list (List);\ndef rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    | #[] => 0\n    \
+                   | #[x, ..rest] => { let n = count[<] rest; n + 1 }\n  }\n}\ndef main(args : \
+                   List(String)) -> -F Integer { become count args }\n";
     let file = Scratch::write(Path::new("arguments"), SourceText::from(counted));
     for arguments in [vec![], vec![String::from("one"), String::from("two")]] {
         let mut script = Script::new(file.0.clone());
@@ -487,7 +487,7 @@ fn a_script_pings_over_its_network_3186()
     let stray = Scratch::write(
         Path::new("net-stray-3186"),
         SourceText::from(
-            "import std.net;\ndef main() -> -F [std.net.Eff] Integer { std.net.transmit(7, \"lost\"); 0 }\n",
+            "import std.net;\ndef main() -> -F [std.net.Eff] Integer { std.net.transmit 7 \"lost\"; 0 }\n",
         ),
     );
     let mut script = Script::new(stray.0.clone());

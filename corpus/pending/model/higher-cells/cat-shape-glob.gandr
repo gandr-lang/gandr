@@ -1,11 +1,9 @@
-codata Glob : Type where {
+codata Glob : Type where
   cells : Type;
   hom : (x : cells, y : cells) --> Glob;
-}
 
-def path_glob(A : Type) -> Glob {
+def path_glob(A : Type) -> Glob =
   glob {
     cells = A;
-    hom (x, y) = path_glob(Path(x, y));
+    hom *{x, y} = path_glob (Path x y);
   }
-}

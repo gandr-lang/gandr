@@ -10,33 +10,31 @@ import std.process;
 /// Keeps a view of a value held inside the handler at the hold, and forces it
 /// before the hold ends.
 @[ runs("42") ]
-def keptAtHold() -> Integer {
+def keptAtHold() -> Integer =
   handle inner : std.process.Exit.Eff {
     var l = 42;
-    let q : (() => Integer) at l = access shared l as w { pure pure w };
+    let q : (() -> Integer) at l = access shared l as w { pure pure w };
     force q
   } with {
-    pure(y) => pure y,
-    oper exit(code, k) => pure 0
+    | pure(y) => pure y
+    | oper exit(code, k) => pure 0
   }
-}
 
 /// The same inside a handler a `run` binds within another: where a handler is
 /// bound opens no region of its own.
 @[ runs("42") ]
-def keptAtNestedHold() -> Integer {
+def keptAtNestedHold() -> Integer =
   handle outer : std.process.Exit.Eff {
     let x : Integer = handle inner : std.process.Exit.Eff {
       var l = 42;
-      let q : (() => Integer) at l = access shared l as w { pure pure w };
+      let q : (() -> Integer) at l = access shared l as w { pure pure w };
       force q
     } with {
-      pure(y) => pure y,
-      oper exit(code, k) => pure 0
+      | pure(y) => pure y
+      | oper exit(code, k) => pure 0
     };
     pure x
   } with {
-    pure(y) => pure y,
-    oper exit(code, k) => pure 0
+    | pure(y) => pure y
+    | oper exit(code, k) => pure 0
   }
-}

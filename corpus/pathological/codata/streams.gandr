@@ -10,92 +10,80 @@
 // - see: #2188 — `Swap`, `Twisted`
 
 /// A stream of integers, the family every definition here builds.
-codata Stream : Type[-] where {
+codata Stream : Type[-] where
   head : Integer;
   tail : Stream;
-}
 
 /// A point at the value universe: an observation is a computation, so the
 /// family's kind is a computation universe.
 @[ refuses("CodataKindNotUniverse") ]
-codata Point : Type where {
+codata Point : Type where
   x : Integer;
   depth : Integer;
-}
 
 /// A pair of streams interleaved by swapping its parameters at the tail: a
 /// family names itself only at its own parameters in order.
 @[ refuses("CodataOccurrence") ]
-codata Swap(a : Type, b : Type) : Type[-] where {
+codata Swap(a : Type, b : Type) : Type[-] where
   head : a;
   tail : Swap(b, a);
-}
 
 /// A stream whose tail nests the family in its own argument: refused the same
 /// way.
 @[ refuses("CodataOccurrence") ]
-codata Twisted(a : Type) : Type[-] where {
+codata Twisted(a : Type) : Type[-] where
   head : a;
   tail : Twisted(Twisted(a));
-}
 
 /// Three readings of a position.
-codata Spot : Type[-] where {
+codata Spot : Type[-] where
   x : Integer;
   y : Integer;
   depth : Integer;
-}
 
 /// A block that leaves the `depth` observation unanswered.
 @[ refuses("MalformedForm") ]
-def shallow(n : Integer) -> Spot {
+def shallow(n : Integer) -> Spot =
   &{.x => return n, .y => return n}
-}
 
 /// A block answering an observation the family does not have.
 @[ refuses("UnresolvedName") ]
-def stray(n : Integer) -> Spot {
+def stray(n : Integer) -> Spot =
   &{.x => return n, .y => return n, .z => return n}
-}
 
 /// The head of a stream.
-def peek(s : +U Stream) -> Integer {
+def peek(s : +U Stream) -> Integer =
   become s.head
-}
 
 /// A stream pointwise sum, the call the refusals below nest a productive
 /// call under.
-def rec sums(s : +U Stream, t : +U Stream) -> Stream {
+def rec sums(s : +U Stream, t : +U Stream) -> Stream =
   &{
     .head => {
-      let x = peek(s);
-      let y = peek(t);
+      let x = peek s;
+      let y = peek t;
       x + y
     },
-    .tail => sums[>](s.tail, t.tail)
+    .tail => sums[>] s.tail t.tail
   }
-}
 
 /// The Fibonacci numbers as a stream summed with its own tail: the productive
 /// calls stand under `sums`, which the guard cannot see through; the sized
 /// rung's `>` admits it.
 @[ refuses("UnguardedCorecursion") ]
-def rec fibs(n : Integer) -> Stream {
+def rec fibs(n : Integer) -> Stream =
   &{
     .head => return n,
-    .tail => sums(thunk { fibs[>](n) }, thunk { fibs[>](n) })
+    .tail => sums (thunk { fibs[>] n }) (thunk { fibs[>] n })
   }
-}
 
 /// A productive call under `become` is not the arm itself.
 @[ refuses("UnguardedCorecursion") ]
-def rec deferred(n : Integer) -> Stream {
-  &{.head => return n, .tail => become deferred[>](n)}
-}
+def rec deferred(n : Integer) -> Stream =
+  &{.head => return n, .tail => become deferred[>] n}
 
 /// A productive call outside any copattern block: nothing is observed before
 /// the function runs again.
 @[ refuses("UnguardedCorecursion") ]
-def rec bare(n : Integer) -> Stream {
-  bare[>](n)
-}
+def rec bare(n : Integer) -> Stream =
+  bare[>] n

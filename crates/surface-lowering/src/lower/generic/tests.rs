@@ -20,7 +20,7 @@ use crate::unit::Unit;
 const DATA: &str = "\
 data Point : Type where { | Point : (x : Integer, y : Integer) --> Point }
 data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-data Shape : Type where { | Shape : (f : (Integer) => Integer) --> Shape }
+data Shape : Type where { | Shape : (f : (Integer) -> Integer) --> Shape }
 data Box(a : Type) : Type where { | Box : (x : a) --> Box(a) }
 ";
 
@@ -63,9 +63,9 @@ fn a_generic_equality_lowers_to_the_derived_declaration_2302()
     // prelude's `Eq.generic` yields no declaration of its own.
     let (text, unit) = laid(SourceText::from(
         "\
-def eqPoint = Eq.generic(Point) ;
-def stated : (Point, Point) => Bool = Eq.generic(Point) ;
-def eqNat = Eq.generic(Nat) ;
+def eqPoint = Eq.generic Point ;
+def stated : *{Point, Point} -> Bool = Eq.generic Point ;
+def eqNat = Eq.generic Nat ;
 ",
     ));
     let mut arena = CoreArena::new();
@@ -99,7 +99,7 @@ fn a_leaf_reads_a_source_s_family_before_the_prelude_s_3287()
     let (text, unit) = laid(SourceText::from(
         "\
 data Tagged : Type where { | Tagged : (shown : Bool, count : Nat) --> Tagged }
-def eqTagged = Eq.generic(Tagged) ;
+def eqTagged = Eq.generic Tagged ;
 ",
     ));
     let mut arena = CoreArena::new();
@@ -115,14 +115,14 @@ fn a_derived_law_lowers_to_its_proof_2302()
     // `==` reaches points through it.
     let (text, unit) = laid(SourceText::from(
         "\
-def reflPoint = Eq.generic.refl(Point) ;
-def symPoint = Eq.generic.sym(Point) ;
+def reflPoint = Eq.generic.refl Point ;
+def symPoint = Eq.generic.sym Point ;
 module EqPoint : Model(Eq) with sort Carrier = Point where {
-  def eq = Eq.generic(Point) ;
-  def refl = Eq.generic.refl(Point) ;
-  def sym = Eq.generic.sym(Point) ;
+  def eq = Eq.generic Point ;
+  def refl = Eq.generic.refl Point ;
+  def sym = Eq.generic.sym Point ;
 }
-def same() -> Bool { Point(1, 2) == Point(1, 2) }
+def same() -> Bool { Point 1 2 == Point 1 2 }
 ",
     ));
     let mut arena = CoreArena::new();
@@ -140,7 +140,7 @@ def same() -> Bool { Point(1, 2) == Point(1, 2) }
 #[test]
 fn a_generic_equality_names_the_declaration_each_case_eliminates_2363()
 {
-    let (text, unit) = laid(SourceText::from("def eqNat = Eq.generic(Nat) ;\n"));
+    let (text, unit) = laid(SourceText::from("def eqNat = Eq.generic Nat ;\n"));
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
     // The source's own naturals, declared after the prelude's binary `Nat`.
@@ -168,7 +168,7 @@ fn a_source_s_own_eq_module_is_no_derivation_2302()
     // With no prelude, `Eq.generic` is whatever the source declares.
     let source = "\
 module Eq where { def generic(a : Integer) -> -F Integer { return a } }
-def one() -> -F Integer { Eq.generic(1) }
+def one() -> -F Integer { Eq.generic 1 }
 ";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
@@ -182,10 +182,10 @@ fn a_misplaced_generic_is_refused_at_the_call_2302()
     // as a value, each refused at the form.
     let (text, unit) = laid(SourceText::from(
         "\
-def inside() -> Bool { Eq.generic(Point)(Point(1, 2), Point(1, 2)) }
-def integers = Eq.generic(Integer) ;
+def inside() -> Bool { (Eq.generic Point) (Point 1 2) (Point 1 2) }
+def integers = Eq.generic (Integer) ;
 def bare = Eq.generic ;
-def reflIntegers = Eq.generic.refl(Integer) ;
+def reflIntegers = Eq.generic.refl (Integer) ;
 ",
     ));
     let mut arena = CoreArena::new();
@@ -219,9 +219,9 @@ fn an_uncovered_declaration_is_refused_at_its_name_2302()
     // refused at the name of the type.
     let (text, unit) = laid(SourceText::from(
         "\
-def shapes = Eq.generic(Shape) ;
-def boxes = Eq.generic(Box) ;
-def reflNats = Eq.generic.refl(Nat) ;
+def shapes = Eq.generic Shape ;
+def boxes = Eq.generic Box ;
+def reflNats = Eq.generic.refl Nat ;
 ",
     ));
     let mut arena = CoreArena::new();

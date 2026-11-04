@@ -29,9 +29,8 @@ def useAtExtension(
   q : +U ((g : con) -> -F tm(extend(g))),
   use : +U ((g : con) -> (t : tm(g)) -> -F Unit),
   g : con
-) -> -F Unit {
-  use(extend(g), q(g))
-}
+) -> -F Unit =
+  use (extend g) (q g)
 
 /// The same with the family applied to a variable, which needs no call bound
 /// ahead of it.
@@ -42,46 +41,43 @@ def useAtVariable(
   q : +U ((g : con) -> -F tm(g)),
   use : +U ((g : con) -> (t : tm(g)) -> -F Unit),
   g : con
-) -> -F Unit {
-  use(g, q(g))
-}
+) -> -F Unit =
+  use g (q g)
 
 /// The law of the first stated as a record's field: each later field's type
 /// reads the family field, and the types printed at `use` and `q` in the law
 /// name it by its label.
 @[ checks ]
 def fieldAt(
-  m : #{
+  m : *{
     con : Type,
     tm : +U (con -> -F Type),
     extend : +U ((g : con) -> -F con),
     q : +U ((g : con) -> -F tm(extend(g))),
     use : +U ((g : con) -> (t : tm(g)) -> -F Unit),
-    law : +U ((g : con) -> -F Path[.A = Unit](use(extend(g), q(g)), unit))
+    law : +U ((g : con) -> -F Path[.A = Unit](use (extend g) (q g), *{}))
   }
-) -> -F Unit {
-  return unit
-}
+) -> -F Unit =
+  return *{}
 
 /// A record holding a family and an operation into it: the operation's field
 /// is at the family applied to its argument, which the check reads through
 /// the family the record holds before it reads `unit` against it; the
 /// family drops its argument, so the field prints as `Unit => Unit`.
 @[ checks ]
-def familyRecord : #{con : Type, tm : +U (con -> -F Type), f : +U ((g : con) -> -F tm(g))};
-def familyRecord = #{Unit, #{thunk { fun (g) { return Unit } }, thunk { fun (g) { return unit } }}};
+def familyRecord : *{con : Type, tm : +U (con -> -F Type), f : +U ((g : con) -> -F tm(g))};
+def familyRecord = *{Unit, *{thunk { fun (g) { return Unit } }, thunk { fun (g) { return *{} } }}};
 
 /// A family applied through a definition: `appliedVia(post, x)` unfolds to
 /// `post(x)`.
-def appliedVia(post : +U (Unit -> -F Type), x : Unit) -> Type { post(x) }
+def appliedVia(post : +U (Unit -> -F Type), x : Unit) -> Type { post x }
 
 /// The application written out stands where the definition's is asked, and
 /// the definition's where the written one is: a definition that unfolds to a
 /// variable's call converts with the call.
 @[ checks ]
-def appliedWrittenOut(post : +U (Unit -> -F Type), x : Unit, h : post(x)) -> appliedVia(post, x) {
+def appliedWrittenOut(post : +U (Unit -> -F Type), x : Unit, h : post(x)) -> appliedVia(post, x) =
   h
-}
 
 /// The other way round.
 @[ checks ]

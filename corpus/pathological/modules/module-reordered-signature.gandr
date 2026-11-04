@@ -3,7 +3,7 @@
 // signature leaves out stays inside.
 
 /// A module whose signature lists its members last first.
-module Ordered : #{ third : Integer, first : Integer, second : Integer } where {
+module Ordered : *{ third : Integer, first : Integer, second : Integer } where {
   /// The first value.
   def first = 1;
   /// A member the signature leaves out.
@@ -19,4 +19,4 @@ module Ordered : #{ third : Integer, first : Integer, second : Integer } where {
 
 /// The three gathered in a record: it checks, each member typed by the
 /// signature, though the second and third are refused above.
-def gathered = #{a = Ordered.first, b = Ordered.second, c = Ordered.third};
+def gathered = *{a = Ordered.first, b = Ordered.second, c = Ordered.third};

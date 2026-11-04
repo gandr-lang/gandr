@@ -11,59 +11,51 @@
 
 /// A monoid presented as data: the block binds `Monoid : Theory`, its sort and
 /// its two operations held in one value.
-pub theory Monoid where {
+pub theory Monoid where
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
-}
 
 /// Structural recursion over any presentation's operation chain: one per
 /// `Oper` link, zero at its end.
-def rec operations(chain : Theory) -> Integer {
-  match chain {
-    Oper(name, inputs, outputs, rest) => { let r = operations[<](rest); r + 1 },
-    _ => 0
-  }
-}
+def rec operations(chain : Theory) -> Integer =
+  match chain
+    | Oper(name, inputs, outputs, rest) => { let r = operations[<] rest; r + 1 }
+    | _ => 0
 
 /// The number of operations a presentation declares, read off its `Presents`
 /// value by the generic program above.
-pub def arity(presented : Theory) -> Integer {
-  match presented {
-    Presents(sorts, opers, rules) => operations(opers),
-    _ => 0
-  }
-}
+pub def arity(presented : Theory) -> Integer =
+  match presented
+    | Presents(sorts, opers, rules) => operations opers
+    | _ => 0
 
 /// The generic program run on `Monoid`: two operations, `mul` and `one`.
 @[ runs("2") ]
-def counted() -> Integer { arity(Monoid) }
+def counted() -> Integer { arity Monoid }
 
 /// `sign` is an ordinary name now that the block's keyword is `theory`:
 /// a definition so named runs the generic program as `counted` does.
 @[ runs("2") ]
-def sign() -> Integer { arity(Monoid) }
+def sign() -> Integer { arity Monoid }
 
 /// A type computed from a presentation: a `case` over `Theory` whose arms return
 /// the quotes `Integer` and `Unit`. The type language gains no `case`; the call
 /// is unquoted where a type is read.
-def counted_at(presented : Theory) -> Type {
-  match presented {
-    Presents(sorts, opers, rules) => return Integer,
-    _ => return Unit
-  }
-}
+def counted_at(presented : Theory) -> Type =
+  match presented
+    | Presents(sorts, opers, rules) => return Integer
+    | _ => return Unit
 
 /// `counted_at(Monoid)` as a type: the closed call runs to `Integer`, so the
 /// count of `Monoid`'s operations inhabits it.
 @[ runs("2") ]
-def typed() -> counted_at(Monoid) { arity(Monoid) }
+def typed() -> counted_at(Monoid) { arity Monoid }
 
 /// On a binder the call cannot run: `counted_at(presented)` stays rigid, and
 /// its two occurrences are one type.
-def kept(presented : Theory, n : counted_at(presented)) -> counted_at(presented) {
+def kept(presented : Theory, n : counted_at(presented)) -> counted_at(presented) =
   n
-}
 
 /// Text is no `Integer`, so it does not inhabit `counted_at(Monoid)`.
 @[ refuses("TypeMismatch") ]

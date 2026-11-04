@@ -37,4 +37,4 @@ def acrossHoles : code = held;
 /// A pair whose first component waits on `code` and whose second is a string
 /// where an integer stands: the refusal wins over the wait.
 @[ refuses("TypeMismatch") ]
-def halfWaiting : code * Integer = (3, "three");
+def halfWaiting : code * Integer = *{3, "three"};

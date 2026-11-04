@@ -11,68 +11,55 @@
 // - see: #1205 — `discarded`
 
 @[ checks, form(explicit) ]
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
 
 @[ checks ]
-def rec down(n : Nat) -> -F Nat {
-  match n {
-    Zero => return n,
-    Succ(p) => become down[<](p)
-  }
-}
+def rec down(n : Nat) -> -F Nat =
+  match n
+    | Zero => return n
+    | Succ(p) => become down[<] p
 
 @[ checks ]
-def rec down_elided(n : Nat) -> -F Nat {
-  match n {
-    Zero => n,
-    Succ(p) => down_elided[<](p)
-  }
-}
+def rec down_elided(n : Nat) -> -F Nat =
+  match n
+    | Zero => n
+    | Succ(p) => down_elided[<] p
 
 @[ checks ]
-def twice(n : Nat) -> -F Nat {
-  let once = down(n);
-  become down(once)
-}
+def twice(n : Nat) -> -F Nat =
+  let once = down n
+  become down once
 
 @[ checks ]
-def twice_elided(n : Nat) -> -F Nat {
-  let once = down(n);
-  down(once)
-}
+def twice_elided(n : Nat) -> -F Nat =
+  let once = down n
+  down once
 
 @[ checks ]
-def twice_nested(n : Nat) -> -F Nat {
-  become down(down(n))
-}
+def twice_nested(n : Nat) -> -F Nat =
+  become down (down n)
 
 @[ checks ]
-def twice_run(n : Nat) -> -F Nat {
-  down(run down(n))
-}
+def twice_run(n : Nat) -> -F Nat =
+  down (run down n)
 
 @[ checks ]
-def count(n : Nat) -> -F Integer {
+def count(n : Nat) -> -F Integer =
   return 1
-}
 
 @[ checks ]
-def count_elided(n : Nat) -> -F Integer {
+def count_elided(n : Nat) -> -F Integer =
   1
-}
 
 @[ refuses("TypeMismatch") ]
-def mismatched(n : Nat) -> -F Nat {
-  become count(n)
-}
+def mismatched(n : Nat) -> -F Nat =
+  become count n
 
 @[ refuses("TypeMismatch") ]
-def mismatched_elided(n : Nat) -> -F Nat {
-  count(n)
-}
+def mismatched_elided(n : Nat) -> -F Nat =
+  count n
 
 @[ checks ]
 def identity(n : Nat) -> -F Nat { return n }
@@ -85,272 +72,229 @@ def ret : Nat;
 def ret = Zero;
 
 @[ checks ]
-def named(n : Nat) -> -F Nat {
+def named(n : Nat) -> -F Nat =
   return ret
-}
 
 @[ checks ]
-def named_elided(n : Nat) -> -F Nat {
+def named_elided(n : Nat) -> -F Nat =
   ret
-}
 
 @[ checks ]
-def rec stated(n : Nat) -> -F Nat {
-  match n {
-    Zero => { return n; },
-    Succ(p) => { become stated[<](p); }
-  }
-}
+def rec stated(n : Nat) -> -F Nat =
+  match n
+    | Zero => { return n; }
+    | Succ(p) => { become stated[<] p; }
 
 @[ checks ]
-def rec stated_elided(n : Nat) -> -F Nat {
-  match n {
-    Zero => { n },
-    Succ(p) => { stated_elided[<](p) }
-  }
-}
+def rec stated_elided(n : Nat) -> -F Nat =
+  match n
+    | Zero => { n }
+    | Succ(p) => { stated_elided[<] p }
 
 @[ checks ]
-def sequenced(n : Nat) -> -F Nat {
-  let m = down(n);
+def sequenced(n : Nat) -> -F Nat =
+  let m = down n
   return m;
-}
 
 @[ checks ]
-def sequenced_elided(n : Nat) -> -F Nat {
-  let m = down(n);
+def sequenced_elided(n : Nat) -> -F Nat =
+  let m = down n
   m
-}
 
 @[ checks ]
-def sequenced_nested(n : Nat) -> -F Nat {
-  return down(n)
-}
+def sequenced_nested(n : Nat) -> -F Nat =
+  return down n
 
 @[ checks ]
-def sequenced_run(n : Nat) -> -F Nat {
-  return run down(n)
-}
+def sequenced_run(n : Nat) -> -F Nat =
+  return run down n
 
 /// A last statement's value is the block's unit, so a body answering a
 /// natural cannot end in one.
 @[ refuses("ShapeMismatch") ]
-def discarded(n : Nat) -> -F Nat {
-  let m = down(n);
-  down(m);
-}
+def discarded(n : Nat) -> -F Nat =
+  let m = down n
+  down m;
 
 @[ checks ]
-def done(n : Nat) -> -F Unit {
-  return unit
-}
+def done(n : Nat) -> -F Unit =
+  return *{}
 
 @[ checks ]
-def done_elided(n : Nat) -> -F Unit {
-  unit
-}
+def done_elided(n : Nat) -> -F Unit =
+  *{}
 
 @[ checks ]
-def discards_unit(n : Nat) -> -F Nat {
-  done(n);
+def discards_unit(n : Nat) -> -F Nat =
+  done n
   return n
-}
 
 @[ checks ]
-def discards_unit_elided(n : Nat) -> -F Nat {
-  done(n);
+def discards_unit_elided(n : Nat) -> -F Nat =
+  done n
   n
-}
 
 @[ refuses("ShapeMismatch") ]
-def discards_nat(n : Nat) -> -F Nat {
-  down(n);
+def discards_nat(n : Nat) -> -F Nat =
+  down n
   return n
-}
 
 @[ refuses("ShapeMismatch") ]
-def discards_nat_elided(n : Nat) -> -F Nat {
-  down(n);
+def discards_nat_elided(n : Nat) -> -F Nat =
+  down n
   n
-}
 
 @[ checks ]
-def discards_any(n : Nat) -> -F Nat {
-  let _ = down(n);
+def discards_any(n : Nat) -> -F Nat =
+  let _ = down n
   return n
-}
 
 @[ checks ]
-def discards_any_elided(n : Nat) -> -F Nat {
-  let _ = down(n);
+def discards_any_elided(n : Nat) -> -F Nat =
+  let _ = down n
   n
-}
 
 @[ refuses("Unreachable") ]
-def early(n : Nat) -> -F Nat {
-  let m = return n;
+def early(n : Nat) -> -F Nat =
+  let m = return n
   return m
-}
 
 @[ refuses("Unreachable") ]
-def early_elided(n : Nat) -> -F Nat {
-  let m = return n;
+def early_elided(n : Nat) -> -F Nat =
+  let m = return n
   m
-}
 
 @[ refuses("Unreachable") ]
-def local(n : Nat) -> -F Nat {
-  let m = become down(n);
+def local(n : Nat) -> -F Nat =
+  let m = become down n
   return m
-}
 
 @[ refuses("Unreachable") ]
-def local_elided(n : Nat) -> -F Nat {
-  let m = become down(n);
+def local_elided(n : Nat) -> -F Nat =
+  let m = become down n
   m
-}
 
 @[ refuses("OutOfFragment.NotInTail") ]
 def returned = return Zero;
 
 @[ checks ]
-def predecessor(n : Nat) -> -F Nat {
-  let m = match n {
-    Zero => return n,
-    Succ(p) => pure p,
-  };
+def predecessor(n : Nat) -> -F Nat =
+  let m = match n
+    | Zero => return n
+    | Succ(p) => pure p
   return m
-}
 
 @[ checks ]
-def predecessor_elided(n : Nat) -> -F Nat {
-  let m = match n {
-    Zero => return n,
-    Succ(p) => pure p,
-  };
+def predecessor_elided(n : Nat) -> -F Nat =
+  let m = match n
+    | Zero => return n
+    | Succ(p) => pure p
   m
-}
 
 @[ checks ]
-def pick(n : Nat) -> -F Nat {
-  let m = match n {
-    Zero => return n,
-    Succ(p) => {
+def pick(n : Nat) -> -F Nat =
+  let m = match n
+    | Zero => return n
+    | Succ(p) => {
       let q = match p {
-        Zero => return n,
-        Succ(r) => pure r,
+        | Zero => return n
+        | Succ(r) => pure r
       };
       pure q
-    },
-  };
-  return Succ(m)
-}
+    }
+  return Succ m
 
 @[ checks ]
-def pick_elided(n : Nat) -> -F Nat {
-  let m = match n {
-    Zero => return n,
-    Succ(p) => {
+def pick_elided(n : Nat) -> -F Nat =
+  let m = match n
+    | Zero => return n
+    | Succ(p) => {
       let q = match p {
-        Zero => return n,
-        Succ(r) => pure r,
+        | Zero => return n
+        | Succ(r) => pure r
       };
       pure q
-    },
-  };
-  Succ(m)
-}
+    }
+  Succ m
 
 @[ runs("Zero") ]
-def pick_zero() -> -F Nat { become pick(Zero) }
+def pick_zero() -> -F Nat { become pick Zero }
 
 @[ runs("Zero") ]
-def pick_zero_elided() -> -F Nat { pick_elided(Zero) }
+def pick_zero_elided() -> -F Nat { pick_elided Zero }
 
 @[ runs("Succ(Zero)") ]
-def pick_one() -> -F Nat { become pick(Succ(Zero)) }
+def pick_one() -> -F Nat { become pick (Succ Zero) }
 
 @[ runs("Succ(Zero)") ]
-def pick_one_elided() -> -F Nat { pick_elided(Succ(Zero)) }
+def pick_one_elided() -> -F Nat { pick_elided (Succ Zero) }
 
 @[ runs("Succ(Succ(Zero))") ]
-def pick_three() -> -F Nat { become pick(Succ(Succ(Succ(Zero)))) }
+def pick_three() -> -F Nat { become pick (Succ (Succ (Succ Zero))) }
 
 @[ runs("Succ(Succ(Zero))") ]
-def pick_three_elided() -> -F Nat { pick_elided(Succ(Succ(Succ(Zero)))) }
+def pick_three_elided() -> -F Nat { pick_elided (Succ (Succ (Succ Zero))) }
 
 @[ checks ]
-def handed(n : Nat) -> -F Nat {
-  let m = match n {
-    Zero => become down(n),
-    Succ(p) => pure p,
-  };
-  return Succ(m)
-}
+def handed(n : Nat) -> -F Nat =
+  let m = match n
+    | Zero => become down n
+    | Succ(p) => pure p
+  return Succ m
 
 @[ checks ]
-def handed_elided(n : Nat) -> -F Nat {
-  let m = match n {
-    Zero => become down(n),
-    Succ(p) => pure p,
-  };
-  Succ(m)
-}
+def handed_elided(n : Nat) -> -F Nat =
+  let m = match n
+    | Zero => become down n
+    | Succ(p) => pure p
+  Succ m
 
 @[ checks ]
-def rec skim(n : Nat) -> -F Nat {
-  match n {
-    Zero => return n,
-    Succ(p) => {
+def rec skim(n : Nat) -> -F Nat =
+  match n
+    | Zero => return n
+    | Succ(p) => {
       let _ = match p {
-        Zero => return p,
-        Succ(r) => pure r,
+        | Zero => return p
+        | Succ(r) => pure r
       };
-      become skim[<](p)
-    },
-  }
-}
+      become skim[<] p
+    }
 
 @[ checks ]
-def rec skim_elided(n : Nat) -> -F Nat {
-  match n {
-    Zero => n,
-    Succ(p) => {
+def rec skim_elided(n : Nat) -> -F Nat =
+  match n
+    | Zero => n
+    | Succ(p) => {
       let _ = match p {
-        Zero => return p,
-        Succ(r) => pure r,
+        | Zero => return p
+        | Succ(r) => pure r
       };
-      skim_elided[<](p)
-    },
-  }
-}
+      skim_elided[<] p
+    }
 
 @[ runs("Zero") ]
-def skimmed() -> -F Nat { become skim(Succ(Succ(Succ(Zero)))) }
+def skimmed() -> -F Nat { become skim (Succ (Succ (Succ Zero))) }
 
 @[ runs("Zero") ]
-def skimmed_elided() -> -F Nat { skim_elided(Succ(Succ(Succ(Zero)))) }
+def skimmed_elided() -> -F Nat { skim_elided (Succ (Succ (Succ Zero))) }
 
 @[ refuses("OutOfFragment.JoinsBlock") ]
-def joined(n : Nat) -> -F Nat {
-  let m = match n -> -F Nat {
-    Zero => return n,
-    Succ(p) => pure p,
-  };
+def joined(n : Nat) -> -F Nat =
+  let m = match n -> -F Nat
+    | Zero => return n
+    | Succ(p) => pure p
   return m
-}
 
 @[ refuses("OutOfFragment.JoinsBlock") ]
-def joined_elided(n : Nat) -> -F Nat {
-  let m = match n -> -F Nat {
-    Zero => return n,
-    Succ(p) => pure p,
-  };
+def joined_elided(n : Nat) -> -F Nat =
+  let m = match n -> -F Nat
+    | Zero => return n
+    | Succ(p) => pure p
   m
-}
 
 @[ refuses("MalformedForm") ]
 def rec stream(n : Nat) -> Stream(Nat) {
   .head => return n,
-  .tail => stream[>](Succ(n))
+  .tail => stream[>] (Succ n)
 }

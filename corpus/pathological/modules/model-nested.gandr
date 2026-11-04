@@ -14,15 +14,13 @@ import "../../model/modules/model-nested.gandr";
 /// The facts with their nested module unascribed: `Faceted` states a model
 /// of `Answering` under `inner`, and a module ascribed no theory is not one.
 @[ refuses("OutOfFragment.WrongSort") ]
-module Unascribed : Model(Faceted) where {
+module Unascribed : Model(Faceted) where
   /// The nested module, ascribed no theory.
-  module inner where {
+  module inner where
     /// The answer.
     def answer = 41;
-  }
   /// The total.
   def total = 42;
-}
 
 /// The sealed nested point read at the integers: `Sealed.inner.T` is an atom
 /// outside the seal, so the point is not an integer there.

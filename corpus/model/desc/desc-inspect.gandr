@@ -6,8 +6,7 @@
 //! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
 /// A traffic signal: stop, go or wait.
-data Traffic : Type where {
+data Traffic : Type where
   | Stop : Traffic
   | Go : Traffic
   | Wait : Traffic
-}

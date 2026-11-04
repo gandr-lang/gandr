@@ -5,19 +5,16 @@
 // - see: #391 — `classify`
 
 /// Three colours, one arm each.
-data Color : Type where {
+data Color : Type where
   | Red : Color
   | Green : Color
   | Blue : Color
-}
 
 /// Every colour reaches the hole.
 @[ refuses("UndecidedCoverage") ]
-def classify(c : Color) -> Integer {
-  match c {
+def classify(c : Color) -> Integer =
+  match c
     ?branch => 1
-  }
-}
 
 /// The function, named again: it checks against `classify`'s signature, whose
 /// body is refused above, so it is not run.

@@ -20,7 +20,7 @@ module Counted where {
 
 /// The same member under a transparent ascription: the component's witness
 /// reads the member's expectation, and the refusal is the member's alone.
-module Ascribed : #{ three : Integer, type R } where {
+module Ascribed : *{ three : Integer, type R } where {
   /// Three, a value.
   @[ runs("3") ]
   def three = 3;
@@ -30,7 +30,7 @@ module Ascribed : #{ three : Integer, type R } where {
 }
 
 /// A functor whose type member reads its argument's value.
-module Pointed(S : #{ type T, z : T }) where {
+module Pointed(S : *{ type T, z : T }) where {
   /// A path at the argument's point.
   @[ refuses("PhaseDependence") ]
   type At = Path(S.z, S.z);

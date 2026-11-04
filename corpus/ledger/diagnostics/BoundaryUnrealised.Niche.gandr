@@ -4,10 +4,10 @@ import std.boundary (Arg, Code, NoCode, Plain, Row, Sum);
 import std.layout (Done, Field, NoVariant, Ref, U32, Variant);
 
 /// `Option<&u32>`: one word, its discriminant in the reference's null.
-def optRef : Code = Sum(Variant("Some", Field("0", Ref, Done), Variant("None", Done, NoVariant)));
+def optRef : Code = Sum (Variant "Some" (Field "0" Ref Done) (Variant "None" Done NoVariant));
 
 /// A `u32` and an `Option<&u32>` to a `u32`.
-def borrowedRow : Row = Row(Arg(Plain(U32), Arg(optRef, NoCode)), Plain(U32));
+def borrowedRow : Row = Row (Arg (Plain U32) (Arg optRef NoCode)) (Plain U32);
 
 @[ boundary(borrowedRow), refuses("BoundaryUnrealised.Niche") ]
 extern "rust" from "niched" as Niched {

@@ -33,58 +33,50 @@ import "../../model/data/recursive-lists.gandr" ;
 /// The direct form: a node over a list of nodes, nested through `List`'s
 /// strictly positive parameter.
 @[ checks ]
-data Bush : Type where {
+data Bush : Type where
   | Sprout : (kids : List(Bush)) --> Bush
-}
 
 /// A node without children, written directly.
 @[ checks ]
-def sprig : Bush = Sprout((Nil : List(Bush))) ;
+def sprig : Bush = Sprout (Nil : List(Bush)) ;
 
 /// A node over two childless nodes, written directly.
 @[ checks ]
-def shrub : Bush = Sprout((Cons(
-  sprig,
-  (Cons(sprig, (Nil : List(Bush))) : List(Bush))
-) : List(Bush))) ;
+def shrub : Bush = Sprout (Cons
+  sprig
+  (Cons sprig (Nil : List(Bush)) : List(Bush)) : List(Bush)) ;
 
 /// A list of numbers, summed.
 @[ checks ]
-def rec sum(xs : List(Nat)) -> Nat {
-  match xs {
-    Nil => Zero,
-    Cons(x, rest) => plus(x, sum[<](rest))
-  }
-}
+def rec sum(xs : List(Nat)) -> Nat =
+  match xs
+    | Nil => Zero
+    | Cons(x, rest) => plus x (sum[<] rest)
 
 /// The nodes of a bush, its children's measured through `map`: the call
 /// instantiates `map`'s element at the children's stage, below the node's,
 /// so `nodes[<]` takes each child.
 @[ checks ]
-def rec nodes(t : Bush) -> Nat {
-  match t {
-    Sprout(kids) => Succ(sum(map(Bush, Nat, nodes[<], kids)))
-  }
-}
+def rec nodes(t : Bush) -> Nat =
+  match t
+    Sprout(kids) => Succ (sum (map Bush Nat nodes[<] kids))
 
 /// A map over the tree: every node gains a childless node beside its
 /// children, each child grown through `map` at its stage.
 @[ checks ]
-def rec grow(t : Bush) -> Bush {
-  match t {
-    Sprout(kids) => Sprout((Cons(sprig, map(Bush, Bush, grow[<], kids)) : List(Bush)))
-  }
-}
+def rec grow(t : Bush) -> Bush =
+  match t
+    Sprout(kids) => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List(Bush))
 
 /// The shrub's three nodes, its children counted through `map` at the
 /// children's type.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def shrub_nodes : () => Nat = nodes(shrub) ;
+def shrub_nodes : () -> Nat = nodes shrub ;
 
 /// The shrub grown, then counted: the root gains a childless node and each
 /// of its two children gains one, six nodes in all.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
-def grown_nodes : () => Nat = nodes(grow(shrub)) ;
+def grown_nodes : () -> Nat = nodes (grow shrub) ;
 
 /// The tree and its forest, one block: each family names the other, and
 /// the two measures recurse through each other.
@@ -105,33 +97,30 @@ rec {
   /// The nodes of a tree: its own and its children's.
   @[ checks ]
   def rec treeSize(t : Rose) -> Nat {
-    match t {
-      Node(kids) => { let s = forestSize[<](kids); Succ(s) }
-    }
+    match t
+      Node(kids) => { let s = forestSize[<] kids; Succ s }
   }
 
   /// The nodes of a forest: each tree's, summed.
   @[ checks ]
-  def rec forestSize(ts : Forest) -> Nat {
-    match ts {
-      Empty => Zero,
-      More(t, rest) => { let a = treeSize[<](t); let b = forestSize[<](rest); plus(a, b) }
-    }
-  }
+  def rec forestSize(ts : Forest) -> Nat =
+    match ts
+      | Empty => Zero
+      | More(t, rest) => { let a = treeSize[<] t; let b = forestSize[<] rest; plus a b }
 }
 
 /// A node without children.
 @[ checks ]
-def leaf : Rose = Node(Empty) ;
+def leaf : Rose = Node Empty ;
 
 /// A node over two leaves.
 @[ checks ]
-def sapling : Rose = Node(More(leaf, More(leaf, Empty))) ;
+def sapling : Rose = Node (More leaf (More leaf Empty)) ;
 
 /// The sapling's three nodes.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def sapling_nodes : () => Nat = treeSize(sapling) ;
+def sapling_nodes : () -> Nat = treeSize sapling ;
 
 /// A forest of a sapling and a leaf: four nodes.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
-def forested : () => Nat = forestSize(More(sapling, More(leaf, Empty))) ;
+def forested : () -> Nat = forestSize (More sapling (More leaf Empty)) ;

@@ -4,7 +4,7 @@
 import std.process;
 
 /// A task's join protocol and the path it reads.
-module Cancel :> #{
+module Cancel :> *{
   type Join = !String. end,
   notes : String
 } where {
@@ -14,22 +14,20 @@ module Cancel :> #{
 }
 
 @[ checks ]
-def resume_stack(j : Stack(-F Unit, -F Unit)) -> -F Unit {
-  j(unit)
-}
+def resume_stack(j : Stack(-F Unit, -F Unit)) -> -F Unit =
+  j *{}
 
 @[ refuses("ContinuationAsValue") ]
-def handed() -> -F Unit {
+def handed() -> -F Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {
       send(task, Cancel.notes);
       close(task)
     };
-    c.exit(1);
+    c.exit 1;
     let text = recv(found);
     close(found)
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => resume_stack(k)
+    | pure(x) => pure x
+    | oper exit(code, k) => resume_stack k
   }
-}

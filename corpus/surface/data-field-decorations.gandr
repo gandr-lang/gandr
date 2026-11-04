@@ -1,15 +1,13 @@
 /// A list whose cons cell holds its head once: the field's grade `1` is
 /// read, and the constructor takes its fields as an ungraded one does.
-data Vec(a : Type) : Type where {
+data Vec(a : Type) : Type where
   | Nil : Vec(a)
   | Cons : (x[1] : a, xs : Vec(a)) --> Vec(a)
-}
 
 /// An expression whose `Add` constructor is decorated after its result: a
 /// constructor carries no decoration list, and the declaration is refused at
 /// the list.
 @[ refuses("MalformedForm") ]
-data Expr(a : Type) : Type where {
+data Expr(a : Type) : Type where
   | Lit : (x : Integer) --> Expr(a)
   | Add : (l : Expr(a), r : Expr(a)) --> Expr(a) [ctor, assoc]
-}

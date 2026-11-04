@@ -11125,7 +11125,7 @@ mod tests
             "#!{ [ cd d; ls ] | sort; echo ${x}${y} \"z $w\"; }",
             "def f(x: Integer) -> -F Integer { return (x * x + 1) }",
             "data Tree(a) where { Leaf, Node(l: Tree(a), v: a, r: Tree(a)) }",
-            "def s = \"a ${ f(\"${x}\") } b\";",
+            "def s = \"a ${ f \"${x}\" } b\";",
             "match v { Inl(x) => x, Inr(y) => y }",
             "#!{ echo unclosed",
             ") } ] stray closers",
@@ -11383,7 +11383,7 @@ mod tests
         };
         assert_eq!(
             vec!["access c as v { abort(v) } unwind { pure unit }".to_owned()],
-            accesses("def g() -> Integer { access c as v { abort(v) } unwind { pure unit } }")?,
+            accesses("def g() -> Integer { access c as v { abort(v) } unwind { pure *{} } }")?,
             "the `unwind` clause continues the access after its block"
         );
         assert_eq!(
@@ -11402,7 +11402,7 @@ mod tests
     fn each_comment_is_owned_by_the_node_it_describes() -> Result<(), Box<dyn Error>>
     {
         let pbg = built_in()?;
-        let source = "// lead\ndef x = 1; // trail\n\n// alone\n\n// first\n// second\ndef w = 2;\n\
+        let source = "// lead\ndef x = 1; // trail // trail\n\n// alone\n\n// first\n// second\ndef w = 2;\n\
                       def f(x: Integer) -> -F Integer {\n  // above\n  return x\n}\n\
                       def y = #[ /* empty */ ];\ndef z = 1 /* one */;\n";
         let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();

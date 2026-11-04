@@ -15,7 +15,7 @@
 // - see: #5032
 
 /// The STLC signature: terms indexed by a context and a type.
-pub theory STLC where {
+pub theory STLC where
   /// Types.
   sort Ty : Type;
   /// Contexts.
@@ -43,34 +43,30 @@ pub theory STLC where {
   oper lam : (t : Tm(ext(g, a), b)) --> Tm(g, arr(a, b));
   /// Application.
   oper app : (t : Tm(g, arr(a, b)), u : Tm(g, a)) --> Tm(g, b);
-}
 
 /// The object types.
-pub data ObjTy : Type where {
+pub data ObjTy : Type where
   /// The base type.
   | Base : ObjTy
   /// The functions from `dom` to `cod`.
   | Arr : (dom : ObjTy, cod : ObjTy) --> ObjTy
-}
 
 /// The contexts, the last entry outermost.
-pub data Ctx : Type where {
+pub data Ctx : Type where
   /// The empty context.
   | Empty : Ctx
   /// The context `gamma` and one more entry of type `a`.
   | Extend : (gamma : Ctx, a : ObjTy) --> Ctx
-}
 
 /// A variable of type `a` in the context `gamma`.
-pub data Var : (gamma : Ctx, a : ObjTy) --> Type where {
+pub data Var : (gamma : Ctx, a : ObjTy) --> Type where
   /// The variable of the last entry.
   | Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a)
   /// A variable of `gamma`, past one more entry.
   | There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var(gamma, a)) --> Var(Extend(gamma, b), a)
-}
 
 /// A term of type `a` in the context `gamma`.
-pub data Tm : (gamma : Ctx, a : ObjTy) --> Type where {
+pub data Tm : (gamma : Ctx, a : ObjTy) --> Type where
   /// A variable.
   | V : (gamma : Ctx, a : ObjTy, x : Var(gamma, a)) --> Tm(gamma, a)
   /// An abstraction over one more entry.
@@ -86,7 +82,6 @@ pub data Tm : (gamma : Ctx, a : ObjTy) --> Type where {
     t : Tm(gamma, Arr(a, b)),
     u : Tm(gamma, a)
   ) --> Tm(gamma, b)
-}
 
 /// The neutral terms and the normal forms, each over the other.
 rec {
@@ -101,7 +96,7 @@ rec {
     )
   }
   /// A term with no redex.
-  pub data Nf : (gamma : Ctx, a : ObjTy) --> Type where {
+  pub data Nf : (gamma : Ctx, a : ObjTy) --> Type where
     /// A neutral at the base type.
     | NNe : (gamma : Ctx, t : Ne(gamma, Base)) --> Nf(gamma, Base)
     /// An abstraction over a normal form.
@@ -109,11 +104,10 @@ rec {
       gamma,
       Arr(a, b)
     )
-  }
 }
 
 /// The syntax as a model: each operation is the constructor of its sort.
-pub module Syntax : Model(STLC) where {
+pub module Syntax : Model(STLC) where
   /// A type is an object type.
   type Ty = ObjTy;
   /// A context is an object context.
@@ -126,38 +120,33 @@ pub module Syntax : Model(STLC) where {
   /// The base type.
   def base() -> ObjTy { Base }
   /// The function type.
-  def arr(a : ObjTy, b : ObjTy) -> ObjTy { Arr(a, b) }
+  def arr(a : ObjTy, b : ObjTy) -> ObjTy { Arr a b }
   /// The empty context.
   def empty() -> Ctx { Empty }
   /// One more entry.
-  def ext(g : Ctx, a : ObjTy) -> Ctx { Extend(g, a) }
+  def ext(g : Ctx, a : ObjTy) -> Ctx { Extend g a }
   /// The variable of the last entry.
-  def vz(g : Ctx, a : ObjTy) -> Var(Extend(g, a), a) { Here(g, a) }
+  def vz(g : Ctx, a : ObjTy) -> Var(Extend(g, a), a) { Here g a }
   /// A variable past one more entry.
-  def vs(g : Ctx, a : ObjTy, x : Var(g, a), b : ObjTy) -> Var(Extend(g, b), a) { There(g, a, b, x) }
+  def vs(g : Ctx, a : ObjTy, x : Var(g, a), b : ObjTy) -> Var(Extend(g, b), a) { There g a b x }
   /// A variable as a term.
-  def var(g : Ctx, a : ObjTy, x : Var(g, a)) -> Tm(g, a) { V(g, a, x) }
+  def var(g : Ctx, a : ObjTy, x : Var(g, a)) -> Tm(g, a) { V g a x }
   /// An abstraction.
-  def lam(g : Ctx, a : ObjTy, b : ObjTy, t : Tm(Extend(g, a), b)) -> Tm(g, Arr(a, b)) {
-    Lam(g, a, b, t)
-  }
+  def lam(g : Ctx, a : ObjTy, b : ObjTy, t : Tm(Extend(g, a), b)) -> Tm(g, Arr(a, b)) =
+    Lam g a b t
   /// An application.
-  def app(g : Ctx, a : ObjTy, b : ObjTy, t : Tm(g, Arr(a, b)), u : Tm(g, a)) -> Tm(g, b) {
-    Ap(g, a, b, t, u)
-  }
-}
+  def app(g : Ctx, a : ObjTy, b : ObjTy, t : Tm(g, Arr(a, b)), u : Tm(g, a)) -> Tm(g, b) =
+    Ap g a b t u
 
 /// A renamer from `g` to `d`: it sends each variable of `g` to a variable of `d`.
-pub type Ren(d : Ctx, g : Ctx) = (a : ObjTy) => Var(g, a) => Var(d, a);
+pub type Ren(d : Ctx, g : Ctx) = (a : ObjTy) -> (Var(g, a) -> Var(d, a));
 
 /// The semantic type of `a` at the context `g`. At an arrow it is the
 /// Kripke function space: a function at each renaming of `g`.
-pub def rec sem(a : ObjTy, g : Ctx) -> Type {
-  match a {
-    Base => return Nf(g, Base),
-    Arr(dom, cod) => return type((d : Ctx) => Ren(d, g) => sem[<](dom, d) => sem[<](cod, d))
-  }
-}
+pub def rec sem(a : ObjTy, g : Ctx) -> Type =
+  match a
+    | Base => return Nf g Base
+    | Arr(dom, cod) => return type((d : Ctx) -> (Ren(d, g) -> (sem[<](dom, d) -> sem[<](cod, d))))
 
 /// The value of a semantic function at a renamer and an argument.
 pub def apply(
@@ -168,9 +157,8 @@ pub def apply(
   d : Ctx,
   r : Ren(d, g),
   v : sem(a, d)
-) -> sem(b, d) {
-  w(d)(r)(v)
-}
+) -> sem(b, d) =
+  ((w d) r) v
 
 /// A renaming lifted under one more entry, at one variable. The arm `Here`
 /// learns that `c` is `a` from the split of `Extend(_h, c) = Extend(g, a)`.
@@ -191,35 +179,31 @@ pub def lift(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, a), Ex
 
 /// The size of a term. Each recursive call is at the indices its pattern
 /// binds.
-pub def rec size(g : Ctx, a : ObjTy, t : Tm(g, a)) -> Integer {
-  match t {
-    V(_g, _a, _x) => 1,
-    Lam(h, b, c, u) => size[<](Extend(h, b), c, u) + 1,
-    Ap(h, b, c, f, u) => size[<](h, Arr(b, c), f) + size[<](h, b, u) + 1
-  }
-}
+pub def rec size(g : Ctx, a : ObjTy, t : Tm(g, a)) -> Integer =
+  match t
+    | V(_g, _a, _x) => 1
+    | Lam(h, b, c, u) => size[<] (Extend h b) c u + 1
+    | Ap(h, b, c, f, u) => size[<] h (Arr b c) f + size[<] h b u + 1
 
 /// The identity at a variable, through the syntax model.
-def redex() -> Tm(Extend(Empty, Base), Base) {
-  let one = Extend(Empty, Base);
-  let two = Extend(one, Base);
-  let body = Syntax.var(two, Base, Syntax.vz(one, Base));
-  Syntax.app(
-    one,
-    Base,
-    Base,
-    Syntax.lam(one, Base, Base, body),
-    Syntax.var(one, Base, Syntax.vz(Empty, Base))
-  )
-}
+def redex() -> Tm(Extend(Empty, Base), Base) =
+  let one = Extend Empty Base
+  let two = Extend one Base
+  let body = Syntax.var two Base (Syntax.vz one Base)
+  Syntax.app
+    one
+    Base
+    Base
+    (Syntax.lam one Base Base body)
+    (Syntax.var one Base (Syntax.vz Empty Base))
 
 /// The redex has four nodes: an application, an abstraction and two
 /// variables.
 @[ runs("4") ]
-def redexSize() -> Integer { size(Extend(Empty, Base), Base, redex()) }
+def redexSize() -> Integer { size (Extend Empty Base) Base (redex ()) }
 
 /// Environments: a semantic value for each entry of `g`, at the context `d`.
-pub data SemEnv : (g : Ctx, d : Ctx) --> Type where {
+pub data SemEnv : (g : Ctx, d : Ctx) --> Type where
   /// The empty environment.
   | ENil : (d : Ctx) --> SemEnv(Empty, d)
   /// An environment and one more value.
@@ -227,40 +211,32 @@ pub data SemEnv : (g : Ctx, d : Ctx) --> Type where {
     Extend(g, a),
     d
   )
-}
 
 /// The shape of reflection beside reification: two members over a type,
 /// whose later parameters differ, and the first of which reads the type.
 rec {
   /// The depth of a semantic value's type.
   def rec reflectDepth(a : ObjTy, _v : sem(a, Empty)) -> Integer {
-    match a {
-      Base => 0,
-      Arr(dom, _cod) => { let n = reifyDepth[<](dom, Empty); n + 1 }
-    }
+    match a
+      | Base => 0
+      | Arr(dom, _cod) => { let n = reifyDepth[<] dom Empty; n + 1 }
   }
   /// The depth of a type at a context.
-  def rec reifyDepth(a : ObjTy, g : Ctx) -> Integer {
-    match a {
-      Base => 0,
-      Arr(_dom, cod) => { let n = reifyDepth[<](cod, g); n + 1 }
-    }
-  }
+  def rec reifyDepth(a : ObjTy, g : Ctx) -> Integer =
+    match a
+      | Base => 0
+      | Arr(_dom, cod) => { let n = reifyDepth[<] cod g; n + 1 }
 }
 
 /// The depth of `Base -> Base` as reification reads it: one arrow.
 @[ runs("1") ]
-def arrowDepth() -> Integer { reifyDepth(Arr(Base, Base), Empty) }
+def arrowDepth() -> Integer { reifyDepth (Arr Base Base) Empty }
 
 /// The lookup of a variable in an environment. Each inner case omits `ENil`
 /// and learns the indices of `ECons` from the equations that it binds.
-pub def rec lookVar(g : Ctx, a : ObjTy, x : Var(g, a), d : Ctx, rho : SemEnv(g, d)) -> sem(a, d) {
-  match x {
-    Here(_h, _b) => match rho {
-      ECons(_h, _b, _d, _rest, v) => v
-    },
-    There(h, b, _c, y) => match rho {
-      ECons(_h, _c, _d, rest, _v) => lookVar[<](h, b, y, d, rest)
-    }
-  }
-}
+pub def rec lookVar(g : Ctx, a : ObjTy, x : Var(g, a), d : Ctx, rho : SemEnv(g, d)) -> sem(a, d) =
+  match x
+    | Here(_h, _b) => match rho
+      | ECons(_h, _b, _d, _rest, v) => v
+    | There(h, b, _c, y) => match rho
+      | ECons(_h, _c, _d, rest, _v) => lookVar[<] h b y d rest

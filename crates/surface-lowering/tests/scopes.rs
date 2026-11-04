@@ -101,15 +101,15 @@ fn resolved(
 /// A family, and a recursive function matching on it: each arm sees the
 /// parameters, the recursion and its own pattern's binder alone.
 const WRITTEN: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
-                       plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    Zero => n,\n    \
-                       Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef k : +U (Nat -> -F Nat) ;\ndef k \
-                       = thunk { fun (x) { return Succ(x) } } ;\n";
+                       plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    | Zero => n\n    \
+                       | Succ(p) => Succ (plus[<] n p)\n  }\n}\ndef k : +U (Nat -> -F Nat) ;\ndef k \
+                       = thunk { fun (x) { return Succ x } } ;\n";
 
 /// [`WRITTEN`] with the recursive call not yet written in full: `pl` resolves
 /// to nothing, and the lowering refuses `plus`.
 const TYPING: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
-                      plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    Zero => n,\n    \
-                      Succ(p) => Succ(pl)\n  }\n}\n";
+                      plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    | Zero => n\n    \
+                      | Succ(p) => Succ pl\n  }\n}\n";
 
 #[test]
 fn the_binders_in_scope_are_the_innermost_reading_s_chain()
@@ -170,7 +170,7 @@ fn a_name_in_a_type_keeps_what_it_resolved_to()
         ],
         "a family named in a claim names its declaration"
     );
-    let fields = "def r : #{ con : Type, tm : +U (con -> -F Type), t : tm(con) } ;\n";
+    let fields = "def r : *{ con : Type, tm : +U (con -> -F Type), t : tm(con) } ;\n";
     assert_eq!(
         resolved(SourceText::from(fields), SourceText::from("def r")),
         [pair("con", "con"), pair("tm", "tm"), pair("con", "con")],
@@ -200,9 +200,9 @@ const MUTUAL: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : N
                       data Rose : Type where { | Node : (kids : Forest) --> Rose }\n  data Forest : \
                       Type where { | Empty : Forest | More : (head : Rose, tail : Forest) --> Forest \
                       }\n  def rec size(t : Rose) -> -F Nat { match t { Node(kids) => { let s \
-                      = sizes[<](kids); return Succ(s) } } }\n  def rec sizes(ts : Forest) \
-                      -> -F Nat { match ts { Empty => return Zero, More(t, rest) => { let a = \
-                      size[<](t); sizes[<](rest) } } }\n}\n";
+                      = sizes[<] kids; return Succ s } } }\n  def rec sizes(ts : Forest) \
+                      -> -F Nat { match ts { | Empty => return Zero | More(t, rest) => { let a = \
+                      size[<] t; sizes[<] rest } } }\n}\n";
 
 /// #827: a call head written with its descent marker keeps what its name
 /// names at the name alone, the marker aside: the function's own fixpoint
@@ -281,8 +281,8 @@ fn a_use_inside_a_refused_form_keeps_its_referent_1265()
         "the endpoint a `fork` binds, used inside the refused `dup`, names its binder"
     );
     let joined = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef joined(n : \
-                  Nat) -> -F Nat {\n  let m = match n -> -F Nat {\n    Zero => return n,\n    \
-                  Succ(p) => pure p,\n  } ;\n  return m\n}\n";
+                  Nat) -> -F Nat {\n  let m = match n -> -F Nat {\n    | Zero => return n\n    \
+                  | Succ(p) => pure p\n  } ;\n  return m\n}\n";
     assert!(
         resolved(SourceText::from(joined), SourceText::from("match n"))
             .contains(&(String::from("n"), String::from("n"))),

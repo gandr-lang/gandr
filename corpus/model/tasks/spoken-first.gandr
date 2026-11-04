@@ -18,20 +18,18 @@ import "./task-base.gandr";
 /// A task sending its notes before it reads its parent's answer.
 @[
   runs("unit"),
-  traces(decomposes(task, series(
-    event(left, 0),
-    event(right, 0),
-    event(right, 1),
-    parallel(series(event(left, 1), event(left, 2)), event(right, 2))
-  )))
+  traces(decomposes task (series
+    (event left 0)
+    (event right 0)
+    (event right 1)
+    (parallel (series (event left 1) (event left 2)) (event right 2))))
 ]
-def spokenFirst() -> Unit {
+def spokenFirst() -> Unit =
   let heard = fork (task : Task.Volunteer) {
     send(task, Task.notes);
     let answer = recv(task);
     close(task)
   };
-  let told = recv(heard);
-  send(heard, told);
+  let told = recv(heard)
+  send(heard, told)
   close(heard)
-}

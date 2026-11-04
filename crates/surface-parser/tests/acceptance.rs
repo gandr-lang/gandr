@@ -267,7 +267,7 @@ fn core_forms_are_clean() -> Result<(), Box<dyn Error>>
         "- x",
         "pure - y",
         "def id = x;",
-        "def nested = comp(id(a), f);",
+        "def nested = comp (id a) f;",
     ];
     for &src in clean {
         let result = parse(pbg, SourceText::from(src))?;
@@ -413,7 +413,7 @@ fn value_statement_uses_let_keyword() -> Result<(), Box<dyn Error>>
     let written = [
         "def use() -> -F Integer { let value = expression; pure value }",
         "def use() -> -F Integer { let value : Integer = expression; pure value }",
-        "def use() -> -F Integer { let (a, b) = expression; pure a }",
+        "def use() -> -F Integer { let *{a, b} = expression; pure a }",
     ];
     for src in written {
         let result = parse(pbg, SourceText::from(src))?;
@@ -755,7 +755,7 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Box<dyn Error
         "def feed = 1;",
         "def use() -> -F Integer { let node = 1; pure node }",
         "def project(sort : Integer) -> -F Integer { return sort }",
-        "def record = #{ node = 1, feed = 2 };",
+        "def record = *{ node = 1, feed = 2 };",
     ];
     for &src in binding {
         let result = parse(pbg, SourceText::from(src))?;
@@ -2456,17 +2456,15 @@ fn run_reads_as_an_inline_run_wherever_it_stands() -> Result<(), Box<dyn Error>>
     let pbg = built();
     for (src, inline) in [
         (
-            "def g() -> -F Integer { run f(x); pure 0 }",
+            "def g() -> -F Integer { run f x; pure 0 }",
             [true].as_slice(),
         ),
-        ("def g() -> -F Integer { let v = run f(x); pure v }", &[
-            true,
-        ]),
+        ("def g() -> -F Integer { let v = run f x; pure v }", &[true]),
         (
-            "def g() -> -F Integer { let r = f(run h(x)); pure g(run f(r), r) }",
+            "def g() -> -F Integer { let r = f (run h x); pure g (run f r) r }",
             &[true, true],
         ),
-        ("def g() -> -F Nat { Succ(run plus(n, p)) }", &[true]),
+        ("def g() -> -F Nat { Succ (run plus n p) }", &[true]),
     ] {
         let result = parse(pbg, SourceText::from(src))?;
         assert!(

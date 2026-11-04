@@ -8,7 +8,7 @@
 import build (Gandr);
 
 /// The package: `std`, at the version `package.gandr.toml` records.
-pub module Package : Model(Gandr.Package) where {
+pub module Package : Model(Gandr.Package) where
   /// The package's name, `std`.
   def name = "std";
   /// The version `std` releases at.
@@ -31,4 +31,3 @@ pub module Package : Model(Gandr.Package) where {
   def spelling = "";
   /// The directory the modules of `std` sit under.
   def sources = "src";
-}

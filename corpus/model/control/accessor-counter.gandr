@@ -11,40 +11,36 @@
 //! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
 
 /// The successor, a call whose type synthesises where a statement binds it.
-pub def succ(n : Integer) -> Integer {
+pub def succ(n : Integer) -> Integer =
   pure n + 1
-}
 
 /// A count held at zero and two accesses through the view: the first resumes
 /// with the increment, the second aborts. The count observes the write-back on
 /// `resume` and none on `abort`.
 @[ runs("1") ]
-def counter() -> Integer {
-  var c = 0;
-  access c as v { let n = succ(v); resume(v, n) };
-  access c as v { abort(v) } unwind { pure unit };
+def counter() -> Integer =
+  var c = 0
+  access c as v { let n = succ v; resume(v, n) };
+  access c as v { abort(v) } unwind { pure *{} };
   pure c
-}
 
 /// The view reads the value it lends, so each write-back sees the one before
 /// it.
 @[ runs("12") ]
-def doubled() -> Integer {
-  var c = 3;
+def doubled() -> Integer =
+  var c = 3
   access c as v { resume(v, v + v) };
   access c as v { resume(v, v + 6) };
   pure c
-}
 
 /// A held value beside a parameter: the write-back reads both, and an access
 /// that aborts without an `unwind` clause unwinds by doing nothing.
-def add_to(n : Integer) -> Integer {
-  var c = 1;
+def add_to(n : Integer) -> Integer =
+  var c = 1
   access c as v { resume(v, v + n) };
   access c as v { abort(v) };
   pure c
-}
 
 /// One held, five added.
 @[ runs("6") ]
-def add_five : () => Integer = add_to(5);
+def add_five : () -> Integer = add_to 5;

@@ -65,8 +65,8 @@ const EXPLICIT: &str = "\
         def raw_rel_monad = fun (T) { fun (A) { fun (B) { type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } } } ;
         def unit_and_bind : raw_rel_monad(fun (X) { -F (X * X) }, Integer, Integer) ;
         def unit_and_bind_spelled :
-          (Integer => Integer * Integer)
-          * ((+U (-F (Integer * Integer)), Integer => Integer * Integer) => Integer * Integer) ;
+          (Integer -> Integer * Integer)
+          * ((+U (-F (Integer * Integer)), Integer -> Integer * Integer) -> Integer * Integer) ;
     ";
 
 /// The same witness with the sort and level defaults left off.
@@ -91,8 +91,8 @@ const ELIDED: &str = "\
         def raw_rel_monad = fun (T) { fun (A) { fun (B) { type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } } } ;
         def unit_and_bind : raw_rel_monad(fun (X) { -F (X * X) }, Integer, Integer) ;
         def unit_and_bind_spelled :
-          (Integer => Integer * Integer)
-          * ((+U (-F (Integer * Integer)), Integer => Integer * Integer) => Integer * Integer) ;
+          (Integer -> Integer * Integer)
+          * ((+U (-F (Integer * Integer)), Integer -> Integer * Integer) -> Integer * Integer) ;
     ";
 
 /// The witness's two sort errors: the carrier `T(A)`, a computation type,

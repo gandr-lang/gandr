@@ -1,16 +1,12 @@
 /// `flow_declaration`: a flow: one theory's members, defined over another's, written with its glyph and in ASCII.
-theory Older where {
+theory Older where
   oper answer : Integer;
-}
 
-theory Newer where {
+theory Newer where
   oper reply : Integer;
-}
 
-flow downgrade : Newer ⇝ Older where {
+flow downgrade : Newer ⇝ Older where
   def answer = reply;
-}
 
-flow downgradeAscii : Newer ~~> Older where {
+flow downgradeAscii : Newer ~~> Older where
   def answer = reply;
-}

@@ -1,6 +1,6 @@
 /// `UndescribedMember.LhsNotOperation`: a member the description does not read: a rule whose left side is no operation application.
 @[ refuses("UndescribedMember.LhsNotOperation") ]
-theory Shared where {
+theory Shared where
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
 
@@ -8,4 +8,3 @@ theory Shared where {
     node : p(x) ==> (m);
     node : f(x) --> (m);
   };
-}

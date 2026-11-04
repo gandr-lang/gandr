@@ -18,117 +18,102 @@
 import "./model-ascription.gandr";
 
 /// Three states nested to the right, renested to the left.
-def toLeft(c : Unit + (Unit + Unit)) -> (Unit + Unit) + Unit {
-  match c {
-    +{.0 = u} => +{.0 = +{.0 = u}},
-    +{.1 = +{.0 = u}} => +{.0 = +{.1 = u}},
-    +{.1 = +{.1 = u}} => +{.1 = u}
-  }
-}
+def toLeft(c : Unit + (Unit + Unit)) -> (Unit + Unit) + Unit =
+  match c
+    | +{.0 = u} => +{.0 = +{.0 = u}}
+    | +{.1 = +{.0 = u}} => +{.0 = +{.1 = u}}
+    | +{.1 = +{.1 = u}} => +{.1 = u}
 
 /// Three states nested to the left, renested to the right.
-def toRight(c : (Unit + Unit) + Unit) -> Unit + (Unit + Unit) {
-  match c {
-    +{.0 = +{.0 = u}} => +{.0 = u},
-    +{.0 = +{.1 = u}} => +{.1 = +{.0 = u}},
-    +{.1 = u} => +{.1 = +{.1 = u}}
-  }
-}
+def toRight(c : (Unit + Unit) + Unit) -> Unit + (Unit + Unit) =
+  match c
+    | +{.0 = +{.0 = u}} => +{.0 = u}
+    | +{.0 = +{.1 = u}} => +{.1 = +{.0 = u}}
+    | +{.1 = u} => +{.1 = +{.1 = u}}
 
 /// The two nestings are one type, the two maps inverse by computation.
-def nestings : Path[.A = Type](Unit + (Unit + Unit), (Unit + Unit) + Unit) = equiv(toLeft, toRight);
+def nestings : Path[.A = Type](Unit + (Unit + Unit), (Unit + Unit) + Unit) = equiv toLeft toRight;
 
 /// The counters whose carrier is `x`.
-def countersOn(x : Type) -> Type {
+def countersOn(x : Type) -> Type =
   return type(Model(Counter) with sort C = x)
-}
 
 /// The counters over either nesting are one type: two sharings that differ
 /// by an equivalence are one.
 def oneSharing() -> Path[.A = Type](
   Model(Counter) with sort C = Unit + (Unit + Unit),
   Model(Counter) with sort C = (Unit + Unit) + Unit
-) { Path.ap(countersOn, nestings) }
+) { Path.ap countersOn nestings }
 
 /// One state on, modulo three, nested to the right.
-def onward(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
-  match c {
-    +{.0 = u} => +{.1 = +{.0 = u}},
-    +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
-    +{.1 = +{.1 = u}} => +{.0 = u}
-  }
-}
+def onward(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
+  match c
+    | +{.0 = u} => +{.1 = +{.0 = u}}
+    | +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}}
+    | +{.1 = +{.1 = u}} => +{.0 = u}
 
 /// The first state, nested to the right.
-def first() -> Unit + (Unit + Unit) {
-  +{.0 = unit}
-}
+def first() -> Unit + (Unit + Unit) =
+  +{.0 = *{}}
 
 /// Counting modulo three over the right nesting: the carrier is no field,
 /// so the record is the start and the step.
-def rightward : Model(Counter) with sort C = Unit + (Unit + Unit) = #{
+def rightward : Model(Counter) with sort C = Unit + (Unit + Unit) = *{
   .start = first,
   .step = onward
 };
 
 /// The same counter carried to the left nesting.
-def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit = Path.walk(
-  fun (x) { type(Model(Counter) with sort C = x) },
-  nestings,
-  rightward
-);
+def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit = Path.walk
+  (fun (x) { type(Model(Counter) with sort C = x) })
+  nestings
+  rightward;
 
 /// A counter over the right nesting stepped once from its start.
-def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
-  match m {
-    #{.start = s, .step = t} => t(s())
-  }
-}
+def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
+  match m
+    | *{.start = s, .step = t} => t (s ())
 
 /// Counting modulo three stepped once: the second state.
 @[ runs("+{.1 = +{.0 = unit}}") ]
-def second() -> Unit + (Unit + Unit) { stepOnce(rightward) }
+def second() -> Unit + (Unit + Unit) { stepOnce rightward }
 
 /// A counter over the left nesting stepped once from its start.
-def stepOnceLeft(m : Model(Counter) with sort C = (Unit + Unit) + Unit) -> (Unit + Unit) + Unit {
-  match m {
-    #{.start = s, .step = t} => t(s())
-  }
-}
+def stepOnceLeft(m : Model(Counter) with sort C = (Unit + Unit) + Unit) -> (Unit + Unit) + Unit =
+  match m
+    | *{.start = s, .step = t} => t (s ())
 
 /// The counter carried to the left nesting stepped once, its second
 /// state carried along: the transport moves the record field by field, each
 /// field a function moved along the path.
 @[ runs("+{.0 = +{.1 = unit}}") ]
-def secondLeft() -> (Unit + Unit) + Unit { stepOnceLeft(leftward) }
+def secondLeft() -> (Unit + Unit) + Unit { stepOnceLeft leftward }
 
 /// The same transport written as the call's argument, not bound by a
 /// definition first, runs to the same state.
 @[ runs("+{.0 = +{.1 = unit}}") ]
-def inlineLeft() -> (Unit + Unit) + Unit {
-  stepOnceLeft(Path.walk(fun (x) { type(Model(Counter) with sort C = x) }, nestings, rightward))
-}
+def inlineLeft() -> (Unit + Unit) + Unit =
+  stepOnceLeft (Path.walk (fun (x) { type(Model(Counter) with sort C = x) }) nestings rightward)
 
 /// A module counts modulo three over the right nesting.
-module Thirds : Model(Counter) where {
+module Thirds : Model(Counter) where
   /// The right nesting holds the three states.
   type C = Unit + (Unit + Unit);
 
   /// The count starts at the first state.
-  def start() -> Unit + (Unit + Unit) { first() }
+  def start() -> Unit + (Unit + Unit) { first () }
 
   /// Each step moves one state on.
-  def step(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { onward(c) }
-}
+  def step(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { onward c }
 
 /// A counter over the right nesting takes the module, and the module leaves
 /// out the carrier its parameter fixes.
 @[ runs("+{.1 = +{.0 = unit}}") ]
-def secondThirds() -> Unit + (Unit + Unit) { stepOnce(Thirds) }
+def secondThirds() -> Unit + (Unit + Unit) { stepOnce Thirds }
 
 /// The module stands at a signature that fixes its carrier.
 def thirds : Model(Counter) with sort C = Unit + (Unit + Unit) = Thirds;
 
 /// The counter steps once from its start to the second state.
 @[ runs("+{.1 = +{.0 = unit}}") ]
-def secondPacked() -> Unit + (Unit + Unit) { stepOnce(thirds) }
+def secondPacked() -> Unit + (Unit + Unit) { stepOnce thirds }

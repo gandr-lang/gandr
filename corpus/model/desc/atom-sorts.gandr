@@ -12,32 +12,28 @@
 //! [Gabbay-2009-nominal_universal_algebra]: https://doi.org/10.1093/logcom/exp033 "Gabbay and Mathijssen, Nominal (Universal) Algebra: Equational Logic with Names and Binding"
 
 /// One atom sort and nothing else.
-theory AtomOnly where {
+theory AtomOnly where
   sort Name : Atom;
-}
 
 /// Names and the terms that mention them: a variable names an atom, and a
 /// renaming takes two atoms and a term.
-theory Renaming where {
+theory Renaming where
   sort Name : Atom;
   sort Tm : Type;
   oper var : (a : Name) --> Tm;
   oper rename : (a : Name, b : Name, t : Tm) --> Tm;
-}
 
 /// Structural recursion over a sort chain: one per `Atom` link, none for an
 /// ordinary `Sort`.
-def rec atoms(chain : Theory) -> Integer {
-  match chain {
-    Atom(name, indices, rest) => { let r = atoms[<](rest); r + 1 },
-    Sort(name, indices, rest) => atoms[<](rest),
-    _ => 0
-  }
-}
+def rec atoms(chain : Theory) -> Integer =
+  match chain
+    | Atom(name, indices, rest) => { let r = atoms[<] rest; r + 1 }
+    | Sort(name, indices, rest) => atoms[<] rest
+    | _ => 0
 
 /// The renaming signature declares one atom sort, `Name`.
 @[ runs("1") ]
 def atomSorts() -> Integer { match Renaming {
-  Presents(sorts, opers, rules) => atoms(sorts),
-  _ => 0
+  | Presents(sorts, opers, rules) => atoms sorts
+  | _ => 0
 } }

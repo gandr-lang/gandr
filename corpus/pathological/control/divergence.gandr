@@ -9,47 +9,41 @@
 /// A diverging loop's function, typed as if it returned: the loop's fixpoint
 /// is refused, its type named with `Partial` in the row.
 @[ refuses("TypeMismatch") ]
-def spinPure(x : Bool) -> Bool {
+def spinPure(x : Bool) -> Bool =
   let y = loop {
     let below = 1 < 0;
-    match below {
-      true => break(x),
-      false => continue,
-    }
+    match below
+      | true => break(x)
+      | false => continue
   };
   y
-}
 
 /// The loop at the row it needs.
-def spin(x : Bool) -> [Partial] Bool {
+def spin(x : Bool) -> [Partial] Bool =
   let y = loop {
     let below = 1 < 0;
-    match below {
-      true => break(x),
-      false => continue,
-    }
+    match below
+      | true => break(x)
+      | false => continue
   };
   y
-}
 
 /// A caller at the empty row of a function whose row holds `Partial`: the call
 /// synthesises the row, which the caller's does not include.
 @[ refuses("TypeMismatch") ]
-def spinFirst(x : Bool) -> Bool {
-  spin(x)
-}
+def spinFirst(x : Bool) -> Bool =
+  spin x
 
 /// A handler of `Partial` has no operation to answer and runs its subject, which
 /// may still run forever: it leaves `Partial` in its row, which the empty row
 /// does not include.
 @[ refuses("TypeMismatch") ]
-def tamed(x : Bool) -> Bool {
+def tamed(x : Bool) -> Bool =
   handle c : Partial {
-    spin(x)
+    spin x
   } with {
-    pure(v) => pure v
+    | pure(v) => pure v
   }
-}
 
 /// An unread call whose row holds `Partial` may run forever, so it is not the
 /// computation that follows it: the endpoints stay apart.
@@ -57,11 +51,10 @@ def tamed(x : Bool) -> Bool {
 def unreadDiv(
   a : Type,
   b : Type,
-  f : a => b,
+  f : a -> b,
   g : +U (a -> -F [Partial] b)
 ) -> Path[.A = +U (a -> -F [Partial] b)](
-  thunk { fun (x) { let _ = g(x); f(x) } },
-  thunk { fun (x) { f(x) } }
-) {
-  Path.here(thunk { fun (x) { f(x) } })
-}
+  thunk { fun (x) { let _ = g x; f x } },
+  thunk { fun (x) { f x } }
+) =
+  Path.here (thunk { fun (x) { f x } })

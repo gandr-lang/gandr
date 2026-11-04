@@ -20,45 +20,34 @@ import "../data/data-base.gandr";
 import "./conversion-base.gandr";
 
 /// Two to the power `p`.
-def rec power(p : Nat) -> Nat {
-  match p {
-    Zero => Succ(Zero),
-    Succ(q) => times(power[<](q), two)
-  }
-}
+def rec power(p : Nat) -> Nat =
+  match p
+    | Zero => Succ Zero
+    | Succ(q) => times (power[<] q) two
 
 /// The remainder of `n` by `d + 1`: `r` counts up, and `left` counts the
 /// steps to the next wrap.
-def rec remainder(n : Nat, d : Nat, r : Nat, left : Nat) -> Nat {
-  match left {
-    Zero => match n {
-      Zero => r,
-      Succ(k) => remainder[<](k, d, Zero, d)
-    },
-    Succ(l) => match n {
-      Zero => r,
-      Succ(k) => remainder[<](k, d, Succ(r), l)
-    }
-  }
-}
+def rec remainder(n : Nat, d : Nat, r : Nat, left : Nat) -> Nat =
+  match left
+    | Zero => match n
+      | Zero => r
+      | Succ(k) => remainder[<] k d Zero d
+    | Succ(l) => match n
+      | Zero => r
+      | Succ(k) => remainder[<] k d (Succ r) l
 
 /// The sequence `k` steps on from `s`, each step `s * s - 2` modulo `d + 1`.
-def rec steps(k : Nat, d : Nat, s : Nat) -> Nat {
-  match k {
-    Zero => s,
-    Succ(j) => steps[<](j, d, remainder(monus(times(s, s), two), d, Zero, d))
-  }
-}
+def rec steps(k : Nat, d : Nat, s : Nat) -> Nat =
+  match k
+    | Zero => s
+    | Succ(j) => steps[<] j d (remainder (monus (times s s) two) d Zero d)
 
 /// Whether `2^p - 1` is prime, for an odd prime `p`.
-def lucasLehmer(p : Nat) -> Bool {
-  match steps(monus(p, two), monus(power(p), two), four) {
-    Zero => true,
-    Succ(_) => false
-  }
-}
+def lucasLehmer(p : Nat) -> Bool =
+  match steps (monus p two) (monus (power p) two) four
+    | Zero => true
+    | Succ(_) => false
 
 /// Thirty-one is a Mersenne prime.
-def thirtyOneIsPrime() -> Path(lucasLehmer(Succ(four)), true) {
-  Path.here(true)
-}
+def thirtyOneIsPrime() -> Path(lucasLehmer (Succ four), true) =
+  Path.here true

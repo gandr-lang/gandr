@@ -22,17 +22,14 @@ module FirstOrder : Model(State.Eff) with sort S = Integer where {
 /// model signature does not state: refused by the law's name at the
 /// module, even admitted.
 @[ refuses("UnstatedComponent.Binding") ]
-module PutGet : Model(StatePutGet) with sort S = Integer where {
+module PutGet : Model(StatePutGet) with sort S = Integer where
   /// A computation awaiting the current state.
   type C = +U (Integer -> -F Integer);
   /// Reading hands the current state on.
-  def get(k : +U (Integer -> -F +U (Integer -> -F Integer))) -> +U (Integer -> -F Integer) {
-    thunk { fun (s) { let after = k(s); after(s) } }
-  }
+  def get(k : +U (Integer -> -F +U (Integer -> -F Integer))) -> +U (Integer -> -F Integer) =
+    thunk { fun (s) { let after = k s; after s } }
   /// Storing runs what comes after at the stored value.
-  def put(s : Integer, k : +U (Integer -> -F Integer)) -> +U (Integer -> -F Integer) {
-    thunk { fun (_old) { k(s) } }
-  }
+  def put(s : Integer, k : +U (Integer -> -F Integer)) -> +U (Integer -> -F Integer) =
+    thunk { fun (_old) { k s } }
   /// The law the signature cannot state.
   law putGet = ~admitted;
-}

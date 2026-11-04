@@ -13,13 +13,13 @@ import "./data-maybe.gandr";
 def opt : Type -> Type[-] = fun (A) { -F Maybe(A) };
 
 /// The same type through a second name.
-def optAgain : Type -> Type[-] = fun (A) { opt(A) };
+def optAgain : Type -> Type[-] = fun (A) { opt A };
 
 /// A present value against the named type at `Integer`.
-def someOne() -> opt(Integer) { Some(1) }
+def someOne() -> opt(Integer) { Some 1 }
 
 /// An absent value against the named type at a type parameter.
 def noneAt(A : Type) -> opt(A) { None }
 
 /// A present value through both names.
-def someTwo() -> optAgain(Integer) { Some(2) }
+def someTwo() -> optAgain(Integer) { Some 2 }

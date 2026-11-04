@@ -4,62 +4,53 @@
 // the second (the HoTT book, §2.7).
 
 /// A family indexed by an integer, with one element at each index.
-data Ix(n : Integer) : Type where {
+data Ix(n : Integer) : Type where
   | MkIx : Ix(n)
-}
 
 /// A label a later entry names binds there: the type is a dependent pair.
-def tagged : #{n : Integer, w : Ix(n)} = (3, (MkIx : Ix(3)));
+def tagged : *{n : Integer, w : Ix(n)} = *{3, (MkIx : Ix(3))};
 
 /// The first component of a dependent pair, by a match.
-def tag_of(p : #{n : Integer, w : Ix(n)}) -> Integer {
-  match p {
-    #{m, w} => m
-  }
-}
+def tag_of(p : *{n : Integer, w : Ix(n)}) -> Integer =
+  match p
+    | *{m, w} => m
 
 /// The tag of `tagged`.
 @[ runs("3") ]
-def tag() -> Integer { tag_of(tagged) }
+def tag() -> Integer { tag_of tagged }
 
 /// The first component of a dependent pair, selected by its label.
-def index_of(p : #{n : Integer, w : Ix(n)}) -> Integer {
+def index_of(p : *{n : Integer, w : Ix(n)}) -> Integer =
   p.n
-}
 
 /// The index of `tagged`.
 @[ runs("3") ]
-def index() -> Integer { index_of(tagged) }
+def index() -> Integer { index_of tagged }
 
 /// A pair whose second component is a loop at its first.
-def ring : #{n : Integer, v : Path[.A = Integer](n, n)} = (2, Path.here(2));
+def ring : *{n : Integer, v : Path[.A = Integer](n, n)} = *{2, Path.here 2};
 
 /// The second projection's type reads the first.
-def lap(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> Path(p.n, p.n) {
+def lap(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> Path(p.n, p.n) =
   p.v
-}
 
 /// A selection by position names the same entry: `.0` the first, `.1` the
 /// second.
-def lap_by_position(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> Path(p.0, p.0) {
+def lap_by_position(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> Path(p.0, p.0) =
   p.1
-}
 
 /// A pair has two positions, so a third names nothing.
 @[ refuses("UnresolvedName") ]
-def third(p : Integer * String) -> -F String {
+def third(p : Integer * String) -> -F String =
   return p.2
-}
 
 /// A split's answer may name its scrutinee: each arm answers it at the pair.
-def rebuilt(p : #{
+def rebuilt(p : *{
   n : Integer,
   v : Path[.A = Integer](n, n)
-}) -> Path(p, p) {
-  match p {
-    #{.n = m, .v = w} => Path.here((m, w))
-  }
-}
+}) -> Path(p, p) =
+  match p
+    | *{.n = m, .v = w} => Path.here (*{m, w})
 
 /// A record of three over a type parameter, split under a motive reading the
 /// scrutinee: each arm answers it at the pair its entries rebuild, and the
@@ -67,71 +58,65 @@ def rebuilt(p : #{
 /// at.
 def againAt(
   b : Type,
-  w : #{x : b, y : b, p : Path[.A = b](x, y)}
-) -> Path[.A = #{x : b, y : b, p : Path[.A = b](x, y)}](w, w) {
-  match w {
-    #{.x = u, .y = v, .p = q} => Path.here((u, (v, q)))
-  }
-}
+  w : *{x : b, y : b, p : Path[.A = b](x, y)}
+) -> Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)}](w, w) =
+  match w
+    | *{.x = u, .y = v, .p = q} => Path.here (*{u, *{v, q}})
 
 /// A record of three over a type parameter is equivalent to itself; each
 /// entry reads the ones before it on both sides.
-def selfEquiv(b : Type) -> #{x : b, y : b, p : Path[.A = b](x, y)} ≃ #{
+def selfEquiv(b : Type) -> *{x : b, y : b, p : Path[.A = b](x, y)} ≃ *{
   x : b,
   y : b,
   p : Path[.A = b](x, y)
-} {
-  (
+} =
+  *{
     fun (w) { w },
-    (
-      (fun (w) { w }, fun (w) { Path.here(w) }),
-      (fun (w) { w }, fun (w) { Path.here(w) })
-    )
-  )
-}
+    *{
+      *{fun (w) { w }, fun (w) { Path.here w }},
+      *{fun (w) { w }, fun (w) { Path.here w }}
+    }
+  }
 
 /// A record of three nests its links; a labelled pattern binds the entries it
 /// names, the later one's type reading the earlier.
-def middle(t : #{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> Integer {
-  match t {
-    #{.a = x, .c = z} => x
-  }
-}
+def middle(t : *{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> Integer =
+  match t
+    | *{.a = x, .c = z} => x
 
 /// A path between pairs is a path between the first components and, over
 /// it, a path between the second.
-def both : Path[.A = #{n : Integer, v : Path[.A = Integer](n, n)}](
-  (2, Path.here(2)),
-  (2, Path.here(2))
-) = (
-  Path.here(2),
-  Path.here(Path.here(2))
-);
+def both : Path[.A = *{n : Integer, v : Path[.A = Integer](n, n)}](
+  *{2, Path.here 2},
+  *{2, Path.here 2}
+) = *{
+  Path.here 2,
+  Path.here (Path.here 2)
+};
 
 /// A declared pair's path reads the pair it unfolds to.
-def ring_around : Path(ring, ring) = (
-  Path.here(2),
-  Path.here(Path.here(2))
-);
+def ring_around : Path(ring, ring) = *{
+  Path.here 2,
+  Path.here (Path.here 2)
+};
 
 /// The constant path at `tagged`, the second component's over the first's.
-def tagged_around : Path(tagged, tagged) = (
-  Path.here(3),
-  Path.here((MkIx : Ix(3)))
-);
+def tagged_around : Path(tagged, tagged) = *{
+  Path.here 3,
+  Path.here (MkIx : Ix(3))
+};
 
 /// Five, carried along `both` through the constant family.
-def moved() -> Integer { Path.walk(fun (s) { Integer }, both, 5) }
+def moved() -> Integer { Path.walk (fun (s) { Integer }) both 5 }
 
 /// A later entry's type may apply the earlier one: the type printed for the
 /// pair, `Path[.A = Integer](e.0(0), 0)` at its second entry, reads back to it
 /// (#935).
-def calledFiber(e : #{
-  cell : Integer => Integer,
-  fix : Path[.A = Integer](cell(0), 0)
-}) -> Path[.A = #{cell : Integer => Integer, fix : Path[.A = Integer](cell(0), 0)}](
-  (e.cell, e.fix),
+def calledFiber(e : *{
+  cell : Integer -> Integer,
+  fix : Path[.A = Integer](cell 0, 0)
+}) -> Path[.A = *{cell : Integer -> Integer, fix : Path[.A = Integer](cell 0, 0)}](
+  *{e.cell, e.fix},
   e
-) {
-  Path.here(e)
-}
+) =
+  Path.here e

@@ -17,7 +17,7 @@
 /// on the submitter's side, the protocols that take a buffer, a pending
 /// completion or a target's pending completion over a session, and one entry
 /// of each kind.
-pub module Ring :> #{
+pub module Ring :> *{
   type Sqe,
   type Cqe,
   type Submission = ?Sqe. !Cqe. end,
@@ -28,11 +28,10 @@ pub module Ring :> #{
   type Cancelling = ?Pending. !Cqe. end,
   read : Sqe,
   done : Cqe
-} where {
+} where
   type Sqe = String;
   type Cqe = Integer;
   /// The entry a read submits.
   def read = "read";
   /// The result its completion posts.
   def done = 0;
-}

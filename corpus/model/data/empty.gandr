@@ -20,14 +20,12 @@ import "./data-base.gandr";
 pub data Empty : Type where {}
 
 /// Anything follows from an element of the empty type.
-def absurd(v : Empty) -> Integer {
+def absurd(v : Empty) -> Integer =
   match v {}
-}
 
 /// The answer written on the match itself.
-def stated(v : Empty) -> Integer {
+def stated(v : Empty) -> Integer =
   match v -> -F Integer {}
-}
 
 /// A lambda's binder matched with no arm: the function form lowers to
 /// the lambda its arrow types, the binder `Empty`, as a parameter's written
@@ -45,40 +43,34 @@ def viaBare(x : Empty) -> Integer { match x {} }
 def viaBareStated(x : Empty) -> Integer { match x -> -F Integer {} }
 
 /// A function of a function on the empty type, applied to its element.
-def applied(f : Empty => Integer, v : Empty) -> Integer { f(v) }
+def applied(f : Empty -> Integer, v : Empty) -> Integer { f v }
 
 /// A lambda passed as an argument: the callee's parameter types its binder
 /// as a signature types a definition's.
-def viaArgument(v : Empty) -> Integer { applied(fun (x) { match x {} }, v) }
+def viaArgument(v : Empty) -> Integer { applied (fun (x) { match x {} }) v }
 
 /// The answer written on a passed lambda binder's match.
-def viaArgumentStated(v : Empty) -> Integer {
-  applied(fun (x) { match x -> -F Integer {} }, v)
-}
+def viaArgumentStated(v : Empty) -> Integer =
+  applied (fun (x) { match x -> -F Integer {} }) v
 
 /// One is not zero: `S(Z)` and `Z` are normal forms with distinct heads.
-def not_zero(e : Path(S(Z), Z)) -> Empty {
+def not_zero(e : Path(S Z, Z)) -> Empty =
   match e {}
-}
 
 /// One is not two: the normal forms first differ below their shared
 /// successor.
-def one_not_two(e : Path(S(Z), S(S(Z)))) -> Empty {
+def one_not_two(e : Path(S Z, S (S Z))) -> Empty =
   match e {}
-}
 
 /// Minus one is not one, read through the rules: `P(S(P(Z)))` is `P(Z)`.
-def signs(e : Path(P(S(P(Z))), S(Z))) -> Empty {
+def signs(e : Path(P (S (P Z)), S Z)) -> Empty =
   match e {}
-}
 
 /// A free type: two constructors and no rule.
-data Truth : Type where {
+data Truth : Type where
   | False : Truth
   | True : Truth
-}
 
 /// True is not false: distinct constructors of a free type are apart.
-def true_not_false(e : Path(True, False)) -> Empty {
+def true_not_false(e : Path(True, False)) -> Empty =
   match e {}
-}

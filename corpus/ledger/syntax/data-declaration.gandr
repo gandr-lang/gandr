@@ -1,9 +1,7 @@
 /// `data_declaration`: a datatype: its family head, `where`, and one member per constructor opened by a bar, a field at the unrestricted grade written with its glyph and in ASCII.
 @[ checks ]
-data Box : Type where {
+data Box : Type where
   | Wrap : (n[ω] : Integer) --> Box
-}
 @[ checks ]
-data BoxAscii : Type where {
+data BoxAscii : Type where
   | WrapAscii : (n[inf] : Integer) --> BoxAscii
-}

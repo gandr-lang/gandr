@@ -9,68 +9,62 @@ import "./string-base.gandr";
 
 /// A code point's UTF-8 bytes: one byte below 128, two below 2048, three below
 /// 65536 and four up to the last code point.
-def encode(c : Integer) -> List(Integer) {
-  let one = c < 128;
-  match one {
-    true => Cons(c, Nil),
-    false => {
+def encode(c : Integer) -> List(Integer) =
+  let one = c < 128
+  match one
+    | true => Cons c Nil
+    | false => {
       let two = c < 2048;
-      match two {
-        true => {
-          let lead = int.div(c, 64);
-          let low = int.mod(c, 64);
-          Cons(192 + lead, Cons(128 + low, Nil))
-        },
-        false => {
-          let three = c < 65536;
-          match three {
-            true => {
-              let lead = int.div(c, 4096);
-              let rest = int.mod(c, 4096);
-              let mid = int.div(rest, 64);
-              let low = int.mod(c, 64);
-              Cons(224 + lead, Cons(128 + mid, Cons(128 + low, Nil)))
-            },
-            false => {
-              let lead = int.div(c, 262144);
-              let rest = int.mod(c, 262144);
-              let high = int.div(rest, 4096);
-              let tail = int.mod(c, 4096);
-              let mid = int.div(tail, 64);
-              let low = int.mod(c, 64);
-              Cons(240 + lead, Cons(128 + high, Cons(128 + mid, Cons(128 + low, Nil))))
-            }
-          }
+      match two
+        | true => {
+          let lead = int.div c 64;
+          let low = int.mod c 64;
+          Cons (192 + lead) (Cons (128 + low) Nil)
         }
-      }
+        | false => {
+          let three = c < 65536;
+          match three
+            | true => {
+              let lead = int.div c 4096;
+              let rest = int.mod c 4096;
+              let mid = int.div rest 64;
+              let low = int.mod c 64;
+              Cons (224 + lead) (Cons (128 + mid) (Cons (128 + low) Nil))
+            }
+            | false => {
+              let lead = int.div c 262144;
+              let rest = int.mod c 262144;
+              let high = int.div rest 4096;
+              let tail = int.mod c 4096;
+              let mid = int.div (tail) 64;
+              let low = int.mod c 64;
+              Cons (240 + lead) (Cons (128 + high) (Cons (128 + mid) (Cons (128 + low) Nil)))
+            }
+        }
     }
-  }
-}
 
 /// A run of code points, each encoded in turn.
-pub def rec encodeAll(cs : List(Integer)) -> List(Integer) {
-  match cs {
-    Nil => Nil,
-    Cons(c, rest) => concat(encode(c), encodeAll[<](rest))
-  }
-}
+pub def rec encodeAll(cs : List(Integer)) -> List(Integer) =
+  match cs
+    | Nil => Nil
+    | Cons(c, rest) => concat (encode c) (encodeAll[<] rest)
 
 /// `$`, below 128: one byte, itself.
 @[ runs("Cons(36, Nil)") ]
-def dollar() -> List(Integer) { encode(36) }
+def dollar() -> List(Integer) { encode 36 }
 
 /// `é`, below 2048: two bytes.
 @[ runs("Cons(195, Cons(169, Nil))") ]
-def eAcute() -> List(Integer) { encode(233) }
+def eAcute() -> List(Integer) { encode 233 }
 
 /// `€`, below 65536: three bytes.
 @[ runs("Cons(226, Cons(130, Cons(172, Nil)))") ]
-def euro() -> List(Integer) { encode(8364) }
+def euro() -> List(Integer) { encode 8364 }
 
 /// `😀`, past 65536: four bytes.
 @[ runs("Cons(240, Cons(159, Cons(152, Cons(128, Nil))))") ]
-def grin() -> List(Integer) { encode(128512) }
+def grin() -> List(Integer) { encode 128512 }
 
 /// `hé`: one byte, then two.
 @[ runs("Cons(104, Cons(195, Cons(169, Nil)))") ]
-def he() -> List(Integer) { encodeAll((Cons(104, Cons(233, Nil)) : List(Integer))) }
+def he() -> List(Integer) { encodeAll (Cons 104 (Cons 233 Nil) : List(Integer)) }

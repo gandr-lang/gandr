@@ -1,39 +1,33 @@
 /// `Undecided`: a claim the machine cannot decide: a `ua` whose translator branches on a lazy record's entry, which the machine does not observe.
-theory Magma where {
+theory Magma where
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
-}
 
 @[ checks ]
-def keep(e : +{Unit}) -> -F +{Unit} {
+def keep(e : +{Unit}) -> -F +{Unit} =
   e
-}
 
 @[ checks ]
-def flag() -> &{get : -F Bool} {
+def flag() -> &{get : -F Bool} =
   &{.get => true}
-}
 
 @[ checks ]
-def observed(m : +U &{get : -F Bool}) -> Bool {
+def observed(m : +U &{get : -F Bool}) -> Bool =
   m.get
-}
 
 @[ checks ]
-def measured(b : Bool) -> -F Bool {
-  if observed(flag) {
-    match b {
-      true => +{.1 = unit},
-      false => +{.0 = unit}
-    }
+def measured(b : Bool) -> -F Bool =
+  if observed flag {
+    match b
+      | true => +{.1 = *{}}
+      | false => +{.0 = *{}}
   } else {
     b
   }
-}
 
 @[ refuses("Undecided") ]
 def compared = ua[
   1,
   4
-](Magma, Magma, #{.mul = measured, .one = keep}, #{.mul = measured, .one = keep}) ;
+] Magma Magma (*{.mul = measured, .one = keep}) (*{.mul = measured, .one = keep}) ;

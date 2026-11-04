@@ -1,6 +1,4 @@
 @[ refuses("AbsentRecordField") ]
-def absent(r : #{n : Integer, s : String}) -> Integer {
-  match r {
-    #{.z = m} => m
-  }
-}
+def absent(r : *{n : Integer, s : String}) -> Integer =
+  match r
+    *{.z = m} => m

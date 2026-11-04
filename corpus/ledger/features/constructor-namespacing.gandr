@@ -5,45 +5,39 @@
 /// - owes: #2713 — two families sharing a constructor name, and a bare name resolved among imports
 /// - owes: #4293 — rule terms naming a data block's constructors qualified
 @[ checks ]
-data Shape : Type where {
+data Shape : Type where
   | Dot : Shape
   | Line : (length : Integer) --> Shape
-}
 
 /// The length of a line, zero for a dot, each matched by its qualified name.
 @[ checks ]
-def length(s : Shape) -> Integer {
-  match s {
-    Shape.Dot => 0,
-    Shape.Line(n) => n
-  }
-}
+def length(s : Shape) -> Integer =
+  match s
+    | Shape.Dot => 0
+    | Shape.Line(n) => n
 
 /// A line built by its qualified name.
 @[ runs("3") ]
-def measured() -> Integer { length(Shape.Line(3)) }
+def measured() -> Integer { length (Shape.Line 3) }
 
 /// A shared subterm with two ports.
 @[ checks ]
-data Expr : Type where {
+data Expr : Type where
   | Lit : (n : Integer) --> Expr
   | Share : (e : Expr) --> (left : Expr, right : Expr)
-}
 
 /// The size of an expression, each port matched by its qualified name.
 @[ checks ]
-def rec size(e : Expr) -> -F Integer {
-  match e {
-    Expr.Lit(n) => return 1,
-    Expr.Share(x).left => size[<](x),
-    Expr.Share(x).right => size[<](x)
-  }
-}
+def rec size(e : Expr) -> -F Integer =
+  match e
+    | Expr.Lit(n) => return 1
+    | Expr.Share(x).left => size[<] x
+    | Expr.Share(x).right => size[<] x
 
 /// A port built by its qualified name.
 @[ runs("1") ]
-def shared() -> -F Integer { size(Expr.Share(Expr.Lit(7)).right) }
+def shared() -> -F Integer { size ((Expr.Share (Expr.Lit 7)).right) }
 
 /// The record of both ports, built by the qualified name.
 @[ checks ]
-def ports : #{left : Expr, right : Expr} = Expr.Share(Expr.Lit(7));
+def ports : *{left : Expr, right : Expr} = Expr.Share (Expr.Lit 7);

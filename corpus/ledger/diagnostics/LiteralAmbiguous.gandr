@@ -2,16 +2,15 @@
 ///
 /// Expressions over integers.
 @[ checks ]
-data Expr : Type where {
+data Expr : Type where
   | Lit : (n : Integer) --> Expr
   | Zero : Expr
-}
 
 /// A literal read as its leaf.
 module Leaf : Model(FromNat) with sort Carrier = Expr where {
   /// The leaf.
   @[ checks ]
-  def fromNat(n : Integer) -> Expr { Lit(n) }
+  def fromNat(n : Integer) -> Expr { Lit n }
 }
 
 /// Every literal read as zero.

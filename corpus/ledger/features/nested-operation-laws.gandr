@@ -14,7 +14,7 @@
 /// Choice with cut over a grade-indexed sort: `cutLeft` commits to the left
 /// branch whatever grade the right one stands at.
 @[ normalizes("orBot(cut, fail) ~> cut") ]
-theory GradedCut where {
+theory GradedCut where
   sort Grade : Type;
   sort M(g : Grade) : Type;
 
@@ -24,28 +24,26 @@ theory GradedCut where {
   oper fail : () --> M(top());
   oper orBot : (x : M(bot()), y : M(e)) --> M(bot());
 
-  rule cutLeft : orBot(x, y) ==> x;
-}
+  rule cutLeft : orBot x y ==> x;
 
 /// A category's shape: its laws over `Hom(dom, cod)` are read with the
 /// objects each composite stands at, so the unit laws agree at
 /// `comp(id(a), id(a))`.
-theory Category where {
+theory Category where
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
 
   oper id : (a : Ob) --> Hom(a, a);
   oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
 
-  rule unitL : comp(id(a), f) ==> f;
-  rule unitR : comp(f, id(b)) ==> f;
-  rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
-}
+  rule unitL : comp (id a) f ==> f;
+  rule unitR : comp f (id b) ==> f;
+  rule assoc : comp (comp f g) h ==> comp f (comp g h);
 
 /// 2-cells between homs: the laws rewrite homs, so a 2-cell carries no hom,
 /// and a whisker carries only the objects its hom stands between. A whisker
 /// distributes over vertical composition, which the laws decide.
-theory TwoCells where {
+theory TwoCells where
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
   sort Two(src : Hom(x, y), tgt : Hom(x, y)) : Type;
@@ -55,17 +53,16 @@ theory TwoCells where {
   oper vcomp : (s : Two(f, g), t : Two(g, k)) --> Two(f, k);
   oper whiskerR : (s : Two(f, g), h : Hom(b, c)) --> Two(comp(f, h), comp(g, h));
 
-  rule unitL : comp(id(a), f) ==> f;
-  rule unitR : comp(f, id(b)) ==> f;
-  rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
-  rule vassoc : vcomp(vcomp(s, t), u) ==> vcomp(s, vcomp(t, u));
-  rule whiskerDist : whiskerR(vcomp(s, t), h) ==> vcomp(whiskerR(s, h), whiskerR(t, h));
-}
+  rule unitL : comp (id a) f ==> f;
+  rule unitR : comp f (id b) ==> f;
+  rule assoc : comp (comp f g) h ==> comp f (comp g h);
+  rule vassoc : vcomp (vcomp s t) u ==> vcomp s (vcomp t u);
+  rule whiskerDist : whiskerR (vcomp s t) h ==> vcomp (whiskerR s h) (whiskerR t h);
 
 /// Views of an edited morphism: `fuse` and `step` rewrite `view(edit(f))`
 /// two ways, so completion derives `view(patch(f)) ==> fresh(f)` over the
 /// objects `f` stands at, and the kernel replays it from its peak.
-theory EditedViews where {
+theory EditedViews where
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
 
@@ -74,9 +71,8 @@ theory EditedViews where {
   oper patch : (f : Hom(x, y)) --> Hom(x, y);
   oper fresh : (f : Hom(x, y)) --> Hom(x, y);
 
-  rule fuse : view(edit(f)) ==> fresh(f);
-  rule step : edit(f) ==> patch(f);
-}
+  rule fuse : view (edit f) ==> fresh f;
+  rule step : edit f ==> patch f;
 
 /// Addition with its associativity: the law nests `add` in a call, so `add`
 /// runs by its two other rules, and the kernel decides the three converge.
@@ -85,11 +81,11 @@ data NatAssoc : Type where {
   | Zero : NatAssoc
   | Succ : (n : NatAssoc) --> NatAssoc
   oper add : (m : NatAssoc, n : NatAssoc) --> NatAssoc;
-  rule : add(Zero, n) ==> n;
-  rule : add(Succ(m), n) ==> Succ(add(m, n));
-  rule : add(add(m, n), k) ==> add(m, add(n, k));
+  rule : add Zero n ==> n;
+  rule : add (Succ m) n ==> Succ (add m n);
+  rule : add (add m n) k ==> add m (add n k);
 }
 
 /// One plus one, plus one, runs to three.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def three() -> NatAssoc { add(add(Succ(Zero), Succ(Zero)), Succ(Zero)) }
+def three() -> NatAssoc { add (add (Succ Zero) (Succ Zero)) (Succ Zero) }

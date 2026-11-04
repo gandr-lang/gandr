@@ -1212,7 +1212,7 @@ mod tests
             ),
             (
                 "attributes/entry.gandr",
-                "/// `entry`: no world.\n@[ entry(seat) ]\ndef opened() -> -F Unit {\n  pure unit\n}\n",
+                "/// `entry`: no world.\n@[ entry(seat) ]\ndef opened() -> -F Unit {\n  pure *{}\n}\n",
             ),
         ] {
             std::fs::write(directory.join(file), text).expect("the exemplar is replaced");

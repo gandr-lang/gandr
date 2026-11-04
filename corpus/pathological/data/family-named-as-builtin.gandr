@@ -4,6 +4,5 @@
 ///
 /// - see: #535
 @[ refuses("ShadowedBuiltin") ]
-data Unit : Type where {
+data Unit : Type where
   | Pt : Unit
-}

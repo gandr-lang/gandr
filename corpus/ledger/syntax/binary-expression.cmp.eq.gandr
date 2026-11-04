@@ -1,5 +1,4 @@
 /// `binary_expression.cmp.eq`: an equality comparison.
 @[ checks ]
-def same() -> -F Bool {
+def same() -> -F Bool =
   return 1 == 1
-}

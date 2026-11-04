@@ -10,6 +10,5 @@ import "./circle-absent.gandr";
 /// A declaration of the importer, refused with its import: what it reads
 /// could be the absent sibling's.
 @[ refuses("ImportUnresolved") ]
-data Point : Type where {
+data Point : Type where
   | Here : Point
-}

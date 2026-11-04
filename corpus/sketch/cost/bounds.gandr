@@ -24,42 +24,39 @@ import std.cost.list (chargesLength);
 def threeSteps() -> [Cost] Integer #spec{
   measure { cost 3 }
 } {
-  charge(1);
-  charge(2);
+  charge 1;
+  charge 2;
   7
 }
 
 /// Sums a list at one step for each element. The bound is open in the list,
 /// so the author proves it with a lemma.
 def rec total(xs : List(Nat)) -> [Cost] Nat #spec{
-  measure { cost length(xs) with chargesLength(xs) }
+  measure { cost length xs with chargesLength(xs) }
 } {
-  match xs {
-    Nil => 0,
-    Cons(x, rest) => {
-      charge(1);
-      x + total(rest)
+  match xs
+    | Nil => 0
+    | Cons(x, rest) => {
+      charge 1;
+      x + total rest
     }
-  }
 }
 
 /// Merges two sorted lists at one step for each element taken. The solver in
 /// scope proves the bound.
 def rec merge(xs : List(Integer), ys : List(Integer)) -> [Cost] List(Integer) #spec{
-  measure { cost length(xs) + length(ys) with ~smt }
+  measure { cost length xs + length ys with ~smt }
 } {
-  match (xs, ys) {
-    (Nil, _) => ys,
-    (_, Nil) => xs,
-    (Cons(x, xr), Cons(y, yr)) => {
-      charge(1);
-      if x <= y { Cons(x, merge(xr, ys)) } else { Cons(y, merge(xs, yr)) }
+  match *{xs, ys}
+    | *{Nil, _} => ys
+    | *{_, Nil} => xs
+    | *{Cons(x, xr), Cons(y, yr)} => {
+      charge 1;
+      if x <= y { Cons x (merge xr ys) } else { Cons y (merge xs yr) }
     }
-  }
 }
 
 /// A grade on the effect row states the bound of `threeSteps` in the form
 /// sketch 19 rules. This sketch states a bound as a `measure` clause.
-def threeStepsGraded() -> [Cost <= 3] Integer {
-  threeSteps()
-}
+def threeStepsGraded() -> [Cost <= 3] Integer =
+  threeSteps ()

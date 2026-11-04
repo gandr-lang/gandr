@@ -53,12 +53,12 @@ def wrong = "text" ;
 const FORCE: &str = "def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n";
 
 /// An application whose head is a return, not a function.
-const APPLICATION: &str = "def b : +U (-F Integer) ;\ndef b = thunk { become (pure 1)(2) } \
+const APPLICATION: &str = "def b : +U (-F Integer) ;\ndef b = thunk { become (pure 1) 2 } \
                                ;\n";
 
 /// A mismatch under a `let` binder.
 const BOUND: &str = "def id(x: Integer) -> -F Integer { return x }\ndef f(n: Integer) -> -F \
-                         String { let m = id(n) ; return m }\n";
+                         String { let m = id n ; return m }\n";
 
 /// A fresh scratch directory, removed when dropped.
 #[repr(transparent)]

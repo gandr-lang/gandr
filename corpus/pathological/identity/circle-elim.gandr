@@ -8,86 +8,73 @@
 // - see: #485 — `elsewhereComputed`
 
 /// The circle: one point and a loop at it.
-data Circle : Type where {
+data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
-}
 
 /// Every point joined to the point: reflexivity at `Base`, which the loop
 /// carries to the loop, not to reflexivity, and no loop arm supplies the path
 /// between them. The circle is not contractible.
 @[ refuses("LoopNotRespected") ]
-def contractible(x : Circle) -> Path[.A = Circle](Base, x) {
-  match x {
-    Base => Path.here(Base)
-  }
-}
+def contractible(x : Circle) -> Path[.A = Circle](Base, x) =
+  match x
+    | Base => Path.here Base
 
 /// The same nesting as `circle-rotation.gandr`'s `rotInv1`, at a fibre that
 /// is no set: a point with a loop at it, a 1-type. Holding `b` at its point
 /// drops the square between the two loops, which only a fibre presented as a
 /// set leaves unowed, so the case is refused naming the fibre.
 @[ refuses("LoopNotRespected") ]
-def rotTwin(a : Circle, b : Circle) -> #{centre : Circle, around : Path[.A = Circle](a, a)} {
-  match a {
-    Base => match b {
-      Base => #{centre = Base, around = loop}
-    }
-  }
-}
+def rotTwin(a : Circle, b : Circle) -> *{centre : Circle, around : Path[.A = Circle](a, a)} =
+  match a
+    | Base => match b
+      | Base => *{centre = Base, around = loop}
 
 /// The degree-two map: the loop goes round twice. A loop arm of a
 /// non-dependent case chooses any loop at the image of the point, so the map
 /// is admitted.
-def doubled(x : Circle) -> Circle {
-  match x {
-    Base => Base,
-    loop => loop ∷ loop ∷ Path.here(Base)
-  }
-}
+def doubled(x : Circle) -> Circle =
+  match x
+    | Base => Base
+    | loop => loop ∷ loop ∷ Path.here Base
 
 /// A dependent loop arm at the wrong endpoints: it owes a path from the
 /// answer carried along the loop, the loop, to the answer, reflexivity, and
 /// answers reflexivity at reflexivity.
 @[ refuses("EndpointMismatch") ]
-def misjoined(x : Circle) -> Path[.A = Circle](Base, x) {
-  match x {
-    Base => Path.here(Base),
-    loop => Path.here(Path.here(Base))
-  }
-}
+def misjoined(x : Circle) -> Path[.A = Circle](Base, x) =
+  match x
+    | Base => Path.here Base
+    | loop => Path.here (Path.here Base)
 
 /// A point with a loop at it, and a second point the loop never reaches.
-data Marked : Type where {
+data Marked : Type where
   | Mark : Marked
   | Elsewhere : Marked
   | turn : Mark <-> Mark
-}
 
 /// A composite whose second path starts where the first does not end: the
 /// turn ends at `Mark`, and `Path.here(Elsewhere)` starts at `Elsewhere`. `Path.step` is
 /// the composite of the 2-chain, so its one inner wire does not fill.
 @[ refuses("ComposeDoesNotFill") ]
-def misjoined_then : Path(Mark, Elsewhere) = Path.step(turn, Path.here(Elsewhere));
+def misjoined_then : Path(Mark, Elsewhere) = Path.step turn (Path.here Elsewhere);
 
 /// Every point to itself, by cases: no loop arm, and the motive reads no
 /// point, so the turn is owed nothing.
-def kept(x : Marked) -> Marked {
-  match x {
-    Mark => Mark,
-    Elsewhere => Elsewhere
-  }
-}
+def kept(x : Marked) -> Marked =
+  match x
+    | Mark => Mark
+    | Elsewhere => Elsewhere
 
 /// Reflexivity at the looped point, wanted at a path whose endpoints compute
 /// the other point: `kept(Elsewhere)` computes `Elsewhere`, which the turn
 /// never reaches, so the path is no words and `Path.here(Mark)` does not inhabit
 /// it.
 @[ refuses("TypeMismatch") ]
-def elsewhereComputed : Path(kept(Elsewhere), kept(Elsewhere)) = Path.here(Mark);
+def elsewhereComputed : Path(kept Elsewhere, kept Elsewhere) = Path.here Mark;
 
 /// `Path.ap` maps a path by a function, and the point's constructor is not one:
 /// `Base` names the point, not a map out of the circle.
 @[ refuses("OutOfFragment.NotAFunction") ]
 def cong_at_point : Path(Base, Base);
-def cong_at_point = Path.ap(Base, loop);
+def cong_at_point = Path.ap Base (loop);

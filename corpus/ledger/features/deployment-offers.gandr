@@ -18,7 +18,7 @@
 import std.io;
 
 /// What a role at `far` reads and writes: values held by key.
-pub theory Store where {
+pub theory Store where
   /// The store holds values of this sort.
   sort V : Type+;
   /// What a computation over the store answers.
@@ -27,7 +27,6 @@ pub theory Store where {
   oper get : (key : V, k : pi+ (v : V). C) --> C;
   /// Holds `value` at `key`.
   oper put : (key : V, value : V, k : C) --> C;
-}
 
 /// The world the entry runs at.
 pub world near;

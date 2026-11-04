@@ -18,7 +18,7 @@
 // - see: `fetch-list.gandr` — the provided modules this source reads
 
 // The DOM specification, which the provider reads from its WebIDL.
-@[provide(std.provide.webidl.specification("dom", revision = "2026-10-01"))]
+@[provide(std.provide.webidl.specification "dom" revision (= "2026-10-01"))]
 module Dom
 
 // The Console specification, which the provider reads from its WebIDL.

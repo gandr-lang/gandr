@@ -22,9 +22,8 @@ def concat(
   z : A,
   p : Path[.A = A](x, y),
   q : Path[.A = A](y, z)
-) -> Path[.A = A](x, z) {
-  Path.step(p, q)
-}
+) -> Path[.A = A](x, z) =
+  Path.step p q
 
 /// Reflexivity at `concat`'s composite, its type written with `concat`.
 def concatHere(
@@ -34,9 +33,8 @@ def concatHere(
   z : A,
   p : Path[.A = A](x, y),
   q : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](concat(A, x, y, z, p, q), concat(A, x, y, z, p, q)) {
-  Path.here(concat(A, x, y, z, p, q))
-}
+) -> Path[.A = Path[.A = A](x, z)](concat A x y z p q, concat A x y z p q) =
+  Path.here (concat A x y z p q)
 
 /// `concatHere` at variable endpoints, against `Path.step`.
 def atVariables(
@@ -46,9 +44,8 @@ def atVariables(
   z : A,
   p : Path[.A = A](x, y),
   q : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(p, q), Path.step(p, q)) {
-  concatHere(A, x, y, z, p, q)
-}
+) -> Path[.A = Path[.A = A](x, z)](Path.step p q, Path.step p q) =
+  concatHere A x y z p q
 
 /// `concatHere` at endpoints that are the stuck composite `Path.step(f, g)`.
 def atComposite(
@@ -58,24 +55,22 @@ def atComposite(
   z : A,
   f : Path[.A = A](x, y),
   g : Path[.A = A](y, z),
-  p : Path[.A = Path[.A = A](x, z)](Path.step(f, g), Path.step(f, g)),
-  q : Path[.A = Path[.A = A](x, z)](Path.step(f, g), Path.step(f, g))
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(f, g), Path.step(f, g))](
-  Path.step(p, q),
-  Path.step(p, q)
-) {
-  concatHere(type(Path[.A = A](x, z)), Path.step(f, g), Path.step(f, g), Path.step(f, g), p, q)
-}
+  p : Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f g),
+  q : Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f g)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f g)](
+  Path.step p q,
+  Path.step p q
+) =
+  concatHere (type(Path[.A = A](x, z))) (Path.step f g) (Path.step f g) (Path.step f g) p q
 
 /// `concatHere` at endpoints that apply a variable function.
 def atApplication(
   A : Type,
-  F : A => A,
+  F : A -> A,
   x : A,
   y : A,
   z : A,
-  p : Path[.A = A](F(x), F(y)),
-  q : Path[.A = A](F(y), z)
-) -> Path[.A = Path[.A = A](F(x), z)](Path.step(p, q), Path.step(p, q)) {
-  concatHere(A, F(x), F(y), z, p, q)
-}
+  p : Path[.A = A](F x, F y),
+  q : Path[.A = A](F y, z)
+) -> Path[.A = Path[.A = A](F x, z)](Path.step p q, Path.step p q) =
+  concatHere A (F x) (F y) z p q

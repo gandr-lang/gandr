@@ -103,7 +103,7 @@ fn module_declarations_mold_zero_obligation() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let cases = [
         "module M where { def x = 1; def y : Integer; }",
-        r#"module M : #{ x : Integer, f : -F Integer } where {
+        r#"module M : *{ x : Integer, f : -F Integer } where {
   def x = 1;
   def f(a : Integer) -> -F Integer { pure a }
 }"#,
@@ -173,9 +173,9 @@ fn prefix_type_formers_group_required_operands() -> Result<(), Box<dyn Error>>
 fn nested_module_members_mold_zero_obligation() -> Result<(), Box<dyn Error>>
 {
     let pbg = built_in()?;
-    let src = r#"module Outer : #{ before : Integer, inner : #{ answer : Integer }, after : Integer } where {
+    let src = r#"module Outer : *{ before : Integer, inner : *{ answer : Integer }, after : Integer } where {
   def before = 0;
-  module inner : #{ answer : Integer } where { def answer = 42; }
+  module inner : *{ answer : Integer } where { def answer = 42; }
   def after = inner.answer;
 }"#;
     let result = parse(&pbg, SourceText::from(src))?;
@@ -290,7 +290,7 @@ fn hole_tile_sorts(
 fn an_opaque_module_ascription_parses_cleanly() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let src = "module Counter :> #{ type T, zero : T } where { type T = Integer; def zero = 0; }";
+    let src = "module Counter :> *{ type T, zero : T } where { type T = Integer; def zero = 0; }";
     let result = parse(pbg, SourceText::from(src))?;
     assert!(
         bool::from(result.is_clean()),
@@ -308,7 +308,7 @@ fn an_opaque_module_ascription_parses_cleanly() -> Result<(), Box<dyn Error>>
 fn a_transparent_ascription_admits_the_same_signature() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let src = "module Counter : #{ type T, zero : T } where { def zero = 0; }";
+    let src = "module Counter : *{ type T, zero : T } where { def zero = 0; }";
     let result = parse(pbg, SourceText::from(src))?;
     assert!(
         bool::from(result.is_clean()),

@@ -15,24 +15,20 @@
 import "./group-laws.gandr";
 
 /// The inverse of a product, in every group.
-rule Group.invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x));
+rule Group.invMul : inv (mul x y) <=> mul (inv y) (inv x);
 
 /// A bit.
-data Bit : Type where {
+data Bit : Type where
   | Zero : Bit
   | One : Bit
-}
 
 /// Exclusive or.
-def xor(a : Bit, b : Bit) -> Bit {
-  match a {
-    Zero => b,
-    One => match b {
-      Zero => One,
-      One => Zero,
-    },
-  }
-}
+def xor(a : Bit, b : Bit) -> Bit =
+  match a
+    | Zero => b
+    | One => match b
+      | Zero => One
+      | One => Zero
 
 /// The group of order two: zero is the unit, exclusive or the product, and
 /// each bit its own inverse; the two elements the presentation names are one
@@ -43,40 +39,32 @@ module Parity : Model(Group) where {
   def a = One;
   def b = Zero;
   def inv(x : Bit) -> Bit { x }
-  def mul(x : Bit, y : Bit) -> Bit { xor(x, y) }
+  def mul(x : Bit, y : Bit) -> Bit { xor x y }
   @[ checks ]
-  def unitL(x : Bit) -> Path(mul(e, x), x) { Path.here(x) }
+  def unitL(x : Bit) -> Path(mul e x, x) { Path.here x }
   @[ checks ]
-  def unitR(x : Bit) -> Path(mul(x, e), x) {
-    match x {
-      Zero => Path.here(Zero),
-      One => Path.here(One),
-    }
-  }
+  def unitR(x : Bit) -> Path(mul x e, x) =
+    match x
+      | Zero => Path.here Zero
+      | One => Path.here One
   @[ checks ]
-  def assoc(x : Bit, y : Bit, z : Bit) -> Path(mul(mul(x, y), z), mul(x, mul(y, z))) {
-    match x {
-      Zero => Path.here(xor(y, z)),
-      One => match y {
-        Zero => Path.here(xor(One, z)),
-        One => match z {
-          Zero => Path.here(Zero),
-          One => Path.here(One),
-        },
-      },
-    }
-  }
+  def assoc(x : Bit, y : Bit, z : Bit) -> Path(mul (mul x y) z, mul x (mul y z)) =
+    match x
+      | Zero => Path.here (xor y z)
+      | One => match y
+        | Zero => Path.here (xor One z)
+        | One => match z
+          | Zero => Path.here Zero
+          | One => Path.here One
   @[ checks ]
-  def invInv(x : Bit) -> Path(inv(inv(x)), x) { Path.here(x) }
+  def invInv(x : Bit) -> Path(inv (inv x), x) { Path.here x }
   @[ checks ]
-  def invE() -> Path(inv(e), e) { Path.here(Zero) }
+  def invE() -> Path(inv e, e) { Path.here Zero }
   @[ checks ]
-  def invL(x : Bit) -> Path(mul(inv(x), x), e) {
-    match x {
-      Zero => Path.here(Zero),
-      One => Path.here(Zero),
-    }
-  }
+  def invL(x : Bit) -> Path(mul (inv x) x, e) =
+    match x
+      | Zero => Path.here Zero
+      | One => Path.here Zero
 }
 
 /// The parity group, as a model.
@@ -84,16 +72,14 @@ def parityGroup : Model(Group) = pack Parity at Model(Group);
 
 /// The derived rule read at the parity group, at one and zero: both sides are
 /// one.
-def invMulParity() -> Path(One, One) {
-  let law = Group.invMul(parityGroup);
-  law(One, Zero)
-}
+def invMulParity() -> Path(One, One) =
+  let law = Group.invMul parityGroup
+  law One Zero
 
 /// `Path.walk` over the derived rule, completion's filler, reduces to its
 /// base: the rule computes to `Path.here`, as any decided cell does.
 def overDerived(
-  M : Bit => Type,
+  M : Bit -> Type,
   v : M(One)
-) -> Path(Path.walk(fun (b) { M(b) }, invMulParity(), v), v) {
-  Path.here(v)
-}
+) -> Path(Path.walk (fun (b) { M b }) (invMulParity ()) v, v) =
+  Path.here v

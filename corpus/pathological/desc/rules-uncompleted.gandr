@@ -14,6 +14,6 @@ data NatSwapped : Type where {
   | Succ : (n : NatSwapped) --> NatSwapped
   oper plus : (m : NatSwapped, n : NatSwapped) --> NatSwapped;
   oper pick : (m : NatSwapped, n : NatSwapped) --> NatSwapped;
-  rule : pick(m, n) ==> plus(m, n);
-  rule : pick(Zero, n) ==> plus(n, Zero);
+  rule : pick m n ==> plus m n;
+  rule : pick Zero n ==> plus n Zero;
 }

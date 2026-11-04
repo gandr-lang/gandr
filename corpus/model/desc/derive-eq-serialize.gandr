@@ -7,7 +7,6 @@
 //! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
 /// One bit: off or on.
-data Bit : Type where {
+data Bit : Type where
   | Off : Bit
   | On : Bit
-}

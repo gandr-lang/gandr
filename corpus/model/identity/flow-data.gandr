@@ -13,68 +13,58 @@
 import std.list (List);
 
 /// The old type: one constructor of one integer field.
-data Old : Type where {
+data Old : Type where
   | Mk : (n : Integer) --> Old
-}
 
 /// The new type: the same field under another constructor.
-data Other : Type where {
+data Other : Type where
   | Make : (n : Integer) --> Other
-}
 
 /// The old shapes.
-pub data Shape : Type where {
+pub data Shape : Type where
   | Circle : (r : Integer) --> Shape
   | Rect : (w : Integer, h : Integer) --> Shape
-}
 
 /// The new shapes: the circle renamed, the rectangle's sides swapped.
-pub data Figure : Type where {
+pub data Figure : Type where
   | Round : (r : Integer) --> Figure
   | Box : (h : Integer, w : Integer) --> Figure
-}
 
 /// One field moved to a constructor of another name.
 module Rename where {
   /// The translator: the field moved to the new constructor.
   @[ checks ]
-  def toOther(old : Old) -> Other {
-    match old {
-      Mk(n) => Make(n)
-    }
-  }
+  def toOther(old : Old) -> Other =
+    match old
+      | Mk(n) => Make n
   /// The flow from the old type to the new, by its translator.
   @[ checks ]
-  def renamed : Flow[.A = Type](Old, Other) = Flow.into(toOther);
+  def renamed : Flow[.A = Type](Old, Other) = Flow.into toOther;
   /// One value ridden along the flow.
   @[ checks ]
-  def moved(old : Old) -> Other {
-    Flow.ride(fun (X) { X }, renamed, old)
-  }
+  def moved(old : Old) -> Other =
+    Flow.ride (fun (X) { X }) renamed old
   /// A value migrated by a run.
   @[ runs("Make(3)") ]
-  def one : () => Other = moved(Mk(3));
+  def one : () -> Other = moved (Mk 3);
 }
 
 /// Each constructor moved to its twin, a constructor's fields swapped.
 pub module Shapes where {
   /// The translator: each shape to its figure, the sides swapped.
   @[ checks ]
-  def toFigure(shape : Shape) -> Figure {
-    match shape {
-      Circle(r) => Round(r),
-      Rect(w, h) => Box(h, w)
-    }
-  }
+  def toFigure(shape : Shape) -> Figure =
+    match shape
+      | Circle(r) => Round r
+      | Rect(w, h) => Box h w
   /// The flow from the old shapes to the new.
   @[ checks ]
-  def redrawn : Flow[.A = Type](Shape, Figure) = Flow.into(toFigure);
+  def redrawn : Flow[.A = Type](Shape, Figure) = Flow.into toFigure;
   /// A list of shapes ridden along the flow in the family of lists.
   @[ checks ]
-  def all(shapes : List(Shape)) -> List(Figure) {
-    Flow.ride(fun (X) { List(X) }, redrawn, shapes)
-  }
+  def all(shapes : List(Shape)) -> List(Figure) =
+    Flow.ride (fun (X) { List X }) redrawn shapes
   /// Two shapes migrated by a run.
   @[ runs("cons(Round(1), cons(Box(3, 2), nil))") ]
-  def two : () => List(Figure) = all(cons(Circle(1), cons(Rect(2, 3), nil)));
+  def two : () -> List(Figure) = all (cons (Circle 1) (cons (Rect 2 3) nil));
 }

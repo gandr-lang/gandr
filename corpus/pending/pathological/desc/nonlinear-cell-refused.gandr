@@ -2,6 +2,6 @@ data Bit : Type where {
   | Off : Bit
   | On : Bit
   oper and : (a : Bit, b : Bit) --> Bit;
-  rule : and(x, y) ==> y;
-  rule : and(x, x) ==> x;
+  rule : and x y ==> y;
+  rule : and x x ==> x;
 }

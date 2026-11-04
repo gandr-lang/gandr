@@ -17,67 +17,61 @@
 /// and storing a value of it before what runs after. The module `State` holds
 /// the theory, and a handler answers each with the sort fixed
 /// (`state-handler.gandr`).
-pub theory State.Eff where {
+pub theory State.Eff where
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
-}
 
 /// Storing a value and then reading the state is storing it and continuing
 /// at it.
-pub theory StatePutGet where {
+pub theory StatePutGet where
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
-}
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
 
 /// Storing twice keeps the second value.
-pub theory StatePutPut where {
+pub theory StatePutPut where
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule putPut : put(s, put(u, k)) <=> put(u, k);
-}
+  rule putPut : put s (put u k) <=> put u k;
 
 /// Put-get and put-put together. Put-put's continuation can be a `get`, so
 /// its inner `put` is a put-get redex; both reducts store the second value
 /// and continue at it.
-pub theory StatePutLaws where {
+pub theory StatePutLaws where
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
-  rule putPut : put(s, put(u, k)) <=> put(u, k);
-}
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
+  rule putPut : put s (put u k) <=> put u k;
 
 /// Reading twice is reading once at the same state. The inner `get` is an
 /// instance of the rule's own left side through its pattern, and both
 /// reducts read once and continue at that state three times. A
 /// scope over this theory runs its subject normalised by the rule: `let a = /// st.get(); let b = st.get(); pure a + b` reads once, `let a = st.get();
 /// pure a + a` with `b` bound to `a` (`state-laws.gandr`'s `readTwice`).
-pub theory StateGetGet where {
+pub theory StateGetGet where
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
-  rule getGet : get(bind s. get(bind t. k(s, t))) <=> get(bind s. k(s, s));
-}
+  rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s));
 
 /// Put-get, put-put and get-get together, the laws a state-passing handler
 /// is checked against (`../specification/state-wp.gandr`). A read of a read
 /// under a store is a redex of put-get and of get-get, and both reducts store
 /// the value and continue at it twice. Get-put beside them is refused in the
 /// twin.
-pub theory StateLaws where {
+pub theory StateLaws where
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
-  rule putPut : put(s, put(u, k)) <=> put(u, k);
-  rule getGet : get(bind s. get(bind t. k(s, t))) <=> get(bind s. k(s, s));
-}
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
+  rule putPut : put s (put u k) <=> put u k;
+  rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s));

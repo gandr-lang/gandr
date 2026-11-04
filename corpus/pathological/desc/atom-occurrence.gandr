@@ -13,14 +13,13 @@ import "../../model/desc/atom-occurrence.gandr";
 /// one: the description check refuses the occurrence as misplaced, an
 /// ill-formed description.
 @[ refuses("IllFormedDescription") ]
-theory Misplaced where {
+theory Misplaced where
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule stray : nu(bind a. par(a, nil())) ==> nil();
-}
+  rule stray : nu (bind a. (par a (nil ()))) ==> nil ();
 
 /// Scope extrusion beside the law that a restriction of the inert process is
 /// inert, where `out` takes a channel: the law rewrites the restriction
@@ -28,27 +27,25 @@ theory Misplaced where {
 /// reaches `nu(bind a . par(nil, q))` one way and `par(nil, q)` the other, two
 /// normal forms, so the rules are refused.
 @[ refuses("RulesOverlapCondition") ]
-theory Vacant where {
+theory Vacant where
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule scope : par(nu(bind a. p), q) <=> nu(bind a. par(p, q)) where { | a # q };
-  rule vacant : nu(bind a. nil()) <=> nil();
-}
+  rule scope : par (nu (bind a. p)) q <=> nu (bind a. (par p q)) where { | a # q };
+  rule vacant : nu (bind a. (nil ())) <=> nil ();
 
 /// A variable matched under a restriction and beside it where `out` takes a
 /// channel: its two instances agree only up to the channels they name, which
 /// no matching step decides yet, so the description check refuses the rule
 /// undecided.
 @[ refuses("IllFormedDescription") ]
-theory Split where {
+theory Split where
   sort Name : Atom;
   sort Proc : Type;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule split : par(nu(bind a. p), p) ==> p where { | a # p };
-}
+  rule split : par (nu (bind a. p)) p ==> p where { | a # p };

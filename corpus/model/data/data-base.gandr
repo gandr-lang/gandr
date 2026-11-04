@@ -15,27 +15,24 @@
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 /// Natural numbers, free: every constructor term is its own value.
-pub data Nat : Type where {
+pub data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
 
 /// Addition by recursion on the second argument, the recursive call nested
 /// in the successor it returns.
-pub def rec plus(n : Nat, m : Nat) -> Nat {
-  match m {
-    Zero => n,
-    Succ(p) => Succ(plus[<](n, p))
-  }
-}
+pub def rec plus(n : Nat, m : Nat) -> Nat =
+  match m
+    | Zero => n
+    | Succ(p) => Succ (plus[<] n p)
 
 /// Two.
 @[ runs("Succ(Succ(Zero))") ]
-pub def two : Nat = Succ(Succ(Zero));
+pub def two : Nat = Succ (Succ Zero);
 
 /// Three.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-pub def three : Nat = Succ(two);
+pub def three : Nat = Succ two;
 
 /// The integers as a presented type: a successor and a predecessor that
 /// cancel, each rule invertible.
@@ -44,27 +41,24 @@ pub data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
   | P : (x : Int) --> Int
-  rule : S(P(x)) <=> x;
-  rule : P(S(x)) <=> x;
+  rule : S (P x) <=> x;
+  rule : P (S x) <=> x;
 }
 
 /// Three colours: an enumeration, a data type whose constructors take no
 /// field.
-pub data Color : Type where {
+pub data Color : Type where
   | Red : Color
   | Green : Color
   | Blue : Color
-}
 
 /// The two branches of a binary node.
-pub data Two : Type where {
+pub data Two : Type where
   | L : Two
   | R : Two
-}
 
 /// Lists of elements of a type `a`. The element stands only where a list
 /// holds it, strictly positive, so a family nests through it.
-pub data List(a : Type) : Type where {
+pub data List(a : Type) : Type where
   | Nil : List(a)
   | Cons : (head : a, tail : List(a)) --> List(a)
-}

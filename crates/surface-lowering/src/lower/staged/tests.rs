@@ -28,7 +28,7 @@ use crate::resolve::SurfaceName;
 const NAT: &str = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n";
 
 /// A function applied at a stage, and a recursion handing its claim to it.
-const APPLIED: &str = "def applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat {\n  f(x)\n}\ndef rec helped(n : Nat) -> -F Nat {\n  match n {\n    Zero => Zero,\n    Succ(p) => Succ(applyAt(helped[<], p))\n  }\n}\n";
+const APPLIED: &str = "def applyAt[i : Size](f : Nat[<i] -> Nat, x : Nat[<i]) -> -F Nat {\n  f x\n}\ndef rec helped(n : Nat) -> -F Nat {\n  match n {\n    | Zero => Zero\n    | Succ(p) => Succ (applyAt helped[<] p)\n  }\n}\n";
 
 /// The bounds `name`'s telescope files.
 ///
@@ -119,7 +119,7 @@ fn a_telescope_files_its_bounds_and_marks_its_stages()
 #[test]
 fn a_definition_s_region_binders_are_named_by_ordinal_2138()
 {
-    let source = "def crossed[s : Region, i : Size, r : Region](k : (() => Integer) at r, j : (() => Integer) at s) -> -F Integer {\n  force k\n}\ndef plain(x : Integer) -> -F Integer {\n  return x\n}\n";
+    let source = "def crossed[s : Region, i : Size, r : Region](k : (() -> Integer) at r, j : (() -> Integer) at s) -> -F Integer {\n  force k\n}\ndef plain(x : Integer) -> -F Integer {\n  return x\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let named = |name: &str| {

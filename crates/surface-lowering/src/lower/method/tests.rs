@@ -39,9 +39,9 @@ const COUNTER: &str = r"module Counter where {
 }
 def used() -> -F Integer {
   var s = 1;
-  let n = s.read();
-  let _ = s.bump(2);
-  let m = s.spend();
+  let n = s.read ();
+  let _ = s.bump 2;
+  let m = s.spend ();
   pure n + m
 }
 ";
@@ -151,7 +151,7 @@ fn a_method_two_modules_declare_is_refused_naming_both()
 {
     let source = "module A where { def size(self : shared Integer) -> -F Integer { pure self } }\n\
                   module B where { def size(self : shared Integer) -> -F Integer { pure 0 } }\n\
-                  def measured() -> -F Integer { var s = 1; s.size() }\n";
+                  def measured() -> -F Integer { var s = 1; s.size () }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert!(
@@ -233,9 +233,9 @@ fn a_receiver_is_a_typed_first_self()
                   def other(x : Integer) -> -F Integer { pure x }\n\
                   def generic[a : Type](self : shared a) -> -F a { pure self }\n\
                   }\n\
-                  def first() -> -F Integer { var s = 1; s.untyped() }\n\
-                  def second() -> -F Integer { var s = 1; s.other() }\n\
-                  def third() -> -F Integer { var s = 1; s.generic() }\n";
+                  def first() -> -F Integer { var s = 1; s.untyped () }\n\
+                  def second() -> -F Integer { var s = 1; s.other () }\n\
+                  def third() -> -F Integer { var s = 1; s.generic () }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     for name in ["first", "second"] {

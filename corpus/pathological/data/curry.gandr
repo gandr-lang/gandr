@@ -12,28 +12,22 @@
 data Empty : Type where {}
 
 /// A node holding a function from its own family into the empty type.
-data Bad : Type where {
-  | MkBad : (f : Bad => Empty) --> Bad
-}
+data Bad : Type where
+  | MkBad : (f : Bad -> Empty) --> Bad
 
 /// A function applied to a node, each at its declared type.
-def apply(g : Bad => Empty, b : Bad) -> Empty {
-  g(b)
-}
+def apply(g : Bad -> Empty, b : Bad) -> Empty =
+  g b
 
 /// Curry's consumer: the function a node holds, applied to that node.
 @[ refuses("StageNotBelow") ]
-def bad(b : Bad) -> Empty {
-  match b {
-    MkBad(f) => f(b)
-  }
-}
+def bad(b : Bad) -> Empty =
+  match b
+    MkBad(f) => f b
 
 /// The same consumer through `apply`: the function a node holds takes
 /// nodes only below the node, not every node `apply` hands it.
 @[ refuses("StageNotBelow") ]
-def smuggled(b : Bad) -> Empty {
-  match b {
-    MkBad(f) => apply(f, b)
-  }
-}
+def smuggled(b : Bad) -> Empty =
+  match b
+    MkBad(f) => apply f b

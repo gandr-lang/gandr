@@ -17,38 +17,33 @@
 import std.cost (Cost, Counting, countOf);
 
 /// Three steps: a charge of one, a charge of two, then seven.
-def threeSteps() -> [Cost] Integer {
-  charge(1);
-  charge(2);
+def threeSteps() -> [Cost] Integer =
+  charge 1
+  charge 2
   7
-}
 
 /// Looks a key up in a cache. A hit charges one, and a miss charges ten and
 /// loads the value.
-def lookup(cache : Ref(Map(String, String)), load : String -> String, key : String) -> [Cost, State(Heap)] String {
-  match cache.get().#[key] {
-    Some(v) => {
-      charge(1);
-      v
-    },
-    None => {
-      charge(10);
-      let v = load(key);
-      cache.set(insert(cache.get(), key, v));
+def lookup(cache : Ref(Map(String, String)), load : String -> String, key : String) -> [Cost, State(Heap)] String =
+  match (cache.get ()).#[key]
+    | Some(v) => {
+      charge 1;
       v
     }
-  }
-}
+    | None => {
+      charge 10;
+      let v = load key;
+      cache.set (insert (cache.get ()) key v);
+      v
+    }
 
 /// The steps under the counting model, which answers their count of three.
-def countedSteps() -> Nat {
-  countOf(handle cost : Cost {
-    threeSteps()
+def countedSteps() -> Nat =
+  countOf (handle cost : Cost {
+    threeSteps ()
   } with Counting)
-}
 
 /// The steps with no model named. The default makes each charge the identity,
 /// so the answer is seven and the run counts nothing.
-def plainSteps() -> Integer {
-  threeSteps()
-}
+def plainSteps() -> Integer =
+  threeSteps ()

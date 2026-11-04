@@ -19,7 +19,6 @@ def namedTwice() -> -F [std.fs.Eff, std.fs.Eff] Integer { pure 1 }
 /// Sequencing joins the rows: the computation reads through `std.fs.Eff`, which the
 /// row `[Partial]` does not hold.
 @[ refuses("TypeMismatch") ]
-def narrowedRow(c : Cap { read }) -> [Partial] Integer {
-  let _ = peek(c);
-  once(2)
-}
+def narrowedRow(c : Cap { read }) -> [Partial] Integer =
+  let _ = peek c
+  once 2

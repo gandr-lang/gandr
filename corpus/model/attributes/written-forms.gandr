@@ -11,16 +11,14 @@
 
 /// An answer whose exit is written, as `explicit_exits` asks.
 @[ checks, explicit_exits ]
-def exitWritten() -> Integer {
+def exitWritten() -> Integer =
   return 42
-}
 
 /// The same answer, bound by a written run, as `explicit_runs` asks.
 @[ checks, explicit_runs ]
-def runWritten() -> Integer {
-  let m = exitWritten();
+def runWritten() -> Integer =
+  let m = exitWritten ()
   m
-}
 
 /// A value laid out in the sugared form.
 @[ checks, form(sugared) ]

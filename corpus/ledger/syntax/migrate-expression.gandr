@@ -3,13 +3,12 @@
 world operator ;
 @[ checks ]
 world seat ;
-module Seat :> #{ mobile type Report, progress : Report } where {
+module Seat :> *{ mobile type Report, progress : Report } where {
   type Report = String;
   @[ checks ]
   def progress = "progress";
 }
 @[ checks ]
-@[ entry((operator, seat)) ]
-def moved() -> -F Seat.Report {
+@[ entry(*{operator, seat}) ]
+def moved() -> -F Seat.Report =
   migrate [seat] { pure Seat.progress }
-}

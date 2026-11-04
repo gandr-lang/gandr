@@ -11,13 +11,12 @@ import std.process;
 /// A seat's end closed inside a scope after an operation whose clause drops
 /// its continuation: the close never runs and the end is left open.
 @[ refuses("CapturedEndpoint") ]
-def closedInScope() -> Unit {
+def closedInScope() -> Unit =
   let desk = fork (seat : end) { close(seat) };
   handle c : std.process.Exit.Eff {
-    c.exit(1);
+    c.exit 1;
     close(desk)
   } with {
-    pure(v) => pure v,
-    oper exit(code, k) => pure unit
+    | pure(v) => pure v
+    | oper exit(code, k) => pure *{}
   }
-}

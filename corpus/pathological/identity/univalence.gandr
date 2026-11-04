@@ -22,18 +22,17 @@ import "../../model/identity/circle.gandr";
 /// inverse's round trip: `pick(collapse(x))` is `Yes` at every `x`, so
 /// reflexivity at `x` does not reach it.
 @[ refuses("EndpointMismatch") ]
-def collapsedPath : Path[.A = Type](Two, One) = ua((
+def collapsedPath : Path[.A = Type](Two, One) = ua (*{
   collapse,
-  ((pick, thunk { fun (x) { Path.here(x) } }), (pick, single))
-));
+  *{*{pick, thunk { fun (x) { Path.here x } }}, *{pick, single}}
+});
 
 /// A transport along `ua` of a bi-invertible map from `Type` to itself,
 /// refused at the code `ua` reads off the record: `Type` is a code of
 /// `Type[1]`, not of `Type`.
 @[ refuses("LevelMismatch") ]
-def alongTypeSelf(e : Type ≃ Type, x : Type) -> Type {
-  Path.walk(fun (X) { X }, ua(e), x)
-}
+def alongTypeSelf(e : Type ≃ Type, x : Type) -> Type =
+  Path.walk (fun (X) { X }) (ua e) x
 
 /// A record written out where nothing names the path it builds, refused at
 /// the `ua`: away from `Path[.A = Type](a, b)` the record's own type names the
@@ -43,26 +42,24 @@ def alongTypeSelf(e : Type ≃ Type, x : Type) -> Type {
 def alongLiteral(
   a : Type,
   b : Type,
-  t : a => b,
-  g : b => a,
-  s : (x : a) => Path[.A = a](g(t(x)), x),
-  h : b => a,
-  r : (y : b) => Path[.A = b](t(h(y)), y),
+  t : a -> b,
+  g : b -> a,
+  s : (x : a) -> Path[.A = a](g (t x), x),
+  h : b -> a,
+  r : (y : b) -> Path[.A = b](t (h y), y),
   x : a
-) -> b {
-  Path.walk(fun (X) { X }, ua((t, ((g, s), (h, r)))), x)
-}
+) -> b =
+  Path.walk (fun (X) { X }) (ua (*{t, *{*{g, s}, *{h, r}}})) x
 
 /// `ua` after `idtoequiv` converted with the path, refused even at
 /// reflexivity: no rule relates `ua` of the packaged transport to the path it
 /// packages, so the model source owes it as `uaEta`.
 @[ refuses("EndpointMismatch") ]
 def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type](a, a)](
-  ua(idtoequiv(a, a, Path.here(a))),
-  Path.here(a)
-) {
-  Path.here(Path.here(a))
-}
+  ua (idtoequiv a a (Path.here a)),
+  Path.here a
+) =
+  Path.here (Path.here a)
 
 /// The loops' path to the integers ascribed a type whose right end is a
 /// wildcard, declared to end at the unit type: `ua(winding)` forces the
@@ -71,7 +68,7 @@ def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type](a, a)](
 def loopsAreUnit : Path[.A = Type](
   Path[.A = Circle](Base, Base),
   Unit
-) = (ua(winding) : Path[.A = Type](
+) = (ua winding : Path[.A = Type](
   Path[.A = Circle](Base, Base),
   _
 ));

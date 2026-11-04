@@ -25,12 +25,12 @@ use super::span_of;
 use super::verdicts;
 
 /// A sealed counter seed: an abstract type, a value of it and a step on it.
-const SEED: &str = "module Seed :> #{ type T, seed : T, next : +U[ω] (T -> -F T) } where {\n  type T = \
+const SEED: &str = "module Seed :> *{ type T, seed : T, next : +U[ω] (T -> -F T) } where {\n  type T = \
                     Integer ;\n  def seed = 0 ;\n  def next = thunk { fun (n) { return n } } ;\n}\n";
 
 /// The counter functor: over any seed, a sealed seed of its own type, so an
 /// instance is itself an argument.
-const COUNTER: &str = "module MkCounter(S : #{ type T, seed : T, next : +U[ω] (T -> -F T) }) :> #{ \
+const COUNTER: &str = "module MkCounter(S : *{ type T, seed : T, next : +U[ω] (T -> -F T) }) :> *{ \
                        type T, seed : T, next : +U[ω] (T -> -F T) } where {\n  type T = S.T ;\n  def \
                        seed = S.seed ;\n  def next = S.next ;\n}\n";
 
@@ -110,7 +110,7 @@ fn the_classic_functor_pair_checks()
 #[test]
 fn a_parameter_s_abstract_type_answers_at_its_kind_2183()
 {
-    let source = "module Pointed(R : #{ type V, y : V }) where {\n  def w = R.y ;\n}\n";
+    let source = "module Pointed(R : *{ type V, y : V }) where {\n  def w = R.y ;\n}\n";
     let lowered = lower(source);
     let kinds: Vec<_> = lowered
         .module
@@ -232,8 +232,8 @@ fn a_functor_body_never_reaches_the_kernel()
 #[test]
 fn a_type_member_never_reads_its_parameter_s_value()
 {
-    let pinned = "module Pinned(S : #{ type T, z : T }) :> #{ type P, q : P } where {\n  type P = \
-                  Path[.A = S.T](S.z, S.z);\n  def q = Path.here(S.z);\n}\n";
+    let pinned = "module Pinned(S : *{ type T, z : T }) :> *{ type P, q : P } where {\n  type P = \
+                  Path[.A = S.T](S.z, S.z);\n  def q = Path.here S.z;\n}\n";
     let found = rows(&lower(pinned));
     let phase = LoweringRefusal::PhaseDependence {
         span: span_of(pinned, "S.z", 0_usize),
@@ -248,8 +248,8 @@ fn a_type_member_never_reads_its_parameter_s_value()
     );
     let squared = [
         SEED,
-        "module Square(S : #{ type T, seed : T }) :> #{ type U, w : U } where {\n  type U = S.T * \
-         S.T;\n  def w = (S.seed, S.seed);\n}\nmodule Squared = Square(Seed) ;\n",
+        "module Square(S : *{ type T, seed : T }) :> *{ type U, w : U } where {\n  type U = S.T * \
+         S.T;\n  def w = *{S.seed, S.seed};\n}\nmodule Squared = Square(Seed) ;\n",
     ]
     .concat();
     let mut lowered = lower(squared.as_str());
@@ -274,7 +274,7 @@ fn an_application_is_bound_before_anything_projects_from_it()
     let projected = [
         SEED,
         COUNTER,
-        "def direct : Integer ;\ndef direct = MkCounter(Seed).seed ;\ndef typed : \
+        "def direct : Integer ;\ndef direct = (MkCounter Seed).seed ;\ndef typed : \
          MkCounter(Seed).T ;\n",
     ]
     .concat();
@@ -299,7 +299,7 @@ fn an_argument_is_matched_against_the_parameter()
 {
     let thin = [
         COUNTER,
-        "module Thin :> #{ type T, seed : T } where { type T = Integer ; def seed = 0 ; }\nmodule A = \
+        "module Thin :> *{ type T, seed : T } where { type T = Integer ; def seed = 0 ; }\nmodule A = \
          MkCounter(Thin) ;\n",
     ]
     .concat();
@@ -317,7 +317,7 @@ fn an_argument_is_matched_against_the_parameter()
 
     let mistyped = [
         COUNTER,
-        "module Wrong :> #{ type T, seed : Integer, next : +U[ω] (T -> -F T) } where { type T = Integer \
+        "module Wrong :> *{ type T, seed : Integer, next : +U[ω] (T -> -F T) } where { type T = Integer \
          ; def seed = 0 ; def next = thunk { fun (n) { return n } } ; }\nmodule A = \
          MkCounter(Wrong) ;\n",
     ]
@@ -351,7 +351,7 @@ fn a_parameter_reads_only_types_and_values()
         ("type F : Type -> Type", AscriptionForm::Kinded),
         ("type F(a : Type) = a", AscriptionForm::Parameterized),
     ] {
-        let source = format!("module Over(S : #{{ {component} }}) where {{ def x = 1 ; }}\n");
+        let source = format!("module Over(S : *{{ {component} }}) where {{ def x = 1 ; }}\n");
         let found = rows(&lower(source.as_str()));
         assert!(
             found.contains(&row(
@@ -376,7 +376,7 @@ const MAGMA: &str = "theory Mag where {\n  sort M : Type;\n  oper mul : (x : M, 
 /// Squaring in any magma: the parameter's signature is the one the magma
 /// derives.
 const SQUARE: &str = "module Square(S : Model(Mag)) where {\n  def square(x : S.M) -> -F S.M { become \
-                      S.mul(x, x) }\n}\n";
+                      S.mul x x }\n}\n";
 
 #[test]
 fn a_functor_over_a_model_applies_to_one_1226()
@@ -415,18 +415,18 @@ fn a_functor_over_a_model_applies_to_one_1226()
 
 /// A semigroup, its law over its own multiplication.
 const SEMI: &str = "theory Semi where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule \
-                    assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));\n}\n";
+                    assoc : mul (mul x y) z ==> mul x (mul y z);\n}\n";
 
 /// Associativity turned round at any model, read off the parameter's law.
 const REASSOCIATING: &str = "module Reassociating(S : Model(Semi)) where {\n  def reassoc(x : S.M, y : \
-                             S.M, z : S.M) -> -F Path[.A = S.M](S.mul(x, S.mul(y, z)), \
-                             S.mul(S.mul(x, y), z)) { Path.back(S.assoc(x, y, z)) }\n}\n";
+                             S.M, z : S.M) -> -F Path[.A = S.M](S.mul x (S.mul y z), \
+                             S.mul (S.mul x y) z) { Path.back (S.assoc x y z) }\n}\n";
 
 /// The one-point semigroup, its law by computation.
 const ONE_POINT: &str = "module OnePoint : Model(Semi) where {\n  type M = Unit;\n  def mul(a : Unit, \
-                         b : Unit) -> -F Unit { unit }\n  def assoc(x : Unit, y : Unit, z : \
-                         Unit) -> -F Path[.A = Unit](mul(mul(x, y), z), mul(x, mul(y, z))) { \
-                         Path.here(unit) }\n}\n";
+                         b : Unit) -> -F Unit { *{} }\n  def assoc(x : Unit, y : Unit, z : \
+                         Unit) -> -F Path[.A = Unit](mul (mul x y) z, mul x (mul y z)) { \
+                         Path.here *{} }\n}\n";
 
 #[test]
 fn a_functor_reads_the_laws_of_its_model_parameter_1764()
@@ -464,8 +464,8 @@ fn an_instance_names_its_argument_s_operations_2179()
         REASSOCIATING,
         ONE_POINT,
         "module Turned = Reassociating(OnePoint) ;\ndef written : (x : Unit, y : Unit, z : Unit) \
-         => Path[.A = Unit](OnePoint.mul(x, OnePoint.mul(y, z)), OnePoint.mul(OnePoint.mul(x, y), \
-         z)) ;\ndef written = Turned.reassoc ;\n",
+         -> Path[.A = Unit](OnePoint.mul x (OnePoint.mul y z), OnePoint.mul (OnePoint.mul x y) \
+         z) ;\ndef written = Turned.reassoc ;\n",
     ]
     .concat();
     let mut lowered = lower(source.as_str());
@@ -515,7 +515,7 @@ fn a_transparent_result_reads_the_argument_through()
 {
     let source = [
         SEED,
-        "module Keep(S : #{ type T, seed : T }) : #{ type T = S.T, seed : T } where { def seed = \
+        "module Keep(S : *{ type T, seed : T }) : *{ type T = S.T, seed : T } where { def seed = \
          S.seed ; }\nmodule K = Keep(Seed) ;\nmodule KK = Keep(K) ;\ndef k : Seed.T ;\ndef k = \
          K.seed ;\ndef kk : Seed.T ;\ndef kk = KK.seed ;\n",
     ]
@@ -552,7 +552,7 @@ fn a_parameter_is_read_only_inside_its_functor()
 
     let missing = [
         SEED,
-        "module Peek(S : #{ type T, seed : T }) where { def wrong = S.missing ; }\nmodule P = \
+        "module Peek(S : *{ type T, seed : T }) where { def wrong = S.missing ; }\nmodule P = \
          Peek(Seed) ;\n",
     ]
     .concat();
@@ -569,7 +569,7 @@ fn a_parameter_is_read_only_inside_its_functor()
 
     let deeper = [
         SEED,
-        "module Dig(S : #{ type T, seed : T }) where { def wrong = S.seed.inner ; def typed : S.T.U \
+        "module Dig(S : *{ type T, seed : T }) where { def wrong = S.seed.inner ; def typed : S.T.U \
          ; }\nmodule D = Dig(Seed) ;\n",
     ]
     .concat();
@@ -588,7 +588,7 @@ fn a_parameter_is_read_only_inside_its_functor()
 
     let reached = [
         SEED,
-        "module Reach(S : #{ type T, seed : T }) where { def other = Seed.next ; }\nmodule R = \
+        "module Reach(S : *{ type T, seed : T }) where { def other = Seed.next ; }\nmodule R = \
          Reach(Seed) ;\n",
     ]
     .concat();
@@ -623,7 +623,7 @@ fn a_dotted_argument_reads_the_nested_module_it_names()
 {
     let source = [
         COUNTER,
-        "module Outer where { module Other where { def seed = 1 ; } module Seed :> #{ type T, seed : T, next \
+        "module Outer where { module Other where { def seed = 1 ; } module Seed :> *{ type T, seed : T, next \
          : +U[ω] (T -> -F T) } where { type T = Integer ; def seed = 0 ; def next = thunk { fun (n) { \
          return n } } ; } }\nmodule A = MkCounter(Outer.Seed) ;\nmodule B = \
          MkCounter(Outer.Nope) ;\n",
@@ -652,7 +652,7 @@ fn a_type_component_binds_the_argument_type_of_its_own_name()
 {
     let source = [
         COUNTER,
-        "module Two :> #{ type U, type T, seed : T, next : +U[ω] (T -> -F T) } where { type U = String \
+        "module Two :> *{ type U, type T, seed : T, next : +U[ω] (T -> -F T) } where { type U = String \
          ; type T = Integer ; def seed = 0 ; def next = thunk { fun (n) { return n } } ; }\nmodule \
          A = MkCounter(Two) ;\n",
     ]
@@ -671,7 +671,7 @@ fn a_type_component_binds_the_argument_type_of_its_own_name()
 #[test]
 fn a_manifest_parameter_component_reads_the_arguments_type()
 {
-    let source = "module Plain where { type T = Integer ; def seed = 1 ; }\nmodule Over(S : #{ type T = \
+    let source = "module Plain where { type T = Integer ; def seed = 1 ; }\nmodule Over(S : *{ type T = \
                   Integer, seed : T }) where { def get = S.seed ; }\nmodule O = Over(Plain) ;\ndef g : \
                   Integer ;\ndef g = O.get ;\n";
     let mut lowered = lower(source);
@@ -691,7 +691,7 @@ fn a_manifest_parameter_component_reads_the_arguments_type()
 #[test]
 fn an_application_copies_the_modules_nested_in_its_body()
 {
-    let source = "module Plain where { type T = Integer ; def seed = 1 ; }\nmodule Over(S : #{ type T, \
+    let source = "module Plain where { type T = Integer ; def seed = 1 ; }\nmodule Over(S : *{ type T, \
                   seed : T }) where { module inner where { module deeper where { def kept = S.seed ; } } }\nmodule \
                   O = Over(Plain) ;\ndef g : Plain.T ;\ndef g = O.inner.deeper.kept ;\n";
     let mut lowered = lower(source);
@@ -707,7 +707,7 @@ fn an_application_copies_the_modules_nested_in_its_body()
 #[test]
 fn an_application_named_twice_is_refused_naming_the_first()
 {
-    let source = "module Plain where { type T = Integer ; def seed = 1 ; }\nmodule Over(S : #{ type T, \
+    let source = "module Plain where { type T = Integer ; def seed = 1 ; }\nmodule Over(S : *{ type T, \
                   seed : T }) where { def get = S.seed ; }\nmodule O = Over(Plain) ;\nmodule O = \
                   Over(Plain) ;\n";
     let found = rows(&lower(source));

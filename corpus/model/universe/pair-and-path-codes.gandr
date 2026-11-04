@@ -30,21 +30,18 @@ import "fresh-lists.gandr";
 
 /// The codes: the naturals and the pairs of two coded types.
 @[ checks, form(explicit) ]
-data UProd : Type where {
+data UProd : Type where
   /// The naturals.
   | NatX : UProd
   /// The pairs of two coded types.
   | ProdX : (a : UProd, b : UProd) --> UProd
-}
 
 /// The decoder, with a pair code's two decodes as calls.
 @[ checks ]
-def rec elProd(u : UProd) -> -F Type {
-  match u {
-    NatX => return Nat,
-    ProdX(a, b) => return (Both(elProd[<](a), elProd[<](b)))
-  }
-}
+def rec elProd(u : UProd) -> -F Type =
+  match u
+    | NatX => return Nat
+    | ProdX(a, b) => return (Both (elProd[<] a) (elProd[<] b))
 
 /// The dependent pair code and its decoder, in one block.
 rec {
@@ -62,12 +59,10 @@ rec {
   /// The quoted first decode converts with the decode the second field's
   /// binder takes.
   @[ checks ]
-  def rec elSig(u : USig) -> -F Type {
-    match u {
-      NatS => return Nat,
-      SigS(a, b) => return (Sig(elSig[<](a), thunk { fun (x) { elSig[<](b(x)) } }))
-    }
-  }
+  def rec elSig(u : USig) -> -F Type =
+    match u
+      | NatS => return Nat
+      | SigS(a, b) => return (Sig (elSig[<] a) (thunk { fun (x) { elSig[<] (b x) } }))
 }
 
 /// The path code and its decoder, in one block.
@@ -85,10 +80,8 @@ rec {
   /// The decoder: a path code decodes to the path type over its carrier.
   /// The carrier is the decoder's own marked call, read as a type.
   @[ checks ]
-  def rec elPath(u : UPath) -> -F Type {
-    match u {
-      NatP => return Nat,
-      PathP(a, x, y) => return (type(Path[.A = elPath[<](a)](x, y)))
-    }
-  }
+  def rec elPath(u : UPath) -> -F Type =
+    match u
+      | NatP => return Nat
+      | PathP(a, x, y) => return (type(Path[.A = elPath[<](a)](x, y)))
 }

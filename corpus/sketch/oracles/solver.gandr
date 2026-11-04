@@ -16,17 +16,16 @@
 import std.oracle (Outcome, Checked, Certificate);
 
 /// The solver's interface: a query and the answer it may give.
-pub theory Smt where {
+pub theory Smt where
   /// A question the solver takes.
   sort Query : Type;
   /// What a question admits as its answer.
   sort Answer : (q : Query) -> Type;
   /// Asks one question.
   oper ask : (q : Query) --> Answer(q);
-}
 
 /// The sheaf equations, which the oracle theory states as its laws.
-pub theory SmtSheaf where {
+pub theory SmtSheaf where
   /// A question the solver takes.
   sort Query : Type+;
   /// What a question admits as its answer.
@@ -36,10 +35,9 @@ pub theory SmtSheaf where {
   /// Asks one question, then runs what follows on its answer.
   oper ask : (q : Query, k : pi+ (a : Answer(q)). C) --> C;
   /// A second ask of one question reads the first answer.
-  rule answered : ask(q, bind a. ask(q, bind b. k(a, b))) <=> ask(q, bind a. k(a, a));
+  rule answered : ask q (bind a. (ask q (bind b. (k a b)))) <=> ask q (bind a. (k a a));
   /// Two questions commute.
-  rule reorder : ask(p, bind a. ask(q, bind b. k(a, b))) <=> ask(q, bind b. ask(p, bind a. k(a, b)));
-}
+  rule reorder : ask p (bind a. (ask q (bind b. (k a b)))) <=> ask q (bind b. (ask p (bind a. (k a b))));
 
 /// The solver binary, its authority in the process row of whoever runs it.
 extern Process from "bin:z3" {
@@ -53,6 +51,5 @@ pub def checkedZ3 : Model(Smt) = Checked(z3, replay = Smt.replay);
 
 /// Whether a formula is satisfiable, asked of the model in scope, its
 /// answer one of four outcomes.
-pub def satisfiable[s : Model(Smt)](f : Formula) -> [Smt] Outcome(Sat(f)) {
-  s.ask(Query.sat(f))
-}
+pub def satisfiable[s : Model(Smt)](f : Formula) -> [Smt] Outcome(Sat(f)) =
+  s.ask (Query.sat f)

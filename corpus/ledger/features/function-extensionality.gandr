@@ -9,25 +9,21 @@
 
 /// Negation on the booleans, `+{Unit, Unit}`.
 @[ checks ]
-def not(b : Unit + Unit) -> Unit + Unit {
-  match b {
-    +{.0 = u} => +{.1 = u},
-    +{.1 = u} => +{.0 = u}
-  }
-}
+def not(b : Unit + Unit) -> Unit + Unit =
+  match b
+    | +{.0 = u} => +{.1 = u}
+    | +{.1 = u} => +{.0 = u}
 
 /// Negation twice.
 @[ checks ]
-def not_not(b : Unit + Unit) -> Unit + Unit {
-  not(not(b))
-}
+def not_not(b : Unit + Unit) -> Unit + Unit =
+  not (not b)
 
 /// The identity on the booleans.
 @[ checks ]
-def same(b : Unit + Unit) -> Unit + Unit {
+def same(b : Unit + Unit) -> Unit + Unit =
   b
-}
 
 /// Negation twice is the identity: they agree at both booleans.
 @[ checks ]
-def involution : Path(not_not, same) = Path.funext(not_not, same) ;
+def involution : Path(not_not, same) = Path.funext not_not same ;

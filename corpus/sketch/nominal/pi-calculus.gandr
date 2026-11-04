@@ -12,7 +12,7 @@
 /// - see: corpus/sketch/nominal/fresh.gandr — fresh names in a program
 
 /// The π-calculus: names, processes, restriction and parallel composition.
-pub theory Pi where {
+pub theory Pi where
   /// The channel names.
   sort Name : Atom;
   /// The processes.
@@ -24,9 +24,8 @@ pub theory Pi where {
   /// Two processes side by side.
   oper par : (p : Proc, q : Proc) --> Proc;
   /// A restriction whose name the body never uses is garbage.
-  rule gc : nu(fun (a) { p }) <=> p where { a # p };
+  rule gc : nu (fun (a) { p }) <=> p where { a # p };
   /// A restriction moves past a process the name is fresh for.
-  rule extrude : par(nu(fun (a) { p }), q) <=> nu(fun (a) { par(p, q) }) where { a # q };
+  rule extrude : par (nu (fun (a) { p })) q <=> nu (fun (a) { par p q }) where { a # q };
   /// Two restrictions commute.
-  rule swapNu : nu(fun (a) { nu(fun (b) { p }) }) <=> nu(fun (b) { nu(fun (a) { p }) });
-}
+  rule swapNu : nu (fun (a) { nu (fun (b) { p }) }) <=> nu (fun (b) { nu (fun (a) { p }) });

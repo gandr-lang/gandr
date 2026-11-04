@@ -19,14 +19,14 @@ import std.math.path (assoc);
 /// The associator's naturality in its first cell: the square whose sides are
 /// the associators at `fm` and `fp`, and whose other sides whisker `fa`.
 def assocNat[A : Type, x y z w : A, fm fp : Path(x, y)](
-  fa : fm => fp,
+  fa : fm -> fp,
   g : Path(y, z),
   h : Path(z, w)
-) = Pasting.nat(assoc(fm, g, h), fa)
+) = Pasting.nat (assoc fm g h) fa
 
 /// A homotopy's naturality along a path: the square between the two ways
 /// around it.
 def homotopyNat[A B : Type, f g : A -> B, x y : A](
-  H : (a : A) -> Path(f(a), g(a)),
+  H : (a : A) -> Path(f a, g a),
   p : Path(x, y)
-) = Pasting.nat(H, p)
+) = Pasting.nat H p

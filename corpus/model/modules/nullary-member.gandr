@@ -9,15 +9,14 @@
 //! [Levy-2003-callbypushvalue_functional_imperative_synthesis]: https://doi.org/10.1007/978-94-007-0954-6 "Levy, Call-By-Push-Value"
 
 /// A module whose one member takes no arguments.
-module Origin where {
+module Origin where
   /// The starting point.
   def zero() -> Integer { 0 }
-}
 
 /// The member called through its module's name.
 @[ runs("0") ]
-def started() -> Integer { Origin.zero() }
+def started() -> Integer { Origin.zero () }
 
 /// A top-level suspension called with no arguments by its own name.
 @[ runs("0") ]
-def restarted() -> Integer { started() }
+def restarted() -> Integer { started () }

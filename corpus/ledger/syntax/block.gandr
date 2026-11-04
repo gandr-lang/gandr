@@ -5,69 +5,61 @@ import std.list (List);
 
 /// A block's value bound, then read with a local beside it.
 @[ checks ]
-def answer() -> -F Integer {
+def answer() -> -F Integer =
   let n = { pure 40 };
-  let one = 1;
-  let m : Integer = n + one;
+  let one = 1
+  let m : Integer = n + one
   return m + one
-}
 
 /// A name a `let` binds reads as the value itself.
 @[ checks ]
-def three() -> -F Path(3, 3) {
-  let x = 3;
-  return Path.here(x)
-}
+def three() -> -F Path(3, 3) =
+  let x = 3
+  return Path.here x
 
 /// The checker checks the value a `let` binds at the `let`, read or not.
 @[ refuses("TypeMismatch") ]
-def unread() -> -F Integer {
-  let y = (1 : Bool);
+def unread() -> -F Integer =
+  let y = (1 : Bool)
   return 2
-}
 
 /// The block holds the value a `let` binds once, and each use reads it.
 @[ runs("42") ]
-def doubled() -> -F Integer {
-  let x = 20 + 1;
+def doubled() -> -F Integer =
+  let x = 20 + 1
   return x + x
-}
 
 /// A `var` holds a value over the rest of its block; an access writes it.
 @[ checks ]
-def counted() -> -F Integer {
-  var c = 1;
+def counted() -> -F Integer =
+  var c = 1
   access c as v { resume(v, v + 1) };
   pure c
-}
 
 /// An assignment writes a held place. `=` writes the right side's value, and
 /// `+=`, `-=` and `*=` write the operator over the place's value and it. The
 /// right side runs before the assignment lends the place.
 @[ checks ]
-def assigned() -> -F Integer {
-  var n = 1;
-  n = n + 1;
-  n *= 3;
-  n -= 1;
+def assigned() -> -F Integer =
+  var n = 1
+  n = n + 1
+  n *= 3
+  n -= 1
   return n
-}
 
 /// A `var` may state its value's type, and a list needs one.
 @[ checks ]
-def listed() -> -F Integer {
-  var xs : List(Integer) = #[1, 2];
-  xs.#[0] += 1;
+def listed() -> -F Integer =
+  var xs : List(Integer) = #[1, 2]
+  xs.#[0] += 1
   return 0
-}
 
 /// A loop, an `if` or an access closing on its block, followed by another
 /// statement, needs no `;`.
 @[ checks ]
-def looped() -> -F [Partial] Integer {
-  var n = 0;
+def looped() -> -F [Partial] Integer =
+  var n = 0
   while n < 3 { n += 1; }
   if n == 3 { n += 10; } else { n -= 1; }
   access n as v { resume(v, v * 2) }
   return n
-}

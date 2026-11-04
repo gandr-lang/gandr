@@ -2,30 +2,26 @@
 // computation returns, so a computation that only checks may be bound.
 
 /// The naturals the bound computations return.
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
 
 /// A return checks only against a type, and the annotation states it.
-def next(n : Nat) -> Nat {
-  let m : Nat = Succ(n);
-  Succ(m)
-}
+def next(n : Nat) -> Nat =
+  let m : Nat = Succ n
+  Succ m
 
 /// The bind runs: `next` binds the successor and returns the next one.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def three() -> Nat { next(Succ(Zero)) }
+def three() -> Nat { next (Succ Zero) }
 
 /// A suspended function is named at its written type and called.
-def apply(n : Nat) -> Nat {
-  let f : Nat => Nat = fun (x) { Succ(x) };
-  f(n)
-}
+def apply(n : Nat) -> Nat =
+  let f : Nat -> Nat = fun (x) { Succ x };
+  f n
 
 /// A computation that returns a `Nat` is no `Unit`.
 @[ refuses("TypeMismatch") ]
-def mistyped(n : Nat) -> Nat {
-  let m : Unit = Succ(n);
+def mistyped(n : Nat) -> Nat =
+  let m : Unit = Succ n
   n
-}

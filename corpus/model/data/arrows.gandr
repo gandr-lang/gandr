@@ -29,34 +29,33 @@ data IntOp : Type where {
   | S : (x : IntOp) --> IntOp
   | P : (x : IntOp) --> IntOp
   oper pred : (x : IntOp) --> IntOp;
-  rule : P(S(x)) ==> x;
-  rule : x <=> S(P(x));
-  rule : pred(x) <=> P(x);
+  rule : P (S x) ==> x;
+  rule : x <=> S (P x);
+  rule : pred x <=> P x;
 }
 
 /// A rule identifies: `S(P(Z))` and `Z` are one term, so reflexivity proves
 /// the path between them.
-def collapsed : Path(S(P(Z)), Z) = Path.here(Z);
+def collapsed : Path(S (P Z), Z) = Path.here Z;
 
 /// The circle: one point and one invertible cell at it, bound as `loop :
 /// Path[.A = Circle](Base, Base)`.
-data Circle : Type where {
+data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
-}
 
 /// A cell adds: the loop's inverse is `back(loop)`, and the cancellation
 /// `Path.step(loop, Path.back(loop))` is the empty word by the rules the cell mints on
 /// its words.
 def cancelled : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step(loop, Path.back(loop)),
-  Path.here(Base)
-) = Path.here(Path.here(Base));
+  Path.step (loop) (Path.back (loop)),
+  Path.here Base
+) = Path.here (Path.here Base);
 
 /// A cell is not a rule: no rule identifies the loop with the empty word, so
 /// reflexivity does not prove it.
 @[ refuses("EndpointMismatch") ]
 def notARule : Path[.A = Path[.A = Circle](Base, Base)](
   loop,
-  Path.here(Base)
-) = Path.here(Path.here(Base));
+  Path.here Base
+) = Path.here (Path.here Base);

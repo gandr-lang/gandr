@@ -13,72 +13,54 @@
 import "./circle-base.gandr";
 
 /// The identity on the circle, its loop arm the loop's name.
-def circleId(a : Circle) -> Circle {
-  match a {
-    Base => Base,
-    loop => loop
-  }
-}
+def circleId(a : Circle) -> Circle =
+  match a
+    | Base => Base
+    | loop => loop
 
 /// The identity on its first argument, the second along for the ride.
-def first(a : Circle, b : Circle) -> Circle {
-  match a {
-    Base => Base,
-    loop => loop
-  }
-}
+def first(a : Circle, b : Circle) -> Circle =
+  match a
+    | Base => Base
+    | loop => loop
 
 /// The identity on its second argument, the first along for the ride.
-def second(b : Circle, a : Circle) -> Circle {
-  match a {
-    Base => Base,
-    loop => loop
-  }
-}
+def second(b : Circle, a : Circle) -> Circle =
+  match a
+    | Base => Base
+    | loop => loop
 
 /// A map whose loop arm answers the loop's name: carried along the loop,
 /// reflexivity at `Base` is the loop's inverse, then the loop.
-def throughName(b : Circle) -> Path[.A = Circle](circleId(b), b) {
-  match b {
-    Base => Path.here(Base)
-  }
-}
+def throughName(b : Circle) -> Path[.A = Circle](circleId b, b) =
+  match b
+    | Base => Path.here Base
 
 /// A map of two arguments, the point through the first.
-def throughFirst(b : Circle) -> Path[.A = Circle](first(b, Base), b) {
-  match b {
-    Base => Path.here(Base)
-  }
-}
+def throughFirst(b : Circle) -> Path[.A = Circle](first b Base, b) =
+  match b
+    | Base => Path.here Base
 
 /// A map of two arguments, the point through the second.
-def throughSecond(b : Circle) -> Path[.A = Circle](second(Base, b), b) {
-  match b {
-    Base => Path.here(Base)
-  }
-}
+def throughSecond(b : Circle) -> Path[.A = Circle](second Base b, b) =
+  match b
+    | Base => Path.here Base
 
 /// Two maps of two arguments, one inside the other.
-def throughBoth(b : Circle) -> Path[.A = Circle](second(Base, first(b, Base)), b) {
-  match b {
-    Base => Path.here(Base)
-  }
-}
+def throughBoth(b : Circle) -> Path[.A = Circle](second Base (first b Base), b) =
+  match b
+    | Base => Path.here Base
 
 /// Reflexivity carried along the loop through a map is the loop's inverse,
 /// not reflexivity, against a fixed right endpoint.
 @[ refuses("LoopNotRespected") ]
-def twisted(b : Circle) -> Path[.A = Circle](first(b, Base), Base) {
-  match b {
-    Base => Path.here(Base)
-  }
-}
+def twisted(b : Circle) -> Path[.A = Circle](first b Base, Base) =
+  match b
+    | Base => Path.here Base
 
 /// The point is a right unit of the multiplication, whose loop arm calls
 /// `selfloop`. The obligation unfolds `mul`'s loop arm through its call of
 /// `selfloop`, and the transport computes.
-def unitRight(b : Circle) -> Path[.A = Circle](mul(b, Base), b) {
-  match b {
-    Base => Path.here(Base)
-  }
-}
+def unitRight(b : Circle) -> Path[.A = Circle](mul b Base, b) =
+  match b
+    | Base => Path.here Base

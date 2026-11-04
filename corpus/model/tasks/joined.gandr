@@ -9,7 +9,7 @@ import std.process;
 
 /// A scope exiting after the parent read its task's end to its close.
 @[ runs("unit") ]
-def joined() -> Unit {
+def joined() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Task.Join) {
       send(task, Task.notes);
@@ -17,9 +17,8 @@ def joined() -> Unit {
     };
     let text = recv(found);
     close(found);
-    c.exit(1)
+    c.exit 1
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => k(unit)
+    | pure(x) => pure x
+    | oper exit(code, k) => k *{}
   }
-}

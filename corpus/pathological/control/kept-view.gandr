@@ -14,94 +14,87 @@ import std.process;
 /// The model's thunk at a type kept in no region: the view would outlive the
 /// access that lent it.
 @[ refuses("ViewEscaped") ]
-def unkept() -> Integer {
-  var s = 3;
+def unkept() -> Integer =
+  var s = 3
   handle c : std.process.Exit.Eff {
-    let k : () => Integer = access shared s as w { pure thunk { pure w } };
+    let k : () -> Integer = access shared s as w { pure thunk { pure w } };
     force k
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
   }
-}
 
 /// An exclusive view is kept in no region: its write-back runs when its access
 /// resumes, so nothing may read through it afterwards.
 @[ refuses("ViewEscaped") ]
-def keptExclusive() -> Integer {
-  var s = 3;
+def keptExclusive() -> Integer =
+  var s = 3
   handle c : std.process.Exit.Eff {
     access s as v {
-      let k : (() => Integer) at c = thunk { pure v };
+      let k : (() -> Integer) at c = thunk { pure v };
       resume(v, v)
     };
     pure 0
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
   }
-}
 
 /// An exclusive access inside the region that keeps a view of the held value:
 /// the kept thunk would read the value while it is written.
 @[ refuses("HeldKept") ]
-def written() -> Integer {
-  var s = 3;
+def written() -> Integer =
+  var s = 3
   handle c : std.process.Exit.Eff {
-    let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
+    let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
     access s as v { resume(v, v + 1) };
     force k
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
   }
-}
 
 /// A thunk kept in no region that forces the kept one: the kept thunk would
 /// leave its region inside it.
 @[ refuses("KeptEscaped") ]
-def rewrapped() -> Integer {
-  var s = 3;
+def rewrapped() -> Integer =
+  var s = 3
   handle c : std.process.Exit.Eff {
-    let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
-    let j : () => Integer = thunk { force k };
+    let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
+    let j : () -> Integer = thunk { force k };
     force j
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
   }
-}
 
 /// The kept thunk answered where a thunk kept in no region is promised: a value
 /// kept in a region never stands outside it.
 @[ refuses("TypeMismatch") ]
-def answered() -> () => Integer {
-  var s = 3;
+def answered() -> () -> Integer =
+  var s = 3
   handle c : std.process.Exit.Eff {
-    let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
+    let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
     pure k
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => pure thunk { pure 0 }
+    | pure(x) => pure x
+    | oper exit(code, k) => pure thunk { pure 0 }
   }
-}
 
 /// An exclusive access while the hold's own region keeps a view of its value:
 /// the kept thunk would read the value while it is written.
 @[ refuses("HeldKept") ]
-def writtenInHold() -> Integer {
-  var s = 3;
-  let k : (() => Integer) at s = access shared s as w { pure thunk { pure w } };
+def writtenInHold() -> Integer =
+  var s = 3
+  let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };
   access s as v { resume(v, v + 1) };
   force k
-}
 
 /// A thunk kept in no region that forces the one kept in the hold's region:
 /// the kept thunk would leave the hold's region inside it.
 @[ refuses("KeptEscaped") ]
-def leftHold() -> Integer {
-  var s = 3;
-  let k : (() => Integer) at s = access shared s as w { pure thunk { pure w } };
-  let j : () => Integer = thunk { force k };
+def leftHold() -> Integer =
+  var s = 3
+  let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };
+  let j : () -> Integer = thunk { force k };
   force j
-}

@@ -485,8 +485,8 @@ fn a_telescope_type_lowers_by_its_arity()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def none : #{} ; def one : #{Integer} ; def three : #{Integer, String, Unit,} ; def \
-         labelled : #{n : Integer, s : String} ; def reordered : #{s : String, n : Integer} ;",
+        "def none : *{} ; def one : *{Integer} ; def three : *{Integer, String, Unit,} ; def \
+         labelled : *{n : Integer, s : String} ; def reordered : *{s : String, n : Integer} ;",
         &mut arena,
     );
 
@@ -515,7 +515,7 @@ fn a_telescope_type_lowers_by_its_arity()
         declared(&arena, &module, "labelled"),
         "and the order its fields are written in is not observable"
     );
-    let source = "def bad : #{Integer : String} ;";
+    let source = "def bad : *{Integer : String} ;";
     assert_eq!(
         refused(source),
         malformed(
@@ -536,10 +536,10 @@ fn a_later_label_reading_an_earlier_one_lowers_to_nested_pairs()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def two : #{n : Integer, v : Path[.A = Integer](n, n)} ; def three : #{a : Integer, b : \
-         Integer, c : Path[.A = Integer](a, a)} ; def late : #{a : Integer, b : Integer, c : \
-         Path[.A = Integer](b, b)} ; def plain : #{n : Integer, s : String} ; def pair : #{n : \
-         Integer, v : Path[.A = Integer](n, n)} ; def pair = #{2, Path.here(2)} ;",
+        "def two : *{n : Integer, v : Path[.A = Integer](n, n)} ; def three : *{a : Integer, b : \
+         Integer, c : Path[.A = Integer](a, a)} ; def late : *{a : Integer, b : Integer, c : \
+         Path[.A = Integer](b, b)} ; def plain : *{n : Integer, s : String} ; def pair : *{n : \
+         Integer, v : Path[.A = Integer](n, n)} ; def pair = *{2, Path.here 2} ;",
         &mut arena,
     );
 
@@ -627,8 +627,8 @@ fn a_nested_record_s_key_is_no_mention_of_an_outer_label_3010()
 fn each_record_link_keeps_its_labels_3934()
 {
     let mut arena = CoreArena::new();
-    let source = "def two : #{n : Integer, v : Path[.A = Integer](n, n)} ; def three : #{a : Integer, \
-                  b : Integer, c : Path[.A = Integer](a, a)} ; def chain : #{x : Integer, y : \
+    let source = "def two : *{n : Integer, v : Path[.A = Integer](n, n)} ; def three : *{a : Integer, \
+                  b : Integer, c : Path[.A = Integer](a, a)} ; def chain : *{x : Integer, y : \
                   Path[.A = Integer](x, x), z : Path[.A = Path[.A = Integer](x, x)](y, y)} ;";
     let module = lowered(source, &mut arena);
     let origins = module.origins();
@@ -730,8 +730,8 @@ fn a_selection_projects_a_dependent_record_along_its_nesting()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def first(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return p.n } \
-         def last(t : #{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> -F \
+        "def first(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return p.n } \
+         def last(t : *{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> -F \
          Path[.A = Integer](t.a, t.a) { return t.c }",
         &mut arena,
     );
@@ -755,7 +755,7 @@ fn a_selection_projects_a_dependent_record_along_its_nesting()
         ],
         "the last of three is the second component of the second link"
     );
-    let source = "def lacks(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return \
+    let source = "def lacks(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return \
                   p.w }";
     assert!(
         matches!(refused(source), LoweringRefusal::UnresolvedName { .. }),
@@ -771,7 +771,7 @@ fn a_selection_off_a_record_projects_its_label_855()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def by_label(r : #{n : Integer, s : String}) -> -F String { return r.s }",
+        "def by_label(r : *{n : Integer, s : String}) -> -F String { return r.s }",
         &mut arena,
     );
 
@@ -791,7 +791,7 @@ fn a_field_of_a_record_no_type_states_projects_its_label_1106()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def outer = #{ tag = \"t\", inner = #{ x = 1, y = 2 } } ; def one() -> -F #{x : \
+        "def outer = *{ tag = \"t\", inner = *{ x = 1, y = 2 } } ; def one() -> -F *{x : \
          Integer, y : Integer} { outer.inner } def two() -> -F Integer { outer.inner.x }",
         &mut arena,
     );
@@ -825,9 +825,9 @@ fn a_sub_record_binds_each_field_and_returns_their_record()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def pick(r : #{a : Integer, b : Integer, c : Integer}) -> -F #{c : Integer, a : \
-         Integer} { r.#{.c, .a} } def outer = #{ x = 1, y = 2 } ; def free() -> -F #{y : \
-         Integer} { outer.#{.y} }",
+        "def pick(r : *{a : Integer, b : Integer, c : Integer}) -> -F *{c : Integer, a : \
+         Integer} { r.*{.c, .a} } def outer = *{ x = 1, y = 2 } ; def free() -> -F *{y : \
+         Integer} { outer.*{.y} }",
         &mut arena,
     );
 
@@ -864,7 +864,7 @@ fn a_sub_record_binds_each_field_and_returns_their_record()
     );
     assert!(
         matches!(
-            refused("def p(r : #{a : Integer}) -> -F #{a : Integer} { (r).#{.a} }"),
+            refused("def p(r : *{a : Integer}) -> -F *{a : Integer} { (r).*{.a} }"),
             LoweringRefusal::OutOfFragment { .. }
         ),
         "a value that is no name is unadmitted"
@@ -879,9 +879,9 @@ fn a_selection_by_position_projects_a_pair_401()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def first(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return p.0 } \
-         def second(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Path[.A = Integer](p.0, p.0) \
-         { return p.1 } def by_label(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> -F \
+        "def first(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return p.0 } \
+         def second(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Path[.A = Integer](p.0, p.0) \
+         { return p.1 } def by_label(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F \
          Path[.A = Integer](p.n, p.n) { return p.v }",
         &mut arena,
     );
@@ -921,8 +921,8 @@ fn a_selection_by_position_reads_the_written_type_1106()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def middle(p : Integer * String * Integer) -> -F String { return p.1 } def last(p : \
-         Integer * String * Integer) -> -F Integer { return p.2 } def by_place(r : #{n : \
-         Integer, s : String}) -> -F String { return r.1 } def by_label(r : #{n : Integer, s : \
+         Integer * String * Integer) -> -F Integer { return p.2 } def by_place(r : *{n : \
+         Integer, s : String}) -> -F String { return r.1 } def by_label(r : *{n : Integer, s : \
          String}) -> -F String { return r.s }",
         &mut arena,
     );
@@ -956,7 +956,7 @@ fn a_selection_by_position_reads_the_written_type_1106()
     );
     assert!(
         matches!(
-            refused("def pair = (1, 2) ; def third() -> -F Integer { pair.2 }"),
+            refused("def pair = *{1, 2} ; def third() -> -F Integer { pair.2 }"),
             LoweringRefusal::OutOfFragment { .. }
         ),
         "with no written type a third place stays unadmitted"
@@ -968,9 +968,9 @@ fn a_telescope_value_lowers_by_its_arity()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def none = #{} ; def one = #{1} ; def two = #{1, \"b\"} ; def trailing = #{1, \"b\",} ; \
-         def reordered = #{.1 = \"b\", .0 = 1} ; def dotted = #{.s = \"x\", .n = 3} ; def \
-         shorthand = #{n = 3, s = \"x\"} ;",
+        "def none = *{} ; def one = *{1} ; def two = *{1, \"b\"} ; def trailing = *{1, \"b\",} ; \
+         def reordered = *{.1 = \"b\", .0 = 1} ; def dotted = *{.s = \"x\", .n = 3} ; def \
+         shorthand = *{n = 3, s = \"x\"} ;",
         &mut arena,
     );
 
@@ -1010,7 +1010,7 @@ fn a_telescope_value_lowers_by_its_arity()
     );
     // Two entries side by side are one entry, an application. So the case
     // writes a tile that neither separates nor closes the entry before it.
-    let source = "def bad = #{1 = 2} ;";
+    let source = "def bad = *{1 = 2} ;";
     assert!(
         matches!(
             refused(source),
@@ -1026,8 +1026,8 @@ fn a_record_update_lowers_to_its_base_and_its_fields()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def r = #{n = 1} ; def one = #{r | n = 2} ; def written = #{n = 2} ; def two = #{r | n = \
-         2, m = \"a\",} ; def both = #{m = \"a\", n = 2} ;",
+        "def r = *{n = 1} ; def one = *{r | n = 2} ; def written = *{n = 2} ; def two = *{r | n = \
+         2, m = \"a\",} ; def both = *{m = \"a\", n = 2} ;",
         &mut arena,
     );
     let over = |record: &str| {
@@ -1047,7 +1047,7 @@ fn a_record_update_lowers_to_its_base_and_its_fields()
         over("both"),
         "the fields it writes make one record keyed by them, a trailing comma closing them"
     );
-    let source = "def r = #{n = 1} ; def twice = #{r | n = 2, n = 3} ;";
+    let source = "def r = *{n = 1} ; def twice = *{r | n = 2, n = 3} ;";
     assert_eq!(
         refused(source),
         LoweringRefusal::DuplicateDefinition {
@@ -1062,7 +1062,7 @@ fn a_record_update_lowers_to_its_base_and_its_fields()
 #[test]
 fn labels_are_of_one_kind_and_written_once()
 {
-    let source = "def gap = #{.0 = 1, .2 = 2} ;";
+    let source = "def gap = *{.0 = 1, .2 = 2} ;";
     assert_eq!(
         refused(source),
         malformed(
@@ -1072,7 +1072,7 @@ fn labels_are_of_one_kind_and_written_once()
         ),
         "the indices of a form are exactly 0 to n - 1"
     );
-    let source = "def repeated = #{.0 = 1, .0 = 2} ;";
+    let source = "def repeated = *{.0 = 1, .0 = 2} ;";
     assert_eq!(
         refused(source),
         LoweringRefusal::DuplicateDefinition {
@@ -1082,7 +1082,7 @@ fn labels_are_of_one_kind_and_written_once()
         },
         "an index names one entry"
     );
-    let source = "def twice = #{.n = 1, .n = 2} ;";
+    let source = "def twice = *{.n = 1, .n = 2} ;";
     assert_eq!(
         refused(source),
         LoweringRefusal::DuplicateDefinition {
@@ -1092,7 +1092,7 @@ fn labels_are_of_one_kind_and_written_once()
         },
         "a label names one entry"
     );
-    let source = "def mixed = #{.n = 1, .1 = 2} ;";
+    let source = "def mixed = *{.n = 1, .1 = 2} ;";
     assert_eq!(
         refused(source),
         malformed(
@@ -1102,7 +1102,7 @@ fn labels_are_of_one_kind_and_written_once()
         ),
         "a form holds one kind of entry throughout"
     );
-    let source = "def mixed : #{Integer, k : String} ;";
+    let source = "def mixed : *{Integer, k : String} ;";
     assert_eq!(
         refused(source),
         malformed(
@@ -1149,7 +1149,7 @@ fn an_injection_takes_its_index_from_its_label()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def third = +{.2 = unit} ; def labelled = (+{.err = \"no\"} : +{ok : Integer, err : \
+        "def third = +{.2 = *{}} ; def labelled = (+{.err = \"no\"} : +{ok : Integer, err : \
          String}) ; def only = (+{.only = 4} : +{only : Integer}) ;",
         &mut arena,
     );
@@ -1623,10 +1623,10 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
     let module = lowered(
         "codata Trio : Type[-] where { a : Integer; b : Integer; c : Integer; }\ndef trio(n : Integer) \
          -> Trio { &{ .a => n, .b => n, .c => n } }\ndef pair(n : Integer) -> &{a : -F Integer, \
-         b : -F Integer} { &{ .a => n, .b => n } }\ndef named() -> -F Integer { trio(1).b \
-         }\ndef counted() -> -F Integer { trio(1).1 }\ndef recorded() -> -F Integer { \
-         pair(1).b }\ndef above() -> -F Bool { trio(1).c >= 1 }\ndef grouped() -> -F Integer { \
-         (trio(1)).b }\n",
+         b : -F Integer} { &{ .a => n, .b => n } }\ndef named() -> -F Integer { (trio 1).b \
+         }\ndef counted() -> -F Integer { (trio 1).1 }\ndef recorded() -> -F Integer { \
+         (pair 1).b }\ndef above() -> -F Bool { (trio 1).c >= 1 }\ndef grouped() -> -F Integer { \
+         (trio 1).b }\n",
         &mut arena,
     );
     // The projections, forces and applications of a body, in its walk's
@@ -1668,7 +1668,7 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
         outcome(&module, "above")
     );
     let source = "codata Duo : Type[-] where { a : Integer; b : Integer; }\ndef duo() -> Duo { &{ .a => \
-                  1, .b => 2 } }\ndef gone() -> -F Integer { duo().z }\n";
+                  1, .b => 2 } }\ndef gone() -> -F Integer { (duo ()).z }\n";
     assert!(
         matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("z")),
         "a label the callee's family lacks is unresolved: {:?}",
@@ -1687,11 +1687,11 @@ fn a_chain_of_observations_projects_each_link_1106()
     let mut arena = CoreArena::new();
     let module = lowered(
         "codata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }\ndef rec upward(n : \
-         Integer) -> Stream(Integer) { &{ .head => n, .tail => upward[>](n + 1) } }\ndef \
+         Integer) -> Stream(Integer) { &{ .head => n, .tail => upward[>] (n + 1) } }\ndef \
          second(s : +U Stream(Integer)) -> -F Integer { s.tail.head }\ndef third() -> -F Integer \
-         { upward(1).tail.tail.head }\ndef counted() -> -F Integer { upward(1).1.tail.0 }\ndef \
+         { (upward 1).tail.tail.head }\ndef counted() -> -F Integer { (upward 1).1.tail.0 }\ndef \
          deeper(s : +U Stream(Integer)) -> -F Integer { s.head.tail }\ndef grouped() -> -F Integer \
-         { (upward(1)).tail.tail.head }\n",
+         { (upward 1).tail.tail.head }\n",
         &mut arena,
     );
     // The projections, forces and applications of a body, in its walk's
@@ -1735,10 +1735,10 @@ fn a_telescope_binds_each_entry_in_the_ones_after_it()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def dependent : (a : Type, x : a) => a ; def mixed : (x : Integer, String) => Integer ; \
-         def plain : (Integer, String) => Integer ; def endpoint : (n : Integer) => Path[.A = Integer](\
+        "def dependent : (a : Type, x : a) -> a ; def mixed : (x : Integer, String) -> Integer ; \
+         def plain : (Integer, String) -> Integer ; def endpoint : (n : Integer) -> Path[.A = Integer](\
          n, n) ; def tail(n : Integer) -> -F Integer { return n }\ndef spelled : (n : Integer) \
-         => Integer ;",
+         -> Integer ;",
         &mut arena,
     );
 
@@ -1767,7 +1767,7 @@ fn a_telescope_binds_each_entry_in_the_ones_after_it()
         declared(&arena, &module, "tail"),
         "a telescope and a function tail writing one signature declare one type"
     );
-    let source = "def twice : (x : Integer, x : String) => Integer ;";
+    let source = "def twice : (x : Integer, x : String) -> Integer ;";
     assert!(
         matches!(refused(source), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("x")),
         "a binder is written once"
@@ -1881,7 +1881,7 @@ fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def spelled : +U ((a : Type) -> (x : a) -> -F a) ; def aliased : (a : Type, x : a) => a \
+        "def spelled : +U ((a : Type) -> (x : a) -> -F a) ; def aliased : (a : Type, x : a) -> a \
          ; def ignored : +U ((n : Integer) -> -F Integer) ; def tail(n : Integer) -> -F Integer { \
          return n }",
         &mut arena,
@@ -1995,7 +1995,7 @@ fn a_tuple_ending_a_body_of_outputs_returns_each_member()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def swap(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (n, m) }\ndef \
-         paired(m : Integer, n : Integer) -> Integer * Integer { (n, m) }",
+         paired(m : Integer, n : Integer) -> Integer * Integer { *{n, m} }",
         &mut arena,
     );
 
@@ -2017,10 +2017,10 @@ fn a_tuple_pattern_binds_each_output_of_a_call()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
-         second(a : Integer, b : Integer) -> Integer { let (q, r) = divmod(a, b); r }\ndef \
-         first(a : Integer, b : Integer) -> Integer { let (q, r) = divmod(a, b); q }\ndef \
-         pair(a : Integer) -> Integer * Integer { (a, a) }\ndef split(a : Integer) -> Integer { \
-         let (x, y) = pair(a); y }",
+         second(a : Integer, b : Integer) -> Integer { let *{q, r} = divmod a b; r }\ndef \
+         first(a : Integer, b : Integer) -> Integer { let *{q, r} = divmod a b; q }\ndef \
+         pair(a : Integer) -> Integer * Integer { *{a, a} }\ndef split(a : Integer) -> Integer { \
+         let *{x, y} = pair a; y }",
         &mut arena,
     );
 
@@ -2054,7 +2054,7 @@ fn a_tuple_pattern_binds_each_output_of_a_call()
         "a call returning a pair is split, not bound output by output"
     );
     let source = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
-                  three(a : Integer) -> Integer { let (q, r, s) = divmod(a, a); q }";
+                  three(a : Integer) -> Integer { let *{q, r, s} = divmod a a; q }";
     assert!(
         matches!(
             refused(source),
@@ -2074,8 +2074,8 @@ fn a_tuple_pattern_binds_each_output_of_a_call()
 fn a_tuple_pattern_binds_each_output_of_an_operation_4855()
 {
     let operation = "data Flag : Type where {\n    | Down : Flag\n    | Up : Flag\n    oper \
-                     swap : (a : Flag, b : Flag) --> (x : Flag, y : Flag);\n    rule : swap(a, \
-                     b) ==> (b, a);\n}\n";
+                     swap : (a : Flag, b : Flag) --> (x : Flag, y : Flag);\n    rule : swap a \
+                     b ==> (b, a);\n}\n";
     let source = format!(
         "{operation}def second(a : Flag, b : Flag) -> Flag {{ let (x, y) = swap(a, b); y }}\n"
     );
@@ -2119,8 +2119,8 @@ fn a_selected_output_binds_every_output_and_returns_one()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
-         half(n : Integer) -> Integer { divmod(n, n).q }\ndef rest(n : Integer) -> Integer { \
-         (divmod(n, n)).r }",
+         half(n : Integer) -> Integer { (divmod n n).q }\ndef rest(n : Integer) -> Integer { \
+         (divmod n n).r }",
         &mut arena,
     );
 
@@ -2156,8 +2156,8 @@ fn a_plugging_passes_every_output_in_order()
     let module = lowered(
         "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
          recombine(q : Integer, r : Integer) -> Integer { q }\ndef round(n : Integer) -> Integer \
-         { divmod(n, n) |> recombine }\ndef double(n : Integer) -> Integer { n }\ndef single(n : \
-         Integer) -> Integer { double(n) |> double }",
+         { divmod n n |> recombine }\ndef double(n : Integer) -> Integer { n }\ndef single(n : \
+         Integer) -> Integer { double n |> double }",
         &mut arena,
     );
 
@@ -2197,8 +2197,8 @@ fn a_call_of_outputs_standing_as_one_value_is_their_record()
     let module = lowered(
         "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
          pair(m : Integer, n : Integer) -> (Integer, Integer) { (m, n) }\ndef named(a : Integer) \
-         -> Integer { let r = divmod(a, a); r.q }\ndef whole(a : Integer) -> Integer { let t = \
-         pair(a, a); 0 }",
+         -> Integer { let r = divmod a a; r.q }\ndef whole(a : Integer) -> Integer { let t = \
+         pair a a; 0 }",
         &mut arena,
     );
 
@@ -2223,7 +2223,7 @@ fn a_row_returns_a_group_of_outputs()
     let module = lowered(
         "def spin(n : Integer) -> [Partial] (q : Integer, r : Integer) { (n, n) }\ndef \
          explicit(n : Integer) -> -F [Partial] (Integer, Integer) { (n, n) }\ndef caller(n : \
-         Integer) -> [Partial] Integer { let (q, r) = spin(n); q }\ndef none(n : Integer) -> \
+         Integer) -> [Partial] Integer { let *{q, r} = spin n; q }\ndef none(n : Integer) -> \
          [Partial] () { () }",
         &mut arena,
     );
@@ -2301,8 +2301,8 @@ fn a_labelled_pattern_binds_each_output_by_its_label()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
-         punned(a : Integer, b : Integer) -> Integer { let (.r, .q) = divmod(a, b); r }\ndef \
-         renamed(a : Integer, b : Integer) -> Integer { let (.r = rem, .q = quo) = divmod(a, b); \
+         punned(a : Integer, b : Integer) -> Integer { let *{.r, .q} = divmod a b; r }\ndef \
+         renamed(a : Integer, b : Integer) -> Integer { let *{.r = rem, .q = quo} = divmod a b; \
          quo }",
         &mut arena,
     );
@@ -2343,8 +2343,8 @@ fn a_labelled_pattern_binds_each_output_by_its_label()
         "a group is all positional or all labelled: a dotted entry among positional ones is no \
          pattern, {mixed:?}"
     );
-    let record = "def pair(a : Integer) -> Integer * Integer { (a, a) }\ndef split(a : Integer) -> \
-                  Integer { let (.x, .y) = pair(a); x }";
+    let record = "def pair(a : Integer) -> Integer * Integer { *{a, a} }\ndef split(a : Integer) -> \
+                  Integer { let *{.x, .y} = pair a; x }";
     assert!(
         matches!(refused(record), LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::WrongSort,
@@ -2363,7 +2363,7 @@ fn a_dependent_arrow_binds_a_type_named_binder_2179()
     let mut arena = CoreArena::new();
     let module = lowered(
         "def named : +U ((A : Type) -> A -> -F A) ; def lower : +U ((a : Type) -> a -> -F a) ; def \
-         aliased : (A : Type, A) => A ; def tail(A : Type, x : A) -> -F A { return x }",
+         aliased : (A : Type, A) -> A ; def tail(A : Type, x : A) -> -F A { return x }",
         &mut arena,
     );
     let signature = |name: &str| match outcome(&module, name) {
@@ -2389,9 +2389,9 @@ fn a_dependent_arrow_binds_a_type_named_binder_2179()
 fn each_label_names_what_it_labels()
 {
     let mut arena = CoreArena::new();
-    let source = "def point : #{n : Integer} ;\ndef pair = #{m = 3} ;\ndef pick : +U ((y : \
-                  Integer) -> -F Integer) ;\ndef dependent : (a : Type, x : a) => a ;\ndef ring \
-                  : #{k : Integer, w : Path[.A = Integer](k, k)} ;";
+    let source = "def point : *{n : Integer} ;\ndef pair = *{m = 3} ;\ndef pick : +U ((y : \
+                  Integer) -> -F Integer) ;\ndef dependent : (a : Type, x : a) -> a ;\ndef ring \
+                  : *{k : Integer, w : Path[.A = Integer](k, k)} ;";
     let module = lowered(source, &mut arena);
     let written = |label: &Label| {
         source
@@ -2505,8 +2505,8 @@ fn a_box_returns_a_group_under_a_row_4853()
     }
     let module = lowered(
         "def divmod : (m : Integer, n : Integer) -> (q : Integer, r : Integer) ;\ndef half(n : \
-         Integer) -> Integer { let (q, r) = divmod(n, n); q }\ndef apply(f : (Integer, Integer) -> \
-         (Integer, Integer), x : Integer) -> Integer { let (a, b) = f(x, x); b }",
+         Integer) -> Integer { let *{q, r} = divmod n n; q }\ndef apply(f : (Integer, Integer) -> \
+         (Integer, Integer), x : Integer) -> Integer { let *{a, b} = f x x; b }",
         &mut arena,
     );
     for name in ["half", "apply"] {
@@ -2528,7 +2528,7 @@ fn a_body_after_equals_is_its_block_4853()
     let module = lowered(
         "def braced(n : Integer) -> Integer { n }\ndef equals(n : Integer) -> Integer = n ;\ndef \
          divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = (m, n) ;\ndef half(n : \
-         Integer) -> Integer = divmod(n, 2).q ;\ndef stepped(n : Integer) -> (Integer -> Integer) \
+         Integer) -> Integer = (divmod n 2).q ;\ndef stepped(n : Integer) -> (Integer -> Integer) \
          = fun (k : Integer) { n } ;\ndef steppedT : +U (Integer -> -F (+U (Integer -> -F \
          Integer))) ;",
         &mut arena,

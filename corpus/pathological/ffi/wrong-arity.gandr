@@ -14,4 +14,4 @@ extern "c" from "m" {
 /// A call with its base alone; the lowering reads no projection yet,
 /// and `m` is the extern block's.
 @[ refuses("OutOfFragment.projection_expression") ]
-def squared = m.pow(2.0f64);
+def squared = m.pow 2.0f64;

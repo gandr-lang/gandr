@@ -2,4 +2,4 @@
 @[ refuses("UnenclosedRun") ]
 def seed : Integer;
 
-def seed = prim.const(40, prim.id(999));
+def seed = prim.const 40 (prim.id 999);

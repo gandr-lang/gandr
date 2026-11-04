@@ -6,19 +6,15 @@
 // - see: #2687
 
 /// A block holding a dotted module, refused at the dotted name.
-module Outer where {
+module Outer where
   /// A dotted module inside a block.
-  module In.Deep where {
+  module In.Deep where
     /// A value.
     def v = 2;
-  }
-}
 
 /// A block holding a theory, which is no member.
-module Holder where {
+module Holder where
   /// A theory inside a block.
-  theory In.T where {
+  theory In.T where
     /// Its size.
     oper size : Integer;
-  }
-}

@@ -10,11 +10,10 @@ import std.list (List);
 /// Binds a list of optional integers, then returns. The list is annotated
 /// where it is run as a value, and each element takes the element type,
 /// `Maybe(Integer)`, from that annotation.
-def sum_first() -> Integer {
-  let items = (#[Some(1), None, Some(3)] : List(Maybe(Integer)));
+def sum_first() -> Integer =
+  let items = (#[Some 1, None, Some 3] : List(Maybe(Integer)))
   7
-}
 
 /// A call of `sum_first`.
 @[ runs("7") ]
-def first_summed() -> Integer { sum_first() }
+def first_summed() -> Integer { sum_first () }

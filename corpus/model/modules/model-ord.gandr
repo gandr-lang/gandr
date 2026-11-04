@@ -37,7 +37,7 @@ def atLeast() -> Bool { "alpha" >= "beta" }
 
 /// The integers keep their order: `OrdInteger` is the integer primitives.
 @[ runs("+{.0 = unit}") ]
-def integerOrder() -> Bool { -4 < 9 }
+def integerOrder() -> Bool { - 4 < 9 }
 
 /// Equality at the strings still resolves: `EqString` and `OrdString`'s
 /// reduct to `Eq` are one elaboration.
@@ -45,17 +45,16 @@ def integerOrder() -> Bool { -4 < 9 }
 def sameName() -> Bool { "alpha" == "alpha" }
 
 /// The lesser of two, through the order the operands force.
-def least[o : Model(Ord)](a : o.Carrier, b : o.Carrier) -> o.Carrier {
-  if o.lt(b, a) { b } else { a }
-}
+def least[o : Model(Ord)](a : o.Carrier, b : o.Carrier) -> o.Carrier =
+  if o.lt b a { b } else { a }
 
 /// The lesser name.
 @[ runs("\"alpha\"") ]
-def leastName() -> String { least("beta", "alpha") }
+def leastName() -> String { least "beta" "alpha" }
 
 /// The lesser integer.
 @[ runs("3") ]
-def leastNumber() -> Integer { least(3, 4) }
+def leastNumber() -> Integer { least 3 4 }
 
 /// Order across types: the string fixes the carrier `<` orders at, and the
 /// integer is not one.

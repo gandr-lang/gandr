@@ -8,22 +8,19 @@
 //! [Rust-rustdoc_book]: https://doc.rust-lang.org/rustdoc/ "The Rust Project, The rustdoc book"
 
 /// Returns its argument; [echo] does the same.
-def identity(x : Integer) -> Integer {
+def identity(x : Integer) -> Integer =
   x
-}
 
 // Documented by the attribute, linking back to `identity`.
 @[ checks, doc("Returns its argument, as [identity] does.") ]
-def echo(x : Integer) -> Integer {
+def echo(x : Integer) -> Integer =
   x
-}
 
 /// Returns its argument, as the [book] does for Rust.
 ///
 /// [book]: https://doc.rust-lang.org/rustdoc/write-documentation/linking-to-items-by-name.html
-def cited(x : Integer) -> Integer {
+def cited(x : Integer) -> Integer =
   x
-}
 
 /// Points at [missing], which nothing declares.
 @[ refuses("UnresolvedDocLink") ]

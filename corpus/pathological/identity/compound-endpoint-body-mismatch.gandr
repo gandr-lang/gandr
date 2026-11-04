@@ -1,8 +1,6 @@
-def dbl(x : Integer) -> Integer {
+def dbl(x : Integer) -> Integer =
   x + x
-}
 
 @[ refuses("TypeMismatch") ]
-def refuted(x : Integer) -> Path(dbl(x), x) {
+def refuted(x : Integer) -> Path(dbl x, x) =
   5
-}

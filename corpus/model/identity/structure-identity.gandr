@@ -19,32 +19,32 @@
 import "./transport-list.gandr";
 
 /// A pair relates to a pair by a path in each place.
-def corners : Path[.A = Integer * Integer]((2, 3), (2, 3)) = (Path.here(2), Path.here(3));
+def corners : Path[.A = Integer * Integer](*{2, 3}, *{2, 3}) = *{Path.here 2, Path.here 3};
 
 /// A pair carried along negation is each component carried, so it relates to
 /// the swapped pair by a reflexivity in each place.
 def swappedPair : Path(
-  Path.walk(fun (t) { type(t * t) }, negation, (+{.0 = unit}, +{.1 = unit})),
-  (+{.1 = unit}, +{.0 = unit})
-) = (Path.here(+{.1 = unit}), Path.here(+{.0 = unit}));
+  Path.walk (fun (t) { type(t * t) }) negation (*{+{.0 = *{}}, +{.1 = *{}}}),
+  *{+{.1 = *{}}, +{.0 = *{}}}
+) = *{Path.here (+{.1 = *{}}), Path.here (+{.0 = *{}})};
 
 /// A carrier with a start and a stop, starting false.
-def rising : #{t : Type, start : t, stop : t} = (Bool, (+{.0 = unit}, +{.1 = unit}));
+def rising : *{t : Type, start : t, stop : t} = *{Bool, *{+{.0 = *{}}, +{.1 = *{}}}};
 
 /// The same structure written the other way round, starting true.
-def falling : #{t : Type, start : t, stop : t} = (Bool, (+{.1 = unit}, +{.0 = unit}));
+def falling : *{t : Type, start : t, stop : t} = *{Bool, *{+{.1 = *{}}, +{.0 = *{}}}};
 
 /// The two structures are one: the carriers by negation, and each point
 /// carried along it to the other's.
-def oneStructure : Path(rising, falling) = (
+def oneStructure : Path(rising, falling) = *{
   negation,
-  (Path.here(+{.1 = unit}), Path.here(+{.0 = unit}))
-);
+  *{Path.here (+{.1 = *{}}), Path.here (+{.0 = *{}})}
+};
 
 /// Carried along reflexivity instead, the points stay where they are, and the
 /// path between the structures is refused at the first point.
 @[ refuses("EndpointMismatch") ]
-def stayed : Path(rising, falling) = (
-  Path.here(Bool),
-  (Path.here(+{.1 = unit}), Path.here(+{.0 = unit}))
-);
+def stayed : Path(rising, falling) = *{
+  Path.here Bool,
+  *{Path.here (+{.1 = *{}}), Path.here (+{.0 = *{}})}
+};

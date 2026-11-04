@@ -15,21 +15,21 @@ def pick(a : Integer, u : Unit, b : Integer) -> Integer { ~assumption }
 
 /// `pick` applied: its tactic answered `b`.
 @[ runs("3") ]
-def picked() -> Integer { pick(1, unit, 3) }
+def picked() -> Integer { pick 1 *{} 3 }
 
 /// The identity on integers, written by its tactic: one introduction, then
 /// the binder it introduced.
-def id : Integer => Integer = ~intro(assumption);
+def id : Integer -> Integer = ~intro assumption;
 
 /// The identity applied.
 @[ runs("5") ]
-def identity() -> Integer { id(5) }
+def identity() -> Integer { id 5 }
 
 /// The polymorphic identity: the second introduction's binder has the type
 /// the first introduced, and the goal under both reads that type, so each new
 /// goal is stated under the binders before it.
-def poly : (a : Type, a) => a = ~intro(intro(assumption));
+def poly : (a : Type, a) -> a = ~intro (intro assumption);
 
 /// The polymorphic identity applied.
 @[ runs("7") ]
-def polyApplied() -> Integer { poly(Integer, 7) }
+def polyApplied() -> Integer { poly (Integer) 7 }

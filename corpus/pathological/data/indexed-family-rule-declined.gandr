@@ -6,12 +6,11 @@
 ///
 /// - see: #2865
 /// - see: #1314
-data N : Type where {
+data N : Type where
   /// The zero index.
   | Z : N
   /// The successor of an index.
   | S : (n : N) --> N
-}
 
 /// An indexed family with a rule over its constructors is refused.
 @[ refuses("OutOfFragment.Indexed") ]
@@ -23,5 +22,5 @@ data Prog : N -> Type where {
   /// A program that tells an integer and continues at the same index.
   | Tell : (s : Integer, k : Prog(Z)) --> Prog(Z)
   /// Two tells in a row keep only the second, a rule over the constructors.
-  rule : Tell(s, Tell(u, k)) <=> Tell(u, k);
+  rule : Tell s (Tell u k) <=> Tell u k;
 }

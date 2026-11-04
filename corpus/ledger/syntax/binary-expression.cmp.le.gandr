@@ -1,5 +1,4 @@
 /// `binary_expression.cmp.le`: an at-most comparison.
 @[ checks ]
-def at_most() -> -F Bool {
+def at_most() -> -F Bool =
   return 1 <= 2
-}

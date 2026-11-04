@@ -11,18 +11,15 @@
 /// - see: #4565 — the loops sketch, its rulings in the issue body
 
 /// A list whose every next cell holds pairs of the cell before.
-data Nest(A : Type) : Type where {
+data Nest(A : Type) : Type where
   /// The empty nest.
   | Nil : Nest(A)
   /// An element, then a nest of pairs.
   | Cons : (head : A, tail : Nest(A * A)) --> Nest(A)
-}
 
 /// The number of elements a nest holds. The recursive call runs at `A * A`,
 /// and the stated signature lets it check.
-def size[A : Type](xs : Nest(A)) -> Nat {
-  match xs {
+def size[A : Type](xs : Nest(A)) -> Nat =
+  match xs
     | Nil => 0
-    | Cons(_, tail) => 1 + 2 * size(tail)
-  }
-}
+    | Cons(_, tail) => 1 + 2 * size (tail)

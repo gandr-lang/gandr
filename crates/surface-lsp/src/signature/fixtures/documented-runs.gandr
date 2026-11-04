@@ -1,4 +1,4 @@
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (
     /// The predecessor.
@@ -7,7 +7,6 @@ data Nat : Type where {
   | Two : Nat
   /// Three.
   | Three : Nat
-}
 def apply(
   f : (
     /// The argument.
@@ -21,5 +20,5 @@ def use(
   h : (
     /// The index.
     i : Nat
-  ) => Nat
+  ) -> Nat
 ) -> -F Nat { 0 }

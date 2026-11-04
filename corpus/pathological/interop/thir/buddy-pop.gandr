@@ -28,10 +28,10 @@ def popShared(
   order : Nat,
   b : Nat,
   rest : Ixs,
-  h : Path((Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
+  h : Path((Some (SomeV (IntV b)) : Maybe(Val)), nth heads order),
   held : Path(
-    (Some(headOf(rest)) : Maybe(Val)),
-    below(Down(b, Down(Zero, Here)), Tree(blocks))
+    (Some (headOf rest) : Maybe(Val)),
+    below (Down b (Down Zero Here)) (Tree blocks)
   ),
   link : chain(rest, blocks),
   apart : notIn(rest, b)
@@ -40,12 +40,11 @@ def popShared(
   popEnv(order),
   popPost(blocks, heads, order, ICons(b, rest)),
   Own(Zero, Part, buddy(blocks, heads))
-) {
-  (
-    SomeV(IntV(b)),
-    (Path.ap(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
-  )
-}
+) =
+  *{
+    SomeV (IntV b),
+    *{Path.ap keepSome h, afterRead blocks heads order b rest h held link apart}
+  }
 
 /// At a listed head `pop` answers that block, so its claim to answer `None` is refused.
 @[ refuses("TypeMismatch") ]
@@ -55,10 +54,10 @@ def popListedAsEmpty(
   order : Nat,
   b : Nat,
   rest : Ixs,
-  h : Path((Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
+  h : Path((Some (SomeV (IntV b)) : Maybe(Val)), nth heads order),
   held : Path(
-    (Some(headOf(rest)) : Maybe(Val)),
-    below(Down(b, Down(Zero, Here)), Tree(blocks))
+    (Some (headOf rest) : Maybe(Val)),
+    below (Down b (Down Zero Here)) (Tree blocks)
   ),
   link : chain(rest, blocks),
   apart : notIn(rest, b)
@@ -67,9 +66,8 @@ def popListedAsEmpty(
   popEnv(order),
   popPost(blocks, heads, order, INil),
   Own(Zero, Whole, buddy(blocks, heads))
-) {
-  (
-    SomeV(IntV(b)),
-    (Path.ap(keepSome, h), afterRead(blocks, heads, order, b, rest, h, held, link, apart))
-  )
-}
+) =
+  *{
+    SomeV (IntV b),
+    *{Path.ap keepSome h, afterRead blocks heads order b rest h held link apart}
+  }

@@ -1,5 +1,5 @@
 /// `Elsewhere`: a hypothesis or a resident used at a world other than its own.
-module Seat :> #{
+module Seat :> *{
   type Dispatch,
   mobile type Report,
   type Handoff,
@@ -33,7 +33,6 @@ world seat ;
 
 @[ refuses("Elsewhere") ]
 @[ entry(operator) ]
-def readHere(report : Seat.Report at seat) -> -F Seat.Report {
-  let written at seat = report;
+def readHere(report : Seat.Report at seat) -> -F Seat.Report =
+  let written at seat = report
   pure written
-}

@@ -1,8 +1,7 @@
 /// `SignatureMismatch.Sort`: an import at a signature that states a member its source exports at another type.
 @[ refuses("SignatureMismatch.Sort") ]
-theory Spelled where {
+theory Spelled where
   oper answer : String;
-}
 
 // The source writes `answer : Integer`.
 import "../syntax/pub-declaration.gandr" as declared : Spelled;

@@ -6,31 +6,25 @@
 // - see: #1169 — `open`
 
 /// One for a value below 128 and two otherwise, cased on as the boolean.
-def written(c : Integer) -> Integer {
-  let small = c < 128;
-  match small {
-    true => 1,
-    false => 2
-  }
-}
+def written(c : Integer) -> Integer =
+  let small = c < 128
+  match small
+    | true => 1
+    | false => 2
 
 /// The same case as the printer writes it, each arm an index of the sum the
 /// boolean stands for.
-def printed(c : Integer) -> Integer {
-  let small = c < 128;
-  match small {
-    +{.0 = u} => 1,
-    +{.1 = u} => 2
-  }
-}
+def printed(c : Integer) -> Integer =
+  let small = c < 128
+  match small
+    | +{.0 = u} => 1
+    | +{.1 = u} => 2
 
 /// An arm that matches anything leaves the sum's width open, so the arms
 /// settle no sum and the scrutinee still needs its type.
 @[ refuses("OutOfFragment.Unannotated") ]
-def open(c : Integer) -> -F Integer {
-  let small = c < 128;
-  match small {
-    +{.0 = u} => return 1,
-    _ => return 2
-  }
-}
+def open(c : Integer) -> -F Integer =
+  let small = c < 128
+  match small
+    | +{.0 = u} => return 1
+    | _ => return 2

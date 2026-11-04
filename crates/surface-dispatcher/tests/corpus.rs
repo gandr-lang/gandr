@@ -854,12 +854,12 @@ fn a_reads_claim_settles_against_the_carried_footprint_2520()
 {
     let text = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 data Flag : Type where { | On : Flag | Off : Flag }
-@[ reads((Flag, Nat)) ]
+@[ reads(*{Flag, Nat}) ]
 data Either : Type where { | Count : (m : Nat) --> Either | Mark : (f : Flag) --> Either }
-@[ reads((Either, Nat)) ]
-def side(n : Nat, e : Either) -> -F Nat { match e -> -F Nat { Count(_m) => n, Mark(_f) => n } }
-@[ reads((side, Nat, Flag, Either)) ]
-def marked() -> -F Nat { side(Succ(Zero), Mark(On)) }
+@[ reads(*{Either, Nat}) ]
+def side(n : Nat, e : Either) -> -F Nat { match e -> -F Nat { | Count(_m) => n | Mark(_f) => n } }
+@[ reads(*{side, Nat, Flag, Either}) ]
+def marked() -> -F Nat { side (Succ Zero) (Mark On) }
 def answer : Integer ;
 @[ reads(()) ]
 def answer = 42 ;

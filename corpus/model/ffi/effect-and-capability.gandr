@@ -11,4 +11,4 @@ extern "c" from "sensor" {
 /// Channel zero, read; the lowering reads no projection yet, and
 /// `sensor` is the extern block's.
 @[ refuses("OutOfFragment.projection_expression") ]
-def reading = sensor.read(0i32);
+def reading = sensor.read 0i32;

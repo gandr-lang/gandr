@@ -11,27 +11,23 @@
 import "./data-base.gandr";
 
 /// Doubling: each successor and each predecessor written twice.
-def rec dbl(n : Int) -> Int {
-  match n {
-    Z => Z,
-    S(x) => S(S(dbl[<](x))),
-    P(x) => P(P(dbl[<](x)))
-  }
-}
+def rec dbl(n : Int) -> Int =
+  match n
+    | Z => Z
+    | S(x) => S (S (dbl[<] x))
+    | P(x) => P (P (dbl[<] x))
 
 /// Negation: successors and predecessors swapped.
-def rec neg(n : Int) -> Int {
-  match n {
-    Z => Z,
-    S(x) => P(neg[<](x)),
-    P(x) => S(neg[<](x))
-  }
-}
+def rec neg(n : Int) -> Int =
+  match n
+    | Z => Z
+    | S(x) => P (neg[<] x)
+    | P(x) => S (neg[<] x)
 
 /// Two doubled.
 @[ runs("S(S(S(S(Z))))") ]
-def doubled : () => Int = dbl(S(S(Z)));
+def doubled : () -> Int = dbl (S (S Z));
 
 /// Two negated.
 @[ runs("P(P(Z))") ]
-def negated : () => Int = neg(S(S(Z)));
+def negated : () -> Int = neg (S (S Z));

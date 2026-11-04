@@ -2,22 +2,19 @@
 // so which arm runs for it is undecided and the checker refuses the match.
 
 /// Three colours, one arm each.
-data Color : Type where {
+data Color : Type where
   | Red : Color
   | Green : Color
   | Blue : Color
-}
 
 /// `Green` falls to the hole.
 @[ refuses("UndecidedCoverage") ]
-def classify(c : Color) -> Integer {
-  match c {
-    Red => 0,
-    ? => 1,
-    Blue => 2
-  }
-}
+def classify(c : Color) -> Integer =
+  match c
+    | Red => 0
+    | ? => 1
+    | Blue => 2
 
 /// `Green` classified: it checks against `classify`'s signature, whose body is
 /// refused above, so it is not run.
-def green() -> Integer { classify(Green) }
+def green() -> Integer { classify Green }

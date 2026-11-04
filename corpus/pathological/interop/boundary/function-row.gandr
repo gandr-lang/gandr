@@ -28,12 +28,10 @@ import "../../../model/interop/boundary/function-row.gandr";
 
 /// A code's realisers, chosen by its layout: a niched enum's are the null
 /// niche over `u32`, any other code's an unboxed integer.
-def realiser(c : Code, w : Nat, h : Heap) -> Type {
-  match niched(c) {
-    true => vOpt(vInt, w, h),
-    false => vInt(w, h)
-  }
-}
+def realiser(c : Code, w : Nat, h : Heap) -> Type =
+  match niched c
+    | true => vOpt vInt w h
+    | false => vInt w h
 
 /// The first argument's realisers read through the layout: the niche's by the
 /// run, undecided by the checker. It holds the layout program's integer

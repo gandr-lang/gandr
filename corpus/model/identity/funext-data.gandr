@@ -9,70 +9,57 @@
 import "./flow-data.gandr";
 
 /// A shape's width: a circle's radius, a rectangle's first side.
-pub def width(shape : Shape) -> Integer {
-  match shape {
-    Circle(r) => r,
-    Rect(w, h) => w
-  }
-}
+pub def width(shape : Shape) -> Integer =
+  match shape
+    | Circle(r) => r
+    | Rect(w, h) => w
 
 /// A figure's width: a round's radius, a box's second side.
-def figureWidth(figure : Figure) -> Integer {
-  match figure {
-    Round(r) => r,
-    Box(h, w) => w
-  }
-}
+def figureWidth(figure : Figure) -> Integer =
+  match figure
+    | Round(r) => r
+    | Box(h, w) => w
 
 /// A shape's width read off its figure, where the sides are swapped.
-def throughFigure(shape : Shape) -> Integer {
-  figureWidth(Shapes.toFigure(shape))
-}
+def throughFigure(shape : Shape) -> Integer =
+  figureWidth (Shapes.toFigure (shape))
 
 /// The two readings are one function: they agree at a circle and at a
 /// rectangle, whatever their sides.
-def widths : Path(width, throughFigure) = Path.funext(width, throughFigure);
+def widths : Path(width, throughFigure) = Path.funext width throughFigure;
 
 /// A shape drawn as its figure, the sides swapped in the other order of
 /// binding.
-def drawn(shape : Shape) -> Figure {
-  match shape {
-    Circle(r) => Round(r),
-    Rect(a, b) => Box(b, a)
-  }
-}
+def drawn(shape : Shape) -> Figure =
+  match shape
+    | Circle(r) => Round r
+    | Rect(a, b) => Box b a
 
 /// The two drawings are one function: at each shape they return the same
 /// figure, constructor and fields.
-def drawings : Path(Shapes.toFigure, drawn) = Path.funext(Shapes.toFigure, drawn);
+def drawings : Path(Shapes.toFigure, drawn) = Path.funext Shapes.toFigure drawn;
 
 /// A light's two states, neither holding a field.
-data Light : Type where {
+data Light : Type where
   | Stop : Light
   | Go : Light
-}
 
 /// A light switched.
-def switch(light : Light) -> Light {
-  match light {
-    Stop => Go,
-    Go => Stop
-  }
-}
+def switch(light : Light) -> Light =
+  match light
+    | Stop => Go
+    | Go => Stop
 
 /// A light switched twice.
-def switchTwice(light : Light) -> Light {
-  switch(switch(light))
-}
+def switchTwice(light : Light) -> Light =
+  switch (switch light)
 
 /// A light left as it is.
-def unswitched(light : Light) -> Light {
+def unswitched(light : Light) -> Light =
   light
-}
 
 /// Switching twice is leaving the light as it is: the two agree at both
 /// states.
-def switchedTwice : Path(switchTwice, unswitched) = Path.funext(
-  switchTwice,
-  unswitched
-);
+def switchedTwice : Path(switchTwice, unswitched) = Path.funext
+  switchTwice
+  unswitched;

@@ -14051,8 +14051,8 @@ mod tests
                 r#"[{{"jsonrpc":"2.0","id":9,"result":[{uris}]}}]"#
             )))
         };
-        let minus = "def rec minus(n : Nat, k : Nat) -> Nat {\n  match k {\n    Zero => n,\n    \
-                     Succ(j) => match n {\n      Zero => Zero,\n      Succ(p) => minus[<](p, j)\n    \
+        let minus = "def rec minus(n : Nat, k : Nat) -> Nat {\n  match k {\n    | Zero => n\n    \
+                     | Succ(j) => match n {\n      | Zero => Zero\n      | Succ(p) => minus[<] p j\n    \
                      }\n  }\n}";
         assert_eq!(
             copied(&mut server, &following, &[(

@@ -21,7 +21,7 @@ import std.process;
 /// The peer sends, then waits on a payload the abandoned rest would have
 /// sent.
 @[ runs("7") ]
-def parked() -> Integer {
+def parked() -> Integer =
   handle c : std.process.Exit.Eff {
     let found = fork (peer : !Integer. ?Integer. end) {
       send(peer, 1);
@@ -29,40 +29,38 @@ def parked() -> Integer {
       close(peer)
     };
     let first = recv(found);
-    c.exit(1);
+    c.exit 1;
     send(found, 2);
     close(found);
     pure first
   } with {
-    pure(y) => pure y,
-    oper exit(code, k) => { abandon(k); pure 7 }
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
   }
-}
 
 /// The peer's first action is the receive, and the root abandons the rest
 /// before the peer ever waits.
 @[ runs("7") ]
-def late() -> Integer {
+def late() -> Integer =
   handle c : std.process.Exit.Eff {
     let found = fork (peer : ?Integer. end) {
       let x = recv(peer);
       close(peer)
     };
-    c.exit(1);
+    c.exit 1;
     send(found, 2);
     close(found);
     pure 1
   } with {
-    pure(y) => pure y,
-    oper exit(code, k) => { abandon(k); pure 7 }
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
   }
-}
 
 /// A relay sends the root the worker's peer, and the clause abandons the
 /// root's rest before it takes that end. The root's cancelled end cancels the
 /// end queued at it, and the worker's waiting receive then abandons the worker.
 @[ runs("7") ]
-def forwarded() -> Integer {
+def forwarded() -> Integer =
   handle c : std.process.Exit.Eff {
     let r = fork (relay : !(!Integer. end). end) {
       let w = fork (worker : ?Integer. end) {
@@ -78,14 +76,13 @@ def forwarded() -> Integer {
     };
     let one = recv(t);
     close(t);
-    c.exit(1);
+    c.exit 1;
     let held = recv(r);
     send(held, 3);
     close(held);
     close(r);
     pure one
   } with {
-    pure(y) => pure y,
-    oper exit(code, k) => { abandon(k); pure 7 }
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
   }
-}

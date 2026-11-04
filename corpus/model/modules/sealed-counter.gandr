@@ -14,8 +14,8 @@ import "./functor-pair.gandr";
 /// One step from the counter's zero: a value of its abstract type, which a
 /// run answers opaque at the seal.
 @[ runs("⟨opaque at Seed⟩ : () => Seed.T") ]
-def one() -> Seed.T { Seed.next(Seed.zero) }
+def one() -> Seed.T { Seed.next Seed.zero }
 
 /// That value read back through the exposed reader.
 @[ runs("1") ]
-def shown() -> Integer { let n = force one; Seed.read(n) }
+def shown() -> Integer { let n = force one; Seed.read n }

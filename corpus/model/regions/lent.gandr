@@ -6,17 +6,16 @@
 import std.process;
 
 /// Reads the thunk it is lent, whatever region keeps it.
-def read[r : Region](k : (() => Integer) at r) -> Integer { force k }
+def read[r : Region](k : (() -> Integer) at r) -> Integer { force k }
 
 /// Lends `read` a view kept in the handler's region, which the call reads it at.
 @[ runs("3") ]
-def lent() -> Integer {
-  var s = 3;
+def lent() -> Integer =
+  var s = 3
   handle c : std.process.Exit.Eff {
-    let k : (() => Integer) at c = access shared s as w { pure pure w };
-    read(k)
+    let k : (() -> Integer) at c = access shared s as w { pure pure w };
+    read k
   } with {
-    pure(x) => pure x,
-    oper exit(code, rest) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, rest) => pure 0
   }
-}

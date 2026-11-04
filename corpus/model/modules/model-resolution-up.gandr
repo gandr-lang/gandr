@@ -4,7 +4,7 @@
 import "./model-resolution-tally.gandr";
 
 /// Counting up by one.
-module Up : Model(Count) where {
+module Up : Model(Count) where
   type C = Integer;
   /// Zero.
   def zero = 0;
@@ -12,4 +12,3 @@ module Up : Model(Count) where {
   def incr(c : Integer) -> Integer { c + 1 }
   /// The count as it is.
   def read(c : Integer) -> Integer { c }
-}

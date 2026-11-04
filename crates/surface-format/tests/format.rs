@@ -168,10 +168,10 @@ fn a_bulleted_head_comment_keeps_its_lines_2918()
 fn a_rule_s_freshness_conditions_stay_on_its_line()
 {
     let grammar = grammar();
-    let source = "theory Gc where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu(bind a . q) <=> q where { | a # q | a # q };\n}\n";
+    let source = "theory Gc where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu (bind a . q) <=> q where { | a # q | a # q };\n}\n";
     assert_eq!(
         text(&grammar, source, WIDE),
-        "theory Gc where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name). Proc) --> Proc;\n  rule gc : nu(bind a. q) <=> q where { | a # q | a # q };\n}\n",
+        "theory Gc where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name). Proc) --> Proc;\n  rule gc : nu (bind a. q) <=> q where { | a # q | a # q };\n}\n",
         "a theory's members end at `;`, so the comma between two conditions keeps them on the rule's line"
     );
 }
@@ -181,7 +181,7 @@ fn a_clause_s_patterns_stay_on_its_line()
 {
     let grammar = grammar();
     let source =
-        "def both : (Bool, Bool) => Bool where {\n  | true, b if b => true\n  | _, _ => false\n}\n";
+        "def both : (Bool, Bool) -> Bool where {\n  | true, b if b => true\n  | _, _ => false\n}\n";
     assert_eq!(
         text(&grammar, source, WIDE),
         source,
@@ -206,13 +206,13 @@ fn the_printer_decides_every_inner_space()
     let grammar = grammar();
     let source = "@[checks]\n\
                   def  f ( x:Integer , y : Integer ) -> -F Integer{ return x+y ;}\n\
-                  def p = #{ a = 1 , b = - 2 } ;\n\
+                  def p = *{ a = 1 , b = - 2 } ;\n\
                   def q : +{ A : Integer , B : Unit } ;\n\
-                  def g[ r : Row ]( k : Integer ) -> [ Partial | r ] Unit { pure unit }\n\
+                  def g[ r : Row ]( k : Integer ) -> [ Partial | r ] Unit { pure *{} }\n\
                   def l = fun( x ){ x } ;\n\
                   def c = thunk { fun( x ) { x } } ;\n\
                   def m = r . a [ 0 ] ;\n\
-                  module M :> #{type T} where { type T = Integer ; }\n\
+                  module M :> *{type T} where { type T = Integer ; }\n\
                   theory S where { boundary Q {p,q} ; face left = { p , q } ; }\n\
                   theory Kit . Shape where { sort T : Type ; }\n\
                   module Kit . Made : Model( Kit . Shape ) where { type T = Integer ; }\n";
@@ -220,13 +220,13 @@ fn the_printer_decides_every_inner_space()
         text(&grammar, source, WIDE),
         "@[ checks ]\n\
          def f(x : Integer, y : Integer) -> -F Integer { return x + y; }\n\
-         def p = #{a = 1, b = -2};\n\
+         def p = *{a = 1, b = -2};\n\
          def q : +{A : Integer, B : Unit};\n\
-         def g[r : Row](k : Integer) -> [Partial | r] Unit { pure unit }\n\
+         def g[r : Row](k : Integer) -> [Partial | r] Unit { pure *{} }\n\
          def l = fun (x) { x };\n\
          def c = thunk { fun (x) { x } };\n\
          def m = r.a[0];\n\
-         module M :> #{ type T } where { type T = Integer; }\n\
+         module M :> *{ type T } where { type T = Integer; }\n\
          theory S where { boundary Q { p, q }; face left = {p, q}; }\n\
          theory Kit.Shape where { sort T : Type; }\n\
          module Kit.Made : Model(Kit.Shape) where { type T = Integer; }\n",
@@ -241,15 +241,15 @@ fn a_terminator_touches_the_form_it_ends()
     let source = "import \"./base.gandr\" as prelude ;\n\
                   world seat ;\n\
                   def a = 1 ;\n\
-                  def f(a : Type, y : a) -> -F a {\n  let x : a = same(a, y) ;\n  loop { break } ;\n  return x\n}\n\
-                  def t = (1, 2) ;\n";
+                  def f(a : Type, y : a) -> -F a {\n  let x : a = same a y ;\n  loop { break } ;\n  return x\n}\n\
+                  def t = *{1, 2} ;\n";
     assert_eq!(
         text(&grammar, source, WIDE),
         "import \"./base.gandr\" as prelude;\n\
          world seat;\n\
          def a = 1;\n\
-         def f(a : Type, y : a) -> -F a {\n  let x : a = same(a, y);\n  loop { break };\n  return x\n}\n\
-         def t = (1, 2);\n",
+         def f(a : Type, y : a) -> -F a {\n  let x : a = same a y;\n  loop { break };\n  return x\n}\n\
+         def t = *{1, 2};\n",
         "no space stands before a `;`, whatever ends the form it closes"
     );
 }
@@ -269,10 +269,10 @@ fn a_separator_written_on_the_next_line_joins_its_statement()
 fn a_continuation_line_indents_under_its_statement()
 {
     let grammar = grammar();
-    let source = "def f(x : Integer) -> -F Integer {\nlet y = inc(x)\n      ;\n         let z = inc(y);\n  return z\n}\n";
+    let source = "def f(x : Integer) -> -F Integer {\nlet y = inc x\n      ;\n         let z = inc y;\n  return z\n}\n";
     assert_eq!(
         text(&grammar, source, WIDE),
-        "def f(x : Integer) -> -F Integer {\n  let y = inc(x)\n    ;\n  let z = inc(y);\n  return z\n}\n",
+        "def f(x : Integer) -> -F Integer {\n  let y = inc x\n    ;\n  let z = inc y;\n  return z\n}\n",
         "a line indented past its statement continues it; one after a separator starts a statement"
     );
 }
@@ -365,7 +365,7 @@ fn a_source_split_evenly_between_endings_keeps_line_feeds()
 fn pieces_place_each_top_level_form()
 {
     let grammar = grammar();
-    let source = "def  a = 1 ;  // note\ndef b = 2 ;\n";
+    let source = "def  a = 1 ;  // note  // note\ndef b = 2 ;\n";
     let formatted = formatted(&grammar, source, WIDE);
     let text = <&str>::from(formatted.text());
     let spans: Vec<(&str, &str)> = formatted
@@ -384,7 +384,10 @@ fn pieces_place_each_top_level_form()
     assert_eq!(
         spans,
         [
-            ("def  a = 1 ;  // note", "def a = 1; // note"),
+            (
+                "def  a = 1 ;  // note  // note",
+                "def a = 1; // note // note"
+            ),
             ("def b = 2 ;", "def b = 2;")
         ],
         "a form's piece runs from its first token to its trailing comment"
@@ -394,7 +397,7 @@ fn pieces_place_each_top_level_form()
 /// A source in the core's explicit spelling, its head declaring it:
 /// every run, force and thunk written out.
 const EXPLICIT: &str = "@[ form(explicit) ]\ndef  shown : +U (-F Integer) ;\ndef shown = \
-                            thunk {   let n = force one ;  become read(n) } ;\n";
+                            thunk {   let n = force one ;  become read n } ;\n";
 
 /// #492: the gate's invariant made visible. The formatter keeps every
 /// token, so a source spelled in the explicit form comes back in the
@@ -407,13 +410,13 @@ fn an_explicit_source_keeps_its_explicit_spelling()
 {
     let grammar = grammar();
     let kept = "@[ form(explicit) ]\ndef shown : +U (-F Integer);\ndef shown = thunk { let n = \
-                force one; become read(n) };\n";
+                force one; become read n };\n";
     let imported = "import \"./base.gandr\" ;\n";
     let imported_kept = "import \"./base.gandr\";\n";
     let grouped = "rec {\n@[ form(explicit) ]\ndef shown : +U (-F Integer) ;\ndef shown = \
-                   thunk {   let n = force one ;  become read(n) } ;\n}\n";
+                   thunk {   let n = force one ;  become read n } ;\n}\n";
     let grouped_kept = "rec {\n  @[ form(explicit) ]\n  def shown : +U (-F Integer);\n  def \
-                        shown = thunk { let n = force one; become read(n) };\n}\n";
+                        shown = thunk { let n = force one; become read n };\n}\n";
     for (written, expected) in [
         (String::from(EXPLICIT), String::from(kept)),
         (
@@ -444,10 +447,10 @@ fn an_explicit_source_keeps_its_explicit_spelling()
             );
         }
     }
-    let sugared = "@[ form(sugared) ]\ndef shown : () => Integer ;\n";
+    let sugared = "@[ form(sugared) ]\ndef shown : () -> Integer ;\n";
     for (written, declared) in [
         (sugared, Some(Form::Sugared)),
-        ("def shown : () => Integer ;\n", None),
+        ("def shown : () -> Integer ;\n", None),
     ] {
         let parsed = parse(&grammar, SourceText::from(written)).expect("the source parses");
         assert_eq!(declared_form(&grammar, &parsed), declared, "{written}");

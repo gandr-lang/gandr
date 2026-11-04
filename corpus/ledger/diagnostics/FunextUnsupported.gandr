@@ -1,8 +1,7 @@
 /// `FunextUnsupported`: a function extensionality past the first-order boundary, where no finite coverage decides it.
 @[ refuses("FunextUnsupported") ]
-def open(f : Unit + Unit => Unit + Unit) -> -F Path(
+def open(f : Unit + Unit -> Unit + Unit) -> -F Path(
   f,
   f
-) {
-  Path.funext(f, f)
-}
+) =
+  Path.funext f f

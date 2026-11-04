@@ -5,7 +5,7 @@ def answer : Integer = 42;
 def greeting : String = "hello, gandr";
 
 @[ runs("unit") ]
-def nothing : Unit = unit;
+def nothing : Unit = *{};
 
 @[ runs("42") ]
 def copy = answer;

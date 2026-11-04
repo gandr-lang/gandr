@@ -1,13 +1,13 @@
 @[ form(explicit) ]
 def apply : (Type -> Type) -> Type -> Type;
-def apply = fun (F) { fun (X) { F(X) } };
+def apply = fun (F) { fun (X) { F X } };
 
 @[ checks ]
-def at_a_static_parameter : apply(fun (Y) { type(#{Y, Y}) }, Integer);
-def at_a_static_parameter = #{1, 2};
+def at_a_static_parameter : apply(fun (Y) { type(*{Y, Y}) }, Integer);
+def at_a_static_parameter = *{1, 2};
 
 @[ runs("fun (a) { unit }") ]
-def use(f : Type -> Type) -> -F Unit { return unit }
+def use(f : Type -> Type) -> -F Unit { return *{} }
 
 @[ refuses("StaticLambdaArgument") ]
-def at_a_dynamic_parameter() -> -F Unit { use(fun (X) { type(#{X, X}) }) }
+def at_a_dynamic_parameter() -> -F Unit { use (fun (X) { type(*{X, X}) }) }

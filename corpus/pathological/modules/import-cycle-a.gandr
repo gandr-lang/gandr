@@ -9,6 +9,5 @@ import "./import-cycle-b.gandr";
 
 /// A declaration of the first member, refused with the cycle.
 @[ refuses("ImportCycle") ]
-data Left : Type where {
+data Left : Type where
   | L : Left
-}

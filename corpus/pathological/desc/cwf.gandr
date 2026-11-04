@@ -21,9 +21,8 @@ import "../../model/desc/cwf.gandr";
 /// The sort of a term after the identity agrees with its own sort only
 /// modulo the law on types.
 @[ refuses("UndescribedMember.NestedOperation") ]
-theory CwFTermIdentity where {
+theory CwFTermIdentity where
   /// The sorts, operations and laws of a category with families.
   include CwF;
   /// The identity leaves a term as it is.
-  rule tmId : subTm(t, id(g)) ==> t;
-}
+  rule tmId : subTm t (id g) ==> t;

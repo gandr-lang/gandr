@@ -13,12 +13,11 @@
 
 /// The older signature with a member no flow of the newer source produces.
 @[ refuses("SignatureMismatch.Missing") ]
-theory Wider where {
+theory Wider where
   /// The answer.
   oper answer : Integer;
   /// A member the flow does not define.
   oper extra : Integer;
-}
 
 // The newer version, read through the flow it publishes.
 import "../../model/modules/translated-newer.gandr" as newer : Wider via downgrade;

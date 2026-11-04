@@ -10,11 +10,10 @@ import "../../model/identity/transport-list.gandr";
 import std.list (List);
 
 /// Every list of booleans to the empty list.
-def emptied(xs : List(Bool)) -> List(Bool) {
+def emptied(xs : List(Bool)) -> List(Bool) =
   nil
-}
 
 /// To the empty list and back by the identity: the empty pattern returns,
 /// the first cell does not, refused at that cell.
 @[ refuses("UncertifiedStratum") ]
-def collapsed = equiv(emptied, keep);
+def collapsed = equiv emptied keep;

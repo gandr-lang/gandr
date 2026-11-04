@@ -21,8 +21,8 @@ fn a_splice_is_a_hole_carrying_its_tactic_2762()
     // A splice whose whole definition it is lowers to the hole its tactic
     // fills, the tactic in the hole's name; the checker answers each.
     let source = "\
-def id : (Integer) => Integer = ~intro(assumption) ;
-def second : (Integer, Unit) => Integer = ~intro(intro(assumption)) ;
+def id : (Integer) -> Integer = ~intro assumption ;
+def second : (Integer, Unit) -> Integer = ~intro (intro assumption) ;
 def pick(a : Integer, u : Unit) -> -F Integer { return ~assumption }
 ";
     let mut arena = CoreArena::new();
@@ -58,10 +58,10 @@ fn an_operand_writing_no_tactic_is_refused_2762()
     let source = format!(
         "\
 def named(x : Integer) -> -F Integer {{ return ~x }}
-def pair : (Integer) => Integer = ~intro(assumption, assumption) ;
-def other : (Integer) => Integer = ~apply(assumption) ;
+def pair : (Integer) -> Integer = ~intro assumption assumption ;
+def other : (Integer) -> Integer = ~apply assumption ;
 def literal : Integer = ~3 ;
-def deep : (Integer) => Integer = ~{deep} ;
+def deep : (Integer) -> Integer = ~{deep} ;
 def head(x : Integer) -> -F Integer {{ become ~assumption }}
 "
     );

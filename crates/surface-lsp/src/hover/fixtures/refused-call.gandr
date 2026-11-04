@@ -1,7 +1,5 @@
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
-def bad(x : Nat) -> -F Nat {
-  return Succ(x, x)
-}
+def bad(x : Nat) -> -F Nat =
+  return Succ x x

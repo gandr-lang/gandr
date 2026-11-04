@@ -2245,7 +2245,7 @@ mod tests
     fn a_deprecated_use_is_published_struck_through()
     {
         let uri = DocumentUri::from("file:///strict/deprecated.gandr");
-        let text = "@[ deprecated(#{ note = \"use two\" }) ] def one = 1 ;\ndef two = 2 \
+        let text = "@[ deprecated(*{ note = \"use two\" }) ] def one = 1 ;\ndef two = 2 \
                     ;\ndef uses = one ;\ndef add : Integer ;\ndef add = two ;\n";
         let diagnostics = checked(&uri, SourceText::from(text));
         assert_eq!(
@@ -2541,7 +2541,7 @@ mod tests
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
-        let base = "module P :> #{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} where {\n}\n";
+        let base = "module P :> *{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} where {\n}\n";
         let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  let ring = \
                     fork (kernel : P.Moving) {\n    let held = recv(kernel);\n    close(kernel)\n  \
                     };\n  close(ring)\n}\n";

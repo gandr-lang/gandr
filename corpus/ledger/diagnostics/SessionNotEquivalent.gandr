@@ -11,5 +11,5 @@ module Evolution where {
   };
   @[ refuses("SessionNotEquivalent") ]
   def same : Path[.A = Type](SeatEnd, SeatEnd′) ;
-  def same = Path.bisim(SeatEnd, SeatEnd′) ;
+  def same = Path.bisim SeatEnd SeatEnd′ ;
 }

@@ -38,7 +38,7 @@ use crate::resolve::SurfaceName;
 const COUNTER: &str = r"def counter(n : Integer) -> -F Integer {
   var c = 0;
   access c as v { resume(v, v + 1) };
-  access c as v { abort(v) } unwind { pure unit };
+  access c as v { abort(v) } unwind { pure *{} };
   return c
 }
 ";
@@ -165,7 +165,7 @@ fn a_shared_access_lowers_without_an_unwind()
 }
 def unwound() -> -F Unit {
   var c = 0;
-  access shared c as w { pure unit } unwind { pure unit }
+  access shared c as w { pure *{} } unwind { pure *{} }
 }
 ",
     );
@@ -202,7 +202,7 @@ fn an_access_of_a_place_lowers_with_its_index()
 {
     let source = listing(
         r"def pair : List(Integer) ;
-def pair = cons(1, cons(2, nil)) ;
+def pair = cons 1 (cons 2 nil) ;
 def second() -> -F Integer {
   var xs = pair;
   access xs.#[1] as v { resume(v, v + 1) };
@@ -247,7 +247,7 @@ fn a_hold_lowers_at_its_grade()
 }
 def two() -> -F Unit {
   var[2] c = 0;
-  pure unit
+  pure *{}
 }
 ",
     );
@@ -316,16 +316,16 @@ fn an_exit_inside_an_access_is_refused()
 {
     let source = SourceText::from(
         r"data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-def leaves(n : Integer) -> -F Unit { var c = 0; access c as v { return unit } }
-def unwinds(n : Integer) -> -F Unit { var c = 0; access c as v { abort(v) } unwind { return unit } }
+def leaves(n : Integer) -> -F Unit { var c = 0; access c as v { return *{} } }
+def unwinds(n : Integer) -> -F Unit { var c = 0; access c as v { abort(v) } unwind { return *{} } }
 def early(n : Nat) -> -F Integer {
   var c = 0;
-  let m = match n { Zero => return 5, Succ(p) => pure 1 } ;
+  let m = match n { | Zero => return 5 | Succ(p) => pure 1 } ;
   return c
 }
 def early_by_hand(n : Nat) -> -F Integer {
   var c = 0;
-  match n { Zero => return 5, Succ(p) => return c }
+  match n { | Zero => return 5 | Succ(p) => return c }
 }
 ",
     );
@@ -385,12 +385,12 @@ fn a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
         r"data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 def joined(n : Nat) -> -F Integer {
   var c = 100;
-  let m = match n { Zero => return 7, Succ(p) => { var c = unit; pure 1 } } ;
+  let m = match n { | Zero => return 7 | Succ(p) => { var c = *{}; pure 1 } } ;
   pure c
 }
 def joined_by_hand(n : Nat) -> -F Integer {
   var c = 100;
-  match n { Zero => return 7, Succ(p) => { var d = unit; pure c } }
+  match n { | Zero => return 7 | Succ(p) => { var d = *{}; pure c } }
 }
 ",
     );
@@ -412,7 +412,7 @@ fn a_place_assignment_writes_through_an_exclusive_view()
 {
     let source = listing(
         r"def pair : List(Integer) ;
-def pair = cons(1, cons(2, nil)) ;
+def pair = cons 1 (cons 2 nil) ;
 def written() -> -F Integer {
   var n = 1;
   n = n + 1;
@@ -456,7 +456,7 @@ fn an_assignment_writes_only_a_held_place()
     let source = SourceText::from(
         r"def parameter(n : Integer) -> -F Unit { n = 3; }
 def viewed() -> -F Unit { var c = 0; access c as v { v = 1; resume(v, 2) } }
-def field(p : #{ a : Integer }) -> -F Unit { p.a += 1; }
+def field(p : *{ a : Integer }) -> -F Unit { p.a += 1; }
 ",
     );
     let mut arena = CoreArena::new();
@@ -519,7 +519,7 @@ def located() -> -F (Integer at seat) {
   var h : Integer at seat = 3;
   pure h
 }
-def graded() -> -F Unit { var[1] h : Integer at seat = 3; pure unit }
+def graded() -> -F Unit { var[1] h : Integer at seat = 3; pure *{} }
 ",
     );
     let mut arena = CoreArena::new();
@@ -572,7 +572,7 @@ fn each_name_a_form_lends_ends_or_writes_keeps_its_binder_5011()
         r"def probed(i : Integer) -> -F Integer {
   var xs : List(Integer) = #[1, 2];
   access xs as v { resume(v, v) };
-  access shared xs.#[i] as w { pure unit };
+  access shared xs.#[i] as w { pure *{} };
   access xs as u { abort(u) };
   xs.#[0] += 1;
   let y = xs.#[i];

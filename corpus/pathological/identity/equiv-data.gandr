@@ -10,20 +10,18 @@ import "../../model/identity/flow-data.gandr";
 import "./flow-data.gandr";
 
 /// Every figure drawn as a circle: a rectangle's height is lost.
-def rounded(figure : Figure) -> Shape {
-  match figure {
-    Round(r) => Circle(r),
-    Box(h, w) => Circle(w)
-  }
-}
+def rounded(figure : Figure) -> Shape =
+  match figure
+    | Round(r) => Circle r
+    | Box(h, w) => Circle w
 
 /// To the figures and back as circles: the circle returns, the rectangle does
 /// not, refused at that pattern.
 @[ refuses("RoundTripDistinct") ]
-def flattened = equiv(Shapes.toFigure, rounded);
+def flattened = equiv Shapes.toFigure rounded;
 
 /// A type holding itself would be covered as a list is, its own field
 /// read as a tail; the coverage does not read one yet, so no equivalence
 /// decides it.
 @[ refuses("EquivUnsupported") ]
-def renumbering = equiv(Renumber.step, Renumber.step);
+def renumbering = equiv Renumber.step Renumber.step;

@@ -2,36 +2,31 @@
 
 /// Two cells' composite, answered by its declared type.
 @[ checks ]
-def composite(A : Type, x : A, y : A, z : A, f : Path(x, y), g : Path(y, z)) -> Path(x, z) {
-  Path.step(f, g)
-}
+def composite(A : Type, x : A, y : A, z : A, f : Path(x, y), g : Path(y, z)) -> Path(x, z) =
+  Path.step f g
 
 /// Two cells, the reflexivity of their composite: the generator over the 2-chain.
 @[ checks ]
-def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(x, y)) => (g : Path[.A = A](y, z)) => Path[.A = Path[.A = A](x, z)](Path.step(f, g), Path.step(f, g)) {
-  thunk { fun (f) { thunk { fun (g) { Path.here(composite(A, x, y, z, f, g)) } } } }
-}
+def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(x, y)) -> ((g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f g)) =
+  thunk { fun (f) { thunk { fun (g) { Path.here (composite A x y z f g) } } } }
 
 /// The right whisker, the transport the generator lifts the first cell by.
 @[ checks ]
-def whiskered(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path(x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g)) {
-  Path.walk(fun (a) { type(Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(a, g))) }, fa, Path.here(Path.step(fm, g)))
-}
+def whiskered(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path(x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) =
+  Path.walk (fun (a) { type(Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step a g)) }) fa (Path.here (Path.step fm g))
 
 /// The fill at a degree the chains certify.
 @[ checks ]
-def certified(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g))](
-  Path.step(Path.here(Path.step(fm, g)), whiskered(A, x, y, z, fm, fp, fa, g)),
-  Path.step(whiskered(A, x, y, z, fm, fp, fa, g), Path.here(Path.step(fp, g)))
-) {
-  fill[5, 7](chain(2), selfComposite(A, x, y, z), (fa, g))
-}
+def certified(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
+  Path.step (Path.here (Path.step fm g)) (whiskered A x y z fm fp fa g),
+  Path.step (whiskered A x y z fm fp fa g) (Path.here (Path.step fp g))
+) =
+  fill[5, 7] (chain 2) (selfComposite A x y z) (*{fa, g})
 
 /// The same fill at degree zero, which no chain reaches.
 @[ refuses("FillUncertified") ]
-def uncertified(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g))](
-  Path.step(Path.here(Path.step(fm, g)), whiskered(A, x, y, z, fm, fp, fa, g)),
-  Path.step(whiskered(A, x, y, z, fm, fp, fa, g), Path.here(Path.step(fp, g)))
-) {
-  fill[0, 7](chain(2), selfComposite(A, x, y, z), (fa, g))
-}
+def uncertified(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
+  Path.step (Path.here (Path.step fm g)) (whiskered A x y z fm fp fa g),
+  Path.step (whiskered A x y z fm fp fa g) (Path.here (Path.step fp g))
+) =
+  fill[0, 7] (chain 2) (selfComposite A x y z) (*{fa, g})

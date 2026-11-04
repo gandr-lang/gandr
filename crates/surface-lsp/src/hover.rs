@@ -2420,7 +2420,7 @@ mod tests
             ),
             (
                 "a declaration written with a dependent record",
-                "def r$0ing : #{n : Integer, v : Path[.A = Integer](n, n)} ;\ndef ring = #{2, Path.here(2)} \
+                "def r$0ing : *{n : Integer, v : Path[.A = Integer](n, n)} ;\ndef ring = *{2, Path.here 2} \
                  ;\n",
                 Ok(fenced(SourceText::from(
                     "ring : #{n : Integer, v : Path[.A = Integer](n, n)}",
@@ -2490,7 +2490,7 @@ mod tests
         assert_eq!(
             marked(SourceText::from(
                 "data Flag : Type where {\n  | On : Flag\n  | Off : Flag\n}\ndef decoded(f : Flag) -> -F \
-                 Type { match f { On => return Integer, Off => return Unit } }\ndef kept(f : \
+                 Type { match f { | On => return Integer | Off => return Unit } }\ndef kept(f : \
                  Flag, n : decoded$0(f)) -> -F decoded(f) { return n }\n"
             )),
             Ok(fenced(SourceText::from("decoded(f) : Type")))
@@ -2503,7 +2503,7 @@ mod tests
         assert_eq!(
             marked(SourceText::from(
                 "data U : Type where {\n  | NatC : U\n  | Arrow : (a : U, b : U) --> U\n}\ndef el(u : U) \
-                 -> -F Type { match u { NatC => return Integer, Arrow(a, b) => return Unit } \
+                 -> -F Type { match u { | NatC => return Integer | Arrow(a, b) => return Unit } \
                  }\ndef k : el(Arrow$0(NatC, NatC)) ;\n"
             )),
             Ok(fenced(SourceText::from("Arrow(NatC, NatC) : U")))
@@ -2526,8 +2526,8 @@ mod tests
     {
         assert_eq!(
             marked(SourceText::from(
-                "module Seed :> #{ type T, zero : T } where {\n  type T = Integer;\n  def zero = \
-                 0;\n}\nmodule Keep(S : #{ type T, zero : T }) :> #{ type T, zero : T } where {\n  type \
+                "module Seed :> *{ type T, zero : T } where {\n  type T = Integer;\n  def zero = \
+                 0;\n}\nmodule Keep(S : *{ type T, zero : T }) :> *{ type T, zero : T } where {\n  type \
                  T = S.T;\n  def zero = S.zero;\n}\nmodule A = Keep(S$0eed) ;\n"
             )),
             Ok(fenced(SourceText::from("module A = Keep(Seed)")))
@@ -2540,8 +2540,8 @@ mod tests
         let call = |marked_at: &str| {
             marked(SourceText::from(
                 format!(
-                    "def quotientOf(c : Integer) -> -F Integer {{\n  let lead = {marked_at}(c, \
-                     64);\n  return lead\n}}\n"
+                    "def quotientOf(c : Integer) -> -F Integer {{\n  let lead = ({marked_at}) c \
+                     64;\n  return lead\n}}\n"
                 )
                 .as_str(),
             ))
@@ -2563,8 +2563,8 @@ mod tests
         assert_eq!(
             marked(SourceText::from(
                 "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef rec size(p : \
-                 Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    here => return 0,\n    \
-                 loop ∷ q => become size[<](q),\n    back$0(loop) ∷ q => become size[<](q)\n  }\n}\n"
+                 Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    | here => return 0\n    \
+                 | loop ∷ q => become size[<] q\n    | back$0(loop) ∷ q => become size[<] q\n  }\n}\n"
             )),
             Ok(fenced(SourceText::from(
                 "back(loop) ∷ q : Path[.A = Circle](Base, Base)"
@@ -2577,8 +2577,8 @@ mod tests
     {
         assert_eq!(
             marked(SourceText::from(
-                "def flip(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  match b {\n    +{.$00 = u} => \
-                 return +{.1 = u},\n    +{.1 = u} => return +{.0 = u}\n  }\n}\n"
+                "def flip(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  match b {\n    | +{.$00 = u} => \
+                 return +{.1 = u}\n    | +{.1 = u} => return +{.0 = u}\n  }\n}\n"
             )),
             Ok(fenced(SourceText::from("0 : Unit")))
         );
@@ -2766,9 +2766,9 @@ mod tests
     {
         let text = SourceText::from(
             "theory Lawful where {\n  sort Carrier : Type;\n  oper alike : (a : Carrier, b : Carrier) \
-             --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](alike(a, a), true);\n}\nmodule \
+             --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](alike a a, true);\n}\nmodule \
              Host : Model(Lawful) with sort Carrier = Integer where {\n  def alike(a : Integer, b : \
-             Integer) -> Bool { int.eq(a, b) }\n  law refl = ~admitted;\n}\n",
+             Integer) -> Bool { int.eq a b }\n  law refl = ~admitted;\n}\n",
         );
         assert_eq!(
             shown(text, (7.into(), 7.into())),
@@ -2794,8 +2794,8 @@ mod tests
         let text = SourceText::from(
             "theory State where {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ (s : \
              S) . C) --> C;\n}\ndef read() -> Integer {\n  handle st : State with sort S = \
-             Integer {\n    st.get()\n  } with {\n    pure(x) => pure x,\n    oper get(k) => \
-             k(4)\n  }\n}\n",
+             Integer {\n    st.get ()\n  } with {\n    | pure(x) => pure x\n    | oper get(k) => \
+             k 4\n  }\n}\n",
         );
         assert_eq!(
             shown(text, (6.into(), 14.into())),
@@ -2813,7 +2813,7 @@ mod tests
     {
         let text = SourceText::from(
             "theory Tally where {\n  sort C : Type;\n  oper incr : (c : C) --> C;\n}\ndef stepped[s : \
-             Model(Tally)] (c : s.C) -> s.C { s.incr(c) }\n",
+             Model(Tally)] (c : s.C) -> s.C { s.incr c }\n",
         );
         assert_eq!(
             shown(text, (4.into(), 12.into())),
@@ -3125,7 +3125,7 @@ mod tests
             "{}\n\nA semigroup with a unit.",
             fenced(SourceText::from(
                 "theory Monoid where {\n  include Semigroup;\n  oper one : () --> M;\n  rule unitL : \
-                 mul(one(), x) ==> x;\n}"
+                 mul (one ()) x ==> x;\n}"
             ))
         );
         let module = fenced(SourceText::from("module Ints : Model(Semigroup)"));

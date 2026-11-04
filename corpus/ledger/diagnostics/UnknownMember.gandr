@@ -1,9 +1,8 @@
 /// `UnknownMember`: a selection or a signature component a module does not supply.
 ///
 /// The answers.
-module Answers where {
+module Answers where
   def answer = 42 ;
-}
 
 @[ refuses("UnknownMember") ]
 def asked = Answers.question ;

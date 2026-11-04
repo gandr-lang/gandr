@@ -12,12 +12,10 @@ module Schema where {
   type Old = String * Integer;
   type New = Integer * String;
   /// The translator: the age moved, the name replaced by a literal.
-  def anonymise(old : Old) -> New {
-    match old {
-      #{name, age} => (age, "anonymous")
-    }
-  }
+  def anonymise(old : Old) -> New =
+    match old
+      | *{name, age} => *{age, "anonymous"}
   /// A literal is no image of a source leaf, so no flow forwards by it.
   @[ refuses("ForwardUnsupported") ]
-  def scrub : Flow[.A = Type](Old, New) = Flow.into(anonymise);
+  def scrub : Flow[.A = Type](Old, New) = Flow.into anonymise;
 }

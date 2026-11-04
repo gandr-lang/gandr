@@ -97,7 +97,7 @@ const ERROR_CORPUS: [Case; 13] = [
         name: "shape-arrow",
         identifier: "ShapeMismatch",
         source: "def h : +U (-F Integer) ;\ndef h = thunk { return 1 } ;\ndef g : +U (-F Integer) ;\ndef g \
-             = thunk { become (force h)(1) } ;\n",
+             = thunk { become (force h) 1 } ;\n",
         locus: "force h",
     },
     Case {

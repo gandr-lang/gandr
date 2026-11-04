@@ -4,41 +4,37 @@
 /// either with `module m = p ;` and reads it without knowing which.
 
 /// A counter: a seed and a reading of it.
-theory Seeded where {
+theory Seeded where
   /// What the counter counts in.
   sort T : Type;
   /// The reading of a count.
   oper read : (t : T) --> Integer;
   /// The first count.
   oper seed : T;
-}
 
 /// A counter over integers, its seed read as itself.
-module Ints : Model(Seeded) where {
+module Ints : Model(Seeded) where
   /// Counts are integers.
   type T = Integer;
   /// A count reads as itself.
   def read(n : Integer) -> Integer { n }
   /// Seven.
   def seed = 7;
-}
 
 /// A counter over strings, its seed read as a constant.
-module Texts : Model(Seeded) where {
+module Texts : Model(Seeded) where
   /// Counts are strings.
   type T = String;
   /// Every count reads as 42.
   def read(s : String) -> Integer { 42 }
   /// The word seven.
   def seed = "seven";
-}
 
 /// Opens a counter and reads its seed through its own reader.
-def consume(p : Model(Seeded)) -> Integer {
-  module m = p;
-  m.read(m.seed)
-}
+def consume(p : Model(Seeded)) -> Integer =
+  module m = p
+  m.read m.seed
 
 /// Both counters read and summed.
 @[ runs("49") ]
-def total() -> Integer { consume(Ints) + consume(Texts) }
+def total() -> Integer { consume Ints + consume Texts }

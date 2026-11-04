@@ -15,53 +15,47 @@
 
 /// The π-calculus's processes: `nu` restricts a channel name over a process,
 /// abstracting it.
-pub theory Restriction where {
+pub theory Restriction where
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-}
 
 /// Both binders over one port, the abstraction outside: a fresh channel
 /// abstracted over a body that binds the value received on it.
-theory Receive where {
+theory Receive where
   sort Name : Atom;
   sort Val : Type+;
   sort Proc : Type;
   oper new : (body : bind (c : Name). pi+ (x : Val). Proc) --> Proc;
-}
 
 /// Structural recursion over a port chain: one per `Abstracted` link, none
 /// for a `Port` or a `Bound` one.
-def rec abstracted(chain : Theory) -> Integer {
-  match chain {
-    Abstracted(name, sort, indices, atoms, binders, rest) => {
-      let r = abstracted[<](rest);
+def rec abstracted(chain : Theory) -> Integer =
+  match chain
+    | Abstracted(name, sort, indices, atoms, binders, rest) => {
+      let r = abstracted[<] rest;
       r + 1
-    },
-    Port(name, sort, indices, rest) => abstracted[<](rest),
-    Bound(name, sort, indices, binders, rest) => abstracted[<](rest),
-    _ => 0
-  }
-}
+    }
+    | Port(name, sort, indices, rest) => abstracted[<] rest
+    | Bound(name, sort, indices, binders, rest) => abstracted[<] rest
+    | _ => 0
 
 /// Structural recursion over an operation chain: the abstracting input ports
 /// of every operation.
-def rec abstracting(chain : Theory) -> Integer {
-  match chain {
-    Oper(name, inputs, outputs, rest) => {
-      let here = abstracted(inputs);
-      let r = abstracting[<](rest);
+def rec abstracting(chain : Theory) -> Integer =
+  match chain
+    | Oper(name, inputs, outputs, rest) => {
+      let here = abstracted inputs;
+      let r = abstracting[<] rest;
       here + r
-    },
-    _ => 0
-  }
-}
+    }
+    | _ => 0
 
 /// Of the restriction signature's three operations, `nu` alone abstracts.
 @[ runs("1") ]
 def abstractions() -> Integer { match Restriction {
-  Presents(sorts, opers, rules) => abstracting(opers),
-  _ => 0
+  | Presents(sorts, opers, rules) => abstracting opers
+  | _ => 0
 } }

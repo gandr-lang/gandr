@@ -3,29 +3,25 @@
 // members.
 
 /// A configuration, three modules deep.
-module Config where {
+module Config where
   /// The configuration's name.
   def name = "gandr";
   /// The limits.
-  module limits where {
+  module limits where
     /// The soft limit.
     def soft = 10;
     /// The hard limit, one level down.
-    module hard where {
+    module hard where
       /// Its value.
       def value = 100;
       /// The innermost module.
-      module detail where {
+      module detail where
         /// A note at the bottom.
         def note = "the innermost component";
-      }
-    }
     /// The hard value, through the nested module's name.
     def hard_inside = hard.value;
-  }
   /// The innermost note, through the nested modules' names.
   def note_inside = limits.hard.detail.note;
-}
 
 /// The hard limit, through a path of three names.
 def hard_limit = Config.limits.hard.value;
@@ -38,4 +34,4 @@ def soft_limit = Config.limits.soft;
 
 /// The three gathered in a record, spelled by its labels in order.
 @[ runs("#{.hard = 100, .note = \"the innermost component\", .soft = 10}") ]
-def limits = #{hard = hard_limit, soft = soft_limit, note = note};
+def limits = *{hard = hard_limit, soft = soft_limit, note = note};

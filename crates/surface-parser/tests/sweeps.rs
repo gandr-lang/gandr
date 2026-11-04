@@ -665,7 +665,7 @@ fn tables_agree(sweep: &Sweep) -> Result<(), Box<dyn Error>>
         "too_big = Type ;\ndef wrong_sort : Type ;",
         "def : Integer ;\ndef y = 1 ;",
         "def h(x : List[Nat) -> Nat { pure x }",
-        "def k(a : Unit) -> Unit { run r go(a); pure r }",
+        "def k(a : Unit) -> Unit { run r go a; pure r }",
     ];
 
     let pbg = built();

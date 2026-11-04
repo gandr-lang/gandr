@@ -12,30 +12,26 @@
 /// - see: corpus/ledger/features/cut-schedules.gandr — the tree sum run by hand on two threads
 
 /// A binary tree with an integer at each leaf.
-data Tree : Type where {
+data Tree : Type where
   /// A leaf holding `n`.
   | Leaf : (n : Integer) --> Tree
   /// A node over two subtrees.
   | Node : (l : Tree, r : Tree) --> Tree
-}
 
 /// The sum of a tree's leaves. Each half is a pure cut, so the scheduler may
 /// run the two apart, and the answer stays the sequential one.
-def sum(t : Tree) -> Integer {
-  match t {
+def sum(t : Tree) -> Integer =
+  match t
     | Leaf(n) => n
     | Node(l, r) => {
-      let a = sum(l);
-      let b = sum(r);
+      let a = sum l;
+      let b = sum r;
       a + b
     }
-  }
-}
 
 /// A count of matching lines. Each read touches only its own file, so the
 /// footprints are disjoint and the two reads may run apart.
-def matches(left : Path, right : Path, word : String) -> [Fs] Nat {
-  let a = countIn(left, word);
-  let b = countIn(right, word);
+def matches(left : Path, right : Path, word : String) -> [Fs] Nat =
+  let a = countIn left word
+  let b = countIn right word
   a + b
-}

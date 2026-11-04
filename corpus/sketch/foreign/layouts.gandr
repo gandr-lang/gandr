@@ -17,7 +17,7 @@ import std.layout (Layout, Realizes);
 
 /// The allocator's block header as gandr writes it.
 @[repr(c)]
-type Header = #{size : U32, order : U8, free : Bool};
+type Header = *{size : U32, order : U8, free : Bool};
 
 /// The block header as the C side declares it, read from its IR.
 def cHeader : C.Abi = ~c.abi("struct header", path = "vendor/alloc.h");

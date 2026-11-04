@@ -1,6 +1,5 @@
 /// `send_session_type`: a session that sends.
 @[ checks ]
-def outward(c : !Integer >> end) -> -F Unit {
-  send(c, 1);
+def outward(c : !Integer >> end) -> -F Unit =
+  send(c, 1)
   close(c)
-}

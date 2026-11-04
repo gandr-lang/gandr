@@ -12,84 +12,78 @@
 import std.process;
 
 /// The scope's own capability is bound at the type that names its region.
-def named() -> Unit {
+def named() -> Unit =
   handle c : std.process.Exit.Eff {
     let d : Cap { exit } at c = c;
-    return unit
+    return *{}
   } with {
-    pure(x) => x,
-    oper exit(code, k) => unit
+    | pure(x) => x
+    | oper exit(code, k) => *{}
   }
-}
 
 /// A capability held for the whole run is not one a scope introduced: the
 /// scope's capability would outlive its scope there.
 @[ refuses("CapabilityEscaped") ]
-def held() -> Unit {
+def held() -> Unit =
   handle c : std.process.Exit.Eff {
     let d : Cap { exit } = c;
-    return unit
+    return *{}
   } with {
-    pure(x) => x,
-    oper exit(code, k) => unit
+    | pure(x) => x
+    | oper exit(code, k) => *{}
   }
-}
 
 /// Inside a second scope the outer capability still names the outer region.
-def outer() -> Unit {
+def outer() -> Unit =
   handle c : std.process.Exit.Eff {
     handle e : std.process.Exit.Eff {
       let d : Cap { exit } at c = c;
-      return unit
+      return *{}
     } with {
-      pure(x) => x,
-      oper exit(code, k) => unit
+      | pure(x) => x
+      | oper exit(code, k) => *{}
     }
   } with {
-    pure(x) => x,
-    oper exit(code, k) => unit
+    | pure(x) => x
+    | oper exit(code, k) => *{}
   }
-}
 
 /// An outer capability may stand where the inner region is named, since it
 /// lives longer; the inner one may not stand in the outer region.
 @[ refuses("CapabilityEscaped") ]
-def swapped() -> Unit {
+def swapped() -> Unit =
   handle c : std.process.Exit.Eff {
     handle e : std.process.Exit.Eff {
       let d : Cap { exit } at e = c;
       let f : Cap { exit } at c = e;
-      return unit
+      return *{}
     } with {
-      pure(x) => x,
-      oper exit(code, k) => unit
+      | pure(x) => x
+      | oper exit(code, k) => *{}
     }
   } with {
-    pure(x) => x,
-    oper exit(code, k) => unit
+    | pure(x) => x
+    | oper exit(code, k) => *{}
   }
-}
 
 /// A region is named by a scope's capability, never by another binder.
 @[ refuses("UnresolvedName") ]
-def unbound(c : Integer) -> -F Unit {
+def unbound(c : Integer) -> -F Unit =
   handle e : std.process.Exit.Eff {
     let d : Cap { exit } at c = e;
-    return unit
+    return *{}
   } with {
-    pure(x) => return x,
-    oper exit(code, k) => return unit
+    | pure(x) => return x
+    | oper exit(code, k) => return *{}
   }
-}
 
 /// Any value enters a region the same way: the integer is kept until the scope
 /// binding `c` ends (`kept-view.gandr` keeps a view there).
-def plain() -> Unit {
+def plain() -> Unit =
   handle c : std.process.Exit.Eff {
     let d : Integer at c = 1;
-    return unit
+    return *{}
   } with {
-    pure(x) => x,
-    oper exit(code, k) => unit
+    | pure(x) => x
+    | oper exit(code, k) => *{}
   }
-}

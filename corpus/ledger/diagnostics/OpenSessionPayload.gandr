@@ -2,8 +2,7 @@
 @[ refuses("OpenSessionPayload") ]
 def open_payload : Path[.A = Type](?String. end, ?String. end) ;
 
-def open_payload = Path.walk(
-  fun (X) { type(Path[.A = Type](type(?String. end), type(?X. end))) },
-  Path.here(String),
-  Path.here(type(?String. end))
-) ;
+def open_payload = Path.walk
+  (fun (X) { type(Path[.A = Type](type(?String. end), type(?X. end))) })
+  (Path.here (String))
+  (Path.here (type(?String. end))) ;

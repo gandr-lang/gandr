@@ -11,75 +11,65 @@
 //! [Petrakis-2022-univalent_typoids]: https://arxiv.org/abs/2205.06651 "Petrakis, Univalent Typoids"
 
 /// A rig's binary operations, two corollas of one shape.
-theory Rig where {
+theory Rig where
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
   oper times : (x : R, y : R) --> (z : R);
-}
 
 /// A semigroup: one binary operation.
-theory Semi where {
+theory Semi where
   sort S : Type;
   oper mul : (x : S, y : S) --> (z : S);
-}
 
 /// A relabelling of the corolla's four elements, natural along its
 /// automorphisms.
-def rename(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit {
-  match e {
-    +{.0 = u} => +{.2 = u},
-    +{.1 = u} => +{.3 = u},
-    +{.2 = u} => +{.0 = u},
-    +{.3 = u} => +{.1 = u}
-  }
-}
+def rename(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
+  match e
+    | +{.0 = u} => +{.2 = u}
+    | +{.1 = u} => +{.3 = u}
+    | +{.2 = u} => +{.0 = u}
+    | +{.3 = u} => +{.1 = u}
 
 /// A relabelling of the corolla's four elements that is not natural along
 /// its automorphisms.
-def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit {
-  match e {
-    +{.0 = u} => +{.2 = u},
-    +{.1 = u} => +{.1 = u},
-    +{.2 = u} => +{.0 = u},
-    +{.3 = u} => +{.3 = u}
-  }
-}
+def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
+  match e
+    | +{.0 = u} => +{.2 = u}
+    | +{.1 = u} => +{.1 = u}
+    | +{.2 = u} => +{.0 = u}
+    | +{.3 = u} => +{.3 = u}
 
 /// The rig to itself by the natural relabelling at `plus`.
-def dual = ua[1, 4](Rig, Rig, #{.plus = rename}, #{.plus = rename});
+def dual = ua[1, 4] Rig Rig (*{.plus = rename}) (*{.plus = rename});
 
 /// Transport along it relabels the corolla's element.
 def swaps : Path(
-  Path.walk(fun (X) { X }, dual, (unit, +{.1 = unit})),
-  (unit, +{.3 = unit})
-) = Path.here((unit, +{.3 = unit}));
+  Path.walk (fun (X) { X }) dual (*{*{}, +{.1 = *{}}}),
+  *{*{}, +{.3 = *{}}}
+) = Path.here (*{*{}, +{.3 = *{}}});
 
 /// A relabelling that does not commute with the corolla's symmetry.
 @[ refuses("NotNatural") ]
-def crossed = ua[1, 4](Rig, Rig, #{.plus = cross}, #{.plus = cross});
+def crossed = ua[1, 4] Rig Rig (*{.plus = cross}) (*{.plus = cross});
 
 /// Tables that name a corolla on one side and not on the other.
 @[ refuses("CorollaTables") ]
-def twice = ua[1, 4](Rig, Rig, #{.plus = rename, .times = rename}, #{.plus = rename});
+def twice = ua[1, 4] Rig Rig (*{.plus = rename, .times = rename}) (*{.plus = rename});
 
 /// The booleans into the corolla's four elements.
-def widen(b : Bool) -> Unit + Unit + Unit + Unit {
-  match b {
-    true => +{.0 = unit},
-    false => +{.1 = unit}
-  }
-}
+def widen(b : Bool) -> Unit + Unit + Unit + Unit =
+  match b
+    | true => +{.0 = *{}}
+    | false => +{.1 = *{}}
 
 /// The corolla's four elements onto the booleans.
-def narrow(e : Unit + Unit + Unit + Unit) -> Bool {
-  match e {
-    +{.0 = u} => +{.0 = u},
-    +{.1 = u} => +{.1 = u},
-    +{.2 = u} => +{.0 = u},
-    +{.3 = u} => +{.1 = u}
-  }
-}
+def narrow(e : Unit + Unit + Unit + Unit) -> Bool =
+  match e
+    | +{.0 = u} => +{.0 = u}
+    | +{.1 = u} => +{.1 = u}
+    | +{.2 = u} => +{.0 = u}
+    | +{.3 = u} => +{.1 = u}
 
 /// Two corollas of different element counts.
 @[ refuses("CorollaCardinality") ]
-def uneven = ua[1, 4](Semi, Rig, #{.mul = widen}, #{.plus = narrow});
+def uneven = ua[1, 4] Semi Rig (*{.mul = widen}) (*{.plus = narrow});

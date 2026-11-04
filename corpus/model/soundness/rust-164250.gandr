@@ -10,13 +10,12 @@ import std.process;
 
 /// A slot kept at the handler's region holds a view of a value the handler's
 /// scope holds, and is forced inside it.
-def kept() -> Integer {
-  var l = 42;
+def kept() -> Integer =
+  var l = 42
   handle inner : std.process.Exit.Eff {
-    let q2 : (() => Integer) at inner = access shared l as w { pure pure w };
+    let q2 : (() -> Integer) at inner = access shared l as w { pure pure w };
     force q2
   } with {
-    pure(y) => pure y,
-    oper exit(code, k) => pure 0
+    | pure(y) => pure y
+    | oper exit(code, k) => pure 0
   }
-}

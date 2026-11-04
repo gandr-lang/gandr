@@ -18,118 +18,99 @@ import "./small-string.gandr";
 
 /// A written string and the number of buffers the write filled anew: none
 /// in place, one when the bytes moved to a buffer of their own.
-pub data Written : Type where {
+pub data Written : Type where
   | Written : (string : Repr, copies : Integer) --> Written
-}
 
 /// The string a copy holds: the same inline bytes, or the same buffer with
 /// one more holder.
-pub def copy(s : Repr) -> Repr {
-  match s {
-    Inline(bs) => Inline(bs),
-    Shared(n, bs) => Shared(n + 1, bs)
-  }
-}
+pub def copy(s : Repr) -> Repr =
+  match s
+    | Inline(bs) => Inline bs
+    | Shared(n, bs) => Shared (n + 1) bs
 
 /// The bytes with `b` written before the terminating zero.
-pub def rec beforeZero(bs : List(Integer), b : Integer) -> List(Integer) {
-  match bs {
-    Nil => Nil,
-    Cons(x, rest) => {
-      match rest {
-        Nil => (Cons(b, Cons(x, Nil)) : List(Integer)),
-        Cons(y, more) => (Cons(x, beforeZero[<](rest, b)) : List(Integer))
-      }
+pub def rec beforeZero(bs : List(Integer), b : Integer) -> List(Integer) =
+  match bs
+    | Nil => Nil
+    | Cons(x, rest) => {
+      match rest
+        | Nil => (Cons b (Cons x Nil) : List(Integer))
+        | Cons(y, more) => (Cons x (beforeZero[<] rest b) : List(Integer))
     }
-  }
-}
 
 /// `b` appended to a string: inline bytes written where they are, moved to the
 /// heap when they outgrow it; a buffer held once written in place; a shared
 /// buffer copied first.
-pub def push(s : Repr, b : Integer) -> Written {
-  match s {
-    Inline(bs) => {
-      let grown = beforeZero(bs, b);
-      let stored = store(grown);
-      match stored {
-        Inline(kept) => Written(stored, 0),
-        Shared(n, moved) => Written(stored, 1)
-      }
-    },
-    Shared(n, bs) => {
-      let grown = beforeZero(bs, b);
-      let alone = n == 1;
-      match alone {
-        true => Written(Shared(1, grown), 0),
-        false => Written(Shared(1, grown), 1)
-      }
+pub def push(s : Repr, b : Integer) -> Written =
+  match s
+    | Inline(bs) => {
+      let grown = beforeZero bs b;
+      let stored = store grown;
+      match stored
+        | Inline(kept) => Written stored 0
+        | Shared(n, moved) => Written stored 1
     }
-  }
-}
+    | Shared(n, bs) => {
+      let grown = beforeZero bs b;
+      let alone = n == 1;
+      match alone
+        | true => Written (Shared 1 grown) 0
+        | false => Written (Shared 1 grown) 1
+    }
 
 /// The buffers a write filled anew.
-pub def copies(w : Written) -> Integer {
-  match w {
+pub def copies(w : Written) -> Integer =
+  match w
     Written(s, n) => n
-  }
-}
 
 /// The written string.
-pub def written(w : Written) -> Repr {
-  match w {
+pub def written(w : Written) -> Repr =
+  match w
     Written(s, n) => s
-  }
-}
 
 /// A long string, twenty-four bytes and the zero, held once. It is built by
 /// a loop, so it states `Partial`, and so does each run that forces it.
-pub def long() -> [Partial] Repr { own(repeatOnto(97, 24, (Nil : List(Integer)))) }
+pub def long() -> [Partial] Repr { own (repeatOnto 97 24 (Nil : List(Integer))) }
 
 /// `!` appended to a long string held once: written in place, nothing copied.
 @[ runs("0") ]
-def alone() -> [Partial] Integer { let s = force long; copies(push(s, 33)) }
+def alone() -> [Partial] Integer { let s = force long; copies (push s 33) }
 
 /// The same write to a copy: the buffer has two holders, so the copy's write
 /// fills a buffer of its own.
 @[ runs("1") ]
-def shared() -> [Partial] Integer {
-  let s = force long;
-  let c = copy(s);
-  copies(push(c, 33))
-}
+def shared() -> [Partial] Integer =
+  let s = force long
+  let c = copy s
+  copies (push c 33)
 
 /// The copy's write leaves the original's bytes as they were.
 @[ runs("25") ]
-def untouched() -> [Partial] Integer {
-  let s = force long;
-  let c = copy(s);
-  let w = push(c, 33);
-  count(bytes(s))
-}
+def untouched() -> [Partial] Integer =
+  let s = force long
+  let c = copy s
+  let w = push c 33
+  count (bytes s)
 
 /// And the copy reads one byte more.
 @[ runs("26") ]
-def grown() -> [Partial] Integer {
-  let s = force long;
-  let c = copy(s);
-  let w = push(c, 33);
-  let t = written(w);
-  count(bytes(t))
-}
+def grown() -> [Partial] Integer =
+  let s = force long
+  let c = copy s
+  let w = push c 33
+  let t = written w
+  count (bytes t)
 
 /// A short string written where its bytes are: `hi!` stays inline.
 @[ runs("Inside") ]
-def shout() -> Place {
-  let s = own((Cons(104, Cons(105, Nil)) : List(Integer)));
-  let w = push(s, 33);
-  place(written(w))
-}
+def shout() -> Place =
+  let s = own (Cons 104 (Cons 105 Nil) : List(Integer))
+  let w = push s 33
+  place (written w)
 
 /// A full inline string outgrows it: the write moves its bytes to the heap.
 @[ runs("1") ]
-def spill() -> [Partial] Integer {
-  let cs = repeatOnto(97, 23, (Nil : List(Integer)));
-  let s = own(cs);
-  copies(push(s, 33))
-}
+def spill() -> [Partial] Integer =
+  let cs = repeatOnto 97 23 (Nil : List(Integer))
+  let s = own cs
+  copies (push s 33)

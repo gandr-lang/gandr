@@ -11,20 +11,19 @@
 /// - see: corpus/sketch/model-refinement/counters.gandr — the block fixing sorts alone
 
 /// A bounded buffer: its elements, its capacity and a way to fill it.
-pub theory Buffer where {
+pub theory Buffer where
   /// What the buffer holds.
   sort E : Type;
   /// How many it holds.
   oper size : Integer;
   /// The element an empty slot holds.
   oper empty : E;
-}
 
 /// A buffer of three integers, its capacity fixed by its type.
 def triple : Model(Buffer) with {
   | sort E = Integer
   | def size = 3
-} = #{
+} = *{
   .size = 3,
   .empty = 0
 };
@@ -34,11 +33,9 @@ def triple : Model(Buffer) with {
 def zipSame[n : Integer](
   a : Model(Buffer) with { def size = n },
   b : Model(Buffer) with { def size = n }
-) -> #{left : a.E, right : b.E} {
-  #{left = a.empty, right = b.empty}
-}
+) -> *{left : a.E, right : b.E} =
+  *{left = a.empty, right = b.empty}
 
 /// The capacity of a fixed buffer reads off its type.
-def capacityOfTriple() -> Integer {
+def capacityOfTriple() -> Integer =
   triple.size
-}

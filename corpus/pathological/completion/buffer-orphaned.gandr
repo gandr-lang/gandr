@@ -18,7 +18,7 @@ import "../../model/completion/ring-base.gandr";
 /// forked, since no region bounds a forked peer (`region-ended.gandr`), so
 /// this checks until a kernel can be bounded by the buffer's hold,
 /// when a reaper that outlives the hold becomes the refusal.
-def bufferOrphaned() -> Unit {
+def bufferOrphaned() -> Unit =
   let reaper = fork (reactor : Ring.Reaping) {
     let pending = recv(reactor);
     let cqe = recv(pending);
@@ -30,7 +30,6 @@ def bufferOrphaned() -> Unit {
     send(kernel, Ring.done);
     close(kernel)
   };
-  send(ring, Ring.read);
-  send(reaper, ring);
+  send(ring, Ring.read)
+  send(reaper, ring)
   close(reaper)
-}

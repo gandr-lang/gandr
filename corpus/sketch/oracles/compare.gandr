@@ -15,21 +15,19 @@
 import "./solver.gandr";
 
 /// The propositional oracle: a clause set and whether it is satisfiable.
-pub theory Sat where {
+pub theory Sat where
   /// A set of clauses in conjunctive normal form.
   sort Clauses : Type;
   /// Asks whether a clause set is satisfiable.
   oper solve : (c : Clauses) --> Outcome(Satisfiable(c));
-}
 
 /// A SAT query asked as an SMT query: each clause set read as a formula.
-pub def satToSmt : sim(Sat, Smt) = Flow.reduce(fun (c) { Query.sat(Formula.ofClauses(c)) });
+pub def satToSmt : sim(Sat, Smt) = Flow.reduce (fun (c) { Query.sat (Formula.ofClauses c) });
 
 /// Two encodings of bit-vector queries, the same oracle up to the sheaf
 /// equations.
-pub def encodings : bisim(SmtBitBlast, SmtLazy) = Path.oracle(bitBlastIsLazy);
+pub def encodings : bisim(SmtBitBlast, SmtLazy) = Path.oracle bitBlastIsLazy;
 
 /// A certificate recorded under SAT, carried to SMT along the reduction.
-def replayed(c : Clauses, cert : Certificate(Sat, c)) -> Certificate(Smt, Query.sat(Formula.ofClauses(c))) {
+def replayed(c : Clauses, cert : Certificate(Sat, c)) -> Certificate(Smt, Query.sat(Formula.ofClauses c)) =
   Flow.walk(satToSmt, cert)
-}

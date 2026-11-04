@@ -811,7 +811,7 @@ fn nullary_function_call_evaluates()
     let mut session = session(SourceRoot::Strict);
     let mut submission = submit(
         &mut session,
-        "def step() -> -F Integer { return 1 }\ndef called : +U (-F Integer) ;\ndef called = thunk { become step() } ;",
+        "def step() -> -F Integer { return 1 }\ndef called : +U (-F Integer) ;\ndef called = thunk { become step () } ;",
     );
     assert_eq!(
         rows(submission.composed()),
@@ -966,7 +966,7 @@ fn module_builtins_type_and_evaluate()
     let mut session = session(SourceRoot::Strict);
     let mut submission = submit(
         &mut session,
-        "def identity : +U (-F Integer) ; def identity = thunk { become prim.id(5) } ; def first : +U (-F Integer) ; def first = thunk { become prim.const(7, 9) } ;",
+        "def identity : +U (-F Integer) ; def identity = thunk { become prim.id 5 } ; def first : +U (-F Integer) ; def first = thunk { become prim.const 7 9 } ;",
     );
     assert_eq!(rows(submission.composed()), vec![
         ("identity".to_owned(), checks(), Settlement::Settled),
@@ -1093,7 +1093,7 @@ fn documentation_keeps_its_declaration_links_4963()
 fn a_deprecation_is_kept_by_declaration_identity()
 {
     let mut session = session(SourceRoot::Strict);
-    let text = "@[ deprecated(#{ since = \"0.2\", note = \"use `other`\" }) ]\ndef answer = 42 \
+    let text = "@[ deprecated(*{ since = \"0.2\", note = \"use `other`\" }) ]\ndef answer = 42 \
                 ;\n@[ deprecated ]\ndef bare = 2 ;\ndef other = 1 ;";
     let _submitted = submit(&mut session, text);
     let key = |form: &str| first_declaration(form.into());

@@ -1452,8 +1452,8 @@ mod tests
     {
         let grammar = built_in().expect("the grammar builds");
         let text = SourceText::from(
-            "def a() -> Integer {\n  return 1 ^ 2\n}\n\ndef b() -> Integer {\n  return a()\n}\n\ndef \
-             c() -> Integer {\n  return 1\n}\n\ndef d() -> Integer {\n  return c()\n}\n",
+            "def a() -> Integer {\n  return 1 ^ 2\n}\n\ndef b() -> Integer {\n  return a ()\n}\n\ndef \
+             c() -> Integer {\n  return 1\n}\n\ndef d() -> Integer {\n  return c ()\n}\n",
         );
         let cascade = step(
             Path::new("cascade.gandr"),
@@ -1714,9 +1714,9 @@ mod tests
         let grammar = built_in().expect("the grammar builds");
         let text = SourceText::from(
             "def id(n: Integer) -> -F Integer { n }\n@[ explicit_runs(\"effects\") ]\ndef \
-             effects(n: Integer) -> -F Integer { id(id(n)) }\n@[ explicit_runs ]\ndef every(n: \
-             Integer) -> -F Integer { id(id(n)) }\ndef unasked(n: Integer) -> -F Integer { \
-             id(id(n)) }\n",
+             effects(n: Integer) -> -F Integer { id (id n) }\n@[ explicit_runs ]\ndef every(n: \
+             Integer) -> -F Integer { id (id n) }\ndef unasked(n: Integer) -> -F Integer { \
+             id (id n) }\n",
         );
         let nested = |declaration: &str| {
             let context = text.as_ref().find(declaration).expect("declared");
@@ -1803,7 +1803,7 @@ mod tests
     fn a_second_run_refusal_is_located_where_its_bound_spelling_is_380()
     {
         let grammar = built_in().expect("the grammar builds");
-        let data = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> Int\n  rule : S(P(x)) ==> x;\n  rule : P(S(x)) ==> x;\n}\n\n";
+        let data = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> Int\n  rule : S (P x) ==> x;\n  rule : P (S x) ==> x;\n}\n\n";
         let fold = |arm: &str| {
             format!(
                 "{data}def rec tell(n : Int) -> -F Int {{\n  match n {{\n    Z => Z,\n    S(x) => \

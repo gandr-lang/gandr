@@ -1,39 +1,31 @@
 @[ checks, ]
-data Either(a : Type, b : Type,) : Type where {
+data Either(a : Type, b : Type,) : Type where
   | Left : (x : a,) --> Either(a, b,)
   | Right : (y : b,) --> Either(a, b,)
-}
 
-data Color : Type where {
+data Color : Type where
   | Red : Color
   | Green : Color
   | Blue : Color
-}
 
-def from_left() -> Integer {
-  match (Left(5,) : Either(Integer, String,)) {
-    | Left(x,) => x,
-    | Right(y) => 0,
-  }
-}
+def from_left() -> Integer =
+  match (Left 5 : Either(Integer, String,))
+    | Left(x,) => x
+    | Right(y) => 0
 
-def warm(c : Color) -> Integer {
-  match c {
-    | Red | Green => 1,
-    Blue => 0
-  }
-}
+def warm(c : Color) -> Integer =
+  match c
+    | Red | Green => 1
+    | Blue => 0
 
-def cool(c : Color) -> Integer {
-  match c { Red | Green => 0, | Blue => 1, }
-}
+def cool(c : Color) -> Integer =
+  match c { | Red | Green => 0 | Blue => 1 }
 
 @[ runs("fun (a) { fun (b) { a } }") ]
 def first(x : Integer, y : Integer) -> Integer { x }
 
 @[ runs("42") ]
-def chosen() -> Integer { become (force first)(42,)(7,) }
+def chosen() -> Integer { become ((force first) 42) 7 }
 
-def pick(x : Integer, y : Integer,) -> Integer {
+def pick(x : Integer, y : Integer,) -> Integer =
   x
-}

@@ -1507,8 +1507,8 @@ fn the_prelude_answers_a_name_nothing_written_binds_2302()
     // neither.
     let pbg = grammar();
     let source = "theory Decided where { include Eq; }\ndef same[e : Model(Eq)](a : e.Carrier, b \
-                  : e.Carrier) -> Bool { e.eq(a, b) }\ndef eq(a : Bool) -> Bool { a }\ndef \
-                  mine() -> Bool { eq(true) }\n";
+                  : e.Carrier) -> Bool { e.eq a b }\ndef eq(a : Bool) -> Bool { a }\ndef \
+                  mine() -> Bool { eq true }\n";
     let (text, unit) =
         gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
             .expect("a unit of one source lays after the prelude");
@@ -1679,13 +1679,13 @@ fn an_imported_theory_at_a_dotted_path_is_named_wherever_a_theory_is_4514()
         (
             SourceText::from(
                 "import \"./store.gandr\" ;\ndef read() -> [st : Store.Eff with sort S = Integer] \
-                 Integer { st.get() }\ndef scoped() -> Integer { handle st : Store.Eff with sort S \
-                 = Integer { read() } with { pure(x) => pure x, oper get(k) => k(4) } }\nmodule \
+                 Integer { st.get () }\ndef scoped() -> Integer { handle st : Store.Eff with sort S \
+                 = Integer { read () } with { | pure(x) => pure x | oper get(k) => k 4 } }\nmodule \
                  Fixed : Model(Store.Eff) with sort S = Integer where {\n  type C = Integer;\n  def \
-                 get(k : Integer => Integer) -> Integer { k(4) }\n}\ndef answered() -> Integer { \
-                 handle st : Store.Eff with sort S = Integer { read() } with Fixed }\ntheory Marks \
+                 get(k : Integer -> Integer) -> Integer { k 4 }\n}\ndef answered() -> Integer { \
+                 handle st : Store.Eff with sort S = Integer { read () } with Fixed }\ntheory Marks \
                  where {\n  sort C : Type;\n  oper mark : (k : C) --> C;\n  rule kept : \
-                 mark(mark(k)) <=> mark(k) where { | under [Store.Eff | r] };\n}\n",
+                 mark (mark k) <=> mark k where { | under [Store.Eff | r] };\n}\n",
             ),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
@@ -1709,8 +1709,8 @@ fn the_prelude_offers_no_presentation_constructor_2302()
     let pbg = grammar();
     let source = "data Shape : Type where {\n  | Circle : (r : Integer) --> Shape\n}\ndata Figure : \
                   Type where {\n  | Round : (r : Integer) --> Figure\n}\ndef toFigure(shape : Shape) \
-                  -> Figure {\n  match shape {\n    Circle(r) => Round(r)\n  }\n}\ndef redrawn : \
-                  Flow[.A = Type](Shape, Figure) = Flow.into(toFigure) ;\n";
+                  -> Figure {\n  match shape {\n    | Circle(r) => Round r\n  }\n}\ndef redrawn : \
+                  Flow[.A = Type](Shape, Figure) = Flow.into toFigure ;\n";
     let (text, unit) =
         gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
             .expect("a unit of one source lays after the prelude");
@@ -1731,7 +1731,7 @@ fn the_prelude_offers_no_presentation_constructor_2302()
 fn a_source_s_type_shadows_the_prelude_s_constructor_3287()
 {
     let pbg = grammar();
-    let source = "data One : Type where {\n  | Single : One\n}\ndef same : Path[.A = Type](One, One) = Path.here(One) ;\n";
+    let source = "data One : Type where {\n  | Single : One\n}\ndef same : Path[.A = Type](One, One) = Path.here One ;\n";
     let (text, unit) =
         gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
             .expect("a unit of one source lays after the prelude");
@@ -1763,14 +1763,14 @@ fn a_method_of_a_source_not_imported_is_out_of_scope()
         ),
         (
             SourceText::from(
-                "import \"./str.gandr\" ;\ndef measured() -> -F Integer { var s = 1; s.len() }",
+                "import \"./str.gandr\" ;\ndef measured() -> -F Integer { var s = 1; s.len () }",
             ),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
         (
             SourceText::from(
                 "import \"./str.gandr\" ;\nimport \"./bytes.gandr\" ;\ndef both() -> -F Integer \
-                 { var s = 1; s.len() }",
+                 { var s = 1; s.len () }",
             ),
             &[
                 ImportTarget::Source(SourceIndex::from(0_usize)),
@@ -2016,7 +2016,7 @@ fn a_functor_argument_reads_an_imported_module_1993()
         (
             SourceText::from(
                 "import \"./base.gandr\" ;\nmodule TimesSquared = Squaring(Times) ;\ndef nine() \
-                 -> -F Integer { become TimesSquared.square(3) }",
+                 -> -F Integer { become TimesSquared.square 3 }",
             ),
             &base,
         ),
@@ -2087,7 +2087,7 @@ fn a_rule_derived_in_an_imported_theory_is_read_under_its_name()
         ),
         (
             SourceText::from(
-                "import \"./base.gandr\" ;\nrule Inv.four : inv(inv(inv(inv(x)))) <=> x;\ndef \
+                "import \"./base.gandr\" ;\nrule Inv.four : inv (inv (inv (inv x))) <=> x;\ndef \
                  again = Inv.four ;",
             ),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
@@ -2340,7 +2340,7 @@ fn a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078()
         SourceText::from("theory Magma where {\n  sort M : Type;\n  oper one : () --> (z : M);\n}");
     let counting = "theory Monoid where {\n  sort M : Type;\n  oper one : () --> (z : M);\n}\ndef \
                     count(presented : Theory) -> -F Integer {\n  match presented {\n    \
-                    Presents(sorts, opers, rules) => return 1,\n    _ => return 0\n  }\n}";
+                    | Presents(sorts, opers, rules) => return 1\n    | _ => return 0\n  }\n}";
     let importing = format!("import \"./base.gandr\" ;\n{counting}");
     let both = SourceText::from(
         "import \"./base.gandr\" ;\nimport \"./counting.gandr\" ;\ndef pick(presented : Theory) \
@@ -2415,9 +2415,9 @@ fn a_univalence_statement_reads_only_the_blocks_its_source_sees_1078()
     );
     let stating = "theory Magma where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
                    oper one : () --> (z : M);\n}\ndef exchange(b : Bool) -> -F Bool {\n  match b \
-                   {\n    true => return +{.1 = unit},\n    false => return +{.0 = unit}\n  \
+                   {\n    | true => return +{.1 = *{}}\n    | false => return +{.0 = *{}}\n  \
                    }\n}\ndef keep(e : +{Unit}) -> -F +{Unit} {\n  return e\n}\ndef unnamed = \
-                   ua[1, 4](Monoid, Magma, #{mul = exchange, one = keep}, #{mul = exchange, one \
+                   ua[1, 4] Monoid Magma (*{mul = exchange, one = keep}) (*{mul = exchange, one \
                    = keep}) ;";
     let importing = format!("import \"./base.gandr\" ;\n{stating}");
     // Whether `unnamed` is refused, and whether at `Monoid` as an unresolved
@@ -2611,39 +2611,39 @@ fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_w
         "pub def applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat {\n  f(x)\n}\n",
         "def appliedAt[j : Size, k : Size](f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat {\n",
         "  applyAt[.i = k](f, x)\n}\n",
-        "def crossed[s : Region, r : Region](k : (() => Integer) at r, j : (() => Integer) \
+        "def crossed[s : Region, r : Region](k : (() -> Integer) at r, j : (() -> Integer) \
          at s) -> -F Integer {\n  force k\n}\n",
         "pub theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper \
          read : (c : C) --> Integer; }\n",
         "pub module Up : Model(Counter) where {\n  type C = Integer;\n  def zero = 0;\n  def incr(c : \
          Integer) -> -F Integer { c + 1 }\n  def read(c : Integer) -> -F Integer { c }\n}\n",
         "pub def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read(s.incr(c)) }\n",
-        "def omitted() -> -F Integer { stepped(4) }\n",
+        "def omitted() -> -F Integer { stepped 4 }\n",
         "pub theory StatePutLaws where {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ \
          (s : S) . C) --> C;\n  oper put : (s : S, k : C) --> C;\n  rule putGet : put(s, \
          get(bind t . k(t))) <=> put(s, k(s));\n  rule putPut : put(s, put(u, k)) <=> put(u, \
          k);\n}\n",
         "def forgetful() -> -F Integer { handle st : StatePutLaws with sort S = Integer { \
-         st.put(1); st.get() } with { pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => \
-         k(unit) } }\n",
+         st.put 1; st.get () } with { | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => \
+         k *{} } }\n",
         "data NatAdd : Type where {\n  | AddZero : NatAdd\n  | AddSucc : (n : NatAdd) --> NatAdd\n  oper \
-         add : (m : NatAdd, n : NatAdd) --> NatAdd;\n  rule : add(AddZero, n) ==> n;\n  rule : \
-         add(AddSucc(m), n) ==> AddSucc(add(m, n));\n}\n",
+         add : (m : NatAdd, n : NatAdd) --> NatAdd;\n  rule : add AddZero n ==> n;\n  rule : \
+         add (AddSucc m) n ==> AddSucc (add m n);\n}\n",
     ));
     let document = SourceText::from(concat!(
         "import \"./base.gandr\" ;\n",
         "def appliedAgain[k : Size](f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat {\n",
         "  applyAt[.i = k](f, x)\n}\n",
-        "def crossedAgain[r : Region](k : (() => Integer) at r) -> -F Integer {\n  force \
+        "def crossedAgain[r : Region](k : (() -> Integer) at r) -> -F Integer {\n  force \
          k\n}\n",
         "def fixed[s : Model(Counter) with sort C = Integer](c : Integer) -> -F Integer { \
-         s.read(s.incr(c + s.zero)) }\n",
-        "def omittedAgain() -> -F Integer { stepped(5) }\n",
+         s.read (s.incr (c + s.zero)) }\n",
+        "def omittedAgain() -> -F Integer { stepped 5 }\n",
         "def forgetfulAgain() -> -F Integer { handle st : StatePutLaws with sort S = Integer { \
-         st.put(2); st.get() } with { pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => \
-         k(unit) } }\n",
+         st.put 2; st.get () } with { | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => \
+         k *{} } }\n",
         "data Bit : Type where {\n  | Off : Bit\n  | On : Bit\n  oper not : (a : Bit) --> Bit;\n  rule : \
-         not(Off) ==> On;\n  rule : not(On) ==> Off;\n}\n",
+         not Off ==> On;\n  rule : not On ==> Off;\n}\n",
     ));
     let imports = [ImportTarget::Source(SourceIndex::from(0_usize))];
     let (text, unit) = laid(&[(base, &[]), (document, &imports)]);
@@ -5220,7 +5220,7 @@ fn each_import_a_name_is_read_through_is_reached()
         ),
         (
             SourceText::from(
-                "import \"./base.gandr\" ;\ndef measured() -> -F Integer { var s = 1; s.len() }",
+                "import \"./base.gandr\" ;\ndef measured() -> -F Integer { var s = 1; s.len () }",
             ),
             &first,
         ),
@@ -5410,7 +5410,7 @@ fn a_pub_declaration_is_read_by_its_importer_2687()
          = hidden ;\ndef c : Integer ;\ndef c = checked ;\ndef d : Integer ;\ndef d = early ;\ndef \
          e : Bit ;\ndef e = O ;\ndef f : Integer ;\ndef f = Open.x ;\nmodule Pointing : \
          Model(Pointed) where {\n  type P = Integer;\n  def pt() -> -F Integer { return 0 }\n}\ndef \
-         g() -> -F Integer { var s = 1; s.width() }",
+         g() -> -F Integer { var s = 1; s.width () }",
     ));
     let refused: Vec<_> = outcomes
         .iter()
@@ -5435,7 +5435,7 @@ fn a_private_declaration_is_refused_to_its_importer_2687()
         "import \"./base.gandr\" ;\ndef g : Integer ;\ndef g = secret ;\ndef h : Hid ;\ndef h = \
          1 ;\ndef i = H ;\ndef j : Integer ;\ndef j = Shut.y ;\nmodule Closing : Model(Closed) \
          where {\n  type Q = Integer;\n  def qt() -> -F Integer { return 0 }\n}\ndef k() -> -F Integer \
-         { var s = 1; s.depth() }\ndef secret = 8 ;",
+         { var s = 1; s.depth () }\ndef secret = 8 ;",
     ));
     let private = |name: &str| format!("name: SurfaceName(SourceFragment(\"{name}\"))");
     let refused_as = |declaration: &str, name: &str| {

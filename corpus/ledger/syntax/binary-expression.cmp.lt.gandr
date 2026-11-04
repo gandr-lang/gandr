@@ -1,5 +1,4 @@
 /// `binary_expression.cmp.lt`: a less-than comparison.
 @[ checks ]
-def smaller() -> -F Bool {
+def smaller() -> -F Bool =
   return 1 < 2
-}

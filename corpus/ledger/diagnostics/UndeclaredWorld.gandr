@@ -1,5 +1,5 @@
 /// `UndeclaredWorld`: a world position no world declaration holds.
-module Seat :> #{
+module Seat :> *{
   type Dispatch,
   mobile type Report,
   type Handoff,
@@ -32,13 +32,11 @@ world operator ;
 world seat ;
 
 @[ checks ]
-@[ entry((operator, seat)) ]
-def collect() -> -F Seat.Report {
+@[ entry(*{operator, seat}) ]
+def collect() -> -F Seat.Report =
   migrate [seat] { pure Seat.progress }
-}
 
 @[ refuses("UndeclaredWorld") ]
-@[ entry((operator, seat)) ]
-def toAValue() -> -F Seat.Report {
+@[ entry(*{operator, seat}) ]
+def toAValue() -> -F Seat.Report =
   migrate [collect] { pure Seat.progress }
-}

@@ -201,7 +201,7 @@ fn a_site_s_offer_answers_by_label_and_by_name_3523()
         "  oper put : (key : V, value : V, k : C) --> C; }\n",
         "module Echo : Model(Kept) with sort V = String where {\n",
         "  type C = String;\n",
-        "  def get(key : String, k : String => String) -> String { k(key) }\n",
+        "  def get(key : String, k : String -> String) -> String { k key }\n",
         "  def put(key : String, value : String, k : String) -> String { k }\n",
         "}\n",
     );
@@ -424,7 +424,7 @@ fn a_mobile_component_marks_its_sealing()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            r"module Pair :> #{ mobile type Mobile, type Kept, one : Mobile, two : Kept } where {
+            r"module Pair :> *{ mobile type Mobile, type Kept, one : Mobile, two : Kept } where {
   type Mobile = Integer;
   type Kept = Integer;
   def one = 1;
@@ -466,7 +466,7 @@ fn an_entry_names_its_home_then_its_capabilities()
         SourceText::from(
             r"world operator;
 world seat;
-@[ entry((operator, seat)) ]
+@[ entry(*{operator, seat}) ]
 def entered() -> -F Integer { pure 1 }
 @[ entry(operator) ]
 def homed() -> -F Integer { pure 1 }

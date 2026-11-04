@@ -7,14 +7,13 @@
 /// The stationary flow at a protocol that opens with a receive is no flow to
 /// one that opens with a send.
 @[ refuses("EndpointMismatch") ]
-def quoted_receive : Flow[.A = Type](?String. end, !String. end) = Flow.stay(type(?String. end));
+def quoted_receive : Flow[.A = Type](?String. end, !String. end) = Flow.stay (type(?String. end));
 
 /// A quote beneath a motive's binder whose payload reads that binder: a
 /// session's payload codes form in the empty term context, so the quote is
 /// the code of no session at any point of the motive.
 @[ refuses("OpenSessionPayload") ]
-def open_payload : Path[.A = Type](?String. end, ?String. end) = Path.walk(
-  fun (X) { type(Path[.A = Type](type(?String. end), type(?X. end))) },
-  Path.here(String),
-  Path.here(type(?String. end))
-);
+def open_payload : Path[.A = Type](?String. end, ?String. end) = Path.walk
+  (fun (X) { type(Path[.A = Type](type(?String. end), type(?X. end))) })
+  (Path.here (String))
+  (Path.here (type(?String. end)));

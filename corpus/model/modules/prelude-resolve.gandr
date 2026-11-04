@@ -7,23 +7,22 @@
 // - see: #2395
 
 /// A point in the plane.
-data Point : Type where {
+data Point : Type where
   | Point : (x : Integer, y : Integer) --> Point
-}
 
 /// Points under `==`, compared field by field.
 module EqPoint : Model(Eq) with sort Carrier = Point where {
   /// Both coordinates, in order.
   @[ checks ]
-  def eq = Eq.generic(Point);
+  def eq = Eq.generic Point;
 
   /// Every point is equal to itself.
   @[ checks ]
-  def refl = Eq.generic.refl(Point);
+  def refl = Eq.generic.refl Point;
 
   /// Equality reads the same from either side.
   @[ checks ]
-  def sym = Eq.generic.sym(Point);
+  def sym = Eq.generic.sym Point;
 }
 
 /// Two integers alike.
@@ -44,8 +43,8 @@ def laterLabel() -> Bool { "there" < "here" }
 
 /// Two points alike, through the derived member.
 @[ runs("+{.0 = unit}") ]
-def samePlace() -> Bool { Point(1, 2) == Point(1, 2) }
+def samePlace() -> Bool { Point 1 2 == Point 1 2 }
 
 /// Two points apart in one coordinate.
 @[ runs("+{.1 = unit}") ]
-def movedPlace() -> Bool { Point(1, 2) == Point(1, 3) }
+def movedPlace() -> Bool { Point 1 2 == Point 1 3 }

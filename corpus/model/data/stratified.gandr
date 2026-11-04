@@ -14,38 +14,33 @@ import "./data-base.gandr";
 
 /// Chains whose every link holds the chain before it and a test of chains:
 /// `Chain` stands to the left of the test's arrow, below the link.
-data Chain : Type where {
+data Chain : Type where
   | Start : Chain
-  | Link : (prev : Chain, test : Chain => Two) --> Chain
-}
+  | Link : (prev : Chain, test : Chain -> Two) --> Chain
 
 /// A test answering `R` of a link and `L` of the start.
-def linked(c : Chain) -> Two { match c -> -F Two { Start => L, Link(p, t) => R } }
+def linked(c : Chain) -> Two { match c -> -F Two { | Start => L | Link(p, t) => R } }
 
 /// Two links over the start, each holding `linked`.
-def twice : Chain = Link(Link(Start, linked), linked);
+def twice : Chain = Link (Link Start linked) linked;
 
 /// The test a link holds, applied to the chain before it: the chain stands
 /// at the stage the test takes.
-def judge(c : Chain) -> Two {
-  match c {
-    Start => L,
-    Link(prev, test) => test(prev)
-  }
-}
+def judge(c : Chain) -> Two =
+  match c
+    | Start => L
+    | Link(prev, test) => test prev
 
 /// The links of a chain, by recursion one stage below each link.
-def rec chainLength(c : Chain) -> Nat {
-  match c {
-    Start => Zero,
-    Link(prev, test) => Succ(chainLength[<](prev))
-  }
-}
+def rec chainLength(c : Chain) -> Nat =
+  match c
+    | Start => Zero
+    | Link(prev, test) => Succ (chainLength[<] prev)
 
 /// The outer link's test of the inner link.
 @[ runs("R") ]
-def judged : () => Two = judge(twice);
+def judged : () -> Two = judge twice;
 
 /// The chain's two links.
 @[ runs("Succ(Succ(Zero))") ]
-def measured : () => Nat = chainLength(twice);
+def measured : () -> Nat = chainLength twice;

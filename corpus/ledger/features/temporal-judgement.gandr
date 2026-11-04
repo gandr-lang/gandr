@@ -30,56 +30,53 @@ import std.buffer (Web);
 /// the seat's report beside the operator's choice, then the seat's tail
 /// beside the operator's close.
 @[ decomposes(
-  series(
-    event(right, 0),
-    event(left, 0),
-    event(left, 1),
-    parallel(event(left, 2), event(right, 1)),
-    event(right, 2),
-    event(right, 3),
-    parallel(series(event(left, 3), event(left, 4)), event(right, 4))
-  )
+  series
+    (event right 0)
+    (event left 0)
+    (event left 1)
+    (parallel (event left 2) (event right 1))
+    (event right 2)
+    (event right 3)
+    (parallel (series (event left 3) (event left 4)) (event right 4))
 ) ]
-def retiring : Dialogue(Seat.SeatEnd) = dialogue(
-  right(sent(Seat.task)),
-  left(received(Seat.task)),
-  left(selected(report)),
-  left(sent(Seat.progress)),
-  right(offered(report)),
-  right(received(Seat.progress)),
-  right(selected(retire)),
-  left(offered(retire)),
-  left(closed),
-  right(closed)
-) ;
+def retiring : Dialogue(Seat.SeatEnd) = dialogue
+  (right (sent Seat.task))
+  (left (received Seat.task))
+  (left (selected report))
+  (left (sent Seat.progress))
+  (right (offered report))
+  (right (received Seat.progress))
+  (right (selected retire))
+  (left (offered retire))
+  (left closed)
+  (right closed) ;
 
 /// The same play, the operator taking the choice before the seat's report is
 /// logged: the two moves are independent, so the log reads back the web
 /// `retiring` does, stated here by its prime count alone: series-parallel, it
 /// has no prime node.
 @[ decomposes(primes = 0) ]
-def retiringLater : Dialogue(Seat.SeatEnd) = dialogue(
-  right(sent(Seat.task)),
-  left(received(Seat.task)),
-  left(selected(report)),
-  right(offered(report)),
-  left(sent(Seat.progress)),
-  right(received(Seat.progress)),
-  right(selected(retire)),
-  left(offered(retire)),
-  right(closed),
-  left(closed)
-) ;
+def retiringLater : Dialogue(Seat.SeatEnd) = dialogue
+  (right (sent Seat.task))
+  (left (received Seat.task))
+  (left (selected report))
+  (right (offered report))
+  (left (sent Seat.progress))
+  (right (received Seat.progress))
+  (right (selected retire))
+  (left (offered retire))
+  (right closed)
+  (left closed) ;
 
 /// The two logs are one dialogue: they share every endpoint's moves and
 /// every send's receipt, so the path is reflexivity.
 @[ checks ]
-def commuted : Path[.A = Dialogue(Seat.SeatEnd)](retiring, retiringLater) = Path.here(retiring) ;
+def commuted : Path[.A = Dialogue(Seat.SeatEnd)](retiring, retiringLater) = Path.here retiring ;
 
 /// The two logs decompose to one web: a web is read off the dialogue it
 /// decomposes, so the path between the logs' webs is reflexivity too.
 @[ checks ]
-def sameWeb : Path[.A = Web](decompose(retiring), decompose(retiringLater)) = Path.here(decompose(retiring)) ;
+def sameWeb : Path[.A = Web](decompose retiring, decompose retiringLater) = Path.here (decompose retiring) ;
 
 /// A dialogue that hands off: the seat's notes sent before the operator takes
 /// the choice. Its web leaves a prime node: the seat's notes precede its
@@ -87,25 +84,22 @@ def sameWeb : Path[.A = Web](decompose(retiring), decompose(retiringLater)) = Pa
 /// receipt, and no module of the four joins them — the N-shape, the
 /// operator's receipt and close one factor.
 @[ decomposes(
-  series(
-    event(right, 0),
-    event(left, 0),
-    event(left, 1),
-    prime(
-      event(left, 2),
-      event(left, 3),
-      event(right, 1),
-      series(event(right, 2), event(right, 3))
-    )
-  )
+  series
+    (event right 0)
+    (event left 0)
+    (event left 1)
+    (prime
+      (event left 2)
+      (event left 3)
+      (event right 1)
+      (series (event right 2) (event right 3)))
 ) ]
-def handedOff : Dialogue(Seat.SeatEnd) = dialogue(
-  right(sent(Seat.task)),
-  left(received(Seat.task)),
-  left(selected(handoff)),
-  left(sent(Seat.notes)),
-  left(closed),
-  right(offered(handoff)),
-  right(received(Seat.notes)),
-  right(closed)
-) ;
+def handedOff : Dialogue(Seat.SeatEnd) = dialogue
+  (right (sent Seat.task))
+  (left (received Seat.task))
+  (left (selected handoff))
+  (left (sent Seat.notes))
+  (left closed)
+  (right (offered handoff))
+  (right (received Seat.notes))
+  (right closed) ;

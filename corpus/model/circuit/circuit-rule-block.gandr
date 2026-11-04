@@ -8,14 +8,13 @@
 //! [Lafont-1990-interaction_nets]: https://doi.org/10.1145/96709.96718 "Lafont, Interaction Nets"
 
 /// A data family whose constructors are written with the circuit arrow.
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
 
 /// Congruence in `add`'s first argument as a circuit: `p` rewrites `x`, then
 /// `add` takes the result and `y`. The block binds `NatSum : Theory`.
-theory NatSum where {
+theory NatSum where
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
 
@@ -27,4 +26,3 @@ theory NatSum where {
     node : p(x) ==> (x′);
     node : add(x′, y) --> (z);
   };
-}

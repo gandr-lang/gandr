@@ -9,94 +9,80 @@
 import "./data-base.gandr";
 
 /// One, named.
-def oneByName : Nat = Succ(Zero);
+def oneByName : Nat = Succ Zero;
 
 /// Whether the first natural is at most the second.
-def rec le(a : Nat, b : Nat) -> Bool {
-  match a {
-    Zero => true,
-    Succ(p) => match b {
-      Zero => false,
-      Succ(q) => le[<](p, q),
-    },
-  }
-}
+def rec le(a : Nat, b : Nat) -> Bool =
+  match a
+    | Zero => true
+    | Succ(p) => match b
+      | Zero => false
+      | Succ(q) => le[<] p q
 
 /// Zero is at most one, the second argument through the name.
-def zeroAtMostOne : Path(le(Zero, oneByName), true) = Path.here(true);
+def zeroAtMostOne : Path(le Zero oneByName, true) = Path.here true;
 
 /// One is at most one, both arguments through the name.
-def oneAtMostOne : Path(le(oneByName, oneByName), true) = Path.here(true);
+def oneAtMostOne : Path(le oneByName oneByName, true) = Path.here true;
 
 /// Zero is at most three, a name reached through the name `two`.
-def zeroAtMostThree : Path(le(Zero, three), true) = Path.here(true);
+def zeroAtMostThree : Path(le Zero three, true) = Path.here true;
 
 /// One is at most three, the gate opening on a name at each call.
-def oneAtMostThree : Path(le(oneByName, three), true) = Path.here(true);
+def oneAtMostThree : Path(le oneByName three, true) = Path.here true;
 
 /// Three is not at most one.
-def threeAboveOne : Path(le(three, oneByName), false) = Path.here(false);
+def threeAboveOne : Path(le three oneByName, false) = Path.here false;
 
 /// Whether the first natural is at most both the second and the third; it recurses on the third.
-def rec leBoth(a : Nat, b : Nat, c : Nat) -> Bool {
-  match a {
-    Zero => true,
-    Succ(p) => match b {
-      Zero => false,
-      Succ(q) => match c {
-        Zero => false,
-        Succ(r) => leBoth[<](p, q, r),
-      },
-    },
-  }
-}
+def rec leBoth(a : Nat, b : Nat, c : Nat) -> Bool =
+  match a
+    | Zero => true
+    | Succ(p) => match b
+      | Zero => false
+      | Succ(q) => match c
+        | Zero => false
+        | Succ(r) => leBoth[<] p q r
 
 /// Zero comes first, and the third reaches its gate through a name.
-def zeroFirst : Path(leBoth(Zero, oneByName, three), true) = Path.here(true);
+def zeroFirst : Path(leBoth Zero oneByName three, true) = Path.here true;
 
 /// Positive binary numerals, the high bit outermost.
-data Pos : Type where {
+data Pos : Type where
   /// One.
   | H : Pos
   /// Twice `p`.
   | O : (p : Pos) --> Pos
   /// Twice `p`, and one.
   | I : (p : Pos) --> Pos
-}
 
 /// How two positives compare.
-data Cmp : Type where {
+data Cmp : Type where
   /// The first is below the second.
   | Lt : Cmp
   /// The two are equal.
   | Eq : Cmp
   /// The first is above the second.
   | Gt : Cmp
-}
 
 /// Two, named.
-def twoPos : Pos = O(H);
+def twoPos : Pos = O H;
 
 /// Compare two positives low bit first, `k` the verdict the lower bits gave.
-def rec cmpPos(a : Pos, b : Pos, k : Cmp) -> Cmp {
-  match a {
-    H => match b {
-      H => k,
-      O(q) => Lt,
-      I(q) => Lt,
-    },
-    O(p) => match b {
-      H => Gt,
-      O(q) => cmpPos[<](p, q, k),
-      I(q) => cmpPos[<](p, q, Lt),
-    },
-    I(p) => match b {
-      H => Gt,
-      O(q) => cmpPos[<](p, q, Gt),
-      I(q) => cmpPos[<](p, q, k),
-    },
-  }
-}
+def rec cmpPos(a : Pos, b : Pos, k : Cmp) -> Cmp =
+  match a
+    | H => match b
+      | H => k
+      | O(q) => Lt
+      | I(q) => Lt
+    | O(p) => match b
+      | H => Gt
+      | O(q) => cmpPos[<] p q k
+      | I(q) => cmpPos[<] p q Lt
+    | I(p) => match b
+      | H => Gt
+      | O(q) => cmpPos[<] p q Gt
+      | I(q) => cmpPos[<] p q k
 
 /// One is below two, the second positive through the name.
-def oneBelowTwo : Path(cmpPos(H, twoPos, Eq), Lt) = Path.here(Lt);
+def oneBelowTwo : Path(cmpPos H twoPos Eq, Lt) = Path.here Lt;

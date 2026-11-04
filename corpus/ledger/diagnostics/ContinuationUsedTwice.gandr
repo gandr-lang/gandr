@@ -4,7 +4,7 @@
 import std.process;
 
 /// The completion ring's protocol: its submissions, completions and buffers.
-module Ring :> #{
+module Ring :> *{
   type Sqe,
   type Cqe,
   type Submission = ?Sqe. !Cqe. end,
@@ -27,7 +27,7 @@ module Ring :> #{
 }
 
 @[ refuses("ContinuationUsedTwice") ]
-def resumedTwice() -> -F Unit {
+def resumedTwice() -> -F Unit =
   handle c : std.process.Exit.Eff {
     let ring = fork (kernel : Ring.Submission) {
       let sqe = recv(kernel);
@@ -35,11 +35,10 @@ def resumedTwice() -> -F Unit {
       close(kernel)
     };
     send(ring, Ring.read);
-    c.exit(1);
+    c.exit 1;
     let cqe = recv(ring);
     close(ring)
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => { let first = k(unit) ; k(unit) }
+    | pure(x) => pure x
+    | oper exit(code, k) => { let first = k *{} ; k *{} }
   }
-}

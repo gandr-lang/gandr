@@ -9,10 +9,10 @@
 def quoted_product : Flow[.A = Type](
   Unit * Integer,
   Unit * Integer
-) = Flow.stay(type(Unit * Integer));
+) = Flow.stay (type(Unit * Integer));
 
 /// The stationary flow at a sum of two summands.
 def quoted_chain : Flow[.A = Type](
   Integer + Unit,
   Integer + Unit
-) = Flow.stay(type(Integer + Unit));
+) = Flow.stay (type(Integer + Unit));

@@ -23,17 +23,13 @@ import "../../model/universe/ir-codes.gandr";
 /// The decode of the arguments a code asks for. The code's case refines their
 /// type, since the marked call stages the code.
 @[ checks, form(explicit) ]
-def rec decodeArgs(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), v : args(d, c, x, t)) -> d {
-  match c {
-    Iota(e) => e,
-    SigmaC(a, f) => match v {
-      MkSig(y, r) => decodeArgs[<](d, f(y), x, t, r)
-    },
-    DeltaC(a, f) => match v {
-      MkSig(h, r) => decodeArgs[<](d, f(thunk { fun (z) { t(h(z)) } }), x, t, r)
-    }
-  }
-}
+def rec decodeArgs(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), v : args(d, c, x, t)) -> d =
+  match c
+    | Iota(e) => e
+    | SigmaC(a, f) => match v
+      MkSig(y, r) => decodeArgs[<] d (f y) x t r
+    | DeltaC(a, f) => match v
+      MkSig(h, r) => decodeArgs[<] d (f (thunk { fun (z) { t (h z) } })) x t r
 
 /// The family a code defines, and its decoder, in one block.
 rec {
@@ -42,14 +38,12 @@ rec {
   @[ refuses("IndexOccurrence") ]
   data Mu(d : Type, c : IR(d)) : Type where {
     /// The arguments, over the family the decoder decodes.
-    | In : (v : args(d, c, Mu(d, c), thunk { fun (m) { decodeMu(d, c, m) } })) --> Mu(d, c)
+    | In : (v : args(d, c, Mu(d, c), thunk { fun (m) { decodeMu d c m } })) --> Mu(d, c)
   }
 
   /// The decoder: the decode of the arguments its constructor holds.
   @[ refuses("StageNotBelow") ]
-  def rec decodeMu(d : Type, c : IR(d), m : Mu(d, c)) -> d {
-    match m {
-      In(v) => decodeArgs(d, c, Mu(d, c), thunk { fun (n) { decodeMu[<](d, c, n) } }, v)
-    }
-  }
+  def rec decodeMu(d : Type, c : IR(d), m : Mu(d, c)) -> d =
+    match m
+      In(v) => decodeArgs d c (Mu d c) (thunk { fun (n) { decodeMu[<] d c n } }) v
 }

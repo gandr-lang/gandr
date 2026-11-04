@@ -1195,8 +1195,8 @@ fn gated(
 fn a_tactic_and_a_lowercase_module_path_stand_placed_2959()
 {
     let grammar = built_in().expect("the built-in grammar builds");
-    let source = "import text.greet (greeting);\ndef id : Integer => Integer = \
-                  ~intro(assumption);\ndef note = limits.hard.note;\ndef welcome = \
+    let source = "import text.greet (greeting);\ndef id : Integer -> Integer = \
+                  ~intro assumption;\ndef note = limits.hard.note;\ndef welcome = \
                   text.greet.greeting;\n";
     let tree = parse(&grammar, SourceText::from(source))
         .expect("the source parses")

@@ -4,6 +4,5 @@ def twice : Type -> Type ;
 def twice = fun (Y) { type(Y * Y) } ;
 
 @[ refuses("FamilyArgumentClassifier") ]
-def wrong(p : twice(1)) -> -F Integer {
+def wrong(p : twice(1)) -> -F Integer =
   return 1
-}

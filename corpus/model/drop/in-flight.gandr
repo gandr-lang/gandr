@@ -16,7 +16,7 @@ import std.process;
 /// A read submitted and its completion abandoned in flight: the clause
 /// abandons the rest that would reap it.
 @[ runs("unit") ]
-def inFlight() -> Unit {
+def inFlight() -> Unit =
   handle c : std.process.Exit.Eff {
     let ring = fork (kernel : Ring.Submission) {
       let sqe = recv(kernel);
@@ -24,11 +24,10 @@ def inFlight() -> Unit {
       close(kernel)
     };
     send(ring, Ring.read);
-    c.exit(1);
+    c.exit 1;
     let cqe = recv(ring);
     close(ring)
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => abandon(k)
+    | pure(x) => pure x
+    | oper exit(code, k) => abandon k
   }
-}

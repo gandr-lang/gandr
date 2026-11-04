@@ -2443,7 +2443,7 @@ mod tests
             "  /* a block\n",
             "     comment */ return \"hello ${name}, \\\"quoted\\\" ${ { 1 } }\";\n",
             "}\n",
-            "def g : Integer ⇝ Integer; // a trailing comment\n",
+            "def g : Integer ⇝ Integer; // a trailing comment // a trailing comment\n",
             "def x = (1 + #[2, 3]) /* open",
         );
         let whole = Labeled::new(SourceText::from(text));
@@ -2492,9 +2492,18 @@ mod tests
     {
         let tools = tools();
         for (before, first) in [
-            ("def x = 1; // note", "\ndef ${1:identifier} : ${2:type};"),
-            ("def x = 1; /* note", " */ def ${1:identifier} : ${2:type};"),
-            ("def x = 1; /* note */", " def ${1:identifier} : ${2:type};"),
+            (
+                "def x = 1; // note // note",
+                "\ndef ${1:identifier} : ${2:type};",
+            ),
+            (
+                "def x = 1; /* note /* note",
+                " */ def ${1:identifier} : ${2:type};",
+            ),
+            (
+                "def x = 1; /* note */ /* note */",
+                " def ${1:identifier} : ${2:type};",
+            ),
             ("def x = // note", "\n${1:value};"),
         ] {
             let found = between(&tools, SourceText::from(before), SourceText::from(""));

@@ -22,7 +22,7 @@ import std.manifold (Site, Manifold, Placement, At);
 import std.list (List);
 
 /// What the site keeps: values by key.
-pub theory Kept where {
+pub theory Kept where
   /// The site keeps values of this sort.
   sort V : Type+;
   /// What a computation over them answers.
@@ -31,43 +31,39 @@ pub theory Kept where {
   oper get : (key : V, k : pi+ (v : V). C) --> C;
   /// Keeps `value` at `key`.
   oper put : (key : V, value : V, k : C) --> C;
-}
 
 /// Every key holds itself: a store of integers, where `far` asks for strings.
-pub module Counted : Model(Kept) with sort V = Integer where {
+pub module Counted : Model(Kept) with sort V = Integer where
   /// A computation answers an integer.
   type C = Integer;
   /// Hands the key on.
-  def get(key : Integer, k : Integer => Integer) -> Integer { k(key) }
+  def get(key : Integer, k : Integer -> Integer) -> Integer { k key }
   /// Drops the write and runs what comes after.
   def put(key : Integer, value : Integer, k : Integer) -> Integer { k }
-}
 
 /// A store at other sorts, and no console.
 pub offers [store = Counted];
 
 /// The site, on a loopback socket.
-pub module Site : Model(Site) where {
+pub module Site : Model(Site) where
   /// The key the hosting process proves.
   def key = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1";
   /// The socket it binds, where a dialer reaches it.
   def sockets = "127.0.0.1:7433";
   /// The name of the key's secret.
   def secret = "far";
-}
 
 /// The site's model, which a placement holds.
 pub def site : Model(Site) = pack Site at Model(Site);
 
 /// The program this deployment runs.
-pub module Manifold : Model(Manifold) where {
+pub module Manifold : Model(Manifold) where
   /// The program whose `far` requires the row.
   def artifact = "../../model/deployments/offers.gandr";
-}
 
 /// `far` at a site that answers neither entry, and a world the program
 /// lacks.
 pub def placements : List(Placement) = #[
-  At("far", site),
-  At("nowhere", site),
+  At "far" site,
+  At "nowhere" site,
 ];

@@ -13,24 +13,19 @@
 import "./data-base.gandr";
 
 /// The family that is `Void` at zero and `Unit` past it.
-pub def isVoid(n : Nat) -> Type {
-  match n {
-    Zero => return Void,
-    Succ(_m) => return Unit
-  }
-}
+pub def isVoid(n : Nat) -> Type =
+  match n
+    | Zero => return Void
+    | Succ(_m) => return Unit
 
 /// A function from the family at `n` to the naturals, whose arm at zero cases on no value.
-pub def absurdArm(n : Nat) -> (isVoid(n)) => Nat {
-  match n {
-    Zero => return fun (u) { match u {} },
-    Succ(_m) => return fun (_u) { return Zero }
-  }
-}
+pub def absurdArm(n : Nat) -> (isVoid(n)) -> Nat =
+  match n
+    | Zero => return fun (u) { match u {} }
+    | Succ(_m) => return fun (_u) { return Zero }
 
 /// Past zero, the family is `Unit`, and the arm answers zero.
 @[ runs("Zero") ]
-def absurdPast() -> Nat {
-  let arm = absurdArm(Succ(Zero));
-  arm(unit)
-}
+def absurdPast() -> Nat =
+  let arm = absurdArm (Succ Zero)
+  arm *{}

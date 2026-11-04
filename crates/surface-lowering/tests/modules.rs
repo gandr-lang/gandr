@@ -1824,8 +1824,8 @@ fn manifest_refusals_propagate_transitively_before_minting()
 #[test]
 fn a_kinded_type_component_forms_at_its_classifier()
 {
-    let operator = "module M : #{ type Pair : Type -> Type, both : Pair(Integer) } where { type \
-                        Pair(a : Type) = a * a; def both = (1, 2); }";
+    let operator = "module M : *{ type Pair : Type -> Type, both : Pair(Integer) } where { type \
+                        Pair(a : Type) = a * a; def both = *{1, 2}; }";
     let mut lowered = lower(operator);
     assert_eq!(
         rows(&lowered),
@@ -1864,7 +1864,7 @@ fn a_kinded_type_component_forms_at_its_classifier()
         "both the member, at the family applied, and the operator check"
     );
 
-    let indexed = "module Indexed : #{ type Hom : Integer -> Integer } where { type Hom(n : Integer) \
+    let indexed = "module Indexed : *{ type Hom : Integer -> Integer } where { type Hom(n : Integer) \
                        = Integer; }";
     let mut lowered = lower(indexed);
     assert_eq!(
@@ -1886,7 +1886,7 @@ fn a_kinded_type_component_forms_at_its_classifier()
         report.judged()
     );
 
-    let sealed = "module M :> #{ type Pair : Type -> Type } where { type Pair(a : Type) = a * a; }";
+    let sealed = "module M :> *{ type Pair : Type -> Type } where { type Pair(a : Type) = a * a; }";
     assert_eq!(
         rows(&lower(sealed)),
         [row(
@@ -1900,7 +1900,7 @@ fn a_kinded_type_component_forms_at_its_classifier()
         )],
         "an opaque operator would be an atom at a kind no universe is, and is refused by name"
     );
-    let represented = "module M :> #{ type Pair : Type -> Type } where { type Pair = Integer; }";
+    let represented = "module M :> *{ type Pair : Type -> Type } where { type Pair = Integer; }";
     assert_eq!(
         rows(&lower(represented)),
         [row(
@@ -1916,7 +1916,7 @@ fn a_kinded_type_component_forms_at_its_classifier()
              representation"
     );
 
-    let manifest = "module M : #{ type Hom = Integer } where { }";
+    let manifest = "module M : *{ type Hom = Integer } where { }";
     let lowered = lower(manifest);
     assert_eq!(rows(&lowered), [], "the manifest component is read");
     assert!(
@@ -1932,7 +1932,7 @@ fn a_kinded_type_component_forms_at_its_classifier()
 #[test]
 fn a_component_check_carries_its_members_expectation()
 {
-    let indexed = "module Indexed : #{ type Hom : Integer -> Integer } where { @[ \
+    let indexed = "module Indexed : *{ type Hom : Integer -> Integer } where { @[ \
                        refuses(\"StaticClassifierExpected\") ] type Hom(n : Integer) = Integer; }";
     let lowered = lower(indexed);
     assert_eq!(
@@ -1952,7 +1952,7 @@ fn a_component_check_carries_its_members_expectation()
         "and the member's attribute is filed under it"
     );
 
-    let transparent = "module M : #{ type T : Type } where { @[ checks ] type T = Integer; }";
+    let transparent = "module M : *{ type T : Type } where { @[ checks ] type T = Integer; }";
     let lowered = lower(transparent);
     let witness = declaration(&lowered, "M.T", Role::Witness);
     assert!(
@@ -1997,7 +1997,7 @@ fn an_attributed_top_level_type_member_is_read_as_the_plain_one_4464()
 #[test]
 fn a_type_member_s_refusal_is_reported_once_1087()
 {
-    let source = "module M : #{ count : Integer, type Q } where {\n  def count = 3;\n  @[ checks ] type Q \
+    let source = "module M : *{ count : Integer, type Q } where {\n  def count = 3;\n  @[ checks ] type Q \
                   = Path[.A = Integer](count, 3);\n}\n";
     let found = rows(&lower(source));
     let refused: Vec<Role> = found
@@ -2019,7 +2019,7 @@ fn a_sealed_atom_reads_the_identity_its_type_member_states()
     let stated = |payload: &str| {
         format!(
             "def rel(a : Integer, b : Integer) -> -F Type {{ return Integer }}\ndef refl(a : \
-             Integer) -> -F Integer {{ return 0 }}\ndef law = 0;\nmodule M :> #{{ type T, seed : \
+             Integer) -> -F Integer {{ return 0 }}\ndef law = 0;\nmodule M :> *{{ type T, seed : \
              T }} where {{ @[ identity({payload}) ] type T = Integer; def seed = 7; }}"
         )
     };
@@ -2047,7 +2047,7 @@ fn a_sealed_atom_reads_the_identity_its_type_member_states()
         );
     }
     let plain =
-        lower("module M :> #{ type T, seed : T } where { type T = Integer; def seed = 7; }");
+        lower("module M :> *{ type T, seed : T } where { type T = Integer; def seed = 7; }");
     assert!(
         plain
             .module
@@ -2075,7 +2075,7 @@ fn a_sealed_atom_reads_the_identity_its_type_member_states()
 #[test]
 fn a_kinded_type_component_declares_an_abstract_member()
 {
-    let source = "module M :> #{ type Ob : Type, probe : Ob } where { type Ob = Integer; def probe \
+    let source = "module M :> *{ type Ob : Type, probe : Ob } where { type Ob = Integer; def probe \
                       = 1; }";
     let mut lowered = lower(source);
     assert_eq!(
@@ -2106,7 +2106,7 @@ fn a_kinded_type_component_declares_an_abstract_member()
 #[test]
 fn a_kinded_type_component_spine_declares_its_arity()
 {
-    let source = "module M : #{ type Hom : Type -> Type -> Type, probe : Integer } where { type \
+    let source = "module M : *{ type Hom : Type -> Type -> Type, probe : Integer } where { type \
                       Hom(a : Type, b : Type) = a * b; def probe = 1; }";
     let mut lowered = lower(source);
     assert_eq!(
@@ -2137,7 +2137,7 @@ fn a_kinded_type_component_spine_declares_its_arity()
         "and the operator checks at the spine"
     );
 
-    let short = "module M : #{ type Hom : Type -> Type -> Type, probe : Integer } where { type \
+    let short = "module M : *{ type Hom : Type -> Type -> Type, probe : Integer } where { type \
                      Hom(a : Type) = a; def probe = 1; }";
     assert_eq!(
         rows(&lower(short)),
@@ -2195,7 +2195,7 @@ fn a_kind_reads_through_its_grouping_parentheses()
         );
     }
 
-    let family = "module M : #{ type Hom : ((a : Integer, b : Integer) => Type) } where { type \
+    let family = "module M : *{ type Hom : ((a : Integer, b : Integer) => Type) } where { type \
                       Hom(a : Integer, b : Integer) = Integer; }";
     let mut lowered = lower(family);
     assert_eq!(
@@ -2214,7 +2214,7 @@ fn a_kind_reads_through_its_grouping_parentheses()
 #[test]
 fn a_manifest_family_component_binds_two_parameters()
 {
-    let source = "module M : #{ type Hom(a : Type, b : Type) = +U[ω] (a -> -F b), d : \
+    let source = "module M : *{ type Hom(a : Type, b : Type) = +U[ω] (a -> -F b), d : \
                       Integer } where { def d = 1; }";
     let mut lowered = lower(source);
     assert_eq!(
@@ -2228,8 +2228,8 @@ fn a_manifest_family_component_binds_two_parameters()
         "and checks"
     );
 
-    let applied = "module M : #{ type Pair(a : Type, b : Type) = a * b, p : Pair(Integer, \
-                       String) } where { def p = (1, \"x\"); }";
+    let applied = "module M : *{ type Pair(a : Type, b : Type) = a * b, p : Pair(Integer, \
+                       String) } where { def p = *{1, \"x\"}; }";
     let mut lowered = lower(applied);
     assert_eq!(
         lowered
@@ -2249,7 +2249,7 @@ fn a_manifest_family_component_binds_two_parameters()
 #[test]
 fn a_type_component_arity_mismatch_is_refused_by_name()
 {
-    let under = "module N : #{ type Hom(a : Type, b : Type) = +U[ω] (a -> -F b), bad : Hom } \
+    let under = "module N : *{ type Hom(a : Type, b : Type) = +U[ω] (a -> -F b), bad : Hom } \
                      where { def bad = 1; }";
     assert_eq!(
         rows(&lower(under)),
@@ -2266,7 +2266,7 @@ fn a_type_component_arity_mismatch_is_refused_by_name()
         "a family named with no arguments is refused, never read as an ambient atom"
     );
 
-    let over = "module N : #{ type T = Integer, bad : T(Integer) } where { def bad = 1; }";
+    let over = "module N : *{ type T = Integer, bad : T(Integer) } where { def bad = 1; }";
     assert_eq!(
         rows(&lower(over)),
         [row(
@@ -2333,7 +2333,7 @@ fn a_transparent_abstract_component_reads_its_type_member()
 #[test]
 fn an_abstract_component_kinds_at_a_universe()
 {
-    let kinded = "module M : #{ type T : Type[+, 0] } where { type T = Integer; }";
+    let kinded = "module M : *{ type T : Type[+, 0] } where { type T = Integer; }";
     let mut lowered = lower(kinded);
     assert_eq!(
         rows(&lowered),
@@ -2346,7 +2346,7 @@ fn an_abstract_component_kinds_at_a_universe()
         "and the member's type inhabits it"
     );
 
-    let classified = "module M : #{ type T : Integer } where { type T = Integer; }";
+    let classified = "module M : *{ type T : Integer } where { type T = Integer; }";
     let mut lowered = lower(classified);
     assert_eq!(
         verdicts(&mut lowered),
@@ -2354,7 +2354,7 @@ fn an_abstract_component_kinds_at_a_universe()
         "a kind that is no universe classifies no type"
     );
 
-    let sealed = "module M :> #{ type T : Type[+, 0] } where { type T = Integer; }";
+    let sealed = "module M :> *{ type T : Type[+, 0] } where { type T = Integer; }";
     let mut lowered = lower(sealed);
     assert_eq!(
         rows(&lowered),
@@ -2367,7 +2367,7 @@ fn an_abstract_component_kinds_at_a_universe()
         "which the checker admits"
     );
 
-    let unsorted = "module M :> #{ type T : Integer } where { type T = Integer; }";
+    let unsorted = "module M :> *{ type T : Integer } where { type T = Integer; }";
     let mut lowered = lower(unsorted);
     assert_eq!(
         verdicts(&mut lowered),
@@ -2505,7 +2505,7 @@ fn a_record_type_names_its_faces_over_its_labels()
 
     let source = faced!(
         "face secure = {tls, port}; face addr = {host, port}; face none = {};",
-        "def local : Config; def local = #{ .host = \"h\", .port = 1, .tls = true };"
+        "def local : Config; def local = *{ .host = \"h\", .port = 1, .tls = true };"
     );
     let mut lowered = lower(source);
     assert_eq!(
@@ -2542,7 +2542,7 @@ fn a_record_type_names_its_faces_over_its_labels()
     );
 
     let bare =
-        "type Config = #{host : String}; def local : Config; def local = #{ .host = \"h\" };";
+        "type Config = *{host : String}; def local : Config; def local = *{ .host = \"h\" };";
     assert!(
         lower(bare).module.record_faces().is_empty(),
         "a record type with no faces block names no faces"
@@ -2651,7 +2651,7 @@ fn a_type_member_names_a_computation_type_3080()
         "a computation member named where a value type is read is refused at the name"
     );
 
-    let sealed = "module S :> #{ type T, v : T } where { type T = -F Integer; def v = 1; }";
+    let sealed = "module S :> *{ type T, v : T } where { type T = -F Integer; def v = 1; }";
     let representation = Amounts::Refused(LoweringRefusal::OutOfFragment {
         span: span_of(sealed, "-F Integer", 0_usize),
         form: FormName::from(NamedKind("f_type")),
@@ -2668,9 +2668,9 @@ fn a_type_member_names_a_computation_type_3080()
          readers with it"
     );
 
-    let instance = "module Pt :> #{ type V, v : V } where { type V = Integer; def v = 3; }\nmodule \
-                    Mk(S : #{ type V, v : V }) where { type K = -F S.V; def k() -> K { return S.v } \
-                    }\nmodule I = Mk(Pt);\ndef through() -> I.K { I.k() }\ndef lie() -> I.K { \
+    let instance = "module Pt :> *{ type V, v : V } where { type V = Integer; def v = 3; }\nmodule \
+                    Mk(S : *{ type V, v : V }) where { type K = -F S.V; def k() -> K { return S.v } \
+                    }\nmodule I = Mk(Pt);\ndef through() -> I.K { I.k () }\ndef lie() -> I.K { \
                     return true }";
     let judgements = verdicts(&mut lower(instance));
     assert_eq!(
@@ -2685,7 +2685,7 @@ fn a_type_member_names_a_computation_type_3080()
          atom: the instance's run inhabits it and a boolean does not"
     );
 
-    let argued = "module Q where { type V = -F Integer; }\nmodule Mk(S : #{ type V }) where { def one() -> \
+    let argued = "module Q where { type V = -F Integer; }\nmodule Mk(S : *{ type V }) where { def one() -> \
                   Integer { 1 } }\nmodule J = Mk(Q);";
     assert!(
         rows(&lower(argued)).iter().any(|found| matches!(
@@ -3282,9 +3282,9 @@ fn a_later_seal_leaves_an_earlier_extent()
         }
     };
     let alone =
-        "module Counter :> #{ type T, seed : T } where { type T = Integer ; def seed = 7 ; }";
-    let followed = "module Counter :> #{ type T, seed : T } where { type T = Integer ; def seed = 7 ; \
-                        }\nmodule Other :> #{ type U, one : U } where { type U = Integer ; def one = 1 ; }";
+        "module Counter :> *{ type T, seed : T } where { type T = Integer ; def seed = 7 ; }";
+    let followed = "module Counter :> *{ type T, seed : T } where { type T = Integer ; def seed = 7 ; \
+                        }\nmodule Other :> *{ type U, one : U } where { type U = Integer ; def one = 1 ; }";
     assert_eq!(
         extent(followed),
         extent(alone),
@@ -3296,7 +3296,7 @@ fn a_later_seal_leaves_an_earlier_extent()
 #[test]
 fn opaque_ascription_seals()
 {
-    let source = "module Counter :> #{ type T, seed : T } where { type T = Integer ; def seed = 7 ; \
+    let source = "module Counter :> *{ type T, seed : T } where { type T = Integer ; def seed = 7 ; \
                       }\ndef held : Counter.T ;\ndef held = Counter.seed ;\ndef n : Integer ;\ndef \
                       n = Counter.seed ;";
     let mut lowered = lower(source);
@@ -3416,7 +3416,7 @@ fn opaque_ascription_seals()
         "naming the atom it found"
     );
 
-    let early = "def early : Counter.T ;\ndef early = 1 ;\nmodule Counter :> #{ type T } where { \
+    let early = "def early : Counter.T ;\ndef early = 1 ;\nmodule Counter :> *{ type T } where { \
                      type T = Integer ; }";
     assert_eq!(
         rows(&lower(early)),
@@ -3439,7 +3439,7 @@ fn opaque_ascription_seals()
 #[test]
 fn a_signed_member_of_a_sealed_module_exports_its_witness()
 {
-    let source = "module Counter :> #{ type T, seed : T } where { type T = Integer ; def seed : \
+    let source = "module Counter :> *{ type T, seed : T } where { type T = Integer ; def seed : \
                       Integer ; def seed = 7 ; }\ndef held : Counter.T ;\ndef held = Counter.seed ;";
     let mut lowered = lower(source);
     assert_eq!(
@@ -3478,7 +3478,7 @@ fn a_signed_member_of_a_sealed_module_exports_its_witness()
 fn a_qualified_type_reference_resolves_through_the_namespace()
 {
     let source = "module Shapes where { type Side = Integer ; module Inner where { type Label = String ; } \
-                      }\nmodule Box : #{ type Item = Integer, item : Item } where { def item = 1 ; \
+                      }\nmodule Box : *{ type Item = Integer, item : Item } where { def item = 1 ; \
                       }\ndef side : Shapes.Side ;\ndef side = 3 ;\ndef label : Shapes.Inner.Label \
                       ;\ndef label = \"l\" ;\ndef boxed : Box.Item ;\ndef boxed = Box.item ;";
     let mut lowered = lower(source);
@@ -3513,8 +3513,8 @@ fn a_qualified_type_reference_resolves_through_the_namespace()
 fn a_module_member_family_is_named_through_the_module_4298()
 {
     let source = "module M where { data Box : Type where { | B : (x : Integer) --> Box } def one \
-                      : Box = B(1); }\ndef two : M.Box = M.B(2);\ndef three : M.Box = \
-                      M.Box.B(3);\ndef open(b : M.Box) -> Integer { match b { M.B(x) => x } }";
+                      : Box = B 1; }\ndef two : M.Box = M.B 2;\ndef three : M.Box = \
+                      M.Box.B 3;\ndef open(b : M.Box) -> Integer { match b { | M.B(x) => x } }";
     let mut lowered = lower(source);
     let family = lowered
         .arena
@@ -3550,7 +3550,7 @@ fn a_module_member_family_is_named_through_the_module_4298()
             .all(|&(_, judgement)| matches!(judgement, Judgement::Checked | Judgement::Declared)),
         "and every declaration checks: {judged:?}"
     );
-    let sealed = "module S :> #{ one : Integer } where { data Box : Type where { | B : Box } def \
+    let sealed = "module S :> *{ one : Integer } where { data Box : Type where { | B : Box } def \
                       one = 1; }";
     let found = rows(&lower(sealed));
     assert!(
@@ -3623,7 +3623,7 @@ fn a_module_s_family_is_applied_through_its_name_3051()
 #[test]
 fn an_unbound_type_path_is_refused_by_name()
 {
-    let source = "module Shapes :> #{ side : Integer } where { type Hidden = Integer ; def side = 1 \
+    let source = "module Shapes :> *{ side : Integer } where { type Hidden = Integer ; def side = 1 \
                       ; }\ndef corner : Shapes.Corner ;\ndef hidden : Shapes.Hidden ;\ndef \
                       stranger : Nowhere.Side ;";
     let unknown = |member: &'static str| {
@@ -3691,7 +3691,7 @@ fn a_module_opened_twice_in_one_container_is_refused()
 #[test]
 fn a_dangling_member_signature_is_an_obligation()
 {
-    let source = "module M : #{} where { def missing : Integer; }";
+    let source = "module M : *{} where { def missing : Integer; }";
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -3883,7 +3883,7 @@ fn a_repaired_container_keeps_its_member()
 fn an_unread_module_body_is_refused_not_emptied()
 {
     let source =
-        "module M : #{\n  sort x : Integer\n} where {\n  def x = 1;\n}\n\ndef after = 1;\n";
+        "module M : *{\n  sort x : Integer\n} where {\n  def x = 1;\n}\n\ndef after = 1;\n";
     let lowered = lower(source);
     let found = rows(&lowered);
     assert!(
@@ -4063,14 +4063,14 @@ fn a_forward_member_reference_is_refused_by_position()
     );
     forward(
         "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\nmodule M where { def w : \
-             Path[.A = Circle](Base, Base) ; def w = loop ∷ Path.here(Base) ; def loop = 1 ; }",
+             Path[.A = Circle](Base, Base) ; def w = loop ∷ Path.here Base ; def loop = 1 ; }",
         "M.w",
         "loop",
         1_usize,
         2_usize,
     );
     forward(
-        "module M where { def a = here(1); def here = 1; }",
+        "module M where { def a = here 1; def here = 1; }",
         "M.a",
         "here",
         1_usize,
@@ -4136,7 +4136,7 @@ fn a_type_member_reads_types_and_never_values()
         ("M.count", 0_usize),
     );
     phase(
-        "module S :> #{ type T, z : T, type P = Path[.A = T](z, z) } where {\n  type T = Integer;\n  def \
+        "module S :> *{ type T, z : T, type P = Path[.A = T](z, z) } where {\n  type T = Integer;\n  def \
          z = 0;\n  type P = Path[.A = Integer](0, 0);\n}\n",
         "P",
         "z",
@@ -4144,7 +4144,7 @@ fn a_type_member_reads_types_and_never_values()
     );
     let static_only = "data Bit : Type where { | Low : Bit | High : Bit }\nmodule M where {\n  type Three = \
                        Path[.A = Integer](3, 3);\n  type Lowered = Path[.A = Bit](Low, Low);\n  def three \
-                       : Three ;\n  def three = Path.here(3);\n}\n";
+                       : Three ;\n  def three = Path.here 3;\n}\n";
     let mut lowered = lower(static_only);
     let found = rows(&lowered);
     assert!(
@@ -4247,9 +4247,9 @@ fn a_nested_module_is_named_from_inside_its_enclosing_module_1106()
 fn a_recursive_member_declares_under_its_module_4145()
 {
     let source = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\nmodule M \
-                  where {\n  def rec down(n : Nat) -> Nat {\n    match n { Zero => Zero, Succ(k) => \
-                  down[<](k) }\n  }\n  @[ checks ]\n  def rec again(n : Nat) -> Nat {\n    match n { \
-                  Zero => Zero, Succ(k) => again[<](k) }\n  }\n}\n";
+                  where {\n  def rec down(n : Nat) -> Nat {\n    match n { | Zero => Zero | Succ(k) => \
+                  down[<] k }\n  }\n  @[ checks ]\n  def rec again(n : Nat) -> Nat {\n    match n { \
+                  | Zero => Zero | Succ(k) => again[<] k }\n  }\n}\n";
     let mut lowered = lower(source);
     let found = rows(&lowered);
     for member in ["M.down", "M.again"] {

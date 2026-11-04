@@ -2,15 +2,12 @@ module Schema where {
   type Old = String * Integer;
   type New = Integer * String;
   @[ checks ]
-  def toNew(old : Old) -> New {
-    match old {
-      #{name, age} => (age, name)
-    }
-  }
+  def toNew(old : Old) -> New =
+    match old
+      | *{name, age} => *{age, name}
   @[ checks ]
-  def upgrade : Flow[.A = Type](Old, New) = Flow.into(toNew);
+  def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew;
   @[ refuses("NonCovariantMotive") ]
-  def downgrade() -> Flow[.A = Type](New, Old) {
-    Path.back(upgrade)
-  }
+  def downgrade() -> Flow[.A = Type](New, Old) =
+    Path.back upgrade
 }

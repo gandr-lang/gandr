@@ -6,4 +6,4 @@
 
 /// `fs.write` handed a path alone.
 @[ refuses("OutOfFragment.projection_expression") ]
-def written = fs.write("/tmp/only-a-path");
+def written = fs.write "/tmp/only-a-path";

@@ -9,17 +9,15 @@
 import "./flow-data.gandr";
 
 /// The map back: each figure to its shape, the sides swapped back.
-def toShape(figure : Figure) -> Shape {
-  match figure {
-    Round(r) => Circle(r),
-    Box(h, w) => Rect(w, h)
-  }
-}
+def toShape(figure : Figure) -> Shape =
+  match figure
+    | Round(r) => Circle r
+    | Box(h, w) => Rect w h
 
 /// The shapes and the figures are one type, by the two round trips at each
 /// constructor.
-def redrawing : Path[.A = Type](Shape, Figure) = equiv(Shapes.toFigure, toShape);
+def redrawing : Path[.A = Type](Shape, Figure) = equiv Shapes.toFigure toShape;
 
 /// A rectangle transported along the path is its figure, the sides swapped.
 @[ runs("Box(3, 2)") ]
-def boxed() -> Figure { Path.walk(fun (X) { X }, redrawing, Rect(2, 3)) }
+def boxed() -> Figure { Path.walk (fun (X) { X }) redrawing (Rect 2 3) }

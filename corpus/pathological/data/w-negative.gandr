@@ -9,17 +9,15 @@
 // - see: #602 — `Hidden`
 
 /// The two branches of a binary node.
-data Two : Type where {
+data Two : Type where
   | L : Two
   | R : Two
-}
 
 /// A node consuming its family at another argument than its parameter:
 /// `Lop(Two)` stands left of the arrow where no stage reaches.
 @[ refuses("NegativeOccurrence") ]
-data Lop(a : Type) : Type where {
-  | MkLop : (f : Lop(Two) => Two) --> Lop(a)
-}
+data Lop(a : Type) : Type where
+  | MkLop : (f : Lop(Two) -> Two) --> Lop(a)
 
 /// The same node with its domain written through a definition of its block
 /// : the walk reads `hidden` through to `Hidden`, which stands left of
@@ -28,7 +26,7 @@ rec {
   /// A node consuming its own family through `hidden`.
   @[ refuses("NegativeOccurrence") ]
   data Hidden : Type where {
-    | MkH : (f : hidden => Two) --> Hidden
+    | MkH : (f : hidden -> Two) --> Hidden
   }
 
   /// The family, named by a definition of its block, refused with it.

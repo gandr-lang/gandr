@@ -10,17 +10,13 @@
 
 /// A quasi-inverse's map back read as `back`, a label `A ≅ B` does not have.
 @[ refuses("UnresolvedName") ]
-def backByOtherLabel(a : Type, b : Type, i : a ≅ b) -> b => a {
-  match i {
-    #{.back = k} => k
-  }
-}
+def backByOtherLabel(a : Type, b : Type, i : a ≅ b) -> b -> a =
+  match i
+    *{.back = k} => k
 
 /// An equivalence's left inverse read as `g`, a label its `linv` does not
 /// have.
 @[ refuses("UnresolvedName") ]
-def leftByOtherLabel(a : Type, b : Type, e : a ≃ b) -> b => a {
-  match e {
-    #{.linv = #{.g = k}} => k
-  }
-}
+def leftByOtherLabel(a : Type, b : Type, e : a ≃ b) -> b -> a =
+  match e
+    *{.linv = *{.g = k}} => k

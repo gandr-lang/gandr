@@ -33,63 +33,55 @@ pub module Places where {
 
 /// The first element, read by a call without a block.
 @[ runs("1") ]
-def head() -> Integer {
-  var xs = pair;
-  let h = xs.first();
+def head() -> Integer =
+  var xs = pair
+  let h = xs.first ()
   pure h
-}
 
 /// The element after the first, read through a sum as its index.
 @[ runs("2") ]
-def later() -> Integer {
-  var xs = pair;
-  let y = xs.after(0);
+def later() -> Integer =
+  var xs = pair
+  let y = xs.after 0
   pure y
-}
 
 /// A read of an element of a held list, without a method. The index lends
 /// its place shared to a view without a block.
 @[ runs("2") ]
-def element() -> Integer {
-  var xs = pair;
-  let y = xs.#[1];
+def element() -> Integer =
+  var xs = pair
+  let y = xs.#[1]
   pure y
-}
 
 /// The same read at an index that a parameter carries.
-def elementAt(i : Integer) -> Integer {
-  var xs = pair;
-  let y = xs.#[i];
+def elementAt(i : Integer) -> Integer =
+  var xs = pair
+  let y = xs.#[i]
   pure y
-}
 
 /// A call of that read at the first index.
 @[ runs("1") ]
-def elementFirst() -> Integer {
-  elementAt(0)
-}
+def elementFirst() -> Integer =
+  elementAt 0
 
 /// The first element read through a view the block lends shared: the block
 /// only reads it.
 @[ runs("2") ]
-def readTwice() -> Integer {
-  var xs = pair;
-  xs.first() as w { pure w + w }
-}
+def readTwice() -> Integer =
+  var xs = pair
+  (xs.first ()) as w { pure w + w }
 
 /// The element at an index written back through a view the block lends
 /// exclusively: the resume asks it, and only that element moved.
 @[ runs("cons(1, cons(5, nil))") ]
-def raised() -> List(Integer) {
-  var xs = pair;
-  xs.nth(1) as w { resume(w, w + 3) };
+def raised() -> List(Integer) =
+  var xs = pair
+  (xs.nth 1) as w { resume(w, w + 3) };
   pure xs
-}
 
 /// An abort asks an exclusive lend as well and writes nothing back.
 @[ runs("cons(1, cons(2, nil))") ]
-def abandonedView() -> List(Integer) {
-  var xs = pair;
-  xs.first() as w { abort(w) };
+def abandonedView() -> List(Integer) =
+  var xs = pair
+  (xs.first ()) as w { abort(w) };
   pure xs
-}

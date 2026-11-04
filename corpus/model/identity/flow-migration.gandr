@@ -17,28 +17,24 @@ pub module Schema where {
   type New = Integer * String * (Unit + Unit);
   /// The translator: the fields swapped and a flag added.
   @[ checks ]
-  def toNew(old : Old) -> New {
-    match old {
-      #{name, age} => (age, name, +{.0 = unit})
-    }
-  }
+  def toNew(old : Old) -> New =
+    match old
+      | *{name, age} => *{age, name, +{.0 = *{}}}
   /// The flow from the old schema to the new, by its translator.
   @[ checks ]
-  def upgrade : Flow[.A = Type](Old, New) = Flow.into(toNew);
+  def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew;
   /// One record ridden along the flow.
   @[ checks ]
-  def moved(old : Old) -> New {
-    Flow.ride(fun (X) { X }, upgrade, old)
-  }
+  def moved(old : Old) -> New =
+    Flow.ride (fun (X) { X }) upgrade old
   /// A list of records ridden along the flow in the family of lists.
   @[ checks ]
-  def everyone(olds : List(Old)) -> List(New) {
-    Flow.ride(fun (X) { List(X) }, upgrade, olds)
-  }
+  def everyone(olds : List(Old)) -> List(New) =
+    Flow.ride (fun (X) { List X }) upgrade olds
   /// One old record migrated by a run.
   @[ runs("(30, \"ada\", +{.0 = unit})") ]
-  def one : () => New = moved(("ada", 30));
+  def one : () -> New = moved (*{"ada", 30});
   /// Two old records migrated by a run.
   @[ runs("cons((30, \"ada\", +{.0 = unit}), cons((41, \"grace\", +{.0 = unit}), nil))") ]
-  def many : () => List(New) = everyone(cons(("ada", 30), cons(("grace", 41), nil)));
+  def many : () -> List(New) = everyone (cons (*{"ada", 30}) (cons (*{"grace", 41}) nil));
 }

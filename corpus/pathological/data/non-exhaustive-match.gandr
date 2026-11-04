@@ -1,11 +1,8 @@
-data Maybe(a : Type) : Type where {
+data Maybe(a : Type) : Type where
   | None : Maybe(a)
   | Some : (x : a) --> Maybe(a)
-}
 
 @[ refuses("NonExhaustiveMatch") ]
-def unwrap() -> -F Integer {
-  match (None : Maybe(Integer)) {
+def unwrap() -> -F Integer =
+  match (None : Maybe(Integer))
     Some(x) => return x
-  }
-}

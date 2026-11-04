@@ -24,58 +24,50 @@ import "./copy-on-write.gandr";
 
 /// `b` appended with no holder count read: inline bytes as `push` writes
 /// them, a heap buffer written where it is, whoever holds it.
-pub def pushInPlace(s : Repr, b : Integer) -> Written {
-  match s {
-    Inline(bs) => push(s, b),
-    Shared(n, bs) => Written(Shared(n, beforeZero(bs, b)), 0)
-  }
-}
+pub def pushInPlace(s : Repr, b : Integer) -> Written =
+  match s
+    | Inline(bs) => push s b
+    | Shared(n, bs) => Written (Shared n (beforeZero bs b)) 0
 
 /// The number of strings holding a string's bytes: one for inline bytes.
-def holders(s : Repr) -> Integer {
-  match s {
-    Inline(bs) => 1,
-    Shared(n, bs) => n
-  }
-}
+def holders(s : Repr) -> Integer =
+  match s
+    | Inline(bs) => 1
+    | Shared(n, bs) => n
 
 /// On a long string held once, the write that reads no count copies nothing,
 /// as copy-on-write does.
 @[ runs("0") ]
-def aloneCopies() -> [Partial] Integer { let s = force long; copies(pushInPlace(s, 33)) }
+def aloneCopies() -> [Partial] Integer { let s = force long; copies (pushInPlace s 33) }
 
 /// And its written buffer has the one holder copy-on-write's has.
 @[ runs("1") ]
-def aloneHolders() -> [Partial] Integer {
-  let s = force long;
-  let w = pushInPlace(s, 33);
-  holders(written(w))
-}
+def aloneHolders() -> [Partial] Integer =
+  let s = force long
+  let w = pushInPlace s 33
+  holders (written w)
 
 /// On a copy it writes the buffer the original reads too: the written buffer
 /// still has two holders, so the original would see the write. This is the
 /// write a grade must keep from a shared string.
 @[ runs("2") ]
-def sharedHolders() -> [Partial] Integer {
-  let s = force long;
-  let c = copy(s);
-  let w = pushInPlace(c, 33);
-  holders(written(w))
-}
+def sharedHolders() -> [Partial] Integer =
+  let s = force long
+  let c = copy s
+  let w = pushInPlace c 33
+  holders (written w)
 
 /// Under a grade-one hold the string is made in place, so the write that reads
 /// no count, through the hold's exclusive view, copies nothing.
 @[ runs("0") ]
-def heldOnce() -> [Partial] Integer {
-  let bs = repeatOnto(97, 24, (Nil : List(Integer)));
-  var[1] s = Shared(1, bs);
-  access s as v { let w = pushInPlace(v, 33); let t = written(w); resume(v, t); copies(w) }
-}
+def heldOnce() -> [Partial] Integer =
+  let bs = repeatOnto 97 24 (Nil : List(Integer))
+  var[1] s = Shared 1 bs
+  access s as v { let w = pushInPlace v 33; let t = written w; resume(v, t); copies w }
 
 /// And the buffer it wrote back still has its one holder.
 @[ runs("1") ]
-def heldOnceHolders() -> [Partial] Integer {
-  let bs = repeatOnto(97, 24, (Nil : List(Integer)));
-  var[1] s = Shared(1, bs);
-  access s as v { let w = pushInPlace(v, 33); let t = written(w); resume(v, t); holders(t) }
-}
+def heldOnceHolders() -> [Partial] Integer =
+  let bs = repeatOnto 97 24 (Nil : List(Integer))
+  var[1] s = Shared 1 bs
+  access s as v { let w = pushInPlace v 33; let t = written w; resume(v, t); holders t }

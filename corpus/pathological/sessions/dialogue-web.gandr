@@ -15,45 +15,41 @@ import "../../model/sessions/dialogue-web.gandr";
 import std.buffer (Web);
 
 /// A protocol that sends one string and ends.
-module Ask where {
+module Ask where
   type Asking = !String. end;
-}
 
 /// Reporting and handing off are different plays: no path joins them.
 @[ refuses("EndpointMismatch") ]
-def apart : Path(retiring, handedOff) = Path.here(retiring);
+def apart : Path(retiring, handedOff) = Path.here retiring;
 
 /// Their webs differ as well: one is series-parallel and the other leaves a
 /// prime node.
 @[ refuses("EndpointMismatch") ]
 def apartWebs : Path(
-  decompose(retiring),
-  decompose(handedOff)
-) = Path.here(decompose(retiring));
+  decompose retiring,
+  decompose handedOff
+) = Path.here (decompose retiring);
 
 /// A receipt that hears other than was sent has no send to match it.
 @[ refuses("DialogueUnmatched") ]
-def misheard : Dialogue(Ask.Asking) = dialogue(
-  left(sent("yes")),
-  right(received("no")),
-  left(closed),
-  right(closed)
-);
+def misheard : Dialogue(Ask.Asking) = dialogue
+  (left (sent "yes"))
+  (right (received "no"))
+  (left closed)
+  (right closed);
 
 /// A receipt logged before its send is no order a recorder saw.
 @[ refuses("DialogueInverted") ]
-def foretold : Dialogue(Ask.Asking) = dialogue(
-  right(received("yes")),
-  left(sent("yes")),
-  left(closed),
-  right(closed)
-);
+def foretold : Dialogue(Ask.Asking) = dialogue
+  (right (received "yes"))
+  (left (sent "yes"))
+  (left closed)
+  (right closed);
 
 /// The left endpoint receiving where its protocol sends is off the protocol.
 @[ refuses("RunNotAdmitted") ]
-def answered : Dialogue(Ask.Asking) = dialogue(
-  left(received("yes")),
-  right(sent("yes")),
-  left(closed),
-  right(closed)
-);
+def answered : Dialogue(Ask.Asking) = dialogue
+  (left (received "yes"))
+  (right (sent "yes"))
+  (left closed)
+  (right closed);

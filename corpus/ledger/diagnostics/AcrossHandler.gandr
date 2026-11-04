@@ -5,11 +5,10 @@ import std.process;
 
 /// A `become` inside the subject of a handled scope.
 @[ refuses("AcrossHandler") ]
-def became() -> -F Integer {
+def became() -> -F Integer =
   handle c : std.process.Exit.Eff {
-    become one()
+    become one ()
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => k(unit)
+    | pure(x) => pure x
+    | oper exit(code, k) => k *{}
   }
-}

@@ -11,37 +11,36 @@ def tens = (#[10, 20, 30] : List(Integer));
 
 /// The element at position one, replaced.
 @[ refuses("OutOfFragment.projection_expression") ]
-def replaced = list.set(tens, 1, 99);
+def replaced = list.set tens 1 99;
 
 /// The element at position zero, incremented.
 @[ refuses("OutOfFragment.projection_expression") ]
-def bumped = list.update_at(tens, 0, thunk { fun (n) { return n + 1 } });
+def bumped = list.update_at tens 0 (thunk { fun (n) { return n + 1 } });
 
 /// An element inserted at position one.
 @[ refuses("OutOfFragment.projection_expression") ]
-def inserted = list.insert_at(tens, 1, 15);
+def inserted = list.insert_at tens 1 15;
 
 /// The element at position zero, removed.
 @[ refuses("OutOfFragment.projection_expression") ]
-def removed = list.remove_at(tens, 0);
+def removed = list.remove_at tens 0;
 
 /// An element pushed at the end.
 @[ refuses("OutOfFragment.projection_expression") ]
-def grown = list.push(tens, 40);
+def grown = list.push tens 40;
 
 /// A second list appended.
 @[ refuses("OutOfFragment.projection_expression") ]
-def appended = list.append(tens, #[40, 50]);
+def appended = list.append tens (#[40, 50]);
 
 /// A list of lists, concatenated.
 @[ refuses("OutOfFragment.projection_expression") ]
-def concatenated = list.concat(#[tens, #[40, 50]]);
+def concatenated = list.concat (#[tens, #[40, 50]]);
 
 /// Every element over fifteen doubled; the lowering reads no `list` primitive
 /// yet (#1106).
 @[ refuses("OutOfFragment.projection_expression") ]
-def doubled_over_fifteen = list.update_where(
-  thunk { fun (n) { return n > 15 } },
-  thunk { fun (n) { return n * 2 } },
-  tens
-);
+def doubled_over_fifteen = list.update_where
+  (thunk { fun (n) { return n > 15 } })
+  (thunk { fun (n) { return n * 2 } })
+  tens;

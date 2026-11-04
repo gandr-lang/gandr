@@ -16,12 +16,11 @@
 /// - see: #3976 — the checker declined two such motives over captures laid out apart
 
 /// The action of `F` on `p`.
-def act(A : Type, B : Type, F : A => B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](
-  F(x),
-  F(y)
-) {
-  Path.ap(F, p)
-}
+def act(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](
+  F x,
+  F y
+) =
+  Path.ap F p
 
 /// The action on `fa` of composing with `g`.
 def apThen(
@@ -33,16 +32,14 @@ def apThen(
   fp : Path[.A = A](x, y),
   fa : Path[.A = Path[.A = A](x, y)](fm, fp),
   g : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g)) {
-  act(
-    type(Path[.A = A](x, y)),
-    type(Path[.A = A](x, z)),
-    fun (q : Path[.A = A](x, y)) { Path.step(q, g) },
-    fm,
-    fp,
+) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) =
+  act
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g })
+    fm
+    fp
     fa
-  )
-}
 
 /// The same action, the lambda written again.
 def apThenAgain(
@@ -54,16 +51,14 @@ def apThenAgain(
   fp : Path[.A = A](x, y),
   fa : Path[.A = Path[.A = A](x, y)](fm, fp),
   g : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g)) {
-  act(
-    type(Path[.A = A](x, y)),
-    type(Path[.A = A](x, z)),
-    fun (q : Path[.A = A](x, y)) { Path.step(q, g) },
-    fm,
-    fp,
+) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) =
+  act
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g })
+    fm
+    fp
     fa
-  )
-}
 
 /// The action over the lambda written twice: a reflexivity relates the two.
 def writtenTwice(
@@ -75,12 +70,11 @@ def writtenTwice(
   fp : Path[.A = A](x, y),
   fa : Path[.A = Path[.A = A](x, y)](fm, fp),
   g : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g))](
-  apThen(A, x, y, z, fm, fp, fa, g),
-  apThenAgain(A, x, y, z, fm, fp, fa, g)
-) {
-  Path.here(apThen(A, x, y, z, fm, fp, fa, g))
-}
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
+  apThen A x y z fm fp fa g,
+  apThenAgain A x y z fm fp fa g
+) =
+  Path.here (apThen A x y z fm fp fa g)
 
 /// The action written in a scope that binds one more variable after `g`.
 def bindsOneMore(
@@ -93,19 +87,17 @@ def bindsOneMore(
   fa : Path[.A = Path[.A = A](x, y)](fm, fp),
   g : Path[.A = A](y, z),
   _w : A
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g))](
-  act(
-    type(Path[.A = A](x, y)),
-    type(Path[.A = A](x, z)),
-    fun (q : Path[.A = A](x, y)) { Path.step(q, g) },
-    fm,
-    fp,
-    fa
-  ),
-  apThen(A, x, y, z, fm, fp, fa, g)
-) {
-  Path.here(apThen(A, x, y, z, fm, fp, fa, g))
-}
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
+  act
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g })
+    fm
+    fp
+    fa,
+  apThen A x y z fm fp fa g
+) =
+  Path.here (apThen A x y z fm fp fa g)
 
 /// The action written in a scope that binds one more variable before `fm`.
 def bindsOneBetween(
@@ -118,19 +110,17 @@ def bindsOneBetween(
   fp : Path[.A = A](x, y),
   fa : Path[.A = Path[.A = A](x, y)](fm, fp),
   g : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g))](
-  act(
-    type(Path[.A = A](x, y)),
-    type(Path[.A = A](x, z)),
-    fun (q : Path[.A = A](x, y)) { Path.step(q, g) },
-    fm,
-    fp,
-    fa
-  ),
-  apThen(A, x, y, z, fm, fp, fa, g)
-) {
-  Path.here(apThen(A, x, y, z, fm, fp, fa, g))
-}
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
+  act
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g })
+    fm
+    fp
+    fa,
+  apThen A x y z fm fp fa g
+) =
+  Path.here (apThen A x y z fm fp fa g)
 
 /// The action written in a scope that binds `g` before `fm`.
 def bindsGFirst(
@@ -142,16 +132,14 @@ def bindsGFirst(
   fm : Path[.A = A](x, y),
   fp : Path[.A = A](x, y),
   fa : Path[.A = Path[.A = A](x, y)](fm, fp)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g))](
-  act(
-    type(Path[.A = A](x, y)),
-    type(Path[.A = A](x, z)),
-    fun (q : Path[.A = A](x, y)) { Path.step(q, g) },
-    fm,
-    fp,
-    fa
-  ),
-  apThen(A, x, y, z, fm, fp, fa, g)
-) {
-  Path.here(apThen(A, x, y, z, fm, fp, fa, g))
-}
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
+  act
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g })
+    fm
+    fp
+    fa,
+  apThen A x y z fm fp fa g
+) =
+  Path.here (apThen A x y z fm fp fa g)

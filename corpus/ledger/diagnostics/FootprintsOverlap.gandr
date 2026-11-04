@@ -12,11 +12,10 @@ import std.fs;
 
 /// Both halves write `notes` through one capability that may read and write.
 @[ refuses("FootprintsOverlap") ]
-def racing(c : Cap { read, write }) -> [std.fs.Eff] Unit {
+def racing(c : Cap { read, write }) -> [std.fs.Eff] Unit =
   let found = fork (task : end) {
-    c.write("notes", "task");
+    c.write "notes" "task";
     close(task)
   };
-  c.write("notes", "parent");
+  c.write "notes" "parent"
   close(found)
-}

@@ -452,7 +452,7 @@ mod tests
     {
         let written = "def one() -> Integer { 1 }\n\
                        def two() -> -F Integer { return 2 }\n\
-                       def three() -> -F Integer { one() }\n";
+                       def three() -> -F Integer { one () }\n";
         let text = SourceText::from(written);
         let whole = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(written.len()))
             .expect("an ordered window");

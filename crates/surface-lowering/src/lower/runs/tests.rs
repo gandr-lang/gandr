@@ -28,7 +28,7 @@ use crate::resolve::SurfaceName;
 
 /// The naturals every witness builds on, and a function to nest.
 const NAT: &str = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
-                   def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n";
+                   def twice(n : Nat) -> -F Nat { Succ (Succ n) }\n";
 
 #[test]
 fn an_explicit_runs_attribute_asks_within_its_form()
@@ -102,8 +102,8 @@ fn a_nested_run_is_spelled_as_its_written_run_reads_back()
 {
     let text = SourceText::from(
         "def id(n: Integer) -> -F Integer { n }\n\
-         def returned(n: Integer) -> -F Integer { return id(n) }\n\
-         def leading(n: Integer) -> -F Integer { id(n) + 1 }\n\
+         def returned(n: Integer) -> -F Integer { return id n }\n\
+         def leading(n: Integer) -> -F Integer { id n + 1 }\n\
          def grouped(n: Integer) -> -F Integer { return n + 1 }\n",
     );
     let mut arena = CoreArena::new();
@@ -143,8 +143,8 @@ fn a_nested_run_is_spelled_as_its_written_run_reads_back()
     );
     let written = SourceText::from(
         "def id(n: Integer) -> -F Integer { n }\n\
-         def returned(n: Integer) -> -F Integer { return run id(n) }\n\
-         def leading(n: Integer) -> -F Integer { run id(n) + 1 }\n\
+         def returned(n: Integer) -> -F Integer { return run id n }\n\
+         def leading(n: Integer) -> -F Integer { run id n + 1 }\n\
          def grouped(n: Integer) -> -F Integer { return run (n + 1) }\n",
     );
     let mut rewritten = CoreArena::new();
@@ -166,12 +166,12 @@ fn a_nested_run_is_spelled_as_its_written_run_reads_back()
 fn a_call_returning_a_function_runs_where_it_is_applied_3935()
 {
     let text = SourceText::from(
-        "def plus(n : Integer) -> Integer => Integer { thunk { fun (m : Integer) { m + n } } }\n\
-         def applied(n : Integer) -> Integer { let h = plus(n)(1) ; h }\n\
-         def dependent(A : Type) -> A => A { thunk { fun (x : A) { x } } }\n\
-         def picked(A : Type, x : A) -> A { dependent(A)(x) }\n\
+        "def plus(n : Integer) -> Integer -> Integer { thunk { fun (m : Integer) { m + n } } }\n\
+         def applied(n : Integer) -> Integer { let h = (plus n) 1 ; h }\n\
+         def dependent(A : Type) -> A -> A { thunk { fun (x : A) { x } } }\n\
+         def picked(A : Type, x : A) -> A { (dependent A) x }\n\
          def curried(n : Integer, m : Integer) -> Integer { n + m }\n\
-         def partial(n : Integer) -> Integer { curried(n)(1) }\n",
+         def partial(n : Integer) -> Integer { (curried n) 1 }\n",
     );
     let mut arena = CoreArena::new();
     let module = lowered(text, &mut arena);
@@ -199,10 +199,10 @@ fn a_call_returning_a_function_runs_where_it_is_applied_3935()
          reads it as at a tail's start; a curried call runs nothing"
     );
     let written = SourceText::from(
-        "def plus(n : Integer) -> Integer => Integer { thunk { fun (m : Integer) { m + n } } }\n\
-         def applied(n : Integer) -> Integer { let h = (run plus(n))(1) ; h }\n\
-         def dependent(A : Type) -> A => A { thunk { fun (x : A) { x } } }\n\
-         def picked(A : Type, x : A) -> A { (run dependent(A))(x) }\n",
+        "def plus(n : Integer) -> Integer -> Integer { thunk { fun (m : Integer) { m + n } } }\n\
+         def applied(n : Integer) -> Integer { let h = (run plus n) 1 ; h }\n\
+         def dependent(A : Type) -> A -> A { thunk { fun (x : A) { x } } }\n\
+         def picked(A : Type, x : A) -> A { (run dependent A) x }\n",
     );
     let mut rewritten = CoreArena::new();
     let fixed = lowered(written, &mut rewritten);

@@ -12,7 +12,6 @@ module M where {
 
 // a rec block
 rec {
-  data Rose : Type where {
+  data Rose : Type where
     | Node : Rose
-  }
 }

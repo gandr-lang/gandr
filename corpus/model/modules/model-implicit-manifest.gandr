@@ -8,15 +8,14 @@
 // - see: #2317
 
 /// A dial: a carrier, a zero, a turn and a reading.
-theory Dial where {
+theory Dial where
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
   oper read : (c : C) --> Integer;
-}
 
 /// Counting up by one.
-module Up : Model(Dial) where {
+module Up : Model(Dial) where
   type C = Integer;
   /// Zero.
   def zero = 0;
@@ -24,10 +23,9 @@ module Up : Model(Dial) where {
   def incr(c : Integer) -> Integer { c + 1 }
   /// The count as it is.
   def read(c : Integer) -> Integer { c }
-}
 
 /// Flipping a flag.
-module Flips : Model(Dial) where {
+module Flips : Model(Dial) where
   type C = Bool;
   /// Down.
   def zero = (false : Bool);
@@ -35,22 +33,19 @@ module Flips : Model(Dial) where {
   def incr(c : Bool) -> Bool { if c { false } else { true } }
   /// One for up, zero for down.
   def read(c : Bool) -> Integer { if c { 1 } else { 0 } }
-}
 
 /// The reading after one turn from zero, over any dial of integers.
-def upOnce[s : Model(Dial) with sort C = Integer]() -> Integer {
-  s.read(s.incr(s.zero))
-}
+def upOnce[s : Model(Dial) with sort C = Integer]() -> Integer =
+  s.read (s.incr s.zero)
 
 /// The reading after one turn from zero, over any dial of flags.
-def flipOnce[s : Model(Dial) with sort C = Bool]() -> Integer {
-  s.read(s.incr(s.zero))
-}
+def flipOnce[s : Model(Dial) with sort C = Bool]() -> Integer =
+  s.read (s.incr s.zero)
 
 /// The slot fixes the integers: `Up` answers it, one count from zero.
 @[ runs("1") ]
-def turnedUp() -> Integer { upOnce() }
+def turnedUp() -> Integer { upOnce () }
 
 /// The slot fixes the flags: `Flips` answers it, up after one flip.
 @[ runs("1") ]
-def turnedOver() -> Integer { flipOnce() }
+def turnedOver() -> Integer { flipOnce () }

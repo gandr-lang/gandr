@@ -21,35 +21,28 @@ module Written : Model(Monoid) where {
   /// Plus is the unit.
   def e = Plus;
   /// The product is the signs' product.
-  def mul(x : Sign, y : Sign) -> Sign { times(x, y) }
+  def mul(x : Sign, y : Sign) -> Sign { times x y }
   /// The left unit law, by conversion.
-  def unitL(x : Sign) -> Path(mul(e, x), x) { Path.here(x) }
+  def unitL(x : Sign) -> Path(mul e x, x) { Path.here x }
   /// The right unit law, case by case.
-  def unitR(x : Sign) -> Path(mul(x, e), x) {
-    match x {
-      Plus => Path.here(Plus),
-      Minus => Path.here(Minus),
-    }
-  }
+  def unitR(x : Sign) -> Path(mul x e, x) =
+    match x
+      | Plus => Path.here Plus
+      | Minus => Path.here Minus
   /// Binary associativity, case by case.
-  def assoc(x : Sign, y : Sign, z : Sign) -> Path(mul(mul(x, y), z), mul(x, mul(y, z))) {
-    match x {
-      Plus => Path.here(times(y, z)),
-      Minus => match y {
-        Plus => Path.here(times(Minus, z)),
-        Minus => match z {
-          Plus => Path.here(Plus),
-          Minus => Path.here(Minus),
-        },
-      },
-    }
-  }
+  def assoc(x : Sign, y : Sign, z : Sign) -> Path(mul (mul x y) z, mul x (mul y z)) =
+    match x
+      | Plus => Path.here (times y z)
+      | Minus => match y
+        | Plus => Path.here (times Minus z)
+        | Minus => match z
+          | Plus => Path.here Plus
+          | Minus => Path.here Minus
   /// The associator of four, refused: the derivation fills it.
   @[ refuses("DerivedComponent") ]
   def assoc4(a : Sign, b : Sign, c : Sign, d : Sign) -> Path(
-    mul(mul(mul(a, b), c), d),
-    mul(a, mul(b, mul(c, d)))
-  ) {
-    Path.here(times(times(times(a, b), c), d))
-  }
+    mul (mul (mul a b) c) d,
+    mul a (mul b (mul c d))
+  ) =
+    Path.here (times (times (times a b) c) d)
 }

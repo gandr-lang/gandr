@@ -13,10 +13,10 @@ data NatAdd : Type where {
   | Zero : NatAdd
   | Succ : (n : NatAdd) --> NatAdd
   oper add : (m : NatAdd, n : NatAdd) --> NatAdd;
-  rule : add(Zero, n) <=> n;
-  rule : add(Succ(m), n) <=> Succ(add(m, n));
+  rule : add Zero n <=> n;
+  rule : add (Succ m) n <=> Succ (add m n);
 }
 
 /// Two plus one runs to three.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def two_plus_one() -> NatAdd { add(Succ(Succ(Zero)), Succ(Zero)) }
+def two_plus_one() -> NatAdd { add (Succ (Succ Zero)) (Succ Zero) }

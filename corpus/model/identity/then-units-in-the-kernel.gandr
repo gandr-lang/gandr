@@ -24,17 +24,15 @@ def composite(
 ) -> Path[.A = A](
   x,
   z
-) {
-  Path.step(p, q)
-}
+) =
+  Path.step p q
 
 /// A function's action on a path, whose type states its endpoints.
-def ap(B : Type, C : Type, F : B => C, b1 : B, b2 : B, p : Path[.A = B](b1, b2)) -> Path[.A = C](
-  F(b1),
-  F(b2)
-) {
-  Path.ap(F, p)
-}
+def ap(B : Type, C : Type, F : B -> C, b1 : B, b2 : B, p : Path[.A = B](b1, b2)) -> Path[.A = C](
+  F b1,
+  F b2
+) =
+  Path.ap F p
 
 /// The associator by based path induction on `h`.
 def associator(
@@ -46,21 +44,19 @@ def associator(
   f : Path[.A = A](x, y),
   g : Path[.A = A](y, z),
   h : Path[.A = A](z, w)
-) -> Path[.A = Path[.A = A](x, w)](Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
-  Path.walk(
-    (
+) -> Path[.A = Path[.A = A](x, w)](Path.step (Path.step f g) h, Path.step f (Path.step g h)) =
+  Path.walk
+    ((
       v : A,
       k : Path[.A = A](z, v)
-    ) => Path[.A = Path[.A = A](x, v)](
-      Path.step(Path.step(f, g), k),
-      Path.step(f, Path.step(g, k))
-    ),
-    h,
-    Path.here(z),
-    Path.here(h),
-    Path.here(Path.step(f, g))
-  )
-}
+    ) -> Path[.A = Path[.A = A](x, v)](
+      Path.step (Path.step f g) k,
+      Path.step f (Path.step g k)
+    ))
+    h
+    (Path.here z)
+    (Path.here h)
+    (Path.here (Path.step f g))
 
 /// The right whisker of a path of paths by a path.
 def rightWhisker(
@@ -72,16 +68,14 @@ def rightWhisker(
   f2 : Path[.A = A](x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
   g : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
-  ap(
-    type(Path[.A = A](x, y)),
-    type(Path[.A = A](x, z)),
-    (fun (q : Path[.A = A](x, y)) { Path.step(q, g) } : Path[.A = A](x, y) => Path[.A = A](x, z)),
-    f1,
-    f2,
+) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) =
+  ap
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path[.A = A](x, y) -> Path[.A = A](x, z))
+    f1
+    f2
     a
-  )
-}
 
 /// The associator before reflexivity is the associator.
 def assocThenHere(
@@ -94,21 +88,19 @@ def assocThenHere(
   g : Path[.A = A](y, z),
   h : Path[.A = A](z, w)
 ) -> Path[.A = Path[.A = Path[.A = A](x, w)](
-  Path.step(Path.step(f, g), h),
-  Path.step(f, Path.step(g, h))
+  Path.step (Path.step f g) h,
+  Path.step f (Path.step g h)
 )](
-  composite(
-    type(Path[.A = A](x, w)),
-    Path.step(Path.step(f, g), h),
-    Path.step(f, Path.step(g, h)),
-    Path.step(f, Path.step(g, h)),
-    associator(A, x, y, z, w, f, g, h),
-    Path.here(Path.step(f, Path.step(g, h)))
-  ),
-  associator(A, x, y, z, w, f, g, h)
-) {
-  Path.here(associator(A, x, y, z, w, f, g, h))
-}
+  composite
+    (type(Path[.A = A](x, w)))
+    (Path.step (Path.step f g) h)
+    (Path.step f (Path.step g h))
+    (Path.step f (Path.step g h))
+    (associator A x y z w f g h)
+    (Path.here (Path.step f (Path.step g h))),
+  associator A x y z w f g h
+) =
+  Path.here (associator A x y z w f g h)
 
 /// Reflexivity before the associator is the associator.
 def hereThenAssoc(
@@ -121,21 +113,19 @@ def hereThenAssoc(
   g : Path[.A = A](y, z),
   h : Path[.A = A](z, w)
 ) -> Path[.A = Path[.A = Path[.A = A](x, w)](
-  Path.step(Path.step(f, g), h),
-  Path.step(f, Path.step(g, h))
+  Path.step (Path.step f g) h,
+  Path.step f (Path.step g h)
 )](
-  composite(
-    type(Path[.A = A](x, w)),
-    Path.step(Path.step(f, g), h),
-    Path.step(Path.step(f, g), h),
-    Path.step(f, Path.step(g, h)),
-    Path.here(Path.step(Path.step(f, g), h)),
-    associator(A, x, y, z, w, f, g, h)
-  ),
-  associator(A, x, y, z, w, f, g, h)
-) {
-  Path.here(associator(A, x, y, z, w, f, g, h))
-}
+  composite
+    (type(Path[.A = A](x, w)))
+    (Path.step (Path.step f g) h)
+    (Path.step (Path.step f g) h)
+    (Path.step f (Path.step g h))
+    (Path.here (Path.step (Path.step f g) h))
+    (associator A x y z w f g h),
+  associator A x y z w f g h
+) =
+  Path.here (associator A x y z w f g h)
 
 /// The associator before a whiskered reflexivity is the associator.
 def assocThenWhiskeredHere(
@@ -148,33 +138,30 @@ def assocThenWhiskeredHere(
   g : Path[.A = A](y, z),
   h : Path[.A = A](z, w)
 ) -> Path[.A = Path[.A = Path[.A = A](x, w)](
-  Path.step(Path.step(f, g), h),
-  Path.step(f, Path.step(g, h))
+  Path.step (Path.step f g) h,
+  Path.step f (Path.step g h)
 )](
-  composite(
-    type(Path[.A = A](x, w)),
-    Path.step(Path.step(f, g), h),
-    Path.step(f, Path.step(g, h)),
-    Path.step(f, Path.step(g, h)),
-    associator(A, x, y, z, w, f, g, h),
-    rightWhisker(A, x, y, w, f, f, Path.here(f), Path.step(g, h))
-  ),
-  associator(A, x, y, z, w, f, g, h)
-) {
-  Path.here(associator(A, x, y, z, w, f, g, h))
-}
+  composite
+    (type(Path[.A = A](x, w)))
+    (Path.step (Path.step f g) h)
+    (Path.step f (Path.step g h))
+    (Path.step f (Path.step g h))
+    (associator A x y z w f g h)
+    (rightWhisker A x y w f f (Path.here f) (Path.step g h)),
+  associator A x y z w f g h
+) =
+  Path.here (associator A x y z w f g h)
 
 /// A homotopy's component before the action on reflexivity is the component.
 def componentThenApHere(
   B : Type,
   C : Type,
-  F : B => C,
-  G : B => C,
-  H : (b : B) => Path[.A = C](F(b), G(b)),
+  F : B -> C,
+  G : B -> C,
+  H : (b : B) -> Path[.A = C](F b, G b),
   b1 : B
-) -> Path[.A = Path[.A = C](F(b1), G(b1))](
-  composite(C, F(b1), G(b1), G(b1), H(b1), ap(B, C, G, b1, b1, Path.here(b1))),
-  H(b1)
-) {
-  Path.here(H(b1))
-}
+) -> Path[.A = Path[.A = C](F b1, G b1)](
+  composite C (F b1) (G b1) (G b1) (H b1) (ap B C G b1 b1 (Path.here b1)),
+  H b1
+) =
+  Path.here (H b1)

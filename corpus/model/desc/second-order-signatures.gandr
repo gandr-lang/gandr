@@ -11,24 +11,22 @@
 
 /// The naturals, a first-order signature: one ordinary sort, a constant and
 /// a successor.
-pub theory Nat where {
+pub theory Nat where
   sort Nat : Type;
   oper zero : () --> Nat;
   oper succ : (n : Nat) --> Nat;
-}
 
 /// Pure λ-calculus syntax: one representable sort of terms, an abstraction
 /// whose body binds a term, and an application.
-theory Lambda where {
+theory Lambda where
   sort Tm : Type+;
   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
   oper app : (t : Tm, u : Tm) --> Tm;
-}
 
 /// The identity-return signature: value types and computation types, values
 /// representable and indexed by their type, and an abstraction whose body
 /// binds a value of its domain.
-theory IdentityReturn where {
+theory IdentityReturn where
   sort VTy : Type;
   sort CTy : Type;
   sort VTm(a : VTy) : Type+;
@@ -37,41 +35,35 @@ theory IdentityReturn where {
   oper arrow : (a : VTy, b : CTy) --> CTy;
   oper ret : (a : VTy, t : VTm(a)) --> CTm(f(a));
   oper lam : (a : VTy, b : CTy, t : pi+ (x : VTm(a)). CTm(b)) --> CTm(arrow(a, b));
-}
 
 /// Structural recursion over a sort chain: one per `Representable` link, none
 /// for an ordinary `Sort`.
-def rec representable(chain : Theory) -> Integer {
-  match chain {
-    Representable(name, indices, rest) => { let r = representable[<](rest); r + 1 },
-    Sort(name, indices, rest) => representable[<](rest),
-    _ => 0
-  }
-}
+def rec representable(chain : Theory) -> Integer =
+  match chain
+    | Representable(name, indices, rest) => { let r = representable[<] rest; r + 1 }
+    | Sort(name, indices, rest) => representable[<] rest
+    | _ => 0
 
 /// Structural recursion over a port chain: one per `Bound` port, none for a
 /// plain `Port`.
-def rec bound(chain : Theory) -> Integer {
-  match chain {
-    Bound(name, sort, indices, binders, rest) => { let r = bound[<](rest); r + 1 },
-    Port(name, sort, indices, rest) => bound[<](rest),
-    _ => 0
-  }
-}
+def rec bound(chain : Theory) -> Integer =
+  match chain
+    | Bound(name, sort, indices, binders, rest) => { let r = bound[<] rest; r + 1 }
+    | Port(name, sort, indices, rest) => bound[<] rest
+    | _ => 0
 
 /// The identity-return signature declares one representable sort, `VTm`.
 @[ runs("1") ]
 def representableSorts() -> Integer { match IdentityReturn {
-  Presents(sorts, opers, rules) => representable(sorts),
-  _ => 0
+  | Presents(sorts, opers, rules) => representable sorts
+  | _ => 0
 } }
 
 /// The λ-calculus's first operation, `lam`, binds over its one input.
 @[ runs("1") ]
 def boundInputs() -> Integer { match Lambda {
-  Presents(sorts, opers, rules) => match opers {
-    Oper(name, inputs, outputs, rest) => bound(inputs),
-    _ => 0
-  },
-  _ => 0
+  | Presents(sorts, opers, rules) => match opers
+    | Oper(name, inputs, outputs, rest) => bound inputs
+    | _ => 0
+  | _ => 0
 } }

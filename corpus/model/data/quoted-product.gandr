@@ -16,12 +16,10 @@ import "./data-base.gandr";
 def prodOf(a : Type, b : Type) -> Type { return type(a * b) }
 
 /// One integer for each step of `n`, the next step's tower beside it.
-def rec tower(n : Nat) -> Type {
-  match n {
-    Zero => return Unit,
-    Succ(m) => return type(Integer * tower[<](m))
-  }
-}
+def rec tower(n : Nat) -> Type =
+  match n
+    | Zero => return Unit
+    | Succ(m) => return type(Integer * tower[<](m))
 
 /// The tower of `n` beside the product of `a` with itself.
 def towered(n : Nat, a : Type) -> Type { return type(tower(n) * prodOf(a, a)) }

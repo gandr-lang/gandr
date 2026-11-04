@@ -5,21 +5,18 @@
 // - see: #2687
 
 /// A written module.
-module Kit where {
+module Kit where
   /// Its one member.
   def width = 4;
-}
 
 /// A theory declared through the written module's name.
 @[ refuses("DuplicateDefinition") ]
-theory Kit.Labelled where {
+theory Kit.Labelled where
   /// The label.
   oper label : String;
-}
 
 /// A model of a theory the path names in no module.
 @[ refuses("UnknownMember") ]
-module Tag : Model(Kit.Missing) where {
+module Tag : Model(Kit.Missing) where
   /// Its label.
   def label : String = "tag";
-}

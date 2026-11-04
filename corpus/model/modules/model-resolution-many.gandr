@@ -8,12 +8,11 @@
 import "./model-resolution-tally.gandr";
 
 /// The carrier of the tally numbered 0.
-data Tag0 : Type where {
+data Tag0 : Type where
   | Mark0 : Tag0
-}
 
 /// A tally over `Tag0`, reading 0.
-module Tally0 : Model(Count) where {
+module Tally0 : Model(Count) where
   type C = Tag0;
   /// The one mark.
   def zero = Mark0;
@@ -21,15 +20,13 @@ module Tally0 : Model(Count) where {
   def incr(c : Tag0) -> Tag0 { c }
   /// The tally's number.
   def read(c : Tag0) -> Integer { 0 }
-}
 
 /// The carrier of the tally numbered 1.
-data Tag1 : Type where {
+data Tag1 : Type where
   | Mark1 : Tag1
-}
 
 /// A tally over `Tag1`, reading 1.
-module Tally1 : Model(Count) where {
+module Tally1 : Model(Count) where
   type C = Tag1;
   /// The one mark.
   def zero = Mark1;
@@ -37,15 +34,13 @@ module Tally1 : Model(Count) where {
   def incr(c : Tag1) -> Tag1 { c }
   /// The tally's number.
   def read(c : Tag1) -> Integer { 1 }
-}
 
 /// The carrier of the tally numbered 2.
-data Tag2 : Type where {
+data Tag2 : Type where
   | Mark2 : Tag2
-}
 
 /// A tally over `Tag2`, reading 2.
-module Tally2 : Model(Count) where {
+module Tally2 : Model(Count) where
   type C = Tag2;
   /// The one mark.
   def zero = Mark2;
@@ -53,15 +48,13 @@ module Tally2 : Model(Count) where {
   def incr(c : Tag2) -> Tag2 { c }
   /// The tally's number.
   def read(c : Tag2) -> Integer { 2 }
-}
 
 /// The carrier of the tally numbered 3.
-data Tag3 : Type where {
+data Tag3 : Type where
   | Mark3 : Tag3
-}
 
 /// A tally over `Tag3`, reading 3.
-module Tally3 : Model(Count) where {
+module Tally3 : Model(Count) where
   type C = Tag3;
   /// The one mark.
   def zero = Mark3;
@@ -69,15 +62,13 @@ module Tally3 : Model(Count) where {
   def incr(c : Tag3) -> Tag3 { c }
   /// The tally's number.
   def read(c : Tag3) -> Integer { 3 }
-}
 
 /// The carrier of the tally numbered 4.
-data Tag4 : Type where {
+data Tag4 : Type where
   | Mark4 : Tag4
-}
 
 /// A tally over `Tag4`, reading 4.
-module Tally4 : Model(Count) where {
+module Tally4 : Model(Count) where
   type C = Tag4;
   /// The one mark.
   def zero = Mark4;
@@ -85,15 +76,13 @@ module Tally4 : Model(Count) where {
   def incr(c : Tag4) -> Tag4 { c }
   /// The tally's number.
   def read(c : Tag4) -> Integer { 4 }
-}
 
 /// The carrier of the tally numbered 5.
-data Tag5 : Type where {
+data Tag5 : Type where
   | Mark5 : Tag5
-}
 
 /// A tally over `Tag5`, reading 5.
-module Tally5 : Model(Count) where {
+module Tally5 : Model(Count) where
   type C = Tag5;
   /// The one mark.
   def zero = Mark5;
@@ -101,15 +90,13 @@ module Tally5 : Model(Count) where {
   def incr(c : Tag5) -> Tag5 { c }
   /// The tally's number.
   def read(c : Tag5) -> Integer { 5 }
-}
 
 /// The carrier of the tally numbered 6.
-data Tag6 : Type where {
+data Tag6 : Type where
   | Mark6 : Tag6
-}
 
 /// A tally over `Tag6`, reading 6.
-module Tally6 : Model(Count) where {
+module Tally6 : Model(Count) where
   type C = Tag6;
   /// The one mark.
   def zero = Mark6;
@@ -117,15 +104,13 @@ module Tally6 : Model(Count) where {
   def incr(c : Tag6) -> Tag6 { c }
   /// The tally's number.
   def read(c : Tag6) -> Integer { 6 }
-}
 
 /// The carrier of the tally numbered 7.
-data Tag7 : Type where {
+data Tag7 : Type where
   | Mark7 : Tag7
-}
 
 /// A tally over `Tag7`, reading 7.
-module Tally7 : Model(Count) where {
+module Tally7 : Model(Count) where
   type C = Tag7;
   /// The one mark.
   def zero = Mark7;
@@ -133,15 +118,13 @@ module Tally7 : Model(Count) where {
   def incr(c : Tag7) -> Tag7 { c }
   /// The tally's number.
   def read(c : Tag7) -> Integer { 7 }
-}
 
 /// The carrier of the tally numbered 8.
-data Tag8 : Type where {
+data Tag8 : Type where
   | Mark8 : Tag8
-}
 
 /// A tally over `Tag8`, reading 8.
-module Tally8 : Model(Count) where {
+module Tally8 : Model(Count) where
   type C = Tag8;
   /// The one mark.
   def zero = Mark8;
@@ -149,15 +132,13 @@ module Tally8 : Model(Count) where {
   def incr(c : Tag8) -> Tag8 { c }
   /// The tally's number.
   def read(c : Tag8) -> Integer { 8 }
-}
 
 /// The carrier of the tally numbered 9.
-data Tag9 : Type where {
+data Tag9 : Type where
   | Mark9 : Tag9
-}
 
 /// A tally over `Tag9`, reading 9.
-module Tally9 : Model(Count) where {
+module Tally9 : Model(Count) where
   type C = Tag9;
   /// The one mark.
   def zero = Mark9;
@@ -165,15 +146,13 @@ module Tally9 : Model(Count) where {
   def incr(c : Tag9) -> Tag9 { c }
   /// The tally's number.
   def read(c : Tag9) -> Integer { 9 }
-}
 
 /// The carrier of the tally numbered 10.
-data Tag10 : Type where {
+data Tag10 : Type where
   | Mark10 : Tag10
-}
 
 /// A tally over `Tag10`, reading 10.
-module Tally10 : Model(Count) where {
+module Tally10 : Model(Count) where
   type C = Tag10;
   /// The one mark.
   def zero = Mark10;
@@ -181,15 +160,13 @@ module Tally10 : Model(Count) where {
   def incr(c : Tag10) -> Tag10 { c }
   /// The tally's number.
   def read(c : Tag10) -> Integer { 10 }
-}
 
 /// The carrier of the tally numbered 11.
-data Tag11 : Type where {
+data Tag11 : Type where
   | Mark11 : Tag11
-}
 
 /// A tally over `Tag11`, reading 11.
-module Tally11 : Model(Count) where {
+module Tally11 : Model(Count) where
   type C = Tag11;
   /// The one mark.
   def zero = Mark11;
@@ -197,15 +174,13 @@ module Tally11 : Model(Count) where {
   def incr(c : Tag11) -> Tag11 { c }
   /// The tally's number.
   def read(c : Tag11) -> Integer { 11 }
-}
 
 /// The carrier of the tally numbered 12.
-data Tag12 : Type where {
+data Tag12 : Type where
   | Mark12 : Tag12
-}
 
 /// A tally over `Tag12`, reading 12.
-module Tally12 : Model(Count) where {
+module Tally12 : Model(Count) where
   type C = Tag12;
   /// The one mark.
   def zero = Mark12;
@@ -213,15 +188,13 @@ module Tally12 : Model(Count) where {
   def incr(c : Tag12) -> Tag12 { c }
   /// The tally's number.
   def read(c : Tag12) -> Integer { 12 }
-}
 
 /// The carrier of the tally numbered 13.
-data Tag13 : Type where {
+data Tag13 : Type where
   | Mark13 : Tag13
-}
 
 /// A tally over `Tag13`, reading 13.
-module Tally13 : Model(Count) where {
+module Tally13 : Model(Count) where
   type C = Tag13;
   /// The one mark.
   def zero = Mark13;
@@ -229,15 +202,13 @@ module Tally13 : Model(Count) where {
   def incr(c : Tag13) -> Tag13 { c }
   /// The tally's number.
   def read(c : Tag13) -> Integer { 13 }
-}
 
 /// The carrier of the tally numbered 14.
-data Tag14 : Type where {
+data Tag14 : Type where
   | Mark14 : Tag14
-}
 
 /// A tally over `Tag14`, reading 14.
-module Tally14 : Model(Count) where {
+module Tally14 : Model(Count) where
   type C = Tag14;
   /// The one mark.
   def zero = Mark14;
@@ -245,15 +216,13 @@ module Tally14 : Model(Count) where {
   def incr(c : Tag14) -> Tag14 { c }
   /// The tally's number.
   def read(c : Tag14) -> Integer { 14 }
-}
 
 /// The carrier of the tally numbered 15.
-data Tag15 : Type where {
+data Tag15 : Type where
   | Mark15 : Tag15
-}
 
 /// A tally over `Tag15`, reading 15.
-module Tally15 : Model(Count) where {
+module Tally15 : Model(Count) where
   type C = Tag15;
   /// The one mark.
   def zero = Mark15;
@@ -261,25 +230,23 @@ module Tally15 : Model(Count) where {
   def incr(c : Tag15) -> Tag15 { c }
   /// The tally's number.
   def read(c : Tag15) -> Integer { 15 }
-}
 
 /// Each mark forces its own tally: the readings add up to 0 + 1 + … + 15.
 @[ runs("120") ]
-def summed() -> Integer {
-  advanced(Mark0)
-    + advanced(Mark1)
-    + advanced(Mark2)
-    + advanced(Mark3)
-    + advanced(Mark4)
-    + advanced(Mark5)
-    + advanced(Mark6)
-    + advanced(Mark7)
-    + advanced(Mark8)
-    + advanced(Mark9)
-    + advanced(Mark10)
-    + advanced(Mark11)
-    + advanced(Mark12)
-    + advanced(Mark13)
-    + advanced(Mark14)
-    + advanced(Mark15)
-}
+def summed() -> Integer =
+  advanced Mark0
+    + advanced Mark1
+    + advanced Mark2
+    + advanced Mark3
+    + advanced Mark4
+    + advanced Mark5
+    + advanced Mark6
+    + advanced Mark7
+    + advanced Mark8
+    + advanced Mark9
+    + advanced Mark10
+    + advanced Mark11
+    + advanced Mark12
+    + advanced Mark13
+    + advanced Mark14
+    + advanced Mark15

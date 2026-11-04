@@ -14,13 +14,12 @@
 def double(n : Nat) -> Nat { n + n }
 
 /// One more than twice a natural.
-def doubleSucc(n : Nat) -> Nat { double(n) + 1 }
+def doubleSucc(n : Nat) -> Nat { double n + 1 }
 
 /// Every natural is twice a half or one more. The two injections are apart,
 /// and the remainder by two decides which one reaches a natural.
-def parityCover() -> Cover(Nat, [double, doubleSucc]) {
-  Cover.decide(fun (n) { n % 2 == 0 })
-}
+def parityCover() -> Cover(Nat, [double, doubleSucc]) =
+  Cover.decide (fun (n) { n % 2 == 0 })
 
 /// A natural read as even or odd, each with its half.
 view Parity : Nat
@@ -29,24 +28,22 @@ view Parity : Nat
   with parityCover
 
 /// `b` to the power `n`, halving the exponent at each step.
-def rec power(b : Nat, n : Nat) -> Nat {
+def rec power(b : Nat, n : Nat) -> Nat =
   match n with Parity {
-    even(0) => 1,
-    even(h) => {
-      let r = power[<](b, h);
+    even(0) -> 1,
+    even h => {
+      let r = power[<] b h;
       r * r
     },
-    odd(h) => {
-      let r = power[<](b, h);
+    odd h => {
+      let r = power[<] b h;
       b * r * r
     }
   }
-}
 
 /// Whether a natural is even, read off the view's arm.
-def isEven(n : Nat) -> Bool {
+def isEven(n : Nat) -> Bool =
   match n with Parity {
     even(_) => true,
-    odd(_) => false
+    odd _ -> false
   }
-}

@@ -1,8 +1,6 @@
 /// `match_expression`: a case analysis.
 @[ checks ]
-def sign(b : Bool) -> -F Integer {
-  match b {
-    true => return 1,
-    false => return 0
-  }
-}
+def sign(b : Bool) -> -F Integer =
+  match b
+    | true => return 1
+    | false => return 0

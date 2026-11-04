@@ -4995,7 +4995,7 @@ mod tests
         // right after one only matches the whole stream when the first run's
         // window reads into the second run's tokens.
         let pbg = built()?;
-        let src = "def a : Type = List(Integer);\ndef b = Inl(1);\ndef c = match b { Inl(x) => x, Inr(y) => y };\n";
+        let src = "def a : Type = List (Integer);\ndef b = Inl 1;\ndef c = match b { | Inl(x) => x | Inr(y) => y };\n";
         let source = SourceText::from(src);
         let tokens = label(SourceFragment::from(src));
         let mut molder = Molder::new(&pbg);
@@ -5728,12 +5728,12 @@ mod tests
         // next token is known, and only the trailing comma can precede it.
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
-        let source = SourceText::from("def x = f(a, ) ;");
-        let tokens = label(SourceFragment::from("def x = f(a, ) ;"));
+        let source = SourceText::from("def x = f a ;");
+        let tokens = label(SourceFragment::from("def x = f a ;"));
         let comma = tokens
             .iter()
             .position(|token| {
-                AsRef::<str>::as_ref(&token.text(&SourceFragment::from("def x = f(a, ) ;"))) == ","
+                AsRef::<str>::as_ref(&token.text(&SourceFragment::from("def x = f a ;"))) == ","
             })
             .ok_or("the source spells a comma")?;
         let mut state = MeldState::new(&pbg);
@@ -5750,7 +5750,7 @@ mod tests
         let ahead = Ahead::Stream {
             tokens: &tokens,
             index: TokenIndex::from(comma),
-            source: &SourceFragment::from("def x = f(a, ) ;"),
+            source: &SourceFragment::from("def x = f a ;"),
         };
         let windowed = molder.choose(&mut state, TokenText::from(","), ahead);
         assert_eq!(

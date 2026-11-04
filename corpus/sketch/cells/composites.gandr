@@ -17,16 +17,16 @@ import std.math.category.Pasting;
 /// Two 2-cells side by side: `α` between `f` and `g`, `β` between `h` and
 /// `k`. The context is the shape `x -f,g-> y -h,k-> z`, read off the types.
 def hcomp[A : Type, x y z : A, f g : Path(x, y), h k : Path(y, z)](
-  α : f => g,
-  β : h => k
-) : (f |> h) => (g |> k) = #fuse{ α β }
+  α : f -> g,
+  β : h -> k
+) : (f |> h) -> (g |> k) = #fuse{ α β }
 
 /// `vcomp` stacks two 2-cells over one pair of points, `α` then `α'`. The
 /// cells fix the order, so `#fuse{ α' α }` names the same composite.
 def vcomp[A : Type, x y : A, f g h : Path(x, y)](
-  α : f => g,
-  α' : g => h
-) : f => h = #fuse{ α α' }
+  α : f -> g,
+  α' : g -> h
+) : f -> h = #fuse{ α α' }
 
 /// A path through three named 1-cells: the one-dimensional reading, which
 /// is the composite `f |> g |> h`.
@@ -39,6 +39,6 @@ def through[A : Type, w x y z : A](
 /// A cell may be any term that synthesises its type: here `α` whiskered by
 /// `h`, then `β` whiskered by `g`, the composite `hcomp` names.
 def whiskered[A : Type, x y z : A, f g : Path(x, y), h k : Path(y, z)](
-  α : f => g,
-  β : h => k
-) : (f |> h) => (g |> k) = #fuse{ (α |> h) (g |> β) }
+  α : f -> g,
+  β : h -> k
+) : (f |> h) -> (g |> k) = #fuse{ (α |> h) (g |> β) }

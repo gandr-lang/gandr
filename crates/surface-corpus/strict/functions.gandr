@@ -8,10 +8,10 @@ def first(x : Integer, y : Integer) -> Integer { x }
 def answer : Integer = 42;
 
 @[ runs("42") ]
-def applied() -> Integer { become (force identity)(answer) }
+def applied() -> Integer { become (force identity) answer }
 
 @[ runs("42") ]
-def chosen() -> Integer { become (force first)(answer)(7) }
+def chosen() -> Integer { become ((force first) answer) 7 }
 
 @[ runs("\"later\"") ]
 def delayed() -> String { "later" }

@@ -11,12 +11,11 @@
 // - see: `model/modules/family-applied.gandr` — the families applied
 
 /// A module of a family and a plain type.
-module Shapes where {
+module Shapes where
   /// A family of one type.
   type Same(a : Type) = a;
   /// A type of no parameter.
   type Count = Integer;
-}
 
 /// The family at two arguments.
 @[ refuses("OutOfFragment.Arity") ]

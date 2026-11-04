@@ -22,7 +22,7 @@ import "../data/data-base.gandr";
 import "./conversion-base.gandr";
 
 /// A propositional formula over numbered variables.
-data Formula : Type where {
+data Formula : Type where
   /// The variable of that number.
   | Atom : (index : Nat) --> Formula
   /// Negation.
@@ -31,76 +31,57 @@ data Formula : Type where {
   | And : (l : Formula, r : Formula) --> Formula
   /// Disjunction.
   | Or : (l : Formula, r : Formula) --> Formula
-}
 
 /// The values of the variables set so far, the last one set first.
-data Assignment : Type where {
+data Assignment : Type where
   /// No variable set.
   | Unset : Assignment
   /// One more variable, set to `value`.
   | Set : (value : Bool, rest : Assignment) --> Assignment
-}
 
 /// The value of variable `i`, counted from the last one set.
-def rec lookup(i : Nat, a : Assignment) -> Bool {
-  match a {
-    Unset => false,
-    Set(value, rest) => match i {
-      Zero => value,
-      Succ(j) => lookup[<](j, rest)
-    }
-  }
-}
+def rec lookup(i : Nat, a : Assignment) -> Bool =
+  match a
+    | Unset => false
+    | Set(value, rest) => match i
+      | Zero => value
+      | Succ(j) => lookup[<] j rest
 
 /// Whether a formula holds under an assignment of its variables.
-def rec holds(f : Formula, a : Assignment) -> Bool {
-  match f {
-    Atom(i) => lookup(i, a),
-    Not(g) => match holds[<](g, a) {
-      true => false,
-      false => true
-    },
-    And(l, r) => match holds[<](l, a) {
-      true => holds[<](r, a),
-      false => false
-    },
-    Or(l, r) => match holds[<](l, a) {
-      true => true,
-      false => holds[<](r, a)
-    }
-  }
-}
+def rec holds(f : Formula, a : Assignment) -> Bool =
+  match f
+    | Atom(i) => lookup i a
+    | Not(g) => match holds[<] g a
+      | true => false
+      | false => true
+    | And(l, r) => match holds[<] l a
+      | true => holds[<] r a
+      | false => false
+    | Or(l, r) => match holds[<] l a
+      | true => true
+      | false => holds[<] r a
 
 /// Whether a formula holds under every assignment of `k` more variables.
-def rec tautology(k : Nat, f : Formula, a : Assignment) -> Bool {
-  match k {
-    Zero => holds(f, a),
-    Succ(j) => match tautology[<](j, f, Set(true, a)) {
-      true => tautology[<](j, f, Set(false, a)),
-      false => false
-    }
-  }
-}
+def rec tautology(k : Nat, f : Formula, a : Assignment) -> Bool =
+  match k
+    | Zero => holds f a
+    | Succ(j) => match tautology[<] j f (Set true a)
+      | true => tautology[<] j f (Set false a)
+      | false => false
 
 /// Three pigeons in two holes: pigeon `i` in hole `j` is variable `2i + j`.
-def pigeons : Formula = Not(And(
-  And(
-    Or(Atom(Zero), Atom(Succ(Zero))),
-    And(Or(Atom(two), Atom(three)), Or(Atom(four), Atom(Succ(four))))
-  ),
-  And(
-    And(
-      Not(And(Atom(Zero), Atom(two))),
-      And(Not(And(Atom(Zero), Atom(four))), Not(And(Atom(two), Atom(four))))
-    ),
-    And(
-      Not(And(Atom(Succ(Zero)), Atom(three))),
-      And(Not(And(Atom(Succ(Zero)), Atom(Succ(four)))), Not(And(Atom(three), Atom(Succ(four)))))
-    )
-  )
-));
+def pigeons : Formula = Not (And
+  (And
+    (Or (Atom Zero) (Atom (Succ Zero)))
+    (And (Or (Atom two) (Atom three)) (Or (Atom four) (Atom (Succ four)))))
+  (And
+    (And
+      (Not (And (Atom Zero) (Atom two)))
+      (And (Not (And (Atom Zero) (Atom four))) (Not (And (Atom two) (Atom four)))))
+    (And
+      (Not (And (Atom (Succ Zero)) (Atom three)))
+      (And (Not (And (Atom (Succ Zero)) (Atom (Succ four)))) (Not (And (Atom three) (Atom (Succ four))))))));
 
 /// No assignment places every pigeon in a hole of its own.
-def pigeonsDoNotFit() -> Path(tautology(Succ(Succ(four)), pigeons, Unset), true) {
-  Path.here(true)
-}
+def pigeonsDoNotFit() -> Path(tautology (Succ (Succ four)) pigeons Unset, true) =
+  Path.here true

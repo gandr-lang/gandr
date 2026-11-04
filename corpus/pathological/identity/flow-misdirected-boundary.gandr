@@ -2,16 +2,13 @@ module Schema where {
   type Old = String * Integer;
   type New = Integer * String;
   @[ checks ]
-  def toNew(old : Old) -> New {
-    match old {
-      #{name, age} => (age, name)
-    }
-  }
+  def toNew(old : Old) -> New =
+    match old
+      | *{name, age} => *{age, name}
   @[ checks ]
-  def upgrade : Flow[.A = Type](Old, New) = Flow.into(toNew);
+  def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew;
   @[ refuses("Boundary") ]
-  def reader : Flow[.A = Type](Old => Integer, New => Integer) = Flow.arrow(
-    upgrade,
-    Flow.stay(Integer)
-  );
+  def reader : Flow[.A = Type](Old -> Integer, New -> Integer) = Flow.arrow
+    upgrade
+    (Flow.stay (Integer));
 }

@@ -292,10 +292,10 @@ fn a_bound_match_continues_its_block_through_a_split_arm()
 #[test]
 fn a_block_ending_in_a_statement_returns_the_unit_1205()
 {
-    let source = "def stated() -> -F Unit { pure unit; }\n\
-         def noop() -> -F Unit { return unit }\n\
-         def some(b : Bool) -> -F Unit { match b { true => return unit, false => noop() }; }\n\
-         def some_by_hand(b : Bool) -> -F Unit { match b { true => return unit, false => { noop(); return unit } } }\n";
+    let source = "def stated() -> -F Unit { pure *{}; }\n\
+         def noop() -> -F Unit { return *{} }\n\
+         def some(b : Bool) -> -F Unit { match b { | true => return *{} | false => noop () }; }\n\
+         def some_by_hand(b : Bool) -> -F Unit { match b { | true => return *{} | false => { noop (); return *{} } } }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let returns = |id: ComputationId| matches!(arena.computation(id), Some(Computation::Return(_)));
@@ -808,7 +808,7 @@ fn a_match_continuing_its_block_answers_what_the_block_does()
 #[test]
 fn a_variable_answering_at_its_own_bytes_gains_no_label()
 {
-    let source = "def absent(r : #{n : Integer, s : String}) -> -F Integer {\n  match r {\n    #{.z = \
+    let source = "def absent(r : *{n : Integer, s : String}) -> -F Integer {\n  match r {\n    *{.z = \
                   m} => return m\n  }\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
@@ -830,9 +830,9 @@ fn a_variable_answering_at_its_own_bytes_gains_no_label()
 #[test]
 fn a_renamed_parameter_type_stands_in_only_at_other_bytes()
 {
-    let source = "module Seed :> #{ type T, zero : T, next : +U[ω] (T -> -F T) } where {\n  type T = \
+    let source = "module Seed :> *{ type T, zero : T, next : +U[ω] (T -> -F T) } where {\n  type T = \
                   Integer;\n  def zero = 0;\n  def next(n : T) -> -F T { become n + 1 }\n}\n\nmodule \
-                  MkCounter(S : #{ type T, zero : T, next : +U[ω] (T -> -F T) }) :> #{ type T, \
+                  MkCounter(S : *{ type T, zero : T, next : +U[ω] (T -> -F T) }) :> *{ type T, \
                   seed : T, step : +U[ω] (T -> -F T) } where {\n  type T = S.T;\n  def seed = \
                   S.zero;\n  def step = S.next;\n}\n\nmodule A = MkCounter(Seed) ;\n";
     let mut arena = CoreArena::new();

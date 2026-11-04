@@ -1,5 +1,4 @@
 /// `refuses`: states the refusal a declaration is expected to meet.
 @[ refuses("TypeMismatch") ]
-def wrong() -> -F Integer {
+def wrong() -> -F Integer =
   return "text"
-}

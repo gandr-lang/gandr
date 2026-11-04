@@ -13,42 +13,35 @@
 /// - owes: #3636 — a checked form that applies a block where the block stands
 
 /// The naturals the closures return.
-data Nat : Type where {
+data Nat : Type where
   /// Zero.
   | Zero : Nat
   /// The natural after `n`.
   | Succ : (n : Nat) --> Nat
-}
 
 /// The constant function at `n`, a closure over `n`.
-def constantly(n : Nat) -> -F (+U (Nat -> -F Nat)) {
+def constantly(n : Nat) -> -F (+U (Nat -> -F Nat)) =
   return fun (_m) { n }
-}
 
 /// Applies `g` to zero.
-def at_zero(g : +U (Nat -> -F Nat)) -> -F Nat {
-  g(Zero)
-}
+def at_zero(g : +U (Nat -> -F Nat)) -> -F Nat =
+  g Zero
 
 /// The closure `constantly` returns, applied at zero, answers the natural it closed over.
 @[ runs("Succ(Zero)") ]
-def applied() -> -F Nat {
-  at_zero(constantly(Succ(Zero)))
-}
+def applied() -> -F Nat =
+  at_zero (constantly (Succ Zero))
 
 /// A suspended choice: `b` when `a` is zero, `a` otherwise, a thunk over both.
-def either(a : Nat, b : Nat) -> -F (+U (-F Nat)) {
+def either(a : Nat, b : Nat) -> -F (+U (-F Nat)) =
   return thunk {
-    match a -> -F Nat {
-      Zero => b,
-      Succ(_p) => a
-    }
+    match a -> -F Nat
+      | Zero => b
+      | Succ(_p) => a
   }
-}
 
 /// The thunk `either` returns, forced, answers the second natural when the first is zero.
 @[ runs("Succ(Zero)") ]
-def forced() -> -F Nat {
-  let k = either(Zero, Succ(Zero));
+def forced() -> -F Nat =
+  let k = either Zero (Succ Zero)
   force k
-}
