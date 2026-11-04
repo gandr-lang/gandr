@@ -257,25 +257,26 @@ jobs:
             target/nextest/ci-enforcing/junit.xml
             target/nextest/ci-enforcing/junit-*.xml
           if-no-files-found: ignore
-      # Each lane's summary names where its state came from and what each
-      # step took, so a slow run says where its time went; the nightly lane
-      # budget (`ci:lane-budget`) holds the medians to their budgets. The job
-      # finds itself by its runner. The jobs API at times lists a job without
-      # its steps; the summary then says so. Hosted only: act serves no jobs
-      # API.
-      - &lane-timing
-        name: summarize the lane's state and step times
-        if: ${{ always() && env.ACT != 'true' }}
+      # Each lane's summary names where its state came from. The
+      # `lane-timing` job adds what each step took, so a slow run says where
+      # its time went, from one read of the run's jobs for every lane
+      # (#5078); the nightly lane budget (`ci:lane-budget`) holds the medians
+      # to their budgets.
+      - &lane-state
+        name: summarize the lane's state
+        if: ${{ always() }}
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ github.token }}
           CI_TEST_STATE: ${{ steps.test-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.download-build-state.outcome == 'success' && 'queue artifact' || steps.test-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.test-state-restore.outcome == 'success' && 'miss' || 'not used' }}
           CI_POLICY_STATE: ${{ steps.policy-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.policy-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.policy-state-restore.outcome == 'success' && 'miss' || 'not used' }}
           CI_CLIPPY_STATE: ${{ steps.clippy-state-restore.outputs.cache-hit == 'true' && 'exact cache hit' || steps.clippy-state-restore.outputs.cache-matched-key != '' && 'main''s newest state' || steps.clippy-state-restore.outcome == 'success' && 'miss' || 'not used' }}
-        run: >-
-          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs"
-          --jq '.jobs[] | select(.runner_name == env.RUNNER_NAME) | [.steps[] | select(.completed_at != null and .conclusion != "skipped") | "| \(.name) | \((((.completed_at | fromdate) - (.started_at | fromdate)) / 6 | round) / 10) |"] as $rows | "### Lane timing\n\n" + ([["Test", env.CI_TEST_STATE], ["Policy", env.CI_POLICY_STATE], ["Clippy", env.CI_CLIPPY_STATE]] | map(select(.[1] != "not used") | "\(.[0]) state: \(.[1]).") | join(" ")) + "\n\n" + if $rows == [] then "Step times unavailable: the jobs API listed no steps for this job." else "| step | minutes |\n| --- | ---: |\n" + ($rows | join("\n")) end'
-          >> "$GITHUB_STEP_SUMMARY"
+        shell: bash
+        run: |
+          line=
+          for pair in "Test:$CI_TEST_STATE" "Policy:$CI_POLICY_STATE" "Clippy:$CI_CLIPPY_STATE"; do
+            if [[ ${pair#*:} != "not used" ]]; then line+="${line:+ }${pair%%:*} state: ${pair#*:}."; fi
+          done
+          if [[ -n $line ]]; then printf '### Lane state\n\n%s\n' "$line" >> "$GITHUB_STEP_SUMMARY"; fi
       # Compute once, before any restored build directory can add manifests.
       # The fingerprint names one exact state; the generation is the toolchain
       # pin alone. A restore takes the newest state of its generation and
@@ -587,20 +588,21 @@ jobs:
       # landing was `unbuilt` and ran every lane a second time, a group's
       # worth of jobs against the account's concurrency cap while the next
       # group waited for runners, up to 156 s in #2365 (#2148). The lookup
-      # waits for the run with this head to complete, five minutes at most;
-      # a head no queue run built answers at once.
+      # waits for the run with this head to complete, five minutes at most,
+      # in at most 8 reads whose waits grow (#5078); a head no queue run
+      # built answers at once.
       - id: run
         name: find the completed queue run for this landing
         if: ${{ env.CI_QUEUE_STATE == 'true' && env.ACT != 'true' && github.event_name == 'push' }}
         continue-on-error: true
         shell: bash
         run: |
-          for _ in $(seq 30); do
+          for wait in 0 15 15 30 60 60 60 60; do
+            sleep "$wait"
             read -r id status < <(gh api --method GET "repos/$GH_REPO/actions/workflows/ci.yml/runs" \
               -f event=merge_group -f head_sha="$CI_SHA" \
               --jq '.workflow_runs[0] // {} | "\(.id // "") \(.status // "")"')
             [[ -z $id || $status == completed ]] && break
-            sleep 10
           done
           echo "run-id=$([[ -n $id && $status == completed ]] && echo "$id")" >> "$GITHUB_OUTPUT"
       - id: previous
@@ -869,7 +871,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
-      - *lane-timing
+      - *lane-state
 
   # The recovery sweep in a lane of its own (#2148). A change that reaches
   # the recovery records (`parser`) sweeps every one of them at every row,
@@ -911,7 +913,7 @@ jobs:
         run: mise run build:tests-plain-only
       - name: sweep every recovery record the change reaches
         run: mise run ci:recovery
-      - *lane-timing
+      - *lane-state
 
   # The documentation lane: the private-item rustdoc as its build, over a
   # state of its own. It shares no unit with the plain lane's gates, since
@@ -1075,7 +1077,7 @@ jobs:
       - *upload-build-state
       - *save-test-state
       - *delete-superseded-state
-      - *lane-timing
+      - *lane-state
 
   # The plain baseline: every workspace test without enforcement, timed daily
   # on main and when a dispatch asks, so the enforcing lane can report what
@@ -1266,7 +1268,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CI_STATE_KEY: ${{ steps.clippy-state-restore.outputs.cache-primary-key }}
         run: mise run ci:delete-superseded clippy-state-v "$CI_STATE_KEY"
-      - *lane-timing
+      - *lane-state
   # The external plugin checks all local targets once per landing, beside the
   # build it would otherwise repeat on every pull request; the obligations lane
   # runs it on a pull request for its records. The image carries its driver;
@@ -1330,7 +1332,7 @@ jobs:
           name: dylint-drivers
           if-no-files-found: error
           retention-days: 1
-      - *lane-timing
+      - *lane-state
 
   # A change owes re-verification by every specification naming a changed
   # item (`evidence:obligations`). A pull request reruns only the obligated
@@ -1430,6 +1432,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          # The head the run checks, so the task reads no pull request for it.
+          CI_PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           extra=()
           if [[ $OBLIGATIONS_BODY == true ]]; then
@@ -1463,7 +1467,7 @@ jobs:
           printf '::error::a prose obligation is unticked in the body'"'"'s ## Re-verification section; tick its box (`mise run pr:land` writes the section), then rerun this job\n'
           exit 1
       - *upload-test-report
-      - *lane-timing
+      - *lane-state
 
   # Posted whatever the witnesses' verdict and the boxes' state, once the
   # report exists: the comment lists the witnesses rerun. GitHub refuses a
@@ -1593,7 +1597,7 @@ jobs:
           if (( survivors > 0 )); then
             printf '::warning::%s mutant(s) on the change'"'"'s lines survive; the mutants comment names each with its verdict\n' "$survivors"
           fi
-      - *lane-timing
+      - *lane-state
 
   mutants-comment:
     name: post the mutants comment
@@ -1678,7 +1682,7 @@ jobs:
         with:
           path: *mutants-state
           key: gandr-v1-mutants-nightly-${{ github.run_id }}
-      - *lane-timing
+      - *lane-state
 
   # The benchmark report (`mise run ci:hotpath`): each series runs under the
   # hotpath profiler and uploads its report to hotpath Cloud twice, as
@@ -1810,7 +1814,43 @@ jobs:
           name: hotpath-${{ github.event.pull_request.base.sha }}
           path: target/hotpath/base/measured/*.json
           retention-days: 14
-      - *lane-timing
+      - *lane-state
+
+  # Every lane's step times, from one read of the run's jobs (#5078): each
+  # lane once read the jobs for itself, nine reads a run. A page of 100
+  # holds every job of a run. The jobs API at times lists a job without its
+  # steps; the summary then says so. Hosted only: act serves no jobs API.
+  lane-timing:
+    name: summarize the lanes' step times
+    needs:
+      [
+        cargo-test-plain-only,
+        cargo-test-recovery,
+        cargo-test-enforcing,
+        cargo-clippy-crate,
+        cargo-dylint-crate,
+        obligations,
+        mutants,
+        mutants-nightly,
+        hotpath,
+      ]
+    if: ${{ !cancelled() }}
+    runs-on: *linux
+    permissions:
+      actions: read
+    steps:
+      - name: summarize the lanes' step times
+        if: ${{ env.ACT != 'true' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100"
+          --jq '[.jobs[] | select(.name != "summarize the lanes'"'"' step times" and .conclusion != null and .conclusion != "skipped")
+          | [.steps[]? | select(.completed_at != null and .conclusion != "skipped") | "| \(.name) | \((((.completed_at | fromdate) - (.started_at | fromdate)) / 6 | round) / 10) |"] as $rows
+          | "#### \(.name)\n\n" + if $rows == [] then "Step times unavailable: the jobs API listed no steps for this job." else "| step | minutes |\n| --- | ---: |\n" + ($rows | join("\n")) end]
+          | "### Lane timing\n\n" + join("\n\n")'
+          >> "$GITHUB_STEP_SUMMARY"
 
   # The judge's `hotpath / <benchmark>-band` and `-push` checks, posted on
   # the judged commit from a bare runner, so the job running the change's
@@ -1833,18 +1873,29 @@ jobs:
       HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      REPO_ID: ${{ github.event.repository.node_id }}
     steps:
       - name: download the judged checks
         uses: *download-artifact
         with:
           name: hotpath-judged
+      # Every judged check in one GraphQL request, one `createCheckRun` for
+      # each under its own alias (#5078): a REST post a check spent about
+      # four requests a judgement. A check keeps its name, conclusion and
+      # output as the judge wrote them.
       - name: post the checks and dispatch the guard
         shell: bash
         run: |
-          for check in *.json; do
-            jq --arg sha "$HEAD_SHA" '. + {head_sha: $sha, status: "completed"}' "$check" |
-              gh api --method POST "repos/$GH_REPO/check-runs" --input - --silent
-          done
+          jq -s --arg repo "$REPO_ID" --arg sha "$HEAD_SHA" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+            [range(length)] as $i
+            | {query: ("mutation($repo: ID!, $sha: GitObjectID!, $at: DateTime!"
+                  + ($i | map(", $n\(.): String!, $k\(.): CheckConclusionState!, $o\(.): CheckRunOutput!") | join(""))
+                  + ") { "
+                  + ($i | map("c\(.): createCheckRun(input: {repositoryId: $repo, headSha: $sha, name: $n\(.), status: COMPLETED, conclusion: $k\(.), completedAt: $at, output: $o\(.)}) { checkRun { id } }") | join(" "))
+                  + " }"),
+               variables: ({repo: $repo, sha: $sha, at: $at}
+                  + (to_entries | map({"n\(.key)": .value.name, "k\(.key)": (.value.conclusion | ascii_upcase), "o\(.key)": .value.output}) | add))}' *.json \
+            | gh api graphql --input - --silent
           gh workflow run hotpath-guard.yml --ref "$DEFAULT_BRANCH" -f sha="$HEAD_SHA" ${PR_NUMBER:+-f pull="$PR_NUMBER"}
 
   # A landing's hotpath verdicts become ledger rows (`mise run

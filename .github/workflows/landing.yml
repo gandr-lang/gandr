@@ -94,10 +94,27 @@ jobs:
           permission-issues: write
           permission-checks: read
           permission-statuses: read
+      # The extension comes from the Actions cache, keyed on its pin (#5078):
+      # an install reads its release through the API, once each landing run
+      # before. A miss installs it and saves it.
+      - name: restore gh-stack
+        id: gh-stack
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/gh/extensions/gh-stack
+          key: gh-stack-v0.2.1-${{ runner.os }}-${{ runner.arch }}
       - name: install gh-stack
+        if: ${{ steps.gh-stack.outputs.cache-hit != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh extension install github/gh-stack --pin v0.2.1
+      - name: save gh-stack
+        if: ${{ steps.gh-stack.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/gh/extensions/gh-stack
+          key: gh-stack-v0.2.1-${{ runner.os }}-${{ runner.arch }}
       - name: read and land the open pull requests
         env:
           GH_TOKEN: ${{ secrets.LANDING_TOKEN || steps.app.outputs.token || github.token }}
