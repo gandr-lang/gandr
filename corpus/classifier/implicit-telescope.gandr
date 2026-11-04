@@ -6,13 +6,15 @@
 // declaration's metadata, so the declared type is the one the function written
 // with every parameter explicit, in the merged order, has. A call that omits
 // its implicits has each one solved from its arguments and the type it is
-// checked against. What refuses is in
-// `../pathological/classifier/implicit-telescope.gandr`.
+// checked against. The checker solves a call in a declared type where the type
+// forms.
+// What refuses is in `../pathological/classifier/implicit-telescope.gandr`.
 //
 // - see: #315
 // - see: #1216
 // - see: #1498 — `identityAt`
 // - see: #1188 — `twiceRun`
+// - see: #5026 — `sameSigned`
 
 /// The identity at a type supplied by name.
 pub def same[a : Type](y : a) -> a { y }
@@ -65,6 +67,10 @@ def keptInferred() -> Integer { kept(0, 4) }
 /// `same` called at a type the definition binds: the solution for `a` is the
 /// parameter `t`, which the call stands under.
 def sameAt(t : Type, y : t) -> t { same(y) }
+
+/// `same(3)` in a declared type: the argument `3` determines `a` where the
+/// type forms.
+def sameSigned : Path(Integer, same(3), 3) = Path.here(3);
 
 /// A function taking a function of a type and a value of it, the result type
 /// of that function implicit.

@@ -3592,6 +3592,72 @@ fn a_nested_argument_binds_the_implicit_it_is_read_at()
 }
 
 #[test]
+fn a_decoded_hole_in_a_signature_is_solved_where_it_forms_5026()
+{
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::NominationIndex;
+
+    // def agreed : Path(El ?a, 0, 0) = here(0) ;
+    // def mixed  : Path(El ?b, 0, ()) ;
+    // def free   : El ?c ;
+    // The carrier is the decode of a hole a call nominated, as `Path(x, y)`
+    // lowers it: the first endpoint binds it, so the second meets it bound.
+    let mut arena = CoreArena::new();
+    let [first, second, third] = [0_u32, 1, 2].map(|index| {
+        arena.value_hole(HoleId::nominated(NominationIndex::from(index)).expect("a nominated name"))
+    });
+    let carrier = |arena: &mut CoreArena, hole| arena.value_type_element(hole, Level::zero());
+    let zero = arena.value_literal(integer_literal());
+    let nothing = arena.value_unit();
+    let agreed_carrier = carrier(&mut arena, first);
+    let agreed = arena.value_type_path(agreed_carrier, zero, zero);
+    let here = arena.value_here(zero);
+    let mixed_carrier = carrier(&mut arena, second);
+    let mixed = arena.value_type_path(mixed_carrier, zero, nothing);
+    let free = carrier(&mut arena, third);
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(agreed), Maybe::Present(here)),
+            declaration(At(1), Maybe::Present(mixed), HOLE),
+            declaration(At(2), Maybe::Present(free), HOLE),
+        ])
+    };
+    let Verdict::Checked { declared, .. } = report.judged()[0].verdict()
+    else {
+        panic!(
+            "the endpoints bind the carrier: {:?}",
+            report.judged()[0].verdict()
+        );
+    };
+    assert!(
+        matches!(
+            arena.value_type(declared.id()),
+            Some(&gandr_core_term::ValueType::Path { carrier, .. })
+                if arena.value_type(carrier) == Some(&gandr_core_term::ValueType::Base(BaseType::Integer))
+        ),
+        "the body is judged against the carrier the endpoints fix: {:?}",
+        arena.value_type(declared.id())
+    );
+    assert!(
+        matches!(
+            report.judged()[1].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "the unit end meets the integers the zero end bound: {:?}",
+        report.judged()[1].verdict()
+    );
+    assert_eq!(
+        report.judged()[2].verdict(),
+        Verdict::Refused(CheckRefusal::ImplicitUnsolved {
+            at: third,
+            reason: crate::Unsolved::Unforced,
+        }),
+        "a signature no comparison fixes is refused where the hole stands"
+    );
+}
+
+#[test]
 fn a_hosted_law_is_admitted_only_where_the_host_asserts_it_2302()
 {
     use gandr_core_term::primitive::PRELUDE;

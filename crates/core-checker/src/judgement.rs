@@ -7606,8 +7606,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   tail checks its term against the row kind; a sealed atom is formed
     ///   when its abstract type was admitted; a thunk type forms its body; a
     ///   universe is formed below the greatest level; a lift forms its type,
-    ///   then awaits the raise; a decode awaits its code's synthesised type; an
-    ///   eager product and a sum form each component, an empty sum at once; a
+    ///   then awaits the raise; a decode awaits its code's synthesised type; a
+    ///   decode of a nominated hole nominates the hole and is formed; an eager
+    ///   product and a sum form each component, an empty sum at once; a
     ///   dependent pair forms its first factor, then its second under a binder
     ///   of the first; a static Pi forms both classifiers, then awaits their
     ///   check as static classifiers; a path type and a flow type form their
@@ -7658,6 +7659,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
         // abstraction's to choose.
         if let ValueTypeView::Bridge { carrier, .. } = value_type_view(self.context.arena(), at)? {
             crate::relatedness::require_unsealed(self.context, at, carrier)?;
+        }
+        // A decode of a hole a call or a wildcard nominated views as the
+        // unknown type. The hole is still this judgement's metavariable, so
+        // the endpoints and conversions the type forms under pose against it.
+        if let Some(&gandr_core_term::ValueType::Element { code, .. }) =
+            self.context.arena().value_type(at)
+        {
+            self.nominate_code(code)?;
         }
         match value_type_view(self.context.arena(), at)? {
             ValueTypeView::Data { .. } => self.native_data(at),
@@ -7866,7 +7875,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   its codomain; a dependent arrow forms its domain, then its codomain
     ///   under a binder of the domain; a decode awaits its code's synthesised
     ///   type; a codata application checks each argument against its
-    ///   instantiated parameter; the unknown type is formed at once.
+    ///   instantiated parameter; the unknown type is formed at once, a decode
+    ///   of a nominated hole once it nominates the hole.
     /// - fails: the view's refusal for a dangling id; [`CheckRefusal::Codata`]
     ///   for a codata application naming the declaration being formed, no
     ///   admitted declaration, or another number of arguments.
@@ -7925,8 +7935,60 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             CompTypeView::Codata { .. } => self.native_codata(at),
-            CompTypeView::Unknown => Ok(Step::Ascend(Produced::Checked)),
+            CompTypeView::Unknown => {
+                // A decode of a nominated hole views as the unknown type, as
+                // in [`Self::form_value_type`].
+                if let Some(&gandr_core_term::CompType::Element { code, .. }) =
+                    self.context.arena().comp_type(at)
+                {
+                    self.nominate_code(code)?;
+                }
+                Ok(Step::Ascend(Produced::Checked))
+            },
         }
+    }
+
+    /// Declare `code` a metavariable of this judgement when it is a hole a
+    /// call or a wildcard nominated.
+    ///
+    /// # Specification
+    /// - requires: `code` is the code of a decode being formed.
+    /// - ensures: while the judgement forms a declared type, a nominated or
+    ///   wildcard hole at `code` is nominated at the current depth, as a value
+    ///   judgement meeting it nominates it; any other code, and any code met in
+    ///   a body, is left as it stands.
+    /// - fails: as [`CheckingContext::nominate`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path type whose carrier is the decode of a
+    ///   nominated hole binds the hole from its first endpoint and refuses a
+    ///   second endpoint of another type; left unnominated, both endpoints
+    ///   check against the unknown type and the path type forms.
+    /// - witness: `module::tests::a_decoded_hole_in_a_signature_is_solved_where_it_forms_5026`
+    #[spec(ensures: |ret| ret.is_err()
+        || self.context.deferrals().signing != crate::elaboration::Signing::Signature
+        || match self.context.arena().value(code) {
+            Some(&Value::Hole(hole)) if matches!(hole.origin(), HoleOrigin::Nominated | HoleOrigin::Wildcard) => {
+                matches!(self.context.deferrals().metas.meta(hole), Maybe::Present(_))
+            },
+            Some(_) | None => true,
+        })]
+    fn nominate_code(
+        &mut self,
+        code: ValueId,
+    ) -> Result<(), CheckRefusal>
+    {
+        if self.context.deferrals().signing == crate::elaboration::Signing::Signature
+            && let Some(&Value::Hole(hole)) = self.context.arena().value(code)
+            && matches!(hole.origin(), HoleOrigin::Nominated | HoleOrigin::Wildcard)
+        {
+            self.context.nominate(code, hole)?;
+        }
+        Ok(())
     }
 
     /// Add the bound computation's demand to the continuation's ambient type.

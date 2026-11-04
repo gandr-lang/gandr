@@ -156,6 +156,7 @@ use crate::declaration::signature;
 use crate::elaboration::Collecting;
 use crate::elaboration::Deferred;
 use crate::elaboration::Residue;
+use crate::elaboration::Signing;
 use crate::elaboration::Suspension;
 use crate::equiv::Equivalence;
 use crate::failure::Failure;
@@ -1218,7 +1219,10 @@ enum Run
 ///   elaboration of either when it held a computation written where a value is
 ///   read; each minted after the declaration's — and defines the constant as
 ///   that body. A call's omitted implicit no conversion determines is refused
-///   as [`CheckRefusal::ImplicitUnsolved`]. A value declaration whose
+///   as [`CheckRefusal::ImplicitUnsolved`]. The judgement reads a signature
+///   through the holes its formation bound before it judges the body. A
+///   signature without a body that leaves a hole unbound is refused as
+///   [`CheckRefusal::ImplicitUnsolved`] at that hole. A value declaration whose
 ///   judgement, accepted otherwise, left a bare flex–rigid equation on a hole
 ///   the context holds owed, or read the type of a declaration it holds
 ///   suspended, is [`Verdict::Suspended`] at the type it supplies instead,
@@ -1251,6 +1255,7 @@ enum Run
 /// - witness: `module::tests::a_body_that_synthesised_nothing_supplies_no_type`
 /// - witness: `module::tests::a_later_declaration_reads_an_earlier_type`
 /// - witness: `elaboration::tests::owed_conversion_suspends`
+/// - witness: `module::tests::a_decoded_hole_in_a_signature_is_solved_where_it_forms_5026`
 /// - witness: `elaboration::tests::dependent_resumption_closes_its_prerequisites`
 #[spec(
     captures: depth = context.depth(gandr_core_term::Zone::Intuitionistic),
@@ -1520,6 +1525,7 @@ fn decide(
                     ),
                 )
             };
+            context.deferrals_mut().signing = Signing::Signature;
             crate::quantified::bounded(declaration.stages(), declared)
                 .map_err(bare)
                 .and_then(|()| {
@@ -1544,6 +1550,7 @@ fn decide(
         },
         Maybe::Absent(signature::Absent::Unsigned) => Ok(Direction::Synthesise),
     };
+    context.deferrals_mut().signing = Signing::Body;
     let mut signed = finish(context, outer);
     let direction = match direction {
         Ok(direction) => direction,
@@ -1557,6 +1564,16 @@ fn decide(
                 ..unrun(refusal)
             };
         },
+    };
+    let written = direction;
+    // The holes the signature's formation nominated and bound are read through
+    // their solutions, so the body is judged against the type they fix. A hole
+    // still unbound, a model slot's among them, waits for the body.
+    let direction = match context.deferrals().solutions(context.arena()) {
+        Ok(solutions) if !solutions.is_empty() => {
+            filled_direction(context.arena_mut(), direction, &solutions)
+        },
+        Ok(_) | Err(_) => direction,
     };
     let mut spending = Spending::Unspent;
     let mut typings = Maybe::Absent(untyped);
@@ -1698,7 +1715,20 @@ fn decide(
         // A discharged body is minted above, so one reaching here is unsigned,
         // and the hole's rule refuses it as a hole's.
         Maybe::Absent(absent) => {
-            let owed = hole(direction, constant, declaration.origin()).and_then(|absence| {
+            // No body poses a further comparison, so the holes the signature's
+            // formation nominated are solved by now or never: an unbound one
+            // is refused, and the table takes the type filled.
+            let solved = match context.deferrals().solutions(context.arena()) {
+                Ok(solutions) => {
+                    entered = filled_direction(context.arena_mut(), direction, &solutions);
+                    Ok(entered)
+                },
+                Err((at, reason)) => Err(unsolved_failure(at, reason)),
+            };
+            let owed = solved
+                .map_err(|failure| failure.refusal())
+                .and_then(|entered| hole(entered, constant, declaration.origin()));
+            let owed = owed.and_then(|absence| {
                 crate::capability::held(context, constant, absence.declared())?;
                 if absent == body::Absent::Hosted {
                     hosted(context, absence.declared())?;
@@ -1710,6 +1740,10 @@ fn decide(
                 Ok(absence) => (
                     Verdict::Owed(ObligationEntry::from(absence)),
                     Maybe::Absent(kept::Absent::Accepted),
+                ),
+                Err(refusal @ CheckRefusal::ImplicitUnsolved { at, .. }) => (
+                    Verdict::Refused(refusal),
+                    Maybe::Present(call_failure(refusal, at)),
                 ),
                 Err(refusal) => (
                     Verdict::Refused(refusal),
@@ -1738,7 +1772,7 @@ fn decide(
             settled @ (Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_)),
         ) => settled,
     };
-    let filled = match (direction, entered) {
+    let filled = match (written, entered) {
         (Direction::Check(written), Direction::Check(entered)) if written != entered => {
             Maybe::Present(entered.id())
         },

@@ -6,10 +6,12 @@
 // supply standing as a value whose implicit, once the supply abstracts the
 // explicit parameter before it, holds no value of that parameter, a
 // telescope whose types mention each other, and a positional supply after a
-// named one, past the block, twice, or compound.
+// named one, past the block, twice, or compound. A call in a declared type is
+// refused as one in a body is: the type's formation solves its implicits.
 //
 // - see: #315
 // - see: #1216
+// - see: #5026 — `unchosenSigned`, `disagreeingSigned`
 
 // `same`, the identity at a type supplied by name, `twice`, whose combination
 // is implicit, `chosen`, whose implicit's type names its explicit parameter,
@@ -80,3 +82,13 @@ def chosenStanding : Type => Integer = chosen[.x = 7];
 /// Two implicits each typed by the other: no order binds either first.
 @[ refuses("TelescopeCycle") ]
 def tangled[a : b, b : a](x : a) -> -F a { return x }
+
+/// `chosen` with its implicit omitted in a declared type with no body: no
+/// body poses a comparison, so nothing determines `x`.
+@[ refuses("ImplicitUnsolved") ]
+def unchosenSigned : Path(Integer, chosen(Integer), 0);
+
+/// `same(unit)` in a declared type: the argument solves `a` as `Unit`, and
+/// the path's integer carrier then disagrees with it.
+@[ refuses("TypeMismatch") ]
+def disagreeingSigned : Path(Integer, same(unit), 3) = Path.here(3);

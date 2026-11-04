@@ -1862,7 +1862,8 @@ fn read_free(
 ///   its base; a dependent arrow ignoring its binder has no spelling, and is
 ///   spelled as the arrow; a dependent pair ignoring its binder is spelled as
 ///   the product; a transport the checker derives is spelled `p then q`, which
-///   reads back as the composite folding to it.
+///   reads back as the composite folding to it; an implicit a call omits is
+///   spelled as nothing, which reads back as another omission (#5026).
 /// - fails: returns `Different` on a dangling node.
 /// - panics: none.
 ///
@@ -1889,7 +1890,9 @@ fn read_free(
 ///   different. A path between a function suspended reads as one between the
 ///   function's thunk, in either order, and a call's thunk stays apart from the
 ///   call kept. A path between a composite returned reads as one between its
-///   fold, in either order, and not as one between the other bracketing.
+///   fold, in either order, and not as one between the other bracketing. Two
+///   omitted implicits compare equal, in either order; an omission against a
+///   wildcard stays different.
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
 /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
 /// - witness: `syntax::tests::a_decoded_redex_reads_as_its_reduct`
@@ -1902,6 +1905,7 @@ fn read_free(
 /// - witness: `syntax::tests::a_dependent_pair_ignoring_its_binder_reads_as_the_product_771`
 /// - witness: `syntax::tests::a_suspended_function_reads_as_its_thunk_3947`
 /// - witness: `syntax::tests::a_returned_composite_reads_as_its_fold_4057`
+/// - witness: `syntax::tests::an_omitted_implicit_reads_as_another_omission_5026`
 #[spec(ensures: |ret| ret == CertificateEquality::Different || (arena.value_type(left).is_some() && arena.value_type(right).is_some()))]
 #[inline]
 #[must_use]
@@ -4165,6 +4169,16 @@ where
                     pending.queue(C(left, right), beside);
                     CertificateEquality::Equal
                 },
+                // An implicit a call omits prints as nothing: the call writes
+                // what the source wrote. Read back, the lowering nominates a
+                // fresh hole in its place, which is the same omission.
+                (&Value::Hole(left), &Value::Hole(right))
+                    if matches!(reading, Reading::Printed(_))
+                        && left.origin() == crate::hole::HoleOrigin::Nominated
+                        && right.origin() == crate::hole::HoleOrigin::Nominated =>
+                {
+                    CertificateEquality::Equal
+                },
                 // A function written as a call's argument is kept nested,
                 // and the checker suspends it, as a function returns
                 // nothing; printed, it is the bare `fun` a thunk of the
@@ -5419,6 +5433,57 @@ mod tests
             equal_type_reading(&arena, &signatures, returned, elsewhere),
             CertificateEquality::Different,
             "a call does not read as another call kept"
+        );
+    }
+
+    /// #5026: a refused declaration keeps an implicit its call omits as a
+    /// nominated hole, and the printer writes nothing there. Read back, the
+    /// lowering nominates another hole in the same place.
+    #[test]
+    fn an_omitted_implicit_reads_as_another_omission_5026()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let hole = |index: u32| {
+            HoleId::nominated(crate::hole::NominationIndex::from(index))
+                .expect("a small index names a nominated hole")
+        };
+        let wildcard = HoleId::wildcard(crate::hole::NominationIndex::from(0_u32))
+            .expect("a small index names a wildcard");
+        let at = |arena: &mut crate::CoreArena, hole: HoleId| {
+            let end = arena.value_hole(hole);
+            arena.value_type_path(int, end, end)
+        };
+        let (written, read, again, wild) = (
+            at(&mut arena, hole(0)),
+            at(&mut arena, hole(1)),
+            at(&mut arena, hole(2)),
+            at(&mut arena, wildcard),
+        );
+        for (left, right, what) in [
+            (
+                written,
+                read,
+                "an omission against the one its reading nominates",
+            ),
+            (read, again, "in either order"),
+        ] {
+            assert_eq!(
+                equal_type_reading(&arena, &signatures, left, right),
+                CertificateEquality::Equal,
+                "{what} read as one type"
+            );
+            assert_eq!(
+                equal_type_syntax(&arena, left, right),
+                CertificateEquality::Different,
+                "{what} differ in syntax"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, written, wild),
+            CertificateEquality::Different,
+            "an omission does not read as a written wildcard"
         );
     }
 

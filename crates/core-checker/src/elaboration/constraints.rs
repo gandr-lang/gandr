@@ -141,6 +141,19 @@ pub enum Collecting
     On,
 }
 
+/// Which part of a value declaration the running judgement forms.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Signing
+{
+    /// The body, or no judgement: a decode of a nominated hole forms as the
+    /// unknown type, and a model slot's resolution answers its hole.
+    #[default]
+    Body,
+    /// The declared type: a decode of a nominated hole is a metavariable, and
+    /// the type's own comparisons fix it.
+    Signature,
+}
+
 /// What one value declaration's judgement left undecided: the equations it
 /// recorded and the waiting declarations it read.
 ///
@@ -214,6 +227,11 @@ pub struct Deferrals
     /// The fill of each hole a splice wrote that the running judgement met:
     /// its tactic's answer, judged again, and the binders it stands under.
     pub spliced: BTreeMap<HoleId, (ValueId, Binders)>,
+    /// Whether the running judgement forms the declaration's signature. A
+    /// decode of a nominated hole that formation meets is a metavariable then,
+    /// so the signature's own comparisons fix it. In a body, such a decode is
+    /// a model slot's carrier, which its resolution answers.
+    pub signing: Signing,
 }
 
 impl Deferrals
@@ -240,6 +258,7 @@ impl Deferrals
             && self.residue.dependencies.is_empty()
             && self.nominated.is_empty() && self.answered.is_empty() && self.spliced.is_empty()
             && usize::from(self.metas.count()) == 0
+            && self.signing == Signing::Body
             && self.owed.len() == owed && self.suspended.len() == suspended,
     )]
     pub fn open(
@@ -248,6 +267,7 @@ impl Deferrals
     )
     {
         self.collecting = collecting;
+        self.signing = Signing::Body;
         self.residue = Residue::default();
         self.emission.restart();
         self.metas = Metas::new();
