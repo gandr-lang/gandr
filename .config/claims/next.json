@@ -1760,7 +1760,7 @@
     "output": "observation due: #51 — mise run debug:test <package> <test>\n51\tdefect\tkernel: WrongSorted heads lose their motive"
   },
   {
-    "name": "#3915: a lane holding a claimed issue that no open pull request names claims nothing, and names the issue; a claim a pull request names holds nothing",
+    "name": "#5154: a lane holding a claimed issue that no open pull request names names the issue and claims its next unit all the same; a claim a pull request names holds nothing",
     "input": {
       "areas": ["area:surface", "area:ux"],
       "order": {},
@@ -1799,7 +1799,7 @@
         }
       ]
     },
-    "output": "held: #3680 surface: a claim in hand"
+    "output": "held: #3680 surface: a claim in hand\nobservation due: #3811 — mise run debug:test <package> <test>\nsections due: #3811 — `## Sources` is missing\nsections due: #3811 — `## Readings` is missing\nsections due: #3811 — `## Concerns` is missing\nsections due: #3811 — `## Ledger` is missing\nsections due: #3811 — `## Not in this slice` is missing\nsections due: #3811 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\nsections due: #3811 — `## Engineering` is missing: write one row for each of `change`, `complexity`, `latency`, `parallelism`, `memory` and `failure`, each a bound, a budget or a measured number, or `n/a — <reason>` (`units.md` § units-engineering)\n3811\tdefect\tsurface: an unowned defect"
   },
   {
     "name": "#3915: a claim marker places a claim in its lane over the issue's areas",
@@ -1836,7 +1836,7 @@
         }
       ]
     },
-    "output": "held: #11 core: this lane's claim"
+    "output": "held: #11 core: this lane's claim\nobservation due: #12 — mise run debug:test <package> <test>\nsections due: #12 — `## Sources` is missing\nsections due: #12 — `## Readings` is missing\nsections due: #12 — `## Concerns` is missing\nsections due: #12 — `## Ledger` is missing\nsections due: #12 — `## Not in this slice` is missing\nsections due: #12 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\nsections due: #12 — `## Engineering` is missing: write one row for each of `change`, `complexity`, `latency`, `parallelism`, `memory` and `failure`, each a bound, a budget or a measured number, or `n/a — <reason>` (`units.md` § units-engineering)\n12\tdefect\tworkflow: an unowned defect"
   },
   {
     "name": "#3915: an issue its lane released within 2 hours comes first for that lane, ahead of the lane's defect",
@@ -2211,7 +2211,7 @@
         }
       ]
     },
-    "output": "held: #60 workflow: the other seat's claim"
+    "output": "held: #60 workflow: the other seat's claim\nobservation due: #61 — mise run debug:test <package> <test>\nsections due: #61 — `## Sources` is missing\nsections due: #61 — `## Readings` is missing\nsections due: #61 — `## Concerns` is missing\nsections due: #61 — `## Ledger` is missing\nsections due: #61 — `## Not in this slice` is missing\nsections due: #61 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\nsections due: #61 — `## Engineering` is missing: write one row for each of `change`, `complexity`, `latency`, `parallelism`, `memory` and `failure`, each a bound, a budget or a measured number, or `n/a — <reason>` (`units.md` § units-engineering)\n61\tdefect\tworkflow: an unowned defect"
   },
   {
     "name": "#3951: a claim with no marker belongs to the lane whose branch on origin works it, not the lane of its areas",
@@ -2830,7 +2830,7 @@
     "output": "observation due: #81 — mise run debug:test <package> <test>\nsections due: #81 — `## Sources` is missing\nsections due: #81 — `## Readings` is missing\nsections due: #81 — `## Concerns` is missing\nsections due: #81 — `## Ledger` is missing\nsections due: #81 — `## Not in this slice` is missing\nsections due: #81 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\nsections due: #81 — `## Engineering` is missing: write one row for each of `change`, `complexity`, `latency`, `parallelism`, `memory` and `failure`, each a bound, a budget or a measured number, or `n/a — <reason>` (`units.md` § units-engineering)\n81\tdefect\tworkflow: the second defect"
   },
   {
-    "name": "#4660: a pick the reread shows this lane's own run claimed is held, and nothing more is claimed",
+    "name": "#5154: a pick the reread shows this lane's own run claimed is held and named, and the lane's next pick follows it",
     "input": {
       "areas": ["area:workflow", "area:ci"],
       "order": {},
@@ -2869,7 +2869,7 @@
         }
       }
     },
-    "output": "held: #80 workflow: the first defect"
+    "output": "held: #80 workflow: the first defect\nobservation due: #81 — mise run debug:test <package> <test>\nsections due: #81 — `## Sources` is missing\nsections due: #81 — `## Readings` is missing\nsections due: #81 — `## Concerns` is missing\nsections due: #81 — `## Ledger` is missing\nsections due: #81 — `## Not in this slice` is missing\nsections due: #81 — `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\nsections due: #81 — `## Engineering` is missing: write one row for each of `change`, `complexity`, `latency`, `parallelism`, `memory` and `failure`, each a bound, a budget or a measured number, or `n/a — <reason>` (`units.md` § units-engineering)\n81\tdefect\tworkflow: the second defect"
   },
   {
     "name": "#4660: a pick the reread shows unchanged is the pick",

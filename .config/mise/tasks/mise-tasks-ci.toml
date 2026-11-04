@@ -2048,12 +2048,9 @@ awk '/^focus: /' <<< "$lines" >&2
 # A claim with no marker and no branch names no lane (#4504): no lane holds
 # it, and the lane working it writes its marker.
 awk '/^unattributed: / { print; print "claim:next: " $2 " names no lane; the lane working it writes `<!-- claim: lane=<lane> -->` in its body" }' <<< "$lines" >&2
-held=$(awk '/^held: /' <<< "$lines")
-if [[ -n $held ]]; then
-  echo "$held" >&2
-  echo "claim:next: $lane holds a claim no open pull request names; land it or run \`mise run claim:release $lane <n>\`" >&2
-  exit 1
-fi
+# A held claim, one no open pull request names, is reported and never stops
+# the lane's next claim (`next.jq`): the seat opens it when it can.
+awk '/^held: / { print; print "claim:next: " $2 " has no open pull request yet; open it with `pr:open` when its gate passes" }' <<< "$lines" >&2
 awk '/^collector: /' <<< "$lines" >&2
 source "$claims/design.bash"
 design=$(design_report "$board/issues.json")
