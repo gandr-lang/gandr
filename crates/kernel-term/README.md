@@ -33,6 +33,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the sharing format (§ The representation) — one maximally shared table per artifact, bounded by expanded work, so a declaration's shared size is the entries its segment adds and its unshared size its roots' expanded work.
 - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Example 1.4 and § 6 give Catt's artifact sizes, which `decode_measured`'s per-declaration shares stand beside.
 - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites grows with dimension, so `decode_measured` reports both sizes rather than one.
+- `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Ambrus Kovács. "Canonicity for Indexed Inductive-Recursive Types." _Proceedings of the ACM on Programming Languages_ 10 (POPL), 2026. `doi:10.1145/3776685` — the signatures, `E` and `F` of § 2.2 give `Builtin`'s three roles and the judgement of each holder.
 
 ## Provided features
 

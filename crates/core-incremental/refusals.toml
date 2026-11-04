@@ -50,6 +50,8 @@ AtomTransport = { tag = 85 }
 BridgeAtSealedType = { tag = 96, sites = ["at"] }
 OutsideFold = { tag = 97 }
 SealSiteRepeated = { tag = 51 }
+BuiltinRepeated = { tag = 107 }
+BuiltinMisplaced = { tag = 108 }
 DataArgumentArity = { tag = 22, sites = ["0"] }
 UnknownConstructor = { tag = 23 }
 ConstructorArity = { tag = 24 }

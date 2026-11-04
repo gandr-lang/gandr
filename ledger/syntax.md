@@ -5,7 +5,7 @@ Generated from the built-in grammar by `mise run ledger:syntax`; never edited by
 - Grammar fingerprint: `0x96bf64daa117d1f6`
 - Rules: 170 — 169 committed, 1 internal
 - Molds: 3015
-- Attributes: 17
+- Attributes: 18
 
 ## Reading a form
 
@@ -237,7 +237,7 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
-## Attributes — 17 attributes
+## Attributes — 18 attributes
 
 Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.
 
@@ -260,6 +260,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`identity`](../corpus/ledger/attributes/identity.gandr) | a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law |
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
+| [`builtin`](../corpus/ledger/attributes/builtin.gandr) | one of the words `irSignature`, `irArgs`, `irDecode` |
 
 ## Decisions — 113 of 170 rules decided at every token
 

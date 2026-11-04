@@ -4384,6 +4384,12 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 {
     let mut declarations = Vec::with_capacity(module.declarations().iter().len());
     for lowered in module.declarations() {
+        // The role a `builtin` mark gives the declaration, of any judgement. The
+        // checker refuses a role on the wrong judgement.
+        let marked = |declaration: Declaration| match module.builtin(lowered) {
+            Maybe::Present(role) => declaration.built_in(role),
+            Maybe::Absent(_) => declaration,
+        };
         let (declared, defined) = match lowered.outcome() {
             DeclarationOutcome::Completed {
                 declared_type,
@@ -4407,37 +4413,37 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
             ),
             DeclarationOutcome::Data(index) => {
                 if let Maybe::Present(signature) = module.data(index) {
-                    declarations.push(Declaration::data(
+                    declarations.push(marked(Declaration::data(
                         lowered.constant(),
                         Arc::clone(signature),
                         OriginToken::from(usize::from(lowered.origin())),
-                    ));
+                    )));
                 }
                 continue;
             },
             DeclarationOutcome::Codata(index) => {
                 if let Maybe::Present(signature) = module.codata(index) {
-                    declarations.push(Declaration::codata(
+                    declarations.push(marked(Declaration::codata(
                         lowered.constant(),
                         Arc::clone(signature),
                         OriginToken::from(usize::from(lowered.origin())),
-                    ));
+                    )));
                 }
                 continue;
             },
             DeclarationOutcome::Abstract(sealing) => {
-                declarations.push(Declaration::abstract_type(
+                declarations.push(marked(Declaration::abstract_type(
                     lowered.constant(),
                     abstract_type(sealing, module.interface(lowered)),
                     OriginToken::from(usize::from(lowered.origin())),
-                ));
+                )));
                 continue;
             },
             DeclarationOutcome::World => {
-                declarations.push(Declaration::world(
+                declarations.push(marked(Declaration::world(
                     lowered.constant(),
                     OriginToken::from(usize::from(lowered.origin())),
-                ));
+                )));
                 continue;
             },
             DeclarationOutcome::Refused(_) => continue,
@@ -4454,6 +4460,7 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
         .supplied(module.supplies(lowered).to_vec())
         .resolving(module.models(lowered).to_vec())
         .obliged(module.handler_laws(lowered).to_vec());
+        let declaration = marked(declaration);
         declarations.push(match Entry::declared(module.worlds(lowered)) {
             Maybe::Present(entry) => declaration.entered(entry),
             Maybe::Absent(_) => declaration,

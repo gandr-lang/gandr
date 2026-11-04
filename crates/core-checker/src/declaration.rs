@@ -501,6 +501,9 @@ pub struct Declaration
     handler_laws: Vec<gandr_core_term::handler::HandlerLaw>,
     /// The entry a value declaration states, or why none.
     entry: Maybe<Entry, entry::Absent>,
+    /// The built-in role a `builtin` attribute gives the declaration, or why
+    /// it takes none.
+    builtin: Maybe<gandr_kernel_term::Builtin, gandr_kernel_term::builtin_role::Absent>,
 }
 
 impl Declaration
@@ -545,6 +548,7 @@ impl Declaration
             models: Vec::new(),
             handler_laws: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
+            builtin: Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unmarked),
         }
     }
 
@@ -596,6 +600,7 @@ impl Declaration
             models: Vec::new(),
             handler_laws: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
+            builtin: Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unmarked),
         }
     }
 
@@ -622,6 +627,7 @@ impl Declaration
             models: Vec::new(),
             handler_laws: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
+            builtin: Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unmarked),
         }
     }
 
@@ -648,6 +654,7 @@ impl Declaration
             models: Vec::new(),
             handler_laws: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
+            builtin: Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unmarked),
         }
     }
 
@@ -673,6 +680,7 @@ impl Declaration
             models: Vec::new(),
             handler_laws: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
+            builtin: Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unmarked),
         }
     }
 
@@ -1038,5 +1046,51 @@ impl Declaration
             | DeclarationContent::Abstract(_)
             | DeclarationContent::World => self,
         }
+    }
+
+    /// This declaration taking the built-in `role`, everything else
+    /// unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — whether the role fits the declaration's judgement,
+    ///   and whether another declaration holds it, is checked when the
+    ///   declaration is judged.
+    /// - ensures: the declaration takes exactly `role`, of any judgement.
+    /// - provides: how a producer attaches the role a `builtin` attribute
+    ///   names.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration of the wrong judgement keeps its role,
+    ///   so the judgement refuses it by name.
+    /// - witness: `module::tests::a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575`
+    #[spec(
+        captures: builtin_before = (self.constant, self.origin),
+        ensures: |ret| ret.constant == builtin_before.0 && ret.origin == builtin_before.1
+            && ret.builtin == Maybe::Present(role),
+    )]
+    #[inline]
+    #[must_use]
+    pub fn built_in(
+        self,
+        role: gandr_kernel_term::Builtin,
+    ) -> Self
+    {
+        Self {
+            builtin: Maybe::Present(role),
+            ..self
+        }
+    }
+
+    /// The built-in role the declaration takes, or why it takes none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn builtin(
+        &self
+    ) -> Maybe<gandr_kernel_term::Builtin, gandr_kernel_term::builtin_role::Absent>
+    {
+        self.builtin
     }
 }

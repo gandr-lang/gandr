@@ -749,6 +749,10 @@ pub enum RefusalName
     BridgeAtSealedType,
     /// The checker reports `SealSiteRepeated`.
     SealSiteRepeated,
+    /// The checker reports `BuiltinRepeated`.
+    BuiltinRepeated,
+    /// The checker reports `BuiltinMisplaced`.
+    BuiltinMisplaced,
     /// The checker reports `DataArgumentArity`.
     DataArgumentArity,
     /// The checker reports `UnknownConstructor`.
@@ -1303,7 +1307,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 238_usize] = [
+    pub const VOCABULARY: [Self; 240_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1318,6 +1322,8 @@ impl RefusalName
         Self::AtomTransport,
         Self::BridgeAtSealedType,
         Self::SealSiteRepeated,
+        Self::BuiltinRepeated,
+        Self::BuiltinMisplaced,
         Self::DataArgumentArity,
         Self::UnknownConstructor,
         Self::ConstructorArity,
@@ -1711,6 +1717,8 @@ impl RefusalName
         | (Self::AtomTransport, b"AtomTransport")
         | (Self::BridgeAtSealedType, b"BridgeAtSealedType")
         | (Self::SealSiteRepeated, b"SealSiteRepeated")
+        | (Self::BuiltinRepeated, b"BuiltinRepeated")
+        | (Self::BuiltinMisplaced, b"BuiltinMisplaced")
         | (Self::DataArgumentArity, b"DataArgumentArity")
         | (Self::UnknownConstructor, b"UnknownConstructor")
         | (Self::ConstructorArity, b"ConstructorArity")
@@ -1854,6 +1862,8 @@ impl RefusalName
             Self::AtomTransport => "AtomTransport",
             Self::BridgeAtSealedType => "BridgeAtSealedType",
             Self::SealSiteRepeated => "SealSiteRepeated",
+            Self::BuiltinRepeated => "BuiltinRepeated",
+            Self::BuiltinMisplaced => "BuiltinMisplaced",
             Self::DataArgumentArity => "DataArgumentArity",
             Self::UnknownConstructor => "UnknownConstructor",
             Self::ConstructorArity => "ConstructorArity",
@@ -2985,6 +2995,8 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::AtomTransport { .. }, RefusalName::AtomTransport)
         | (CheckRefusal::BridgeAtSealedType { .. }, RefusalName::BridgeAtSealedType)
         | (CheckRefusal::SealSiteRepeated(_), RefusalName::SealSiteRepeated)
+        | (CheckRefusal::BuiltinRepeated { .. }, RefusalName::BuiltinRepeated)
+        | (CheckRefusal::BuiltinMisplaced(_), RefusalName::BuiltinMisplaced)
         | (CheckRefusal::DataArgumentArity(_), RefusalName::DataArgumentArity)
         | (CheckRefusal::UnknownConstructor { .. }, RefusalName::UnknownConstructor)
         | (CheckRefusal::ConstructorArity(_), RefusalName::ConstructorArity)
@@ -3138,6 +3150,8 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::AtomTransport { .. } => RefusalName::AtomTransport,
         CheckRefusal::BridgeAtSealedType { .. } => RefusalName::BridgeAtSealedType,
         CheckRefusal::SealSiteRepeated(_) => RefusalName::SealSiteRepeated,
+        CheckRefusal::BuiltinRepeated { .. } => RefusalName::BuiltinRepeated,
+        CheckRefusal::BuiltinMisplaced(_) => RefusalName::BuiltinMisplaced,
         CheckRefusal::DataArgumentArity(_) => RefusalName::DataArgumentArity,
         CheckRefusal::UnknownConstructor { .. } => RefusalName::UnknownConstructor,
         CheckRefusal::ConstructorArity(_) => RefusalName::ConstructorArity,

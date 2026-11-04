@@ -774,6 +774,9 @@ impl<'arena> Session<'arena>
         if let Maybe::Present(stated) = entry.source.entry() {
             filled = filled.entered(stated.clone());
         }
+        if let Maybe::Present(role) = entry.source.builtin() {
+            filled = filled.built_in(role);
+        }
         let count = entry.judgements;
         let mut declarations = self.declarations.clone();
         if let Some(slot) = declarations

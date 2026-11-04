@@ -469,6 +469,10 @@ impl RegisteredAttribute
     /// member's declared types, printed by Rust's default layout, realise its
     /// row, or the block is refused by the first clause a member breaks.
     pub const BOUNDARY: Self = Self("boundary");
+    /// `builtin`: the declaration it decorates takes the built-in role its
+    /// word names, which a core former reads by role
+    /// ([`gandr_kernel_term::Builtin`]).
+    pub const BUILTIN: Self = Self("builtin");
     /// `traces`: the run of the declaration it decorates is recorded, and the
     /// payload states the web one channel's play decomposes to. It is the one
     /// attribute written more than once on a name, once per channel.
@@ -710,7 +714,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 17_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 18_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -740,6 +744,10 @@ const REGISTRY: [(&str, AttributeSchema); 17_usize] = [
         AttributeSchema::MarkerOrRecord(RegisteredAttribute::DEPRECATION_FIELDS),
     ),
     (RegisteredAttribute::BOUNDARY.0, AttributeSchema::Names),
+    (
+        RegisteredAttribute::BUILTIN.0,
+        AttributeSchema::Word(gandr_kernel_term::Builtin::WORDS),
+    ),
 ];
 
 impl AttributeRegistry
@@ -1969,6 +1977,10 @@ mod tests
                 AttributeSchema::MarkerOrRecord(&["since", "note"]),
             ),
             ("boundary", AttributeSchema::Names),
+            (
+                "builtin",
+                AttributeSchema::Word(&["irSignature", "irArgs", "irDecode"]),
+            ),
         ];
 
         for (spelling, schema) in expected {
@@ -2028,6 +2040,7 @@ mod tests
             ("trace", "traces"),
             ("read", "reads"),
             ("boundary", "boundary"),
+            ("builtins", "builtin"),
         ];
 
         for (written, nearest) in expected {

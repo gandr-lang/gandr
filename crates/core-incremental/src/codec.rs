@@ -7350,6 +7350,25 @@ field!(
 );
 
 field!(
+    gandr_kernel_term::Builtin,
+    |role, writer| {
+        writer.count(Count(match *role {
+            gandr_kernel_term::Builtin::IrSignature => 0,
+            gandr_kernel_term::Builtin::IrArgs => 1,
+            gandr_kernel_term::Builtin::IrDecode => 2,
+        }))
+    },
+    |reader| {
+        match reader.count()?.0 {
+            0 => Ok(gandr_kernel_term::Builtin::IrSignature),
+            1 => Ok(gandr_kernel_term::Builtin::IrArgs),
+            2 => Ok(gandr_kernel_term::Builtin::IrDecode),
+            _ => Err(CodecError::Corrupt),
+        }
+    }
+);
+
+field!(
     gandr_core_term::tactic::Tactic,
     |tactic, writer| {
         writer.tag(Tag(u8::from(*tactic)));
@@ -8347,6 +8366,8 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::AtomTransport { .. }
             | Refusal::BridgeAtSealedType { .. }
             | Refusal::SealSiteRepeated(_)
+            | Refusal::BuiltinRepeated { .. }
+            | Refusal::BuiltinMisplaced(_)
             | Refusal::UnenclosedRun { .. }
             | Refusal::ImplicitUnsolved { .. }
             | Refusal::ModelUnanswered { .. }

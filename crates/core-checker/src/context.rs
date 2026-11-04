@@ -422,6 +422,8 @@ pub struct CheckingContext<'arena>
     sealed: BTreeMap<ConstantIndex, Sealed>,
     /// The sites that minted them, in minting order.
     seals: SealTable,
+    /// The declaration that holds each built-in role.
+    builtins: BTreeMap<gandr_kernel_term::Builtin, ConstantIndex>,
     /// The allowance each judgement starts with.
     budget: CheckBudget,
     /// The answers the running supported judgement consulted, when one runs.
@@ -654,6 +656,8 @@ pub struct Checkpoint
     natives: BTreeMap<ValueId, ValueId>,
     /// [`CheckingContext::sealed`].
     sealed: BTreeMap<ConstantIndex, Sealed>,
+    /// [`CheckingContext::builtins`].
+    builtins: BTreeMap<gandr_kernel_term::Builtin, ConstantIndex>,
     /// [`CheckingContext::seals`].
     seals: SealTable,
     /// [`CheckingContext::budget`].
@@ -809,6 +813,7 @@ impl<'arena> CheckingContext<'arena>
             operation_rules: BTreeMap::new(),
             stage_signatures: BTreeMap::new(),
             sealed: BTreeMap::new(),
+            builtins: BTreeMap::new(),
             seals: SealTable::new(),
             budget,
             support: SupportLog::Off,
@@ -892,6 +897,7 @@ impl<'arena> CheckingContext<'arena>
             ref stage_signatures,
             ref natives,
             ref sealed,
+            ref builtins,
             ref seals,
             budget,
             support: _,
@@ -950,6 +956,7 @@ impl<'arena> CheckingContext<'arena>
             stage_signatures: stage_signatures.clone(),
             natives: natives.clone(),
             sealed: sealed.clone(),
+            builtins: builtins.clone(),
             seals: seals.clone(),
             budget,
             owed: deferrals.owed.clone(),
@@ -1029,6 +1036,7 @@ impl<'arena> CheckingContext<'arena>
             stage_signatures,
             natives,
             sealed,
+            builtins,
             seals,
             budget,
             owed,
@@ -1085,6 +1093,7 @@ impl<'arena> CheckingContext<'arena>
             stage_signatures,
             natives,
             sealed,
+            builtins,
             seals,
             budget,
             support: SupportLog::Off,
@@ -2366,6 +2375,78 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         }
         let _previous = self.sealed.insert(constant, Sealed { declared, level });
         Ok(atom)
+    }
+
+    /// Give the declaration at `constant` the built-in `role`, when the
+    /// declaration's `content` is of the judgement that holds the role and no
+    /// earlier declaration holds it.
+    ///
+    /// # Specification
+    /// - requires: `content` is the content of the declaration at `constant`.
+    /// - ensures: the context answers `constant` for `role`; a second claim by
+    ///   the same declaration is admitted unchanged.
+    /// - fails: [`CheckRefusal::BuiltinMisplaced`] when the content is of
+    ///   another judgement than [`gandr_kernel_term::Builtin::holder`], and
+    ///   [`CheckRefusal::BuiltinRepeated`] naming the holder when another
+    ///   declaration holds the role; the context is unchanged.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::BuiltinMisplaced`] and
+    /// [`CheckRefusal::BuiltinRepeated`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a role claimed by two declarations, and a role on a
+    ///   declaration of the wrong judgement, are each refused by cause.
+    /// - witness: `module::tests::a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575`
+    #[spec(
+        captures: before = self.builtins.get(&role).copied(),
+        ensures: |ret| match ret {
+            | Ok(()) => matches!((role.holder(), content), (gandr_kernel_term::Holder::Data, crate::DeclarationContent::Data(_)) | (gandr_kernel_term::Holder::Value, crate::DeclarationContent::Value { .. }))
+                && before.is_none_or(|holder| holder == constant)
+                && self.builtins.get(&role) == Some(&constant),
+            | Err(refusal) => self.builtins.get(&role).copied() == before
+                && if matches!((role.holder(), content), (gandr_kernel_term::Holder::Data, crate::DeclarationContent::Data(_)) | (gandr_kernel_term::Holder::Value, crate::DeclarationContent::Value { .. })) {
+                    before.is_some_and(|holder| refusal == CheckRefusal::BuiltinRepeated { role, holder })
+                }
+                else {
+                    refusal == CheckRefusal::BuiltinMisplaced(role)
+                },
+        },
+    )]
+    pub(crate) fn claim_builtin(
+        &mut self,
+        constant: ConstantIndex,
+        role: gandr_kernel_term::Builtin,
+        content: &crate::DeclarationContent,
+    ) -> Result<(), CheckRefusal>
+    {
+        let fits = matches!(
+            (role.holder(), content),
+            (
+                gandr_kernel_term::Holder::Data,
+                crate::DeclarationContent::Data(_)
+            ) | (
+                gandr_kernel_term::Holder::Value,
+                crate::DeclarationContent::Value { .. }
+            )
+        );
+        if !fits {
+            return Err(CheckRefusal::BuiltinMisplaced(role));
+        }
+        match self.builtins.entry(role) {
+            alloc::collections::btree_map::Entry::Occupied(held) if *held.get() != constant => {
+                Err(CheckRefusal::BuiltinRepeated {
+                    role,
+                    holder: *held.get(),
+                })
+            },
+            alloc::collections::btree_map::Entry::Occupied(_) => Ok(()),
+            alloc::collections::btree_map::Entry::Vacant(vacant) => {
+                let _held = vacant.insert(constant);
+                Ok(())
+            },
+        }
     }
 
     /// Re-form and adopt an abstract type a previous run admitted, minting its

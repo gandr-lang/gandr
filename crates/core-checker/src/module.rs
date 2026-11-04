@@ -1406,6 +1406,13 @@ fn decide(
     if let Err(refusal) = context.admit(constant) {
         return unrun(refusal);
     }
+    // The role is claimed before the content is judged. A declaration that
+    // the judgement refuses later keeps its role.
+    if let Maybe::Present(role) = declaration.builtin()
+        && let Err(refusal) = context.claim_builtin(constant, role, declaration.content())
+    {
+        return unrun(refusal);
+    }
     context.keep_laws(constant, declaration.laws().to_vec());
     context.keep_operation_rules(constant, declaration.operation_rules().clone());
     let outer = (run == Run::Typed).then(|| context.start_typings());

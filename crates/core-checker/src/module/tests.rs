@@ -205,6 +205,81 @@ fn an_admission_out_of_order_is_refused()
     }
 }
 
+/// #3575: one declaration of the judgement a built-in role fits holds the
+/// role. A second holder is refused by the first's position. A role on the
+/// other judgement is refused by name. Neither refusal moves the holder, and
+/// each is the source's fault.
+#[test]
+fn a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575()
+{
+    use gandr_kernel_term::Builtin;
+
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let zero = arena.value_literal(integer_literal());
+    let codes = gandr_core_term::DataSignature::new(Vec::new(), Vec::from([Vec::new()]), kind);
+    let codes = alloc::sync::Arc::new(codes);
+    let data = |at: usize| {
+        Declaration::data(
+            ConstantIndex::from(at),
+            alloc::sync::Arc::clone(&codes),
+            OriginToken::from(at),
+        )
+    };
+    let value = |at: usize| declaration(At(at), UNSIGNED, Maybe::Present(zero));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert_eq!(
+        check_declaration(&mut context, &data(0).built_in(Builtin::IrSignature)),
+        Verdict::Data,
+        "a datatype holds the signature role"
+    );
+    assert!(
+        matches!(
+            check_declaration(&mut context, &value(1).built_in(Builtin::IrArgs)),
+            Verdict::Synthesised { .. }
+        ),
+        "a definition holds the arguments role"
+    );
+    let repeated = CheckRefusal::BuiltinRepeated {
+        role: Builtin::IrArgs,
+        holder: ConstantIndex::from(1_usize),
+    };
+    assert_eq!(
+        check_declaration(&mut context, &value(2).built_in(Builtin::IrArgs)),
+        Verdict::Refused(repeated),
+        "a second holder is refused by the first's position"
+    );
+    assert_eq!(
+        check_declaration(&mut context, &value(3).built_in(Builtin::IrSignature)),
+        Verdict::Refused(CheckRefusal::BuiltinMisplaced(Builtin::IrSignature)),
+        "the signature role on a definition is refused"
+    );
+    assert_eq!(
+        check_declaration(&mut context, &data(4).built_in(Builtin::IrDecode)),
+        Verdict::Refused(CheckRefusal::BuiltinMisplaced(Builtin::IrDecode)),
+        "the decode role on a datatype is refused"
+    );
+    assert_eq!(
+        check_declaration(&mut context, &value(5).built_in(Builtin::IrArgs)),
+        Verdict::Refused(repeated),
+        "the refusals leave the first holder in place"
+    );
+    let world = Declaration::world(ConstantIndex::from(6_usize), OriginToken::from(6_usize));
+    assert_eq!(
+        check_declaration(&mut context, &world.built_in(Builtin::IrArgs)),
+        Verdict::Refused(CheckRefusal::BuiltinMisplaced(Builtin::IrArgs)),
+        "a declaration that is neither data nor a value holds no role"
+    );
+    assert_eq!(
+        [
+            repeated.classify(),
+            CheckRefusal::BuiltinMisplaced(Builtin::IrDecode).classify()
+        ],
+        [FailureClass::MalformedSource; 2],
+        "each refusal is the source's fault"
+    );
+}
+
 #[test]
 fn a_declaration_cannot_read_its_own_type()
 {

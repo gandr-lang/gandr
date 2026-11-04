@@ -188,6 +188,10 @@ quenchant_shape::reason_enum! {
             /// as it judges it; adoption does not replay the judgement, so the
             /// declaration is judged again.
             Derived,
+            /// The declaration takes a built-in role. Whether it holds the role
+            /// reads every other declaration's role, which no support records,
+            /// so the declaration is judged again.
+            Marked,
         }
     }
 }
@@ -2623,7 +2627,8 @@ where
                     recall::Absent::Opaque
                     | recall::Absent::Missed
                     | recall::Absent::Unseated
-                    | recall::Absent::Derived => {},
+                    | recall::Absent::Derived
+                    | recall::Absent::Marked => {},
                 }
                 bump(&mut census.judged);
                 let supported = check_declaration_supported(&mut context, declaration);
@@ -2816,11 +2821,13 @@ enum Seat
         let supported =
             support_holds(input, input.candidate.checkpoint.support()) == Standing::Stands;
         let untouched = touches(input, input.candidate.checkpoint.support()) == Standing::Stands;
+        let marked = matches!(input.declaration.builtin(), Maybe::Present(_));
         match ret {
             | Maybe::Present((ref support, ref typing, _)) => {
                 transparent
                     && supported
                     && untouched
+                    && !marked
                     && !derived
                     && support.as_slice() == input.candidate.checkpoint.support()
                     && typing == input.candidate.checkpoint.typing()
@@ -2835,6 +2842,9 @@ enum Seat
                     }
                     else if !untouched {
                         recall::Absent::ValueRead
+                    }
+                    else if marked {
+                        recall::Absent::Marked
                     }
                     else if derived {
                         recall::Absent::Derived
@@ -2860,6 +2870,9 @@ fn adopt(
     }
     if touches(input, checkpoint.support()) == Standing::Falls {
         return Maybe::Absent(recall::Absent::ValueRead);
+    }
+    if let Maybe::Present(_) = input.declaration.builtin() {
+        return Maybe::Absent(recall::Absent::Marked);
     }
     let (signature, body) = match *(input.declaration.content()) {
         gandr_core_checker::DeclarationContent::Value {
