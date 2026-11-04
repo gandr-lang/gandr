@@ -347,6 +347,16 @@ fn malformed(
         },
         FormFault::NotAName => String::from("write a name before the `@`"),
         FormFault::BareIndex => String::from("write the index as the selector `.#[ … ]`"),
+        FormFault::PositionalAfterNamed => {
+            String::from("write the positional entries before the named ones")
+        },
+        FormFault::PositionalPastBlock => {
+            String::from("remove the entry, or match it to an implicit of the block")
+        },
+        FormFault::CompoundPositional => {
+            String::from("supply the value by name, as `.n = …` with the implicit's name for `n`")
+        },
+        FormFault::SuppliedTwice => String::from("remove one of the two entries"),
         FormFault::MissingOpen(close) => {
             format!(
                 "add the `{}` that this `{}` closes",

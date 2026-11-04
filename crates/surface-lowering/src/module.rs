@@ -1699,6 +1699,10 @@ pub struct Collected<'source>
     /// slot: each binder's name in written order, its position the ordinal of
     /// the stage the checker mints for it.
     pub stage_binders: BTreeMap<SlotIndex, Vec<SurfaceName<'source>>>,
+    /// The implicit block of each function that writes one, by its slot: each
+    /// entry's name in written order, of any sort. A positional supply
+    /// `f[T, U]` names the implicits in this order, never the merged one.
+    pub written_implicits: BTreeMap<SlotIndex, Vec<SurfaceName<'source>>>,
     /// Each method, by its slot: a module member whose first parameter is
     /// `self`, written with its type, with the mode that parameter is written
     /// at. A call `s.f(…)` selects one off its receiver `s`.
@@ -3565,6 +3569,7 @@ pub fn begin_collection<'source>(
         plicities: BTreeMap::new(),
         parameters: BTreeMap::new(),
         stage_binders: BTreeMap::new(),
+        written_implicits: BTreeMap::new(),
         receivers: BTreeMap::new(),
         declared_uses: Vec::new(),
         reached: BTreeSet::new(),
@@ -6450,6 +6455,10 @@ impl<'source> Collector<'_, 'source>
                 && !binders.is_empty()
             {
                 let _first = self.collected.stage_binders.insert(slot, binders);
+            }
+            let written = self.written_implicits(&header);
+            if !written.is_empty() {
+                let _first = self.collected.written_implicits.insert(slot, written);
             }
             if let Container::Module(_) = container
                 && let Some(mode) = receiver_of(

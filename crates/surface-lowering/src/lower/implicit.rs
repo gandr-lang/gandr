@@ -1,7 +1,7 @@
 //! Implicit parameters in the lowering: a function whose telescope `[a :
 //! Type]` binds a value binds every parameter in its merged telescope's order
 //! ([`crate::module::Plicity`]), and a call supplies the implicits by name,
-//! `f[.a = T](x)`, or omits them, `f(x)`.
+//! `f[.a = T](x)`, by position, `f[T](x)`, or omits them, `f(x)`.
 //!
 //! # Supply by name
 //!
@@ -17,6 +17,19 @@
 //! function applied to its implicits alone, a function of the rest: the
 //! declaration taken as a value has every implicit determined where it is
 //! taken.
+//!
+//! # Supply by position
+//!
+//! A resident that names no implicit supplies the implicit at its place in
+//! the block the declaration writes, `[ … ]`, never in the merged telescope.
+//! Every entry of the block counts, a stage, a region or a mode binder among
+//! them. `_` skips its place, so that implicit is omitted. The positional
+//! residents come before the named ones, `f[T, .b = U]`.
+//!
+//! A positional resident is an atom: a numeral, a constructor, or `_`
+//! ([`ResidentAtom`]). The slot molds a resident in any sort, so an atom
+//! arrives as a pattern form and the reader reads it back. A compound value,
+//! `f[n + 1]`, is refused, and goes by name, `f[.n = n + 1]`.
 //!
 //! # Nomination
 //!
@@ -58,6 +71,11 @@
 //!   the function's stage binders: that resident supplies a stage, which
 //!   crosses beside the declaration rather than as an argument
 //!   ([`super::staged`]).
+//! - A positional resident after a named one, one past the written block, and a
+//!   compound one are [`FormFault::PositionalAfterNamed`],
+//!   [`FormFault::PositionalPastBlock`] and [`FormFault::CompoundPositional`]
+//!   at the resident. An implicit supplied twice is
+//!   [`FormFault::SuppliedTwice`] at its second supply.
 //! - A supply standing as a value whose merged telescope places an implicit
 //!   after an explicit parameter, whose type mentions it, opens a lambda for
 //!   each explicit parameter before the last implicit and applies the function
@@ -100,6 +118,7 @@ use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
+use crate::form::FormName;
 use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Placed;
@@ -174,8 +193,151 @@ pub(super) enum Nomination<'source>
     Spliced(gandr_core_term::tactic::Tactic),
 }
 
+/// The atom a resident of an instantiation slot spells. The slot molds a
+/// resident in any sort, so an atom arrives as a pattern form.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each atom keeps the tile that spells it.
+/// - provides: the one reading of a positional supply and of a stratum count.
+/// - panics: none.
+/// - executable: none — a record of placed tiles, holding no tree to check them
+///   against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a numeral, a constructor and `_` each supply a position,
+///   and a compound entry is refused.
+/// - witness: `lower::implicit::tests::a_wildcard_skips_a_position_and_names_follow_positions_4945`
+/// - witness: `lower::implicit::tests::a_misplaced_positional_supply_is_refused_at_its_entry_4945`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ResidentAtom
+{
+    /// A numeral, at its digits.
+    Numeral(Placed),
+    /// A capitalised name applied to nothing.
+    Constructor(Placed),
+    /// The wildcard `_`.
+    Wildcard,
+    /// Any other form, a compound value or a lowercase name among them.
+    Compound,
+}
+
 impl<'source> Lowerer<'_, 'source>
 {
+    /// The atom the instantiation resident `resident` spells.
+    ///
+    /// The slot's positional rule is a lone hole, so the frozen tables hold no
+    /// mold for it, and a pattern mold wins the resident: `7` is a literal
+    /// pattern and `Unit` a constructor pattern. This reads both back as the
+    /// atoms they spell. A lowercase name molds only with a repair, so it is
+    /// compound.
+    ///
+    /// # Specification
+    /// - requires: `resident` is a resident of an instantiation slot.
+    /// - ensures: a number, a constructor, or a literal or constructor pattern
+    ///   of one such tile as that atom at its tile, `_` as the wildcard, and
+    ///   every other form as compound.
+    /// - fails: the pieces of the resident do not read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The refusal of [`read_pieces`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the witnesses' numerals and constructors supply their
+    ///   positions and read as strata, and a compound entry is refused.
+    /// - witness: `lower::implicit::tests::a_positional_supply_follows_the_written_block_4945`
+    /// - witness: `lower::implicit::tests::a_misplaced_positional_supply_is_refused_at_its_entry_4945`
+    /// - witness: `lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
+    #[spec(ensures: |ret| match ret {
+        Ok(ResidentAtom::Numeral(at) | ResidentAtom::Constructor(at)) => {
+            resident.span.start() <= at.span.start() && at.span.end() <= resident.span.end()
+        },
+        Ok(ResidentAtom::Wildcard | ResidentAtom::Compound) | Err(_) => true,
+    })]
+    pub(super) fn resident_atom(
+        &self,
+        resident: Placed,
+    ) -> Result<ResidentAtom, LoweringRefusal<'source>>
+    {
+        let Some(Ok(Shape::Form { name, .. })) = self
+            .tree
+            .node(resident.node)
+            .map(|node| shape_of(self.pbg, node))
+        else {
+            return Ok(ResidentAtom::Compound);
+        };
+        if name == FormName::WILDCARD {
+            return Ok(ResidentAtom::Wildcard);
+        }
+        if name == FormName::NUMBER {
+            return Ok(ResidentAtom::Numeral(resident));
+        }
+        if name == FormName::CONSTRUCTOR {
+            return Ok(ResidentAtom::Constructor(resident));
+        }
+        if name != FormName::LITERAL_PATTERN && name != FormName::CONSTRUCTOR_PATTERN {
+            return Ok(ResidentAtom::Compound);
+        }
+        // A pattern spells an atom when its one piece is the atom's tile.
+        let mut pieces = crate::form::Pieces::new();
+        read_pieces(self.pbg, self.tree, resident.node, &mut pieces)?;
+        Ok(match *pieces.pieces.as_slice() {
+            [Piece::Tile { label, at }] if label == TileName::NUMBER => ResidentAtom::Numeral(at),
+            [Piece::Tile { label, at }] if label == TileName::CONSTRUCTOR => {
+                ResidentAtom::Constructor(at)
+            },
+            _ => ResidentAtom::Compound,
+        })
+    }
+
+    /// Plan the positional atom `atom` as the value it spells, read under
+    /// `frame`. Its node stands as the supplied value, and the classifying
+    /// sweep never reads it as a form of its own.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a numeral or a constructor planned at its tile, which the
+    ///   sweep then leaves alone; nothing for the wildcard or a compound.
+    /// - fails: as the number or the constructor refuses.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The atom's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a numeral and a constructor supplied by position
+    ///   lower as the same values supplied by name.
+    /// - witness: `lower::implicit::tests::a_positional_supply_follows_the_written_block_4945`
+    #[spec(ensures: |ret| ret.is_err() || match atom {
+        ResidentAtom::Numeral(at) | ResidentAtom::Constructor(at) => self.classified_ahead.contains(&at.node),
+        ResidentAtom::Wildcard | ResidentAtom::Compound => true,
+    })]
+    fn positional_atom(
+        &mut self,
+        atom: ResidentAtom,
+        frame: Frame,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let (at, name) = match atom {
+            ResidentAtom::Numeral(at) => (at, FormName::NUMBER),
+            ResidentAtom::Constructor(at) => (at, FormName::CONSTRUCTOR),
+            ResidentAtom::Wildcard | ResidentAtom::Compound => return Ok(()),
+        };
+        let _first = self.classified_ahead.insert(at.node);
+        let site = Site {
+            at,
+            name,
+            reading: Reading::Value(frame),
+        };
+        match atom {
+            ResidentAtom::Numeral(_) => self.number(site),
+            ResidentAtom::Constructor(_) | ResidentAtom::Wildcard | ResidentAtom::Compound => {
+                self.constructor(site)
+            },
+        }
+    }
+
     /// The merged telescope of the function whose declaration holds `node`,
     /// when its telescope binds a value or its row labels an instance.
     ///
@@ -636,17 +798,24 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `head` is the call's head or, standing, `site` itself.
     /// - ensures: as [`Self::supplied_call`] for [`Use::Called`] and
-    ///   [`Self::supplied_value`] for [`Use::Standing`].
-    /// - fails: as theirs.
+    ///   [`Self::supplied_value`] for [`Use::Standing`]; each positional
+    ///   resident supplies the implicit at its place in the declaration's
+    ///   written block, and `_` omits it.
+    /// - fails: as theirs; the positional faults of the module's boundaries at
+    ///   the resident.
     /// - panics: none.
     ///
     /// # Errors
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — exercised through both callers.
+    /// - hypothesis: L3 — exercised through both callers, by name and by
+    ///   position.
     /// - witness: `lower::implicit::tests::supply_by_name_is_order_free`
     /// - witness: `lower::implicit::tests::a_supplied_function_stands_as_a_value`
+    /// - witness: `lower::implicit::tests::a_positional_supply_follows_the_written_block_4945`
+    /// - witness: `lower::implicit::tests::a_wildcard_skips_a_position_and_names_follow_positions_4945`
+    /// - witness: `lower::implicit::tests::a_misplaced_positional_supply_is_refused_at_its_entry_4945`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| match ret {
@@ -696,6 +865,10 @@ impl<'source> Lowerer<'_, 'source>
         // A pun `.a` supplies the variable `a`: its name tile stands as the
         // value, planned as that name once the supply is known to apply.
         let mut puns: Vec<Placed> = Vec::new();
+        // A positional resident `T` supplies the implicit its position names in
+        // the declaration's written block, and `_` supplies none: each waits
+        // until the head resolves to a declaration that writes a block.
+        let mut positional: Vec<(Placed, ResidentAtom)> = Vec::new();
         let mut scratch = core::mem::take(&mut self.scratch);
         let mut outcome = Ok(arity::Planned(true));
         for piece in residents {
@@ -713,6 +886,19 @@ impl<'source> Lowerer<'_, 'source>
                 ..site
             }
             .out(FragmentBoundary::Reserved(Unbuilt::CombinedSupply));
+            // A resident the slot's own forms do not spell is a positional
+            // entry: a type or a value, `_` among them. The slot's forms are a
+            // supply by name, a pun and a claim, `<`, `>`, `tail` or `.i <`.
+            let form = match self
+                .tree
+                .node(resident.node)
+                .map(|node| shape_of(self.pbg, node))
+            {
+                Some(Ok(Shape::Form { name, .. })) => Some(name),
+                Some(Ok(Shape::Root | Shape::Layout | Shape::Repair(_)) | Err(_)) | None => None,
+            };
+            let spelled = form == Some(FormName::INSTANTIATION)
+                && !matches!(scratch.pieces.first(), Some(&Piece::Operand(_)));
             let (written, value) = match *scratch.pieces.as_slice() {
                 [
                     Piece::Tile { label: dot, .. },
@@ -732,6 +918,20 @@ impl<'source> Lowerer<'_, 'source>
                     puns.push(written);
                     (written, written.node)
                 },
+                _ if !spelled => {
+                    if !supplied.is_empty() {
+                        outcome = Err(site.fault(resident.span, FormFault::PositionalAfterNamed));
+                        break;
+                    }
+                    match self.resident_atom(resident) {
+                        Ok(atom) => positional.push((resident, atom)),
+                        Err(refusal) => {
+                            outcome = Err(refusal);
+                            break;
+                        },
+                    }
+                    continue;
+                },
                 _ => {
                     outcome = if supplied.is_empty() {
                         Ok(arity::Planned(false))
@@ -744,7 +944,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             let implicit = self.name_at(written);
             if supplied.insert(implicit, (written, value)).is_some() {
-                outcome = Err(site.fault(written.span, FormFault::MisplacedTile));
+                outcome = Err(site.fault(written.span, FormFault::SuppliedTwice));
                 break;
             }
         }
@@ -762,17 +962,37 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(arity::Planned(false));
         };
+        let slot = SlotIndex::from(usize::from(constant));
+        if !positional.is_empty() {
+            let Some(block) = self.collected.written_implicits.get(&slot)
+            else {
+                return Ok(arity::Planned(false));
+            };
+            for (index, &(resident, atom)) in positional.iter().enumerate() {
+                let Some(&implicit) = block.get(index)
+                else {
+                    return Err(site.fault(resident.span, FormFault::PositionalPastBlock));
+                };
+                let value = match atom {
+                    ResidentAtom::Numeral(at) | ResidentAtom::Constructor(at) => at,
+                    ResidentAtom::Wildcard => continue,
+                    ResidentAtom::Compound => {
+                        return Err(site.fault(resident.span, FormFault::CompoundPositional));
+                    },
+                };
+                if let Some(&(named, _)) = supplied.get(&implicit) {
+                    return Err(site.fault(named.span, FormFault::SuppliedTwice));
+                }
+                let _fresh = supplied.insert(implicit, (resident, value.node));
+            }
+        }
         for pun in puns {
             self.pun(pun, frame)?;
         }
-        self.supply_declared(
-            site,
-            frame,
-            (inner, name),
-            SlotIndex::from(usize::from(constant)),
-            supplied,
-            used,
-        )
+        for &(_, atom) in &positional {
+            self.positional_atom(atom, frame)?;
+        }
+        self.supply_declared(site, frame, (inner, name), slot, supplied, used)
     }
 
     /// Plan the comparison `a ⊙ b` at `site`, read under `frame`, whose

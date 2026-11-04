@@ -4,8 +4,9 @@
 // one, an implicit written among the parentheses, a resident naming
 // no implicit, a use standing as a value with an implicit unsupplied, a
 // supply standing as a value whose implicit, once the supply abstracts the
-// explicit parameter before it, holds no value of that parameter, and a
-// telescope whose types mention each other.
+// explicit parameter before it, holds no value of that parameter, a
+// telescope whose types mention each other, and a positional supply after a
+// named one, past the block, twice, or compound.
 //
 // - see: #315
 // - see: #1216
@@ -45,6 +46,26 @@ def inParentheses = thunk { same(Integer, 3) };
 @[ refuses("UnresolvedName") ]
 def strayResident : () => Integer;
 def strayResident = thunk { same[.b = Integer](3) };
+
+/// A positional resident after a named one: the positions come first.
+@[ refuses("MalformedForm") ]
+def positionAfterName : () => Integer;
+def positionAfterName = thunk { same[.a = Integer, Integer](3) };
+
+/// A second positional resident, where `same`'s block writes one implicit.
+@[ refuses("MalformedForm") ]
+def positionPastBlock : () => Integer;
+def positionPastBlock = thunk { same[Integer, Integer](3) };
+
+/// A position supplies `a`, and a name supplies it again.
+@[ refuses("MalformedForm") ]
+def suppliedTwice : () => Integer;
+def suppliedTwice = thunk { same[Integer, .a = Integer](3) };
+
+/// A compound value by position: it goes by name, `chosen[.x = 3 + 4]`.
+@[ refuses("MalformedForm") ]
+def compoundPosition : () => Integer;
+def compoundPosition = thunk { chosen[3 + 4](Integer) };
 
 /// `same` named as a value, its implicit unsupplied.
 @[ refuses("ImplicitUnsupplied") ]

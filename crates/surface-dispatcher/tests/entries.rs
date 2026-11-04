@@ -1531,7 +1531,12 @@ mod sweeps
                 }
             }
         }
-        assert!(nodes > 0, "the corpus holds gated nodes");
+        // A change may touch only sources whose every declaration refuses,
+        // which hold no gated node.
+        assert!(
+            sweep.portion() == Portion::Changed || nodes > 0,
+            "the corpus holds gated nodes"
+        );
         assert_eq!(
             failures,
             Vec::<String>::new(),

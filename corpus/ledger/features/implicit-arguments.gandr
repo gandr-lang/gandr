@@ -1,5 +1,5 @@
 /// `implicit-arguments`: Implicit arguments.
-/// Implemented: rungs A and B: implicits in one prefix block, supply by name through the slot, a solver binding only forced solutions, and the spine pass making each omitted implicit a hole the kernel never meets.
+/// Implemented: rungs A and B: implicits in one prefix block, supply by name or by position through the slot, a solver binding only forced solutions, and the spine pass making each omitted implicit a hole the kernel never meets.
 /// Not implemented: rung C.
 ///
 /// - owes: #315
@@ -7,11 +7,12 @@
 /// - see: #1498 — `identityAt`
 /// - see: #1188 — `twiceRun`
 // Implicit parameters: the telescope `[a : Type]` after a function's name
-// binds parameters a use supplies by name in the instantiation slot,
-// `same[.a = Integer](3)`, in any order. The implicit and the explicit
-// parameters merge into one telescope, each after every parameter its type
-// names, ties kept in the written order; which ones are implicit is the
-// declaration's metadata, so the declared type is the one the function written
+// binds parameters a use supplies by name, `same[.a = Integer](3)`, or by
+// position, `same[Integer](3)`.
+// The implicit and the explicit parameters merge into one telescope, each
+// after every parameter its type names, ties kept in the written order; which
+// ones are implicit is the declaration's metadata, so the declared type is the
+// one the function written
 // with every parameter explicit, in the merged order, has. A call that omits
 // its implicits has each one solved from its arguments and the type it is
 // checked against. What refuses is in
@@ -24,6 +25,10 @@ def same[a : Type](y : a) -> a { y }
 /// `same` at the integers, supplied by name.
 @[ runs("3") ]
 def sameRun() -> Integer { same[.a = Integer](3) }
+
+/// A position supplies `same` at the integers.
+@[ runs("3") ]
+def samePositional() -> Integer { same[Integer](3) }
 
 /// `same` with its implicit omitted: the argument `3` determines `a`.
 @[ runs("3") ]
@@ -42,6 +47,18 @@ def firstRun() -> Integer { first[.a = Integer, .b = Unit](5, unit) }
 @[ runs("5") ]
 def firstSwapped() -> Integer { first[.b = Unit, .a = Integer](5, unit) }
 
+/// `first` supplied by position, in the order the block writes the implicits.
+@[ runs("5") ]
+def firstPositional() -> Integer { first[Integer, Unit](5, unit) }
+
+/// `first` supplied by position, then by name: the positions come first.
+@[ runs("5") ]
+def firstMixed() -> Integer { first[Integer, .b = Unit](5, unit) }
+
+/// `_` skips the first position of `first`, and `5` solves `a`.
+@[ runs("5") ]
+def firstSkipped() -> Integer { first[_, Unit](5, unit) }
+
 /// `first` with both implicits omitted, each determined by its own argument.
 @[ runs("5") ]
 def firstInferred() -> Integer { first(5, unit) }
@@ -55,6 +72,11 @@ def chosen[x : t](t : Type) -> t { x }
 @[ runs("7") ]
 def chosenRun() -> Integer { chosen[.x = 7](Integer) }
 
+/// `chosen` supplied by position: the block writes `x` first, though the
+/// merge binds `t` before it.
+@[ runs("7") ]
+def chosenPositional() -> Integer { chosen[7](Integer) }
+
 /// A stage and an implicit in one telescope: the stage quantifies the
 /// signature and binds no value, the implicit binds the first parameter.
 @[ checks ]
@@ -63,6 +85,11 @@ def kept[i : Size, a : Type](n : Integer, y : a) -> a { y }
 /// `kept` with its implicit supplied by name.
 @[ runs("4") ]
 def keptRun() -> Integer { kept[.a = Integer](0, 4) }
+
+/// `kept` supplied by position: the stage holds the first position, and `_`
+/// skips it.
+@[ runs("4") ]
+def keptPositional() -> Integer { kept[_, Integer](0, 4) }
 
 /// `kept` with its implicit omitted: the stage binds no value, and the second
 /// argument determines `a`.

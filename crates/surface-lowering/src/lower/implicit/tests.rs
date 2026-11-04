@@ -217,6 +217,85 @@ fn supply_by_name_is_order_free()
 }
 
 #[test]
+fn a_positional_supply_follows_the_written_block_4945()
+{
+    // `i : t` names the explicit `t`, so the merged telescope binds `u`, then
+    // `t`, then `i`. A position still counts the block as written: `7` is `i`.
+    let source = "def pick[i : t, u : Type](t : Type, y : u) -> -F t { return i }\ndef named : () => Integer ;\ndef named = thunk { become pick[.i = 7, .u = Unit](Integer, unit) } ;\ndef positional : () => Integer ;\ndef positional = thunk { become pick[7, Unit](Integer, unit) } ;\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    assert_eq!(
+        equal_certificate_syntax(
+            &arena,
+            body_named(&module, SurfaceName::from("named")),
+            body_named(&module, SurfaceName::from("positional")),
+        ),
+        CertificateEquality::Equal,
+        "the positional supply applies `pick` as the named one does"
+    );
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
+fn a_wildcard_skips_a_position_and_names_follow_positions_4945()
+{
+    let source = format!(
+        "{FIRST}def skipped : () => Integer ;\ndef skipped = thunk {{ become first[_, Unit](5, unit) }} ;\ndef mixed : () => Integer ;\ndef mixed = thunk {{ become first[Integer, .b = Unit](5, unit) }} ;\ndef named : () => Integer ;\ndef named = thunk {{ become first[.a = Integer, .b = Unit](5, unit) }} ;\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let holes = nominated_holes(&module, &arena, SurfaceName::from("skipped"));
+    let named: Vec<Maybe<&Omitted, _>> = holes
+        .iter()
+        .map(|&(at, _)| module.origins().omitted(at))
+        .collect();
+    assert_eq!(
+        named,
+        [Maybe::Present(&Omitted::Implicit {
+            function: String::from("first"),
+            implicit: String::from("a"),
+        })],
+        "`_` leaves `a` omitted, one hole naming it, and `Unit` supplies `b`"
+    );
+    assert_eq!(
+        equal_certificate_syntax(
+            &arena,
+            body_named(&module, SurfaceName::from("mixed")),
+            body_named(&module, SurfaceName::from("named")),
+        ),
+        CertificateEquality::Equal,
+        "a position, then a name, supply both"
+    );
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
+fn a_misplaced_positional_supply_is_refused_at_its_entry_4945()
+{
+    let source = format!(
+        "{FIRST}def after : () => Integer ;\ndef after = thunk {{ become first[.b = Unit, Integer](5, unit) }} ;\ndef past : () => Integer ;\ndef past = thunk {{ become first[Integer, Unit, Unit](5, unit) }} ;\ndef twice : () => Integer ;\ndef twice = thunk {{ become first[Integer, .a = Integer](5, unit) }} ;\ndef renamed : () => Integer ;\ndef renamed = thunk {{ become first[.a = Integer, .a = Integer](5, unit) }} ;\ndef compound : () => Integer ;\ndef compound = thunk {{ become first[Integer, Unit * Unit](5, (unit, unit)) }} ;\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for (name, expected) in [
+        ("after", crate::FormFault::PositionalAfterNamed),
+        ("past", crate::FormFault::PositionalPastBlock),
+        ("twice", crate::FormFault::SuppliedTwice),
+        ("renamed", crate::FormFault::SuppliedTwice),
+        ("compound", crate::FormFault::CompoundPositional),
+    ] {
+        assert!(
+            matches!(
+                refusal_of(&module, SurfaceName::from(name)),
+                LoweringRefusal::MalformedForm { fault, .. } if fault == expected
+            ),
+            "`{name}` is refused as {expected:?}: {:?}",
+            refusal_of(&module, SurfaceName::from(name))
+        );
+    }
+}
+
+#[test]
 fn an_unsupplied_implicit_is_refused_with_its_slot_spelling()
 {
     let source = format!("{SAME}def named : +U (Integer -> -F Integer) ;\ndef named = same ;\n");

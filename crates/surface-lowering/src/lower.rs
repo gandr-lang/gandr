@@ -7557,18 +7557,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: every pass that refuses a declaration of the current source
     ///   has run.
     /// - ensures: each slot of the current source refused as a malformed form,
-    ///   where the half holding the refusal, or the line it stands on when no
-    ///   half holds it, holds a bare bracket that [`bare_bracket`] finds open
-    ///   at the refusal, is refused at that bracket instead, at the same node
-    ///   and naming the same form, as a bare index; every other refusal is
-    ///   unchanged.
+    ///   other than a supply's fault at its own entry, where the half holding
+    ///   the refusal, or the line it stands on when no half holds it, holds a
+    ///   bare bracket that [`bare_bracket`] finds open at the refusal, is
+    ///   refused at that bracket instead, at the same node and naming the same
+    ///   form, as a bare index; every other refusal is unchanged.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause restates the walk over the slots.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`bare_bracket`].
+    /// - hypothesis: L3 — as [`bare_bracket`], and a misplaced positional
+    ///   supply keeps its refusal at its entry.
     /// - witness: `lower::tests::a_bare_index_that_parses_as_no_argument_is_refused_at_its_bracket_4944`
+    /// - witness: `lower::implicit::tests::a_misplaced_positional_supply_is_refused_at_its_entry_4945`
     fn place_bare_index(&mut self)
     {
         let pbg = self.pbg;
@@ -7579,7 +7581,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 continue;
             };
-            if fault == FormFault::BareIndex {
+            // A supply's fault names its entry inside a bracket that holds
+            // static arguments, so it stays where it is.
+            if matches!(
+                fault,
+                FormFault::BareIndex
+                    | FormFault::PositionalAfterNamed
+                    | FormFault::PositionalPastBlock
+                    | FormFault::CompoundPositional
+                    | FormFault::SuppliedTwice
+            ) {
                 continue;
             }
             let half = [slot.signature, slot.definition]

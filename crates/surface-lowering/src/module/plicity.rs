@@ -21,8 +21,9 @@
 //! ([`super::Collected::plicities`]), never type structure: the declared type
 //! is the merged telescope's ordinary function type, so `def f[a : Type](x
 //! : a) -> -F a` and `def f(a : Type, x : a) -> -F a` declare one type. A use
-//! supplies the implicits by name in the instantiation slot, `f[.a = T](x)`,
-//! in any order.
+//! supplies the implicits in the instantiation slot by name, `f[.a = T](x)`,
+//! in any order, or by position, `f[T](x)`, in the order the block writes
+//! them ([`super::Collected::written_implicits`]).
 //!
 //! # An instance is a parameter its row's label binds
 //!
@@ -1069,6 +1070,51 @@ impl<'source> Collector<'_, 'source>
             let _comma = cursor.tile(TileName::COMMA);
         }
         Ok(binders)
+    }
+
+    /// The names the implicit block of the function whose header `header`
+    /// stands just past the name of writes, in written order: the order a
+    /// call's positional supply `f[T, U]` follows.
+    ///
+    /// # Specification
+    /// - requires: `header` stands just past a declaration's name.
+    /// - ensures: the name of each entry of the `[ … ]` block, of any sort, in
+    ///   written order; empty without a block. `header` is left where it was.
+    /// - provides: the written order of
+    ///   [`super::Collected::written_implicits`], which a positional supply
+    ///   names its implicits by.
+    /// - panics: none.
+    /// - executable: none — the entries are read off the tree, and a
+    ///   postcondition would repeat that walk to state it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an implicit whose type names a later explicit, so the
+    ///   merged telescope moves it, still takes the position it is written at.
+    /// - witness: `lower::implicit::tests::a_positional_supply_follows_the_written_block_4945`
+    pub(super) fn written_implicits(
+        &self,
+        header: &Cursor<'_>,
+    ) -> Vec<SurfaceName<'source>>
+    {
+        let mut names = Vec::new();
+        let mut cursor = header.clone();
+        if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_OPEN) {
+            return names;
+        }
+        while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
+            names.push(self.name_of(written));
+            if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
+                let Maybe::Present(Piece::Operand(_)) = cursor.read()
+                else {
+                    return names;
+                };
+            }
+            else if let Maybe::Present(_) = cursor.tile(TileName::LESS_THAN) {
+                let _over = cursor.tile(TileName::IDENTIFIER);
+            }
+            let _comma = cursor.tile(TileName::COMMA);
+        }
+        names
     }
 
     /// How a telescope entry's sort `sort` binds: a stage when it is the

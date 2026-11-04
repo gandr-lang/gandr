@@ -525,6 +525,18 @@ fn lowered(
                 FormFault::BareIndex => {
                     f.write_str("this bracket after an operand indexes an element")
                 },
+                FormFault::PositionalAfterNamed => {
+                    f.write_str("this implicit is supplied by position after one supplied by name")
+                },
+                FormFault::PositionalPastBlock => {
+                    f.write_str("this positional implicit has no entry in the implicit block")
+                },
+                FormFault::CompoundPositional => {
+                    f.write_str("this positional implicit is a compound value, not an atom")
+                },
+                FormFault::SuppliedTwice => {
+                    f.write_str("this implicit is supplied a second time")
+                },
                 FormFault::MissingOpen(close) => {
                     write!(f, "this {form} is missing the `{}` its `{}` closes", match close {
                         ClosingClass::Paren => "(",
