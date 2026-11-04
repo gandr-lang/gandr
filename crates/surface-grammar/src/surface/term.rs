@@ -4149,14 +4149,18 @@ fn regular_def_tail() -> Regex
             ]),
             // value tail: `= E ;`
             seq([t(TileLabel("=")), h(Sort::Expression), t(TileLabel(";"))]),
-            // function tail: `(params) -> T? { … }`, or the clauses matching
-            // the arrows after the head: `(params) : T where { | … }`
+            // function tail: `(params) -> T? { … }`, its body one expression
+            // after `=`, `(params) -> T? = E ;`, or the clauses matching the
+            // arrows after the head: `(params) : T where { | … }`
             seq([
                 params(),
                 alt([
                     seq([
                         opt(seq([t(TileLabel("->")), h(Sort::Type)])),
-                        braced_statements(),
+                        alt([
+                            braced_statements(),
+                            seq([t(TileLabel("=")), h(Sort::Expression), t(TileLabel(";"))]),
+                        ]),
                     ]),
                     seq([
                         t(TileLabel(":")),

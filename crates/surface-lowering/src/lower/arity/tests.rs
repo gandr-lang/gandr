@@ -2401,3 +2401,45 @@ fn a_box_returns_a_group_under_a_row_4853()
         );
     }
 }
+
+/// #4853: a function's body written after `=` is the block of its one
+/// expression, so the tail lowers as the braced tail does, outputs included,
+/// and an arrow at its result is the box it returns, never curried.
+#[test]
+fn a_body_after_equals_is_its_block_4853()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def braced(n : Integer) -> Integer { n }\ndef equals(n : Integer) -> Integer = n ;\ndef \
+         divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = (m, n) ;\ndef half(n : \
+         Integer) -> Integer = divmod(n, 2).q ;\ndef stepped(n : Integer) -> (Integer -> Integer) \
+         = fun (k : Integer) { n } ;\ndef steppedT : +U (Integer -> -F (+U (Integer -> -F \
+         Integer))) ;",
+        &mut arena,
+    );
+    assert_eq!(
+        body(&arena, &module, "equals"),
+        body(&arena, &module, "braced"),
+        "a body after `=` lowers as its braced block does"
+    );
+    let half = body(&arena, &module, "half");
+    assert!(
+        half.iter().any(|token| token == "bindall2"),
+        "a body after `=` returns and selects outputs as a braced one does: {half:?}"
+    );
+    let signature = |name: &str| match outcome(&module, name) {
+        DeclarationOutcome::Uncompleted { declared_type }
+        | DeclarationOutcome::Completed { declared_type, .. } => declared_type,
+        other @ (DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` declares a type, not {other:?}"),
+    };
+    assert_eq!(
+        gandr_core_term::equal_type_syntax(&arena, signature("stepped"), signature("steppedT")),
+        gandr_core_term::CertificateEquality::Equal,
+        "an arrow at a function's result is the box it returns"
+    );
+}

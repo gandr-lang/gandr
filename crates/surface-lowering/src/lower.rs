@@ -10561,7 +10561,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a function tail, `def f(x: A, …) -> B { … }`.
+    /// Classify a function tail, `def f(x: A, …) -> B { … }` or `def f(x: A,
+    /// …) -> B = e ;`.
     ///
     /// # Specification
     /// - requires: `site` is a declaration form read as a function, whose tail
@@ -10578,7 +10579,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   scrutinises; the result, when written, is read at the result position
     ///   under the last parameter's frame, as the block is, and recorded as the
     ///   answer of the block's last computation and of every statement whose
-    ///   local ends continue the block; the block is read as a body a path runs
+    ///   local ends continue the block; the block, or the one expression after
+    ///   `=` read as a block of no statement, is read as a body a path runs
     ///   through; the form is planned as the function's declared type and body.
     /// - provides: the function tail, lowered once at the declaration form for
     ///   both halves it writes.
@@ -10887,7 +10889,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Maybe::Absent(method::unheld::Absent::NotWrittenThrough),
             ),
         };
-        let block = self.block(function, &mut cursor, body)?;
+        let block = if let Maybe::Present(_) = cursor.at(TileName::EQUALS) {
+            self.expression_body(function, &mut cursor, body)?
+        }
+        else {
+            self.block(function, &mut cursor, body)?
+        };
         if let Some(element) = viewed {
             self.view_body(function, block, element)?;
         }
@@ -11191,6 +11198,61 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 },
             }
         }
+    }
+
+    /// Read a function's body written as one expression after `=`, `= e ;`:
+    /// the block of no statement whose last computation is `e`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the body's `=`, which the form's last
+    ///   piece, `;`, closes.
+    /// - ensures: `e` is read as a computation under `frame`, as a block's last
+    ///   computation is, and returned as the block's last over no statement,
+    ///   with the cursor past the `;` and nothing after it.
+    /// - fails: the form's fault for a missing or several expressions, a
+    ///   missing `;`, or anything after it.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The body's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body after `=` lowers as the braced block of its
+    ///   one expression does.
+    /// - witness: `lower::arity::tests::a_body_after_equals_is_its_block_4853`
+    #[spec(
+        captures: before = (self.statements.len(), frame),
+        ensures: |ret| {
+            ret.as_ref().map_or(true, |block| {
+                block.statements.start == before.0
+                    && block.statements.end == before.0
+                    && self.reading(block.last) == Reading::Computation(before.1)
+                    && matches!(cursor.peek(), Maybe::Absent(_))
+            })
+        },
+    )]
+    fn expression_body(
+        &mut self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+        frame: Frame,
+    ) -> Result<Block, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(_) = cursor.tile(TileName::EQUALS)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let last = site.one(cursor.operands())?;
+        closed(site, cursor, TileName::SEMICOLON)?;
+        exhausted(site, cursor)?;
+        let _rest = self.threads(site, last.node, (frame, frame))?;
+        self.read(last.node, Reading::Computation(frame));
+        let start = self.statements.len();
+
+        Ok(Block {
+            statements: Stretch { start, end: start },
+            last: last.node,
+        })
     }
 
     /// Record the computation `discarded` as a statement of the block `site`
@@ -16084,16 +16146,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is an arrow in type position, or in value position
     ///   where a type is quoted.
-    /// - ensures: an arrow standing as a value type that is written as a kind,
-    ///   or whose domain classifies codes, as [`Self::ranges_over_codes`] reads
-    ///   it, is the static Pi, its domain and codomain each read as a value
-    ///   type under the arrow's own frame, since the codomain binds nothing,
-    ///   and a kind's codomain is a kind; any other arrow standing as a value
-    ///   type is the box [`Self::boxed`] plans, the value function `=>` writes.
-    ///   Any other arrow stands as a computation type: one whose domain is one
-    ///   binder is the dependent arrow [`Self::dependent_arrow`] plans, and the
-    ///   rest read their domain as a value type and their codomain as a
-    ///   computation type. Each is planned over both operands.
+    /// - ensures: an arrow standing as a value type, or at a definition's
+    ///   result, where the returner is inserted over it, that is written as a
+    ///   kind, or whose domain classifies codes, as [`Self::ranges_over_codes`]
+    ///   reads it, is the static Pi, its domain and codomain each read as a
+    ///   value type under the arrow's own frame, since the codomain binds
+    ///   nothing, and a kind's codomain is a kind; any other arrow standing so
+    ///   is the box [`Self::boxed`] plans, the value function `=>` writes, so
+    ///   no arrow at a result is curried. Any other arrow stands as a
+    ///   computation type: one whose domain is one binder is the dependent
+    ///   arrow [`Self::dependent_arrow`] plans, and the rest read their domain
+    ///   as a value type and their codomain as a computation type. Each is
+    ///   planned over both operands.
     /// - provides: the function type of the fragment, the box of a function
     ///   value and the classifier of a type operator.
     /// - fails: yields the wrong-sort refusal where neither sort suits the
@@ -16115,14 +16179,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
     /// - witness: `lower::tests::a_computation_codomain_of_a_box_is_refused`
     /// - witness: `lower::tests::an_arrow_between_value_types_is_the_box_4853`
+    /// - witness: `lower::arity::tests::a_body_after_equals_is_its_block_4853`
     /// - witness: `lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
     /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || match self.plans.get(site.at.node) {
-                    | Some(&(Plan::StaticPi(..) | Plan::ValueFunction(..) | Plan::Telescope(..))) => matches!(site.reading, Reading::ValueType(_)),
-                    | Some(&(Plan::Arrow(..) | Plan::DependentArrow(..))) => !matches!(site.reading, Reading::ValueType(_)),
+                    | Some(&(Plan::StaticPi(..) | Plan::ValueFunction(..) | Plan::Telescope(..))) => matches!(site.reading, Reading::ValueType(_) | Reading::Result(_)),
+                    | Some(&(Plan::Arrow(..) | Plan::DependentArrow(..))) => !matches!(site.reading, Reading::ValueType(_) | Reading::Result(_)),
                     | _ => false,
                 }
         },
@@ -16133,7 +16198,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let value_typed = matches!(site.reading, Reading::ValueType(_));
+        let value_typed = matches!(site.reading, Reading::ValueType(_) | Reading::Result(_));
         let produced = if value_typed {
             Produced::ValueType
         }
