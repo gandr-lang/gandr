@@ -1425,9 +1425,9 @@ impl<'source> Collector<'_, 'source>
     ///   answers, and any other name nothing answers each refuse a held slot
     ///   under the component's name, introduced by the module's form, whose
     ///   attributes state its expectation, and nothing is yielded — save a name
-    ///   whose member was repaired, whose parse error already answers for it. A
-    ///   law an admission answers is judged against the host's laws by the
-    ///   checker.
+    ///   whose member was repaired, and a law omitted from a body that holds a
+    ///   repaired member, whose parse error already answers for it. A law an
+    ///   admission answers is judged against the host's laws by the checker.
     /// - provides: the derived half of [`Self::match_signature`].
     /// - fails: never; a fault is filed rather than raised.
     /// - panics: none.
@@ -1535,6 +1535,11 @@ impl<'source> Collector<'_, 'source>
                 return Maybe::Present(Member::Slot(slot));
             },
             (None, _, Maybe::Absent(_)) if self.repaired_member(container, component.name).0 => {
+                return undeclared;
+            },
+            // A body the parser repaired can stop before a law it writes: its
+            // parse error answers for the law, not a discharge beside it.
+            (None, _, Maybe::Absent(_)) if law && self.repaired_body(container).0 => {
                 return undeclared;
             },
             // An omitted law asks for a filler without naming its source: the

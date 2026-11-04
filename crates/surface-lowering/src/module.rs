@@ -10204,6 +10204,40 @@ impl<'source> Collector<'_, 'source>
         }))
     }
 
+    /// Whether `container`'s body holds a member the parser repaired: the
+    /// body can stop before a member it writes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: affirmative exactly when some slot of `container` carries a
+    ///   [`FormFault::Repaired`] refusal.
+    /// - provides: the cascade cut for a law a model omits: the parse error in
+    ///   the model's body stands alone, with no discharge of the law beside it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk over the slots.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a model body cut inside its first member is reported
+    ///   at that member's repair alone, the laws it owes raising nothing.
+    /// - witness: `tests::modules::models::a_repaired_model_body_owes_no_law_beside_its_parse_error_5142`
+    fn repaired_body(
+        &self,
+        container: Container,
+    ) -> MemberRepaired
+    {
+        MemberRepaired(self.collected.slots.iter().any(|slot| {
+            slot.container == container
+                && matches!(
+                    slot.refusal,
+                    Maybe::Present((_, LoweringRefusal::MalformedForm {
+                        fault: FormFault::Repaired(_),
+                        ..
+                    }))
+                )
+        }))
+    }
+
     /// The member `container`'s body declares under `name`.
     ///
     /// # Specification
