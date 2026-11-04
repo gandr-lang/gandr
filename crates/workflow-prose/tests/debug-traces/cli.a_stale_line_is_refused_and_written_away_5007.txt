@@ -1,0 +1,61 @@
+test: cli::a_stale_line_is_refused_and_written_away_5007
+package: gandr-workflow-prose
+command: mise run debug:test gandr-workflow-prose cli::a_stale_line_is_refused_and_written_away_5007
+
+(lldb) target create "target/debug-trace/debug/build/gandr-workflow-prose/c9677d9a6121f077/out/tests-c9677d9a6121f077"
+Current executable set to 'target/debug-trace/debug/build/gandr-workflow-prose/c9677d9a6121f077/out/tests-c9677d9a6121f077' (x86_64).
+(lldb) settings set -- target.run-args  "cli::a_stale_line_is_refused_and_written_away_5007" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = tests-c9677d9a6121f077`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000000a2008
+(lldb) run
+
+running 1 test
+test cli::a_stale_line_is_refused_and_written_away_5007 ... 
+thread 'cli::a_stale_line_is_refused_and_written_away_5007' (1500112) panicked at crates/workflow-prose/tests/cli.rs:150:5:
+assertion `left == right` failed
+  left: Some(2)
+ right: Some(1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1500010 launched: 'target/debug-trace/debug/build/gandr-workflow-prose/c9677d9a6121f077/out/tests-c9677d9a6121f077' (x86_64)
+Process 1500010 stopped and restarted: thread 2 received signal: SIGCHLD
+Process 1500010 stopped and restarted: thread 2 received signal: SIGCHLD
+Process 1500010 stopped and restarted: thread 2 received signal: SIGCHLD
+Process 1500010 stopped
+* thread #2, name = 'cli::a_stale_li', stop reason = breakpoint 1.1
+       frame #0: 0x00005555555f6008 tests-c9677d9a6121f077`__rustc::rust_panic at panicking.rs:887:25
+(lldb) bt 24
+* thread #2, name = 'cli::a_stale_li', stop reason = breakpoint 1.1
+   * frame #0: 0x00005555555f6008 tests-c9677d9a6121f077`__rustc::rust_panic at panicking.rs:887:25
+     frame #1: 0x0000555555612625 tests-c9677d9a6121f077`std::panicking::panic_with_hook at panicking.rs:840:5
+     frame #2: 0x00005555555f5622 tests-c9677d9a6121f077`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13
+     frame #3: 0x00005555555ee0e9 tests-c9677d9a6121f077`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x00005555555f61ed tests-c9677d9a6121f077`__rustc::rust_begin_unwind at panicking.rs:679:5
+     frame #5: 0x000055555562f7ec tests-c9677d9a6121f077`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x000055555562f703 tests-c9677d9a6121f077`core::panicking::assert_failed_inner at panicking.rs:452:17
+     frame #7: 0x000055555559c7d0 tests-c9677d9a6121f077`core::panicking::assert_failed::<core::option::Option<i32>, core::option::Option<i32>>(kind=Eq, left=Some(2), right=Some(1), args=None) at panicking.rs:407:5
+     frame #8: 0x00005555555962e7 tests-c9677d9a6121f077`tests::cli::a_stale_line_is_refused_and_written_away_5007 at cli.rs:150:5
+     frame #9: 0x000055555558ed07 tests-c9677d9a6121f077`tests::cli::a_stale_line_is_refused_and_written_away_5007::{closure#0}((null)={}) at cli.rs:141:51
+     frame #10: 0x000055555559b336 tests-c9677d9a6121f077`<tests::cli::a_stale_line_is_refused_and_written_away_5007::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #11: 0x00005555555a051b tests-c9677d9a6121f077`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #12: 0x00005555555a0519 tests-c9677d9a6121f077`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #13: 0x00005555555ada65 tests-c9677d9a6121f077`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #14: 0x00005555555ada60 tests-c9677d9a6121f077`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #15: 0x00005555555ada60 tests-c9677d9a6121f077`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #16: 0x00005555555ada4b tests-c9677d9a6121f077`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #17: 0x00005555555ada4b tests-c9677d9a6121f077`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #18: 0x00005555555ada4b tests-c9677d9a6121f077`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #19: 0x00005555555ada36 tests-c9677d9a6121f077`test::run_test::{closure#0} at lib.rs:677:43
+     frame #20: 0x00005555555a8424 tests-c9677d9a6121f077`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #21: 0x00005555555a83a9 tests-c9677d9a6121f077`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #22: 0x00005555555b0bc2 tests-c9677d9a6121f077`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #23: 0x00005555555b0bb3 tests-c9677d9a6121f077`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit
