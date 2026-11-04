@@ -7,4 +7,5 @@ error[ImportShadows]: `answer` is bound by an import and again in this source
 6 │ def answer = 43 ;
   │     ━━━━━━ bound here and by an import
   │
-  ╰ note: `answer` is refused with ImportShadows, as its expectation states
+  ├ note: `answer` is refused with ImportShadows, as its expectation states
+  ╰ help: rename the declaration or its imported binding

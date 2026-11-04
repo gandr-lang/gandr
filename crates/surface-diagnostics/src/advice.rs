@@ -295,13 +295,29 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::GenericUncovered { .. } => {
             String::from("write an equality function for the datatype")
         },
+        LoweringRefusal::ImportShadows { .. } => {
+            String::from("rename the declaration or its imported binding")
+        },
+        LoweringRefusal::ImportUnresolved { .. } => {
+            String::from("change the import path to a source under the root")
+        },
+        LoweringRefusal::MissingPayload { .. } => {
+            String::from("give the attribute the payload its schema requires")
+        },
+        LoweringRefusal::InstanceUnanswered { .. } => {
+            String::from("handle the interface or supply its instance by name")
+        },
+        LoweringRefusal::InstanceAmbiguous { .. } => {
+            String::from("supply the intended instance by name")
+        },
+        LoweringRefusal::MismatchedPattern { .. } => {
+            String::from("match constructors of the same datatype in every arm")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::DuplicateSignature { .. }
         | LoweringRefusal::DuplicateImportAlias { .. }
-        | LoweringRefusal::ImportUnresolved { .. }
         | LoweringRefusal::UnlockedDependency { .. }
-        | LoweringRefusal::ImportShadows { .. }
         | LoweringRefusal::UnexportedName { .. }
         | LoweringRefusal::ShadowedBuiltin { .. }
         | LoweringRefusal::OutOfFragment { .. }
@@ -310,7 +326,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::NoUniverseAbove { .. }
         | LoweringRefusal::UnknownAttribute { .. }
         | LoweringRefusal::DuplicateAttribute { .. }
-        | LoweringRefusal::MissingPayload { .. }
         | LoweringRefusal::NonValuePayload { .. }
         | LoweringRefusal::PartialField { .. }
         | LoweringRefusal::NotAFunctor { .. }
@@ -322,12 +337,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::UndescribedMember { .. }
         | LoweringRefusal::ImplicitTelescope { .. }
         | LoweringRefusal::TelescopeCycle { .. }
-        | LoweringRefusal::InstanceUnanswered { .. }
-        | LoweringRefusal::InstanceAmbiguous { .. }
         | LoweringRefusal::RegionAsValue { .. }
         | LoweringRefusal::EntryType { .. }
         | LoweringRefusal::ViewOfNoPlace { .. }
-        | LoweringRefusal::MismatchedPattern { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
         | LoweringRefusal::Unreachable { .. }
         | LoweringRefusal::OutsideLoop { .. }
@@ -868,6 +880,17 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::DialogueUnmatched { .. } => {
             String::from("make each dialogue receipt match its sent value")
         },
+        CheckRefusal::MissingRecordField { .. } => String::from("add the record's missing field"),
+        CheckRefusal::LevelMismatch { .. } => {
+            String::from("lower the code to the expected universe")
+        },
+        CheckRefusal::IndexOccurrence(_) => {
+            String::from("remove the datatype from the field's index")
+        },
+        CheckRefusal::Located {
+            defect: LocatedDefect::MarkUnfounded { .. },
+            ..
+        } => String::from("remove `mobile` or use a representation that crosses"),
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::NotADataType(_)
         | CheckRefusal::LoopUndecided { .. }
@@ -880,7 +903,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::ConstructorArity(_)
         | CheckRefusal::NonExhaustiveDataCase(_)
         | CheckRefusal::AbsentTupleComponent(_)
-        | CheckRefusal::MissingRecordField { .. }
         | CheckRefusal::UnknownOperation { .. }
         | CheckRefusal::HandlerCoverage { .. }
         | CheckRefusal::ShiftWithoutReset { .. }
@@ -907,14 +929,12 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::AdmissionOrder { .. }
         | CheckRefusal::MachineInvariant
         | CheckRefusal::SortMismatch { .. }
-        | CheckRefusal::LevelMismatch { .. }
         | CheckRefusal::Undecided { .. }
         | CheckRefusal::FamilyArity { .. }
         | CheckRefusal::FamilyArgumentClassifier { .. }
         | CheckRefusal::StaticLambdaArgument { .. }
         | CheckRefusal::StaticClassifierExpected { .. }
         | CheckRefusal::NestedOccurrence(_)
-        | CheckRefusal::IndexOccurrence(_)
         | CheckRefusal::NonUniformOccurrence(_)
         | CheckRefusal::CrossBlockReference { .. }
         | CheckRefusal::StageNotCarried { .. }
@@ -947,7 +967,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 125] = [
+    const WORDED: [&str; 135] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1074,6 +1094,16 @@ mod tests
         "HoldElsewhere",
         "ImplicitInParentheses",
         "ImplicitUnsupplied",
+        "ImportShadows",
+        "ImportUnresolved",
+        "IndexOccurrence",
+        "InstanceAmbiguous",
+        "InstanceUnanswered",
+        "LevelMismatch",
+        "MarkUnfounded",
+        "MismatchedPattern",
+        "MissingPayload",
+        "MissingRecordField",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

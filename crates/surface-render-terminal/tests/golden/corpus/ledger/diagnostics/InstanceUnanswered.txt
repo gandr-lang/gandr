@@ -4,4 +4,5 @@ error[InstanceUnanswered]: `say` performs `std.io.Console.Eff` through its insta
 13 │   say()
    │   ━━━━━ an instance with none in scope
    │
-   ╰ note: `unanswered` is refused with InstanceUnanswered, as its expectation states
+   ├ note: `unanswered` is refused with InstanceUnanswered, as its expectation states
+   ╰ help: handle the interface or supply its instance by name

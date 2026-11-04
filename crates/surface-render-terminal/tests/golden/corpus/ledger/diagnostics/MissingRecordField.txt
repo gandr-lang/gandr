@@ -6,4 +6,5 @@ error[MissingRecordField]: the record is missing a field
 4 │ def r = #{.a = 1} ;
   │         ━━━━━━━━━ a required field is missing
   │
-  ╰ note: `r` is refused with MissingRecordField, as its expectation states
+  ├ note: `r` is refused with MissingRecordField, as its expectation states
+  ╰ help: add the record's missing field

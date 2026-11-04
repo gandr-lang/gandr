@@ -7,4 +7,5 @@ error[ImportUnresolved]: this import names no source the root holds, so this sou
 5 │ data Point : Type where {
   │      ───── declared here
   │
-  ╰ note: `Point` is refused with ImportUnresolved, as its expectation states
+  ├ note: `Point` is refused with ImportUnresolved, as its expectation states
+  ╰ help: change the import path to a source under the root

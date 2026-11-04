@@ -4,4 +4,5 @@ error[MissingPayload]: the attribute `doc` needs a text payload
 2 │ @[ doc ]
   │    ━━━ takes a payload
   │
-  ╰ note: `f` is refused with MissingPayload, as its expectation states
+  ├ note: `f` is refused with MissingPayload, as its expectation states
+  ╰ help: give the attribute the payload its schema requires

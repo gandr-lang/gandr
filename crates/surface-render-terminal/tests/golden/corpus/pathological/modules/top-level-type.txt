@@ -16,4 +16,5 @@ error[MissingRecordField]: the record is missing a field
 14 │ def partial : Band = #{low = 200000};
    │                      ━━━━━━━━━━━━━━━ a required field is missing
    │
-   ╰ note: `partial` is refused with MissingRecordField, as its expectation states
+   ├ note: `partial` is refused with MissingRecordField, as its expectation states
+   ╰ help: add the record's missing field

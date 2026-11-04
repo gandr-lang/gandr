@@ -5598,17 +5598,10 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HeldCopied
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/HeldKept.txt STE-5.3 5388aacc3a654ccf
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/Immobile.Homed.txt STE-5.2 67451c9330e56c92
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ImportShadows.txt STE-5.3 b1d2261963d0cdfe
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ImportUnresolved.txt STE-5.3 5be6308f32a9bbe9
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/IndexOccurrence.txt STE-5.3 2065713ae42b1fb5
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InstanceAmbiguous.txt STE-5.3 51e14b31a2f70bd6
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/InstanceUnanswered.txt STE-5.3 0a09f4e667677f07
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LevelMismatch.txt STE-5.3 4243b91b89fd9499
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LiteralAmbiguous.txt STE-5.3 13ee76cefc8c0f1b
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LoopUndecided.txt STE-5.3 3c428e27119f4b66
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/MarkUnfounded.txt STE-5.3 b924bafc122697e0
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/MismatchedPattern.txt STE-5.3 9861b85a5613cd7c
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/MissingPayload.txt STE-5.3 b0bae31b8e56887c
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/MissingRecordField.txt STE-5.3 2beddbca6d6aaa1d
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NestedOccurrence.txt STE-5.3 4afcd4accd9ec98b
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NoUniverseAbove.txt STE-5.3 c1d1f1a1b2e4e34d
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NonUniformOccurrence.txt STE-5.3 43a335be3e97ec81
@@ -5618,7 +5611,6 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAFuncto
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAHandle.txt STE-5.3 1c469c3d291c451e
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAModel.txt STE-5.3 bc5563107c6859ec
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAView.txt STE-5.3 0b132a8e4770a4d9
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAnAbstractType.txt STE-5.3 b924bafc122697e0
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotAnAbstractType.txt STE-5.3 f28dd220311c8b1b
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotHeld.txt STE-5.3 b9a0da034a5c0c31
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotInverse.txt STE-5.3 2778af7f0172858d
@@ -5685,7 +5677,6 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/WithoutK.t
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/effectful-payload.txt STE-5.3 4c01ad891a49afcc
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/ill-typed-deprecation.txt STE-5.3 d0c11940f1f75c24
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/ill-typed-deprecation.txt STE-5.3 d6565ea6daeaf10f
-crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/missing-payload.txt STE-5.3 b0bae31b8e56887c
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/unknown-attribute.txt STE-5.3 545a6d0bc1a68b22
 crates/surface-render-terminal/tests/golden/corpus/pathological/basics/kernel-admission-boundary.txt STE-5.3 1dbe5724dc7f0628
 crates/surface-render-terminal/tests/golden/corpus/pathological/builtins/list-patterns.txt STE-5.3 9861b85a5613cd7c
@@ -5695,8 +5686,6 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/control/accessor
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/held-unique.txt STE-5.2 9ca76855ff60440b
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/held-unique.txt STE-5.3 8bca00861f3d6554
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/kept-view.txt STE-5.3 5388aacc3a654ccf
-crates/surface-render-terminal/tests/golden/corpus/pathological/control/named-instances.txt STE-5.3 0a09f4e667677f07
-crates/surface-render-terminal/tests/golden/corpus/pathological/control/named-instances.txt STE-5.3 51e14b31a2f70bd6
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/descent.txt STE-5.3 82cfda2e0c36480c
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/family-named-as-builtin.txt STE-5.3 d0178ac867679784
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/rose.txt STE-5.3 4afcd4accd9ec98b
@@ -5717,9 +5706,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/interop/boundary
 crates/surface-render-terminal/tests/golden/corpus/pathological/metaprograms/tactics-over-goals.txt STE-5.3 93c38e17aac983f3
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/generative-distinctness.txt STE-5.3 264148eb8bb73011
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/import-shadows.txt STE-5.3 6a4908f05d33503b
-crates/surface-render-terminal/tests/golden/corpus/pathological/modules/import-unresolved.txt STE-5.3 5be6308f32a9bbe9
 crates/surface-render-terminal/tests/golden/corpus/pathological/modules/stray-root-child.txt STE-5.3 509be7e5dc23fb3f
-crates/surface-render-terminal/tests/golden/corpus/pathological/modules/top-level-type.txt STE-5.3 2beddbca6d6aaa1d
 crates/surface-render-terminal/tests/golden/corpus/pathological/regions/named.txt STE-5.3 39af097f219c2e4a
 crates/surface-render-terminal/tests/golden/corpus/pathological/self-reference/written-while-kept.txt STE-5.3 5388aacc3a654ccf
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/fragment.txt STE-5.3 4538ce87b3a6c1e1
@@ -5729,7 +5716,6 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/protoco
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/session-identity-non-subtype.txt STE-5.3 289e0c00c98e0bea
 crates/surface-render-terminal/tests/golden/corpus/pathological/sessions/type-quote.txt STE-5.3 6fbf774237261d9c
 crates/surface-render-terminal/tests/golden/corpus/pathological/strings/views.txt STE-5.3 5388aacc3a654ccf
-crates/surface-render-terminal/tests/golden/corpus/pathological/universe/ir-codes.txt STE-5.3 e3dd92798abbf048
 crates/surface-render-terminal/tests/golden/corpus/pathological/universe/v-infinity.txt STE-5.3 0134ddea7fe81d3f
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/closure-axes.txt STE-5.2 67451c9330e56c92
 crates/surface-render-terminal/tests/golden/corpus/pathological/worlds/located-reads.txt STE-5.3 1c469c3d291c451e

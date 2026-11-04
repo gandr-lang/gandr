@@ -4,4 +4,5 @@ error[InstanceAmbiguous]: `say`'s instance `out` could be `b` or `a`, each an in
 15 │       say();
    │       ━━━━━ an instance with several in scope
    │
-   ╰ note: `ambiguous` is refused with InstanceAmbiguous, as its expectation states
+   ├ note: `ambiguous` is refused with InstanceAmbiguous, as its expectation states
+   ╰ help: supply the intended instance by name
