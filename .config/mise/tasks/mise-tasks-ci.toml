@@ -1434,6 +1434,19 @@ subjects=$(mktemp)
 trap 'rm -f "$subjects"' EXIT
 git log --format=%s "$trunk_ref" | sed -E 's/ \(#[0-9]+\)$//' \
   | jq -R . | jq -s 'map({key: ., value: true}) | from_entries' > "$subjects"
+# The branches the remote still holds, read once over git, which spends no
+# GitHub API budget. A merged pull request's branch is deleted with it, and a
+# branch never pushed has no pull request, so only a branch that tracked a
+# remote branch now gone is asked about over the API: every seat's sweep on
+# a host asking once a kept worktree spent the read budget (2026-11-04).
+declare -A on_remote=()
+remote_read=true
+if heads=$(git ls-remote --heads origin 2> /dev/null); then
+  while read -r _ ref; do on_remote[${ref#refs/heads/}]=1; done <<< "$heads"
+else
+  remote_read=false
+  echo "wt:sweep: listing origin's branches failed; no pull request is read this sweep" >&2
+fi
 # The integration reason and the head it was judged at, from one snapshot; the
 # head leads its line, as it is never empty and a tab-separated read
 # collapses an empty field in the middle.
@@ -1473,7 +1486,8 @@ tree() {
     mapfile -t listed < <(git cherry "$trunk_ref" "$head" | awk '/^\+/ { print $2 }')
     commits=$(if ((${#listed[@]} > 0)); then git log --no-walk=unsorted --format=%s "${listed[@]}"; fi \
       | jq -R . | jq -sc --slurpfile main "$subjects" 'map({subject: ., on_main: ($main[0][.] // false)})')
-    if jq -e 'any(.[]; .on_main | not)' <<< "$commits" > /dev/null; then
+    if jq -e 'any(.[]; .on_main | not)' <<< "$commits" > /dev/null \
+      && $remote_read && [[ -z ${on_remote[$branch]:-} ]] && git config --get "branch.$branch.remote" > /dev/null; then
       pulls=$(gh pr list --state merged --head "$branch" --json number,commits \
         --jq 'map({number, subjects: [.commits[].messageHeadline]})' 2> /dev/null) || pulls=null
     fi
