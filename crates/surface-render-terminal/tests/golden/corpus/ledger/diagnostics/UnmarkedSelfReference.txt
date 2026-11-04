@@ -4,4 +4,5 @@ error[UnmarkedSelfReference]: `bare` calls itself without saying how it recurses
 12 │     Succ(p) => bare(p)
    │                ━━━━ recursion without a claim
    │
-   ╰ note: `bare` is refused with UnmarkedSelfReference, as its expectation states
+   ├ note: `bare` is refused with UnmarkedSelfReference, as its expectation states
+   ╰ help: mark `bare` with a descent claim
