@@ -26,8 +26,10 @@
 | def named: if .repository == $repo then "#\(.number)" else "\(.repository)#\(.number)" end;
   .epic as $epic
   | (.sub_issues // []) as $subs
-  | reduce (.blocked_by[], $subs[]) as $unit ([];
-      if any(.[]; .number == $unit.number and .repository == $unit.repository) then . else . + [$unit] end) as $units
+  # The reduce sits in parentheses: jq 1.7, the runner's, reads no `as`
+  # after a bare reduce.
+  | (reduce (.blocked_by[], $subs[]) as $unit ([];
+      if any(.[]; .number == $unit.number and .repository == $unit.repository) then . else . + [$unit] end)) as $units
   | [$units[] | select(.state == "open") | named] as $open
   | [$units[] | named] as $all
   | [.blocked_by[] | named] as $blockers
