@@ -2795,6 +2795,115 @@ fn an_arm_is_refined_by_its_index_equation_in_both_checkers_3483()
 }
 
 #[test]
+fn an_arm_is_refined_through_the_injectivity_of_its_constructor_3403()
+{
+    let (zeroth, first) = (ConstructorTag::from(0_usize), ConstructorTag::from(1_usize));
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let (natural, boxed, indexed) = (
+        ConstantIndex::from(0_usize),
+        ConstantIndex::from(1_usize),
+        ConstantIndex::from(2_usize),
+    );
+    let nat = arena.value_type_data(natural, vec![]);
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    // `Nat : Type { Z; S(n : Nat) }` and `B(n : Nat) : Type { Mk : B(n) }`.
+    let naturals = Declaration::data(
+        natural,
+        DataSignature::new(vec![], vec![vec![], vec![nat]], kind).into(),
+        OriginToken::from(0_usize),
+    );
+    let boxes = Declaration::data(
+        boxed,
+        DataSignature::new(vec![nat], vec![vec![]], kind).into(),
+        OriginToken::from(1_usize),
+    );
+    // `I : Nat -> Type { Made : (m : Nat) --> I(S(m)) }`: an arm on `Made`
+    // binds `m` and the equation `Path(Nat, S(m), S(n))`.
+    let field = variable(&mut arena, 0);
+    let stated = arena.value_constructor(nat, first, vec![field]);
+    let family = Declaration::data(
+        indexed,
+        DataSignature::new(vec![], vec![vec![nat]], kind)
+            .indexed(vec![nat], vec![vec![stated]])
+            .into(),
+        OriginToken::from(2_usize),
+    );
+    let one_equation = gandr_kernel_term::EquationCount::from(1_usize);
+    let one_field = vec![gandr_kernel_term::FieldCount::from(1_usize)];
+    // `f(n : Nat, i : I(S(n))) -> B(w(n)) { case i { Made(m) => Mk : B(w(m)) } }`,
+    // with `w` the identity for `pred` and `S` for `whole`. The arm learns
+    // `m = n` only from `S(m) = S(n)`.
+    let wrap = |arena: &mut CoreArena, inside: bool, at: ValueId| {
+        if inside {
+            arena.value_constructor(nat, first, vec![at])
+        }
+        else {
+            at
+        }
+    };
+    let [(pred_type, pred), (whole_type, whole)] = [false, true].map(|inside| {
+        let n_outer = variable(&mut arena, 0);
+        let successor = arena.value_constructor(nat, first, vec![n_outer]);
+        let at_successor = arena.value_type_data(indexed, vec![successor]);
+        let n_under = variable(&mut arena, 1);
+        let n_under = wrap(&mut arena, inside, n_under);
+        let box_under = arena.value_type_data(boxed, vec![n_under]);
+        let answers = arena.comp_type_returner(box_under);
+        let ty = arena.comp_type_pi(at_successor, answers);
+        let ty = arena.comp_type_pi(nat, ty);
+        let ty = arena.value_type_thunk(ty);
+        let m = variable(&mut arena, 1);
+        let m = wrap(&mut arena, inside, m);
+        let box_at_m = arena.value_type_data(boxed, vec![m]);
+        let made = arena.value_constructor(box_at_m, zeroth, vec![]);
+        let returned = arena.computation_return(made);
+        let arm = arena.computation_lambda(returned);
+        let arm = arena.computation_lambda(arm);
+        let n_in_motive = variable(&mut arena, 2);
+        let n_in_motive = wrap(&mut arena, inside, n_in_motive);
+        let motive = arena.value_type_data(boxed, vec![n_in_motive]);
+        let motive = arena.comp_type_returner(motive);
+        let scrutinee = variable(&mut arena, 0);
+        let case = arena.computation_data_case_with_equations(
+            scrutinee,
+            motive,
+            (vec![arm], one_field.clone()),
+            one_equation,
+        );
+        let body = arena.computation_lambda(case);
+        let body = arena.computation_lambda(body);
+        let body = arena.value_thunk(body);
+        (ty, body)
+    });
+    let (report, crossed) = run(&mut arena, &[
+        naturals,
+        boxes,
+        family,
+        definition(ConstantIndex::from(3_usize), pred_type, pred),
+        definition(ConstantIndex::from(4_usize), whole_type, whole),
+    ]);
+    for (position, what) in [(3, "the field"), (4, "the field under a constructor")] {
+        assert!(
+            matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+            "the arm reads {what} at the scrutinee's index: {:?}",
+            report.judged()[position].verdict()
+        );
+        assert!(
+            matches!(
+                crossed.readmitted()[position].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "the kernel admits the arm refined at {what}: {:?}",
+            crossed.readmitted()[position].outcome()
+        );
+    }
+    assert!(crossed.audit().axioms().is_empty());
+}
+
+#[test]
 fn a_binder_after_the_scrutinee_is_read_at_each_arm_in_both_checkers_3483()
 {
     let (yes_tag, mut arena) = (ConstructorTag::from(0_usize), CoreArena::new());

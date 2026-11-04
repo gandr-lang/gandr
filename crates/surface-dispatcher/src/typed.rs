@@ -6083,6 +6083,44 @@ mod tests
         }
     }
 
+    /// #3403: a field that an arm learns from the injectivity of a
+    /// constructor keeps an entry at each place the body names it.
+    #[test]
+    fn a_field_split_from_its_constructor_answers_at_its_own_bytes_3403()
+    {
+        let source = concat!(
+            "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n",
+            "data Span : Type where { | Mk : (lo : Nat, hi : Nat) --> Span }\n",
+            "data Over : (s : Span) --> Type where {\n",
+            "  | O : (lo : Nat, hi : Nat) --> Over(Mk(lo, hi))\n",
+            "}\n",
+            "data At2 : (lo : Nat, hi : Nat) --> Type where {\n",
+            "  | A2 : (lo : Nat, hi : Nat) --> At2(lo, hi)\n",
+            "}\n",
+            "def ends(lo : Nat, hi : Nat, o : Over(Mk(lo, hi))) -> At2(lo, hi) {\n",
+            "  match o { O(l, h) => A2(l, h) }\n",
+            "}\n",
+        );
+        let table = table(SourceText::from(source));
+        let body = source.find("A2(l, h)").expect("the body occurs");
+        let lost: Vec<&str> = [("l", 3), ("h", 6)]
+            .into_iter()
+            .filter(|&(written, offset)| {
+                let start = body + offset;
+                !table.spans().any(|span| {
+                    usize::from(span.start()) == start
+                        && usize::from(span.end()) == start + written.len()
+                })
+            })
+            .map(|(written, _)| written)
+            .collect();
+        assert_eq!(
+            lost,
+            Vec::<&str>::new(),
+            "each name answers at its own bytes"
+        );
+    }
+
     /// The table [`TypeTable::of_unit`] builds for `source` laid importing
     /// every host interface's module ([`crate::tests::Listed::hosted`]), its
     /// offsets the source's own; panics when the grammar or the parse fails.

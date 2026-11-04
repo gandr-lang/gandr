@@ -10,7 +10,6 @@
 // - see: #5032
 // - see: #5035
 // - see: #5065
-// - see: #3403
 // - see: #5034
 
 /// The syntax and the semantic types that the model source declares.
@@ -21,24 +20,6 @@ import "../../model/desc/stlc.gandr";
 @[ refuses("OutOfFragment.Unannotated") ]
 def wk(d : Ctx, g : Ctx, b : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, b), g) {
   return fun (a) { return fun (x) { There(d, a, b, r(a)(x)) } }
-}
-
-/// A renaming lifted under one more entry, at one variable. The arm `Here`
-/// does not learn that `c` is `a` from `Extend(_h, c)` and `Extend(g, a)`.
-@[ refuses("TypeMismatch") ]
-def liftAt(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g), b : ObjTy, x : Var(Extend(g, a), b)) -> Var(
-  Extend(d, a),
-  b
-) {
-  match x {
-    Here(_h, c) => Here(d, c),
-    There(_h, c, _e, y) => There(d, c, a, r(c)(y))
-  }
-}
-
-/// The renamer under one more entry. It calls `liftAt` and checks.
-def lift(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, a), Extend(g, a)) {
-  return fun (b) { return fun (x) { liftAt(d, g, a, r, b, x) } }
 }
 
 /// The renaming of neutrals and normal forms. Each descends on its third
@@ -84,17 +65,3 @@ def extendEnv(g : Ctx, a : ObjTy, d : Ctx, rho : envs(g, d), v : sem(a, d)) -> e
   Extend(g, a),
   d
 ) { (rho, v) }
-
-/// The lookup of a variable in an environment. Each inner case omits `ENil`,
-/// but the arm `ECons` does not learn its indices from its equations.
-@[ refuses("TypeMismatch") ]
-def rec look(g : Ctx, a : ObjTy, x : Var(g, a), d : Ctx, rho : SemEnv(g, d)) -> sem(a, d) {
-  match x {
-    Here(_h, _b) => match rho {
-      ECons(_h, _b, _d, _rest, v) => v
-    },
-    There(h, b, _c, y) => match rho {
-      ECons(_h, _c, _d, rest, _v) => look[<](h, b, y, d, rest)
-    }
-  }
-}
