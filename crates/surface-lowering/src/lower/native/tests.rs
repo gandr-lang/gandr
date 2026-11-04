@@ -743,7 +743,7 @@ fn a_recursive_function_closes_a_fixpoint_over_its_staged_parameter()
         "the call applies the field alone, the leading parameter left out"
     );
     let passed = source
-        .find("plus[<](n")
+        .find("plus[<] n")
         .map(|at| at.saturating_add(8_usize));
     assert!(
         module.origins().labels().iter().any(|label| {
@@ -1569,7 +1569,7 @@ fn an_unmarked_self_reference_is_refused_with_its_claim()
         "{NAT}def rec bare(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => become bare p }} }}\ndef rec shadow(shadow : Nat) -> -F Nat {{ return shadow }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
-    let Some(start) = source.find("bare(p)")
+    let Some(start) = source.find("bare p")
     else {
         panic!("the fixture writes the call");
     };
@@ -1631,7 +1631,7 @@ fn a_recursive_call_passes_its_leading_parameters_unchanged()
     assert_eq!(
         refusal_of(&module, SurfaceName::from("shadowed")),
         LoweringRefusal::OutOfFragment {
-            span: at("n, n)", 1_usize),
+            span: at("n n }", 1_usize),
             form: FormName::from(gandr_surface_grammar::NamedKind("call_expression")),
             sort: FragmentSort::Computation,
             boundary: FragmentBoundary::NonUniform,
@@ -1641,7 +1641,7 @@ fn a_recursive_call_passes_its_leading_parameters_unchanged()
     assert_eq!(
         refusal_of(&module, SurfaceName::from("short")),
         LoweringRefusal::OutOfFragment {
-            span: at("short[<](p)", 11_usize),
+            span: at("short[<] p", 10_usize),
             form: FormName::from(gandr_surface_grammar::NamedKind("call_expression")),
             sort: FragmentSort::Computation,
             boundary: FragmentBoundary::Arity(OperandCount::from(1_usize)),
@@ -1656,7 +1656,7 @@ fn a_productive_call_is_the_whole_arm_of_a_copattern_block()
     let mut arena = CoreArena::new();
     let stream = "codata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }\n";
     let source = alloc::format!(
-        "{NAT}{stream}def rec upward(n : Nat, m : Nat) -> Stream(Nat) {{ &{{.head => return n, .tail => upward[>](m, Succ(n))}} }}\n"
+        "{NAT}{stream}def rec upward(n : Nat, m : Nat) -> Stream(Nat) {{ &{{.head => return n, .tail => upward[>] m (Succ n)}} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let (outside, fixpoint) = fixpoint_of(&arena, &module, SurfaceName::from("upward"));
@@ -1680,7 +1680,7 @@ fn a_productive_call_is_the_whole_arm_of_a_copattern_block()
 
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}{stream}def rec ahead(n : Nat) -> -F Nat {{ match n {{ Zero => return n, Succ(p) => become ahead[>](p) }} }}\ndef rec wrapped(n : Nat) -> Stream(Nat) {{ &{{.head => return n, .tail => become wrapped[>](n)}} }}\ndef rec both(n : Nat) -> -F Nat {{ match n {{ Zero => return n, Succ(p) => become both[<, >](p) }} }}\n"
+        "{NAT}{stream}def rec ahead(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => become ahead[>] p }} }}\ndef rec wrapped(n : Nat) -> Stream(Nat) {{ &{{.head => return n, .tail => become wrapped[>] n}} }}\ndef rec both(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => become both[<, >] p }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let unguarded = |name: &'static str| {
@@ -2124,7 +2124,7 @@ fn an_indexed_family_presents_no_rule_2865()
     };
     assert_eq!(
         written(span),
-        Some("Tell(s, Tell(u, k)) <=> Tell(u, k)"),
+        Some("Tell s (Tell u k) <=> Tell u k"),
         "the refusal stands over the rule's two sides"
     );
     let DeclarationOutcome::Data(skip) = outcome_of(&module, SurfaceName::from("Skip"))
@@ -4151,17 +4151,17 @@ fn a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808()
 {
     for (alias, arrow, body) in [
         (
-            "Empty => Integer",
+            "Empty -> Integer",
             "+U (Empty -> -F Integer)",
             "thunk { fun (x) { match x {} } }",
         ),
         (
-            "Empty => Integer",
+            "Empty -> Integer",
             "+U (Empty -> -F Integer)",
             "thunk { fun (x) { match x -> -F Integer {} } }",
         ),
         (
-            "(Empty, Integer) => Integer",
+            "(Empty, Integer) -> Integer",
             "+U (Empty -> Integer -> -F Integer)",
             "thunk { fun (x) { fun (n) { match x {} } } }",
         ),
@@ -4189,7 +4189,7 @@ fn a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815()
 {
     for (alias, arrow, body) in [
         (
-            "(a : Empty, b : Integer) => Integer",
+            "(a : Empty, b : Integer) -> Integer",
             "+U ((a : Empty) -> (b : Integer) -> -F Integer)",
             "thunk { fun (a) { fun (b) { match a {} } } }",
         ),
@@ -5092,7 +5092,7 @@ fn a_constructor_no_row_admits_at_one_index_is_pruned()
         "data Vec(a : Type) : Nat -> Type where { | VNil : Vec(a, Zero) ",
         "| VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n)) }\n",
         "def vhead(n : Nat, v : Vec(Integer, Succ(n))) -> -F Integer ",
-        "{ match v { VCons(m, h, t) => h } }\n",
+        "{ match v { | VCons(m, h, t) => h } }\n",
     );
     let module = lowered(SourceText::from(source), &mut arena);
     let tail = tail_of(&arena, body_named(&module, SurfaceName::from("vhead")));
@@ -5291,12 +5291,12 @@ fn a_leaf_copy_keeps_each_use_naming_its_pattern_variable()
     };
     assert_eq!(
         module.origins().binding(first),
-        written("#{m, w}", "w"),
+        written("*{m, w}", "w"),
         "the copy's first component is the use of `w`"
     );
     assert_eq!(
         module.origins().binding(second),
-        written("#{m, w}", "m"),
+        written("*{m, w}", "m"),
         "the copy's second component is the use of `m`"
     );
     assert_eq!(
@@ -5326,7 +5326,7 @@ fn a_leaf_copy_of_a_copy_keeps_the_use_naming_its_binder_451()
         gandr_surface_syntax::ByteOffset::from(parameter.saturating_add(1)),
     ));
     let form = source
-        .rfind("Path.back(r(a))")
+        .rfind("Path.back (r a)")
         .expect("the `S(x)` arm writes `back`");
     let carried: Vec<ValueId> = arena
         .values_since(gandr_core_term::ArenaWatermark::default())
@@ -5357,7 +5357,7 @@ fn sum_patterns_case_on_the_stated_arity()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def pick(s : +{ok : Integer, err : String, gone : Unit}) -> -F String { match s { +{.ok = n} => return \"ok\", +{.err = e} => return e, +{.gone = u} => return \"gone\" } }\ndef indexed(s : +{String, String, Integer}) -> -F Integer { match s { +{.2 = n} => return n, _ => return 0 } }\ndef nested(t : #{Integer, +{ok : Integer, err : String}}) -> -F String { match t { #{n, +{.ok = m}} => return \"ok\", #{n, +{.err = e}} => return e } }\ndef single(s : +{only : Integer}) -> -F Integer { match s { +{.only = n} => return n } }\n",
+            "def pick(s : +{ok : Integer, err : String, gone : Unit}) -> -F String { match s { | +{.ok = n} => return \"ok\" | +{.err = e} => return e | +{.gone = u} => return \"gone\" } }\ndef indexed(s : +{String, String, Integer}) -> -F Integer { match s { | +{.2 = n} => return n | _ => return 0 } }\ndef nested(t : *{Integer, +{ok : Integer, err : String}}) -> -F String { match t { | *{n, +{.ok = m}} => return \"ok\" | *{n, +{.err = e}} => return e } }\ndef single(s : +{only : Integer}) -> -F Integer { match s { | +{.only = n} => return n } }\n",
         ),
         &mut arena,
     );
@@ -5522,7 +5522,7 @@ fn indexed_arms_settle_their_sum_1169()
             "def written(c : Integer) -> -F Integer { let b = c < 128 ; match b { | true => return 1 | false => return 2 } }\n",
             "def printed(c : Integer) -> -F Integer { let b = c < 128 ; match b { | +{.0 = u} => return 1 | +{.1 = u} => return 2 } }\n",
             "def pick(n : Integer) -> -F +{Unit, Unit, Unit} { return +{.2 = *{}} }\n",
-            "def three(c : Integer) -> -F Integer { let s = pick(c) ; match s { +{.1 = u} => return 1, +{.0 = u} => return 0, +{.2 = u} => return 2 } }\n",
+            "def three(c : Integer) -> -F Integer { let s = pick c ; match s { | +{.1 = u} => return 1 | +{.0 = u} => return 0 | +{.2 = u} => return 2 } }\n",
         )),
         &mut arena,
     );
@@ -5734,7 +5734,7 @@ fn a_cell_between_terms_is_a_loop_or_refused_by_name()
     for (name, at) in [
         ("Ruled", "==>"),
         ("Swapped", "<=>"),
-        ("Open", "Next(x)"),
+        ("Open", "Next x"),
         ("Indexed", "cell"),
     ] {
         let refusal = refusal_of(&module, SurfaceName::from(name));
@@ -5766,7 +5766,7 @@ fn only_back_inverts_a_letter()
                   Base, Base) ;\ndef bad = here (loop) ∷ loop ;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
-    let written = "here(loop) ∷ loop";
+    let written = "here (loop) ∷ loop";
     let start = source.find(written).expect("the word is written");
     assert!(
         matches!(
@@ -5792,8 +5792,11 @@ fn a_letter_naming_nothing_is_unresolved_1997()
     let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef turn : Integer ;\ndef turn = 1 ;\ndef plain : Path[.A = Circle](Base, Base) ;\ndef plain = lop ∷ Path.here Base ;\ndef inverse : Path[.A = Circle](Base, Base) ;\ndef inverse = back lop ∷ Path.here Base ;\ndef other : Path[.A = Circle](Base, Base) ;\ndef other = turn ∷ Path.here Base ;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
-    for (declaration, written) in [("plain", "lop ∷"), ("inverse", "lop) ∷")] {
-        let start = source.find(written).expect("the letter is written");
+    for (declaration, written) in [("plain", "= lop"), ("inverse", "back lop")] {
+        let start = source
+            .find(written)
+            .map(|at| at.saturating_add(written.len()).saturating_sub("lop".len()))
+            .expect("the letter is written");
         assert!(
             matches!(
                 outcome_of(&module, declaration.into()),
@@ -5841,7 +5844,7 @@ fn a_word_conses_its_letters_and_matches_them()
         ref fields,
     }) = arena.value(body_named(&module, SurfaceName::from("empty")))
     else {
-        panic!("`here(Base)` at the loop's point is a word");
+        panic!("`Path.here Base` at the loop's point is a word");
     };
     assert!(is_words(datatype));
     assert_eq!(
@@ -5861,7 +5864,7 @@ fn a_word_conses_its_letters_and_matches_them()
     assert_eq!(
         (usize::from(tag), fields.len()),
         (2_usize, 1_usize),
-        "`back(loop)` is the loop's inverse letter, consed onto one word"
+        "`back (loop)` is the loop's inverse letter, consed onto one word"
     );
     // No core node holds a letter or the point of an empty word: each is
     // labelled at its type, the inverse letter's name inside it too.
@@ -5896,7 +5899,7 @@ fn a_word_conses_its_letters_and_matches_them()
         .find("def empty =")
         .expect("the empty word is written");
     for (text, from) in [
-        ("back(loop)", after_word),
+        ("back (loop)", after_word),
         ("loop", after_word.saturating_add(16)),
     ] {
         assert!(
@@ -6303,7 +6306,7 @@ fn a_clause_of_too_many_patterns_is_refused()
     );
 }
 
-/// A guard reads its clause's variables, `m` in `| Succ(m) if isZero(m)`, and
+/// A guard reads its clause's variables, `m` in `| Succ(m) if isZero m`, and
 /// tests a boolean behind the clause's leaf; a name the clause does not bind
 /// is unresolved there.
 #[test]
@@ -6319,9 +6322,7 @@ fn a_guard_reads_its_clause_s_variables()
             .any(|at| matches!(arena.computation(at), Some(&Computation::Case { .. }))),
         "the guard is tested by a case on its boolean"
     );
-    let stray = source
-        .find("isZero(k)")
-        .map(|at| at.saturating_add(7_usize));
+    let stray = source.find("isZero k").map(|at| at.saturating_add(7_usize));
     assert!(
         matches!(
             refusal_of(&module, SurfaceName::from("stray")),

@@ -481,7 +481,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Character
                 | Former::TypeQuote
                 | Former::Parenthesized
-                | Former::Unit
                 | Former::Boolean
                 | Former::Thunk
                 | Former::Lambda
@@ -519,7 +518,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::SumType
                 | Former::LazyProductType
                 | Former::TelescopeType
-                | Former::ValueFunctionType
                 | Former::ParenthesizedType
                 | Former::PathType
                 | Former::BridgeType
@@ -599,7 +597,6 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::Character
                         | Former::TypeQuote
                         | Former::Parenthesized
-                        | Former::Unit
                         | Former::Boolean
                         | Former::Thunk
                         | Former::Lambda
@@ -639,7 +636,6 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::TelescopeType
                         | Former::LabelledSumType
                         | Former::LazyRecordType
-                        | Former::ValueFunctionType
                         | Former::PathType
                         | Former::BridgeType
                         | Former::FlowType
@@ -676,7 +672,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Character
                 | Former::TypeQuote
                 | Former::Parenthesized
-                | Former::Unit
                 | Former::Boolean
                 | Former::Thunk
                 | Former::Lambda
@@ -713,7 +708,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::SumType
                 | Former::LazyProductType
                 | Former::TelescopeType
-                | Former::ValueFunctionType
                 | Former::PathType
                 | Former::BridgeType
                 | Former::FlowType

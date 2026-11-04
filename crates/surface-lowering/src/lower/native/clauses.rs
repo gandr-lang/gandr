@@ -23,7 +23,6 @@ use super::ArmAt;
 use super::CaseForm;
 use super::CaseIndex;
 use super::Depth;
-use super::Former;
 use super::Lowerer;
 use super::Over;
 use super::ParameterAt;
@@ -116,7 +115,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — two columns over `Nat` lower to two lambdas whose
     ///   arrows are the stated type's.
     /// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
-    /// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
+    /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     #[spec(
         captures: before = self.parameters.len(),
         ensures: |ret| ret.as_ref().map_or(true, |columns| columns.parameters.start == before
@@ -135,12 +134,8 @@ impl<'source> Lowerer<'_, 'source>
         closed(function, cursor, TileName::WHERE)?;
         let mut domains = Vec::new();
         let mut result = stated.node;
-        let former = self.form_at(stated)?.map(|(_, former)| former);
         if self.boxes(stated.node)?.0 {
-            let tile = match former {
-                Some(Former::ArrowType) => TileName::ARROW,
-                _ => TileName::FAT_ARROW,
-            };
+            let tile = TileName::ARROW;
             let mut pieces = Pieces::new();
             read_pieces(self.pbg, self.tree, stated.node, &mut pieces)?;
             if let Maybe::Present(repaired) = pieces.repair {

@@ -1,5 +1,5 @@
 //! A definition quantified over stages: `def applyAt[i : Size](f :
-//! Nat[<i] => Nat, x : Nat[<i])`.
+//! Nat[< i] -> Nat, x : Nat[< i])`.
 //!
 //! - **The signature is read off the declared type.** The lowering writes each
 //!   `Nat[i]` as `Nat` at the stage its binder's ordinal names; [`split`] reads

@@ -524,7 +524,7 @@ fn an_unknown_operation_or_interface_is_refused_by_name()
         "def held : Cap {delete} ;\n",
         "def row(c : Cap {read}) -> -F [Radio] String { c.read \"x\" }\n",
         "def sent(c : Cap {read}) -> -F [std.fs.Eff] String { c.delete \"x\" }\n",
-        "def scoped() -> -F Unit { handle c : Radio { pure *{} } with { pure(x) => pure x } }\n",
+        "def scoped() -> -F Unit { handle c : Radio { pure *{} } with { | pure(x) => pure x } }\n",
         "def twice() -> -F Unit { handle c : std.process.Exit.Eff { pure *{} } with { | pure(x) => pure x | pure(y) => pure y | oper exit(code, k) => k *{} } }\n",
     ));
     let module = hosted(&text, &mut arena);
@@ -1130,7 +1130,7 @@ fn a_scope_handles_its_capability_and_resumes()
     assert_eq!(clause.operation.as_ref(), "exit");
     let Some(&Computation::Resume(continuation, reply)) = arena.computation(clause.body)
     else {
-        panic!("`k(unit)` resumes");
+        panic!("`k *{{}}` resumes");
     };
     assert_eq!(
         arena.value(continuation),
@@ -1194,7 +1194,7 @@ fn a_scope_handles_a_theory_s_operations_2272()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{STATE}def constant() -> -F Integer {{ handle st : State with sort S = Integer {{ let a = st.get(); st.put(a); let b = st.get(); pure a + b + 1 }} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n"
+        "{STATE}def constant() -> -F Integer {{ handle st : State with sort S = Integer {{ let a = st.get (); st.put a; let b = st.get (); pure a + b + 1 }} with {{ | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{{}} }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let constant = tail_of(&module, &arena, "constant".into());
@@ -1292,7 +1292,7 @@ fn a_scope_records_the_theory_and_sorts_it_handles_2382()
 fn a_scope_s_manifest_names_only_its_theory_s_sorts_2272()
 {
     let mut arena = CoreArena::new();
-    let handlers = "with { pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }";
+    let handlers = "with { | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{} }";
     let source = alloc::format!(
         concat!(
             "{state}",
@@ -1800,8 +1800,8 @@ const PUT_LAWS: &str = concat!(
     "  sort C : Type;\n",
     "  oper get : (k : pi+ (s : S) . C) --> C;\n",
     "  oper put : (s : S, k : C) --> C;\n",
-    "  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));\n",
-    "  rule putPut : put(s, put(u, k)) <=> put(u, k);\n",
+    "  rule putGet : put s (get (bind t . (k t))) <=> put s (k s);\n",
+    "  rule putPut : put s (put u k) <=> put u k;\n",
     "}\n",
 );
 
@@ -1814,9 +1814,9 @@ const PUT_LAWS: &str = concat!(
 fn a_scope_owes_its_theory_s_laws_2272()
 {
     let mut arena = CoreArena::new();
-    let clauses = "with { pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }";
+    let clauses = "with { | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{} }";
     let source = alloc::format!(
-        "{STATE}{PUT_LAWS}def lawless() -> -F Integer {{ handle st : State with sort S = Integer {{ st.put(1); st.get() }} {clauses} }}\ndef forgetful() -> -F Integer {{ handle st : StatePutLaws with sort S = Integer {{ st.put(1); st.get() }} {clauses} }}\n"
+        "{STATE}{PUT_LAWS}def lawless() -> -F Integer {{ handle st : State with sort S = Integer {{ st.put 1; st.get () }} {clauses} }}\ndef forgetful() -> -F Integer {{ handle st : StatePutLaws with sort S = Integer {{ st.put 1; st.get () }} {clauses} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let owed = |name: &str| -> Vec<(ComputationId, RuleIndex)> {
@@ -1884,7 +1884,7 @@ fn a_scope_owes_its_theory_s_stated_laws_3966()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{PUT_SKIP}def discarding() -> -F Integer {{ handle st : StatePutSkip with sort S = Integer {{ st.put(1); st.get() }} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => pure 9 }} }}\n"
+        "{PUT_SKIP}def discarding() -> -F Integer {{ handle st : StatePutSkip with sort S = Integer {{ st.put 1; st.get () }} with {{ | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => pure 9 }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let Some(declaration) = module
@@ -1934,7 +1934,7 @@ const GET_GET: &str = concat!(
     "  sort S : Type+;\n",
     "  sort C : Type;\n",
     "  oper get : (k : pi+ (s : S) . C) --> C;\n",
-    "  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));\n",
+    "  rule getGet : get (bind s . (get (bind t . (k s t)))) <=> get (bind s . (k s s));\n",
     "}\n",
 );
 
@@ -1947,9 +1947,9 @@ const GET_GET: &str = concat!(
 fn a_scope_s_subject_normalises_by_its_theory_s_laws_2272()
 {
     let mut arena = CoreArena::new();
-    let subject = "{ let a = st.get(); let b = st.get(); pure a * 10 + b }";
+    let subject = "{ let a = st.get (); let b = st.get (); pure a * 10 + b }";
     let source = alloc::format!(
-        "{STATE}{GET_GET}def once() -> -F Integer {{ handle st : StateGetGet with sort S = Integer {subject} with {{ pure(x) => pure x, oper get(k) => k(4) }} }}\ndef twice() -> -F Integer {{ handle st : State with sort S = Integer {subject} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n"
+        "{STATE}{GET_GET}def once() -> -F Integer {{ handle st : StateGetGet with sort S = Integer {subject} with {{ | pure(x) => pure x | oper get(k) => k 4 }} }}\ndef twice() -> -F Integer {{ handle st : State with sort S = Integer {subject} with {{ | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{{}} }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     // Each step the scope's subject binds, outermost first.
@@ -2001,7 +2001,7 @@ fn a_scope_s_subject_normalises_by_its_theory_s_laws_2272()
     };
     assert_eq!(
         text(module.origins().computation(answered)).as_deref(),
-        Some("st.get()"),
+        Some("st.get ()"),
         "the return answers at the request it stands for"
     );
     assert_eq!(
@@ -2029,7 +2029,7 @@ const PUT_PUT: &str = concat!(
     "  sort C : Type;\n",
     "  oper get : (k : pi+ (s : S) . C) --> C;\n",
     "  oper put : (s : S, k : C) --> C;\n",
-    "  rule putPut : put(s, put(u, k)) <=> put(u, k);\n",
+    "  rule putPut : put s (put u k) <=> put u k;\n",
     "}\n",
 );
 
@@ -2038,17 +2038,17 @@ const PUT_PUT: &str = concat!(
 const PASSING: &str = concat!(
     "module Passing : Model(StatePutPut) with sort S = Integer where {\n",
     "  type C = Integer -> Integer;\n",
-    "  def get(k : Integer => Integer => Integer) -> Integer => Integer {\n",
-    "    thunk { fun (s) { let after = k(s); after(s) } }\n",
+    "  def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer {\n",
+    "    thunk { fun (s) { let after = k s; after s } }\n",
     "  }\n",
-    "  def put(s : Integer, k : Integer => Integer) -> Integer => Integer {\n",
-    "    thunk { fun (_old) { k(s) } }\n",
+    "  def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer {\n",
+    "    thunk { fun (_old) { k s } }\n",
     "  }\n",
     "  def putPut(s : Integer, u : Integer, k : Integer => Integer) -> Path[.A = Integer => Integer](\n",
     "    put(s, put(u, k)),\n",
     "    put(u, k)\n",
     "  ) {\n",
-    "    Path.here(put(u, k))\n",
+    "    Path.here (put u k)\n",
     "  }\n",
     "}\n",
 );
@@ -2218,22 +2218,22 @@ const COST: &str = concat!(
     "  oper charge : (c : N, k : C) --> C;\n",
     "  oper zero : N;\n",
     "  oper plus : (a : N, b : N) --> N;\n",
-    "  rule chargeZero : charge(zero(), k) <=> k;\n",
-    "  rule chargeTwice : charge(a, charge(b, k)) <=> charge(plus(a, b), k);\n",
+    "  rule chargeZero : charge (zero ()) k <=> k;\n",
+    "  rule chargeTwice : charge a (charge b k) <=> charge (plus a b) k;\n",
     "}\n",
 );
 
 /// A model of `Cost` whose cost is the function adding it, so its unit is the
 /// identity and its sum composition, and both laws hold by conversion.
 const COUNTING: &str = concat!(
-    "module Counting : Model(Cost) with sort N = Integer => Integer where {\n",
+    "module Counting : Model(Cost) with sort N = Integer -> Integer where {\n",
     "  type C = (Integer -> Integer) -> Integer;\n",
-    "  def charge(c : Integer => Integer, k : (Integer => Integer) => Integer) -> (Integer => Integer) => Integer {\n",
-    "    thunk { fun (before) { k(thunk { fun (n) { let m = c(n); before(m) } }) } }\n",
+    "  def charge(c : Integer -> Integer, k : (Integer -> Integer) -> Integer) -> (Integer -> Integer) -> Integer {\n",
+    "    thunk { fun (before) { k (thunk { fun (n) { let m = c n; before m } }) } }\n",
     "  }\n",
     "  def zero : Integer -> Integer = thunk { fun (n) { pure n } };\n",
-    "  def plus(a : Integer => Integer, b : Integer => Integer) -> Integer => Integer {\n",
-    "    thunk { fun (n) { let m = b(n); a(m) } }\n",
+    "  def plus(a : Integer -> Integer, b : Integer -> Integer) -> Integer -> Integer {\n",
+    "    thunk { fun (n) { let m = b n; a m } }\n",
     "  }\n",
     "  def chargeZero(k : (Integer => Integer) => Integer) -> Path[.A = (Integer => Integer) => Integer](charge(zero, k), k) {\n",
     "    Path.here(k)\n",
@@ -2498,12 +2498,12 @@ fn a_stated_stack_is_resumed_as_a_clause_resumes_1387()
     assert_eq!(
         resumes(&arena, "later"),
         Some(true),
-        "`j(unit)` resumes the stack its parameter holds"
+        "`j *{{}}` resumes the stack its parameter holds"
     );
     assert_eq!(
         resumes(&arena, "apply"),
         None,
-        "`f(unit)` is not a resumption"
+        "`f *{{}}` is not a resumption"
     );
     for name in ["aliased", "qualified"] {
         assert_eq!(
@@ -2685,7 +2685,7 @@ fn a_return_in_a_subject_leaves_past_the_handler()
         matches!(arena.computation(subject), Some(&Computation::Return(_))),
         "a subject's value tail is its result"
     );
-    let subjects: Vec<core::ops::Range<usize>> = ["{ c.exit(1); return n }", "{ 1 }"]
+    let subjects: Vec<core::ops::Range<usize>> = ["{ c.exit 1; return n }", "{ 1 }"]
         .into_iter()
         .filter_map(|subject| {
             source
@@ -2758,7 +2758,7 @@ fn an_exit_that_would_run_in_a_live_frame_is_refused()
 fn a_capability_at_a_scope_lives_in_its_region()
 {
     let mut arena = CoreArena::new();
-    let clauses = "with { pure(x) => pure x, oper exit(code, k) => k(unit) }";
+    let clauses = "with { | pure(x) => pure x | oper exit(code, k) => k *{} }";
     let source = alloc::format!(
         "def regions() -> -F Unit {{ handle c : std.process.Exit.Eff {{ handle e : std.process.Exit.Eff {{ let d : Cap {{exit}} at c = c ; let f : Cap {{exit}} at e = e ; pure *{{}} }} {clauses} }} {clauses} }}\n\
          def unbound(c : Integer) -> -F Unit {{ handle e : std.process.Exit.Eff {{ let d : Cap {{exit}} at c = e ; pure *{{}} }} {clauses} }}\n\

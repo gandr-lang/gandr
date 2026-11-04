@@ -189,7 +189,7 @@ def unwound() -> -F Unit {
             LoweringRefusal::MalformedForm { span, fault: FormFault::MisplacedTile, .. }
                 if span == spelled_within(
                     source,
-                    SourceText::from("unwind { pure unit }"),
+                    SourceText::from("unwind { pure *{} }"),
                     SourceText::from("unwind")
                 )
         ),
@@ -332,8 +332,8 @@ def early_by_hand(n : Nat) -> -F Integer {
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     for (name, context) in [
-        ("leaves", "as v { return unit }"),
-        ("unwinds", "unwind { return unit }"),
+        ("leaves", "as v { return *{} }"),
+        ("unwinds", "unwind { return *{} }"),
     ] {
         assert!(
             matches!(
@@ -346,7 +346,7 @@ def early_by_hand(n : Nat) -> -F Integer {
                 } if span == spelled_within(
                     source,
                     SourceText::from(context),
-                    SourceText::from("return unit")
+                    SourceText::from("return *{}")
                 )
             ),
             "`{name}`: an exit would leave the access half done: {:?}",
@@ -556,7 +556,7 @@ def graded() -> -F Unit { var[1] h : Integer at seat = 3; pure *{} }
         matches!(
             refusal_of(&module, SurfaceName::from("graded")),
             LoweringRefusal::MalformedForm { span, fault: FormFault::MisplacedTile, .. }
-                if span == spelled_within(source, SourceText::from("h : Integer at seat = 3; pure unit"), SourceText::from("Integer at seat"))
+                if span == spelled_within(source, SourceText::from("h : Integer at seat = 3; pure *{}"), SourceText::from("Integer at seat"))
         ),
         "a handle binds no slot, so a grade has nothing to grade"
     );

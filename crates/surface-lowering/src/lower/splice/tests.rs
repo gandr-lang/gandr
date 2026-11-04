@@ -52,7 +52,7 @@ fn an_operand_writing_no_tactic_is_refused_2762()
     // the wrong sort.
     let deep = format!(
         "{}assumption{}",
-        "intro(".repeat(usize::from(Tactic::INTROS)),
+        "intro (".repeat(usize::from(Tactic::INTROS)),
         ")".repeat(usize::from(Tactic::INTROS)),
     );
     let source = format!(
@@ -69,8 +69,8 @@ def head(x : Integer) -> -F Integer {{ become ~assumption }}
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     for (name, operand) in [
         ("named", String::from("x }")),
-        ("pair", String::from("intro(assumption, assumption)")),
-        ("other", String::from("apply(assumption)")),
+        ("pair", String::from("intro assumption assumption")),
+        ("other", String::from("apply assumption")),
         ("literal", String::from("3 ;")),
         ("deep", deep),
     ] {

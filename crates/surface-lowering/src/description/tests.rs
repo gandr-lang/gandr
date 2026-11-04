@@ -588,11 +588,6 @@ fn a_family_its_code_cannot_carry_is_left_to_the_native_reading()
 {
     for (source, what, result) in [
         (
-            "data Cell(a : Type) : Type where { | Mk : (get : a -> a) --> Cell(a) }",
-            "a function field",
-            "Cell(a)",
-        ),
-        (
             "data Box : Type where { | Put : (a : Type) --> Box }",
             "a universe field",
             "Box",
@@ -624,8 +619,9 @@ fn a_family_its_code_cannot_carry_is_left_to_the_native_reading()
             "{what}: the result is kept past the field the code cannot carry"
         );
     }
-    // An operation the description must carry keeps the field's refusal.
-    let source = "data Cell : Type where { | Mk : (get : Integer -> Integer) --> Cell oper reset : (c : Cell) --> Cell; }";
+    // An operation the description must carry keeps the refusal of a field
+    // holding a box below its whole type.
+    let source = "data Cell : Type where { | Mk : (get : List(Integer -> Integer)) --> Cell oper reset : (c : Cell) --> Cell; }";
     let report = elaborated(SourceText::from(source));
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -677,8 +673,8 @@ fn a_multi_output_constructor_describes_one_constructor_per_port()
     );
 }
 
-/// #4853: a rule names a port through parentheses, `(Split(t)).l`, as it names
-/// the port without them, `Split(t).l`.
+/// #4853: a rule names a port through parentheses, `(Split t).l`, as it names
+/// it with the constructor's argument glued, `(Split(t)).l`.
 #[test]
 fn a_rule_names_a_port_through_parentheses_4853()
 {
@@ -701,9 +697,9 @@ fn a_rule_names_a_port_through_parentheses_4853()
             .collect::<alloc::vec::Vec<_>>()
     };
     assert_eq!(
+        rules("(Split t).l"),
         rules("(Split(t)).l"),
-        rules("Split(t).l"),
-        "a port written through parentheses is the port written without them"
+        "a port written with its argument juxtaposed is the port written glued"
     );
 }
 
@@ -794,19 +790,19 @@ fn a_value_function_field_is_the_function_former()
 fn the_thunked_arrow_is_the_function_former_it_spells_3194()
 {
     let fields = [
-        ("One", "Integer => Prog", "+U (Integer -> -F Prog)"),
+        ("One", "Integer -> Prog", "+U (Integer -> -F Prog)"),
         (
             "Two",
-            "(Integer, String) => Prog",
+            "(Integer, String) -> Prog",
             "+U (Integer -> String -> -F Prog)",
         ),
         (
             "Nested",
-            "Integer => Integer => Prog",
+            "Integer -> (Integer -> Prog)",
             "+U (Integer -> -F (+U (Integer -> -F Prog)))",
         ),
-        ("Thunk", "() => Prog", "+U (-F Prog)"),
-        ("Pure", "Integer => Integer", "+U (Integer -> -F Integer)"),
+        ("Thunk", "() -> Prog", "+U (-F Prog)"),
+        ("Pure", "Integer -> Integer", "+U (Integer -> -F Integer)"),
     ];
     let source = |thunked: bool| {
         let mut written = String::from("data Prog : Type where { | Done : (x : Integer) --> Prog ");
@@ -822,7 +818,7 @@ fn the_thunked_arrow_is_the_function_former_it_spells_3194()
             }
         }
         written.push_str(
-            "| Put : (s : Integer, k : Prog) --> Prog rule : Put(s, Put(u, k)) <=> Put(u, k); }",
+            "| Put : (s : Integer, k : Prog) --> Prog rule : Put s (Put u k) <=> Put u k; }",
         );
         written
     };
@@ -1272,7 +1268,7 @@ fn an_unended_family_is_refused_once_at_its_close()
     let grammar = grammar();
     for (source, why) in [
         (
-            "data Bit : Type where {\n  | Zero : Bit\n  | One : Bit\n  rule : and(x, x) ==> x;\n",
+            "data Bit : Type where {\n  | Zero : Bit\n  | One : Bit\n  rule : and x x ==> x;\n",
             "a data family whose last member the cell gate refuses",
         ),
         (

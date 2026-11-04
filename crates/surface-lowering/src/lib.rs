@@ -62,7 +62,7 @@
 //! `(x : A) -> C` bind exactly where a later type names their binder, as a
 //! function's parameters do. The alternative, #266's choice, reads every named
 //! binder of `(x : A) -> C` as dependent, the spelling taken as written; it
-//! makes `(n : Integer) => Integer` and `def g(n : Integer) -> -F Integer` two
+//! makes `(n : Integer) -> Integer` and `def g(n : Integer) -> -F Integer` two
 //! types (#577). Transport motives still read, the motive reader taking either
 //! arrow (the decision is in `lower::arity`).
 //!
@@ -72,13 +72,14 @@
 //! the failure classifier states by leaving its absence class empty.
 //!
 //! **Type operators lower to the static calculus over codes.** `fun (A) { T }`
-//! is a static lambda over the code of its body, an arrow where a value type is
-//! read is a static Pi, and an operator a binder or a declaration names,
-//! applied to arguments, is a static application — the decode of one where a
-//! type is read. `A * B` and `(a, b)` are the eager product and its pair,
-//! `A + B` is the sum, `(A1, …, An) => B` is exactly `+U (A1 -> … -> An ->
-//! -F B)`, and the arity-shaped formers `#{…}`, `+{…}` and `&{…}` lower to
-//! the core's product, record, sum and lazy product.
+//! is a static lambda over the code of its body, an arrow whose domain
+//! classifies codes where a value type is read is a static Pi, and an operator
+//! a binder or a declaration names, applied to arguments, is a static
+//! application — the decode of one where a type is read. `A * B` and `(a, b)`
+//! are the eager product and its pair, `A + B` is the sum, an arrow over any
+//! other domain where a value type is read is the box, `(A1, …, An) -> B`
+//! exactly `+U (A1 -> … -> An -> -F B)`, and the arity-shaped formers `*{…}`,
+//! `+{…}` and `&{…}` lower to the core's product, record, sum and lazy product.
 //!
 //! **Reserved forms are declined by name.** A recursive call's claim other
 //! than `<` parses and then refuses as unimplemented, naming the issue that
@@ -420,14 +421,17 @@ pub use crate::error::MatchFault;
 pub use crate::error::TelescopeFault;
 pub use crate::error::Unexported;
 pub use crate::error::description_subject;
+pub use crate::form::Boxed;
 pub use crate::form::Ending;
 pub use crate::form::FormName;
 pub use crate::form::Former;
 pub use crate::form::Offer;
+pub use crate::form::Pieces;
 pub use crate::form::Repair;
 pub use crate::form::StrayKeyword;
 pub use crate::form::TileName;
 pub use crate::form::former_of;
+pub use crate::form::writes_box;
 pub use crate::form::written_children;
 pub use crate::import::ImportBinding;
 pub use crate::import::ImportDeclaration;

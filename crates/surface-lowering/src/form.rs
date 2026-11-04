@@ -555,7 +555,8 @@ impl TileName
     /// The greater-than sign `>`: an instantiation's productivity claim, a
     /// self-call standing as a copattern arm.
     pub const GREATER_THAN: Self = Self(">");
-    /// The value function space's `=>`.
+    /// The `=>` after an arm's pattern, a clause's patterns, a handler
+    /// clause's head or a copattern's label.
     pub const FAT_ARROW: Self = Self("=>");
     /// The protocol step `>>` between a send's or a receive's payload and the
     /// rest of the protocol.
@@ -862,8 +863,6 @@ pub enum Former
     /// The type quote `type(T)`: the code of the type `T`, written where an
     /// expression stands.
     TypeQuote,
-    /// The unit value `unit`.
-    Unit,
     /// The thunk `thunk { c }`.
     Thunk,
     /// The lambda `fun (x) { c }`.
@@ -962,9 +961,6 @@ pub enum Former
     LabelledSumType,
     /// The lazy record over labels `&{…}`, positional or labelled.
     LazyRecordType,
-    /// The value function space `A => B`, `(A, B) => C`, or the telescope
-    /// `(x : A, y : B(x)) => C`: the alias of the thunked arrow.
-    ValueFunctionType,
     /// A parenthesised type.
     ParenthesizedType,
     /// The element path type `Path[.A = A](a, b)`: a value type over a carrier
@@ -991,7 +987,7 @@ pub enum Former
     /// capability lives until the scope binding `c` ends.
     AtType,
     /// A data type at a stage a definition's signature binds, `Nat[i]`, or
-    /// one below it, `Nat[<i]`.
+    /// one below it, `Nat[< i]`.
     StagedType,
     /// A type at a mode variable, `m T`: a method's receiver at the mode its
     /// telescope's `[m : Mode]` binds, refused anywhere else.
@@ -1077,7 +1073,7 @@ impl Former
     ///   table outcome's variant. The evidence is bounded to the current closed
     ///   enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 74_usize] = [
+    pub const ALL: [Self; 72_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -1086,7 +1082,6 @@ impl Former
         Self::Text,
         Self::Character,
         Self::Parenthesized,
-        Self::Unit,
         Self::Thunk,
         Self::Lambda,
         Self::Block,
@@ -1125,7 +1120,6 @@ impl Former
         Self::TelescopeType,
         Self::LabelledSumType,
         Self::LazyRecordType,
-        Self::ValueFunctionType,
         Self::ParenthesizedType,
         Self::PathType,
         Self::BridgeType,
@@ -1179,7 +1173,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 137_usize] = [
+pub const FORMERS: [(&str, Former); 135_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1191,7 +1185,6 @@ pub const FORMERS: [(&str, Former); 137_usize] = [
     ("character", Former::Character),
     ("parenthesized_expression", Former::Parenthesized),
     ("type_quote_expression", Former::TypeQuote),
-    ("unit", Former::Unit),
     ("thunk_expression", Former::Thunk),
     ("lambda_expression", Former::Lambda),
     ("block", Former::Block),
@@ -1233,7 +1226,6 @@ pub const FORMERS: [(&str, Former); 137_usize] = [
     ("telescope_type", Former::TelescopeType),
     ("labelled_sum_type", Former::LabelledSumType),
     ("lazy_record_type", Former::LazyRecordType),
-    ("value_function_type", Former::ValueFunctionType),
     ("parenthesized_type", Former::ParenthesizedType),
     ("path_type", Former::PathType),
     ("bridge_type", Former::BridgeType),
@@ -1799,14 +1791,14 @@ pub fn classifies_codes<'source>(
     }
 }
 
-/// Whether the type written at `at` is the box, by its syntax: the value
-/// function `A => B`, or the arrow `A -> B` whose domain classifies no codes,
-/// as [`classifies_codes`] reads it. `scratch` is a reused reading buffer.
+/// Whether the type written at `at` is the box, by its syntax: the arrow
+/// `A -> B` whose domain classifies no codes, as [`classifies_codes`] reads
+/// it. `scratch` is a reused reading buffer.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: boxed for `A => B` and for `A -> B` whose domain is not kinded;
-///   not boxed for a kind arrow such as `Type -> Type`, and for any other type.
+/// - ensures: boxed for `A -> B` whose domain is not kinded; not boxed for a
+///   kind arrow such as `Type -> Type`, and for any other type.
 /// - provides: the box test of every reading that reads a function value's
 ///   written type off its syntax, whichever arrow writes it.
 /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
@@ -1819,9 +1811,9 @@ pub fn classifies_codes<'source>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a lambda passed for a box parameter, an implicit box
-///   applied in a body and a model member at a box, each written with `->`,
-///   lower as their `=>` spelling does.
-/// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
+///   applied in a body, a family a box states and a clause definition over a
+///   box, each written with `->`, lower and check.
+/// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
 pub fn writes_box<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -1834,10 +1826,6 @@ pub fn writes_box<'source>(
         return Ok(Boxed(false));
     };
     match shape_of(pbg, node)? {
-        Shape::Form {
-            former: Former::ValueFunctionType,
-            ..
-        } => Ok(Boxed(true)),
         Shape::Form {
             former: Former::ArrowType,
             ..

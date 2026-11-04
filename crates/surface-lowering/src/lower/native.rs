@@ -10,7 +10,7 @@
 //! lowering inserts. A family with parameters takes it from the type the
 //! constructor's position states: an annotation `(C(…) : T(…))`; the
 //! signature of the definition it is, `def x : T(…) ; def x = C(…) ;`; the
-//! answer of the body it ends, `+U (-F T(…))`, `() => T(…)` or a function's
+//! answer of the body it ends, `+U (-F T(…))`, `() -> T(…)` or a function's
 //! stated result, through a tail, a `pure` there or a `return` — a result
 //! written as a top-level definition's application, `-> opt(Integer)` with
 //! `opt = fun (A) { -F Maybe(A) }`, read through the definition's body; its
@@ -1154,12 +1154,12 @@ pub(super) enum Over
         arm: Frame,
     },
     /// The returner over the written value type, `-F B`: the answer of a
-    /// thunk's body whose signature writes the alias `() => B`.
+    /// thunk's body whose signature writes the box `() -> B`.
     Returning,
-    /// The arrows the value function space `(A1, …, An) => B` the node writes
-    /// stands for, past its first `taken` domains: `Aₜ₊₁ -> … -> An -> -F B`.
-    /// The answer of a thunk's body whose signature writes the alias, and of
-    /// each lambda under it but the last, which answers `B` returning.
+    /// The arrows the box `(A1, …, An) -> B` the node writes stands for, past
+    /// its first `taken` domains: `Aₜ₊₁ -> … -> An -> -F B`. The answer of a
+    /// thunk's body whose signature writes the box, and of each lambda under
+    /// it but the last, which answers `B` returning.
     Valued
     {
         /// How many domains the lambdas around the position took.
@@ -4055,15 +4055,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the collection has read every slot.
     /// - ensures: for each slot whose signature and definition are both written
     ///   types and terms: a signature `+U C`, its parentheses stripped, answers
-    ///   the definition's thunk body with `C`, the alias `() => B` with `-F B`
-    ///   and any other alias `(A1, …, An) => B` with the arrows it stands for,
+    ///   the definition's thunk body with `C`, the box `() -> B` with `-F B`
+    ///   and any other box `(A1, …, An) -> B` with the arrows it stands for,
     ///   each read under the outermost frame; any other signature classifies
     ///   the definition. A slot with no signature whose written definition is
     ///   `(e : T)` records `T` as the annotation's ascription and signs `e` by
     ///   `T` the same way.
     /// - provides: the expected type a constructor takes its classifier from
     ///   where the source states one only in the signature, and the binder
-    ///   types and answers of the lambdas a thunk signed with an alias opens.
+    ///   types and answers of the lambdas a thunk signed with a box opens.
     /// - fails: as [`Self::unwrapped`].
     /// - panics: none.
     ///
@@ -4071,9 +4071,9 @@ impl<'source> Lowerer<'_, 'source>
     /// The walk's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a thunk signed `+U (-F T)` and `() => T`, and a
+    /// - hypothesis: L3 — a thunk signed `+U (-F T)` and `() -> T`, and a
     ///   definition signed `T`, each over a parameterised family's constructor;
-    ///   a lambda signed `A => B` and `(A, C) => B` lowering as under the
+    ///   a lambda signed `A -> B` and `(A, C) -> B` lowering as under the
     ///   thunked arrow.
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
@@ -6635,11 +6635,6 @@ impl<'source> Lowerer<'_, 'source>
         }
         if name == FormName::HOLE {
             return Ok(Matcher::Hole(self.hole(at)?));
-        }
-        if name == FormName::UNIT {
-            // `unit` is the empty product's pattern, `#{}` spelled as the
-            // value it matches.
-            return self.components(here, queued, &[], patterns, work);
         }
         if name == FormName::IDENTIFIER {
             if self.text_at(at).as_ref() == super::identity::HERE {
@@ -11032,9 +11027,9 @@ impl<'source> Lowerer<'_, 'source>
     /// The peeling loop runs `taken` times.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a function result and a thunk signed `() => T`, each
+    /// - hypothesis: L3 — a function result and a thunk signed `() -> T`, each
     ///   answering a constructor's classifier, and a match under a lambda
-    ///   signed `A => B` answering `-F B`.
+    ///   signed `A -> B` answering `-F B`.
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::staged::tests::a_case_under_a_staged_result_answers_plainly`

@@ -590,12 +590,16 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Classify the view block `e as w { b }` at `site`: `e` a call of a
-    /// method answering a place, which the block's view lends.
+    /// method answering a place, which the block's view lends. The call is
+    /// written between parentheses, `(xs.first ()) as w { b }`, since an
+    /// application binds looser than the block's `as`: a parenthesis that
+    /// holds one operand is read through to it.
     ///
     /// # Specification
     /// - requires: `site` is a view block and `pieces` its own.
     /// - ensures: the block stands as the call [`Self::method_at`] plans of
-    ///   `e`, lending the place to `b` under `w`.
+    ///   `e`, read through every parenthesis around it, lending the place to
+    ///   `b` under `w`.
     /// - fails: [`LoweringRefusal::ViewOfNoPlace`] at `e` when it is no call of
     ///   a method, or one of a method answering no place; the call's own
     ///   refusals.
@@ -617,8 +621,12 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let mut cursor = Cursor::new(&pieces.pieces, site.at.span);
-        let call = site.one(cursor.operands())?;
-        let refused = LoweringRefusal::ViewOfNoPlace { span: call.span };
+        let written = site.one(cursor.operands())?;
+        let refused = LoweringRefusal::ViewOfNoPlace { span: written.span };
+        let Some(call) = self.ungrouped_target(written, site.at.node)?
+        else {
+            return Err(refused);
+        };
         let Some((_, Former::Call)) = self.form_at(call)?
         else {
             return Err(refused);

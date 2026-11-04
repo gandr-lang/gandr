@@ -133,7 +133,7 @@ fn a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed()
     );
     assert_eq!(
         source.get(usize::from(rule.span.start()) .. usize::from(rule.span.end())),
-        Some("rule : divmod(Zero, n) ==> Zero")
+        Some("rule : divmod Zero n ==> Zero")
     );
     assert_eq!(cells.declarations[0].store.len(), CellCount::from(1_usize));
     assert_eq!(
@@ -183,13 +183,13 @@ fn a_copied_variable_is_refused_at_its_second_occurrence()
     for (source, member, second) in [
         (
             "data NatSub : Type where { | Zero : NatSub oper minus : (m : NatSub, n : NatSub) --> NatSub; rule : minus x x ==> Zero; }",
-            "rule : minus(x, x) ==> Zero",
-            "rule : minus(x, ".len(),
+            "rule : minus x x ==> Zero",
+            "rule : minus x ".len(),
         ),
         (
             "theory Idem where { sort M : Type; oper mul : (x : M, y : M) --> M; rule idem : mul x x ==> x; }",
-            "rule idem : mul(x, x) ==> x",
-            "rule idem : mul(x, ".len(),
+            "rule idem : mul x x ==> x",
+            "rule idem : mul x ".len(),
         ),
         (
             "theory Copy where { sort Nat : Type; oper add : (l : Nat, r : Nat) --> (s : Nat); rule copy2 : (data x : Nat) ==> (z : Nat) { node : add(x, x) --> (z); }; }",
@@ -375,7 +375,7 @@ fn each_cell_fault_is_refused_by_its_own_member_fault()
     let rows = [
         (
             "data NatDiv2 : Type where { | Zero : NatDiv2 oper divmod : (m : NatDiv2, n : NatDiv2) --> (q : NatDiv2, r : NatDiv2); rule : divmod Zero n ==> Zero; }",
-            "rule : divmod(Zero, n) ==> Zero",
+            "rule : divmod Zero n ==> Zero",
             MemberFault::ResultArity,
         ),
         (

@@ -407,11 +407,11 @@ fn a_thunk_type_reads_as_the_operation_it_curries_1226()
     );
 }
 
-/// #1329: the value-function alias reads as the thunk it stands for, so
-/// `oper next : T => T` is the operation `(_ : T) --> T` that
-/// `+U (T -> -F T)` is, a builtin result a closed sort.
+/// #1329: the box reads as the thunk it stands for, so `oper next : T -> T`
+/// is the operation `(_ : T) --> T` that `+U (T -> -F T)` is, a builtin
+/// result a closed sort; the computation arrow `T -> -F T` is no box.
 #[test]
-fn the_value_function_alias_reads_as_its_thunk_1329()
+fn the_box_reads_as_its_thunk_1329()
 {
     let operations = |source: &str| {
         let report = described(source);
@@ -451,13 +451,6 @@ fn the_value_function_alias_reads_as_its_thunk_1329()
             "theory Counting where { sort T : Type; oper next : +U (T -> -F T); oper read : +U (T -> -F Integer); }"
         ),
     );
-    assert_eq!(
-        operations(
-            "theory Counting where { sort T : Type; oper next : T -> T; oper read : T -> Integer; }"
-        ),
-        "next : T --> T; read : T --> Integer; "
-    );
-    // The thin arrow writes the same box; the computation arrow is no box.
     assert_eq!(
         operations(
             "theory Counting where { sort T : Type; oper next : T -> T; oper read : T -> Integer; }"
@@ -510,12 +503,12 @@ fn the_cat_shape_laws_are_written_faces()
     let report = described(
         "theory CatShape where {
   sort Ob : Type;
-  sort Hom(dom: Ob, cod: Ob) : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
   oper id : (a : Ob) --> Hom(a, a);
   oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
-  rule unitL : comp(id(a), f) ==> f;
-  rule unitR : comp(f, id(b)) ==> f;
-  rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
+  rule unitL : comp (id a) f ==> f;
+  rule unitR : comp f (id b) ==> f;
+  rule assoc : comp (comp f g) h ==> comp f (comp g h);
 }",
     );
     assert_eq!(report.diagnostics, []);
@@ -1549,7 +1542,7 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
     let tree = parse(
         &grammar,
         SourceText::from(
-            "theory CircleShape where { sort Pt : Type; oper base : Pt; oper turn : (x : Pt) --> Pt; oper unturn : (x : Pt) --> Pt; rule turnUnturn : turn(unturn(x)) ==> x; rule unturnTurn : unturn(turn(x)) ==> x; }\ntheory CatShape where { sort Ob : Type; sort Hom(dom: Ob, cod: Ob) : Type; oper id : (a : Ob) --> Hom(a,a); oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c); rule unitL : comp(id(a), f) ==> f; }\n",
+            "theory CircleShape where { sort Pt : Type; oper base : Pt; oper turn : (x : Pt) --> Pt; oper unturn : (x : Pt) --> Pt; rule turnUnturn : turn (unturn x) ==> x; rule unturnTurn : unturn (turn x) ==> x; }\ntheory CatShape where { sort Ob : Type; sort Hom(dom : Ob, cod : Ob) : Type; oper id : (a : Ob) --> Hom(a,a); oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c); rule unitL : comp (id a) f ==> f; }\n",
         ),
     )
     .unwrap()
@@ -1653,7 +1646,7 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
 #[test]
 fn the_description_is_read_off_the_value()
 {
-    let source = "theory CatShape where {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : Ob) --> Hom(a,a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp(id(a), f) ==> f;\n}\n";
+    let source = "theory CatShape where {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a : Ob) --> Hom(a,a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp (id a) f ==> f;\n}\n";
     let report = described(source);
     assert_eq!(report.diagnostics, []);
     let [ref theory] = *report.declarations.as_slice()
@@ -2435,7 +2428,7 @@ fn a_coherence_between_composites_is_a_higher_cell()
   sort Ob : Type;
   oper id : (a : Ob) --> Ob;
   rule unitL : id a ==> a;
-  rule triangle : (Path.step (unitL a) (unitL a)) ==> unitL a;
+  rule triangle : ((Path.step (unitL a)) (unitL a)) ==> unitL a;
   rule face : (f) ==> (z : Ob) { node : id(f) --> (z); };
 }";
     let report = described(source);
@@ -2766,26 +2759,6 @@ fn a_law_member_reads_its_statement_2356()
             String::from("eq(b, a)")
         ),
     ]);
-    // The thin arrow states the same law.
-    let thin = described(
-        "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) -> Path(Bool, eq a a, true);\n}\n",
-    );
-    assert_eq!(thin.diagnostics, []);
-    let law = &presented(&thin.declarations[0]).laws[0];
-    assert_eq!(
-        (
-            format!("{}", law.name),
-            law.binders.len(),
-            format!("{}", law.left),
-            format!("{}", law.right)
-        ),
-        (
-            String::from("refl"),
-            1,
-            String::from("eq(a, a)"),
-            String::from("true")
-        )
-    );
 }
 
 /// #4115: a stated law naming a variable it does not bind, or a head the

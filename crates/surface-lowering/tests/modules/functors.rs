@@ -279,13 +279,13 @@ fn an_application_is_bound_before_anything_projects_from_it()
     ]
     .concat();
     let found = rows(&lower(projected.as_str()));
-    for (path, occurrence) in [("direct", 0_usize), ("typed", 1_usize)] {
+    for (path, needle) in [("direct", "MkCounter Seed"), ("typed", "MkCounter(Seed)")] {
         assert!(
             found.contains(&row(
                 path,
                 Role::Declared,
                 Amounts::Refused(LoweringRefusal::ProjectionFromApplication {
-                    span: span_of(projected.as_str(), "MkCounter(Seed)", occurrence),
+                    span: span_of(projected.as_str(), needle, 0_usize),
                     functor: name("MkCounter"),
                 })
             )),
@@ -347,7 +347,7 @@ fn an_argument_is_matched_against_the_parameter()
 fn a_parameter_reads_only_types_and_values()
 {
     for (component, form) in [
-        ("type F : (a : Type) => Type", AscriptionForm::Kinded),
+        ("type F : (a : Type) -> Type", AscriptionForm::Kinded),
         ("type F : Type -> Type", AscriptionForm::Kinded),
         ("type F(a : Type) = a", AscriptionForm::Parameterized),
     ] {

@@ -758,7 +758,7 @@ fn a_binder_shadowing_a_builtin_is_rejected_under_policy()
             site(21_usize, 25_usize),
         ),
         (
-            "def f(list: Integer) -> -F Integer { return list }",
+            "def f(list : Integer) -> -F Integer { return list }",
             site(6_usize, 10_usize),
         ),
         (

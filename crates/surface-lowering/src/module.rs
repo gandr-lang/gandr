@@ -924,8 +924,8 @@ pub enum ComponentForm
     /// written for it: its meaning is the body's type member of its name,
     /// sealed by an opaque ascription and strengthened by a transparent one.
     Abstract(Maybe<Placed, component_kind::Absent>),
-    /// A type family component `type F : (a : A, …) => Type` or `type F : A ->
-    /// … -> Type`, or an indexed sort a model signature derives: its meaning
+    /// A type family component `type F : (a : A, …) -> Type` or `type F : A ->
+    /// Type`, or an indexed sort a model signature derives: its meaning
     /// is the body's family member of its name.
     Family(FamilyForm),
     /// A manifest family component `type F(a : A, …) = τ`: its parameters'
@@ -5196,7 +5196,6 @@ impl<'source> Collector<'_, 'source>
                     | Former::Character
                     | Former::TypeQuote
                     | Former::Parenthesized
-                    | Former::Unit
                     | Former::Boolean
                     | Former::Thunk
                     | Former::Lambda
@@ -5236,7 +5235,6 @@ impl<'source> Collector<'_, 'source>
                     | Former::TelescopeType
                     | Former::LabelledSumType
                     | Former::LazyRecordType
-                    | Former::ValueFunctionType
                     | Former::ParenthesizedType
                     | Former::PathType
                     | Former::BridgeType
@@ -10989,7 +10987,7 @@ fn read_tail<'source>(
     if let Maybe::Present(_) = past.at(TileName::PAREN_OPEN) {
         return Tail::Function(signing(past));
     }
-    // Clauses after a stated function type, `: (A, …) => C where { | … }`,
+    // Clauses after a stated function type, `: (A, …) -> C where { | … }`,
     // are a function tail of no written parameter, signed by that type.
     let mut clausal = past.clone();
     if let Maybe::Present(_) = clausal.tile(TileName::COLON)
@@ -14837,18 +14835,18 @@ mod tests
             .map(|slot| (slot.name, slot.role))
             .collect::<Vec<_>>()
         };
-        let hugged = names("(1, 2);\ndef s = #{b = 1};\n#{s | b = 2}\n");
+        let hugged = names("(1, 2);\ndef s = *{b = 1};\n*{s | b = 2}\n");
         assert_eq!(
             hugged,
             [
                 (SurfaceName::from("("), Role::Held),
                 (SurfaceName::from("s"), Role::Declared),
-                (SurfaceName::from("#{"), Role::Held),
+                (SurfaceName::from("*{"), Role::Held),
             ],
             "each is named by its first token"
         );
         assert_eq!(
-            names("( 1 , 2 );\ndef s = #{ b = 1 };\n#{ s | b = 2 }\n"),
+            names("( 1 , 2 );\ndef s = *{ b = 1 };\n*{ s | b = 2 }\n"),
             hugged,
             "the spaced spelling collects the same names"
         );
@@ -14991,7 +14989,7 @@ mod tests
     fn a_torn_declaration_is_refused_where_it_broke_2110()
     {
         let pbg = grammar();
-        let text = "theory Restriction where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nil : () --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu(bind a . nil()) =>= nil();\n}\n";
+        let text = "theory Restriction where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nil : () --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu (bind a . (nil ())) =>= nil ();\n}\n";
         let tree = repaired(&pbg, SourceText::from(text));
         // The theory is the source's one item, so its refusal is the source's.
         let refused = match collect(&pbg, &tree, &Unit::single(), &mut tank()) {
@@ -15005,7 +15003,7 @@ mod tests
                 .collect::<Vec<_>>(),
             Err(refusal) => alloc::vec![refusal],
         };
-        let arrow = text.find("=>=").unwrap().saturating_add(2);
+        let rule = text.find("rule gc").unwrap() .. text.find("();\n}").unwrap().saturating_add(3);
         assert!(
             matches!(
                 refused.as_slice(),
@@ -15013,10 +15011,10 @@ mod tests
                     span,
                     form,
                     fault: FormFault::Repaired(_),
-                }] if usize::from(span.start()) == arrow
+                }] if rule.contains(&usize::from(span.start()))
                     && *form == FormName::from(NamedKind("theory_declaration"))
             ),
-            "the theory is refused once, after its arrow: {refused:?}"
+            "the theory is refused once, inside the rule its stray `=>=` broke: {refused:?}"
         );
     }
 

@@ -94,7 +94,7 @@
 //! `description::theory::tests::an_abstraction_stands_outside_the_binders`.
 //!
 //! A rule between terms may close on a `where` block of freshness
-//! conditions, `rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p,
+//! conditions, `rule scope : par (nu (bind a . p)) q <=> nu (bind a . (par p
 //! q)) where { | a # q };`: the atom `a` stands outside the support of the term
 //! `q` stands for (Fernández and Gabbay, _Nominal rewriting_, I&C 2007). The
 //! reader keeps each condition on its rule, in written order, and the value
@@ -1539,13 +1539,13 @@ impl Reader<'_, '_>
             return Err(run.signature_fault(SignatureFault::MissingJudgment));
         }
         // `oper next : +U[ω] (T -> -F T)`, a thunk of curried arrows, is the
-        // operation of those inputs and that output, as is the value-function
-        // alias standing for it, `oper next : T => T`; `oper inner : Model(T)`
+        // operation of those inputs and that output, as is the box standing
+        // for it, `oper next : T -> T`; `oper inner : Model(T)`
         // a model of the theory `T` nested in this one; `oper zero : T`, a type
         // alone with no arrow and no port group, a constant of `T`; and `oper
         // zero : () --> T` an operation of no inputs. A listed domain opens
         // the judgment's own port group, so the operation of two inputs the
-        // alias `(T, T) => T` stands for is written `(T, T) --> T` here.
+        // box `(T, T) -> T` stands for is written `(T, T) --> T` here.
         let thunked = self.thunked(run)?;
         let modeled = match kind {
             OperationKind::Operation if thunked.is_none() => self.modeled(run)?,
@@ -1644,7 +1644,7 @@ impl Reader<'_, '_>
     /// - hypothesis: L3 — a thunk, an alias, a sort alone and a port group
     ///   separate the operation, the constant and the boundary readings.
     /// - witness: `description::theory::tests::a_thunk_type_reads_as_the_operation_it_curries_1226`
-    /// - witness: `description::theory::tests::the_value_function_alias_reads_as_its_thunk_1329`
+    /// - witness: `description::theory::tests::the_box_reads_as_its_thunk_1329`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|at| matches!(*run.remaining(), [Piece::Operand(only)] if only.span == at.span))))]
     fn thunked(
         &self,
@@ -1773,7 +1773,7 @@ impl Reader<'_, '_>
     ///   refusal; the box in each spelling and its thunk read as the same
     ///   operation.
     /// - witness: `description::theory::tests::a_thunk_type_reads_as_the_operation_it_curries_1226`
-    /// - witness: `description::theory::tests::the_value_function_alias_reads_as_its_thunk_1329`
+    /// - witness: `description::theory::tests::the_box_reads_as_its_thunk_1329`
     fn thunk_boundary(
         &self,
         thunk: Placed,

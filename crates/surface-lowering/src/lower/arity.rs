@@ -1,6 +1,6 @@
 //! The arity-shaped formers in the lowering: the telescope `#{…}`, the sum
 //! over labels `+{…}` and the lazy record over labels `&{…}`, at the type,
-//! the value and the observation, and the telescope Π `(x : A, …) => C`. The
+//! the value and the observation, and the telescope Π `(x : A, …) -> C`. The
 //! patterns of the first two are read by the match compiler (`native`).
 //!
 //! # One core former per reading of a delimiter
@@ -110,13 +110,13 @@
 //!
 //! # A telescope Π binds an entry a later type names
 //!
-//! `(x : A, y : B(x)) => C` is `+U (Π x : A. Π y : B(x). -F C)`: an entry is a
+//! `(x : A, y : B(x)) -> C` is `+U (Π x : A. Π y : B(x). -F C)`: an entry is a
 //! dependent arrow exactly where a later entry or the codomain names its
 //! binder, as a type or as a value standing in one, and a plain arrow
 //! everywhere else, an unnamed entry always. A variable written in a later
 //! entry counts only the dependent arrows before it. The dependent arrow
 //! `(x : A) -> C` reads by the same rule: a Π where `C` names `x`, the plain
-//! arrow otherwise. So `(n : Integer) => Integer` is the type `def f(n :
+//! arrow otherwise. So `(n : Integer) -> Integer` is the type `def f(n :
 //! Integer) -> -F Integer` declares, `(n : Integer) -> -F Integer` the
 //! computation under its thunk, and a model's operation whose clause binds an
 //! index nothing later reads converts with the member that implements it.
@@ -130,7 +130,7 @@
 //! - Reason: the kernel kept a Π whose codomain ignores its binder and the
 //!   plain arrow over the same children distinct, and asked the producer to
 //!   emit the dependent former only where the codomain is scoped; reading the
-//!   spelling as written made `def g : (n : Integer) => Integer` and the `def
+//!   spelling as written made `def g : (n : Integer) -> Integer` and the `def
 //!   g(n : Integer) -> -F Integer` that defines it two types, and a model's
 //!   `def` members unable to meet the components `Model(S)` derives. A
 //!   transport motive is unaffected: the motive reader takes a plain arrow and
@@ -1464,7 +1464,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Character
                 | Former::TypeQuote
                 | Former::Parenthesized
-                | Former::Unit
                 | Former::Boolean
                 | Former::Thunk
                 | Former::Lambda
@@ -1502,7 +1501,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::SumType
                 | Former::LazyProductType
                 | Former::TelescopeType
-                | Former::ValueFunctionType
                 | Former::PathType
                 | Former::BridgeType
                 | Former::FlowType
@@ -3641,7 +3639,7 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Classify a value function space whose domain list names a binder: the
-    /// telescope Π `(x : A, y : B(x)) => C`. An implicit group before the
+    /// telescope Π `(x : A, y : B(x)) -> C`. An implicit group before the
     /// domain, `[a : Type] (x : a) -> a`, gives the first entries of the
     /// telescope. Plicity is the declaration's metadata, so the box is the
     /// box its explicit twin `(a : Type, x : a) -> a` writes.
@@ -3897,8 +3895,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   or a binder whose written type is a box returning such a group. One
     ///   positional entry for each output when the name resolves to an
     ///   operation of several outputs. Nothing for any other form or a callee
-    ///   returning one value. The nodes under `bound` take `anchor`'s owner,
-    ///   as the walk would give them.
+    ///   returning one value. The nodes under `bound` take `anchor`'s owner, as
+    ///   the walk would give them.
     /// - fails: the name's resolution refusal; a foreign mold.
     /// - panics: none.
     ///
@@ -4005,7 +4003,7 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The output the box written at `written` returns, read off its syntax:
-    /// `B` of `A -> B` or `A => B`.
+    /// `B` of `A -> B`.
     ///
     /// # Specification
     /// - requires: nothing beyond a well-formed tree.
@@ -4032,10 +4030,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(None);
         };
         let written = Placed::of(written, tree);
-        if !matches!(
-            self.form_at(written)?,
-            Some((_, Former::ArrowType | Former::ValueFunctionType))
-        ) {
+        if !matches!(self.form_at(written)?, Some((_, Former::ArrowType))) {
             return Ok(None);
         }
         let mut pieces = Pieces::new();
@@ -4293,12 +4288,14 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Planned(true))
     }
 
-    /// The form a selection's target `target` writes inside any parentheses
-    /// around it, `f a` of `(f a).l` and of `((f a)).l`, its nodes owned as the
-    /// selection `anchor` is.
+    /// The form a selection's or a view block's target `target` writes inside
+    /// any parentheses around it, `f a` of `(f a).l`, of `((f a)).l` and of
+    /// `(f a) as w { … }`, its nodes owned as the selection or the view block
+    /// `anchor` is.
     ///
     /// # Specification
-    /// - requires: `target` is the target of the selection at `anchor`.
+    /// - requires: `target` is the target of the selection or the view block at
+    ///   `anchor`.
     /// - ensures: `target` itself when no parentheses hold it; otherwise the
     ///   one operand the innermost parentheses hold, every unowned node under
     ///   it given `anchor`'s owner, as the walk reads none of them as a form of
@@ -4315,6 +4312,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   them.
     /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     /// - witness: `lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
+    /// - witness: `lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |inner| inner.is_none_or(|inner| inner.span.start() >= target.span.start() && inner.span.end() <= target.span.end())))]
     pub(super) fn ungrouped_target(
         &mut self,
@@ -4680,9 +4678,9 @@ impl<'source> Lowerer<'_, 'source>
     /// and [`LoweringRefusal::BudgetExceeded`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a lambda under `A => B` binds `A`, two nested under
-    ///   `(A, C) => B` bind `A` then `C`, and two nested under the telescope
-    ///   `(a : A, C) => B` bind `A` then `C`.
+    /// - hypothesis: L3 — a lambda under `A -> B` binds `A`, two nested under
+    ///   `(A, C) -> B` bind `A` then `C`, and two nested under the telescope
+    ///   `(a : A, C) -> B` bind `A` then `C`.
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::native::tests::a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815`
     #[spec(

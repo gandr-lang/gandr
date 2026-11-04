@@ -116,16 +116,16 @@ fn the_binders_in_scope_are_the_innermost_reading_s_chain()
 {
     let at = |needle: &'static str| in_scope(SourceText::from(WRITTEN), SourceText::from(needle));
     assert_eq!(
-        at("p))"),
+        at("p)\n"),
         ["p", "m", "plus", "n"],
         "an arm's body: its binder, then the function's"
     );
     assert_eq!(
-        at("n,\n"),
+        at("n\n    |"),
         ["m", "plus", "n"],
         "a sibling arm: the function's, never `p`"
     );
-    assert_eq!(at("x) }"), ["x"], "a lambda's body: its binder alone");
+    assert_eq!(at("x } }"), ["x"], "a lambda's body: its binder alone");
     assert_eq!(
         at("+U (Nat"),
         Vec::<String>::new(),
@@ -139,7 +139,7 @@ fn the_binders_in_scope_are_the_innermost_reading_s_chain()
 fn the_binders_in_scope_are_kept_for_a_refused_declaration_831()
 {
     assert_eq!(
-        in_scope(SourceText::from(TYPING), SourceText::from("pl)")),
+        in_scope(SourceText::from(TYPING), SourceText::from("pl\n")),
         ["p", "m", "plus", "n"],
         "the arm's binder, then the function's, though `plus` is refused"
     );
@@ -183,7 +183,7 @@ fn a_name_in_a_type_keeps_what_it_resolved_to()
 #[test]
 fn a_refused_declaration_keeps_the_names_it_resolved_836()
 {
-    let typing = WRITTEN.replace("Succ(x)", "Succ()");
+    let typing = WRITTEN.replace("Succ x", "Succ ()");
     assert_eq!(
         resolved(
             SourceText::from(typing.as_str()),
@@ -199,7 +199,7 @@ fn a_refused_declaration_keeps_the_names_it_resolved_836()
 const MUTUAL: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\nrec {\n  \
                       data Rose : Type where { | Node : (kids : Forest) --> Rose }\n  data Forest : \
                       Type where { | Empty : Forest | More : (head : Rose, tail : Forest) --> Forest \
-                      }\n  def rec size(t : Rose) -> -F Nat { match t { Node(kids) => { let s \
+                      }\n  def rec size(t : Rose) -> -F Nat { match t { | Node(kids) => { let s \
                       = sizes[<] kids; return Succ s } } }\n  def rec sizes(ts : Forest) \
                       -> -F Nat { match ts { | Empty => return Zero | More(t, rest) => { let a = \
                       size[<] t; sizes[<] rest } } }\n}\n";
@@ -225,7 +225,7 @@ fn a_marked_call_head_keeps_its_name_s_referent_827()
         "the function's own call names its binder from its name"
     );
     assert_eq!(
-        resolved(SourceText::from(MUTUAL), SourceText::from("sizes[<](kids)")),
+        resolved(SourceText::from(MUTUAL), SourceText::from("sizes[<] kids")),
         [
             pair("sizes", "sizes"),
             pair("kids", "kids"),

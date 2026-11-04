@@ -390,7 +390,7 @@ fn an_operation_answers_only_under_its_former()
 #[test]
 fn funext_lowers_to_its_former()
 {
-    let functions = "def id(b: +{Unit, Unit}) -> -F +{Unit, Unit} {\n  return b\n}\ndef again(b: +{Unit, Unit}) -> -F +{Unit, Unit} {\n  return b\n}\n";
+    let functions = "def id(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  return b\n}\ndef again(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  return b\n}\n";
     let mut arena = CoreArena::new();
     let source = format!(
         "{functions}def same : Path[.A = +U[ω] (+{{Unit, Unit}} -> -F +{{Unit, Unit}})](id, again);\ndef same = Path.funext(id, again);\n"
@@ -402,7 +402,7 @@ fn funext_lowers_to_its_former()
     };
     let Some(&Value::Funext(left, right)) = arena.value(body)
     else {
-        panic!("`Path.funext(id, again)` is function extensionality");
+        panic!("`Path.funext id again` is function extensionality");
     };
     assert!(
         matches!(arena.value(left), Some(&Value::Constant(constant)) if usize::from(constant) == 0)
@@ -412,7 +412,7 @@ fn funext_lowers_to_its_former()
     assert_accepted(&judged(&module, &mut arena));
 
     let mut arena = CoreArena::new();
-    let source = format!("{functions}def once = Path.funext(id);\n");
+    let source = format!("{functions}def once = Path.funext id;\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(
         matches!(
@@ -426,7 +426,7 @@ fn funext_lowers_to_its_former()
     );
 
     let mut arena = CoreArena::new();
-    let source = "def funext(x: Integer, y: Integer) -> -F Integer {\n  return x\n}\ndef call : +U (-F Integer);\ndef call = thunk { become funext 1 2 };\n";
+    let source = "def funext(x : Integer, y : Integer) -> -F Integer {\n  return x\n}\ndef call : +U (-F Integer);\ndef call = thunk { become funext 1 2 };\n";
     let module = lowered(SourceText::from(source), &mut arena);
     let Some(&Computation::Application(..)) =
         arena.computation(tail_of(&module, &arena, "call".into()))
@@ -441,7 +441,7 @@ fn a_list_moves_along_a_universe_equivalence()
     let negation = "def not(b: Bool) -> -F Bool {\n  match b {\n    | true => return +{.1 = *{}}\n    | false => return +{.0 = *{}}\n  }\n}\ndef negation : Path[.A = Type](Bool, Bool);\ndef negation = equiv not not;\n";
     let mut arena = CoreArena::new();
     let source = format!(
-        "{negation}def moved(xs: List(Bool)) -> -F List(Bool) {{\n  become Path.walk(fun (X) {{ List(X) }}, negation, xs)\n}}\ndef again(xs: List(Bool)) -> -F List(Bool) {{\n  become Path.walk(fun (X) {{ List(X) }}, negation, xs)\n}}\ndef both : List(Bool);\ndef both = cons(+{{.0 = unit}}, cons(+{{.1 = unit}}, nil));\n"
+        "{negation}def moved(xs : List(Bool)) -> -F List(Bool) {{\n  become Path.walk (fun (X) {{ List X }}) negation xs\n}}\ndef again(xs : List(Bool)) -> -F List(Bool) {{\n  become Path.walk (fun (X) {{ List X }}) negation xs\n}}\ndef both : List(Bool);\ndef both = cons (+{{.0 = *{{}}}}) (cons (+{{.1 = *{{}}}}) nil);\n"
     );
     let source = listing(&source);
     let module = listed(&source, &mut arena);
@@ -451,7 +451,7 @@ fn a_list_moves_along_a_universe_equivalence()
     };
     let Some(&Value::Equiv(forward, backward)) = arena.value(body)
     else {
-        panic!("`equiv(not, not)` is a universe equivalence");
+        panic!("`equiv not not` is a universe equivalence");
     };
     assert!(
         [forward, backward].iter().all(|&translator| {
@@ -487,7 +487,7 @@ fn a_list_moves_along_a_universe_equivalence()
         .collect();
     written.sort_unstable_by_key(|&(at, _)| at);
     let expected: Vec<(usize, Provenance)> = source
-        .match_indices("fun (X) { List(X) }")
+        .match_indices("fun (X) { List X }")
         .map(|(at, _)| (at, Provenance::Written))
         .collect();
     assert_eq!(
@@ -511,7 +511,7 @@ fn a_list_moves_along_a_universe_equivalence()
 
     let mut arena = CoreArena::new();
     let source = format!(
-        "{negation}def named(xs: List(Bool)) -> -F List(Bool) {{\n  become Path.walk(negation, negation, xs)\n}}\ndef half = cons(unit);\n"
+        "{negation}def named(xs : List(Bool)) -> -F List(Bool) {{\n  become Path.walk negation negation xs\n}}\ndef half = cons *{{}};\n"
     );
     let source = listing(&source);
     let module = listed(&source, &mut arena);
@@ -538,7 +538,7 @@ fn a_list_moves_along_a_universe_equivalence()
 
     let mut arena = CoreArena::new();
     let module = lowered(
-        SourceText::from("def keep(nil: Integer) -> -F Integer {\n  return nil\n}\n"),
+        SourceText::from("def keep(nil : Integer) -> -F Integer {\n  return nil\n}\n"),
         &mut arena,
     );
     assert!(
@@ -553,10 +553,9 @@ fn a_list_moves_along_a_universe_equivalence()
 #[test]
 fn a_path_product_lowers_to_its_former()
 {
-    let negation = "def not(b: Bool) -> -F Bool {\n  match b {\n    | true => return +{.1 = *{}}\n    | false => return +{.0 = *{}}\n  }\n}\n";
+    let negation = "def not(b : Bool) -> -F Bool {\n  match b {\n    | true => return +{.1 = *{}}\n    | false => return +{.0 = *{}}\n  }\n}\n";
     let mut arena = CoreArena::new();
-    let source =
-        format!("{negation}def paired = Path.product(Path.here(Unit), equiv(not, not));\n");
+    let source = format!("{negation}def paired = Path.product (Path.here Unit) (equiv not not);\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let DeclarationOutcome::Bodied { body } = outcome_of(&module, "paired".into())
     else {
@@ -564,7 +563,7 @@ fn a_path_product_lowers_to_its_former()
     };
     let Some(&Value::PathProduct(first, second)) = arena.value(body)
     else {
-        panic!("`pathProduct(p, q)` is the native product");
+        panic!("`Path.product p q` is the native product");
     };
     assert!(
         matches!(arena.value(first), Some(&Value::Here(_)))
@@ -579,7 +578,7 @@ fn a_path_product_lowers_to_its_former()
     );
 
     let mut arena = CoreArena::new();
-    let source = format!("{negation}def half = Path.product(equiv(not, not));\n");
+    let source = format!("{negation}def half = Path.product (equiv not not);\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(
         matches!(
@@ -596,9 +595,9 @@ fn a_path_product_lowers_to_its_former()
 #[test]
 fn a_flow_product_lowers_to_its_former()
 {
-    let negation = "def not(b: Bool) -> -F Bool {\n  match b {\n    | true => return +{.1 = *{}}\n    | false => return +{.0 = *{}}\n  }\n}\n";
+    let negation = "def not(b : Bool) -> -F Bool {\n  match b {\n    | true => return +{.1 = *{}}\n    | false => return +{.0 = *{}}\n  }\n}\n";
     let mut arena = CoreArena::new();
-    let source = format!("{negation}def paired = Flow.product(Flow.stay(Unit), Flow.into(not));\n");
+    let source = format!("{negation}def paired = Flow.product (Flow.stay Unit) (Flow.into not);\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let DeclarationOutcome::Bodied { body } = outcome_of(&module, "paired".into())
     else {
@@ -606,7 +605,7 @@ fn a_flow_product_lowers_to_its_former()
     };
     let Some(&Value::FlowProduct(first, second)) = arena.value(body)
     else {
-        panic!("`flowProduct(p, q)` is the kernel's flow product");
+        panic!("`Flow.product p q` is the kernel's flow product");
     };
     assert!(
         matches!(arena.value(first), Some(&Value::Stay(_)))
@@ -616,7 +615,7 @@ fn a_flow_product_lowers_to_its_former()
     assert_accepted(&judged(&module, &mut arena));
 
     let mut arena = CoreArena::new();
-    let source = format!("{negation}def half = Flow.product(Flow.into(not));\n");
+    let source = format!("{negation}def half = Flow.product (Flow.into not);\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(
         matches!(
@@ -1122,7 +1121,7 @@ fn a_bound_name_shadows_an_identity_operation()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def apply(here: Integer => Integer) -> -F Integer {\n  become here(1)\n}\n",
+            "def apply(here : Integer -> Integer) -> -F Integer {\n  become here 1\n}\n",
         ),
         &mut arena,
     );
@@ -1527,8 +1526,8 @@ fn a_parameter_map_under_cong_answers_at_its_bytes_443()
         other => panic!("the motive is a path type: {other:?}"),
     };
     let at = source
-        .find("Path.ap(f")
-        .expect("the body writes `Path.ap(f`")
+        .find("Path.ap f")
+        .expect("the body writes `Path.ap f`")
         .saturating_add(8);
     assert_eq!(
         module
@@ -1923,7 +1922,7 @@ fn a_derived_operation_reads_a_named_paths_stated_type_2995()
 }
 
 /// #812: before the fix, a call read its callee's dependent result through
-/// the alias `(a : A) => B` but not through the thunk it stands for, `+U ((a
+/// the box `(a : A) -> B` but not through the thunk it stands for, `+U ((a
 /// : A) -> -F B)`, so the explicit spelling refused the call as unannotated.
 #[test]
 fn a_call_reads_a_dependent_result_through_either_spelling_812()
@@ -1954,8 +1953,8 @@ fn a_call_reads_a_dependent_result_through_either_spelling_812()
 }
 
 /// A call reads a path result its callee's signature states with no binder,
-/// through the value-function alias `A => B` and through the plain arrow
-/// `+U (A -> -F B)` it stands for.
+/// through the box `A -> B` and through the plain arrow `+U (A -> -F B)` it
+/// stands for.
 #[test]
 fn a_call_reads_a_non_dependent_result_through_either_spelling()
 {
@@ -2493,7 +2492,7 @@ fn a_move_out_of_shape_is_refused()
             "def bare = recorded sent;\n",
             "def twice = recorded (sent 1 2);\n",
             "def called = recorded (selected (f 1));\n",
-            "def named(receipt: Integer) -> -F Integer {\n  become Flow.ride receipt receipt receipt\n}\n",
+            "def named(receipt : Integer) -> -F Integer {\n  become Flow.ride receipt receipt receipt\n}\n",
         )),
         &mut arena,
     );
@@ -2524,13 +2523,13 @@ fn a_move_out_of_shape_is_refused()
     let source = "def twice = recorded (sent 1 2);\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
-    let start = source.find("sent(1, 2)").expect("the move is written");
+    let start = source.find("sent 1 2").expect("the move is written");
     assert!(
         matches!(
             outcome_of(&module, "twice".into()),
             DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment { span, .. })
                 if usize::from(span.start()) == start
-                    && usize::from(span.end()) == start.saturating_add("sent(1, 2)".len())
+                    && usize::from(span.end()) == start.saturating_add("sent 1 2".len())
         ),
         "a send of two is refused at the move, not the record around it: {:?}",
         outcome_of(&module, "twice".into())
@@ -2596,7 +2595,7 @@ fn a_dialogue_lowers_its_moves_beside_their_endpoints()
             "def elsewhere = dialogue (middle closed);\n",
             "def twice = dialogue (left closed closed);\n",
             "def inner = dialogue (right (skipped 1));\n",
-            "def both(d: Integer) -> -F Integer {\n  become decompose d d\n}\n",
+            "def both(d : Integer) -> -F Integer {\n  become decompose d d\n}\n",
         )),
         &mut arena,
     );
@@ -2737,7 +2736,7 @@ fn a_pattern_at_a_relation_splits_its_record()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def misread(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { match e { #{.rinv = #{.from = h}} => return h } }\n",
+            "def misread(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) { match e { | *{.rinv = *{.from = h}} => return h } }\n",
         ),
         &mut arena,
     );
@@ -3186,11 +3185,11 @@ fn transports_whose_motive_starts_differ_by_a_reduction_convert_4179()
     assert_accepted(&judged(&module, &mut arena));
 }
 
-/// The numbers `compose[n, k](chain(m), d)` writes: `n`, `k` and `m`.
+/// The numbers `compose[n, k] (chain m) d` writes: `n`, `k` and `m`.
 #[derive(Clone, Copy, Debug)]
 struct Written(usize, usize, usize);
 
-/// The composite `compose[n, k](chain(m), d)` at the stratum and chain its
+/// The composite `compose[n, k] (chain m) d` at the stratum and chain its
 /// head and shape write.
 ///
 /// # Specification
@@ -3617,10 +3616,7 @@ fn a_carrier_written_first_is_refused_5024()
             "def p : Flow(Integer, 4, 4);\n",
             crate::form::TileName::FLOW_TYPE,
         ),
-        (
-            "def p = Path (Integer) 4 4;\n",
-            crate::form::TileName::PATH,
-        ),
+        ("def p = Path (Integer) 4 4;\n", crate::form::TileName::PATH),
     ] {
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(source), &mut arena);

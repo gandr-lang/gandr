@@ -201,16 +201,16 @@ fn a_theory_answers_at_every_member()
         "a written sort"
     );
 
-    let applied = entry(&types, span("id(a)", "id(a)"), DescribedRole::Term);
+    let applied = entry(&types, span("(id a)", "id a"), DescribedRole::Term);
     assert!(
         matches!(ty(applied), Some(ValueType::Element { .. })),
         "at the result sort"
     );
-    let head = entry(&types, span("comp(id(a)", "id"), DescribedRole::Term);
+    let head = entry(&types, span("comp (id a)", "id"), DescribedRole::Term);
     let declared = entry(&types, span("oper id", "id"), DescribedRole::Name);
     assert_eq!(ty(head), ty(declared), "a head at its operation's type");
     assert_eq!(context(&types, head), context(&types, declared));
-    let variable = entry(&types, span("f) ==>", "f"), DescribedRole::Term);
+    let variable = entry(&types, span("a) f ==>", "f"), DescribedRole::Term);
     assert!(
         matches!(element(variable), Some(gandr_core_term::Value::Returned(_))),
         "a law's variable at its own binder's sort, `Hom` applied, not another binder's `Ob`"
@@ -262,7 +262,7 @@ fn a_stated_law_answers_at_its_statement_2356()
     let statement = "(a : C) => Path[.A = Bool](eq(a, a), true)";
     let written = entry(&types, span("law refl", statement), DescribedRole::Type);
     assert!(matches!(ty(written), Some(ValueType::Universe { .. })));
-    let binder = entry(&types, span("(a : C) =>", "a"), DescribedRole::Name);
+    let binder = entry(&types, span("(a : C) ->", "a"), DescribedRole::Name);
     assert!(
         matches!(ty(binder), Some(ValueType::Element { .. })),
         "a binder at its sort"
@@ -279,7 +279,7 @@ fn a_stated_law_answers_at_its_statement_2356()
         _ => false,
     }
     };
-    let applied = entry(&types, span("law refl", "eq(a, a)"), DescribedRole::Term);
+    let applied = entry(&types, span("law refl", "eq a a"), DescribedRole::Term);
     assert!(boolean(applied), "an application at the operation's result");
     let literal = entry(&types, span("law refl", "true"), DescribedRole::Term);
     assert!(boolean(literal), "the literal at the path's carrier");
@@ -292,7 +292,7 @@ fn a_stated_law_answers_at_its_statement_2356()
         "a hypothesis at the path it assumes"
     );
     assert_eq!(context(&types, hypothesis), ["C", "eq", "a", "b"]);
-    let assumed = entry(&types, span("p : ", "eq(a, b)"), DescribedRole::Term);
+    let assumed = entry(&types, span("p : ", "eq a b"), DescribedRole::Term);
     assert!(boolean(assumed), "a hypothesis's side at its sort");
 }
 
@@ -487,11 +487,11 @@ fn a_nullary_operation_in_a_law_answers_at_its_sort_668()
     };
     let applied = entry(
         &types,
-        span("flip(pt())", "flip(pt())"),
+        span("flip (pt ())", "flip (pt ())"),
         DescribedRole::Term,
     );
-    let inner = entry(&types, span("flip(pt())", "pt()"), DescribedRole::Term);
-    let right = entry(&types, span("<=> pt()", "pt()"), DescribedRole::Term);
+    let inner = entry(&types, span("flip (pt ())", "pt ()"), DescribedRole::Term);
+    let right = entry(&types, span("<=> pt ()", "pt ()"), DescribedRole::Term);
     assert!(code(applied).is_some(), "an application at its sort");
     assert_eq!(code(inner), code(applied), "the argument at the same sort");
     assert_eq!(
@@ -523,16 +523,16 @@ fn a_derived_rule_answers_each_side_node_at_its_sort()
     };
     let left = entry(
         &types,
-        span("invMul : ", "inv(mul(x, y))"),
+        span("invMul : ", "inv (mul x y)"),
         DescribedRole::Term,
     );
     assert!(code(left).is_some(), "the left side at its sort");
     for (around, inner) in [
-        ("inv(mul(x, y))", "mul(x, y)"),
-        ("inv(mul(x, y))", "x"),
-        ("<=> mul(inv(y)", "mul(inv(y), inv(x))"),
-        ("<=> mul(inv(y)", "inv(y)"),
-        ("inv(x));", "x"),
+        ("inv (mul x y)", "mul x y"),
+        ("inv (mul x y)", "x"),
+        ("<=> mul (inv y)", "mul (inv y) (inv x)"),
+        ("<=> mul (inv y)", "inv y"),
+        ("(inv x);", "x"),
     ] {
         assert_eq!(
             code(entry(&types, span(around, inner), DescribedRole::Term)),
@@ -540,7 +540,7 @@ fn a_derived_rule_answers_each_side_node_at_its_sort()
             "`{inner}` in `{around}` at the group's one sort"
         );
     }
-    let applied = entry(&types, span(": inv(mul(x, y))", "inv"), DescribedRole::Term);
+    let applied = entry(&types, span(": inv (mul x y)", "inv"), DescribedRole::Term);
     let declared = entry(&types, span("oper inv", "inv"), DescribedRole::Name);
     assert_eq!(applied.ty, declared.ty, "a head at its operation's type");
 }
@@ -672,7 +672,7 @@ fn an_indexed_family_s_operation_answers_at_its_index_2940()
         )),
         Some(_) | None => None,
     };
-    let call = entry(&types, span("rule : skip", "skip(k)"), DescribedRole::Term);
+    let call = entry(&types, span("rule : skip", "skip k"), DescribedRole::Term);
     assert_eq!(
         at_index(call),
         at_index(port),
@@ -736,16 +736,16 @@ fn a_data_rule_answers_each_node_at_its_sort()
     );
     let call = entry(
         &types,
-        span("divmod(m, Succ(d))", "divmod(m, Succ(d))"),
+        span("divmod m (Succ d)", "divmod m (Succ d)"),
         DescribedRole::Term,
     );
     assert!(
         matches!(ty(call), Some(ValueType::Product(_))),
         "at the operation's results"
     );
-    let pattern = entry(&types, span("(m, Succ", "m"), DescribedRole::Term);
+    let pattern = entry(&types, span(" m (Succ", "m"), DescribedRole::Term);
     assert_eq!(ty(pattern), ty(zero), "a variable at its position's sort");
-    let nested = entry(&types, span("Succ(d)", "d"), DescribedRole::Term);
+    let nested = entry(&types, span("(Succ d)", "d"), DescribedRole::Term);
     assert_eq!(
         ty(nested),
         ty(zero),
@@ -920,11 +920,11 @@ fn a_second_order_law_answers_at_its_written_sorts()
     };
     let applied = entry(
         &types,
-        span("zeta : let(u, t)", "let(u, t)"),
+        span("zeta : let u t", "let u t"),
         DescribedRole::Term,
     );
     assert!(code(applied).is_some(), "an application at its sort");
-    for (around, inner) in [("let(u,", "u"), ("<=> t(u)", "t(u)"), ("t(u);", "u")] {
+    for (around, inner) in [("zeta : let u", "u"), ("<=> t u", "t u"), ("t u;", "u")] {
         assert_eq!(
             code(entry(&types, span(around, inner), DescribedRole::Term)),
             code(applied),
@@ -934,7 +934,7 @@ fn a_second_order_law_answers_at_its_written_sorts()
     let head = entry(&types, span("zeta : let", "let"), DescribedRole::Term);
     let declared = entry(&types, span("oper let", "let"), DescribedRole::Name);
     assert_eq!(head.ty, declared.ty, "a head at its operation's type");
-    for unstated in [span("u, t)", "t"), span("<=> t(u)", "t")] {
+    for unstated in [span("u t <=>", "t"), span("<=> t u", "t")] {
         assert!(
             types.entries.iter().all(|held| held.span != unstated),
             "the variable a binding port binds, written without its field, answers nowhere"
@@ -963,24 +963,24 @@ fn a_variable_under_an_abstraction_answers_at_its_port()
         Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
         _ => None,
     };
-    let process = code(entry(&types, span(", q)", "q"), DescribedRole::Term));
+    let process = code(entry(&types, span(")) q", "q"), DescribedRole::Term));
     assert!(
         process.is_some(),
         "a first-order variable at its port's sort"
     );
-    for around in [". p)", "(p, q))"] {
+    for around in [". p)", "p q))"] {
         assert_eq!(
             code(entry(&types, span(around, "p"), DescribedRole::Term)),
             process,
             "`p` in `{around}` at the abstracting port's sort"
         );
     }
-    let [left, right] = ["(bind a . p)", "nu(bind a . par"]
+    let [left, right] = ["(bind a . p)", "(bind a . (par"]
         .map(|around| code(entry(&types, span(around, "a"), DescribedRole::Name)));
     assert!(left.is_some(), "an abstraction's atom answers");
     assert_eq!(left, right, "both sides' atoms at the port's one atom sort");
     assert_ne!(left, process, "an atom at the atom sort, not the body's");
-    let abstraction = span("nu(bind a . p)", "bind a . p");
+    let abstraction = span("nu (bind a . p)", "bind a . p");
     assert!(
         types.entries.iter().all(|held| held.span != abstraction),
         "an abstraction answers nowhere"
@@ -1020,7 +1020,7 @@ fn an_occurrence_answers_at_its_port()
         Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
         _ => None,
     };
-    let [binder, occurrence] = ["bind a .", "out(a,"]
+    let [binder, occurrence] = ["bind a .", "out a p"]
         .map(|around| code(entry(&types, span(around, "a"), DescribedRole::Name)));
     assert!(occurrence.is_some(), "the occurrence answers");
     assert_eq!(
@@ -1029,7 +1029,7 @@ fn an_occurrence_answers_at_its_port()
     );
     assert_ne!(
         occurrence,
-        code(entry(&types, span(", p)", "p"), DescribedRole::Term)),
+        code(entry(&types, span("out a p", "p"), DescribedRole::Term)),
         "not at the process sort beside it"
     );
 }
@@ -1038,7 +1038,7 @@ fn an_occurrence_answers_at_its_port()
 /// whose variable no side writes bare answers at the sort of the port it
 /// stands at; each field's variable, where `bind` names it and where an
 /// instantiation takes it, at the representable sort its port binds; and a
-/// variable written under a field without taking it, `q` in `new(bind x .
+/// variable written under a field without taking it, `q` in `new (bind x .
 /// q)`, at the port's sort, as a first-order variable.
 #[test]
 fn a_field_s_variable_and_an_instantiation_under_it_answer_2360()
@@ -1063,22 +1063,22 @@ fn a_field_s_variable_and_an_instantiation_under_it_answer_2360()
         &types,
         span(
             "commute : put",
-            "put(v, bind d . lookup(n, bind c . k(d, c)))",
+            "put v (bind d . (lookup n (bind c . (k d c))))",
         ),
         DescribedRole::Term,
     ));
     assert!(carrier.is_some(), "the application answers at `C`");
-    for around in ["c . k(d, c))) <=>", "d . k(d, c)));"] {
+    for around in ["c . (k d c)))) <=>", "d . (k d c))));"] {
         assert_eq!(
-            code(entry(&types, span(around, "k(d, c)"), DescribedRole::Term)),
+            code(entry(&types, span(around, "k d c"), DescribedRole::Term)),
             carrier,
-            "`k(d, c)` in `{around}` at the port's `C`"
+            "`k d c` in `{around}` at the port's `C`"
         );
     }
     let [digest, claim] = ["d", "c"].map(|bound| {
         code(entry(
             &types,
-            span("k(d, c))) <=>", bound),
+            span("(k d c)))) <=>", bound),
             DescribedRole::Name,
         ))
     });
@@ -1086,10 +1086,10 @@ fn a_field_s_variable_and_an_instantiation_under_it_answer_2360()
     assert_ne!(digest, claim, "each at its own port's sort");
     assert_ne!(digest, carrier, "at the sort it binds, not the body's");
     for (around, bound, sort) in [
-        (" d . lookup", "d", &digest),
-        (" c . k(d, c))) <=>", "c", &claim),
-        ("k(d, c)));", "d", &digest),
-        ("k(d, c)));", "c", &claim),
+        (" d . (lookup", "d", &digest),
+        (" c . (k d c)))) <=>", "c", &claim),
+        ("(k d c))));", "d", &digest),
+        ("(k d c))));", "c", &claim),
     ] {
         assert_eq!(
             &code(entry(&types, span(around, bound), DescribedRole::Name)),

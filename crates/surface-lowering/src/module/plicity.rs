@@ -581,9 +581,7 @@ impl<'source> Collector<'_, 'source>
                                     scope = Some(binders.len().saturating_sub(1));
                                 }
                             },
-                            Some(&Piece::Tile { label, .. })
-                                if label == TileName::ARROW || label == TileName::FAT_ARROW =>
-                            {
+                            Some(&Piece::Tile { label, .. }) if label == TileName::ARROW => {
                                 pending.push((operand.node, scope));
                                 read_pieces(self.pbg, self.tree, operand.node, &mut keyed)?;
                                 for (at, held) in keyed.pieces.iter().enumerate() {
@@ -698,7 +696,7 @@ impl<'source> Collector<'_, 'source>
         else {
             return Ok(None);
         };
-        if label != TileName::ARROW && label != TileName::FAT_ARROW {
+        if label != TileName::ARROW {
             return Ok(None);
         }
         let mut group = Pieces::new();

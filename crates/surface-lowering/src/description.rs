@@ -294,8 +294,8 @@ impl fmt::Display for MemberFault
     {
         f.write_str(match *self {
             Self::HigherOrderField => {
-                "has a function-valued member the description code does not hold: only a value \
-                 function space `A => B` has a code"
+                "has a function-valued member the description code does not hold: only a box \
+                 `A -> B` written as a field's whole type has a code"
             },
             Self::DependentField => {
                 "has a field whose type names a field before it, which the first-order \
@@ -1844,12 +1844,12 @@ impl Reader<'_, '_>
     }
 
     /// The domain and the result of the box `pieces` write: an arrow of two
-    /// operands, `A -> B` or `A => B`, whose result is no returner.
+    /// operands, `A -> B`, whose result is no returner.
     ///
     /// # Specification
-    /// - ensures: the two operands for `[A, =>, B]`, and for `[A, ->, B]` whose
-    ///   `B` does not open with `-F`; nothing otherwise, the computation arrow
-    ///   `A -> -F B` among them.
+    /// - ensures: the two operands for `[A, ->, B]` whose `B` does not open
+    ///   with `-F`; nothing otherwise, the computation arrow `A -> -F B` among
+    ///   them.
     /// - fails: the result's reading refusal.
     /// - panics: none.
     ///
@@ -1857,9 +1857,9 @@ impl Reader<'_, '_>
     /// The result's reading refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the bridge, the thin arrow and the computation arrow
-    ///   separate the box from the arrow inside a thunk.
-    /// - witness: `description::theory::tests::the_value_function_alias_reads_as_its_thunk_1329`
+    /// - hypothesis: L3 — the box and the computation arrow separate the box
+    ///   from the arrow inside a thunk.
+    /// - witness: `description::theory::tests::the_box_reads_as_its_thunk_1329`
     /// - witness: `description::theory::tests::a_law_member_reads_its_statement_2356`
     /// - witness: `description::tests::a_value_function_field_is_the_function_former`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|(domain, result)| domain.span.end() <= result.span.start())))]
@@ -1876,14 +1876,11 @@ impl Reader<'_, '_>
         else {
             return Ok(None);
         };
-        let boxed = match label.as_ref() {
-            "=>" => true,
-            "->" => !matches!(
+        let boxed = label.as_ref() == "->"
+            && !matches!(
                 self.pieces(result)?.first(),
                 Some(Piece::Tile { label, .. }) if label.as_ref() == "-F"
-            ),
-            _ => false,
-        };
+            );
         Ok(boxed.then_some((domain, result)))
     }
 
@@ -2385,7 +2382,7 @@ impl Reader<'_, '_>
                         });
                         continue;
                     }
-                    if pieces.iter().any(|piece| matches!(piece, Piece::Tile { label, .. } if matches!(label.as_ref(), "->" | "=>"))) {
+                    if pieces.iter().any(|piece| matches!(piece, Piece::Tile { label, .. } if label.as_ref() == "->")) {
                         return Err(DescriptionDiagnostic { span: at.span, fault: DescriptionFault::HigherOrderField });
                     }
                     let mut run = Run::new(&pieces, at.span);

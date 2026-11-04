@@ -64,7 +64,7 @@ fn a_generic_equality_lowers_to_the_derived_declaration_2302()
     let (text, unit) = laid(SourceText::from(
         "\
 def eqPoint = Eq.generic Point ;
-def stated : *{Point, Point} -> Bool = Eq.generic Point ;
+def stated : (Point, Point) -> Bool = Eq.generic Point ;
 def eqNat = Eq.generic Nat ;
 ",
     ));
@@ -191,10 +191,10 @@ def reflIntegers = Eq.generic.refl (Integer) ;
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
     for (name, written) in [
-        ("inside", "Eq.generic(Point)"),
-        ("integers", "Eq.generic(Integer)"),
+        ("inside", "Eq.generic Point"),
+        ("integers", "Eq.generic (Integer)"),
         ("bare", "Eq.generic ;"),
-        ("reflIntegers", "Eq.generic.refl(Integer)"),
+        ("reflIntegers", "Eq.generic.refl (Integer)"),
     ] {
         let refusal = refusal_of(&module, SurfaceName::from(name));
         let LoweringRefusal::GenericMisplaced { span } = refusal
@@ -227,9 +227,9 @@ def reflNats = Eq.generic.refl Nat ;
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
     for (name, data, written) in [
-        ("shapes", "Shape", "(Shape)"),
-        ("boxes", "Box", "(Box)"),
-        ("reflNats", "Nat", "(Nat)"),
+        ("shapes", "Shape", "generic Shape"),
+        ("boxes", "Box", "generic Box"),
+        ("reflNats", "Nat", "refl Nat"),
     ] {
         let refusal = refusal_of(&module, SurfaceName::from(name));
         let LoweringRefusal::GenericUncovered {
@@ -243,7 +243,9 @@ def reflNats = Eq.generic.refl Nat ;
         assert_eq!(named, SurfaceName::from(data));
         assert_eq!(
             usize::from(span.start()),
-            text.rfind(written).unwrap().saturating_add(1),
+            text.rfind(written)
+                .unwrap()
+                .saturating_add(written.len().saturating_sub(data.len())),
             "`{name}` is refused at `{data}`"
         );
         match name {

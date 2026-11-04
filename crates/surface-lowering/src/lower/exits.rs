@@ -651,7 +651,6 @@ impl<'source> Lowerer<'_, 'source>
             | Former::Text
             | Former::Character
             | Former::TypeQuote
-            | Former::Unit
             | Former::Boolean
             | Former::Return
             | Former::Force
@@ -678,7 +677,6 @@ impl<'source> Lowerer<'_, 'source>
             | Former::TelescopeType
             | Former::LabelledSumType
             | Former::LazyRecordType
-            | Former::ValueFunctionType
             | Former::ParenthesizedType
             | Former::PathType
             | Former::BridgeType

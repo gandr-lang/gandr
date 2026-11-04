@@ -1531,7 +1531,7 @@ fn the_prelude_answers_a_name_nothing_written_binds_2302()
         .find(|declaration| declaration.name() == SurfaceName::from("eq"))
         .expect("the source declares `eq`")
         .constant();
-    let called = ByteOffset::from(text.rfind("eq(true)").expect("`mine` calls `eq`"));
+    let called = ByteOffset::from(text.rfind("eq true").expect("`mine` calls `eq`"));
     assert!(
         module
             .resolutions()
@@ -1868,13 +1868,13 @@ fn an_imported_top_level_type_member_names_its_type_1834()
     ]);
     let (text, unit) = laid(&[
         (
-            SourceText::from("pub type Band = #{low : Integer, high : Integer} ;"),
+            SourceText::from("pub type Band = *{low : Integer, high : Integer} ;"),
             &[],
         ),
         (SourceText::from("pub type Band = Integer ;"), &[]),
         (
             SourceText::from(
-                "import \"./base.gandr\" ;\npub def wide : Band ;\ndef wide = #{low = 1, high = 2} ;",
+                "import \"./base.gandr\" ;\npub def wide : Band ;\ndef wide = *{low = 1, high = 2} ;",
             ),
             &base,
         ),
@@ -2608,9 +2608,9 @@ fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_w
     let pbg = grammar();
     let base = SourceText::from(concat!(
         "pub data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n",
-        "pub def applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat {\n  f(x)\n}\n",
-        "def appliedAt[j : Size, k : Size](f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat {\n",
-        "  applyAt[.i = k](f, x)\n}\n",
+        "pub def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> -F Nat {\n  f x\n}\n",
+        "def appliedAt[j : Size, k : Size](f : Nat[< k] -> Nat, x : Nat[< k]) -> -F Nat {\n",
+        "  applyAt[.i = k] f x\n}\n",
         "def crossed[s : Region, r : Region](k : (() -> Integer) at r, j : (() -> Integer) \
          at s) -> -F Integer {\n  force k\n}\n",
         "pub theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper \
@@ -2620,9 +2620,9 @@ fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_w
         "pub def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read(s.incr(c)) }\n",
         "def omitted() -> -F Integer { stepped 4 }\n",
         "pub theory StatePutLaws where {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ \
-         (s : S) . C) --> C;\n  oper put : (s : S, k : C) --> C;\n  rule putGet : put(s, \
-         get(bind t . k(t))) <=> put(s, k(s));\n  rule putPut : put(s, put(u, k)) <=> put(u, \
-         k);\n}\n",
+         (s : S) . C) --> C;\n  oper put : (s : S, k : C) --> C;\n  rule putGet : put s \
+         (get (bind t . (k t))) <=> put s (k s);\n  rule putPut : put s (put u k) <=> put u \
+         k;\n}\n",
         "def forgetful() -> -F Integer { handle st : StatePutLaws with sort S = Integer { \
          st.put 1; st.get () } with { | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => \
          k *{} } }\n",
@@ -2632,8 +2632,8 @@ fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_w
     ));
     let document = SourceText::from(concat!(
         "import \"./base.gandr\" ;\n",
-        "def appliedAgain[k : Size](f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat {\n",
-        "  applyAt[.i = k](f, x)\n}\n",
+        "def appliedAgain[k : Size](f : Nat[< k] -> Nat, x : Nat[< k]) -> -F Nat {\n",
+        "  applyAt[.i = k] f x\n}\n",
         "def crossedAgain[r : Region](k : (() -> Integer) at r) -> -F Integer {\n  force \
          k\n}\n",
         "def fixed[s : Model(Counter) with sort C = Integer](c : Integer) -> -F Integer { \
@@ -5179,7 +5179,7 @@ fn each_import_a_name_is_read_through_is_reached()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "pub data Point : Type where { | One : Point }\npub module Cancel :> #{\n  notes : \
+                "pub data Point : Type where { | One : Point }\npub module Cancel :> *{\n  notes : \
                  String\n} where {\n  def notes = \"notes\";\n}\npub module Str where { def len(self : shared \
                  Integer) -> -F Integer { pure self } }\npub def seven : Integer ;\ndef seven = 7 ;",
             ),

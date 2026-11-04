@@ -3974,16 +3974,16 @@ impl<'source> Lowerer<'_, 'source>
     /// before it bound.
     ///
     /// The kind's plan is spent by the mint sweep, so its entries are read
-    /// again from its domain, as the telescope and value function readers
-    /// read them; their types and readings outlive the sweep.
+    /// again from its domain, as the telescope and box readers read them;
+    /// their types and readings outlive the sweep.
     ///
     /// # Specification
     /// - requires: the mint sweep has run.
     /// - ensures: read through the parentheses around the kind as a whole, one
     ///   type per entry of the kind's domain — each entry of a parenthesised
-    ///   list, the domain itself when written bare, or each domain along a
-    ///   static arrow's spine — each carried into the context binding every
-    ///   entry before it.
+    ///   list or the domain itself when written bare, for the box, or each
+    ///   domain along a static arrow's spine — each carried into the context
+    ///   binding every entry before it.
     /// - fails: [`Missing::Refused`] with the reader's refusal for a domain
     ///   whose pieces or entries do not read, and [`Missing::Unlowered`] for an
     ///   empty kind, a list without its opener, or an entry that did not lower.
@@ -3993,8 +3993,8 @@ impl<'source> Lowerer<'_, 'source>
     /// [`Missing`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `(a : Ob, b : Ob) => Type` states `Ob` twice, the
-    ///   second carried under the first, and `Type -> Type -> Type` states
+    /// - hypothesis: L3 — `(a : Ob, b : Ob) -> Type` states `Ob` twice, the
+    ///   second carried under the first, and `Type -> (Type -> Type)` states
     ///   `Type` twice.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `tests::modules::models::a_written_family_of_the_wrong_telescope_is_refused`
@@ -4008,7 +4008,15 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Vec<ValueTypeId>, Missing<'source>>
     {
         let kind = ungrouped(self.pbg, self.tree, kind).map_err(Missing::Refused)?;
-        if let Ok(Some((_, Former::ArrowType))) = self.form_at(kind) {
+        let static_arrow = match self.form_at(kind) {
+            Ok(Some((_, Former::ArrowType))) => {
+                !crate::form::writes_box(self.pbg, self.tree, kind.node, &mut Pieces::new())
+                    .map_err(Missing::Refused)?
+                    .0
+            },
+            Ok(_) | Err(_) => false,
+        };
+        if static_arrow {
             let domains = spine_domains(self.pbg, self.tree, kind).map_err(Missing::Refused)?;
             let mut indices = Vec::with_capacity(domains.len());
             for domain in domains {
@@ -4151,18 +4159,17 @@ impl<'source> Lowerer<'_, 'source>
     /// The check of the family whose type is at `defined`, over `arity`
     /// parameters, at the written kind `kind`.
     ///
-    /// A telescope kind classifies a value function, so the family checks as
-    /// the thunk of its lambdas; a static arrow classifies a type operator, so
+    /// A telescope kind mints the box, so the family checks as the thunk of
+    /// its lambdas; a static arrow mints the static Pi of a type operator, so
     /// it checks as the static abstraction of its code, which the checker
     /// forms at the arrow's classifiers first.
     ///
     /// # Specification
     /// - requires: the mint sweep has run.
-    /// - ensures: the kind's type and, for a static arrow — read through the
-    ///   parentheses around the kind as a whole — `λ … λ. ⌜τ⌝`, one static
-    ///   abstraction per parameter; otherwise `thunk (λ … λ. return ⌜τ⌝)`, one
-    ///   lambda per parameter; every node carrying `origin`; nothing when the
-    ///   kind or the family's type did not lower.
+    /// - ensures: the kind's type and, for a kind that minted the static Pi, `λ
+    ///   … λ. ⌜τ⌝`, one static abstraction per parameter; otherwise `thunk (λ …
+    ///   λ. return ⌜τ⌝)`, one lambda per parameter; every node carrying
+    ///   `origin`; nothing when the kind or the family's type did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -4192,8 +4199,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let code = sink.arena.value_quote(family);
         sink.origins.record_value(code, origin);
-        let operator_kind = ungrouped(self.pbg, self.tree, kind).unwrap_or(kind);
-        if let Ok(Some((_, Former::ArrowType))) = self.form_at(operator_kind) {
+        if let Some(&gandr_core_term::ValueType::StaticPi { .. }) = sink.arena.value_type(stated) {
             let mut operator = code;
             for _parameter in 0 .. usize::from(arity) {
                 operator = sink.arena.value_static_lambda(operator);

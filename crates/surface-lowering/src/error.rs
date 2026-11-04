@@ -426,7 +426,7 @@ impl fmt::Display for FragmentBoundary
                  answers, so a written answer is not read",
             ),
             Self::EmptyList => f.write_str(
-                "is spelled `()`, an empty list and never the unit: the unit value is `unit` and \
+                "is spelled `()`, an empty list and never the unit: the unit value is `*{}` and \
                  its type `Unit`",
             ),
             Self::Endpoint => f.write_str(

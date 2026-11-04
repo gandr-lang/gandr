@@ -2056,7 +2056,7 @@ fn spell(term: &FreeTerm) -> String
                 format!("({joined})")
             }
             else {
-                format!("#{{{joined}}}")
+                format!("*{{{joined}}}")
             }
         },
         TermView::Var(_)

@@ -154,11 +154,12 @@
 //! # A form's sort is decided by its own form
 //!
 //! The sort a position demands flows down from its parent, and the sort a form
-//! produces is a function of the form alone: `+U C`, `Type[s, l]`, `A * B` and
-//! `(A1, …, An) => B` are value types, `-F A` is a computation type, `A -> C`
-//! is a computation type except where a value type is read, where it is a
-//! static Pi (§ Type operators are static functions over codes), a thunk, a
-//! name, a number, a string, `unit`, a tuple and a static abstraction `fun (A)
+//! produces is a function of the form alone: `+U C`, `Type[s, l]` and `A * B`
+//! are value types, `-F A` is a computation type, `A -> C` is a computation
+//! type except where a value type is read, where it is the box `+U (A -> -F
+//! C)`, or a static Pi where its domain classifies codes (§ Type operators are
+//! static functions over codes), a thunk, a name, a number, a string, `*{}`, a
+//! tuple and a static abstraction `fun (A)
 //! { T }` are values, a returner, a force, a lambda, an application and a block
 //! are computations, a name in type position is the sort its binder's universe
 //! classifies, and a grouping is whatever it wraps. A mismatch is therefore
@@ -240,7 +241,7 @@
 //! mismatch at the split is the place to name it.
 //!
 //! A block also stands wherever a computation is read: a match arm that
-//! sequences, `Succ(p) => { let r = f[<](p); return Succ(r) }`, is a block
+//! sequences, `| Succ(p) => { let r = f[<] p; return Succ r }`, is a block
 //! lowered by the same chain, and a block where a value is read is refused as
 //! the wrong sort.
 //!
@@ -399,7 +400,7 @@
 //! The choice reverses for a universe that stops being a data universe, one
 //! whose codes are not values a function can case on.
 //!
-//! # Products, sums, tuples and the value-function alias
+//! # Products, sums, tuples and the box
 //!
 //! `A * B` is the eager product and `(a, b)` its tuple; `A + B` is the sum,
 //! the same core type `+{A, B}` is, and chains as the product does, `A + B +
@@ -410,21 +411,20 @@
 //! many components as it writes, each member read where a value is read, so
 //! `(a, b, c)` inhabits `A * B * C` and not `(A * B) * C`. `(a,)` is the tuple
 //! of one component, a type distinct from the type of `a`; the one-component
-//! product type is `#{A}`. `(A1, …, An) => B` is exactly `+U (A1 -> … -> An ->
-//! -F B)`, every former at the alias's origin, so a program spelled with the
-//! alias and one spelled without it lower to one core term and one content
-//! digest. A computation arrow whose domain is one binder, `(x : A) -> C`, is
-//! the dependent arrow `Π (x : A). C`, so the telescope `(x : A, y : B(x)) =>
-//! C` is exactly `+U ((x : A) -> (y : B(x)) -> -F C)` and has a spelling
-//! where the alias cannot stand, an argument among them. A parenthesised list
-//! of types anywhere but before `=>` is refused as `MisplacedTile` at its
-//! first comma. The lazy product `C & D` is a computation type, the core's
-//! `With`.
+//! product type is `*{A}`. Where a value type is read, `(A1, …, An) -> B` is
+//! the box, exactly `+U (A1 -> … -> An -> -F B)`, every former at the arrow's
+//! origin, so a program spelled with the box and one spelled with its thunk
+//! lower to one core term and one content digest. A computation arrow whose
+//! domain is one binder, `(x : A) -> C`, is the dependent arrow `Π (x : A). C`,
+//! so the telescope `(x : A, y : B(x)) -> C` where a value type is read is
+//! exactly `+U ((x : A) -> (y : B(x)) -> -F C)`. A parenthesised list of types
+//! anywhere but before `->` is refused as `MisplacedTile` at its first comma.
+//! The lazy product `C & D` is a computation type, the core's `With`.
 //!
-//! The alternative was a core former for the alias, which would give one type
-//! two digests by its spelling. It was declined because `=>` is notation for
-//! the thunked arrow, and choosing a spelling is the printer's business, not
-//! the core's. Reversal: none planned. The printer restores the alias, the
+//! The alternative was a core former for the box, which would give one type
+//! two digests by its spelling. It was declined because the box is notation
+//! for the thunked arrow, and choosing a spelling is the printer's business,
+//! not the core's. Reversal: none planned. The printer restores the box, the
 //! infix product and sum and the tuple from the core's shape in its sugared
 //! form, `gandr-surface-pretty`'s § Two forms, one walk.
 //!
@@ -1360,7 +1360,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1384,7 +1384,6 @@ fn ending(former: Former) -> Ending
         | Former::Text
         | Former::Character
         | Former::TypeQuote
-        | Former::Unit
         | Former::Thunk
         | Former::Return
         | Former::Force
@@ -1412,7 +1411,6 @@ fn ending(former: Former) -> Ending
         | Former::TelescopeType
         | Former::LabelledSumType
         | Former::LazyRecordType
-        | Former::ValueFunctionType
         | Former::ParenthesizedType
         | Former::PathType
         | Former::BridgeType
@@ -1462,7 +1460,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1516,7 +1514,6 @@ fn iterating(former: Former) -> Ending
                     | Former::Character
                     | Former::Parenthesized
                     | Former::TypeQuote
-                    | Former::Unit
                     | Former::Thunk
                     | Former::Lambda
                     | Former::Block
@@ -1563,7 +1560,6 @@ fn iterating(former: Former) -> Ending
                     | Former::TelescopeType
                     | Former::LabelledSumType
                     | Former::LazyRecordType
-                    | Former::ValueFunctionType
                     | Former::ParenthesizedType
                     | Former::PathType
                     | Former::BridgeType
@@ -1605,7 +1601,6 @@ const fn family_of(former: Former) -> Family
         | Former::Character
         | Former::Parenthesized
         | Former::TypeQuote
-        | Former::Unit
         | Former::Thunk
         | Former::Lambda
         | Former::Block
@@ -1650,7 +1645,6 @@ const fn family_of(former: Former) -> Family
         | Former::TelescopeType
         | Former::LabelledSumType
         | Former::LazyRecordType
-        | Former::ValueFunctionType
         | Former::ParenthesizedType
         | Former::PathType
         | Former::BridgeType
@@ -2596,8 +2590,6 @@ enum Plan
     /// each appended after the ones before it by the prelude's
     /// `string.append`.
     Interpolated(gandr_core_term::primitive::Primitive, Stretch),
-    /// The unit value.
-    Unit,
     /// A boolean literal: the unit injected into the side of `Bool` it names,
     /// `true` the left.
     Boolean(gandr_kernel_term::Side),
@@ -3472,7 +3464,7 @@ struct Lowerer<'run, 'source>
     /// around it mints it.
     awaiting: BTreeSet<NodeIndex>,
     /// Each thunk a definition is, with the answer its signature states for
-    /// its body: `C` for `+U C`, `-F B` for `() => B`.
+    /// its body: `C` for `+U C`, `-F B` for `() -> B`.
     thunked: BTreeMap<NodeIndex, native::Answer>,
     /// Each thunk or bare lambda passed for a parameter whose type names a
     /// parameter written before it, with the answer that type gives, read
@@ -7438,11 +7430,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::Character => self.character(site),
             Former::Parenthesized => self.parenthesized(site, cursor),
             Former::TypeQuote => self.type_quote(site, cursor),
-            Former::Unit => {
-                let _frame = self.require(site, Produced::Value)?;
-                self.plan(site, Plan::Unit);
-                Ok(())
-            },
             Former::Thunk => self.thunk(site, cursor),
             Former::Lambda => self.lambda(site, cursor),
             Former::Block => self.sequenced(site, cursor),
@@ -7479,7 +7466,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::TelescopeType => self.telescope_type(site, cursor),
             Former::LabelledSumType => self.labelled_sum_type(site, cursor),
             Former::LazyRecordType => self.lazy_record_type(site, cursor),
-            Former::ValueFunctionType => self.value_function(site, cursor),
             Former::ParenthesizedType => self.parenthesized_type(site, cursor),
             Former::PathType => self.path_type(site, cursor, Relating::Path),
             Former::BridgeType => self.path_type(site, cursor, Relating::Bridge),
@@ -7511,16 +7497,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
 
     /// Keep what the head of each call the parser closed for the source
     /// names, inside the declaration at `declaration` that the repair
-    /// refuses: a call typed before its `)` keeps its head's referent.
+    /// refuses: a call typed before its `)` keeps its head's referent, the
+    /// `)` of a juxtaposed call's argument group among them.
     ///
     /// # Specification
     /// - requires: the declaration at `declaration` was refused for a repair it
     ///   holds.
     /// - ensures: every form the walk reaches inside it takes the declaration
     ///   as its owner where it had none; for every call inside it holding a `)`
-    ///   the source never wrote, whose head is a name that resolves where the
-    ///   module's declarations are read, the resolution is kept at the name;
-    ///   nothing else changes.
+    ///   the source never wrote, itself or in the group of its last argument,
+    ///   whose head is a name that resolves where the module's declarations are
+    ///   read, the resolution is kept at the name; nothing else changes.
     /// - provides: the head's use for an editor while the call is typed.
     /// - fails: never; a head that does not resolve is passed over.
     /// - panics: none.
@@ -7546,32 +7533,46 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // economy: the walk runs only over a declaration the parser repaired,
         // so a clean tree never pays for it.
         let mut scratch = core::mem::take(&mut self.scratch);
+        let application = self.pbg.application().map(NodeLabel::Meld);
+        let ghost_paren = |tree: &SyntaxTree<'source>, at: NodeIndex| {
+            tree.children(at).any(|child| {
+                matches!(
+                    tree.node(child).map(gandr_surface_syntax::Node::label),
+                    Some(NodeLabel::GhostClose {
+                        class: ClosingClass::Paren,
+                        ..
+                    })
+                )
+            })
+        };
         let mut forms = alloc::vec![declaration];
         while let Some(form) = forms.pop() {
             // The walk never visited this declaration, so its nodes take their
             // owner here: a name resolves only where a declaration owns it.
             self.inherit_owner(form);
-            let mut unclosed = false;
+            let juxtaposed = application.is_some()
+                && self.tree.node(form).map(gandr_surface_syntax::Node::label) == application;
+            let mut unclosed = ghost_paren(self.tree, form);
             for child in self.tree.children(form) {
-                match self.tree.node(child).map(gandr_surface_syntax::Node::label) {
-                    Some(NodeLabel::Meld(_)) => forms.push(child),
-                    Some(NodeLabel::GhostClose {
-                        class: ClosingClass::Paren,
-                        ..
-                    }) => unclosed = true,
-                    Some(_) | None => {},
+                if let Some(NodeLabel::Meld(_)) =
+                    self.tree.node(child).map(gandr_surface_syntax::Node::label)
+                {
+                    forms.push(child);
+                    // A juxtaposed call holds the `)` of its argument's group.
+                    unclosed |= juxtaposed && ghost_paren(self.tree, child);
                 }
             }
             let call = unclosed
-                && self.tree.node(form).is_some_and(|node| {
-                    matches!(
-                        shape_of(self.pbg, node),
-                        Ok(Shape::Form {
-                            former: Former::Call,
-                            ..
-                        })
-                    )
-                });
+                && (juxtaposed
+                    || self.tree.node(form).is_some_and(|node| {
+                        matches!(
+                            shape_of(self.pbg, node),
+                            Ok(Shape::Form {
+                                former: Former::Call,
+                                ..
+                            })
+                        )
+                    }));
             if !call || read_pieces(self.pbg, self.tree, form, &mut scratch).is_err() {
                 continue;
             }
@@ -10103,7 +10104,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a function result `-F List(T)`, `-> List(T)` and a
-    ///   thunk signed `() => List(T)`, each giving a listed constructor its
+    ///   thunk signed `() -> List(T)`, each giving a listed constructor its
     ///   element type, and a function result `-F (A * B)` or `-> (A * B)`
     ///   giving a tuple's members theirs.
     /// - witness: `lower::native::tests::a_listed_constructor_takes_the_answered_element_type_1602`
@@ -10462,7 +10463,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
 
     /// The domain and the answered codomain of the arrow the lambda at `site`
     /// answers: a written arrow `A -> C`, parentheses stripped, or the next
-    /// arrow a value function space `(A1, …, An) => B` stands for. A binder
+    /// arrow a box `(A1, …, An) -> B` stands for. A binder
     /// the arrow or the space names, `(x : A)`, answers its type `A`. A lambda
     /// a signed definition writes bare, `def f = fun (x) { … }`, answers what
     /// the thunk the checker inserts around it would hand its body, and so does
@@ -15991,7 +15992,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 
     /// Whether a binder whose type is written at `written` holds a function:
-    /// the type is a thunk or the box, `A -> B` or the bridge `A => B`, read
+    /// the type is a thunk or the box `A -> B`, read
     /// through each type family it names to the type the family stands for.
     ///
     /// # Specification
@@ -16355,8 +16356,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        // A type quoted in a term is the box `=>` wrote, unless it is written
-        // as a computation type.
+        // A type quoted in a term is the box, unless it is written as a
+        // computation type.
         let quoted_box =
             matches!(site.reading, Reading::Value(_)) && !self.writes_computation(site.at)?.0;
         let value_typed =
@@ -16373,7 +16374,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let codomain = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
         let kind = self.kinds.contains(&site.at.node);
-        if value_typed && !kind && !self.ranges_over_codes(domain)?.0 {
+        let boxes = value_typed && !self.ranges_over_codes(domain)?.0;
+        // In a kind, the box is a family's telescope, `(a : A, …) -> U`; a
+        // bare domain stays the static Pi, whose classifier the checker reads.
+        if boxes
+            && kind
+            && self.telescope_function(site, frame, domain, codomain)? == arity::Planned(true)
+        {
+            return Ok(());
+        }
+        if boxes && !kind {
             // A box whose output is a box writes the output in parentheses,
             // `A -> (B -> C)`; a flat box writes its inputs as one group,
             // `(A, B) -> C`.
@@ -16713,53 +16723,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
         read.map(Some)
     }
 
-    /// Classify a value function space, `A => B` or `(A1, …, An) => B`, `n`
-    /// zero included.
-    ///
-    /// # Specification
-    /// - requires: `site` is a value function space in type position, or in
-    ///   value position where a type is quoted.
-    /// - ensures: the alias stands as a value type and is the box
-    ///   [`Self::boxed`] plans over its two operands.
-    /// - provides: the value function space, the alias of `+U (A1 -> … -> An ->
-    ///   -F B)`, which is `+U (-F B)` at no domain.
-    /// - fails: yields the wrong-sort refusal where no value type is read,
-    ///   either hole's own refusal, and a domain list's refusal.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// The alias's refusal.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — no domain, one domain, a list of two, and an alias
-    ///   nested to the right, each asserted as the same core node the thunked
-    ///   arrow it stands for lowers to.
-    /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
-    /// - witness: `lower::arity::tests::a_telescope_binds_each_entry_in_the_ones_after_it`
-    #[spec(
-        ensures: |ret| {
-            ret.is_err()
-                || matches!(
-                    self.plans.get(site.at.node),
-                    Some(&(Plan::ValueFunction(..) | Plan::Telescope(..)))
-                )
-        },
-    )]
-    fn value_function(
-        &mut self,
-        site: Site,
-        mut cursor: Cursor<'_>,
-    ) -> Result<(), LoweringRefusal<'source>>
-    {
-        let frame = self.require(site, Produced::ValueType)?;
-        let domain = site.one(cursor.operands())?;
-        closed(site, &mut cursor, TileName::FAT_ARROW)?;
-        let codomain = site.one(cursor.operands())?;
-        exhausted(site, &cursor)?;
-
-        self.boxed(site, frame, domain, codomain)
-    }
-
     /// Plan the box from `domain` to `codomain`: the thunked flat arrow a
     /// function value has.
     ///
@@ -16771,7 +16734,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   none for `()`, else the one operand there — are each read as value
     ///   types under `frame`, its codomain as [`Self::box_output`] reads it,
     ///   and it is planned as the thunked arrow over them.
-    /// - provides: the one reading of the box `->` and the alias `=>` share.
+    /// - provides: the one reading of the box `->`.
     /// - fails: either hole's own refusal, and a domain list's refusal.
     /// - panics: none.
     ///
@@ -16782,9 +16745,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The domain loop runs once per entry of the finite domain stretch.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::value_function`] and [`Self::arrow`].
+    /// - hypothesis: L3 — as [`Self::arrow`].
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
-    /// - witness: `lower::tests::an_arrow_between_value_types_is_the_box_4853`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -16921,12 +16883,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// the operand store.
     ///
     /// # Specification
-    /// - requires: `domain` is the operand written before `=>`.
-    /// - ensures: nothing for the empty list `()`, so `() => C` takes no
+    /// - requires: `domain` is the operand written before the box's `->`.
+    /// - ensures: nothing for the empty list `()`, so `() -> C` takes no
     ///   argument; each member of an unrepaired parenthesised list of more than
     ///   one, left to right; else `domain` itself, whose own reading groups or
     ///   reports a repair.
-    /// - provides: the n-ary domain of the alias, the one place a type list is
+    /// - provides: the n-ary domain of the box, the one place a type list is
     ///   read.
     /// - fails: yields the list's refusal for a member out of shape;
     ///   [`LoweringRefusal::UnknownMold`] for a mold the grammar does not hold.
@@ -17046,8 +17008,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: nothing.
     /// - ensures: the arrow's two operands for an arrow that
     ///   [`crate::form::writes_box`] does not read as a box; nothing for any
-    ///   other form, a thunked arrow `+U (A -> -F B)`, the alias `A => B` and
-    ///   the box `A -> B` among them.
+    ///   other form, a thunked arrow `+U (A -> -F B)` and the box `A -> B`
+    ///   among them.
     /// - fails: as [`Self::unwrapped`].
     /// - panics: none.
     ///
@@ -18469,7 +18431,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::ValueHole(_)
                 | Plan::Constant(_)
                 | Plan::Primitive(_)
-                | Plan::Unit
                 | Plan::Boolean(_)
                 | Plan::Literal(_)
                 | Plan::Natural(..)
@@ -18662,10 +18623,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Plan::Constant(constant) => {
                 let id = sink.arena.value_constant(constant);
-                Maybe::Present(sink.value(id, origin))
-            },
-            Plan::Unit => {
-                let id = sink.arena.value_unit();
                 Maybe::Present(sink.value(id, origin))
             },
             Plan::Boolean(side) => {
@@ -19576,8 +19533,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         },
     )]
     /// # Adequacy
-    /// - hypothesis: L3 — the value-function alias is a thunked arrow over a
-    ///   returner, with domains in written order and the alias’s own origin.
+    /// - hypothesis: L3 — the box is a thunked arrow over a returner, with
+    ///   domains in written order and the box's own origin.
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     #[spec(
@@ -19969,7 +19926,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Primitive(_)
             | Plan::PrimitiveCall(..)
             | Plan::Interpolated(..)
-            | Plan::Unit
             | Plan::Boolean(_)
             | Plan::Literal(_)
             | Plan::Natural(..)
@@ -24997,7 +24953,6 @@ fn halves<'source>(
                     | Former::Text
                     | Former::Character
                     | Former::Parenthesized
-                    | Former::Unit
                     | Former::Thunk
                     | Former::Telescope
                     | Former::List
@@ -25017,7 +24972,6 @@ const fn is_value_form(former: Former) -> ValueForm
             | Former::Text
             | Former::Character
             | Former::Parenthesized
-            | Former::Unit
             | Former::Thunk
             | Former::Telescope
             | Former::List
@@ -25157,7 +25111,6 @@ pub fn parse_literal(
         | Former::Constructor
         | Former::Parenthesized
         | Former::TypeQuote
-        | Former::Unit
         | Former::Boolean
         | Former::Thunk
         | Former::Lambda
@@ -25196,7 +25149,6 @@ pub fn parse_literal(
         | Former::TelescopeType
         | Former::LabelledSumType
         | Former::LazyRecordType
-        | Former::ValueFunctionType
         | Former::ParenthesizedType
         | Former::PathType
         | Former::BridgeType
@@ -25900,13 +25852,13 @@ mod tests
             DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => {
                 body
             },
-            DeclarationOutcome::Uncompleted { .. }
+            other @ (DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World
-            | DeclarationOutcome::Refused(_) => {
-                panic!("the declaration lowers a body")
+            | DeclarationOutcome::Refused(_)) => {
+                panic!("the declaration lowers a body: {other:?}")
             },
         }
     }
@@ -25934,13 +25886,13 @@ mod tests
         match outcome {
             DeclarationOutcome::Completed { declared_type, .. }
             | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
-            DeclarationOutcome::Bodied { .. }
+            other @ (DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World
-            | DeclarationOutcome::Refused(_) => {
-                panic!("the declaration lowers a signature")
+            | DeclarationOutcome::Refused(_)) => {
+                panic!("the declaration lowers a signature: {other:?}")
             },
         }
     }
@@ -26187,10 +26139,16 @@ mod tests
             ["Integer", "Unit"],
             "`A + B` is the sum, the same type `+{{A, B}}` is"
         );
-        assert_eq!(
-            summands(declared_of(lowered[2])),
-            ["Integer", "Unit"],
-            "a sign against a word that begins with the bridge letter is still the sum"
+        assert!(
+            matches!(
+                lowered[2],
+                DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
+                    fault: FormFault::ExtraOperand,
+                    ..
+                })
+            ),
+            "a sign glued to a word is part of the name, so `Integer +Unit` is no sum: {:?}",
+            lowered[2]
         );
         assert_eq!(
             summands(declared_of(lowered[3])),
@@ -26641,8 +26599,8 @@ mod tests
     #[test]
     fn a_signature_s_types_answer_whatever_its_members_1115()
     {
-        let text = "module Facts : #{ inner: #{ answer: Integer }, total: Integer } where {\n  module \
-                    inner : #{ answer: Integer } where {\n    def answer = 1;\n  }\n  def total = \
+        let text = "module Facts : *{ inner : *{ answer : Integer }, total : Integer } where {\n  module \
+                    inner : *{ answer : Integer } where {\n    def answer = 1;\n  }\n  def total = \
                     inner.answer + 1;\n}\n";
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(text), &mut arena);
@@ -26662,10 +26620,10 @@ mod tests
         assert_eq!(
             written,
             [
-                (25, "#{ answer: Integer }"),
-                (36, "Integer"),
-                (54, "Integer"),
-                (100, "Integer"),
+                (26, "*{ answer : Integer }"),
+                (38, "Integer"),
+                (57, "Integer"),
+                (104, "Integer"),
             ],
             "the nested signature, its field, the refused member's field and the nested \
              module's own field, each a written type"
@@ -27254,10 +27212,7 @@ mod tests
     fn the_unit_keyword_lowers_to_the_unit_value()
     {
         let mut arena = CoreArena::new();
-        let module = lowered(
-            SourceText::from("def x : Unit ; def x = *{} ;"),
-            &mut arena,
-        );
+        let module = lowered(SourceText::from("def x : Unit ; def x = *{} ;"), &mut arena);
         let lowered = outcomes(&module);
 
         assert_eq!(
@@ -27597,7 +27552,9 @@ mod tests
         };
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def f(x: Integer, y: String) -> -F Integer { let z = y ; return x }"),
+            SourceText::from(
+                "def f(x : Integer, y : String) -> -F Integer { let z = y ; return x }",
+            ),
             &mut arena,
         );
         let [declaration] = *module.declarations().iter().collect::<Vec<_>>()
@@ -27738,8 +27695,8 @@ mod tests
     fn a_tail_missing_a_type_writes_its_definition_alone()
     {
         for source in [
-            "def f(x: Integer) { return x }",
-            "def f(x, y: Integer) -> -F Integer { return y }",
+            "def f(x : Integer) { return x }",
+            "def f(x, y : Integer) -> -F Integer { return y }",
         ] {
             let mut arena = CoreArena::new();
             let module = lowered(SourceText::from(source), &mut arena);
@@ -27765,7 +27722,7 @@ mod tests
         let pbg = grammar();
         let tree = parsed(
             &pbg,
-            SourceText::from("def f(x: Integer) -> -F Integer { return x }"),
+            SourceText::from("def f(x : Integer) -> -F Integer { return x }"),
         );
         let mut arena = CoreArena::new();
         let mut fuel = Fuel::new(LoweringBudget::DEFAULT);
@@ -27886,7 +27843,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def f(n: Integer) -> -F Integer { return n } \
+                "def f(n : Integer) -> -F Integer { return n } \
                  def a = thunk { let x = 1 ; let y = x ; return y } ; \
                  def b = thunk { let m = f 1 ; return m } ; \
                  def c = thunk { let x : Integer = 1 ; return x } ; \
@@ -27956,7 +27913,7 @@ mod tests
     #[test]
     fn each_named_binder_records_where_its_name_is_written()
     {
-        let text = "def f(n: Integer) -> -F Integer { let m = n ; pure 2 ; return m }";
+        let text = "def f(n : Integer) -> -F Integer { let m = n ; pure 2 ; return m }";
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(text), &mut arena);
         let Some(&Value::Thunk(lambda)) = arena.value(body_of(outcomes(&module)[0]))
@@ -28379,50 +28336,37 @@ def ended() -> -F [Partial] Unit {
     }
 
     #[test]
-    fn a_juxtaposed_call_is_the_call_it_spells_4853()
+    fn a_call_argument_and_an_inferring_call_lower_4853()
     {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def g = thunk { fun (x) { fun (y) { return x } } } ; def h = thunk { become g(1, \
-                 2) } ; def j = thunk { become g 1 2 } ; def spelled = thunk { become g(g(1, 2), \
-                 3) } ; def nested = thunk { become g g(1, 2) 3 } ; def first[a : Type, b : \
-                 Type](x : a, y : b) -> -F a { return x } ; def inferred = thunk { become first \
-                 5 7 } ;",
+                "def g = thunk { fun (x) { fun (y) { return x } } } ; def nested = thunk { become \
+                 g (g 1 2) 3 } ; def first[a : Type, b : Type](x : a, y : b) -> -F a { return x } \
+                 ; def inferred = thunk { become first 5 7 } ;",
             ),
             &mut arena,
         );
-        let body = |wanted: &str| {
-            let declaration = module
+        let outcome = |wanted: &str| {
+            module
                 .declarations()
                 .iter()
                 .find(|declaration| declaration.name().as_ref() == wanted)
-                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
-            body_of(declaration.outcome())
+                .map(LoweredDeclaration::outcome)
         };
-        for (juxtaposed, called, reason) in [
-            ("j", "h", "`g 1 2` is the call `g(1, 2)`"),
+        for (name, reason) in [
+            ("nested", "a call inside an argument is its own call"),
             (
-                "nested",
-                "spelled",
-                "a call inside an argument is its own call",
+                "inferred",
+                "a juxtaposed call of two arguments infers the implicits it omits",
             ),
         ] {
-            assert_eq!(
-                gandr_core_term::equal_certificate_syntax(&arena, body(juxtaposed), body(called)),
-                gandr_core_term::CertificateEquality::Equal,
-                "{reason}"
+            assert!(
+                matches!(outcome(name), Some(DeclarationOutcome::Bodied { .. })),
+                "{reason}: {:?}",
+                outcome(name)
             );
         }
-        let inferred = module
-            .declarations()
-            .iter()
-            .find(|declaration| declaration.name().as_ref() == "inferred")
-            .map(|declaration| declaration.outcome());
-        assert!(
-            matches!(inferred, Some(DeclarationOutcome::Bodied { .. })),
-            "a juxtaposed call of two arguments infers the implicits it omits: {inferred:?}"
-        );
     }
 
     #[test]
@@ -28561,8 +28505,8 @@ def ended() -> -F [Partial] Unit {
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
-        // `g()` at 52..55 with its head at 52..53; `M.z()` at 137..142 with
-        // its head at 137..140.
+        // `g ()` at 52..56 with its head at 52..53; `M.z ()` at 138..144 with
+        // its head at 138..141.
         let module = lowered(
             SourceText::from(
                 "def g = thunk { return 1 } ; def k = thunk { become g () } ; \
@@ -28596,7 +28540,7 @@ def ended() -> -F [Partial] Unit {
         assert_eq!(
             called("k"),
             (
-                Maybe::Present((Provenance::Written, at(52_usize, 55_usize))),
+                Maybe::Present((Provenance::Written, at(52_usize, 56_usize))),
                 Maybe::Present(at(52_usize, 53_usize)),
             ),
             "the force is the call the source wrote, and its head stays at the head"
@@ -28604,8 +28548,8 @@ def ended() -> -F [Partial] Unit {
         assert_eq!(
             called("m"),
             (
-                Maybe::Present((Provenance::Written, at(137_usize, 142_usize))),
-                Maybe::Present(at(137_usize, 140_usize)),
+                Maybe::Present((Provenance::Written, at(138_usize, 144_usize))),
+                Maybe::Present(at(138_usize, 141_usize)),
             ),
             "a module member called with no arguments answers at its call too"
         );
@@ -28694,7 +28638,7 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def f(x: Integer) -> Integer { return x } def g(x: Integer) -> -F Integer { return x }",
+                "def f(x : Integer) -> Integer { return x } def g(x : Integer) -> -F Integer { return x }",
             ),
             &mut arena,
         );
@@ -29017,7 +28961,7 @@ def ended() -> -F [Partial] Unit {
         assert_eq!(
             declared(0_usize),
             ["U", "->", "Integer", "F", "String"],
-            "`A => B` lowers to the thunked arrow into the returner"
+            "`A -> B` lowers to the thunked arrow into the returner"
         );
         assert_eq!(
             declared(0_usize),
@@ -29032,12 +28976,12 @@ def ended() -> -F [Partial] Unit {
         assert_eq!(
             declared(4_usize),
             declared(5_usize),
-            "the alias nests to the right, each level its own thunk"
+            "the box nests to the right, each level its own thunk"
         );
         assert_eq!(
             declared(6_usize),
             ["U", "F", "String"],
-            "`() => C` takes no argument"
+            "`() -> C` takes no argument"
         );
         assert_eq!(
             declared(6_usize),
@@ -29047,7 +28991,7 @@ def ended() -> -F [Partial] Unit {
         assert_eq!(
             declared(8_usize),
             ["U", "->", "Unit", "F", "String"],
-            "`Unit => C` takes the unit value, a type of its own"
+            "`Unit -> C` takes the unit value, a type of its own"
         );
         assert_eq!(
             refusal(SourceText::from("def z : (Integer, String) ;")),
@@ -29058,37 +29002,6 @@ def ended() -> -F [Partial] Unit {
             },
             "a type list anywhere but before an arrow is refused at its first comma"
         );
-    }
-
-    #[test]
-    fn an_arrow_between_value_types_is_the_box_4853()
-    {
-        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let mut arena = CoreArena::new();
-        let module = lowered(
-            SourceText::from(
-                "def a : Integer -> String ; def b : Integer -> String ; def c : (Integer, String) \
-                 -> Unit ; def d : (Integer, String) -> Unit ; def e : Integer -> (Integer -> \
-                 String) ; def f : Integer -> (Integer -> String) ; def g : () -> String ; def h : \
-                 () -> String ;",
-            ),
-            &mut arena,
-        );
-        let lowered = outcomes(&module);
-        let declared = |at: usize| spine(&arena, declared_of(lowered[at]));
-
-        assert_eq!(
-            declared(0_usize),
-            ["U", "->", "Integer", "F", "String"],
-            "an arrow between value types is the box, the thunked arrow into the returner"
-        );
-        for (box_, alias) in [(0_usize, 1_usize), (2, 3), (4, 5), (6, 7)] {
-            assert_eq!(
-                declared(box_),
-                declared(alias),
-                "each box is the core type the alias `=>` spells"
-            );
-        }
         assert_eq!(
             refusal(SourceText::from("def z : Integer -> Integer -> String ;")),
             LoweringRefusal::OutOfFragment {
@@ -29102,16 +29015,16 @@ def ended() -> -F [Partial] Unit {
     }
 
     #[test]
-    fn a_quoted_arrow_is_the_box_its_fat_spelling_wrote_4853()
+    fn a_quoted_arrow_is_the_box_its_thunk_spells_4853()
     {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def boxed = thunk { return type(Integer -> String) } ; def fat = thunk { return \
-                 type(Integer -> String) } ; def grouped = thunk { return type((Integer, String) \
-                 -> (Integer -> String)) } ; def fat_grouped = thunk { return type((Integer, \
-                 String) -> (Integer -> String)) } ; def computed = thunk { return type(Integer -> \
-                 -F String) } ;",
+                "def boxed = thunk { return type(Integer -> String) } ; def thunked = thunk { \
+                 return type(+U (Integer -> -F String)) } ; def grouped = thunk { return \
+                 type((Integer, String) -> (Integer -> String)) } ; def thunked_grouped = thunk { \
+                 return type(+U (Integer -> String -> -F (+U (Integer -> -F String)))) } ; def \
+                 computed = thunk { return type(Integer -> -F String) } ;",
             ),
             &mut arena,
         );
@@ -29126,20 +29039,20 @@ def ended() -> -F [Partial] Unit {
                 other => panic!("`{wanted}` lowers, not {other:?}"),
             }
         };
-        for (arrow, fat, reason) in [
+        for (arrow, thunked, reason) in [
             (
                 "boxed",
-                "fat",
+                "thunked",
                 "a quoted arrow over a value type is the box",
             ),
             (
                 "grouped",
-                "fat_grouped",
+                "thunked_grouped",
                 "a quoted box of a group whose output is a box",
             ),
         ] {
             assert_eq!(
-                gandr_core_term::equal_certificate_syntax(&arena, body(arrow), body(fat)),
+                gandr_core_term::equal_certificate_syntax(&arena, body(arrow), body(thunked)),
                 gandr_core_term::CertificateEquality::Equal,
                 "{reason}"
             );
@@ -29152,31 +29065,17 @@ def ended() -> -F [Partial] Unit {
     }
 
     #[test]
-    fn a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853()
+    fn a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853()
     {
-        let source = |arrow: &str| {
-            alloc::format!(
-                "data Nat : Type where {{ | Zero : Nat | Succ : (n : Nat) --> Nat }}\ndef apply(f : \
-                 Integer {arrow} Integer, x : Integer) -> Integer {{ f x }}\ndef used() -> Integer {{ \
-                 apply (fun (y : Integer) {{ y }}) 1 }}\ndef twice[m : Type, combine : (m, m) {arrow} \
-                 m](x : m) -> m {{ combine x x }}\ndef moved(A : Type, P : A {arrow} Type, x : A, y : \
-                 A, p : Path(A, x, y), v : P(x)) -> P(y) {{ Path.walk P p v }}\ndef rec plus : (Nat, \
-                 Nat) {arrow} Nat where {{\n  | Zero, k => k\n  | Succ(j), k => Succ (plus[<] j k)\n}}\n"
-            )
-        };
+        let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\ndef apply(f : \
+                      Integer -> Integer, x : Integer) -> Integer { f x }\ndef used() -> \
+                      Integer { apply (fun (y : Integer) { y }) 1 }\ndef twice[m : Type, combine : \
+                      (m, m) -> m](x : m) -> m { combine x x }\ndef moved(A : Type, P : A -> Type, x \
+                      : A, y : A, p : Path(A, x, y), v : P(x)) -> P(y) { Path.walk P p v }\ndef rec \
+                      plus : (Nat, Nat) -> Nat where {\n  | Zero, k => k\n  | Succ(j), k => Succ \
+                      (plus[<] j k)\n}\n";
         let mut arena = CoreArena::new();
-        let thin = source("->");
-        let fat = source("=>");
-        let thin = lowered(SourceText::from(thin.as_str()), &mut arena);
-        let fat = lowered(SourceText::from(fat.as_str()), &mut arena);
-        let body = |module: &LoweredModule<'_>, wanted: &str| {
-            let declaration = module
-                .declarations()
-                .iter()
-                .find(|declaration| declaration.name().as_ref() == wanted)
-                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
-            body_of(declaration.outcome())
-        };
+        let module = lowered(SourceText::from(source), &mut arena);
         for (name, reason) in [
             (
                 "used",
@@ -29189,16 +29088,22 @@ def ended() -> -F [Partial] Unit {
                 "a clause definition over a box matches one column per input",
             ),
         ] {
-            assert_eq!(
-                gandr_core_term::equal_certificate_syntax(
-                    &arena,
-                    body(&thin, name),
-                    body(&fat, name)
+            let outcome = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == name)
+                .map(LoweredDeclaration::outcome);
+            assert!(
+                matches!(
+                    outcome,
+                    Some(DeclarationOutcome::Completed { .. } | DeclarationOutcome::Bodied { .. })
                 ),
-                gandr_core_term::CertificateEquality::Equal,
-                "{reason}"
+                "{reason}: {outcome:?}"
             );
         }
+        crate::lower::native::tests::assert_accepted(&crate::lower::native::tests::judged(
+            &module, &mut arena,
+        ));
     }
 
     #[test]
@@ -29316,7 +29221,7 @@ def ended() -> -F [Partial] Unit {
 
         assert_eq!(
             refusal(SourceText::from("def code = Flow.stay (type({Unit})) ;")),
-            block_as_type(at(21_usize, 33_usize)),
+            block_as_type(at(22_usize, 34_usize)),
             "a labelled sum with its `+` left out quotes a block, refused at the quote, which \
              touches where the `+` stood, not at the statement inside it"
         );
@@ -29424,7 +29329,7 @@ def ended() -> -F [Partial] Unit {
             "a product is a value type, not a computation type"
         );
         assert_eq!(
-            refusal(SourceText::from("def u = thunk { *{1, 2} ; return 0 } ;")),
+            refusal(SourceText::from("def u = thunk { (1, 2) ; return 0 } ;")),
             LoweringRefusal::OutOfFragment {
                 span: at(16_usize, 22_usize),
                 form: FormName::TUPLE,
@@ -29785,7 +29690,7 @@ def ended() -> -F [Partial] Unit {
             "the quoted path type lowers: {:?}",
             lowered[1]
         );
-        let at = text.rfind("same(a)").expect("the carrier is written");
+        let at = text.rfind("same a").expect("the carrier is written");
         let carrier = module
             .origins()
             .value_types()
@@ -29838,7 +29743,7 @@ def ended() -> -F [Partial] Unit {
             "the decoder lowers: {:?}",
             lowered[1]
         );
-        let at = text.find("el[<](a)").expect("the carrier is written");
+        let at = text.find("el[<] a").expect("the carrier is written");
         let carrier = module
             .origins()
             .value_types()
@@ -30201,7 +30106,7 @@ def ended() -> -F [Partial] Unit {
             ("def a = 1.5e2 ;", Sign::NonNegative, "150", ""),
             ("def a = 12.5E-1 ;", Sign::NonNegative, "1", "25"),
             ("def a = 1e3 ;", Sign::NonNegative, "1000", ""),
-            ("def a = -1.5 ;", Sign::Negative, "1", "5"),
+            ("def a = - 1.5 ;", Sign::Negative, "1", "5"),
         ] {
             assert_eq!(
                 decimal(source),
@@ -30381,13 +30286,13 @@ def ended() -> -F [Partial] Unit {
         let tree = repaired(
             &pbg,
             SourceText::from(
-                "def rank() -> -F Integer {\n  match (Green : Color) {\n    Red => return 0,\n",
+                "def rank() -> -F Integer {\n  match (Green : Color) {\n    | Red => return 0\n",
             ),
         );
         assert_eq!(
             refusal_in(&pbg, &tree),
             LoweringRefusal::MalformedForm {
-                span: at(73_usize, 73_usize),
+                span: at(74_usize, 74_usize),
                 form: FormName::MATCH,
                 fault: FormFault::Repaired(Repair::GhostClose(
                     gandr_surface_syntax::ClosingClass::Brace,
@@ -30572,7 +30477,7 @@ def ended() -> -F [Partial] Unit {
                       1) ;\n  pure c\n}\n";
         let handle = "def quiet(n : Integer) -> -F Integer {\n  handle c : Proc {\n    \
                       c.exit(1);\n    return n\n  with {\n    pure(x) => pure x,\n    oper \
-                      exit(code, k) => k(unit)\n  }\n}\n";
+                      exit(code, k) => k(*{})\n  }\n}\n";
         let unopened = "def same(n : Integer) -> -F Integer {\n  if n == 0\n    return 0\n  } \
                         else {\n    return n\n  }\n}\n";
         let quoted = "def numbers : List((Integer) ;\ndef numbers = cons(1, nil) ;\n";
@@ -30640,32 +30545,22 @@ def ended() -> -F [Partial] Unit {
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
 
-        let refused = refusal(SourceText::from("def a = thunk { return 1 2 } ;"));
+        let refused = refusal(SourceText::from("def f(x : Integer Integer) { return x }"));
 
         assert_eq!(
             refused,
             LoweringRefusal::MalformedForm {
-                span: at(25_usize, 26_usize),
-                form: FormName::from(NamedKind("thunk_expression")),
-                fault: FormFault::ExtraOperand,
-            },
-            "a thunk's block holds one computation, and a second juxtaposed beside it is \
-             refused where it stands"
-        );
-        assert_eq!(
-            refused.classify(),
-            FailureClass::MalformedSource,
-            "a juxtaposition is the author's mistake"
-        );
-        assert_eq!(
-            refusal(SourceText::from("def f(x: Integer Integer) { return x }")),
-            LoweringRefusal::MalformedForm {
-                span: at(17_usize, 24_usize),
+                span: at(18_usize, 25_usize),
                 form: FormName::FUNCTION,
                 fault: FormFault::ExtraOperand,
             },
             "a parameter's type is one form, and a second juxtaposed beside it is refused as \
              the function's"
+        );
+        assert_eq!(
+            refused.classify(),
+            FailureClass::MalformedSource,
+            "a juxtaposition is the author's mistake"
         );
     }
 
@@ -30765,10 +30660,9 @@ def ended() -> -F [Partial] Unit {
             SourceText::from("def f[a : Type](x : a) -> -F a {\n  zebra x\n}\n"),
         );
         assert!(
-            matches!(refusal_in(&pbg, &tree), LoweringRefusal::MalformedForm {
-                fault: FormFault::ExtraOperand,
-                ..
-            }),
+            matches!(refusal_in(&pbg, &tree), LoweringRefusal::UnresolvedName { span, name }
+                if span == crate::fixture::span(ByteOffset::from(35_usize), ByteOffset::from(40_usize))
+                    && name == SurfaceName::from("zebra")),
             "a static bracket closed before the refusal leaves it where it was: {:?}",
             refusal_in(&pbg, &tree)
         );
@@ -31090,7 +30984,7 @@ def ended() -> -F [Partial] Unit {
         for (source, payload) in [
             (
                 "def p : Integer ;\n@[ respects(*{p, 1}) ] def r = 1 ;\n",
-                at(30_usize, 36_usize),
+                at(30_usize, 37_usize),
             ),
             (
                 "def p : Integer ;\n@[ respects(#[p]) ] def r = 1 ;\n",
@@ -31212,7 +31106,7 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "@[ decomposes(series (event right 0)\n    (parallel (event left 1) (event right 1))) ]\ndef a : Integer ;\ndef b : Integer ;",
+                "@[ decomposes(series (event right 0)\n  (parallel (event left 1) (event right 1))) ]\ndef a : Integer ;\ndef b : Integer ;",
             ),
             &mut arena,
         );
@@ -31244,7 +31138,7 @@ def ended() -> -F [Partial] Unit {
                 .attributes()
                 .spelled(key, entry.span())
                 .map(String::as_str),
-            Some("series(event(right, 0), parallel(event(left, 1), event(right, 1)))"),
+            Some("series (event right 0) (parallel (event left 1) (event right 1))"),
             "the spelling is filed beside the entry, its layout one space"
         );
         assert_eq!(
@@ -31366,8 +31260,8 @@ def ended() -> -F [Partial] Unit {
         assert_eq!(
             spelled,
             [
-                (traces, Some("decomposes(a, event(left, 0))")),
-                (traces, Some("primes(b, 1)")),
+                (traces, Some("decomposes a (event left 0)")),
+                (traces, Some("primes b 1")),
             ],
             "each channel's entry is filed with its own spelling, in written order"
         );
@@ -32183,7 +32077,7 @@ def ended() -> -F [Partial] Unit {
             }
         };
         assert_eq!(
-            negation("def a = thunk { become -0.5f64 } ;"),
+            negation("def a = thunk { become - 0.5f64 } ;"),
             (
                 String::from("float64.neg"),
                 Some(Value::Literal(Literal::Float64(Float64Literal::from(
@@ -32205,7 +32099,7 @@ def ended() -> -F [Partial] Unit {
     fn a_negated_natural_literal_is_one_negative_literal_4732()
     {
         let mut arena = CoreArena::new();
-        let module = lowered(SourceText::from("def a : Integer = -5 ;"), &mut arena);
+        let module = lowered(SourceText::from("def a : Integer = - 5 ;"), &mut arena);
         let held = body_of(module.declarations().iter().next().unwrap().outcome());
         assert_eq!(
             arena.value(held),
@@ -32683,7 +32577,6 @@ def ended() -> -F [Partial] Unit {
             Former::Text,
             Former::Character,
             Former::Parenthesized,
-            Former::Unit,
             Former::Thunk,
             Former::Telescope,
             Former::List,

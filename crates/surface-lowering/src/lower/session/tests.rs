@@ -774,7 +774,7 @@ fn an_offer_arm_is_one_label()
            close(d)\n\
          }\n\
          def patterned(n : Integer) -> -F Unit {\n\
-           let d = fork (c : &{ go : end }) { offer(c) { 7 => close(c) } };\n\
+           let d = fork (c : &{ go : end }) { offer(c) { | 7 => close(c) } };\n\
            select(d, go);\n\
            close(d)\n\
          }\n",
@@ -786,14 +786,14 @@ fn an_offer_arm_is_one_label()
             refusal_of(&module, SurfaceName::from("twice")),
             LoweringRefusal::DuplicateDefinition { name, span, .. }
                 if name == SurfaceName::from("go")
-                    && span == spelled_within(source, SourceText::from("go => close(c), go"), SourceText::from("go"))
+                    && span == spelled_within(source, SourceText::from("go => close(c) | go"), SourceText::from("go"))
         ),
         "a label is armed once"
     );
     assert_eq!(
         refusal_of(&module, SurfaceName::from("patterned")),
         LoweringRefusal::OutOfFragment {
-            span: spelled_within(source, SourceText::from("{ 7 =>"), SourceText::from("7")),
+            span: spelled_within(source, SourceText::from("{ | 7 =>"), SourceText::from("7")),
             form: FormName::from(NamedKind("literal_pattern")),
             sort: FragmentSort::Pattern,
             boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::LiteralPattern),
@@ -956,11 +956,11 @@ fn an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms()
          }\n\
          def offered(n : Nat) -> -F Unit {\n\
            let d = fork (c : +{ go : end }) { select(c, go) ; close(c) };\n\
-           offer(d) { go => { close(d) ; let m = match n { | Zero => return *{} | Succ(p) => pure *{} } ; return m } }\n\
+           offer(d) { | go => { close(d) ; let m = match n { | Zero => return *{} | Succ(p) => pure *{} } ; return m } }\n\
          }\n\
          def offered_by_hand(n : Nat) -> -F Unit {\n\
            let d = fork (c : +{ go : end }) { select(c, go) ; close(c) };\n\
-           offer(d) { go => { close(d) ; match n { | Zero => return *{} | Succ(p) => return *{} } } }\n\
+           offer(d) { | go => { close(d) ; match n { | Zero => return *{} | Succ(p) => return *{} } } }\n\
          }\n",
     );
     let mut arena = CoreArena::new();

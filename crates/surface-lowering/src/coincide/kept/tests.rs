@@ -86,10 +86,7 @@ fn a_block_whose_rule_changed_is_decided_again_1547()
     let mut decisions = Decisions::held();
     let apart = elaborated(APART, &mut decisions);
     assert!(!apart.diagnostics.is_empty(), "the written rules part");
-    let changed = APART.replace(
-        "rule : add(m, Zero) ==> Succ(m);",
-        "rule : add(m, Zero) ==> m;",
-    );
+    let changed = APART.replace("rule : add m Zero ==> Succ m;", "rule : add m Zero ==> m;");
     let decided = elaborated(changed.as_str(), &mut decisions);
     assert_eq!(
         decisions.kept.len(),

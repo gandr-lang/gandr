@@ -227,12 +227,12 @@ data Circle : Type where {
         };
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule : Loop(Loop(x)) ==> x",
+            "rule : Loop (Loop x) ==> x",
             "the refusal stands at the third rule"
         );
         assert_eq!(
             text(source, first).as_ref(),
-            "rule : Loop(Unloop(x)) ==> x",
+            "rule : Loop (Unloop x) ==> x",
             "and names the cancellation it parts from"
         );
         assert_eq!(
@@ -396,12 +396,12 @@ def later = 7;"#,
         };
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule : add(m, Zero) ==> Succ(m)",
+            "rule : add m Zero ==> Succ m",
             "the refusal stands at the later rule"
         );
         assert_eq!(
             text(source, first).as_ref(),
-            "rule : add(Zero, n) ==> n",
+            "rule : add Zero n ==> n",
             "and names the earlier one"
         );
         assert_eq!(
@@ -522,8 +522,8 @@ const SCOPE_EXTRUSION: &str = "theory S where {
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper nu : (p : Proc) --> Proc;
-  rule gc : nu(nil()) ==> nil();
-  rule scope : par(nu(p), q) ==> nu(par(p, q));
+  rule gc : nu (nil ()) ==> nil ();
+  rule scope : par (nu p) q ==> nu (par p q);
 ";
 
 #[test]
@@ -543,7 +543,7 @@ fn a_scope_extrusion_family_never_completes()
         };
         assert_eq!(
             text(source, first).as_ref(),
-            "rule scope : par(nu(p), q) ==> nu(par(p, q))",
+            "rule scope : par (nu p) q ==> nu (par p q)",
             "the refusal names the written rule the family overlaps"
         );
         assert_eq!(
@@ -571,8 +571,8 @@ fn a_scope_extrusion_family_never_completes()
     // after the second or the third derived rule, though each derived rule
     // wraps the one before.
     for flat in [
-        "rule flat : par(par(par(nil(), p), q), r) ==> par(par(nil(), q), r);",
-        "rule flat : par(par(par(par(nil(), p), q), r), s) ==> par(par(par(nil(), q), r), s);",
+        "rule flat : par (par (par (nil ()) p) q) r ==> par (par (nil ()) q) r;",
+        "rule flat : par (par (par (par (nil ()) p) q) r) s ==> par (par (par (nil ()) q) r) s;",
     ] {
         let block = alloc::format!("{SCOPE_EXTRUSION}  {flat}\n}}");
         lowered(SourceText::from(block.as_str()), |module| {
@@ -618,12 +618,12 @@ fn a_permuted_call_no_order_orients_is_uncompleted()
         };
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule : pick(Zero, n) ==> plus(n, Zero)",
+            "rule : pick Zero n ==> plus n Zero",
             "the refusal stands at the later rule"
         );
         assert_eq!(
             text(source, first).as_ref(),
-            "rule : pick(m, n) ==> plus(m, n)",
+            "rule : pick m n ==> plus m n",
             "and names the earlier one"
         );
         assert_eq!(
@@ -743,12 +743,12 @@ data NatApart : Type where {
         };
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule : add(Zero, n) ==> n",
+            "rule : add Zero n ==> n",
             "the refusal stands at the later rule"
         );
         assert_eq!(
             text(source, first).as_ref(),
-            "rule : add(m, Zero) ==> Succ(m)",
+            "rule : add m Zero ==> Succ m",
             "and names the earlier one"
         );
         assert_eq!(
@@ -852,7 +852,7 @@ fn a_rule_that_rebuilds_its_own_call_refuses_the_block()
         );
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule : grow(n) ==> Succ(grow(n))"
+            "rule : grow n ==> Succ (grow n)"
         );
         assert_eq!(
             module.declarations().iter().next().unwrap().outcome(),
@@ -878,7 +878,7 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
 }}"
         )
     };
-    let joins = theory("rule zetaZero : let(zero(), t) <=> t(zero());");
+    let joins = theory("rule zetaZero : let (zero ()) t <=> t (zero ());");
     lowered(SourceText::from(joins.as_str()), |module| {
         assert_eq!(
             module.cells().diagnostics,
@@ -888,12 +888,12 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
     });
     for (rules, later) in [
         (
-            "rule toZero : let(zero(), t) <=> zero();",
-            "rule toZero : let(zero(), t) <=> zero()",
+            "rule toZero : let (zero ()) t <=> zero ();",
+            "rule toZero : let (zero ()) t <=> zero ()",
         ),
         (
-            "rule under : f(let(u, t)) <=> f(u);",
-            "rule under : f(let(u, t)) <=> f(u)",
+            "rule under : f (let u t) <=> f u;",
+            "rule under : f (let u t) <=> f u",
         ),
     ] {
         let source = theory(rules);
@@ -911,7 +911,7 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
             assert_eq!(text(source, diagnostic.span).as_ref(), later);
             assert_eq!(
                 text(source, first).as_ref(),
-                "rule zeta : let(u, t) <=> t(u)",
+                "rule zeta : let u t <=> t u",
                 "{later} names ζ"
             );
             assert_eq!(
@@ -923,7 +923,7 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
             );
         });
     }
-    let apart = theory("rule fZero : f(zero()) <=> zero();");
+    let apart = theory("rule fZero : f (zero ()) <=> zero ();");
     lowered(SourceText::from(apart.as_str()), |module| {
         assert_eq!(
             module.cells().diagnostics,
@@ -952,7 +952,7 @@ fn a_pattern_overlapping_its_own_rule_joins_2115()
         )
     };
     let get_get =
-        theory("rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));");
+        theory("rule getGet : get (bind s . (get (bind t . (k s t)))) <=> get (bind s . (k s s));");
     lowered(SourceText::from(get_get.as_str()), |module| {
         assert_eq!(
             module.cells().diagnostics,
@@ -961,7 +961,7 @@ fn a_pattern_overlapping_its_own_rule_joins_2115()
              normalize to `get(bind s . k(s, s, s))`"
         );
     });
-    let right_unit = theory("rule unitR : ext(m, bind x . ret(x)) <=> m;");
+    let right_unit = theory("rule unitR : ext m (bind x . (ret x)) <=> m;");
     lowered(SourceText::from(right_unit.as_str()), |module| {
         assert_eq!(
             module.cells().diagnostics,
@@ -990,8 +990,9 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
 }}"
         )
     };
-    let scope = "rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where { | a # q };";
-    let gc = "rule gc : nu(bind a . p) <=> p where { | a # p };";
+    let scope =
+        "rule scope : par (nu (bind a . p)) q <=> nu (bind a . (par p q)) where { | a # q };";
+    let gc = "rule gc : nu (bind a . p) <=> p where { | a # p };";
     for channel in ["Name", "Proc"] {
         let collecting = theory(channel, &format!("{scope}\n    {gc}"));
         lowered(SourceText::from(collecting.as_str()), |module| {
@@ -1005,7 +1006,7 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
     }
     let quiet = theory(
         "Name",
-        &format!("{gc}\n    rule quiet : nu(bind a . out(a, nil())) <=> nil();"),
+        &format!("{gc}\n    rule quiet : nu (bind a . (out a (nil ()))) <=> nil ();"),
     );
     lowered(SourceText::from(quiet.as_str()), |module| {
         assert_eq!(
@@ -1017,7 +1018,7 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
     });
     let vacant = theory(
         "Name",
-        &format!("{scope}\n    rule vacant : nu(bind a . nil()) <=> nil();"),
+        &format!("{scope}\n    rule vacant : nu (bind a . (nil ())) <=> nil ();"),
     );
     let source = SourceText::from(vacant.as_str());
     lowered(source, |module| {
@@ -1034,11 +1035,11 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
         };
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule vacant : nu(bind a . nil()) <=> nil()"
+            "rule vacant : nu (bind a . (nil ())) <=> nil ()"
         );
         assert_eq!(
             text(source, first).as_ref(),
-            "rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where { | a # q }",
+            "rule scope : par (nu (bind a . p)) q <=> nu (bind a . (par p q)) where { | a # q }",
             "the vacant restriction names extrusion"
         );
         assert_eq!(

@@ -37,7 +37,7 @@ use super::verdicts;
 
 /// The `CatShape` theory: a category's objects, morphisms, identities,
 /// composition and its three laws.
-const SIGN: &str = "theory CatShape where {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : Ob) --> Hom(a, a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp(id(a), f) ==> f;\n  rule unitR : comp(f, id(b)) ==> f;\n  rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));\n}\n";
+const SIGN: &str = "theory CatShape where {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a : Ob) --> Hom(a, a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp (id a) f ==> f;\n  rule unitR : comp f (id b) ==> f;\n  rule assoc : comp (comp f g) h ==> comp f (comp g h);\n}\n";
 
 /// The category of discrete setoids: types and functions, composition by
 /// sequencing, each law holding by computation.
@@ -52,10 +52,10 @@ const WRITTEN: &str = "#{ type Ob : Type[+, 1], type Hom : (a : Ob, b : Ob) => T
 fn a_derived_signature_states_what_the_written_one_does()
 {
     let over_derived = SETOIDS
-        .replace("comp(p", "Derived.comp(p")
-        .replace("comp(q", "Derived.comp(q")
-        .replace("id(p)", "Derived.id(p)")
-        .replace("id(q)", "Derived.id(q)");
+        .replace("comp p", "Derived.comp p")
+        .replace("comp q", "Derived.comp q")
+        .replace("id p", "Derived.id p")
+        .replace("id q", "Derived.id q");
     let source = format!(
         "{SIGN}module Derived : Model(CatShape) where {{\n  {SETOIDS}}}\nmodule Written : {WRITTEN} \
          where {{\n  {over_derived}}}\n"
@@ -136,7 +136,7 @@ fn a_model_of_an_extension_stands_where_the_included_model_is_asked()
 {
     let source = format!(
         "{INCLUDED}def endo : Model(Monoid) ;\ndef endo = pack Endo at Model(Monoid) ;\ndef \
-         multiplies(s : Model(Semigroup)) -> -F Integer {{\n  match s {{ #{{.mul = m}} => 0 }}\n}}\ndef \
+         multiplies(s : Model(Semigroup)) -> -F Integer {{\n  match s {{ | *{{.mul = m}} => 0 }}\n}}\ndef \
          asked() -> -F Integer {{ become multiplies(endo) }}\ndef named() -> -F Integer {{\n  let s \
          = Monoid.Semigroup(endo) ;\n  become multiplies(s)\n}}\n"
     );
@@ -442,7 +442,7 @@ fn a_model_binder_s_carrier_is_its_projected_sort_2131()
     let stepped = |second: &str, count: &str| {
         let source = format!(
             "{counter}def step(a : Model(Counter), b : {second}, c : a.C) -> -F Integer {{\n  \
-             match b {{\n    #{{.zero = z, .incr = i, .read = r}} => become r(i({count}))\n  \
+             match b {{\n    | *{{.zero = z, .incr = i, .read = r}} => become r(i({count}))\n  \
              }}\n}}\n"
         );
         let mut lowered = lower(source.as_str());
@@ -540,7 +540,7 @@ fn a_sort_a_partly_manifest_type_leaves_a_field_is_read_off_its_binder_2158()
     let handed = |second: &str| {
         let source = format!(
             "{pairing}def hand(m : Model(Pairing) with sort A = Integer, n : {second}) -> -F \
-             m.B {{\n  match n {{\n    #{{.left = l, .right = r}} => become keep(m, r)\n  \
+             m.B {{\n  match n {{\n    | *{{.left = l, .right = r}} => become keep m r\n  \
              }}\n}}\n"
         );
         let mut lowered = lower(source.as_str());
@@ -753,7 +753,7 @@ fn a_law_member_admits_only_by_the_splice_of_admitted()
     ] {
         let source = format!(
             "{theory}module Host : Model(Same) with sort Carrier = Integer where {{\n  def \
-             same(a : Integer, b : Integer) -> Bool {{ int.eq(a, b) }}\n  {member}\n}}\n"
+             same(a : Integer, b : Integer) -> Bool {{ int.eq a b }}\n  {member}\n}}\n"
         );
         let found = rows(&lower(source.as_str()));
         let refused = Amounts::Refused(LoweringRefusal::MalformedForm {
@@ -771,7 +771,7 @@ fn a_law_member_admits_only_by_the_splice_of_admitted()
     }
     let admitted = format!(
         "{theory}module Host : Model(Same) with sort Carrier = Integer where {{\n  def same(a : \
-         Integer, b : Integer) -> Bool {{ int.eq(a, b) }}\n  law refl = ~admitted;\n}}\n"
+         Integer, b : Integer) -> Bool {{ int.eq a b }}\n  law refl = ~admitted;\n}}\n"
     );
     assert!(
         rows(&lower(admitted.as_str())).contains(&row(
@@ -842,7 +842,7 @@ fn a_repaired_model_body_owes_no_law_beside_its_parse_error_5142()
 #[test]
 fn an_instance_with_a_wrong_law_endpoint_is_refused_naming_the_law()
 {
-    // The left-zero semigroup on `Integer`, `comp(f, g) = f` and `id = 0`:
+    // The left-zero semigroup on `Integer`, `comp f g = f` and `id = 0`:
     // `unitR` and `assoc` hold by computation and `unitL` does not.
     let left_zero = |statement: &str| {
         format!(
@@ -864,7 +864,7 @@ fn an_instance_with_a_wrong_law_endpoint_is_refused_naming_the_law()
         (law, stated, verdicts(&mut lowered))
     };
 
-    let (law, stated, judgements) = judged(&left_zero("comp(a, a, b, id(a), f), f"));
+    let (law, stated, judgements) = judged(&left_zero("comp a a b (id a) f, f"));
     assert!(
         judgements.contains(&(law, Judgement::Refused))
             && judgements.iter().all(|&(constant, judgement)| {
@@ -1132,7 +1132,7 @@ fn a_written_family_of_the_wrong_telescope_is_refused()
         "a kind stating one index against a family binding two is refused at the family"
     );
 
-    let mistyped = "module M : *{ type Hom : (a : Integer, b : String) => Type } where { type Hom(a : \
+    let mistyped = "module M : *{ type Hom : (a : Integer, b : String) -> Type } where { type Hom(a : \
                     Integer, b : Integer) = Integer; }";
     let index = Amounts::Refused(LoweringRefusal::FamilyTelescope {
         span: span_of(mistyped, "Hom", 1_usize),
@@ -1145,7 +1145,7 @@ fn a_written_family_of_the_wrong_telescope_is_refused()
         "a kind whose second index is at another type than the family's is refused naming it"
     );
 
-    let agreeing = "module M : *{ type Hom : (a : Integer, b : Integer) => Type } where { type Hom(a : \
+    let agreeing = "module M : *{ type Hom : (a : Integer, b : Integer) -> Type } where { type Hom(a : \
                     Integer, b : Integer) = Integer; }";
     let mut lowered = lower(agreeing);
     assert_eq!(
@@ -1302,7 +1302,7 @@ fn a_computation_sort_is_a_family_into_computation_types_3050()
     let carried = format!(
         "{MAYBE}{carrier}{plain}module Option : Model(Carrier) where {{\n  type Lift(a : Type) = -F \
          Maybe(a);\n  type Cell = -F Integer;\n}}\ndef derived : Model(Carrier) ;\ndef written : \
-         #{{Lift : (a : Type) => Type[-], Cell : Type[-]}} ;\ndef valued : Model(Plain) ;\n"
+         *{{Lift : (a : Type) -> Type[-], Cell : Type[-]}} ;\ndef valued : Model(Plain) ;\n"
     );
     let mut lowered = lower(carried.as_str());
     let found = rows(&lowered);
@@ -1424,7 +1424,7 @@ fn a_nesting_model_type_bundles_the_inner_one()
 {
     states_the_written_types(
         "theory Pointed where {\n  sort T : Type;\n  oper z : T;\n}\ntheory Outer where {\n  oper inner : \
-         Model(Pointed);\n}\ndef derived : Model(Outer) ;\ndef written : #{inner : #{t : Type, z : \
+         Model(Pointed);\n}\ndef derived : Model(Outer) ;\ndef written : *{inner : *{t : Type, z : \
          t}} ;\n",
         &[("derived", "written")],
     );
@@ -2465,7 +2465,7 @@ fn a_theory_s_terms_are_its_operations_over_its_rules_4143()
         "{}{askers}",
         MAG.replace(
             "<=> x;\n}",
-            "<=> x;\n  rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));\n}"
+            "<=> x;\n  rule assoc : mul (mul x y) z <=> mul x (mul y z);\n}"
         )
     );
     let mut refused = lower(monoid.as_str());

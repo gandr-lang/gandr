@@ -58,7 +58,7 @@
 //! telescope of the sorts they index (`Hom(dom : Ob, cod : Ob)` makes each an
 //! `Ob`), and the operation's type binds them first, in the order a walk of
 //! the ports meets them, each sort's own variables before it:
-//! `(a : Ob, b : Ob, c : Ob, f : Hom(a, b), g : Hom(b, c)) => Hom(a, c)`. A
+//! `(a : Ob, b : Ob, c : Ob, f : Hom(a, b), g : Hom(b, c)) -> Hom(a, c)`. A
 //! rule's variables are inferred the same way from the terms it relates, each
 //! application elaborated with the implicit arguments its operation binds, so
 //! `comp(id(a), f) ==> f` is the law

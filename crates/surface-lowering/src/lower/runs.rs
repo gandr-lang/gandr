@@ -842,7 +842,6 @@ fn operand_of(
         | Former::Character
         | Former::TypeQuote
         | Former::Parenthesized
-        | Former::Unit
         | Former::Boolean
         | Former::Thunk
         | Former::Lambda
@@ -880,7 +879,6 @@ fn operand_of(
         | Former::ModedType
         | Former::LabelledSumType
         | Former::LazyRecordType
-        | Former::ValueFunctionType
         | Former::ParenthesizedType
         | Former::PathType
         | Former::BridgeType
