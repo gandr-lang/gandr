@@ -56,7 +56,8 @@ error[CapabilityAmplified]: this capability grants less than the one expected he
 59 │ │  }
    │ └──┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `misplaced` is refused with CapabilityAmplified, as its expectation states
+   ├ note: `misplaced` is refused with CapabilityAmplified, as its expectation states
+   ╰ help: use the required capability
 
 error[UnresolvedName]: `z` is not defined
    ╭▸ corpus/pathological/control/named-instances.gandr:64:25

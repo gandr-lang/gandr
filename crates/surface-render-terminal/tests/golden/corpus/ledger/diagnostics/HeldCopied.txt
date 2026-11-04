@@ -12,4 +12,5 @@ error[HeldCopied]: a value held with `var[1]` is never copied: read it once thro
 6 │ │ }
   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
   │
-  ╰ note: `read_held` is refused with HeldCopied, as its expectation states
+  ├ note: `read_held` is refused with HeldCopied, as its expectation states
+  ╰ help: wrap the `var[1]` read in `access ... resume`

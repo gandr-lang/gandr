@@ -4,4 +4,5 @@ error[OutOfFragment.Stage]: a stage that refines no data type, names no binder o
 3 │ def integerAt[i : Size](n : Integer[i]) -> -F Integer {
   │                             ━━━━━━━━━━ no rule for this former
   │
-  ╰ note: `integerAt` is refused with OutOfFragment.Stage, as its expectation states
+  ├ note: `integerAt` is refused with OutOfFragment.Stage, as its expectation states
+  ╰ help: write the kernel-visible type without a stage

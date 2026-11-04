@@ -4,4 +4,5 @@ error[InertRead]: `shown` reads the inert field `label`; only another inert fiel
 15 │ def shown = Box.label;
    │             ━━━━━━━━━ an inert field read
    │
-   ╰ note: `shown` is refused with InertRead, as its expectation states
+   ├ note: `shown` is refused with InertRead, as its expectation states
+   ╰ help: read an inert field only from a manifest step or inert field

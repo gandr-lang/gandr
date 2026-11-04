@@ -21,7 +21,8 @@ error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, 
 48 │ def inside() -> Bool { Eq.generic(Point)(Point(1, 2), Point(1, 2)) }
    │                        ━━━━━━━━━━━━━━━━━ a generic program read off its place
    │
-   ╰ note: `inside` is refused with GenericMisplaced, as its expectation states
+   ├ note: `inside` is refused with GenericMisplaced, as its expectation states
+   ╰ help: write `Eq.generic(T)` as a definition's whole body
 
 error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, applied to one data type: `def eq = Eq.generic(T)`
    ╭▸ corpus/pathological/data/generic-eq-refused.gandr:52:17
@@ -29,7 +30,8 @@ error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, 
 52 │ def eqInteger = Eq.generic(Integer);
    │                 ━━━━━━━━━━━━━━━━━━━ a generic program read off its place
    │
-   ╰ note: `eqInteger` is refused with GenericMisplaced, as its expectation states
+   ├ note: `eqInteger` is refused with GenericMisplaced, as its expectation states
+   ╰ help: write `Eq.generic(T)` as a definition's whole body
 
 error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, applied to one data type: `def eq = Eq.generic(T)`
    ╭▸ corpus/pathological/data/generic-eq-refused.gandr:56:12
@@ -37,7 +39,8 @@ error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, 
 56 │ def bare = Eq.generic;
    │            ━━━━━━━━━━ a generic program read off its place
    │
-   ╰ note: `bare` is refused with GenericMisplaced, as its expectation states
+   ├ note: `bare` is refused with GenericMisplaced, as its expectation states
+   ╰ help: write `Eq.generic(T)` as a definition's whole body
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/generic-eq-refused.gandr:60:15

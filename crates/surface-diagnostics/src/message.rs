@@ -2109,6 +2109,10 @@ pub mod tests
                 at: CoreNode::Term(TermNode::Computation(computation)),
                 former: UnadmittedFormer::Shift,
             },
+            CheckRefusal::OutOfFragment {
+                at: CoreNode::Term(TermNode::Computation(computation)),
+                former: UnadmittedFormer::Stage,
+            },
             CheckRefusal::UnboundIndex {
                 at: value,
                 zone: Zone::Intuitionistic,

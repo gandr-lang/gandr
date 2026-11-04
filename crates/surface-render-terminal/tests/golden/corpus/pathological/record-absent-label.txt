@@ -12,4 +12,5 @@ error[AbsentRecordField]: the record has no such field
 6 │ │  }
   │ └──┘ checked against `#{n : Integer, s : String} => Integer`; while checking the body of this thunk
   │
-  ╰ note: `absent` is refused with AbsentRecordField, as its expectation states
+  ├ note: `absent` is refused with AbsentRecordField, as its expectation states
+  ╰ help: select a declared record field

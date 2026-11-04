@@ -22,7 +22,8 @@ error[InertRead]: `tag` reads the inert field `label`; only another inert field 
 30 │   def tag = label;
    │             ━━━━━ an inert field read
    │
-   ╰ note: `tag` is refused with InertRead, as its expectation states
+   ├ note: `tag` is refused with InertRead, as its expectation states
+   ╰ help: read an inert field only from a manifest step or inert field
 
 error[InertRead]: `shown` reads the inert field `label`; only another inert field reads one
    ╭▸ corpus/pathological/modules/inert-field.gandr:35:13
@@ -30,7 +31,8 @@ error[InertRead]: `shown` reads the inert field `label`; only another inert fiel
 35 │ def shown = Box.label;
    │             ━━━━━━━━━ an inert field read
    │
-   ╰ note: `shown` is refused with InertRead, as its expectation states
+   ├ note: `shown` is refused with InertRead, as its expectation states
+   ╰ help: read an inert field only from a manifest step or inert field
 
 error[InertRead]: `labelOf` reads the inert field `label`; only another inert field reads one
    ╭▸ corpus/pathological/modules/inert-field.gandr:39:46
@@ -38,4 +40,5 @@ error[InertRead]: `labelOf` reads the inert field `label`; only another inert fi
 39 │ def labelOf(l : Model(Labelled)) -> String { l.label }
    │                                              ━━━━━━━ an inert field read
    │
-   ╰ note: `labelOf` is refused with InertRead, as its expectation states
+   ├ note: `labelOf` is refused with InertRead, as its expectation states
+   ╰ help: read an inert field only from a manifest step or inert field

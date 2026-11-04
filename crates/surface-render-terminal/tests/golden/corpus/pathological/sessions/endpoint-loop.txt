@@ -51,7 +51,8 @@ error[ArmsDisagree]: the arms of this `offer` or case leave the endpoints in dif
 41 │ │    }
    │ └────┘ checked against `+U ((rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F [Partial] Unit)`; while checking the body of this thunk
    │
-   ╰ note: `abandoned` is refused with ArmsDisagree, as its expectation states
+   ├ note: `abandoned` is refused with ArmsDisagree, as its expectation states
+   ╰ help: leave each arm with the same endpoint states
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/sessions/endpoint-loop.gandr:50:3

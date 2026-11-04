@@ -4,4 +4,5 @@ error[PhaseDependence]: the type `Q` depends on the value `count`; a type depend
 6 │   type Q = Path(Integer, count, 3);
   │                          ━━━━━ a value a type depends on
   │
-  ╰ note: `Q` is refused with PhaseDependence, as its expectation states
+  ├ note: `Q` is refused with PhaseDependence, as its expectation states
+  ╰ help: make the static member's type depend only on static members

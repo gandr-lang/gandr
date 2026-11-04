@@ -19,4 +19,5 @@ error[ArmsDisagree]: the arms of this `offer` or case leave the endpoints in dif
 9 │ │ }
   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `seat_arms_leave_it_apart` is refused with ArmsDisagree, as its expectation states
+  ├ note: `seat_arms_leave_it_apart` is refused with ArmsDisagree, as its expectation states
+  ╰ help: leave each arm with the same endpoint states
