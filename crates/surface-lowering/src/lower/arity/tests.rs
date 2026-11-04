@@ -1951,6 +1951,52 @@ fn a_tuple_pattern_binds_each_output_of_a_call()
     );
 }
 
+/// #4855: an operation of several outputs returns them as a function's group
+/// does, so a pattern binds each output of its call by one bind of several
+/// values and splits no product.
+#[test]
+fn a_tuple_pattern_binds_each_output_of_an_operation_4855()
+{
+    let operation = "data Flag : Type where {\n    | Down : Flag\n    | Up : Flag\n    oper \
+                     swap : (a : Flag, b : Flag) --> (x : Flag, y : Flag);\n    rule : swap(a, \
+                     b) ==> (b, a);\n}\n";
+    let source = format!(
+        "{operation}def second(a : Flag, b : Flag) -> Flag {{ let (x, y) = swap(a, b); y }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source.as_str(), &mut arena);
+    let second = body(&arena, &module, "second");
+    assert_eq!(
+        second.get(.. 4_usize),
+        Some(
+            &[
+                String::from("thunk"),
+                String::from("lambda"),
+                String::from("lambda"),
+                String::from("bindall2")
+            ][..]
+        ),
+        "each output of the operation's call is bound by one bind, {second:?}"
+    );
+    assert_eq!(
+        second.last().map(String::as_str),
+        Some("#0"),
+        "the last output is the innermost binder"
+    );
+    let three =
+        format!("{operation}def three(a : Flag) -> Flag {{ let (x, y, z) = swap(a, a); x }}\n");
+    assert!(
+        matches!(
+            refused(three.as_str()),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(operands),
+                ..
+            } if usize::from(operands) == 3
+        ),
+        "a pattern binds every output of the operation's call, no more"
+    );
+}
+
 #[test]
 fn a_selected_output_binds_every_output_and_returns_one()
 {

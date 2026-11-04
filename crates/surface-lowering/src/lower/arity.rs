@@ -3769,17 +3769,19 @@ impl<'source> Lowerer<'_, 'source>
     /// The outputs the call `bound` returns, as its callee writes them, read
     /// under `frame` ahead of the walk from `anchor`: those of the earlier
     /// declaration its head names, when that declaration's result is written
-    /// as a group.
+    /// as a group. An operation of several outputs writes its outputs as
+    /// ports, and its call returns one positional entry for each output.
     ///
     /// # Specification
     /// - requires: `bound` is `anchor` or under it.
     /// - ensures: the entries of the group the callee's result writes, in
     ///   order, when `bound` is a call whose head is one name resolving to a
     ///   declaration whose result is planned as a [`Plan::Returns`] or written
-    ///   as a group, as [`Self::written_group`] reads it; nothing for any other
-    ///   form, a head a binder answers, or a callee returning one value. The
-    ///   nodes under `bound` take `anchor`'s owner, as the walk would give
-    ///   them.
+    ///   as a group, as [`Self::written_group`] reads it. One positional entry
+    ///   for each output when the name resolves to an operation of several
+    ///   outputs. Nothing for any other form, a head a binder answers, or a
+    ///   callee returning one value. The nodes under `bound` take `anchor`'s
+    ///   owner, as the walk would give them.
     /// - fails: the name's resolution refusal; a foreign mold.
     /// - panics: none.
     ///
@@ -3790,6 +3792,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a call of a function returning two outputs, and one
     ///   returning a pair.
     /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_a_call`
+    /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_an_operation_4855`
     #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || matches!(self.form_at(bound), Ok(Some((_, Former::Call)))))]
     pub(super) fn called_outputs(
         &mut self,
@@ -3834,6 +3837,18 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(None);
         };
+        if let Some(plan) = self
+            .collected
+            .operations
+            .get(&crate::module::SlotIndex::from(usize::from(constant)))
+        {
+            let count = usize::from(plan.output_count());
+            let positional = Entry {
+                key: Key::Positional,
+                held: Held::Operand(bound),
+            };
+            return Ok((count > 1).then(|| alloc::vec![positional; count]));
+        }
         let Some(mut at) = self.callee_result(constant)
         else {
             return Ok(None);
