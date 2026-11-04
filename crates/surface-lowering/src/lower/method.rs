@@ -1028,7 +1028,8 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The held slot the head of the index at `site` names, as the binder its
-    /// name resolves to where the form stands.
+    /// name resolves to where the form stands, through
+    /// [`Self::held_slot`].
     ///
     /// # Specification
     /// - requires: `site` is an index `s.#[e]`.
@@ -1036,7 +1037,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   head is a bare name and that binder is a slot a `var` binds; nothing
     ///   is planned or recorded.
     /// - fails: a fault reading the form's pieces or the head's form; the
-    ///   resolution's exhausted allowance.
+    ///   name's own refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -1070,17 +1071,9 @@ impl<'source> Lowerer<'_, 'source>
         if !matches!(self.form_at(head)?, Some((_, Former::Name))) {
             return Ok(Maybe::Absent(unlent::Absent::Unnamed));
         }
-        let name = self.name_at(head);
-        match self
-            .scope
-            .resolve(site.reading.frame(), name, &mut self.fuel)?
-        {
-            Maybe::Present(bound)
-                if bound.zone == Zone::Linear && self.held.contains(&bound.binder) =>
-            {
-                Ok(Maybe::Present(bound))
-            },
-            Maybe::Present(_) | Maybe::Absent(_) => Ok(Maybe::Absent(unlent::Absent::Unheld)),
+        match self.held_slot(site.reading.frame(), head)? {
+            Maybe::Present(bound) => Ok(Maybe::Present(bound)),
+            Maybe::Absent(_) => Ok(Maybe::Absent(unlent::Absent::Unheld)),
         }
     }
 

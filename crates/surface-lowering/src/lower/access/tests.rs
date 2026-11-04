@@ -30,6 +30,7 @@ use crate::lower::native::tests::refusal_of;
 use crate::lower::native::tests::tail_of;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredDeclaration;
+use crate::resolve::Resolution;
 use crate::resolve::SurfaceName;
 
 /// The counter: a held count, one access that writes back its successor and
@@ -559,4 +560,58 @@ def graded() -> -F Unit { var[1] h : Integer at seat = 3; pure unit }
         ),
         "a handle binds no slot, so a grade has nothing to grade"
     );
+}
+
+/// Each name an access, an eliminator, an assignment or an element read
+/// writes keeps the binder it resolves to, so the editor finds every use of a
+/// held slot and of a view (#5011).
+#[test]
+fn each_name_a_form_lends_ends_or_writes_keeps_its_binder_5011()
+{
+    let source = listing(
+        r"def probed(i : Integer) -> -F Integer {
+  var xs : List(Integer) = #[1, 2];
+  access xs as v { resume(v, v) };
+  access shared xs.#[i] as w { pure unit };
+  access xs as u { abort(u) };
+  xs.#[0] += 1;
+  let y = xs.#[i];
+  return y
+}
+",
+    );
+    let mut arena = CoreArena::new();
+    let module = listed(&source, &mut arena);
+    assert_accepted(&judged(&module, &mut arena));
+    let text = SourceText::from(source.as_str());
+    let at = |context: &str, name: &str| {
+        spelled_within(text, SourceText::from(context), SourceText::from(name))
+    };
+    let kept = |span| {
+        module
+            .resolutions()
+            .iter()
+            .find(|&&(used, _)| used == span)
+            .map(|&(_, resolution)| resolution)
+    };
+    let slot = Some(Resolution::Binder(at("var xs", "xs")));
+    for (context, name, binder) in [
+        ("access xs as v", "xs", slot),
+        ("shared xs.#[i] as", "xs", slot),
+        ("access xs as u", "xs", slot),
+        ("  xs.#[0] += 1", "xs", slot),
+        ("y = xs.#[i]", "xs", slot),
+        (
+            "resume(v,",
+            "v",
+            Some(Resolution::Binder(at("as v {", "v"))),
+        ),
+        ("abort(u)", "u", Some(Resolution::Binder(at("as u {", "u")))),
+    ] {
+        assert_eq!(
+            kept(at(context, name)),
+            binder,
+            "`{name}` in `{context}` keeps the binder it names"
+        );
+    }
 }
