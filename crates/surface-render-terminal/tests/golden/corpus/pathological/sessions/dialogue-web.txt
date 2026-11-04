@@ -35,7 +35,8 @@ error[DialogueUnmatched]: this dialogue's message is not received as it was sent
 42 │ ┃ );
    │ ┗━┛ a move the other endpoint does not match
    │
-   ╰ note: `misheard` is refused with DialogueUnmatched, as its expectation states
+   ├ note: `misheard` is refused with DialogueUnmatched, as its expectation states
+   ╰ help: make each dialogue receipt match its sent value
 
 error[DialogueInverted]: this dialogue is logged out of its causal order
    ╭▸ corpus/pathological/sessions/dialogue-web.gandr:46:39

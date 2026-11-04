@@ -15,7 +15,8 @@ error[FamilyTelescope]: the type member `T` lands in value types where its compo
 32 │   type T(a : Type) = List(a);
    │        ━ types its sort does not land in
    │
-   ╰ note: `T` is refused with FamilyTelescope, as its expectation states
+   ├ note: `T` is refused with FamilyTelescope, as its expectation states
+   ╰ help: write a member kind that matches its parameters and result
 
 error[FamilyTelescope]: the type member `T` lands in computation types where its component states value types
    ╭▸ corpus/pathological/desc/relative-monad.gandr:46:8
@@ -23,4 +24,5 @@ error[FamilyTelescope]: the type member `T` lands in computation types where its
 46 │   type T(a : Type) = -F List(a);
    │        ━ types its sort does not land in
    │
-   ╰ note: `T` is refused with FamilyTelescope, as its expectation states
+   ├ note: `T` is refused with FamilyTelescope, as its expectation states
+   ╰ help: write a member kind that matches its parameters and result

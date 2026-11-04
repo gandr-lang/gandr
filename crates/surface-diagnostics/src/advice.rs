@@ -279,6 +279,22 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::CellNotALoop { .. } => {
             String::from("write the same term on both sides of the `<->`")
         },
+        LoweringRefusal::ForwardMemberReference { .. } => {
+            String::from("declare the referenced member before this member")
+        },
+        LoweringRefusal::FamilyTelescope { .. } => {
+            String::from("write a member kind that matches its parameters and result")
+        },
+        LoweringRefusal::ImplicitUnsupplied { .. }
+        | LoweringRefusal::ImplicitInParentheses { .. } => {
+            String::from("supply the implicit by name in square brackets")
+        },
+        LoweringRefusal::DirectedCell { .. } => {
+            String::from("write an undirected `<->` cell instead of `-->`")
+        },
+        LoweringRefusal::GenericUncovered { .. } => {
+            String::from("write an equality function for the datatype")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::DuplicateSignature { .. }
@@ -296,7 +312,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::DuplicateAttribute { .. }
         | LoweringRefusal::MissingPayload { .. }
         | LoweringRefusal::NonValuePayload { .. }
-        | LoweringRefusal::ForwardMemberReference { .. }
         | LoweringRefusal::PartialField { .. }
         | LoweringRefusal::NotAFunctor { .. }
         | LoweringRefusal::NotAModel { .. }
@@ -305,11 +320,8 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::UnreadCells { .. }
         | LoweringRefusal::UnstatedComponent { .. }
         | LoweringRefusal::UndescribedMember { .. }
-        | LoweringRefusal::FamilyTelescope { .. }
         | LoweringRefusal::ImplicitTelescope { .. }
         | LoweringRefusal::TelescopeCycle { .. }
-        | LoweringRefusal::ImplicitUnsupplied { .. }
-        | LoweringRefusal::ImplicitInParentheses { .. }
         | LoweringRefusal::InstanceUnanswered { .. }
         | LoweringRefusal::InstanceAmbiguous { .. }
         | LoweringRefusal::RegionAsValue { .. }
@@ -320,10 +332,8 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::Unreachable { .. }
         | LoweringRefusal::OutsideLoop { .. }
         | LoweringRefusal::WithoutK { .. }
-        | LoweringRefusal::DirectedCell { .. }
         | LoweringRefusal::RulesUndecided { .. }
         | LoweringRefusal::UnderivedRule { .. }
-        | LoweringRefusal::GenericUncovered { .. }
         | LoweringRefusal::UnknownTactic { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
@@ -843,6 +853,21 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::DialogueInverted { .. } => {
             String::from("log each send before its matching receipt")
         },
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::UsedTwice { .. },
+            ..
+        } => String::from("use the endpoint only once in this action"),
+        CheckRefusal::Located {
+            defect: LocatedDefect::EntryNamed { .. },
+            ..
+        } => String::from("call a non-entry declaration instead"),
+        CheckRefusal::Located {
+            defect: LocatedDefect::HoldElsewhere { .. },
+            ..
+        } => String::from("migrate to the handle's world before using `hold`"),
+        CheckRefusal::DialogueUnmatched { .. } => {
+            String::from("make each dialogue receipt match its sent value")
+        },
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::NotADataType(_)
         | CheckRefusal::LoopUndecided { .. }
@@ -906,7 +931,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::SessionCodeExpected { .. }
         | CheckRefusal::OpenSessionPayload { .. }
         | CheckRefusal::RideUnsupported { .. }
-        | CheckRefusal::DialogueUnmatched { .. }
         | CheckRefusal::ForwardUnsupported { .. } => return Maybe::Absent(help::Absent::Unworded),
     })
 }
@@ -923,7 +947,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 115] = [
+    const WORDED: [&str; 125] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1040,6 +1064,16 @@ mod tests
         "DependentBind",
         "DescentOnSeveralParameters",
         "DialogueInverted",
+        "DialogueUnmatched",
+        "DirectedCell",
+        "EndpointUsedTwice",
+        "EntryNamed",
+        "FamilyTelescope",
+        "ForwardMemberReference",
+        "GenericUncovered",
+        "HoldElsewhere",
+        "ImplicitInParentheses",
+        "ImplicitUnsupplied",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

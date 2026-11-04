@@ -7,4 +7,5 @@ error[ForwardMemberReference]: the member `second` is used before it is declared
 5 │   def second = 2;
   │       ────── declared here
   │
-  ╰ note: `first` is refused with ForwardMemberReference, as its expectation states
+  ├ note: `first` is refused with ForwardMemberReference, as its expectation states
+  ╰ help: declare the referenced member before this member

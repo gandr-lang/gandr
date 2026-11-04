@@ -4,7 +4,8 @@ error[GenericUncovered]: `Eq.generic` derives no equality for `Shape`: field 0 o
 40 │ def eqShape = Eq.generic(Shape);
    │                          ━━━━━ a type with no derived equality
    │
-   ╰ note: `eqShape` is refused with GenericUncovered, as its expectation states
+   ├ note: `eqShape` is refused with GenericUncovered, as its expectation states
+   ╰ help: write an equality function for the datatype
 
 error[GenericUncovered]: `Eq.generic` derives no equality for `Box`: it takes parameters or indices
    ╭▸ corpus/pathological/data/generic-eq-refused.gandr:44:24
@@ -13,7 +14,8 @@ error[GenericUncovered]: `Eq.generic` derives no equality for `Box`: it takes pa
    │                        ━━━ a type with no derived equality
    │
    ├ note: `eqBox` is refused with GenericUncovered, as its expectation states
-   ╰ note: tracked by #2345 <https://github.com/gandr-lang/gandr/issues/2345>
+   ├ note: tracked by #2345 <https://github.com/gandr-lang/gandr/issues/2345>
+   ╰ help: write an equality function for the datatype
 
 error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, applied to one data type: `def eq = Eq.generic(T)`
    ╭▸ corpus/pathological/data/generic-eq-refused.gandr:48:24
@@ -62,7 +64,8 @@ error[GenericUncovered.Dependent]: `Eq.generic` derives no equality for `Flagged
    │                                   ━━━━━━━ a type with no derived equality
    │
    ├ note: `reflFlagged` is refused with GenericUncovered.Dependent, as its expectation states
-   ╰ note: tracked by #2374 <https://github.com/gandr-lang/gandr/issues/2374>
+   ├ note: tracked by #2374 <https://github.com/gandr-lang/gandr/issues/2374>
+   ╰ help: write an equality function for the datatype
 
 error[GenericUncovered.Dependent]: `Eq.generic` derives no equality for `Flagged`: field 1 of constructor 0 is a sum or a tuple, whose law cases on it under a motive core's case does not carry (#2374)
    ╭▸ corpus/pathological/data/generic-eq-refused.gandr:68:33
@@ -71,7 +74,8 @@ error[GenericUncovered.Dependent]: `Eq.generic` derives no equality for `Flagged
    │                                 ━━━━━━━ a type with no derived equality
    │
    ├ note: `symFlagged` is refused with GenericUncovered.Dependent, as its expectation states
-   ╰ note: tracked by #2374 <https://github.com/gandr-lang/gandr/issues/2374>
+   ├ note: tracked by #2374 <https://github.com/gandr-lang/gandr/issues/2374>
+   ╰ help: write an equality function for the datatype
 
 error[GenericUncovered]: `Eq.generic` derives no equality for `Peano`: field 0 of constructor 1 holds the type itself, whose law is an induction the derivation does not write
    ╭▸ corpus/pathological/data/generic-eq-refused.gandr:72:33
@@ -80,4 +84,5 @@ error[GenericUncovered]: `Eq.generic` derives no equality for `Peano`: field 0 o
    │                                 ━━━━━ a type with no derived equality
    │
    ├ note: `reflPeano` is refused with GenericUncovered, as its expectation states
-   ╰ note: tracked by #2345 <https://github.com/gandr-lang/gandr/issues/2345>
+   ├ note: tracked by #2345 <https://github.com/gandr-lang/gandr/issues/2345>
+   ╰ help: write an equality function for the datatype

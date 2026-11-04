@@ -4,4 +4,5 @@ error[GenericUncovered]: `Eq.generic` derives no equality for `Shape`: field 0 o
 8 │ def eqShape = Eq.generic(Shape) ;
   │                          ━━━━━ a type with no derived equality
   │
-  ╰ note: `eqShape` is refused with GenericUncovered, as its expectation states
+  ├ note: `eqShape` is refused with GenericUncovered, as its expectation states
+  ╰ help: write an equality function for the datatype

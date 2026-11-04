@@ -4,4 +4,5 @@ error[ImplicitInParentheses]: `same`'s implicit `a` is supplied by name, `same[a
 9 │ def inParentheses = thunk { same(Integer, 3) } ;
   │                             ━━━━━━━━━━━━━━━━ an implicit among the arguments
   │
-  ╰ note: `inParentheses` is refused with ImplicitInParentheses, as its expectation states
+  ├ note: `inParentheses` is refused with ImplicitInParentheses, as its expectation states
+  ╰ help: supply the implicit by name in square brackets

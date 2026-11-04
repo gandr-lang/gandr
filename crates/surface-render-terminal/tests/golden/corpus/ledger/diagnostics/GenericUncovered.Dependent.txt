@@ -5,4 +5,5 @@ error[GenericUncovered.Dependent]: `Eq.generic` derives no equality for `Marked`
   │                                  ━━━━━━ a type with no derived equality
   │
   ├ note: `reflMarked` is refused with GenericUncovered.Dependent, as its expectation states
-  ╰ note: tracked by #2374 <https://github.com/gandr-lang/gandr/issues/2374>
+  ├ note: tracked by #2374 <https://github.com/gandr-lang/gandr/issues/2374>
+  ╰ help: write an equality function for the datatype
