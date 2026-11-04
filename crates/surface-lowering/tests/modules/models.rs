@@ -470,15 +470,15 @@ fn a_model_binder_s_carrier_is_its_projected_sort_2131()
 
     states_the_written_types(
         format!(
-            "{counter}def fixed : (a : Model(Counter) with sort C = Integer) => (c : a.C) => \
-             Integer ;\ndef fixedWritten : (a : Model(Counter) with sort C = Integer) => (c : \
-             Integer) => Integer ;\ndef open : (x : Type) => (a : Model(Counter) with sort C = \
-             x) => (n : Integer) => (c : a.C) => x ;\ndef openWritten : (x : Type) => (a : \
-             Model(Counter) with sort C = x) => (n : Integer) => (c : x) => x ;\ndef named : (x \
-             : Type) => (a : Model(Counter) with sort C = x) => (p : Path[.A = Model(Counter) with \
-             sort C = x](a, a)) => (c : a.C) => x ;\ndef namedWritten : (x : Type) => (a : \
-             Model(Counter) with sort C = x) => (p : Path[.A = Model(Counter) with sort C = x](a, \
-             a)) => (c : x) => x ;\n"
+            "{counter}def fixed : (a : Model(Counter) with sort C = Integer) -> (c : a.C) -> \
+             Integer ;\ndef fixedWritten : (a : Model(Counter) with sort C = Integer) -> (c : \
+             Integer) -> Integer ;\ndef open : (x : Type) -> (a : Model(Counter) with sort C = \
+             x) -> (n : Integer) -> (c : a.C) -> x ;\ndef openWritten : (x : Type) -> (a : \
+             Model(Counter) with sort C = x) -> (n : Integer) -> (c : x) -> x ;\ndef named : (x \
+             : Type) -> (a : Model(Counter) with sort C = x) -> (p : Path[.A = Model(Counter) with \
+             sort C = x](a, a)) -> (c : a.C) -> x ;\ndef namedWritten : (x : Type) -> (a : \
+             Model(Counter) with sort C = x) -> (p : Path[.A = Model(Counter) with sort C = x](a, \
+             a)) -> (c : x) -> x ;\n"
         ),
         &[
             ("fixed", "fixedWritten"),

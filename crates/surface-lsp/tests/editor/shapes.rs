@@ -277,7 +277,7 @@ pub(super) fn judged(
     let mut parsed: BTreeMap<String, bool> = BTreeMap::new();
     let mut parses = |spelled: &str| {
         *parsed.entry(String::from(spelled)).or_insert_with(|| {
-            let signature = format!("def shape : {spelled} ;\n");
+            let signature = format!("def shape :  {spelled} ;\n");
             parse(grammar, SourceText::from(signature.as_str()))
                 .is_ok_and(|parsed| parsed.obligations().is_empty())
         })

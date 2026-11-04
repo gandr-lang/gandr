@@ -202,7 +202,7 @@ fn whole_file_submit_carries_definitions_forward()
 fn a_malformed_declaration_is_declined_and_the_later_definition_binds()
 {
     let mut session = session(SourceRoot::Strict);
-    let first = submit(&mut session, "def bad = 1 ^ 2 ;\ndef good = 2 ;");
+    let first = submit(&mut session, "def bad = 1 \u{1} 2 ;\ndef good = 2 ;");
     let Composed::Settled { ref report, .. } = *first.composed()
     else {
         panic!("the damaged declaration does not collapse the submission");
@@ -229,7 +229,7 @@ fn a_malformed_declaration_is_declined_and_the_later_definition_binds()
 
     let later = submit(
         &mut session,
-        "def bad = 1 ^ 2 ;\ndef good = 2 ;\ndef later : Integer ;\ndef later = good ;",
+        "def bad = 1 \u{1} 2 ;\ndef good = 2 ;\ndef later : Integer ;\ndef later = good ;",
     );
     assert_eq!(
         rows(later.composed()).get(2_usize),
@@ -999,7 +999,9 @@ fn comparison_operators_type_check_and_evaluate()
     )]);
     let answer = constant_of(submission.composed(), SurfaceName::from("answer"));
     assert!(
-        matches!(submission.evaluate(answer), Maybe::Present(Evaluation::Value(ref value)) if value.as_ref() == "+{.0 = unit}")
+        matches!(submission.evaluate(answer), Maybe::Present(Evaluation::Value(ref value)) if value.as_ref() == "+{.0 = *{}}"),
+        "{:?}",
+        submission.evaluate(answer)
     );
 }
 
@@ -1345,7 +1347,7 @@ fn an_admission_resumes_the_declarations_a_revision_left_alone_2102()
     let revision = |three: &str, four: &str, after: &str| {
         format!(
             "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = {three} ;\ndef five : \
-             Path[.A = Integer](three, 1) ;\ndef five = Path.here(1) ;\ndef four : Integer ;\ndef four = \
+             Path[.A = Integer](three, 1) ;\ndef five = Path.here 1 ;\ndef four : Integer ;\ndef four = \
              {four} ;\n{after}"
         )
     };

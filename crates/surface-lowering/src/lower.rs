@@ -25852,13 +25852,13 @@ mod tests
             DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => {
                 body
             },
-            other @ (DeclarationOutcome::Uncompleted { .. }
+            DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World
-            | DeclarationOutcome::Refused(_)) => {
-                panic!("the declaration lowers a body: {other:?}")
+            | DeclarationOutcome::Refused(_) => {
+                panic!("the declaration lowers a body")
             },
         }
     }
@@ -25886,13 +25886,13 @@ mod tests
         match outcome {
             DeclarationOutcome::Completed { declared_type, .. }
             | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
-            other @ (DeclarationOutcome::Bodied { .. }
+            DeclarationOutcome::Bodied { .. }
             | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Codata(_)
             | DeclarationOutcome::Abstract(_)
             | DeclarationOutcome::World
-            | DeclarationOutcome::Refused(_)) => {
-                panic!("the declaration lowers a signature: {other:?}")
+            | DeclarationOutcome::Refused(_) => {
+                panic!("the declaration lowers a signature")
             },
         }
     }
@@ -26827,7 +26827,7 @@ mod tests
         let mut arena = CoreArena::new();
         let source = crate::fixture::listing(
             "def a = Integer ; def b = -F Integer ; def c = Type ; def d = +U (-F Integer) ; def e \
-             = Path 1 1 ; def f = List (Integer) ;",
+             = Path 1 1 ; def f = List Integer ;",
         );
         let module = crate::fixture::listed(&source, &mut arena);
         let quoted = |declaration: usize| {
@@ -29072,7 +29072,7 @@ def ended() -> -F [Partial] Unit {
                       Integer { apply (fun (y : Integer) { y }) 1 }\ndef twice[m : Type, combine : \
                       (m, m) -> m](x : m) -> m { combine x x }\ndef moved(A : Type, P : A -> Type, x \
                       : A, y : A, p : Path(A, x, y), v : P(x)) -> P(y) { Path.walk P p v }\ndef rec \
-                      plus : (Nat, Nat) -> Nat where {\n  | Zero, k => k\n  | Succ(j), k => Succ \
+                      plus : (Nat, Nat) -> Nat where {\n  | Zero, k => k\n  | Succ j, k => Succ \
                       (plus[<] j k)\n}\n";
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(source), &mut arena);
@@ -30066,7 +30066,7 @@ def ended() -> -F [Partial] Unit {
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def pick(a : Type) -> -F Integer { 0 }\ndef chosen = thunk { become pick (f64) } ;",
+                "def pick(a : Type) -> -F Integer { 0 }\ndef chosen = thunk { become pick f64 } ;",
             ),
             &mut arena,
         );
@@ -32110,7 +32110,7 @@ def ended() -> -F [Partial] Unit {
             )))),
             "the negation of a natural literal is the negative literal"
         );
-        let text = "def a : Integer = -5 ;";
+        let text = "def a : Integer = - 5 ;";
         let covers = module.origins().covers();
         assert_eq!(covers.len(), 1, "the folded minus records its operand");
         let Some(&(operator, operand)) = covers.first()

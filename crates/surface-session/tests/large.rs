@@ -267,8 +267,8 @@ fn change(form: &mut String)
         *form = form.replacen("return x }", "return y }", 1);
         return;
     }
-    if form.contains("(7)") {
-        *form = form.replacen("(7)", "(8)", 1);
+    if form.contains(" 7 }") {
+        *form = form.replacen(" 7 }", " 8 }", 1);
         return;
     }
     if let Some(equals) = form.rfind(" = ")
@@ -323,7 +323,7 @@ pub fn module(
             2 => {
                 shape.push(format!("def t{i} : +U (-F Integer) ;"));
                 shape.push(format!(
-                    "def t{i} = thunk {{ ((id ({})) (Integer)) (v{}) }} ;",
+                    "def t{i} = thunk {{ id{} Integer v{} }} ;",
                     i.saturating_sub(1),
                     i.saturating_sub(2)
                 ));
@@ -347,7 +347,7 @@ pub fn module(
             5 => {
                 shape.push(format!("def c{i} : +U (-F Integer) ;"));
                 shape.push(format!(
-                    "def c{i} = thunk {{ become ((force p{}) (v{})) 7 }} ;",
+                    "def c{i} = thunk {{ become (force p{}) v{} 7 }} ;",
                     i.saturating_sub(1),
                     i.saturating_sub(5)
                 ));
@@ -358,7 +358,7 @@ pub fn module(
                         "def u{i} : +U (Integer -> Integer -> -F Integer) ;"
                     ));
                     shape.push(format!(
-                        "def u{i} = thunk {{ fun (x) {{ fun (y) {{ let p = ((force p{}) x) y ; return p }} }} }} ;",
+                        "def u{i} = thunk {{ fun (x) {{ fun (y) {{ let p = (force p{}) x y ; return p }} }} }} ;",
                         i.saturating_sub(2)
                     ));
                 },
@@ -373,14 +373,14 @@ pub fn module(
                     "data Box{i} : Type where {{\n  | Empty{i} : Box{i}\n  | Full{i} : (n : Integer) --> Box{i}\n}}"
                 ));
                 shape.push(format!(
-                    "def unbox{i}(b : Box{i}) -> -F Integer {{\n  match b {{\n    Empty{i} => return 0,\n    Full{i}(n) => return n\n  }}\n}}"
+                    "def unbox{i}(b : Box{i}) -> -F Integer {{\n  match b {{\n    | Empty{i} => return 0\n    | Full{i}(n) => return n\n  }}\n}}"
                 ));
             },
             _ => match root {
                 SourceRoot::Strict => {
                     shape.push(format!("def w{i} : +U (Integer -> -F Integer) ;"));
                     shape.push(format!(
-                        "def w{i} = thunk {{ fun (n) {{ let a = ((force p{}) n) n ; let b = ((force p{}) a) n ; return b }} }} ;",
+                        "def w{i} = thunk {{ fun (n) {{ let a = (force p{}) n n ; let b = (force p{}) a n ; return b }} }} ;",
                         i.saturating_sub(4),
                         i.saturating_sub(4)
                     ));
@@ -388,7 +388,7 @@ pub fn module(
                 SourceRoot::Fixture | SourceRoot::Pending => {
                     let boxed = i.saturating_sub(1);
                     shape.push(format!(
-                        "@[ refuses(\"NonExhaustiveMatch\") ]\ndef k{i}(b : Box{boxed}) -> -F Integer {{\n  match b {{\n    Empty{boxed} => return {i}\n  }}\n}}"
+                        "@[ refuses(\"NonExhaustiveMatch\") ]\ndef k{i}(b : Box{boxed}) -> -F Integer {{\n  match b {{\n    | Empty{boxed} => return {i}\n  }}\n}}"
                     ));
                 },
             },

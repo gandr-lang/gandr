@@ -668,7 +668,7 @@ fn a_shape_mismatch_names_the_type_its_found_type_unfolds_to_5034()
         ),
         (
             Maybe::Present(String::from("pairOf(Integer, Bool)")),
-            Maybe::Present(String::from("#{x : Integer, y : Bool}"))
+            Maybe::Present(String::from("*{x : Integer, y : Bool}"))
         ),
         "the refusal compares the written type and the type it unfolds to"
     );
@@ -679,7 +679,7 @@ fn a_shape_mismatch_names_the_type_its_found_type_unfolds_to_5034()
     assert_eq!(
         primary.label,
         "its type is not of the required shape: found `pairOf(Integer, Bool)`, which unfolds to \
-         `#{x : Integer, y : Bool}`"
+         `*{x : Integer, y : Bool}`"
     );
     assert!(
         refused
@@ -731,7 +731,7 @@ fn a_mismatch_spells_the_constructors_its_type_mentions()
     );
     assert_eq!(
         mismatch.detail.compared.expected,
-        Maybe::Present(String::from("Path[.A = Box](Wrap(4), Wrap(5))")),
+        Maybe::Present(String::from("Path[.A = Box](Wrap 4, Wrap 5)")),
         "a constructor value is spelled by the name its declaration writes"
     );
 }
@@ -746,7 +746,7 @@ fn a_word_spells_by_its_letters()
     assert_eq!(
         mismatch.detail.compared.expected,
         Maybe::Present(String::from(
-            "Path[.A = Path[.A = Circle](Base, Base)](back(loop) ∷ Path.here(Base), Path.here(Base))"
+            "Path[.A = Path[.A = Circle](Base, Base)](back loop ∷ Path.here Base, Path.here Base)"
         )),
         "a word's type is its path type, a letter conses before the rest, and the empty \
              word is `here` at the point"
@@ -758,7 +758,7 @@ fn a_word_spells_by_its_letters()
     assert_eq!(
         preceded.detail.compared.expected,
         Maybe::Present(String::from(
-            "Path[.A = Path[.A = Circle](Base, Base)](back(loop) ∷ Path.here(Base), Path.here(Base))"
+            "Path[.A = Path[.A = Circle](Base, Base)](back loop ∷ Path.here Base, Path.here Base)"
         )),
         "the point is spelled by its own family's constructors, not an earlier family's"
     );
@@ -972,8 +972,8 @@ fn a_model_implicit_s_components_are_named_by_their_paths_2364()
         panic!("the source is one module");
     };
     let used = <&str>::from(text)
-        .rfind("(c)")
-        .and_then(|at| at.checked_add(1))
+        .rfind("incr c")
+        .and_then(|at| at.checked_add(5))
         .expect("the body reads `c`");
     let variables: Vec<_> = module
         .origins()
@@ -1134,7 +1134,7 @@ fn a_loop_arm_is_named_by_its_loop_823()
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
         "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\ndef invLooper(x : \
-         Circle) -> -F Circle {\n  match x {\n    | Base => Base\n    | loop => Path.back (loop)\n  }\n}\n",
+         Circle) -> -F Circle {\n  match x {\n    | Base => Base\n    | loop => Path.back loop\n  }\n}\n",
     );
     let Lowered::Module { module, arena } =
         lower_source(&grammar, text, &mut LoweringCount::default())
@@ -1185,8 +1185,8 @@ fn a_loop_arm_is_named_by_its_loop_823()
         ),
         (
             String::from(
-                "fun (a) { match a { Base => Base, loop => Path.walk(fun (b) { type(Path[.A = Circle](b, Base)) }, \
-                 loop, Path.here(Base)\n    ) } }"
+                "fun (a) { match a { | Base => Base | loop => Path.walk (fun (b) { type(Path[.A = Circle](b, Base)) }) \
+                 loop (Path.here\n                      Base) } }"
             ),
             Fidelity::Faithful,
             true
@@ -1522,7 +1522,7 @@ fn a_refusal_names_the_rules_it_stood_inside()
             (
                 String::from("thunk { become force 1 }"),
                 String::from(
-                    "checked against `() => Integer`; while checking the body of this thunk"
+                    "checked against `() -> Integer`; while checking the body of this thunk"
                 )
             ),
             (
@@ -1540,13 +1540,13 @@ fn a_refusal_names_the_rules_it_stood_inside()
         contexts(SourceText::from(APPLICATION), &application),
         [
             (
-                String::from("thunk { become (pure 1)(2) }"),
+                String::from("thunk { become (pure 1) 2 }"),
                 String::from(
-                    "checked against `() => Integer`; while checking the body of this thunk"
+                    "checked against `() -> Integer`; while checking the body of this thunk"
                 )
             ),
             (
-                String::from("(pure 1)(2)"),
+                String::from("(pure 1) 2"),
                 String::from(
                     "checked against `-F Integer`; while synthesising the function this \
                          applies"
@@ -1803,7 +1803,7 @@ fn a_trace_spells_a_kept_region_by_its_name_1494()
             .into_iter()
             .map(|(_, label)| label)
             .collect();
-        let spelled = format!("(() => Integer) at {kept}");
+        let spelled = format!("(() -> Integer) at {kept}");
         assert!(
             labels.iter().any(|label| label.contains(&spelled)),
             "the kept type names its region `{kept}`: {labels:?}"
@@ -1832,7 +1832,7 @@ fn a_mismatch_between_two_region_binders_names_both_2138()
             Maybe::Present(primary) => primary.label.clone(),
             Maybe::Absent(reason) => panic!("a located refusal carries a label: {reason:?}"),
         },
-        "its type does not convert: expected `(() => Integer) at s`, found `(() => Integer) at r`"
+        "its type does not convert: expected `(() -> Integer) at s`, found `(() -> Integer) at r`"
     );
     let labels: Vec<String> = contexts(text, &diagnostic)
         .into_iter()
@@ -1841,7 +1841,7 @@ fn a_mismatch_between_two_region_binders_names_both_2138()
     assert!(
         labels
             .iter()
-            .any(|label| label.contains("binds k : (() => Integer) at r")),
+            .any(|label| label.contains("binds k : (() -> Integer) at r")),
         "a parameter kept at a binder names it: {labels:?}"
     );
     assert!(
@@ -2132,7 +2132,7 @@ fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
         )
     };
     let (returned, before_returned) = tail("{ n }");
-    let (called, before_called) = tail("{ kept(n) }");
+    let (called, before_called) = tail("{ kept n }");
     let finding = |diagnostic: &Diagnostic| {
         (
             diagnostic.severity,
@@ -2242,7 +2242,7 @@ fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
                     { return id n }\ndef leading(n : Integer) -> -F Integer { id n + 1 }\ndef \
                     grouped(n : Integer) -> -F Integer { return n + 1 }\n";
     let path = Path::new("runs.gandr");
-    let call = |context: &str, offset: usize| {
+    let call = |context: &str, offset: usize, width: usize| {
         let start = text
             .find(context)
             .expect("the call is written")
@@ -2250,17 +2250,17 @@ fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
         (
             ByteSpan::new(
                 ByteOffset::from(start),
-                ByteOffset::from(start.saturating_add(5_usize)),
+                ByteOffset::from(start.saturating_add(width)),
             )
             .expect("the call is ordered"),
             ByteSpan::new(ByteOffset::from(start), ByteOffset::from(start))
                 .expect("an insertion is ordered"),
         )
     };
-    let (inner, before_inner) = call("{ id(id(n)) }", 5_usize);
-    let (returned, before_returned) = call("{ return id(n) }", 9_usize);
-    let (leading, before_leading) = call("{ id(n) + 1 }", 2_usize);
-    let (grouped, _) = call("{ return n + 1 }", 9_usize);
+    let (inner, before_inner) = call("{ id (id n) }", 6_usize, 4_usize);
+    let (returned, before_returned) = call("{ return id n }", 9_usize, 4_usize);
+    let (leading, before_leading) = call("{ id n + 1 }", 2_usize, 4_usize);
+    let (grouped, _) = call("{ return n + 1 }", 9_usize, 5_usize);
     let finding = |diagnostic: &Diagnostic| {
         (
             diagnostic.severity,
@@ -3541,7 +3541,7 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
     assert_eq!(
         hypotheses,
         [
-            "p : #{s : Theory, n : counted_at(s)}",
+            "p : *{s : Theory, n : counted_at(s)}",
             "other : Theory",
             "s : Theory",
             "n : counted_at(s)",

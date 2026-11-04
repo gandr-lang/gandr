@@ -5763,10 +5763,10 @@ fn a_cell_between_terms_is_a_loop_or_refused_by_name()
 fn only_back_inverts_a_letter()
 {
     let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef bad : Path[.A = Circle](\
-                  Base, Base) ;\ndef bad = here (loop) ∷ loop ;\n";
+                  Base, Base) ;\ndef bad = here loop ∷ loop ;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
-    let written = "here (loop) ∷ loop";
+    let written = "here loop ∷ loop";
     let start = source.find(written).expect("the word is written");
     assert!(
         matches!(
@@ -5825,7 +5825,7 @@ fn a_letter_naming_nothing_is_unresolved_1997()
 #[test]
 fn a_word_conses_its_letters_and_matches_them()
 {
-    let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef empty : Path[.A = Circle](Base, Base) ;\ndef empty = Path.here Base ;\ndef word : Path[.A = Circle](Base, Base) ;\ndef word = back (loop) ∷ loop ;\ndef rec size(p : Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    | here => return 0\n    | loop ∷ q => become size[<] q\n    | back(loop) ∷ q => become size[<] q\n  }\n}\n";
+    let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef empty : Path[.A = Circle](Base, Base) ;\ndef empty = Path.here Base ;\ndef word : Path[.A = Circle](Base, Base) ;\ndef word = back loop ∷ loop ;\ndef rec size(p : Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    | here => return 0\n    | loop ∷ q => become size[<] q\n    | back(loop) ∷ q => become size[<] q\n  }\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let words = module
@@ -5899,7 +5899,7 @@ fn a_word_conses_its_letters_and_matches_them()
         .find("def empty =")
         .expect("the empty word is written");
     for (text, from) in [
-        ("back (loop)", after_word),
+        ("back loop", after_word),
         ("loop", after_word.saturating_add(16)),
     ] {
         assert!(
@@ -5948,7 +5948,7 @@ fn a_word_conses_its_letters_and_matches_them()
 #[test]
 fn a_loop_arm_follows_the_constructors_branches()
 {
-    let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndata Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }\ndef invLooper(x : Circle) -> -F Circle {\n  match x {\n    | Base => Base\n    | loop => Path.back (loop)\n  }\n}\nmodule Late where {\n  def kept(x : Circle) -> -F Circle {\n    match x {\n      | later => later\n    }\n  }\n  def later : Circle ;\n  def later = Base ;\n}\ndef twice(x : Circle) -> -F Circle {\n  match x {\n    | Base => Base\n    | loop => loop\n    | loop => Path.back (loop)\n  }\n}\ndef astray(n : Nat) -> -F Nat {\n  match n {\n    | Z => Z\n    | S(m) => m\n    | loop => Z\n  }\n}\n";
+    let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndata Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }\ndef invLooper(x : Circle) -> -F Circle {\n  match x {\n    | Base => Base\n    | loop => Path.back loop\n  }\n}\nmodule Late where {\n  def kept(x : Circle) -> -F Circle {\n    match x {\n      | later => later\n    }\n  }\n  def later : Circle ;\n  def later = Base ;\n}\ndef twice(x : Circle) -> -F Circle {\n  match x {\n    | Base => Base\n    | loop => loop\n    | loop => Path.back loop\n  }\n}\ndef astray(n : Nat) -> -F Nat {\n  match n {\n    | Z => Z\n    | S(m) => m\n    | loop => Z\n  }\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let Some(Computation::DataCase { branches, .. }) = arena

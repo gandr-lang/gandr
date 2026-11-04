@@ -2428,7 +2428,7 @@ fn a_coherence_between_composites_is_a_higher_cell()
   sort Ob : Type;
   oper id : (a : Ob) --> Ob;
   rule unitL : id a ==> a;
-  rule triangle : ((Path.step (unitL a)) (unitL a)) ==> unitL a;
+  rule triangle : (Path.step (unitL a) (unitL a)) ==> unitL a;
   rule face : (f) ==> (z : Ob) { node : id(f) --> (z); };
 }";
     let report = described(source);
@@ -2787,14 +2787,14 @@ fn a_stated_law_naming_an_unbound_variable_is_refused_at_its_theory_4115()
                 name: Name::from("refl"),
                 fault: crate::model::ModelFault::Unbound,
             },
-            "law refl : (a : C) => Path[.A = Bool](eq(a, a), yes)"
+            "law refl : (a : C) -> Path[.A = Bool](eq a a, yes)"
         ),
         (
             DescriptionFault::Unstated {
                 name: Name::from("odd"),
                 fault: crate::model::ModelFault::UnknownHead,
             },
-            "law odd : (a : C) => Path[.A = Bool](qe(a, a), true)"
+            "law odd : (a : C) -> Path[.A = Bool](qe a a, true)"
         ),
     ]);
 }

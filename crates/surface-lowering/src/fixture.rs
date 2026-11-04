@@ -89,9 +89,7 @@ pub fn parsed<'source>(
     let result = parse(pbg, source).expect("the parser reads the source");
     assert!(
         bool::from(result.is_clean()),
-        "the fixture source is one the parser accepts without repair: {:?} in {:?}",
-        result.obligations(),
-        <&str>::from(source)
+        "the fixture source is one the parser accepts without repair"
     );
 
     result.into_tree()
