@@ -40,11 +40,11 @@ def eqBox = Eq.generic Box;
 
 /// The derivation applied inside a larger body.
 @[ refuses("GenericMisplaced") ]
-def inside() -> Bool { ((Eq.generic Point) (Point 1 2)) (Point 1 2) }
+def inside() -> Bool { Eq.generic Point (Point 1 2) (Point 1 2) }
 
 /// The derivation over a type that is no data declaration.
 @[ refuses("GenericMisplaced") ]
-def eqInteger = Eq.generic (Integer);
+def eqInteger = Eq.generic Integer;
 
 /// The derivation read as a value.
 @[ refuses("GenericMisplaced") ]

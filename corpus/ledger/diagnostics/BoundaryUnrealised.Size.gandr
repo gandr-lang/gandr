@@ -4,7 +4,7 @@ import std.boundary (Arg, NoCode, Plain, Row);
 import std.layout (U32);
 
 /// Two `u32` to a `u32`.
-def addRow : Row = (Row ((Arg (Plain U32)) (Arg (Plain U32) NoCode))) (Plain U32);
+def addRow : Row = Row (Arg (Plain U32) (Arg (Plain U32) NoCode)) (Plain U32);
 
 @[ boundary(addRow), refuses("BoundaryUnrealised.Size") ]
 extern "rust" from "counted" as Counted {

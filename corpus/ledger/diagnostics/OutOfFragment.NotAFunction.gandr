@@ -6,4 +6,4 @@ data Circle : Type where
 @[ refuses("OutOfFragment.NotAFunction") ]
 def cong_at_point : Path(Base, Base) ;
 
-def cong_at_point = Path.ap Base (loop) ;
+def cong_at_point = Path.ap Base loop ;

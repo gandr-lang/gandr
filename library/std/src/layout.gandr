@@ -403,7 +403,7 @@ def rec shifted(p : Placed, by : Integer) -> Placed =
     | End => End
     | At(n, off, rest) => {
       let tail = shifted[<] rest by;
-      At n (off + by) (tail)
+      At n (off + by) tail
     }
 
 /// Every variant but the largest placed before the niche or after it.

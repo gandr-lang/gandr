@@ -37,7 +37,7 @@ def annotated() -> Box(Integer) =
 
 /// A list in a field typed by the field before it.
 def packed() -> Packed =
-  (Pack (Integer)) (Cons 1 Nil)
+  Pack Integer (Cons 1 Nil)
 
 /// A string where the field takes integers is refused by the checker, not
 /// as unannotated.

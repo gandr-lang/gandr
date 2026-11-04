@@ -60,7 +60,7 @@ def originOther : Path(Point.origin, Point.other) = *{} ;
 @[ checks ]
 def carriedAlong : Path(
   Path.walk ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Unit)
-    ((originOther (Path.here Point.origin)) (Path.here originOther)) (*{}),
+    (originOther (Path.here Point.origin) (Path.here originOther)) (*{}),
   *{}
 ) = Path.here (*{}) ;
 
@@ -73,7 +73,7 @@ def backToOrigin(
   q : Path(Point.origin, b)
 ) -> Path(b, Point.origin) =
   Path.walk ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Path[.A = Point.T](y, Point.origin))
-    ((q (Path.here Point.origin)) (Path.here q)) (Path.here Point.origin)
+    (q (Path.here Point.origin) (Path.here q)) (Path.here Point.origin)
 
 /// Based path induction in the family of paths back to `origin`, along the
 /// relation's evidence: each fibre of the family is the relation's, the unit
@@ -81,7 +81,7 @@ def backToOrigin(
 @[ checks ]
 def backAlong : Path[.A = Path[.A = Point.T](Point.other, Point.origin)](
   Path.walk ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Path[.A = Point.T](y, Point.origin))
-    ((originOther (Path.here Point.origin)) (Path.here originOther)) (Path.here Point.origin),
+    (originOther (Path.here Point.origin) (Path.here originOther)) (Path.here Point.origin),
   *{}
 ) = Path.here (*{}) ;
 
@@ -94,7 +94,7 @@ def overAlong : Path[.A = Path[.A = Path[.A = Point.T](Point.origin, Point.other
       z,
       z
     ))
-    ((originOther (Path.here Point.origin)) (Path.here originOther)) (Path.here (Path.here Point.origin)),
+    (originOther (Path.here Point.origin) (Path.here originOther)) (Path.here (Path.here Point.origin)),
   *{}
 ) = Path.here (*{}) ;
 
@@ -146,6 +146,6 @@ def pathBack : Path[.A = Path[.A = PathPoint.T](PathPoint.other, PathPoint.origi
       y,
       PathPoint.origin
     ))
-    ((pathOriginOther (Path.here PathPoint.origin)) (Path.here pathOriginOther)) (Path.here PathPoint.origin),
+    (pathOriginOther (Path.here PathPoint.origin) (Path.here pathOriginOther)) (Path.here PathPoint.origin),
   *{}
 ) = Path.here (*{}) ;

@@ -25,7 +25,7 @@ def cool(c : Color) -> Integer =
 def first(x : Integer, y : Integer) -> Integer { x }
 
 @[ runs("42") ]
-def chosen() -> Integer { become ((force first) 42) 7 }
+def chosen() -> Integer { become (force first) 42 7 }
 
 def pick(x : Integer, y : Integer,) -> Integer =
   x

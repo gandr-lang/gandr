@@ -91,7 +91,7 @@ def optRefSummary() -> Witness { summary optRef }
 
 /// `u32`'s record.
 @[ runs("Witness 4 4 4 Bitwise") ]
-def u32Summary() -> Witness { summary (u32) }
+def u32Summary() -> Witness { summary u32 }
 
 /// `Option<&u32>`'s discriminant is the reference's null, so its realisers
 /// are the null niche's.
@@ -99,7 +99,7 @@ def u32Summary() -> Witness { summary (u32) }
 def optRefNiched() -> Bool { niched optRef }
 
 /// `f`'s row: `Option<&u32>` and `u32` to `u32`.
-pub def fRow : Row = (Row (Arg optRef (Arg (u32) NoCode))) (u32);
+pub def fRow : Row = Row (Arg optRef (Arg u32 NoCode)) u32;
 
 /// `Option<&u32>` as rustc printed it: one word, its discriminant in the
 /// reference's niche.
@@ -152,7 +152,7 @@ def aUnrealised() -> Admission =
 /// `w` answers a `u64` where the row answers a `u32`.
 @[ runs("Unrealised (Size Result)") ]
 def wUnrealised() -> Admission =
-  admit ((Declared (Param "x" printedOptRef (Param "n" printedU32 NoParam))) (Printed 8 8 false false))
+  admit (Declared (Param "x" printedOptRef (Param "n" printedU32 NoParam)) (Printed 8 8 false false))
     fRow
 
 /// `k` takes no `n`.

@@ -8,6 +8,6 @@ import "./syntax.gandr";
 /// A substitution applied to an application applies to both sides.
 pub def subApp(t : Term, u : Term, s : Env) -> Path(
   subst (Ap t u) s,
-  (Ap (subst t s)) (subst u s)
+  Ap (subst t s) (subst u s)
 ) =
-  Path.here ((Ap (subst t s)) (subst u s))
+  Path.here (Ap (subst t s) (subst u s))

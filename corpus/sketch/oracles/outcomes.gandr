@@ -21,7 +21,7 @@ import std.io (print);
 /// One line of the report for one obligation's outcome.
 def line(name : String, o : Outcome(Goal)) -> String =
   match o {
-    evidence(cert) -> name ++ ": discharged by " ++ cert.solver,
+    evidence cert -> name ++ ": discharged by " ++ cert.solver,
     counterexample m => name ++ ": fails at " ++ show m,
     refused reason => name ++ ": the solver refused it, " ++ reason,
     inconclusive => name ++ ": open"

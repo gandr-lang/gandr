@@ -28,7 +28,7 @@ data Circle : Type where
 /// The loop then its inverse is the empty word.
 @[ refuses("NotApart") ]
 def cancelled(e : Path[.A = Path[.A = Circle](Base, Base)](
-  loop ∷ back (loop) ∷ Path.here Base,
+  loop ∷ back loop ∷ Path.here Base,
   Path.here Base
 )) -> Empty =
   match e {}

@@ -4,6 +4,6 @@ data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
 @[ checks ]
-def flipped : Path(Base, Base) = back (loop) ∷ Path.here Base ;
+def flipped : Path(Base, Base) = back loop ∷ Path.here Base ;
 @[ checks ]
-def flippedAscii : Path(Base, Base) = back (loop) :: Path.here Base ;
+def flippedAscii : Path(Base, Base) = back loop :: Path.here Base ;

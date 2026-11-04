@@ -28,7 +28,7 @@ import std.buffer (Bytes);
 
 /// The row of `getRandomValues`. It takes a view of `n` `U8` elements and
 /// answers the same view.
-pub def randomRow (n : Nat) -> Row = (Row (Arg (View U8 n) NoCode)) (View U8 n)
+pub def randomRow (n : Nat) -> Row = Row (Arg (View U8 n) NoCode) (View U8 n)
 
 /// The Web Crypto operation that fills a view with random bytes.
 @[boundary(randomRow)]

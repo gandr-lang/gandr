@@ -158,7 +158,7 @@ pub def apply(
   r : Ren(d, g),
   v : sem(a, d)
 ) -> sem(b, d) =
-  ((w d) r) v
+  w d r v
 
 /// A renaming lifted under one more entry, at one variable. The arm `Here`
 /// learns that `c` is `a` from the split of `Extend(_h, c) = Extend(g, a)`.

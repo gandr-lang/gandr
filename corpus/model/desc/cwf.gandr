@@ -132,13 +132,13 @@ def flags(_n : Integer) -> Type { return Bool }
 /// The newest variable reads the second point of a pair.
 @[ runs("+{.0 = *{}}") ]
 def newest() -> Bool =
-  let read = Standard.q (Integer) flags
+  let read = Standard.q Integer flags
   read (3, true)
 
 /// Weakening reads the first point of a pair.
 @[ runs("3") ]
 def weakened() -> Integer =
-  let read = Standard.p (Integer) flags
+  let read = Standard.p Integer flags
   read (3, false)
 
 /// The links of a sort chain or an index chain.

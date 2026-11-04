@@ -20,6 +20,6 @@ def twice_apart(e : Path[.A = Path[.A = Circle](Base, Base)](loop ∷ loop, loop
 /// The loop is not its inverse.
 def inverse_apart(e : Path[.A = Path[.A = Circle](Base, Base)](
   loop,
-  back (loop) ∷ Path.here Base
+  back loop ∷ Path.here Base
 )) -> Empty =
   match e {}

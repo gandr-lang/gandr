@@ -70,12 +70,12 @@ def chosen[x : t](t : Type) -> t { x }
 
 /// `chosen` at the integers, its implicit supplied by name.
 @[ runs("7") ]
-def chosenRun() -> Integer { chosen[.x = 7] (Integer) }
+def chosenRun() -> Integer { chosen[.x = 7] Integer }
 
 /// `chosen` supplied by position: the block writes `x` first, though the
 /// merge binds `t` before it.
 @[ runs("7") ]
-def chosenPositional() -> Integer { chosen[7] (Integer) }
+def chosenPositional() -> Integer { chosen[7] Integer }
 
 /// A stage and an implicit in one telescope: the stage quantifies the
 /// signature and binds no value, the implicit binds the first parameter.
@@ -107,7 +107,7 @@ def samePunned(a : Type, y : a) -> a { same[.a] y }
 
 /// `samePunned` at the integers.
 @[ runs("3") ]
-def samePunnedRun() -> Integer { samePunned (Integer) 3 }
+def samePunnedRun() -> Integer { samePunned Integer 3 }
 
 /// A function taking a function of a type and a value of it, the result type
 /// of that function implicit.
@@ -141,7 +141,7 @@ def identityAt : (t : Type, t) -> t = applyAt[.g = fun (y) { y }] ;
 
 /// `identityAt` at the integers.
 @[ runs("5") ]
-def identityRun() -> Integer { identityAt (Integer) 5 }
+def identityRun() -> Integer { identityAt Integer 5 }
 
 /// The integers' addition, a member of a module.
 module Adding where {

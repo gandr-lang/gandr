@@ -11,4 +11,4 @@ def poly : (a : Type, y : a) -> a = ~intro (intro assumption);
 
 /// The filled body runs as the identity.
 @[ runs("7") ]
-def polyIdentity() -> Integer { poly (Integer) 7 }
+def polyIdentity() -> Integer { poly Integer 7 }

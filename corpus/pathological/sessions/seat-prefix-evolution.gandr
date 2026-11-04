@@ -21,10 +21,10 @@ module Evolution where {
 }
 
 /// A seat that reported, its offer not yet taken.
-def reported : Prefix(Evolution.SeatEnd) = ((recorded (received "task")) (selected report)) (sent "progress");
+def reported : Prefix(Evolution.SeatEnd) = recorded (received "task") (selected report) (sent "progress");
 
 /// The seat after it took `retire`.
-def retired : Prefix(Evolution.SeatEnd) = (((recorded (received "task")) (selected report)) (sent "progress")) (offered retire);
+def retired : Prefix(Evolution.SeatEnd) = recorded (received "task") (selected report) (sent "progress") (offered retire);
 
 /// Short of the offer, the play is a prefix of the narrowed protocol too.
 def kept() -> Prefix(Evolution.Kept) { Flow.ride (fun (X) { Prefix X }) Evolution.keep reported }

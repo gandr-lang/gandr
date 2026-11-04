@@ -41,8 +41,8 @@ def incrObserved() -> *{*{Unit, Integer} -> Type, Integer} -> Type =
   }
 
 /// The increment as a tree.
-def incrTree : Prog(Either(StateOp, Void), Unit) = (Op (Left Get)) (fun (n) {
-  ((Op (Left (Put (n + 1)))) (fun (_u) {
+def incrTree : Prog(Either(StateOp, Void), Unit) = Op (Left Get) (fun (n) {
+  (Op (Left (Put (n + 1))) (fun (_u) {
     (Done (*{}) : Prog(Either(StateOp, Void), Unit))
   }) : Prog(Either(StateOp, Void), Unit))
 }) ;
@@ -62,7 +62,7 @@ def rec wp(
 
 /// The increment's specification: the postcondition at the unit and the
 /// successor of the initial state.
-def incrSpec(post : *{Unit, Integer} -> Type, s : Integer) -> Type { (post (*{})) (s + 1) }
+def incrSpec(post : *{Unit, Integer} -> Type, s : Integer) -> Type { post (*{}) (s + 1) }
 
 /// The counter ends at one.
 def isOne(_x : Unit, s : Integer) -> Type { return Path s 1 }

@@ -49,7 +49,7 @@ pub def chosen[x : t](t : Type) -> t { x }
 
 /// `chosen` at the integers, its implicit supplied by name.
 @[ runs("7") ]
-def chosenRun() -> Integer { chosen[.x = 7] (Integer) }
+def chosenRun() -> Integer { chosen[.x = 7] Integer }
 
 /// A stage and an implicit in one telescope: the stage quantifies the
 /// signature and binds no value, the implicit binds the first parameter.
@@ -100,7 +100,7 @@ def identityAt : (t : Type, t) -> t = applyAt[.g = fun (y) { y }];
 
 /// `identityAt` at the integers.
 @[ runs("5") ]
-def identityRun() -> Integer { identityAt (Integer) 5 }
+def identityRun() -> Integer { identityAt Integer 5 }
 
 /// The integers' addition, a member of a module.
 module Adding where {

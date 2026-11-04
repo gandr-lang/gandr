@@ -30,7 +30,7 @@ def rec spin(n : Int) -> Path[.A = Circle](Base, Base) =
   match n
     | Z => Path.here Base
     | S(x) => loop ∷ spin[<] x
-    | P(x) => back (loop) ∷ spin[<] x
+    | P(x) => back loop ∷ spin[<] x
 
 /// One loop more.
 def loopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) =
@@ -38,7 +38,7 @@ def loopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) =
 
 /// One inverse loop more.
 def unloopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) =
-  back (loop) ∷ p
+  back loop ∷ p
 
 /// A forged section: the loop arm answers with the rest's path unchanged,
 /// typed at the motive at `q`, where the arm owes the motive at `loop ∷ q`:
@@ -67,4 +67,4 @@ def rec rewound(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle
   match p
     | here => Path.here (Path.here Base)
     | loop ∷ q => { let ih = rewound[<] q; Path.ap loopOn ih }
-    | back(loop) ∷ q => Path.here (back (loop) ∷ q)
+    | back(loop) ∷ q => Path.here (back loop ∷ q)

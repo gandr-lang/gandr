@@ -106,14 +106,14 @@ module SetoidCat : Model(CatShape) where {
 /// The identity observed through the interface at `Integer`: the run applies
 /// the operation at its type argument and calls the function it returns.
 @[ runs("3") ]
-def identity_observed() -> Integer { let f = SetoidCat.id (Integer); f 3 }
+def identity_observed() -> Integer { let f = SetoidCat.id Integer; f 3 }
 
 /// Composition observed through the interface: `n + 1` then `n + 2`, applied
 /// to `1`.
 @[ runs("4") ]
 def composite_observed() -> Integer { let h = SetoidCat.comp
-  (Integer)
-  (Integer)
-  (Integer)
+  Integer
+  Integer
+  Integer
   (fun (n) { n + 1 })
   (fun (n) { n + 2 }); h 1 }

@@ -44,7 +44,7 @@ def rec steps(k : Nat, d : Nat, s : Nat) -> Nat =
 
 /// Whether `2^p - 1` is prime, for an odd prime `p`.
 def lucasLehmer(p : Nat) -> Bool =
-  match (steps (monus p two)) (monus (power p) two) four
+  match steps (monus p two) (monus (power p) two) four
     | Zero => true
     | Succ(_) => false
 

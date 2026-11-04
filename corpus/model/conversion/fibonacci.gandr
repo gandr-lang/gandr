@@ -22,7 +22,7 @@ def rec fib(n : Nat) -> Nat =
     | Zero => Zero
     | Succ(m) => match m
       | Zero => Succ Zero
-      | Succ(k) => (plus (fib[<] m)) (fib[<] k)
+      | Succ(k) => plus (fib[<] m) (fib[<] k)
 
 /// Fibonacci by iteration over a pair of accumulators.
 def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat =

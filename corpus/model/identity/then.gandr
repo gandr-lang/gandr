@@ -27,5 +27,5 @@ def joined_unbiased(
   c : Integer,
   q : Path[.A = Integer](a, b),
   r : Path(b, c)
-) -> Path[.A = Path[.A = Integer](a, c)](Path.step q r, (compose[3, 5] (chain 2)) (*{q, r})) =
+) -> Path[.A = Path[.A = Integer](a, c)](Path.step q r, compose[3, 5] (chain 2) (*{q, r})) =
   Path.here (Path.step q r)

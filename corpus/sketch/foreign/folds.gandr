@@ -35,7 +35,7 @@ pub theory Places where
 pub def wp(e : Thir.Expr) -> Spec(Places, Thir.Value) =
   match e
     | Thir.Expr.Deref(p) => Places.load (place p)
-    | Thir.Expr.Assign(p, v) => (Places.store (place p)) (wp v)
+    | Thir.Expr.Assign(p, v) => Places.store (place p) (wp v)
     | Thir.Expr.Return(v) => Spec.exit (wp v)
     | Thir.Expr.Call(f, args) => Spec.call f (map args wp)
 

@@ -70,7 +70,7 @@ def rec tautology(k : Nat, f : Formula, a : Assignment) -> Bool =
       | false => false
 
 /// Three pigeons in two holes: pigeon `i` in hole `j` is variable `2i + j`.
-def pigeons : Formula = Not ((And ((And ((Or (Atom Zero)) (Atom (Succ Zero)))) ((And ((Or (Atom two)) (Atom three))) ((Or (Atom four)) (Atom (Succ four)))))) ((And ((And (Not ((And (Atom Zero)) (Atom two)))) ((And (Not ((And (Atom Zero)) (Atom four)))) (Not ((And (Atom two)) (Atom four)))))) ((And (Not ((And (Atom (Succ Zero))) (Atom three)))) ((And (Not ((And (Atom (Succ Zero))) (Atom (Succ four))))) (Not ((And (Atom three)) (Atom (Succ four))))))));
+def pigeons : Formula = Not (And (And (Or (Atom Zero) (Atom (Succ Zero))) (And (Or (Atom two) (Atom three)) (Or (Atom four) (Atom (Succ four))))) (And (And (Not (And (Atom Zero) (Atom two))) (And (Not (And (Atom Zero) (Atom four))) (Not (And (Atom two) (Atom four))))) (And (Not (And (Atom (Succ Zero)) (Atom three))) (And (Not (And (Atom (Succ Zero)) (Atom (Succ four)))) (Not (And (Atom three) (Atom (Succ four))))))));
 
 /// No assignment places every pigeon in a hole of its own.
 def pigeonsDoNotFit() -> Path(tautology (Succ (Succ four)) pigeons Unset, true) =

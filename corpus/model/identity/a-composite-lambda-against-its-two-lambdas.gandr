@@ -17,7 +17,7 @@
 
 /// The composite of `F` and then `G`.
 def composeAfter(A : Type, B : Type, C : Type, F : A -> B, G : B -> C) -> A -> C =
-  (fun (a : A) { G(F(a)) } : A -> C)
+  (fun (a : A) { G(F a) } : A -> C)
 
 /// The lambda over the composite path, against the composite of its two
 /// lambdas.
@@ -81,8 +81,8 @@ def actThrough(
   y : A,
   p : Path[.A = A](x, y)
 ) -> Path[.A = B](
-  F(x),
-  F(y)
+  F x,
+  F y
 ) =
   Path.ap(F, p)
 
@@ -96,8 +96,8 @@ def actOfCompose(
   x : A,
   y : A,
   p : Path[.A = A](x, y)
-) -> Path[.A = C](G(F(x)), G(F(y))) =
-  actThrough(A, C, (fun (a : A) { G(F(a)) } : A -> C), x, y, p)
+) -> Path[.A = C](G(F x), G(F y)) =
+  actThrough(A, C, (fun (a : A) { G(F a) } : A -> C), x, y, p)
 
 /// The action of the lambda over the composite path, against the action of
 /// the composite of its two lambdas.

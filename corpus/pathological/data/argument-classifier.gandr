@@ -35,4 +35,4 @@ def rec size(a : Type, xs : List(a)) -> Integer =
 /// its type reads the argument before it, and the checker refuses the
 /// strings.
 @[ refuses("TypeMismatch") ]
-def mistypedAt() -> Integer { (size (Integer)) (Cons "no" Nil) }
+def mistypedAt() -> Integer { size Integer (Cons "no" Nil) }

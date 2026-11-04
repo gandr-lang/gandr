@@ -17,20 +17,20 @@ import "./lookup-weaken.gandr";
 /// A lookup under one binder, weakened, renamed by a lift: the step that
 /// carries `lookWeakens` under the lifted renaming.
 def renameLookWeakens(u : Env, q : Ren, m : N) -> Path(
-  (rename (wk (look m u Z))) (RLift q),
-  (rename (look m u (S Z))) (RLift q)
+  rename (wk (look m u Z)) (RLift q),
+  rename (look m u (S Z)) (RLift q)
 ) =
-  ((Path.walk (fun (z) { type(Path[.A = Term](rename z (RLift q), (rename (look m u (S Z))) (RLift q))) })) (lookWeakens m u Z)) (Path.here ((rename (look m u (S Z))) (RLift q)))
+  Path.walk (fun (z) { type(Path[.A = Term](rename z (RLift q), rename (look m u (S Z)) (RLift q))) }) (lookWeakens m u Z) (Path.here (rename (look m u (S Z)) (RLift q)))
 
 /// Renaming by `q` then shifting is shifting then renaming by `q` lifted,
 /// at every index.
 def shiftPastLift(
   q : Ren,
   n : N
-) -> Path((rlook (rlook n q)) (RShift (S Z)), (rlook (rlook n (RShift (S Z)))) (RLift q)) =
+) -> Path(rlook (rlook n q) (RShift (S Z)), rlook (rlook n (RShift (S Z))) (RLift q)) =
   match n
-    | Z => (shiftAdds (rlook Z q)) (S Z)
-    | S(j) => (shiftAdds (rlook (S j) q)) (S Z)
+    | Z => shiftAdds (rlook Z q) (S Z)
+    | S(j) => shiftAdds (rlook (S j) q) (S Z)
 
 /// The hypothesis at `m`, weakened.
 def weakenedSquare(
@@ -52,14 +52,14 @@ def substRenameSquareLift(
   q : Ren,
   h : (n : N) -> Path[.A = Term](look (rlook n r) s Z, rename (look n u Z) q),
   n : N
-) -> Path[.A = Term]((look (rlook n (RLift r))) (Lift s) Z, (rename (look n (Lift u) Z)) (RLift q)) =
+) -> Path[.A = Term](look (rlook n (RLift r)) (Lift s) Z, rename (look n (Lift u) Z) (RLift q)) =
   match n
     | Z => Path.here (Ix Z)
-    | S(m) => (compose[7, 9] (chain 4)) (*{
+    | S(m) => compose[7, 9] (chain 4) (*{
       lookWeakens (rlook m r) s Z,
       weakenedSquare r s u q h m,
       renameSquare (look m u Z)
-        (((q (RShift (S Z))) (RShift (S Z))) (RLift q)) (fun (i) { shiftPastLift q i }),
+        (q (RShift (S Z)) (RShift (S Z)) (RLift q)) (fun (i) { shiftPastLift q i }),
       renameLookWeakens u q m
     })
 
@@ -77,28 +77,28 @@ def rec substRenameSquare(
     | Ix(n) => h n
     | Lam(b) => Path.ap
       lamOf (substRenameSquare[<]
-        ((((b (RLift r)) (Lift s)) (Lift u)) (RLift q)) (fun (n) { substRenameSquareLift r s u q h n }))
-    | Ap(f, x) => ((Path.walk (fun (z) { type(Path[.A = Term](
-        (Ap (subst (rename f r) s)) (subst (rename x r) s),
+        (b (RLift r) (Lift s) (Lift u) (RLift q)) (fun (n) { substRenameSquareLift r s u q h n }))
+    | Ap(f, x) => Path.walk (fun (z) { type(Path[.A = Term](
+        Ap (subst (rename f r) s) (subst (rename x r) s),
         Ap z (rename (subst x u) q)
-      )) })) (substRenameSquare[<] f r s u q h)) (((Path.walk (fun (z) { type(Path[.A = Term](
-          (Ap (subst (rename f r) s)) (subst (rename x r) s),
+      )) }) (substRenameSquare[<] f r s u q h) (Path.walk (fun (z) { type(Path[.A = Term](
+          Ap (subst (rename f r) s) (subst (rename x r) s),
           Ap (subst (rename f r) s) z
-        )) })) (substRenameSquare[<] x r s u q h)) (Path.here ((Ap (subst (rename f r) s)) (subst (rename x r) s))))
+        )) }) (substRenameSquare[<] x r s u q h) (Path.here (Ap (subst (rename f r) s) (subst (rename x r) s))))
 
 /// Weakening then a lifted substitution agrees with the substitution then
 /// weakening, at every index.
 def weakenLiftLooks(
   s : Env,
   n : N
-) -> Path((look (rlook n (RShift (S Z)))) (Lift s) Z, (rename (look n s Z)) (RShift (S Z))) =
+) -> Path(look (rlook n (RShift (S Z))) (Lift s) Z, rename (look n s Z) (RShift (S Z))) =
   match n
     | Z => lookWeakens Z s Z
     | S(j) => lookWeakens (S j) s Z
 
 /// A weakened term under a lifted substitution is the substituted term
 /// weakened.
-pub def substWeaken(x : Term, s : Env) -> Path((subst (wk x)) (Lift s), wk (subst x s)) =
+pub def substWeaken(x : Term, s : Env) -> Path(subst (wk x) (Lift s), wk (subst x s)) =
   substRenameSquare
     (x (RShift (S Z))) (Lift s)
     (s (RShift (S Z))) (fun (n) { weakenLiftLooks s n })

@@ -29,7 +29,7 @@ def rec totalDirect(c : UL) -> elL(c) -> Nat =
         | Cons(h, t) => {
           let each = totalDirect[<] a;
           let rest = totalDirect[<] (ListL a);
-          (plus (each h)) (rest t)
+          plus (each h) (rest t)
         }
     } }
     | PiL(a, b) => thunk { fun (f) { Zero } }

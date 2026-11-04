@@ -20,4 +20,4 @@ def rec count(acc : Int, b : Int) -> Int =
 
 /// One and two by the accumulator: three.
 @[ runs("S (S (S Z))") ]
-def accumulated : () -> Int = (count (S Z)) (S (S Z));
+def accumulated : () -> Int = count (S Z) (S (S Z));

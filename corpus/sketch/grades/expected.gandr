@@ -48,7 +48,7 @@ module Retrying where {
 
   /// Fetches `r` up to three times, until an answer is not a server error.
   pub def thrice(fetch : +U[3] (Request -> Response), r : Request) : Response = {
-    let first = fetch(r);
+    let first = fetch r;
     match first.status
       | ServerError => onceMore(fetch, r)
       | Served => first

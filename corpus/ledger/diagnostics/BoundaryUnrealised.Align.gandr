@@ -7,7 +7,7 @@ import std.layout (Done, Field, NoVariant, U32, Variant);
 def optU32 : Code = Sum (Variant ("Some" (Field "0" U32 Done)) (Variant "None" Done NoVariant));
 
 /// A `u32` and an `Option<u32>` to a `u32`.
-def optionalRow : Row = (Row ((Arg (Plain U32)) (Arg optU32 NoCode))) (Plain U32);
+def optionalRow : Row = Row (Arg (Plain U32) (Arg optU32 NoCode)) (Plain U32);
 
 @[ boundary(optionalRow), refuses("BoundaryUnrealised.Align") ]
 extern "rust" from "aligned" as Aligned {

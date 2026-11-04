@@ -56,7 +56,7 @@ pub def rec spin(n : Int) -> Path[.A = Circle](Base, Base) =
   match n
     | Z => Path.here Base
     | S(x) => loop ∷ spin[<] x
-    | P(x) => back (loop) ∷ spin[<] x
+    | P(x) => back loop ∷ spin[<] x
 
 /// One loop more: the cons a path between words is carried along.
 pub def loopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) =
@@ -64,7 +64,7 @@ pub def loopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Bas
 
 /// One inverse loop more.
 pub def unloopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) =
-  back (loop) ∷ p
+  back loop ∷ p
 
 /// Spinning undoes winding at every loop (cubical's `decodeEncode` at the
 /// point): the round trip at a variable, by induction over the words. The
@@ -110,7 +110,7 @@ pub def selfrefl(x : Circle) -> Path[.A = Circle](x, x) =
 pub def invLooper(x : Circle) -> Circle =
   match x
     | Base => Base
-    | loop => Path.back (loop)
+    | loop => Path.back loop
 
 /// The circle's multiplication (cubical's `_·_`, the book's § 8.5.2 μ): the
 /// point is the unit, and the loop rotates the other argument by its own

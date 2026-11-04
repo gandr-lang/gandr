@@ -143,7 +143,7 @@ def readAt(a : Type) -> [st : State.Eff with sort S = a] a =
 @[ runs("7") ]
 def readAtUnderScope() -> Integer =
   handle s : State.Eff with sort S = Integer {
-    readAt (Integer)
+    readAt Integer
   } with {
     | pure(x) => pure x
     | oper get(k) => k 7

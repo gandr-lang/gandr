@@ -10,4 +10,4 @@ import "./circle-base.gandr";
 /// reflexivity.
 def looped(a : Nat, b : Nat, q : Path(a, b)) -> Path[.A = Path[.A = Nat](a, b)](q, q) =
   Path.walk ((y : Nat, z : Path[.A = Nat](a, y)) -> Path[.A = Path[.A = Nat](a, y)](z, z))
-    ((q (Path.here a)) (Path.here q)) (Path.here (Path.here a))
+    (q (Path.here a) (Path.here q)) (Path.here (Path.here a))

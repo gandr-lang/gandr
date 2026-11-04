@@ -34,7 +34,7 @@ module ByHand where {
 
   /// The same path written by hand.
   @[ checks ]
-  def opposite_by_hand : Path[.A = Type](Tel, Tel) = (Path.product (Path.here (Unit))) ((Path.product (equiv keep keep)) (equiv exchange exchange));
+  def opposite_by_hand : Path[.A = Type](Tel, Tel) = Path.product (Path.here Unit) (Path.product (equiv keep keep) (equiv exchange exchange));
 
   /// The derived and the hand path convert.
   @[ checks ]
@@ -56,7 +56,7 @@ module ByHand where {
 
   /// The directed twin written by hand.
   @[ checks ]
-  def opposite_dir_by_hand : Flow[.A = Type](Tel, Tel) = (Flow.product (Flow.stay (Unit))) ((Flow.product (Flow.into keep)) (Flow.into exchange));
+  def opposite_dir_by_hand : Flow[.A = Type](Tel, Tel) = Flow.product (Flow.stay Unit) (Flow.product (Flow.into keep) (Flow.into exchange));
 
   /// A telescope ridden along the directed twin.
   @[ checks ]

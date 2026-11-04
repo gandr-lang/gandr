@@ -14,9 +14,9 @@ def five : small = 5;
 @[ runs("fun (a) { fun (b) { b } }") ]
 def id(a : Type, x : a) -> a { x }
 
-def at_integer() -> Integer { become id (Integer) five }
+def at_integer() -> Integer { become id Integer five }
 
-def at_string() -> String { become id (String) "text" }
+def at_string() -> String { become id String "text" }
 
 def at_small() -> small { become id small five }
 

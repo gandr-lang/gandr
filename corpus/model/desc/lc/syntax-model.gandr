@@ -54,15 +54,15 @@ pub module LCSyntax : Model(LC) where
 
   /// Law 2, `subQLift`; its indices stand as `liftTm`'s do.
   def law2(d : N, g : N, s : Env) -> Path(
-    (((subTm (S g)) (S d)) (qTm g)) (liftTm d g s),
+    subTm (S g) (S d) (qTm g) (liftTm d g s),
     qTm d
   ) =
     subQLift s
 
   /// Law 3, `subWeakenLift`, by induction on `b`.
   def law3(g : N, d : N, b : Term, s : Env) -> Path(
-    (((subTm (S g)) (S d)) (subTm g (S g) b (pTm g))) (liftTm d g s),
-    subTm ((d (S d)) (subTm g d b s)) (pTm d)
+    subTm (S g) (S d) (subTm g (S g) b (pTm g)) (liftTm d g s),
+    subTm (d (S d) (subTm g d b s)) (pTm d)
   ) =
     subWeakenLift b s
 
@@ -76,7 +76,7 @@ pub module LCSyntax : Model(LC) where
   /// Law 5, `subLam`.
   def law5(g : N, d : N, t : Term, s : Env) -> Path(
     subTm g d (lam g t) s,
-    lam d ((subTm (S g)) (S d) t (liftTm d g s))
+    lam d (subTm (S g) (S d) t (liftTm d g s))
   ) =
     subLam t s
 

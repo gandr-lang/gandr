@@ -32,4 +32,4 @@ def poly : (a : Type, a) -> a = ~intro (intro assumption);
 
 /// The polymorphic identity applied.
 @[ runs("7") ]
-def polyApplied() -> Integer { poly (Integer) 7 }
+def polyApplied() -> Integer { poly Integer 7 }

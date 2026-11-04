@@ -20,7 +20,7 @@ def namedPath : Path[.A = Integer](4, 4) = Path.here 4;
 def punnedPath(A : Type, x : A) -> Path[.A](x, x) { Path.here x }
 
 /// The unit type identified with itself, the universe supplied by name.
-def universalPath : Path[.A = Type](Unit, Unit) = Path.here (Unit);
+def universalPath : Path[.A = Type](Unit, Unit) = Path.here Unit;
 
 /// Two equal integers related by their identity, the carrier supplied by name.
 def namedBridge : Bridge[.A = Integer](4, 4) = *{};
@@ -41,7 +41,7 @@ def namedFlow : Flow[.A = Integer](4, 4) = Flow.stay 4;
 def punnedFlow(A : Type, x : A) -> Flow[.A](x, x) { Flow.stay x }
 
 /// The unit type flows to itself, and a supply names the universe.
-def universalFlow : Flow[.A = Type](Unit, Unit) = Flow.stay (Unit);
+def universalFlow : Flow[.A = Type](Unit, Unit) = Flow.stay Unit;
 
 /// Four flows to itself. The source omits the carrier, and the endpoints fix it.
 def omittedFlow : Flow(4, 4) = Flow.stay 4;

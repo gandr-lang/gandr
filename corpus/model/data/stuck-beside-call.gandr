@@ -35,6 +35,6 @@ def walkOnce(b : Nat, c : Nat) -> Path(walk (Succ b) c, Succ (walk b (succ c))) 
 /// receives that call beside `succ(c2)`.
 def walkTwice(b : Nat, c1 : Nat, c2 : Nat) -> Path(
   walk (Succ (walk b c1)) c2,
-  Succ ((walk (walk b c1)) (succ c2))
+  Succ (walk (walk b c1) (succ c2))
 ) =
-  Path.here (Succ ((walk (walk b c1)) (succ c2)))
+  Path.here (Succ (walk (walk b c1) (succ c2)))

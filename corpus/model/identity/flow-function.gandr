@@ -25,7 +25,7 @@ module ReaderSchema where {
   @[ checks ]
   def reader : Flow[.A = Type](New -> Integer, Old -> Integer) = Flow.arrow
     upgrade
-    (Flow.stay (Integer));
+    (Flow.stay Integer);
   /// The new schema's reader of ages.
   @[ checks ]
   def age(record : New) -> Integer =

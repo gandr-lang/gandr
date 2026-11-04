@@ -31,7 +31,7 @@ def popShared(
   h : Path((Some (SomeV (IntV b)) : Maybe(Val)), nth heads order),
   held : Path(
     (Some (headOf rest) : Maybe(Val)),
-    (below (Down b (Down Zero Here))) (Tree blocks)
+    below (Down b (Down Zero Here)) (Tree blocks)
   ),
   link : chain(rest, blocks),
   apart : notIn(rest, b)
@@ -57,7 +57,7 @@ def popListedAsEmpty(
   h : Path((Some (SomeV (IntV b)) : Maybe(Val)), nth heads order),
   held : Path(
     (Some (headOf rest) : Maybe(Val)),
-    (below (Down b (Down Zero Here))) (Tree blocks)
+    below (Down b (Down Zero Here)) (Tree blocks)
   ),
   link : chain(rest, blocks),
   apart : notIn(rest, b)

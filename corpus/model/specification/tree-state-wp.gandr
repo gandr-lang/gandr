@@ -19,8 +19,8 @@ import "../effects/tree.gandr";
 
 /// The increment as a tree: read the counter, store one more, and answer the
 /// unit.
-pub def incrTree : Prog(Either(StateOp, Void), Unit) = (Op (Left Get)) (fun (n) {
-  ((Op (Left (Put (n + 1)))) (fun (_u) {
+pub def incrTree : Prog(Either(StateOp, Void), Unit) = Op (Left Get) (fun (n) {
+  (Op (Left (Put (n + 1))) (fun (_u) {
     (Done (*{}) : Prog(Either(StateOp, Void), Unit))
   }) : Prog(Either(StateOp, Void), Unit))
 });
@@ -43,7 +43,7 @@ pub def rec wp(
 
 /// The increment's specification: the postcondition at the unit and the
 /// successor of the initial state.
-pub def incrSpec(post : *{Unit, Integer} -> Type, s : Integer) -> Type { (post (*{})) (s + 1) }
+pub def incrSpec(post : *{Unit, Integer} -> Type, s : Integer) -> Type { post (*{}) (s + 1) }
 
 /// The counter ends at one.
 pub def isOne(_x : Unit, s : Integer) -> Type { return Path s 1 }

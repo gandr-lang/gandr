@@ -77,4 +77,4 @@ def elsewhereComputed : Path(kept Elsewhere, kept Elsewhere) = Path.here Mark;
 /// `Base` names the point, not a map out of the circle.
 @[ refuses("OutOfFragment.NotAFunction") ]
 def cong_at_point : Path(Base, Base);
-def cong_at_point = Path.ap Base (loop);
+def cong_at_point = Path.ap Base loop;

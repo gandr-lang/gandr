@@ -19,7 +19,7 @@ import "../../model/desc/stlc.gandr";
 /// lambda, where it reads no stated type.
 @[ refuses("OutOfFragment.Unannotated") ]
 def wk(d : Ctx, g : Ctx, b : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, b), g) =
-  return fun (a) { return fun (x) { There d a b ((r a) x) } }
+  return fun (a) { return fun (x) { There d a b (r a x) } }
 
 
 /// The renaming of neutrals and normal forms. Each descends on its third
@@ -29,7 +29,7 @@ rec {
   @[ refuses("OutOfFragment.mutual_block.staged_after_first") ]
   def rec renNe(g : Ctx, a : ObjTy, t : Ne(g, a), d : Ctx, r : Ren(d, g)) -> Ne(d, a) {
     match t
-      | NVar(_h, b, x) => NVar d b ((r b) x)
+      | NVar(_h, b, x) => NVar d b (r b x)
       | NApp(h, b, c, f, u) => {
         let f2 = renNe[<] h (Arr b c) f d r;
         let u2 = renNf[<] h b u d r;

@@ -36,5 +36,5 @@ pub module Schema where {
   def one : () -> New = moved (*{"ada", 30});
   /// Two old records migrated by a run.
   @[ runs("cons((30, \"ada\", +{.0 = unit}), cons((41, \"grace\", +{.0 = unit}), nil))") ]
-  def many : () -> List(New) = everyone ((cons (*{"ada", 30})) (cons (*{"grace", 41}) nil));
+  def many : () -> List(New) = everyone (cons (*{"ada", 30}) (cons (*{"grace", 41}) nil));
 }

@@ -22,4 +22,4 @@ data Nest(A : Type) : Type where
 def size[A : Type](xs : Nest(A)) -> Nat =
   match xs
     | Nil => 0
-    | Cons(_, tail) => 1 + 2 * size (tail)
+    | Cons(_, tail) => 1 + 2 * size tail

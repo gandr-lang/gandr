@@ -28,7 +28,7 @@ data Tree : Type where
 
 /// A node holding `t` in both halves, each half under its own wrapper.
 def twice(t : Tree) -> Tree =
-  (Node (Wrap t)) (Wrap t)
+  Node (Wrap t) (Wrap t)
 
 /// Builds the complete tree of depth `n` and shares each level.
 def rec held(n : Nat) -> Tree =
@@ -40,7 +40,7 @@ def rec held(n : Nat) -> Tree =
 def rec built(n : Nat) -> Tree =
   match n
     | Zero => Leaf
-    | Succ(m) => (Node (Wrap (built[<] m))) (Wrap (built[<] m))
+    | Succ(m) => Node (Wrap (built[<] m)) (Wrap (built[<] m))
 
 /// The two trees agree at depth twelve.
 def treesAgree() -> Path(held twelve, built twelve) =

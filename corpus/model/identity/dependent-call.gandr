@@ -17,7 +17,7 @@ import "./circle-rotation.gandr";
 /// A map's image of the loop, at the map's image of the point: `Path.ap` of the
 /// parameter `f` along the loop.
 def loopImage(f : Circle -> Int) -> Path[.A = Int](f Base, f Base) =
-  Path.ap f (loop)
+  Path.ap f loop
 
 /// A map out of the circle as a point and a loop there, the loop through
 /// `loopImage`: the second component's type reads the first, the call

@@ -30,7 +30,7 @@ view Parity : Nat
 /// `b` to the power `n`, halving the exponent at each step.
 def rec power(b : Nat, n : Nat) -> Nat =
   match n with Parity {
-    even(0) -> 1,
+    even 0 -> 1,
     even h => {
       let r = power[<] b h;
       r * r
@@ -44,6 +44,6 @@ def rec power(b : Nat, n : Nat) -> Nat =
 /// Whether a natural is even, read off the view's arm.
 def isEven(n : Nat) -> Bool =
   match n with Parity {
-    even(_) => true,
+    even _ => true,
     odd _ -> false
   }

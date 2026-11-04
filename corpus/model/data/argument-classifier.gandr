@@ -54,7 +54,7 @@ def rec anyLength(a : Type, xs : List(a)) -> Integer =
 /// A list passed where `xs : List(a)` takes it at `a = Integer`: its type
 /// reads the argument before it.
 @[ runs("1") ]
-def one() -> Integer { anyLength (Integer) (Cons 1 Nil) }
+def one() -> Integer { anyLength Integer (Cons 1 Nil) }
 
 /// The same parameter read at `a = Color`, the list empty.
 @[ runs("0") ]

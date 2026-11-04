@@ -14,7 +14,7 @@
 // - see: `transport-dependent.gandr` — based path induction
 
 /// A function's action on a path, whose type states its endpoints.
-def actOn(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path(x, y)) -> Path(F(x), F(y)) =
+def actOn(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path(x, y)) -> Path(F x, F y) =
   Path.ap(F, p)
 
 /// `G` after `F` acts on a path as their composite does.
@@ -27,19 +27,19 @@ def apComp(
   x : A,
   y : A,
   p : Path(x, y)
-) -> Path[.A = Path[.A = C](G(F(x)), G(F(y)))](
-  actOn(B, C, G, F(x), F(y), actOn(A, B, F, x, y, p)),
-  actOn(A, C, (fun (a : A) { G(F(a)) } : A -> C), x, y, p)
+) -> Path[.A = Path[.A = C](G(F x), G(F y))](
+  actOn(B, C, G, F x, F y, actOn(A, B, F, x, y, p)),
+  actOn(A, C, (fun (a : A) { G(F a) } : A -> C), x, y, p)
 ) =
   Path.walk(
-    (v : A, k : Path[.A = A](x, v)) -> Path[.A = Path[.A = C](G(F(x)), G(F(v)))](
-      actOn(B, C, G, F(x), F(v), actOn(A, B, F, x, v, k)),
-      actOn(A, C, (fun (a : A) { G(F(a)) } : A -> C), x, v, k)
+    (v : A, k : Path[.A = A](x, v)) -> Path[.A = Path[.A = C](G(F x), G(F v))](
+      actOn(B, C, G, F x, F v, actOn(A, B, F, x, v, k)),
+      actOn(A, C, (fun (a : A) { G(F a) } : A -> C), x, v, k)
     ),
     p,
-    Path.here(x),
-    Path.here(p),
-    Path.here(Path.here(G(F(x))))
+    Path.here x,
+    Path.here p,
+    Path.here(Path.here(G(F x)))
   )
 
 /// Composing with `g`, then with `h`, acts on `fa` as composing with both.
@@ -121,7 +121,7 @@ def apThenThen(
       )
     ),
     fa,
-    Path.here(fm),
-    Path.here(fa),
+    Path.here fm,
+    Path.here fa,
     Path.here(Path.here(Path.step(Path.step(fm, g), h)))
   )

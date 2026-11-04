@@ -48,7 +48,7 @@ def side(n : Nat, e : Either) -> -F Nat =
 /// Calls `side` on a flag. It reads its callee and the data each constructor builds.
 @[ reads(*{side, Nat, Flag, Either}) ]
 def marked() -> -F Nat =
-  (side (Succ Zero)) (Mark On)
+  side (Succ Zero) (Mark On)
 
 /// An integer, which names no item.
 def answer : Integer ;

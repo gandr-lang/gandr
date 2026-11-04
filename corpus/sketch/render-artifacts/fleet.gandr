@@ -50,7 +50,7 @@ pub def live : Aws.State = ~aws.state(region = "eu-central-1");
 
 /// The changes from the live state to the fleet, each after what it reads.
 pub def plan(now : Aws.State, fleet : Fleet) -> List(Change) =
-  topoSort(diff(now.resources, resources(fleet)), fun (c) { c.reads })
+  topoSort(diff(now.resources, resources fleet), fun (c) { c.reads })
 
 /// The plan as the API's change set.
 pub def changeSet(now : Aws.State, fleet : Fleet) -> Json =

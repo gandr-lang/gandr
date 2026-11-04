@@ -40,7 +40,7 @@ def after(f : Flow[.A = Type[+, 1]](Packed, Boxed)) -> Flow[.A = Type[+, 1]](Pac
   Flow.then packedKept f
 
 /// The stationary flow at the smallest universe itself, read one level up.
-def types : Flow[.A = Type[+, 1]](Type, Type) = Flow.stay (Type);
+def types : Flow[.A = Type[+, 1]](Type, Type) = Flow.stay Type;
 
 /// A large code at a universe two levels up: a flow is stated at any level
 /// its codes inhabit.

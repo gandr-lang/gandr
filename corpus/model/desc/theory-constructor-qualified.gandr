@@ -29,8 +29,8 @@ def theoryApplied() -> Integer { isApplication (Theory.App "f" Theory.End) }
 
 /// The bare `App` is this source's.
 @[ runs("App (Var 0) (Var 1)") ]
-def bare() -> Tree { (App (Var 0)) (Var 1) }
+def bare() -> Tree { App (Var 0) (Var 1) }
 
 /// A source's own constructor written qualified is the same constructor.
 @[ runs("App (Var 0) (Var 1)") ]
-def qualified() -> Tree { (Tree.App (Var 0)) (Var 1) }
+def qualified() -> Tree { Tree.App (Var 0) (Var 1) }

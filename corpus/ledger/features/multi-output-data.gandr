@@ -25,7 +25,7 @@ def rec size(e : Expr) -> -F Integer =
 
 /// `twice` adds the sizes of both ports of one share.
 @[ runs("3") ]
-def twice() -> -F Integer { size ((Add (Share (Lit 1)).left) (Share (Lit 1)).right) }
+def twice() -> -F Integer { size (Add (Share (Lit 1)).left (Share (Lit 1)).right) }
 
 /// The two ports of a share, as a record.
 @[ checks ]

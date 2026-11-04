@@ -36,7 +36,7 @@ def encode(c : Integer) -> List(Integer) =
               let rest = int.mod c 262144;
               let high = int.div rest 4096;
               let tail = int.mod c 4096;
-              let mid = int.div (tail) 64;
+              let mid = int.div tail 64;
               let low = int.mod c 64;
               Cons (240 + lead) (Cons (128 + high) (Cons (128 + mid) (Cons (128 + low) Nil)))
             }

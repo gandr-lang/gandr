@@ -43,7 +43,7 @@ def passed(w : Nat, d : Nat, h : Heap) -> vOpt(vInt, w, h) -> derefOrWp(w, d, ke
 /// against its row.
 @[ runs("Admitted") ]
 def rowAdmitted() -> Admission =
-  admit ((Declared (Param ("x" (Printed 8 8 true false)) (Param "n" (Printed 4 4 false false) NoParam))) (Printed
+  admit (Declared (Param ("x" (Printed 8 8 true false)) (Param "n" (Printed 4 4 false false) NoParam)) (Printed
         4
         4
         false

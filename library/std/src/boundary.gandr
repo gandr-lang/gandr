@@ -192,7 +192,7 @@ def rec printedParams(cs : Coded) -> Params =
 /// declaration, and admission compares it with the row.
 pub def admitSignature(s : Signature, r : Row) -> Admission =
   match s
-    | Signature(ps, res) => admit ((Declared (printedParams ps)) (printed res)) r
+    | Signature(ps, res) => admit (Declared (printedParams ps) (printed res)) r
 
 /// An `extern "rust"` block's members' signatures, in written order.
 pub data Signatures : Type where

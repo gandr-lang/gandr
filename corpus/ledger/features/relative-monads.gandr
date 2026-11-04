@@ -76,10 +76,10 @@ def ext(A : Type, B : Type, m : () -> Maybe(A), k : A -> Maybe(B)) -> Maybe(B) =
 @[ runs("2") ]
 def two() -> Integer =
   let r = ext
-    (Integer)
-    (Integer)
-    (ret (Integer) 1)
-    (fun (x) { ret (Integer) (x + 1) })
+    Integer
+    Integer
+    (ret Integer 1)
+    (fun (x) { ret Integer (x + 1) })
   match r
     | None => 0
     | Some(y) => y

@@ -22,7 +22,7 @@ def spawn(body : (a : Name) ->[#] Proc) -> [Fresh] Proc =
 
 /// Two processes that share one private channel and nothing else.
 def pair(left : (a : Name) ->[#] Proc, right : (a : Name) ->[#] Proc) -> [Fresh] Proc =
-  Pi.nu(fun (a) { Pi.par(left(a), right(a)) })
+  Pi.nu(fun (a) { Pi.par(left a, right a) })
 
 /// Exchanges two names in a process, which keeps every freshness fact.
 def rename(a : Name, b : Name, p : Proc) -> Proc =

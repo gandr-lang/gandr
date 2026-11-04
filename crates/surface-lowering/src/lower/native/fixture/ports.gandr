@@ -10,7 +10,7 @@ def grouped : Expr;
 def grouped = (Share (Lit 1)).left;
 
 def both : Expr;
-def both = (Add (Share (Lit 1)).left) (Share (Lit 1)).right;
+def both = Add (Share (Lit 1)).left (Share (Lit 1)).right;
 
 def apart : Path[.A = Expr]((Share (Lit 1)).left, (Share (Lit 1)).right);
 def apart = Path.here (Share (Lit 1)).left;

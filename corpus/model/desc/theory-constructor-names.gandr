@@ -39,7 +39,7 @@ def presentedOps() -> Integer =
 
 /// `App` builds a `Bruijn`.
 @[ runs("App (Ix 0) (Ix 1)") ]
-def applied() -> Bruijn { (App (Ix 0)) (Ix 1) }
+def applied() -> Bruijn { App (Ix 0) (Ix 1) }
 
 /// `Sort` matches a `Kind`.
 @[ runs("1") ]

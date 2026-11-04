@@ -24,4 +24,4 @@ def begun : Prefix(Ask.Asking) = recorded (sent "yes");
 
 /// A dialogue over the protocol, the dialogue type unimported.
 @[ refuses("UnresolvedTypeHead") ]
-def talked : Dialogue(Ask.Asking) = (((dialogue (left (sent "yes"))) (right (received "yes"))) (left closed)) (right closed);
+def talked : Dialogue(Ask.Asking) = dialogue (left (sent "yes")) (right (received "yes")) (left closed) (right closed);

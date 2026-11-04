@@ -10,5 +10,5 @@ module Schema where {
   @[ refuses("Boundary") ]
   def reader : Flow[.A = Type](Old -> Integer, New -> Integer) = Flow.arrow
     upgrade
-    (Flow.stay (Integer));
+    (Flow.stay Integer);
 }

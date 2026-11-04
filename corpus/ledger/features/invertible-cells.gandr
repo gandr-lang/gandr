@@ -38,15 +38,15 @@ def once() -> Path[.A = Circle](Base, Base) { loop }
 /// `Path.back(loop)` converts to.
 @[ checks ]
 def unwound : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.back (loop),
-  back (loop) ∷ Path.here Base
-) = Path.here (back (loop) ∷ Path.here Base) ;
+  Path.back loop,
+  back loop ∷ Path.here Base
+) = Path.here (back loop ∷ Path.here Base) ;
 
 /// The loop then its inverse is the empty word: the minted cancellation, read
 /// by conversion.
 @[ checks ]
 def cancelled : Path[.A = Path[.A = Circle](Base, Base)](
-  (Path.step (loop)) (Path.back (loop)),
+  Path.step loop (Path.back loop),
   Path.here Base
 ) = Path.here (Path.here Base) ;
 
@@ -54,14 +54,14 @@ def cancelled : Path[.A = Path[.A = Circle](Base, Base)](
 /// composite is, by conversion.
 @[ checks ]
 def round : Path[.A = Path[.A = Circle](Base, Base)](
-  spin (wind ((Path.step (loop)) (loop))),
+  spin (wind (Path.step loop loop)),
   loop ∷ loop ∷ Path.here Base
 ) = Path.here (loop ∷ loop ∷ Path.here Base) ;
 
 /// The composite the round trip gives: the loop twice, by conversion.
 @[ checks ]
 def twice : Path[.A = Path[.A = Circle](Base, Base)](
-  (Path.step (loop)) (loop),
+  Path.step loop loop,
   loop ∷ loop ∷ Path.here Base
 ) = Path.here (loop ∷ loop ∷ Path.here Base) ;
 

@@ -40,7 +40,7 @@ def bumped() -> List(Integer) =
 /// A list of pairs built where it runs.
 @[ checks ]
 def tagged(a : Integer) -> List(Integer * Integer) =
-  pure (cons a 1) ((cons a 2) (cons a 3 nil))
+  pure cons a 1 (cons a 2 (cons a 3 nil))
 
 /// An element written back past the head: the cells before it are copied
 /// and share their elements, the cells after it are shared, and fresh pairs

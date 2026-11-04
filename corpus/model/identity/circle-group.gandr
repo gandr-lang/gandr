@@ -32,9 +32,9 @@ def spinUp(n : Int) -> Path[.A = Path[.A = Circle](Base, Base)](spin (S n), loop
 /// `intLoop-predℤ`), by computation.
 def spinDown(n : Int) -> Path[.A = Path[.A = Circle](Base, Base)](
   spin (P n),
-  back (loop) ∷ spin n
+  back loop ∷ spin n
 ) =
-  Path.here (back (loop) ∷ spin n)
+  Path.here (back loop ∷ spin n)
 
 /// Spinning a sum is composing the spins (cubical's `intLoop-hom`), by
 /// induction on the second summand. `spin` puts its new loop first where
@@ -46,7 +46,7 @@ def spinDown(n : Int) -> Path[.A = Path[.A = Circle](Base, Base)](
 def rec spinHom(
   a : Int,
   b : Int
-) -> Path[.A = Path[.A = Circle](Base, Base)](spin (plus a b), (Path.step (spin b)) (spin a)) =
+) -> Path[.A = Path[.A = Circle](Base, Base)](spin (plus a b), Path.step (spin b) (spin a)) =
   match b
     | Z => Path.here (spin a)
     | S(x) => Path.ap loopOn (spinHom[<] a x)
@@ -63,7 +63,7 @@ def rec spinHom(
 def rec windHom(
   q : Path[.A = Circle](Base, Base),
   p : Path[.A = Circle](Base, Base)
-) -> Path[.A = Int](wind (Path.step p q), (plus (wind q)) (wind p)) =
+) -> Path[.A = Int](wind (Path.step p q), plus (wind q) (wind p)) =
   match p
     | here => Path.here (wind q)
     | loop ∷ r => Path.ap up (windHom[<] q r)
@@ -76,12 +76,12 @@ def spunComm(
   p : Path[.A = Circle](Base, Base),
   q : Path[.A = Circle](Base, Base)
 ) -> Path[.A = Path[.A = Circle](Base, Base)](
-  spin ((plus (wind q)) (wind p)),
-  spin ((plus (wind p)) (wind q))
+  spin (plus (wind q) (wind p)),
+  spin (plus (wind p) (wind q))
 ) =
-  ((Path.walk (fun (a) {
-      type(Path[.A = Path[.A = Circle](Base, Base)](spin ((plus (wind q)) (wind p)), spin a))
-    })) ((plusComm (wind q)) (wind p))) (Path.here (spin ((plus (wind q)) (wind p))))
+  Path.walk (fun (a) {
+      type(Path[.A = Path[.A = Circle](Base, Base)](spin (plus (wind q) (wind p)), spin a))
+    }) (plusComm (wind q) (wind p)) (Path.here (spin (plus (wind q) (wind p))))
 
 /// The loops commute (cubical's `comm-ΩS¹`): each composite is the spin of
 /// its winding by `sect`, the windings sum by `windHom`, and the sums commute
@@ -91,10 +91,10 @@ def comm(
   p : Path[.A = Circle](Base, Base),
   q : Path[.A = Circle](Base, Base)
 ) -> Path[.A = Path[.A = Circle](Base, Base)](Path.step p q, Path.step q p) =
-  (compose[9, 11] (chain 5)) (*{
+  compose[9, 11] (chain 5) (*{
     Path.back (sect (Path.step p q)),
     Path.ap spin (windHom q p),
-    Path.ap spin ((plusComm (wind q)) (wind p)),
+    Path.ap spin (plusComm (wind q) (wind p)),
     Path.back (Path.ap spin (windHom p q)),
     sect (Path.step q p)
   })

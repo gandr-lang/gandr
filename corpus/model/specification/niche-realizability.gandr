@@ -214,7 +214,7 @@ def marshalled(vt : *{Nat, Heap} -> Type, h : Heap, w : Nat) -> (vOpt(vt, w, h))
     | Succ(n) => return fun (ok) {
       let meets = fromOptMeets vt (Succ n) h;
       let e = meets ok;
-      return *{(Tag (Succ Zero)) (Succ n), e}
+      return *{ Tag (Succ Zero) (Succ n), e}
     }
 
 /// The tag-zero half of `unmarshalled`: the null word.
@@ -247,7 +247,7 @@ def unmarshalledSome(vt : *{Nat, Heap} -> Type, h : Heap, s : Nat, p : Nat) -> (
     | Zero => match p
       | Zero => return fun (none) { match (none : Void) {} }
       | Succ(n) => return fun (ok) {
-        let meets = toOptMeets vt ((Tag (Succ Zero)) (Succ n)) h;
+        let meets = toOptMeets vt (Tag (Succ Zero) (Succ n)) h;
         let e = meets ok;
         return *{Succ n, e}
       }
@@ -346,7 +346,7 @@ def retrSome(vt : *{Nat, Heap} -> Type, h : Heap, s : Nat, p : Nat) -> (ok : vTa
   match s
     | Zero => match p
       | Zero => return fun (none) { match (none : Void) {} }
-      | Succ(n) => return fun (ok) { Path.here (*{(Tag (Succ Zero)) (Succ n), ok}) }
+      | Succ(n) => return fun (ok) { Path.here (*{ Tag (Succ Zero) (Succ n), ok}) }
     | Succ(_n) => return fun (none) { match (none : Void) {} }
 
 /// `retrTagged` at a written pair, by its tag.

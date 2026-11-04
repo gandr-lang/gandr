@@ -41,7 +41,7 @@ data UProd : Type where
 def rec elProd(u : UProd) -> -F Type =
   match u
     | NatX => return Nat
-    | ProdX(a, b) => return ((Both (elProd[<] a)) (elProd[<] b))
+    | ProdX(a, b) => return (Both (elProd[<] a) (elProd[<] b))
 
 /// The dependent pair code and its decoder, in one block.
 rec {
@@ -62,7 +62,7 @@ rec {
   def rec elSig(u : USig) -> -F Type =
     match u
       | NatS => return Nat
-      | SigS(a, b) => return ((Sig (elSig[<] a)) (thunk { fun (x) { elSig[<] (b x) } }))
+      | SigS(a, b) => return (Sig (elSig[<] a) (thunk { fun (x) { elSig[<] (b x) } }))
 }
 
 /// The path code and its decoder, in one block.

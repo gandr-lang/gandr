@@ -28,7 +28,7 @@ def unread() -> Unit { ignored (thunk { log "unread" }) }
 /// is never decided.
 @[ refuses("ImplicitUnsolved") ]
 def undecided() -> Unit =
-  ignored (thunk { (either (thunk { log "one" })) (thunk { stall "other" }) })
+  ignored (thunk { either (thunk { log "one" }) (thunk { stall "other" }) })
 
 /// A row without `std.io.Console.Eff` is not `log`'s row, whatever its `r`.
 @[ refuses("TypeMismatch") ]

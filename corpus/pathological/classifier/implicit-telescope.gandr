@@ -26,7 +26,7 @@ def undetermined() -> Integer { twice 3 }
 /// `chosen` with its implicit omitted: `x` is a value of `t`, and nothing
 /// determines which.
 @[ refuses("ImplicitUnsolved") ]
-def unchosen() -> Integer { chosen (Integer) }
+def unchosen() -> Integer { chosen Integer }
 
 /// `konst` with its implicit omitted where the lambda returns its own
 /// argument: the only solution for `b` is the lambda's binder `t`, which the
@@ -42,7 +42,7 @@ def disagreeing() -> Unit { same 3 }
 /// The implicit written among the parentheses, as for `sameExplicit`.
 @[ refuses("ImplicitInParentheses") ]
 def inParentheses : () -> Integer;
-def inParentheses = thunk { same (Integer) 3 };
+def inParentheses = thunk { same Integer 3 };
 
 /// A resident naming no implicit of `same`.
 @[ refuses("UnresolvedName") ]
@@ -67,7 +67,7 @@ def suppliedTwice = thunk { same[Integer, .a = Integer] 3 };
 /// A compound value by position: it goes by name, `chosen[.x = 3 + 4]`.
 @[ refuses("MalformedForm") ]
 def compoundPosition : () -> Integer;
-def compoundPosition = thunk { chosen[3 + 4] (Integer) };
+def compoundPosition = thunk { chosen[3 + 4] Integer };
 
 /// `same` named as a value, its implicit unsupplied.
 @[ refuses("ImplicitUnsupplied") ]
@@ -86,7 +86,7 @@ def tangled[a : b, b : a](x : a) -> -F a { return x }
 /// `chosen` with its implicit omitted in a declared type with no body: no
 /// body poses a comparison, so nothing determines `x`.
 @[ refuses("ImplicitUnsolved") ]
-def unchosenSigned : Path(chosen (Integer), 0);
+def unchosenSigned : Path(chosen Integer, 0);
 
 /// `same(unit)` in a declared type: the argument solves `a` as `Unit`, and
 /// the path's integer carrier then disagrees with it.

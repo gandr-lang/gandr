@@ -16,7 +16,7 @@
 /// - see: #3920 — one stated lambda written twice
 
 /// The action of `F` on `p`.
-def along(A : Type, F : A -> A, x : A, y : A, p : Path(x, y)) -> Path[.A = A](F(x), F(y)) =
+def along(A : Type, F : A -> A, x : A, y : A, p : Path(x, y)) -> Path[.A = A](F x, F y) =
   Path.ap(F, p)
 
 /// Reflexivity at the composite of its two parameters.
@@ -38,12 +38,12 @@ def composedAtLambda(
   y : A,
   z : A,
   r : Path(x, y),
-  s : Path(F(y), z)
-) -> Path[.A = Path[.A = A](F(x), z)](
-  Path.step(along(A, (fun (q : A) { F(q) } : A -> A), x, y, r), s),
-  Path.step(along(A, (fun (q : A) { F(q) } : A -> A), x, y, r), s)
+  s : Path(F y, z)
+) -> Path[.A = Path[.A = A](F x, z)](
+  Path.step(along(A, (fun (q : A) { F q } : A -> A), x, y, r), s),
+  Path.step(along(A, (fun (q : A) { F q } : A -> A), x, y, r), s)
 ) =
-  Path.here(Path.step(along(A, (fun (q : A) { F(q) } : A -> A), x, y, r), s))
+  Path.here(Path.step(along(A, (fun (q : A) { F q } : A -> A), x, y, r), s))
 
 /// The same composite through `composeHere`, its start the reduct.
 def passedAtLambda(
@@ -53,12 +53,12 @@ def passedAtLambda(
   y : A,
   z : A,
   r : Path(x, y),
-  s : Path(F(y), z)
-) -> Path[.A = Path[.A = A](F(x), z)](
-  Path.step(along(A, (fun (q : A) { F(q) } : A -> A), x, y, r), s),
-  Path.step(along(A, (fun (q : A) { F(q) } : A -> A), x, y, r), s)
+  s : Path(F y, z)
+) -> Path[.A = Path[.A = A](F x, z)](
+  Path.step(along(A, (fun (q : A) { F q } : A -> A), x, y, r), s),
+  Path.step(along(A, (fun (q : A) { F q } : A -> A), x, y, r), s)
 ) =
-  composeHere(A, F(x), F(y), z, along(A, (fun (q : A) { F(q) } : A -> A), x, y, r), s)
+  composeHere(A, F x, F y, z, along(A, (fun (q : A) { F q } : A -> A), x, y, r), s)
 
 /// The same, its start the application written again.
 def passedRedex(
@@ -68,24 +68,24 @@ def passedRedex(
   y : A,
   z : A,
   r : Path(x, y),
-  s : Path(F(y), z)
-) -> Path[.A = Path[.A = A](F(x), z)](
-  Path.step(along(A, (fun (q : A) { F(q) } : A -> A), x, y, r), s),
-  Path.step(along(A, (fun (q : A) { F(q) } : A -> A), x, y, r), s)
+  s : Path(F y, z)
+) -> Path[.A = Path[.A = A](F x, z)](
+  Path.step(along(A, (fun (q : A) { F q } : A -> A), x, y, r), s),
+  Path.step(along(A, (fun (q : A) { F q } : A -> A), x, y, r), s)
 ) =
   composeHere(
     A,
-    (fun (q : A) { F(q) } : A -> A)(x),
-    F(y),
+    (fun (q : A) { F q } : A -> A) x,
+    F y,
     z,
-    along(A, (fun (q : A) { F(q) } : A -> A), x, y, r),
+    along(A, (fun (q : A) { F q } : A -> A), x, y, r),
     s
   )
 
 /// The action of `F` on `p`, across two carriers.
 def acrossCarriers(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path(x, y)) -> Path[.A = B](
-  F(x),
-  F(y)
+  F x,
+  F y
 ) =
   Path.ap(F, p)
 

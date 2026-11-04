@@ -1,5 +1,5 @@
 data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
-def wound : Path[.A = Path[.A = Circle](Base, Base)](back (loop) ∷ Path.here Base, Path.here Base) ;
+def wound : Path[.A = Path[.A = Circle](Base, Base)](back loop ∷ Path.here Base, Path.here Base) ;
 def wound = 1 ;
