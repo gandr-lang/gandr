@@ -2,10 +2,12 @@ name: "find the CI image"
 description: >
   The pin-file tag of this checkout and whether the registry publishes it, as
   every workflow that runs jobs in the CI image looks it up. Workflow anchors
-  cannot cross files, so the lookup lives here. Only the registry's `manifest
-  unknown` reads as missing; any other lookup error fails the step, so a
-  broken registry fails the image reference rather than silently selecting the
-  bare runner or rebuilding.
+  cannot cross files, so the lookup lives here. A tag is published only when
+  the registry serves its index and every manifest the index lists
+  (`lookup.sh`); `manifest unknown` or `not found` on any of them reads as
+  missing, and any other lookup error fails the step, so a broken registry
+  fails the image reference rather than silently selecting the bare runner or
+  rebuilding.
 inputs:
   enabled:
     description: "Whether the image is on (`vars.GANDR_CI_IMAGE` is set)"
@@ -44,12 +46,4 @@ runs:
       shell: bash
       env:
         IMAGE_TAG: ${{ steps.pin-tag.outputs.tag }}
-      run: |
-        if error=$(docker manifest inspect "ghcr.io/gandr-lang/gandr-ci:${IMAGE_TAG}" 2>&1 > /dev/null); then
-          echo found=true >> "$GITHUB_OUTPUT"
-        elif [[ $error == *"manifest unknown"* ]]; then
-          echo found=false >> "$GITHUB_OUTPUT"
-        else
-          printf '%s\n' "$error" >&2
-          exit 1
-        fi
+      run: .github/actions/find-image/lookup.sh "ghcr.io/gandr-lang/gandr-ci:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"

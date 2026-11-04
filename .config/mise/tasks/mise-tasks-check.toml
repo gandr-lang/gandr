@@ -1119,6 +1119,16 @@ fi
 echo 'workflow hashing check OK: no hashFiles over a tarball'
 """
 
+# CI pulls its image only when `find-image` calls the tag published, and a
+# pull reads the tag's index and then its platform's manifest by digest. So
+# `.github/actions/find-image/lookup.sh` calls a tag published only when the
+# registry serves its index and every manifest the index lists (#5128);
+# `cases.bash` holds its cases over a `docker` stub.
+["check:find-image"]
+description = "The CI image lookup reads a tag as published only when every manifest it lists is served"
+tools.jq = "1.8.1"
+run = ".github/actions/find-image/cases.bash"
+
 # The crate map (#2290, `.config/crate-map/map.jq`): `ledger/crates.dot` and
 # the category graph in `ledger/README.md` § Map (#3890) are what `cargo
 # metadata` and `ledger/concerns.sql` give now, no crate lies outside the
