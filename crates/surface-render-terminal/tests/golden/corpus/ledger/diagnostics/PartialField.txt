@@ -4,4 +4,5 @@ error[PartialField]: the constructor `Dot` declares no field `start`, so `start`
 9 │   shape.start
   │         ━━━━━ a field some constructor lacks
   │
-  ╰ note: `startOf` is refused with PartialField, as its expectation states
+  ├ note: `startOf` is refused with PartialField, as its expectation states
+  ╰ help: select a field each constructor declares

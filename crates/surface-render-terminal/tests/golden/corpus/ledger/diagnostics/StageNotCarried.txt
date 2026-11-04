@@ -19,4 +19,5 @@ error[StageNotCarried]: the transport moves a value of the recursion along a pat
 18 │ │  }
    │ └──┘ checked against `(Nat, Path[.A = Circle](Base, Base)) => Nat`; while checking the body of this function; binds alongLoop : (Nat, Path[.A = Circle](Base, Base)) => Nat
    │
-   ╰ note: `alongLoop` is refused with StageNotCarried, as its expectation states
+   ├ note: `alongLoop` is refused with StageNotCarried, as its expectation states
+   ╰ help: transport the recursive value only along a set

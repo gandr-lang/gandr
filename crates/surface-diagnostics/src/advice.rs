@@ -432,13 +432,28 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             boundary: FragmentBoundary::NotAtResult,
             ..
         } => String::from("write the row only before a definition's result type"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::NotInTail,
+            ..
+        } => String::from(
+            "write the return expression in a function, lambda, thunk or copattern clause",
+        ),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::View,
+            ..
+        } => String::from("open a view with `access` before resuming or aborting it"),
+        LoweringRefusal::OutsideLoop { .. } => {
+            String::from("write `break` or `continue` in its loop body")
+        },
+        LoweringRefusal::PartialField { .. } => {
+            String::from("select a field each constructor declares")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::UnlockedDependency { .. }
         | LoweringRefusal::UnexportedName { .. }
         | LoweringRefusal::OutOfFragment { .. }
         | LoweringRefusal::GradedBridge { .. }
-        | LoweringRefusal::PartialField { .. }
         | LoweringRefusal::UnreadAscription { .. }
         | LoweringRefusal::UnreadCells { .. }
         | LoweringRefusal::UnstatedComponent { .. }
@@ -446,7 +461,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::ImplicitTelescope { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
         | LoweringRefusal::Unreachable { .. }
-        | LoweringRefusal::OutsideLoop { .. }
         | LoweringRefusal::RulesUndecided { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
@@ -1128,9 +1142,25 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             defect: UaDefect::NotInverse { .. },
             ..
         } => String::from("make the `ua` translators inverse"),
+        CheckRefusal::RepresentationAboveKind { .. } => {
+            String::from("seal a representation within its abstract type's universe")
+        },
+        CheckRefusal::PathCode(_) => {
+            String::from("use a quoted closed first-order code at each end")
+        },
+        CheckRefusal::SessionCodeExpected { .. } => {
+            String::from("give the session identity two session types")
+        },
+        CheckRefusal::SortMismatch { .. } => String::from("use a code of the expected sort"),
+        CheckRefusal::StageNotCarried { .. } => {
+            String::from("transport the recursive value only along a set")
+        },
+        CheckRefusal::UaInequivalent {
+            defect: UaDefect::PastTheBound { .. },
+            ..
+        } => String::from("use a corolla within the `ua` catalogue bound"),
         // Unworded: a later slice words each, most-seen first.
-        CheckRefusal::RepresentationAboveKind { .. }
-        | CheckRefusal::SealSiteRepeated(_)
+        CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::DataArgumentArity(_)
         | CheckRefusal::UnknownConstructor { .. }
         | CheckRefusal::ConstructorArity(_)
@@ -1138,7 +1168,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::UnknownOperation { .. }
         | CheckRefusal::ShiftWithoutReset { .. }
         | CheckRefusal::DependentStack { .. }
-        | CheckRefusal::PathCode(_)
         | CheckRefusal::FunextUnsupported { .. }
         | CheckRefusal::EquivUnsupported { .. }
         | CheckRefusal::UncertifiedStratum { .. }
@@ -1156,15 +1185,12 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::DanglingNode { .. }
         | CheckRefusal::AdmissionOrder { .. }
         | CheckRefusal::MachineInvariant
-        | CheckRefusal::SortMismatch { .. }
         | CheckRefusal::StaticLambdaArgument { .. }
         | CheckRefusal::StaticClassifierExpected { .. }
-        | CheckRefusal::StageNotCarried { .. }
         | CheckRefusal::Linearity { .. }
         | CheckRefusal::Codata { .. }
         | CheckRefusal::Located { .. }
         | CheckRefusal::CapabilityUngranted { .. }
-        | CheckRefusal::SessionCodeExpected { .. }
         | CheckRefusal::RideUnsupported { .. }
         | CheckRefusal::ForwardUnsupported { .. } => return Maybe::Absent(help::Absent::Unworded),
     })
@@ -1182,7 +1208,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 206] = [
+    const WORDED: [&str; 216] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1390,6 +1416,16 @@ mod tests
         "OutOfFragment.JoinsBlock",
         "OutOfFragment.NonUniform",
         "OutOfFragment.NotAtResult",
+        "OutOfFragment.NotInTail",
+        "OutOfFragment.View",
+        "OutsideLoop",
+        "PartialField",
+        "PastTheBound",
+        "PathCode",
+        "RepresentationAboveKind",
+        "SessionCodeExpected",
+        "SortMismatch",
+        "StageNotCarried",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

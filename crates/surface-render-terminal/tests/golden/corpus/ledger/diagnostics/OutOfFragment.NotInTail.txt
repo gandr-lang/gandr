@@ -4,4 +4,5 @@ error[OutOfFragment.NotInTail]: a return expression leaves only the body of a fu
 3 │ def returned = return Zero ;
   │                ━━━━━━━━━━━ not on a path through a body
   │
-  ╰ note: `returned` is refused with OutOfFragment.NotInTail, as its expectation states
+  ├ note: `returned` is refused with OutOfFragment.NotInTail, as its expectation states
+  ╰ help: write the return expression in a function, lambda, thunk or copattern clause
