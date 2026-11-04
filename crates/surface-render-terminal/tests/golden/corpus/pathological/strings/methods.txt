@@ -11,7 +11,8 @@ error[HeldConsumed]: a method whose receiver is `consumed` takes the held value 
 19 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `readAfterTaken` is refused with HeldConsumed, as its expectation states
+   ├ note: `readAfterTaken` is refused with HeldConsumed, as its expectation states
+   ╰ help: use the held value before the consumed method call
 
 error[HeldCaptured]: the held value is used inside a thunk, which may run it other than once
    ╭▸ corpus/pathological/strings/methods.gandr:26:27
@@ -36,7 +37,8 @@ error[OutOfFragment.Held]: an `access` lends, and an assignment writes, a held v
 33 │   t.push(33)
    │   ━ not a value a hold holds
    │
-   ╰ note: `pushedUnheld` is refused with OutOfFragment.Held, as its expectation states
+   ├ note: `pushedUnheld` is refused with OutOfFragment.Held, as its expectation states
+   ╰ help: write a value held by a `var` statement
 
 error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
    ╭▸ corpus/pathological/strings/methods.gandr:40:27
@@ -91,7 +93,8 @@ error[HeldConsumed]: a method whose receiver is `consumed` takes the held value 
 61 │ │ }
    │ └─┘ checked against `Repr => Integer`; while checking the body of this thunk
    │
-   ╰ note: `readAfterTakenInOneArm` is refused with HeldConsumed, as its expectation states
+   ├ note: `readAfterTakenInOneArm` is refused with HeldConsumed, as its expectation states
+   ╰ help: use the held value before the consumed method call
 
 error[StrayReceiverMode]: `shared` is a receiver's mode: only a module member's first parameter is written with it, `self : shared T`
    ╭▸ corpus/pathological/strings/methods.gandr:65:14

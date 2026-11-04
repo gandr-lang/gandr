@@ -140,6 +140,14 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             ..
         } => String::from("give the form its declared number of operands"),
         LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Held,
+            ..
+        } => String::from("write a value held by a `var` statement"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Unannotated,
+            ..
+        } => String::from("write a type annotation for the form"),
+        LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::Unbound,
             ..
         } => String::from(
@@ -154,6 +162,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             format!(
                 "declare `flow {name}` before this import, or import a source that publishes it"
             )
+        },
+        LoweringRefusal::ImportCycle { .. } => {
+            String::from("remove the import that closes the cycle")
         },
         LoweringRefusal::SignatureMismatch {
             signature,
@@ -235,12 +246,14 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::UnguardedCorecursion { .. } => {
             String::from("write the productive self-call as a copattern arm's whole body")
         },
+        LoweringRefusal::ModelImplicitValue { .. } => {
+            String::from("select a component from the model implicit")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::DuplicateSignature { .. }
         | LoweringRefusal::DuplicateImportAlias { .. }
         | LoweringRefusal::ImportUnresolved { .. }
-        | LoweringRefusal::ImportCycle { .. }
         | LoweringRefusal::UnlockedDependency { .. }
         | LoweringRefusal::ImportShadows { .. }
         | LoweringRefusal::UnexportedName { .. }
@@ -270,7 +283,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::ImplicitInParentheses { .. }
         | LoweringRefusal::InstanceUnanswered { .. }
         | LoweringRefusal::InstanceAmbiguous { .. }
-        | LoweringRefusal::ModelImplicitValue { .. }
         | LoweringRefusal::RegionAsValue { .. }
         | LoweringRefusal::EntryType { .. }
         | LoweringRefusal::StrayReceiverMode { .. }
@@ -500,9 +512,17 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             ..
         } => String::from("wrap the `var[1]` read in `access ... resume`"),
         CheckRefusal::Access {
+            defect: AccessDefect::HeldShared,
+            ..
+        } => String::from("assign an in-place value to the `var[1]` hold"),
+        CheckRefusal::Access {
             defect: AccessDefect::KeptEscaped,
             ..
         } => String::from("return a value that the scope's own region does not keep"),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::AsValue { .. },
+            ..
+        } => String::from("use the endpoint only in a session action"),
         CheckRefusal::Linearity {
             defect: LinearityDefect::Residue { endpoint, .. },
             ..
@@ -522,8 +542,14 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             "give the arms equal results on the terms that each of the datatype's rules \
              identifies",
         ),
+        CheckRefusal::LoopNotRespected { .. } => {
+            String::from("make the case respect each loop of its sort")
+        },
         CheckRefusal::NotApart { .. } => {
             String::from("write an arm for the path, because its endpoints can be equal")
+        },
+        CheckRefusal::CompoundEndpoint { .. } => {
+            String::from("return a value without effects from the path endpoint")
         },
         CheckRefusal::NegativeOccurrence(_) => String::from(
             "apply the datatype there only to its own parameters, one stage below its \
@@ -583,6 +609,10 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         } => String::from(
             "call the declaration before the migration returns, and return what it answers",
         ),
+        CheckRefusal::Located {
+            defect: LocatedDefect::Elsewhere { .. },
+            ..
+        } => String::from("open the value at its binder with `let x at w`"),
         CheckRefusal::BridgeAtSealedType { .. } => String::from(
             "give the abstract type an `identity` attribute that names its relation, or relate \
              points of a type that is not sealed",
@@ -671,6 +701,10 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             defect: AccessDefect::Kept,
             ..
         } => String::from("write the value only after the scope that keeps its shared view ends"),
+        CheckRefusal::Access {
+            defect: AccessDefect::Consumed,
+            ..
+        } => String::from("use the held value before the consumed method call"),
         CheckRefusal::HandlerUnlawful { .. } => {
             String::from("change the handler's clauses so that they satisfy the law")
         },
@@ -716,7 +750,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
         | CheckRefusal::DataFieldLevel { .. }
-        | CheckRefusal::LoopNotRespected { .. }
         | CheckRefusal::LoopUndecided { .. }
         | CheckRefusal::AbstractKindNotUniverse(_)
         | CheckRefusal::RepresentationAboveKind { .. }
@@ -734,7 +767,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::ShiftWithoutReset { .. }
         | CheckRefusal::DependentStack { .. }
         | CheckRefusal::PathCode(_)
-        | CheckRefusal::CompoundEndpoint { .. }
         | CheckRefusal::FunextUnsupported { .. }
         | CheckRefusal::PointwiseDistinct { .. }
         | CheckRefusal::EquivUnsupported { .. }
@@ -804,7 +836,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 76] = [
+    const WORDED: [&str; 86] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -882,6 +914,16 @@ mod tests
         "CapturedEndpoint",
         "CodataKindNotUniverse",
         "CodataOccurrence",
+        "CompoundEndpoint",
+        "Elsewhere",
+        "EndpointAsValue",
+        "HeldConsumed",
+        "HeldShared",
+        "ImportCycle",
+        "LoopNotRespected",
+        "ModelImplicitValue",
+        "OutOfFragment.Held",
+        "OutOfFragment.Unannotated",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

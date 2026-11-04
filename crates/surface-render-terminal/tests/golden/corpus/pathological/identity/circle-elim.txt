@@ -12,7 +12,8 @@ error[LoopNotRespected]: this case might tell a loop apart from staying put: car
 24 │ │  }
    │ └──┘ checked against `(x : Circle) => Path(Circle, Base, x)`; while checking the body of this thunk
    │
-   ╰ note: `contractible` is refused with LoopNotRespected, as its expectation states
+   ├ note: `contractible` is refused with LoopNotRespected, as its expectation states
+   ╰ help: make the case respect each loop of its sort
 
 error[LoopNotRespected]: this case answers at its loop's point by a case over another looped point, and the fibre it answers in is not presented as a set: the square between the two loops is owed, and nothing here supplies it
    ╭▸ corpus/pathological/identity/circle-elim.gandr:32:3
@@ -31,7 +32,8 @@ error[LoopNotRespected]: this case answers at its loop's point by a case over an
 37 │ │  }
    │ └──┘ checked against `(a : Circle, Circle) => #{around : Path(Circle, a, a), centre : Circle}`; while checking the body of this thunk
    │
-   ╰ note: `rotTwin` is refused with LoopNotRespected, as its expectation states
+   ├ note: `rotTwin` is refused with LoopNotRespected, as its expectation states
+   ╰ help: make the case respect each loop of its sort
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/identity/circle-elim.gandr:56:13

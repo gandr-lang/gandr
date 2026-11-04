@@ -47,7 +47,8 @@ error[EndpointAsValue]: an endpoint can be used only by a session action
 46 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `miscounted` is refused with EndpointAsValue, as its expectation states
+   ├ note: `miscounted` is refused with EndpointAsValue, as its expectation states
+   ╰ help: use the endpoint only in a session action
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
    ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:52:61

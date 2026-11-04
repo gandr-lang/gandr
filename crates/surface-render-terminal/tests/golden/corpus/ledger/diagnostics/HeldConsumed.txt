@@ -11,4 +11,5 @@ error[HeldConsumed]: a method whose receiver is `consumed` takes the held value 
 17 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `readAfterTaken` is refused with HeldConsumed, as its expectation states
+   ├ note: `readAfterTaken` is refused with HeldConsumed, as its expectation states
+   ╰ help: use the held value before the consumed method call

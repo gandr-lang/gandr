@@ -11,4 +11,5 @@ error[CompoundEndpoint]: a path endpoint must compute a value without effects
   │             │               formed; while checking the remaining parts of this
   │             formed; while forming this type under its binder; binds x : Integer
   │
-  ╰ note: `refuted` is refused with CompoundEndpoint, as its expectation states
+  ├ note: `refuted` is refused with CompoundEndpoint, as its expectation states
+  ╰ help: return a value without effects from the path endpoint

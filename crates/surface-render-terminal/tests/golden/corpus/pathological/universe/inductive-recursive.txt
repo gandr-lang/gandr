@@ -166,7 +166,8 @@ error[CompoundEndpoint]: a path endpoint must compute a value without effects
    │             │              the type it synthesises
    │             formed; while forming this type under its binder; binds g : (Two, Two) => Type
    │
-   ╰ note: `curried` is refused with CompoundEndpoint, as its expectation states
+   ├ note: `curried` is refused with CompoundEndpoint, as its expectation states
+   ╰ help: return a value without effects from the path endpoint
 
 error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its field 2 of constructor 2 where no stage reaches it
     ╭▸ corpus/pathological/universe/inductive-recursive.gandr:101:3

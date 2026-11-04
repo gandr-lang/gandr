@@ -4,7 +4,8 @@ error[OutOfFragment.Unannotated]: the call expression needs a type annotation
 24 │   return fun (a) { return fun (x) { There(d, a, b, r(a)(x)) } }
    │                                     ━━━━━━━━━━━━━━━━━━━━━━━ needs a stated type
    │
-   ╰ note: `wk` is refused with OutOfFragment.Unannotated, as its expectation states
+   ├ note: `wk` is refused with OutOfFragment.Unannotated, as its expectation states
+   ╰ help: write a type annotation for the form
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/desc/stlc.gandr:35:20
