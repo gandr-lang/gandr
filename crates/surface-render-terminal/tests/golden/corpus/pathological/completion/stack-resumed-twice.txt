@@ -16,4 +16,5 @@ error[ContinuationUsedTwice]: the continuation is resumed or abandoned a second 
 33 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `resumedTwice` is refused with ContinuationUsedTwice, as its expectation states
+   ├ note: `resumedTwice` is refused with ContinuationUsedTwice, as its expectation states
+   ╰ help: end the continuation only once

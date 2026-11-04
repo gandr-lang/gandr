@@ -273,6 +273,12 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::AmbiguousMethod { .. } => {
             String::from("call the intended method through its module")
         },
+        LoweringRefusal::DescentOnSeveralParameters { .. } => {
+            String::from("mark descent on one parameter in each recursive call")
+        },
+        LoweringRefusal::CellNotALoop { .. } => {
+            String::from("write the same term on both sides of the `<->`")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::DuplicateSignature { .. }
@@ -311,12 +317,10 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::ViewOfNoPlace { .. }
         | LoweringRefusal::MismatchedPattern { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
-        | LoweringRefusal::DescentOnSeveralParameters { .. }
         | LoweringRefusal::Unreachable { .. }
         | LoweringRefusal::OutsideLoop { .. }
         | LoweringRefusal::WithoutK { .. }
         | LoweringRefusal::DirectedCell { .. }
-        | LoweringRefusal::CellNotALoop { .. }
         | LoweringRefusal::RulesUndecided { .. }
         | LoweringRefusal::UnderivedRule { .. }
         | LoweringRefusal::GenericUncovered { .. }
@@ -811,10 +815,36 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::Boundary { .. } => {
             String::from("write the boundary flow in the direction its position's variance permits")
         },
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::ContinuationAsValue { .. },
+            ..
+        } => String::from("use the continuation only with `resume` or `abandon`"),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::ContinuationCaptured { .. },
+            ..
+        } => String::from("move the continuation outside the construct that captures it"),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::ContinuationUnspent { .. },
+            ..
+        } => String::from("end the continuation once with `resume` or `abandon`"),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::ContinuationUsedTwice { .. },
+            ..
+        } => String::from("end the continuation only once"),
+        CheckRefusal::DataFieldLevel { .. } => {
+            String::from("lower each constructor field to its datatype's universe")
+        },
+        CheckRefusal::DataKindNotUniverse(_) => {
+            String::from("give the data declaration a universe kind")
+        },
+        CheckRefusal::DependentBind { .. } => {
+            String::from("bind a computation whose result type ignores its value")
+        },
+        CheckRefusal::DialogueInverted { .. } => {
+            String::from("log each send before its matching receipt")
+        },
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::NotADataType(_)
-        | CheckRefusal::DataKindNotUniverse(_)
-        | CheckRefusal::DataFieldLevel { .. }
         | CheckRefusal::LoopUndecided { .. }
         | CheckRefusal::AbstractKindNotUniverse(_)
         | CheckRefusal::RepresentationAboveKind { .. }
@@ -853,7 +883,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::MachineInvariant
         | CheckRefusal::SortMismatch { .. }
         | CheckRefusal::LevelMismatch { .. }
-        | CheckRefusal::DependentBind { .. }
         | CheckRefusal::Undecided { .. }
         | CheckRefusal::FamilyArity { .. }
         | CheckRefusal::FamilyArgumentClassifier { .. }
@@ -878,7 +907,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::OpenSessionPayload { .. }
         | CheckRefusal::RideUnsupported { .. }
         | CheckRefusal::DialogueUnmatched { .. }
-        | CheckRefusal::DialogueInverted { .. }
         | CheckRefusal::ForwardUnsupported { .. } => return Maybe::Absent(help::Absent::Unworded),
     })
 }
@@ -895,7 +923,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 105] = [
+    const WORDED: [&str; 115] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1002,6 +1030,16 @@ mod tests
         "CapabilityConsumable",
         "CapabilityForged",
         "ViewUnended",
+        "CellNotALoop",
+        "ContinuationAsValue",
+        "ContinuationCaptured",
+        "ContinuationUnspent",
+        "ContinuationUsedTwice",
+        "DataFieldLevel",
+        "DataKindNotUniverse",
+        "DependentBind",
+        "DescentOnSeveralParameters",
+        "DialogueInverted",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

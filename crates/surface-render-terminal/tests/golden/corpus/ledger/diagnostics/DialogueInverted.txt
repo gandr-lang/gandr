@@ -10,4 +10,5 @@ error[DialogueInverted]: this dialogue is logged out of its causal order
 19 │ ┃ ) ;
    │ ┗━┛ a move logged before the move it follows
    │
-   ╰ note: `foretold` is refused with DialogueInverted, as its expectation states
+   ├ note: `foretold` is refused with DialogueInverted, as its expectation states
+   ╰ help: log each send before its matching receipt

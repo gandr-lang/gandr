@@ -48,4 +48,5 @@ error[DependentBind]: the result type of this `let` depends on the value it bind
 53 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `escaped` is refused with DependentBind, as its expectation states
+   ├ note: `escaped` is refused with DependentBind, as its expectation states
+   ╰ help: bind a computation whose result type ignores its value
