@@ -75,7 +75,7 @@ fn a_new_finding_is_refused_with_its_fix()
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         "corpus/a.gandr:1: STE-3.2: \"The kernel reduced the term.\" — state it in the present \
-         tense\ncorpus/a.gandr:1: Head: \"the head is not four paragraphs\" — open the source on \
+         tense\ncorpus/a.gandr:1: STE-6.4: \"the head is not four paragraphs\" — open the source on \
          four paragraphs: what, why, how and references\n"
     );
     std::fs::remove_dir_all(&root).unwrap();
@@ -150,7 +150,7 @@ fn a_stale_line_is_refused_and_written_away_5007()
     assert_eq!(output.status.code(), Some(1_i32));
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "corpus/a.gandr:1: Head: \"the head is not four paragraphs\" — open the source on four \
+        "corpus/a.gandr:1: STE-6.4: \"the head is not four paragraphs\" — open the source on four \
          paragraphs: what, why, how and references\ncorpus/prose.ledger: stale line \
          `corpus/a.gandr STE-3.2 0123456789abcdef`: no finding matches it; run `mise run \
          check:prose --write`\n"
@@ -167,7 +167,7 @@ fn a_stale_line_is_refused_and_written_away_5007()
         .filter(|line| !line.starts_with('#'))
         .collect();
     assert_eq!(lines.len(), 1, "{ledger}");
-    assert!(lines[0].starts_with("corpus/a.gandr Head "), "{ledger}");
+    assert!(lines[0].starts_with("corpus/a.gandr STE-6.4 "), "{ledger}");
     let again = run!(root, NO_ARGS, "");
     assert!(again.status.success());
     assert_eq!(

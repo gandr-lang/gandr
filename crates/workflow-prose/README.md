@@ -31,22 +31,24 @@ Each finding prints its file, the line its passage starts on, the rule, the sent
 | Rule | Fires when | Fix |
 | ---- | ---------- | --- |
 | `STE-3.6` | a token is `auxpass` and its head's lemma is not `refuse`, `admit`, `replay`, `check` or `normalise` | name the agent and make it the subject; a passive is allowed only as `is refused`, `is admitted`, `is replayed`, `is checked` or `is normalised` |
-| `STE-3.2` | the root is past, or an auxiliary is `will`, `shall`, `have` or `has` | state it in the present tense |
+| `STE-3.2` | the root is past, an auxiliary is `will` or `shall`, or a `VBG` has the auxiliary `be` | state it in the present tense |
+| `STE-3.4` | the auxiliary `have` heads a past participle, or a passive has a modal or `to` | use one simple verb |
 | `STE-2.1` | four or more consecutive tokens are `NOUN` or `PROPN` | break the stack of nouns with a preposition or a verb |
-| `STE-3.5` | the root is `VBG`, or a `VBG` token is a noun modifier | make the `-ing` form a finite verb |
+| `STE-3.5` | a `VBG` is the root, a noun modifier, a clause or the conjunct of a verb | make the `-ing` form a finite verb |
+| `STE-9.3` | a verb has a particle | use one verb |
 | `STE-1.2` | a glossary lemma is not in its part of speech | use the glossary word only as its part of speech |
 | `STE-6.3` | a description holds more than 25 words | split it into sentences of at most 25 words |
 | `STE-5.1` | a procedure sentence holds more than 20 words | split the procedure into sentences of at most 20 words |
+| `STE-5.2` | an imperative has a second imperative joined by `and` or a comma | write each instruction as a sentence |
 | `STE-8.1` | a semicolon in a body or a comment has a word after it | end the first sentence and start the next |
-| `Dash` | an em or en dash in a body or a comment has a verb after it | end the first clause, or make the text after the dash a phrase |
-| `InlineReference` | a comment names a URL, an issue or a path | move it to a `- see:` line |
-| `STE-6.6` | a comment paragraph holds more than five sentences | split the paragraph |
-| `Head` | a corpus head is not four paragraphs, or a references line is malformed | open the source on four paragraphs |
-| `What` | the head's first sentence holds more than 20 words | cut the first sentence |
-| `Item` | an item comment holds more than two sentences | cut the item comment |
+| `STE-4.1` | an em or en dash in a body or a comment has a verb after it | end the first clause, or make the text after the dash a phrase |
+| `STE-4.3` | a comment names a URL, an issue or a path | move it to a `- see:` line |
+| `STE-6.6` | a comment paragraph holds more than five sentences, or an item comment more than two | split the paragraph or cut the item comment |
+| `STE-6.4` | a corpus head is not four paragraphs, or a references line is malformed | open the source on four paragraphs |
+| `STE-6.5` | the head's first sentence holds more than 20 words | cut the first sentence |
 | `STE-5.3` | a diagnostic lacks its what, its where or an imperative | state the procedure |
 
-A comment keeps every rule but `STE-5.3`. `Head`, `What` and `Item` bind a corpus source outside the features ledger. A library source and a fixture keep the other comment rules. A README and a diagnostic keep `STE-3.6`, `STE-3.2`, `STE-2.1`, `STE-3.5` and `STE-1.2`. `STE-5.3` binds a diagnostic.
+A comment keeps every rule but `STE-5.3`. `STE-6.4`, `STE-6.5` and the item limit of `STE-6.6` bind a corpus source outside the features ledger. A library source and a fixture keep the other comment rules. A README and a diagnostic keep `STE-3.6`, `STE-3.2`, `STE-3.4`, `STE-2.1`, `STE-3.5`, `STE-9.3` and `STE-1.2`. A body keeps `STE-3.6`, `STE-3.2`, `STE-3.4`, `STE-6.3`, `STE-5.1`, `STE-5.2`, `STE-8.1` and `STE-4.1`. `STE-5.3` binds a diagnostic, and `STE-5.2` binds its `help:` line.
 
 ### Issue 9
 
@@ -71,28 +73,28 @@ The gate is ASD-STE100 with unrestricted technical vocabulary. A finding names t
 | 2.1 | gated: `STE-2.1` |
 | 2.2 | review: first form needs document order |
 | 3.1 | review: a dictionary form is not in the tree |
-| 3.2 | partial: `STE-3.2` |
+| 3.2 | partial: `STE-3.2` reads the past, the future and the progressive |
 | 3.3 | review: an adjectival `-ing` needs a reader |
-| 3.4 | review: an auxiliary policy needs a reader |
+| 3.4 | partial: `STE-3.4` reads the perfect and a passive after a modal |
 | 3.5 | partial: `STE-3.5` |
 | 3.6 | partial: `STE-3.6` |
 | 3.7 | partial: `STE-1.2` |
-| 4.1 | review: clarity needs a reader |
+| 4.1 | partial: `STE-4.1` reads a dash before a clause |
 | 4.2 | review: a contraction needs a reader |
-| 4.3 | review: purpose needs the document |
+| 4.3 | partial: `STE-4.3` reads a reference in comment prose |
 | 4.4 | review: topic relation needs a reader |
 | 4.5 | review: article use needs a reader |
 | 5.1 | gated: `STE-5.1` |
-| 5.2 | review: simultaneous acts need a reader |
+| 5.2 | partial: `STE-5.2` reads two imperatives joined by `and` or a comma, and a reader admits two acts at the same time |
 | 5.3 | partial: `STE-5.3` |
 | 5.4 | review: a condition's relevance needs a reader |
 | 5.5 | review: a note's command needs a reader |
 | 6.1 | review: information order needs a reader |
 | 6.2 | review: logical structure needs a reader |
 | 6.3 | gated: `STE-6.3` |
-| 6.4 | review: related information needs a reader |
-| 6.5 | review: one topic needs a reader |
-| 6.6 | partial: `STE-6.6` holds five sentences |
+| 6.4 | partial: `STE-6.4` reads the four paragraphs of a corpus head |
+| 6.5 | partial: `STE-6.5` reads the length of a head's first sentence |
+| 6.6 | partial: `STE-6.6` holds five sentences, and two in an item comment |
 | 7.1 | review: a safety heading needs a reader |
 | 7.2 | review: a safety block needs a reader |
 | 7.3 | review: a risk needs a reader |
@@ -105,7 +107,7 @@ The gate is ASD-STE100 with unrestricted technical vocabulary. A finding names t
 | 8.7 | review: a hyphen in a count needs a reader |
 | 9.1 | review: a replacement needs an earlier text |
 | 9.2 | review: a sense needs a dictionary |
-| 9.3 | review: a phrasal verb needs a dictionary |
+| 9.3 | partial: `STE-9.3` reads a verb with a particle |
 | 9.4 | review: style needs the document |
 | GR-1 | review: `that` needs a reader |
 | GR-2 | review: `with` needs a reader |
@@ -120,7 +122,7 @@ The small English model misreads some technical sentences. A misreading is debt 
 
 ### Glossary
 
-`corpus/glossary.toml` lists the corpus's technical words in one `[words]` table, each with the one part of speech it carries: `noun`, `verb`, `adjective` or `adverb`. A technical term keeps one meaning and no paraphrase, so a sentence that uses `replay` as a noun, when the glossary makes it a verb, is a `Glossary` finding. The list starts from the features ledger's names and the refusal names. Add a word when the corpus uses it with one meaning.
+`corpus/glossary.toml` lists the corpus's technical words in one `[words]` table, each with the one part of speech it carries: `noun`, `verb`, `adjective` or `adverb`. A technical term keeps one meaning and no paraphrase, so a sentence that uses `replay` as a noun, when the glossary makes it a verb, is an `STE-1.2` finding. The list starts from the features ledger's names and the refusal names. Add a word when the corpus uses it with one meaning.
 
 ## Expected features
 

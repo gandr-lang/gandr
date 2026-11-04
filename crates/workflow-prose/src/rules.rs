@@ -68,6 +68,18 @@ const UNWORDED: [&str; 3] = ["PUNCT", "SPACE", "SYM"];
 /// The dashes that may join two clauses.
 const DASHES: [&str; 2] = ["—", "–"];
 
+/// The dependencies of an `-ing` form that is a clause of its own.
+const CLAUSES: [&str; 8] = [
+    "acl",
+    "advcl",
+    "pcomp",
+    "xcomp",
+    "ccomp",
+    "csubj",
+    "csubjpass",
+    "relcl",
+];
+
 /// The directories a path in the tree starts with.
 const ROOTS: [&str; 8] = [
     "crates/", "corpus/", "library/", "ledger/", ".config/", ".github/", "docs/", "contrib/",
@@ -88,53 +100,61 @@ pub enum Rule
 {
     /// A passive outside the stated list.
     Passive,
-    /// A main verb in a past form.
+    /// A verb in the past, the future or the progressive.
     Tense,
+    /// A complex verb construction: a perfect, or a passive after a modal or
+    /// `to`.
+    Complex,
     /// Four or more nouns in a row.
     NounStack,
-    /// An `-ing` form as the main verb.
+    /// An `-ing` form as the main verb, as a noun modifier or as a clause.
     IngMain,
+    /// A phrasal verb: a verb with a particle.
+    Phrasal,
     /// A glossary word in a part of speech the glossary refuses.
     Glossary,
     /// A sentence of a description longer than twenty-five words.
     Length,
     /// A procedure sentence longer than twenty words.
     ProcedureLength,
+    /// Two instructions in one procedure sentence.
+    Instructions,
     /// A semicolon joining two sentences of a body or a comment.
     Semicolon,
     /// A dash joining two clauses of a body or a comment.
     Dash,
     /// A path, an issue number or a URL in a comment's prose.
     InlineReference,
-    /// A comment paragraph of more than five sentences.
+    /// A comment paragraph of more than five sentences, or an item comment of
+    /// more than two.
     Wall,
     /// A corpus source's head is not four paragraphs, or a references line
     /// opens with neither `- see:` nor `- owes:`.
     Head,
     /// The head's first sentence runs past twenty words.
     What,
-    /// An item comment runs past two sentences.
-    Item,
     /// A diagnostic without its what, its where or its what-to-do.
     Procedure,
 }
 
 /// Every rule, in the order they are stated.
-const RULES: [Rule; 15] = [
+const RULES: [Rule; 17] = [
     Rule::Passive,
     Rule::Tense,
+    Rule::Complex,
     Rule::NounStack,
     Rule::IngMain,
+    Rule::Phrasal,
     Rule::Glossary,
     Rule::Length,
     Rule::ProcedureLength,
+    Rule::Instructions,
     Rule::Semicolon,
     Rule::Dash,
     Rule::InlineReference,
     Rule::Wall,
     Rule::Head,
     Rule::What,
-    Rule::Item,
     Rule::Procedure,
 ];
 
@@ -158,18 +178,20 @@ impl fmt::Display for Rule
         f.write_str(match *self {
             Self::Passive => "STE-3.6",
             Self::Tense => "STE-3.2",
+            Self::Complex => "STE-3.4",
             Self::NounStack => "STE-2.1",
             Self::IngMain => "STE-3.5",
+            Self::Phrasal => "STE-9.3",
             Self::Glossary => "STE-1.2",
             Self::Length => "STE-6.3",
             Self::ProcedureLength => "STE-5.1",
+            Self::Instructions => "STE-5.2",
             Self::Semicolon => "STE-8.1",
-            Self::Dash => "Dash",
-            Self::InlineReference => "InlineReference",
+            Self::Dash => "STE-4.1",
+            Self::InlineReference => "STE-4.3",
             Self::Wall => "STE-6.6",
-            Self::Head => "Head",
-            Self::What => "What",
-            Self::Item => "Item",
+            Self::Head => "STE-6.4",
+            Self::What => "STE-6.5",
             Self::Procedure => "STE-5.3",
         })
     }
@@ -236,13 +258,16 @@ impl fmt::Display for Fix
                  refused`, `is admitted`, `is replayed`, `is checked` or `is normalised`"
             },
             Rule::Tense => "state it in the present tense",
+            Rule::Complex => "use one simple verb: drop the perfect, or make the agent the subject",
             Rule::NounStack => "break the stack of nouns with a preposition or a verb",
-            Rule::IngMain => "make the main verb a finite verb, not an `-ing` form",
+            Rule::IngMain => "make the `-ing` form a finite verb in a clause of its own",
+            Rule::Phrasal => "use one verb in place of the verb and its particle",
             Rule::Glossary => {
                 "use the glossary word only as its part of speech, or choose another word"
             },
             Rule::Length => "split it into sentences of at most 25 words, one clause each",
             Rule::ProcedureLength => "split the procedure into sentences of at most 20 words",
+            Rule::Instructions => "write each instruction as a sentence of its own",
             Rule::Semicolon => "end the first sentence with a full stop and start the next",
             Rule::Dash => {
                 "end the first clause with a full stop, or make the text after the dash a phrase \
@@ -252,11 +277,11 @@ impl fmt::Display for Fix
                 "move the path, the issue or the URL to a `- see:` line after the paragraph"
             },
             Rule::Wall => {
-                "split the paragraph into paragraphs of at most five sentences, one idea each"
+                "split the paragraph into paragraphs of at most five sentences, one idea each, or \
+                 cut the item comment to at most two sentences"
             },
             Rule::Head => "open the source on four paragraphs: what, why, how and references",
             Rule::What => "cut the first sentence to at most twenty words",
-            Rule::Item => "cut the item comment to at most two sentences",
             Rule::Procedure => {
                 "state what is wrong in the headline, label the span, and end with an \
                  imperative `help:` or the issue that tracks it"
@@ -413,9 +438,10 @@ fn words(
 ///   holds more than [`PROCEDURE_WORDS`] words. [`Rule::Length`] when that root
 ///   test fails and the sentence holds more than [`WORDS`] words. A word is a
 ///   token in prose or quotation that is not punctuation, a space or a symbol,
-///   and each code span counts as one. [`Rule::Semicolon`] when a `;` in prose
-///   has a word after it. [`Rule::Dash`] when an em or en dash in prose has a
-///   verb or an auxiliary in prose after it.
+///   and each code span counts as one. [`Rule::Instructions`] when
+///   [`instructions`] finds two instructions. [`Rule::Semicolon`] when a `;` in
+///   prose has a word after it. [`Rule::Dash`] when an em or en dash in prose
+///   has a verb or an auxiliary in prose after it.
 /// - provides: the verdict a body or a comment adds to a sentence.
 /// - fails: never.
 /// - panics: none.
@@ -423,9 +449,11 @@ fn words(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each rule's sentence and a twin it must pass: 26 words
-///   and 25 words with a code span, a joining and a closing semicolon, a dash
-///   before a clause and one before a phrase; an off-by-one limit, a code span
-///   counted per token, or a dropped look-ahead changes the verdicts.
+///   and 25 words with a code span, two instructions joined by `and` and two
+///   joined by `or`, a joining and a closing semicolon, a dash before a clause
+///   and one before a phrase; an off-by-one limit, a code span counted per
+///   token, a conjunction read wrongly, or a dropped look-ahead changes the
+///   verdicts.
 /// - witness: `rules::tests::a_body_holds_its_length_semicolons_and_dashes`
 /// - witness: `rules::tests::a_comment_holds_the_body_rules_its_references_and_walls`
 fn clauses(
@@ -454,6 +482,9 @@ fn clauses(
     else if count > WORDS {
         rules.push(Rule::Length);
     }
+    if instructions(readings, sentence) == Agrees::Agrees {
+        rules.push(Rule::Instructions);
+    }
     let after = |mark: &dyn Fn(&Token) -> bool, follows: &dyn Fn(&Token) -> bool| {
         sentence
             .tokens
@@ -480,16 +511,23 @@ fn clauses(
 ///   from.
 /// - ensures: in the order of [`RULES`], [`Rule::Passive`] when a token in
 ///   prose is `auxpass` and its head's lemma is not on the passive list.
-///   [`Rule::Tense`] when a token in prose is `aux` and its lemma is `will`,
-///   `shall`, `have` or `has`, or the root, in prose, is tagged `VBD`, or `VBN`
-///   with no present-tense `auxpass` child. A `source` of [`Source::Body`] adds
-///   the rules [`clauses`] states. Every other source adds [`Rule::NounStack`]
-///   when more than three consecutive tokens in prose are `NOUN` or `PROPN`.
-///   [`Rule::IngMain`] when the root, in prose, is tagged `VBG`, or a token in
-///   prose is tagged `VBG` and its dependency is `amod`. [`Rule::Glossary`]
-///   when a token in prose has a lemma the glossary holds and a coarse tag its
-///   part of speech does not admit. A `source` of [`Source::Comment`] adds the
-///   rules [`clauses`] states after these.
+///   [`Rule::Tense`] when a token in prose is `aux` and its lemma is `will` or
+///   `shall`, or a token in prose is tagged `VBG` and has an `aux` child of
+///   lemma `be`, or the root, in prose, is tagged `VBD`, or `VBN` with no
+///   `auxpass` child in the present or the base form and no `aux` child of
+///   lemma `have`. [`Rule::Complex`] when a token in prose is `aux` of lemma
+///   `have` and its head is tagged `VBN`, or a token in prose is `auxpass` and
+///   its head has an `aux` child tagged `MD` or `TO`. A `source` of
+///   [`Source::Body`] adds the rules [`clauses`] states. Every other source
+///   adds [`Rule::NounStack`] when more than three consecutive tokens in prose
+///   are `NOUN` or `PROPN`. [`Rule::IngMain`] when a token in prose is tagged
+///   `VBG` and is the root with no `aux` child of lemma `be`, or its dependency
+///   is `amod`, `acl`, `advcl`, `pcomp`, `xcomp`, `ccomp`, `csubj`, `csubjpass`
+///   or `relcl`, or it is the `conj` of a verb. [`Rule::Phrasal`] when a token
+///   in prose is `prt` and its head is a verb. [`Rule::Glossary`] when a token
+///   in prose has a lemma the glossary holds and a coarse tag its part of
+///   speech does not admit. A `source` of [`Source::Comment`] adds the rules
+///   [`clauses`] states after these.
 /// - provides: the verdict of one sentence.
 /// - fails: never.
 /// - panics: none.
@@ -526,24 +564,49 @@ fn broken(
         Maybe::Present(root) if read(readings, root) == Reading::Prose => Some(root),
         Maybe::Present(_) | Maybe::Absent(_) => None,
     };
-    let present_passive = |root: &Token| {
+    let has_aux = |head: &Token, lemma: &str| {
         sentence
-            .children(root)
-            .any(|child| child.dep == "auxpass" && (child.tag == "VBZ" || child.tag == "VBP"))
+            .children(head)
+            .any(|child| child.dep == "aux" && child.lemma.eq_ignore_ascii_case(lemma))
     };
-    let complex = sentence.tokens.iter().any(|token| {
+    let present_passive = |root: &Token| {
+        sentence.children(root).any(|child| {
+            child.dep == "auxpass" && matches!(child.tag.as_str(), "VBZ" | "VBP" | "VB")
+        })
+    };
+    let future = sentence.tokens.iter().any(|token| {
         prose(token)
             && token.dep == "aux"
-            && matches!(
-                token.lemma.to_lowercase().as_str(),
-                "will" | "shall" | "have" | "has"
-            )
+            && matches!(token.lemma.to_lowercase().as_str(), "will" | "shall")
     });
-    if complex
-        || root
-            .is_some_and(|root| root.tag == "VBD" || (root.tag == "VBN" && !present_passive(root)))
-    {
+    let progressive = sentence
+        .tokens
+        .iter()
+        .any(|token| prose(token) && token.tag == "VBG" && has_aux(token, "be"));
+    let past = root.is_some_and(|root| {
+        root.tag == "VBD" || (root.tag == "VBN" && !present_passive(root) && !has_aux(root, "have"))
+    });
+    if future || progressive || past {
         rules.push(Rule::Tense);
+    }
+    let head_of = |token: &Token| sentence.tokens.get(token.head);
+    let perfect = sentence.tokens.iter().any(|token| {
+        prose(token)
+            && token.dep == "aux"
+            && token.lemma.eq_ignore_ascii_case("have")
+            && head_of(token).is_some_and(|head| head.tag == "VBN")
+    });
+    let modal_passive = sentence.tokens.iter().any(|token| {
+        prose(token)
+            && token.dep == "auxpass"
+            && head_of(token).is_some_and(|head| {
+                sentence
+                    .children(head)
+                    .any(|child| child.dep == "aux" && (child.tag == "MD" || child.tag == "TO"))
+            })
+    });
+    if perfect || modal_passive {
+        rules.push(Rule::Complex);
     }
     if source == Source::Body {
         rules.extend(clauses(readings, sentence));
@@ -563,13 +626,23 @@ fn broken(
     if stacked {
         rules.push(Rule::NounStack);
     }
-    let ing = root.is_some_and(|root| root.tag == "VBG")
-        || sentence
-            .tokens
-            .iter()
-            .any(|token| prose(token) && token.tag == "VBG" && token.dep == "amod");
+    let verbal = |token: &Token| token.pos == "VERB" || token.pos == "AUX";
+    let ing = sentence.tokens.iter().any(|token| {
+        prose(token)
+            && token.tag == "VBG"
+            && ((token.dep == "ROOT" && !has_aux(token, "be"))
+                || CLAUSES.contains(&token.dep.as_str())
+                || (token.dep == "conj" && head_of(token).is_some_and(verbal)))
+    });
     if ing {
         rules.push(Rule::IngMain);
+    }
+    let phrasal = sentence
+        .tokens
+        .iter()
+        .any(|token| prose(token) && token.dep == "prt" && head_of(token).is_some_and(verbal));
+    if phrasal {
+        rules.push(Rule::Phrasal);
     }
     let misused = sentence.tokens.iter().any(|token| {
         prose(token)
@@ -584,6 +657,56 @@ fn broken(
         rules.extend(clauses(readings, sentence));
     }
     rules
+}
+
+/// Whether `sentence` holds two instructions: its root, in prose, is a bare
+/// verb with no subject, and a `conj` child of it, in prose, is a bare verb
+/// with no subject, joined by `and` or by a comma alone.
+///
+/// # Specification
+/// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `read the file and write the log` holds two, and `read
+///   the file or write the log` and `the kernel reads and writes` hold one; a
+///   join read as `or`, or a subject left unread, changes one.
+/// - witness: `rules::tests::a_body_holds_its_length_semicolons_and_dashes`
+/// - witness: `rules::tests::a_diagnostic_needs_its_what_where_and_imperative`
+fn instructions(
+    readings: &[Reading],
+    sentence: &Sentence,
+) -> Agrees
+{
+    let prose = |token: &Token| read(readings, token) == Reading::Prose;
+    let bare = |verb: &Token| {
+        prose(verb)
+            && verb.tag == "VB"
+            && !sentence
+                .children(verb)
+                .any(|child| child.dep == "nsubj" || child.dep == "nsubjpass")
+    };
+    let Maybe::Present(root) = sentence.root()
+    else {
+        return Agrees::Differs;
+    };
+    if !bare(root) {
+        return Agrees::Differs;
+    }
+    let twice = sentence.children(root).any(|second| {
+        second.dep == "conj"
+            && bare(second)
+            && sentence
+                .children(root)
+                .chain(sentence.children(second))
+                .filter(|join| join.dep == "cc")
+                .all(|join| join.lemma.eq_ignore_ascii_case("and"))
+    });
+    if twice {
+        Agrees::Agrees
+    }
+    else {
+        Agrees::Differs
+    }
 }
 
 /// [`Rule::InlineReference`] when `text` names a path in the tree, an issue or
@@ -721,7 +844,7 @@ pub fn sentences(
 /// - ensures: one [`Rule::Head`] when a corpus head is not four paragraphs or a
 ///   references line opens with neither `- see:` nor `- owes:`. One
 ///   [`Rule::What`] when that head's first sentence holds more than twenty
-///   words. One [`Rule::Item`] when an item comment holds more than two
+///   words. One [`Rule::Wall`] when an item comment holds more than two
 ///   sentences. The word count is the one [`words`] states.
 /// - provides: the shape rules over the spaCy sentences.
 /// - fails: never.
@@ -787,7 +910,7 @@ pub fn shaped(
                 findings.push(Finding {
                     path: shape.path.clone(),
                     line: item.line,
-                    rule: Rule::Item,
+                    rule: Rule::Wall,
                     sentence: said,
                 });
             }
@@ -821,15 +944,16 @@ fn imperative(sentence: &Sentence) -> Agrees
     }
 }
 
-/// The procedural finding of `golden`, given its `help:` line's parse.
+/// The procedural findings of `golden`, given its `help:` line's parse.
 ///
 /// # Specification
 /// - requires: `help` is the parse of the golden's `help:` passage, empty when
 ///   it has none.
 /// - ensures: one [`Rule::Procedure`] finding, naming the headline, when the
 ///   golden labels no span, or its advice is missing, or its `help:` line's
-///   first sentence is not an imperative; none otherwise. Advice tracked by an
-///   issue passes.
+///   first sentence is not an imperative. Advice tracked by an issue passes.
+///   Then one [`Rule::Instructions`] finding for each sentence of the `help:`
+///   line that holds two instructions ([`instructions`]), naming that sentence.
 /// - provides: the procedural form over one diagnostic.
 /// - fails: never.
 /// - panics: none.
@@ -837,8 +961,8 @@ fn imperative(sentence: &Sentence) -> Agrees
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a labelled golden with an imperative help, one tracked by
-///   an issue, one whose help is a statement and one with no label; any part
-///   left unchecked changes a verdict.
+///   an issue, one whose help is a statement, one with no label and one whose
+///   help holds two instructions; any part left unchecked changes a verdict.
 /// - witness: `rules::tests::a_diagnostic_needs_its_what_where_and_imperative`
 #[inline]
 #[must_use]
@@ -854,15 +978,29 @@ pub fn procedure(
         Advice::Tracked => true,
         Advice::Missing => false,
     };
-    if golden.placed == Placed::Labelled && advised {
-        return Vec::new();
+    let mut findings = Vec::new();
+    if golden.placed != Placed::Labelled || !advised {
+        findings.push(Finding {
+            path: golden.what.path.clone(),
+            line: golden.what.line,
+            rule: Rule::Procedure,
+            sentence: golden.what.text.clone(),
+        });
     }
-    vec![Finding {
-        path: golden.what.path.clone(),
-        line: golden.what.line,
-        rule: Rule::Procedure,
-        sentence: golden.what.text.clone(),
-    }]
+    if let Advice::Help(ref advice) = golden.advice {
+        let read = readings(Text(&advice.text));
+        for sentence in help {
+            if instructions(&read, sentence) == Agrees::Agrees {
+                findings.push(Finding {
+                    path: advice.path.clone(),
+                    line: advice.line,
+                    rule: Rule::Instructions,
+                    sentence: spoken(advice, sentence),
+                });
+            }
+        }
+    }
+    findings
 }
 
 #[cfg(test)]
@@ -994,7 +1132,51 @@ mod tests
             ("it", "it", "PRON", "PRP", "dobj", 3),
             (".", ".", "PUNCT", ".", "punct", 3),
         ]);
-        assert_eq!(rules!(perfect, &none), [Rule::Tense]);
+        assert_eq!(rules!(perfect, &none), [Rule::Complex]);
+        let future = parsed!("The kernel will reduce it.", [
+            ("The", "the", "DET", "DT", "det", 1),
+            ("kernel", "kernel", "NOUN", "NN", "nsubj", 3),
+            ("will", "will", "AUX", "MD", "aux", 3),
+            ("reduce", "reduce", "VERB", "VB", "ROOT", 3),
+            ("it", "it", "PRON", "PRP", "dobj", 3),
+            (".", ".", "PUNCT", ".", "punct", 3),
+        ]);
+        assert_eq!(rules!(future, &none), [Rule::Tense]);
+        let progressive = parsed!("The kernel is reducing it.", [
+            ("The", "the", "DET", "DT", "det", 1),
+            ("kernel", "kernel", "NOUN", "NN", "nsubj", 3),
+            ("is", "be", "AUX", "VBZ", "aux", 3),
+            ("reducing", "reduce", "VERB", "VBG", "ROOT", 3),
+            ("it", "it", "PRON", "PRP", "dobj", 3),
+            (".", ".", "PUNCT", ".", "punct", 3),
+        ]);
+        assert_eq!(
+            rules!(progressive, &none),
+            [Rule::Tense],
+            "a progressive is a tense, not an `-ing` main verb"
+        );
+        let modal = parsed!("The term can be reduced.", [
+            ("The", "the", "DET", "DT", "det", 1),
+            ("term", "term", "NOUN", "NN", "nsubjpass", 4),
+            ("can", "can", "AUX", "MD", "aux", 4),
+            ("be", "be", "AUX", "VB", "auxpass", 4),
+            ("reduced", "reduce", "VERB", "VBN", "ROOT", 4),
+            (".", ".", "PUNCT", ".", "punct", 4),
+        ]);
+        assert_eq!(rules!(modal, &none), [Rule::Passive, Rule::Complex]);
+        let refused = parsed!("The term can be refused.", [
+            ("The", "the", "DET", "DT", "det", 1),
+            ("term", "term", "NOUN", "NN", "nsubjpass", 4),
+            ("can", "can", "AUX", "MD", "aux", 4),
+            ("be", "be", "AUX", "VB", "auxpass", 4),
+            ("refused", "refuse", "VERB", "VBN", "ROOT", 4),
+            (".", ".", "PUNCT", ".", "punct", 4),
+        ]);
+        assert_eq!(
+            rules!(refused, &none),
+            [Rule::Complex],
+            "a listed passive after a modal is still complex"
+        );
         let was = parsed!("The term was reduced.", [
             ("The", "the", "DET", "DT", "det", 1),
             ("term", "term", "NOUN", "NN", "nsubjpass", 3),
@@ -1040,6 +1222,43 @@ mod tests
             (".", ".", "PUNCT", ".", "punct", 0),
         ]);
         assert_eq!(rules!(ing, &none), [Rule::IngMain]);
+        let clause = parsed!("It ends the run, checking the term.", [
+            ("It", "it", "PRON", "PRP", "nsubj", 1),
+            ("ends", "end", "VERB", "VBZ", "ROOT", 1),
+            ("the", "the", "DET", "DT", "det", 3),
+            ("run", "run", "NOUN", "NN", "dobj", 1),
+            (",", ",", "PUNCT", ",", "punct", 1),
+            ("checking", "check", "VERB", "VBG", "advcl", 1),
+            ("the", "the", "DET", "DT", "det", 7),
+            ("term", "term", "NOUN", "NN", "dobj", 5),
+            (".", ".", "PUNCT", ".", "punct", 1),
+        ]);
+        assert_eq!(rules!(clause, &none), [Rule::IngMain]);
+        let gerund = parsed!("It ends the checking.", [
+            ("It", "it", "PRON", "PRP", "nsubj", 1),
+            ("ends", "end", "VERB", "VBZ", "ROOT", 1),
+            ("the", "the", "DET", "DT", "det", 3),
+            ("checking", "checking", "NOUN", "NN", "dobj", 1),
+            (".", ".", "PUNCT", ".", "punct", 1),
+        ]);
+        assert_eq!(rules!(gerund, &none), [], "an `-ing` noun is no clause");
+        let phrasal = parsed!("The kernel hands it back.", [
+            ("The", "the", "DET", "DT", "det", 1),
+            ("kernel", "kernel", "NOUN", "NN", "nsubj", 2),
+            ("hands", "hand", "VERB", "VBZ", "ROOT", 2),
+            ("it", "it", "PRON", "PRP", "dobj", 2),
+            ("back", "back", "ADP", "RP", "prt", 2),
+            (".", ".", "PUNCT", ".", "punct", 2),
+        ]);
+        assert_eq!(rules!(phrasal, &none), [Rule::Phrasal]);
+        let returned = parsed!("The kernel returns it.", [
+            ("The", "the", "DET", "DT", "det", 1),
+            ("kernel", "kernel", "NOUN", "NN", "nsubj", 2),
+            ("returns", "return", "VERB", "VBZ", "ROOT", 2),
+            ("it", "it", "PRON", "PRP", "dobj", 2),
+            (".", ".", "PUNCT", ".", "punct", 2),
+        ]);
+        assert_eq!(rules!(returned, &none), []);
         let noun = parsed!("The replay ends.", [
             ("The", "the", "DET", "DT", "det", 1),
             ("replay", "replay", "NOUN", "NN", "nsubj", 2),
@@ -1127,6 +1346,57 @@ mod tests
             rules!(joined, &Glossary::default()),
             [Rule::Semicolon],
             "a corpus comment holds the body's rules"
+        );
+        let two = parsed!("Read the file and write the log.", [
+            ("Read", "read", "VERB", "VB", "ROOT", 0),
+            ("the", "the", "DET", "DT", "det", 2),
+            ("file", "file", "NOUN", "NN", "dobj", 0),
+            ("and", "and", "CCONJ", "CC", "cc", 0),
+            ("write", "write", "VERB", "VB", "conj", 0),
+            ("the", "the", "DET", "DT", "det", 6),
+            ("log", "log", "NOUN", "NN", "dobj", 4),
+            (".", ".", "PUNCT", ".", "punct", 0),
+        ]);
+        assert_eq!(bodied!(two.clone()), [Rule::Instructions]);
+        assert_eq!(
+            rules!(two, &Glossary::default()),
+            [Rule::Instructions],
+            "a corpus comment holds the two instructions too"
+        );
+        let either = parsed!("Read the file or write the log.", [
+            ("Read", "read", "VERB", "VB", "ROOT", 0),
+            ("the", "the", "DET", "DT", "det", 2),
+            ("file", "file", "NOUN", "NN", "dobj", 0),
+            ("or", "or", "CCONJ", "CC", "cc", 0),
+            ("write", "write", "VERB", "VB", "conj", 0),
+            ("the", "the", "DET", "DT", "det", 6),
+            ("log", "log", "NOUN", "NN", "dobj", 4),
+            (".", ".", "PUNCT", ".", "punct", 0),
+        ]);
+        assert_eq!(bodied!(either), [], "a choice is one instruction");
+        let stated = parsed!("The kernel reads and writes the log.", [
+            ("The", "the", "DET", "DT", "det", 1),
+            ("kernel", "kernel", "NOUN", "NN", "nsubj", 2),
+            ("reads", "read", "VERB", "VBZ", "ROOT", 2),
+            ("and", "and", "CCONJ", "CC", "cc", 2),
+            ("writes", "write", "VERB", "VBZ", "conj", 2),
+            ("the", "the", "DET", "DT", "det", 6),
+            ("log", "log", "NOUN", "NN", "dobj", 4),
+            (".", ".", "PUNCT", ".", "punct", 2),
+        ]);
+        assert_eq!(bodied!(stated), [], "a statement holds no instruction");
+        let handed = parsed!("The kernel hands it back.", [
+            ("The", "the", "DET", "DT", "det", 1),
+            ("kernel", "kernel", "NOUN", "NN", "nsubj", 2),
+            ("hands", "hand", "VERB", "VBZ", "ROOT", 2),
+            ("it", "it", "PRON", "PRP", "dobj", 2),
+            ("back", "back", "ADP", "RP", "prt", 2),
+            (".", ".", "PUNCT", ".", "punct", 2),
+        ]);
+        assert_eq!(
+            bodied!(handed),
+            [],
+            "a body is not held to the phrasal verb"
         );
         let closing = parsed!("It reads a term;", [
             ("It", "it", "PRON", "PRP", "nsubj", 1),
@@ -1348,7 +1618,7 @@ mod tests
             ("edit", "edit", "NOUN", "NN", "nsubj", 2),
             ("applies", "apply", "VERB", "VBZ", "ROOT", 2),
         ]);
-        let helped = Advice::Help(help_passage);
+        let helped = Advice::Help(help_passage.clone());
         assert_eq!(
             procedure(
                 &golden(Placed::Labelled, helped.clone()),
@@ -1375,6 +1645,28 @@ mod tests
                 "{placed:?} {advice:?}"
             );
         }
+        let (_, twice) = parsed!("apply this edit and rerun it", [
+            ("apply", "apply", "VERB", "VB", "ROOT", 0),
+            ("this", "this", "DET", "DT", "det", 2),
+            ("edit", "edit", "NOUN", "NN", "dobj", 0),
+            ("and", "and", "CCONJ", "CC", "cc", 0),
+            ("rerun", "rerun", "VERB", "VB", "conj", 0),
+            ("it", "it", "PRON", "PRP", "dobj", 4),
+        ]);
+        let two_passage = passage::Passage {
+            text: "apply this edit and rerun it".to_owned(),
+            ..help_passage
+        };
+        assert_eq!(
+            procedure(&golden(Placed::Labelled, Advice::Help(two_passage)), &[
+                twice
+            ])
+            .iter()
+            .map(|finding| (finding.rule, finding.sentence.as_str()))
+            .collect::<Vec<_>>(),
+            [(Rule::Instructions, "apply this edit and rerun it")],
+            "a help line holds one instruction"
+        );
     }
 
     #[test]
@@ -1474,7 +1766,7 @@ mod tests
                 vec![item],
                 vec![item_parse]
             ),
-            [Rule::Item]
+            [Rule::Wall]
         );
         let held = passage("/// One. Two.\n");
         let held_line = held.line;
