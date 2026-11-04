@@ -12,4 +12,5 @@ error[ViewReadOnly]: `resume` and `abort` end an exclusive view; a shared view i
 6 │ │ }
   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `written` is refused with ViewReadOnly, as its expectation states
+  ├ note: `written` is refused with ViewReadOnly, as its expectation states
+  ╰ help: end the shared view with its body, without `resume` or `abort`

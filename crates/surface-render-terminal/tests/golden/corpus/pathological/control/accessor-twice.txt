@@ -13,7 +13,8 @@ error[ViewSpent]: the view is used after its `resume` or `abort`
 7 │ │ }
   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `twice` is refused with ViewSpent, as its expectation states
+  ├ note: `twice` is refused with ViewSpent, as its expectation states
+  ╰ help: use the view before its `resume` or `abort`
 
 error[ViewUnended]: the body of this `access` must end its view with `resume` or `abort`
    ╭▸ corpus/pathological/control/accessor-twice.gandr:14:3

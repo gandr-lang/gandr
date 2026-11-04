@@ -38,7 +38,8 @@ error[ViewReadOnly]: `resume` and `abort` end an exclusive view; a shared view i
 14 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `written` is refused with ViewReadOnly, as its expectation states
+   ├ note: `written` is refused with ViewReadOnly, as its expectation states
+   ╰ help: end the shared view with its body, without `resume` or `abort`
 
 error[ViewReadOnly]: `resume` and `abort` end an exclusive view; a shared view is read-only and ends with its body
    ╭▸ corpus/pathological/control/accessor-shared.gandr:20:26
@@ -54,4 +55,5 @@ error[ViewReadOnly]: `resume` and `abort` end an exclusive view; a shared view i
 21 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `aborted` is refused with ViewReadOnly, as its expectation states
+   ├ note: `aborted` is refused with ViewReadOnly, as its expectation states
+   ╰ help: end the shared view with its body, without `resume` or `abort`

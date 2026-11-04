@@ -13,4 +13,5 @@ error[SessionMismatch]: the endpoint's protocol expects a send here, not a recei
 7 │ │ }
   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `desk_receives_first` is refused with SessionMismatch, as its expectation states
+  ├ note: `desk_receives_first` is refused with SessionMismatch, as its expectation states
+  ╰ help: change the endpoint action or protocol so that they agree

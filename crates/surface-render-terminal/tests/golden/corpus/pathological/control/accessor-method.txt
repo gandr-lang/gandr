@@ -107,4 +107,5 @@ error[StrayReceiverMode]: `m` is a receiver's mode: only a module member's first
 79 │ def lent[m : Mode](ys : m List(Integer)) -> -F Integer {
    │                         ━ a mode off a receiver
    │
-   ╰ note: `lent` is refused with StrayReceiverMode, as its expectation states
+   ├ note: `lent` is refused with StrayReceiverMode, as its expectation states
+   ╰ help: write the receiver mode only on a module member's first `self` parameter

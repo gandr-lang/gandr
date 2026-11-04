@@ -16,4 +16,5 @@ error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an 
 9 │ │ }
   │ └─┘ checked against `Cap {exit} => Integer`; while checking the body of this thunk
   │
-  ╰ note: `noisy` is refused with UnwindEffect, as its expectation states
+  ├ note: `noisy` is refused with UnwindEffect, as its expectation states
+  ╰ help: remove the effect from the `unwind`
