@@ -2120,7 +2120,7 @@ mod tests
         };
         assert_eq!(
             (diagnostic.range, diagnostic.code.as_deref()),
-            (range(Span(0, 40, 0, 41)), Some("TypeMismatch")),
+            (range(Span(0, 41, 0, 42)), Some("TypeMismatch")),
             "the returned value is the lead range"
         );
         let related: Vec<(Range, &str)> = diagnostic
@@ -2131,11 +2131,11 @@ mod tests
         assert_eq!(
             related,
             [
-                (range(Span(0, 24, 0, 30)), "the type it is checked against"),
-                (range(Span(0, 9, 0, 16)), "the type it synthesises"),
+                (range(Span(0, 25, 0, 31)), "the type it is checked against"),
+                (range(Span(0, 10, 0, 17)), "the type it synthesises"),
                 (
-                    range(Span(0, 0, 0, 43)),
-                    "checked against `Integer => String`; while checking the body of this \
+                    range(Span(0, 0, 0, 44)),
+                    "checked against `Integer -> String`; while checking the body of this \
                      thunk"
                 ),
                 (
@@ -2144,7 +2144,7 @@ mod tests
                      function; binds v : Integer"
                 ),
                 (
-                    range(Span(0, 33, 0, 41)),
+                    range(Span(0, 34, 0, 42)),
                     "checked against `-F String`; while judging the value this returns"
                 ),
             ],

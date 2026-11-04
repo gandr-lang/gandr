@@ -1253,8 +1253,8 @@ fn the_sugared_form_writes_every_sugar_its_shape_admits()
     }
     for (root, (sugared, explicit)) in values.into_iter().zip([
         ("*{1}", "*{1}"),
-        ("(1, \"two\")", "*{1, \"two\"}"),
-        ("(1, (1, \"two\"))", "*{1, *{1, \"two\"}}"),
+        ("*{1, \"two\"}", "*{1, \"two\"}"),
+        ("*{1, *{1, \"two\"}}", "*{1, *{1, \"two\"}}"),
     ]) {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
             let presented = presented_in(&source, Root::Value(root), wide(), form);
@@ -1535,7 +1535,7 @@ fn a_truth_value_at_a_path_endpoint_spells_as_its_word_2407()
     let source = CoreSource::new(&core, &[]);
     for (ty, expected) in [
         (between, "Path[.A = Bool](true, false)"),
-        (bare, "Path[.A = Bool](+{.0 = unit}, +{.1 = unit})"),
+        (bare, "Path[.A = Bool](+{.0 = *{}}, +{.1 = *{}})"),
     ] {
         assert_eq!(
             spelled(&source, Root::Type(CoreNode::ValueType(ty))),
@@ -2616,7 +2616,7 @@ fn a_selection_off_a_dependent_record_spells_its_label_3971()
             Root::Type(CoreNode::CompType(arrow))
         ),
         faithful(Written(
-            "(r : #{x : Integer, y : Integer, z : Path[.A = Integer](x, y)}) ->\n  -F \
+            "(r : *{x : Integer, y : Integer, z : Path[.A = Integer](x, y)}) ->\n  -F \
              Path[.A = Path[.A = Integer](r.x, r.y)](r.z, r.z)"
         )),
     );
@@ -3409,11 +3409,11 @@ fn a_quoted_telescope_type_is_quoted_1514()
     for (root, spelling) in [
         (
             telescope,
-            "type(#{a : Integer, b : Path[.A = Integer](a, a)})",
+            "type(*{a : Integer, b : Path[.A = Integer](a, a)})",
         ),
         (
             argument,
-            "Flow.stay(type(#{a : Integer, b : Path[.A = Integer](a, a)}))",
+            "Flow.stay type(*{a : Integer, b : Path[.A = Integer](a, a)})",
         ),
     ] {
         for form in [Form::Sugared, Form::Explicit] {
@@ -3457,7 +3457,7 @@ fn a_path_type_over_a_family_application_is_quoted_3279()
     let source = CoreSource::new(&core, &names);
     for (root, spelling) in [
         (over_application, "type(Path[.A = Maybe(Nat)](a, c))"),
-        (argument, "Flow.stay(type(Path[.A = Maybe(Nat)](a, c)))"),
+        (argument, "Flow.stay type(Path[.A = Maybe(Nat)](a, c))"),
         (over_nullary, "type(Path[.A = Nat](a, c))"),
         (over_base, "type(Path[.A = Integer](a, c))"),
     ] {
@@ -3603,16 +3603,16 @@ fn a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102()
     for (root, sugared, explicit) in [
         (
             in_thunk,
-            "Path[.A = Unit * Integer => Unit * Integer](fun (a) { pick(type(Unit * Integer), a) }, fun \
-             (a) { pick(type(Unit * Integer), a) })",
-            "Path[.A = +U (*{Unit, Integer} -> -F *{Unit, Integer})](fun (a) { pick(*{Unit, Integer}, \
-             a) }, fun (a) { pick(*{Unit, Integer}, a) })",
+            "Path[.A = Unit * Integer -> Unit * Integer](fun (a) { pick type(Unit * Integer) a }, fun \
+             (a) { pick type(Unit * Integer) a })",
+            "Path[.A = +U (*{Unit, Integer} -> -F *{Unit, Integer})](fun (a) { pick *{Unit, Integer} \
+             a }, fun (a) { pick *{Unit, Integer} a })",
         ),
         (
             at_endpoint,
-            "Path[.A = Unit * Integer](pick(type(Unit * Integer), held), pick(type(Unit * Integer), \
-             held))",
-            "Path[.A = #{Unit, Integer}](pick(#{Unit, Integer}, held), pick(#{Unit, Integer}, held))",
+            "Path[.A = Unit * Integer](pick type(Unit * Integer) held, pick type(Unit * Integer) \
+             held)",
+            "Path[.A = *{Unit, Integer}](pick *{Unit, Integer} held, pick *{Unit, Integer} held)",
         ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -3768,16 +3768,16 @@ fn every_value_leaf_spells_as_the_surface_writes_it()
         (&named, zero, faithful(Written("Zero"))),
         (&named, one, faithful(Written("Succ Zero"))),
         (&unnamed, one, approximate(Written("? ?"))),
-        (&named, nil, faithful(Written("Path.here (Base)"))),
+        (&named, nil, faithful(Written("Path.here Base"))),
         (
             &named,
             word,
-            faithful(Written("back (loop) ∷ loop ∷ Path.here (Base)")),
+            faithful(Written("back loop ∷ loop ∷ Path.here Base")),
         ),
         (
             &named,
             counted,
-            faithful(Written("Succ (back (loop) ∷ loop ∷ Path.here (Base))")),
+            faithful(Written("Succ (back loop ∷ loop ∷ Path.here Base)")),
         ),
         (&unnamed, word, approximate(Written("? (? ?)"))),
     ] {
@@ -4514,12 +4514,12 @@ fn a_returned_composite_of_paths_is_written_as_a_step_754()
         (
             composite,
             Form::Explicit,
-            "Path.walk(fun (a) { type(Path[.A = Circle](base, a)) }, loop, loop)",
+            "Path.walk (fun (a) { type(Path[.A = Circle](base, a)) }) loop loop",
         ),
         (
             transported,
             Form::Sugared,
-            "Path.walk(fun (a) { type(Path[.A = Circle](a, a)) }, loop, loop)",
+            "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop loop",
         ),
     ] {
         let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -4566,7 +4566,7 @@ fn a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218()
         (agreeing, "Path.step (Path.here base) loop"),
         (
             apart,
-            "Path.walk(fun (a) { type(Path[.A = Circle](other, a)) }, loop, Path.here(base))",
+            "Path.walk (fun (a) { type(Path[.A = Circle](other, a)) }) loop (Path.here base)",
         ),
         (squared, "Path.step (Path.here (Path.here base)) loop"),
     ] {
@@ -4620,8 +4620,8 @@ fn a_composite_a_transport_moves_stays_explicit_815()
     );
     assert_eq!(
         rendered.as_ref(),
-        "Path.walk(fun (a) { type(Path[.A = Circle](a, a)) }, Path.walk(fun (a) { type(Path[.A = Circle](base, a)) }, loop, loop), \
-         Path.walk(fun (a) { type(Path[.A = Circle](base, a)) }, loop, loop))"
+        "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) (Path.walk (fun (a) { type(Path[.A = Circle](base, a)) }) loop loop) \
+         (Path.walk (fun (a) { type(Path[.A = Circle](base, a)) }) loop loop)"
     );
     let rendered = presented_in(
         &source,
@@ -4685,19 +4685,19 @@ fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
         (
             inverse,
             Form::Explicit,
-            "Path.walk(fun (a) { type(Path[.A = Circle](a, base)) }, loop, Path.here(base))",
+            "Path.walk (fun (a) { type(Path[.A = Circle](a, base)) }) loop (Path.here base)",
         ),
         (action, Form::Sugared, "Path.ap spin loop"),
         (
             action,
             Form::Explicit,
-            "Path.walk(fun (a) { type(Path[.A = Circle](spin(base), spin(a))) }, loop, Path.here(spin(base)))",
+            "Path.walk (fun (a) { type(Path[.A = Circle](spin base, spin a)) }) loop (Path.here (spin base))",
         ),
         (mapped, Form::Sugared, "Path.ap f loop"),
         (
             unmapped,
             Form::Sugared,
-            "Path.walk(fun (a) { type(Path[.A = Circle](base, spin(a))) }, loop, Path.here(base))",
+            "Path.walk (fun (a) { type(Path[.A = Circle](base, spin a)) }) loop (Path.here base)",
         ),
     ] {
         let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -5906,7 +5906,7 @@ fn no_thunk_is_left_out_below_a_type_3972()
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(endpoints))),
         faithful(Written(
-            "Path[.A = +U (-F Integer)](thunk { kept(thunk { twice(1) }) }, thunk { kept(thunk { twice(1) }) })"
+            "Path[.A = +U (-F Integer)](thunk { kept (thunk { twice 1 }) }, thunk { kept (thunk { twice 1 }) })"
         )),
         "a call inside an endpoint's thunk keeps its argument's thunk"
     );
@@ -6066,8 +6066,8 @@ fn a_bind_of_several_outputs_is_written_as_its_pattern_5157()
     let bound = core.computation_bind_all(called, ComponentCount::from(2_usize), returned);
     let source = CoreSource::new(&core, &names);
     for (form, expected) in [
-        (Form::Sugared, "let (a, b) = f(1, 2) ; (b, a)"),
-        (Form::Explicit, "let (a, b) = f(1, 2) ; #{b, a}"),
+        (Form::Sugared, "let (a, b) = f 1 2 ; *{b, a}"),
+        (Form::Explicit, "let (a, b) = f 1 2 ; *{b, a}"),
     ] {
         let presented = presented_in(
             &source,
@@ -7180,7 +7180,7 @@ fn a_returned_typed_bind_in_an_argument_is_a_block_3942()
         (
             over_universe,
             "Path[.A = Type]({ let a : Type = pure type(Unit * Integer) ; pure a }, Unit * Integer)",
-            "Path[.A = Type]({ let a : Type = pure #{Unit, Integer} ; pure a }, #{Unit, Integer})",
+            "Path[.A = Type]({ let a : Type = pure *{Unit, Integer} ; pure a }, *{Unit, Integer})",
         ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {

@@ -9974,13 +9974,13 @@ mod tests
                 "pub def rec plus+0:17 `n` parameter declaration+value",
                 "pub def rec plus+0:26 `m` parameter declaration+value",
                 "pub def rec plus+1:8 `m` parameter value",
-                "pub def rec plus+2:4 `Zero` enumMember value",
-                "pub def rec plus+2:12 `n` parameter value",
-                "pub def rec plus+3:4 `Succ` enumMember value",
-                "pub def rec plus+3:9 `p` variable declaration+value",
-                "pub def rec plus+3:20 `plus` function computation",
-                "pub def rec plus+3:28 `n` parameter value",
-                "pub def rec plus+3:31 `p` variable value",
+                "pub def rec plus+2:6 `Zero` enumMember value",
+                "pub def rec plus+2:14 `n` parameter value",
+                "pub def rec plus+3:6 `Succ` enumMember value",
+                "pub def rec plus+3:11 `p` variable declaration+value",
+                "pub def rec plus+3:23 `plus` function computation",
+                "pub def rec plus+3:31 `n` parameter value",
+                "pub def rec plus+3:33 `p` variable value",
             ],
             "#1487: the recursive call's name, written with its claim as `plus[<]`, is run as a \
              computation as any called name is; the arguments passed to it are values"
@@ -10929,7 +10929,7 @@ mod tests
             }})
         };
         let uses = [
-            location("base.gandr", 6, 4, 8),
+            location("base.gandr", 5, 6, 10),
             location("first.gandr", 2, 13, 17),
             location("second.gandr", 2, 12, 16),
         ];
@@ -10949,16 +10949,16 @@ mod tests
             "the same uses from the declaring name, the declaration left out"
         );
         assert_eq!(
-            references("base.gandr", 6, 12, true),
+            references("base.gandr", 5, 14, true),
             Value::Array(vec![
-                location("base.gandr", 4, 17, 18),
-                location("base.gandr", 6, 12, 13),
-                location("base.gandr", 7, 28, 29),
+                location("base.gandr", 3, 17, 18),
+                location("base.gandr", 5, 14, 15),
+                location("base.gandr", 6, 31, 32),
             ]),
             "a parameter's uses stay in its declaration, though every importer reads the source"
         );
         assert_eq!(
-            references("base.gandr", 5, 3, true),
+            references("base.gandr", 4, 3, true),
             Value::Array(vec![]),
             "a keyword refers to nothing"
         );
@@ -11043,19 +11043,19 @@ mod tests
         let minus = item(
             "following.gandr",
             "minus",
-            lines(minus_at, below(minus_at, 8), 1),
+            lines(minus_at, below(minus_at, 5), 31),
             span(minus_at, 8, 13),
         );
         let difference = item(
             "following.gandr",
             "difference",
-            lines(difference_at, difference_at, 54),
+            lines(difference_at, difference_at, 53),
             span(difference_at, 4, 14),
         );
         let three = item(
             "data-base.gandr",
             "three",
-            span(three_at, 4, 32),
+            span(three_at, 4, 31),
             span(three_at, 8, 13),
         );
         let call = |key: &str, item: &Value, ranges: &[Range]| serde_json::json!({key: item, "fromRanges": ranges});
@@ -11081,26 +11081,26 @@ mod tests
                 serde_json::json!({"item": minus})
             ),
             serde_json::json!([
-                call("from", &minus, &[span(below(minus_at, 5), 17, 22)]),
+                call("from", &minus, &[span(below(minus_at, 5), 19, 24)]),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "divided",
-                        lines(divided_at, below(divided_at, 5), 1),
+                        lines(divided_at, below(divided_at, 3), 61),
                         span(divided_at, 8, 15)
                     ),
-                    &[span(below(divided_at, 3), 25, 30)]
+                    &[span(below(divided_at, 3), 27, 32)]
                 ),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "halvedUp",
-                        lines(halved_at, below(halved_at, 5), 1),
+                        lines(halved_at, below(halved_at, 3), 70),
                         span(halved_at, 8, 16)
                     ),
-                    &[span(below(halved_at, 3), 25, 30)]
+                    &[span(below(halved_at, 3), 27, 32)]
                 ),
                 call("from", &difference, &[span(difference_at, 29, 34)]),
             ]),
@@ -11111,7 +11111,7 @@ mod tests
                 "callHierarchy/outgoingCalls",
                 serde_json::json!({"item": minus})
             ),
-            serde_json::json!([call("to", &minus, &[span(below(minus_at, 5), 17, 22)])]),
+            serde_json::json!([call("to", &minus, &[span(below(minus_at, 5), 19, 24)])]),
             "`minus` calls itself once, at the recursive call's name; `Succ` and `Zero` are no calls"
         );
         assert_eq!(
@@ -11140,14 +11140,14 @@ mod tests
                         lines(quotient_at, quotient_at, 60),
                         span(quotient_at, 4, 12)
                     ),
-                    &[span(quotient_at, 40, 45)]
+                    &[span(quotient_at, 41, 46)]
                 ),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "halvedThree",
-                        lines(halved_three_at, halved_three_at, 46),
+                        lines(halved_three_at, halved_three_at, 45),
                         span(halved_three_at, 4, 15)
                     ),
                     &[span(halved_three_at, 39, 44)]
@@ -11160,7 +11160,7 @@ mod tests
                         lines(four_at, four_at, 51),
                         span(four_at, 4, 16)
                     ),
-                    &[span(four_at, 43, 48)]
+                    &[span(four_at, 44, 49)]
                 ),
             ]),
             "the base's `three`, asked about where no editor holds the base, is called by the \
@@ -11431,7 +11431,7 @@ mod tests
             serde_json::json!([
                 location("base.gandr", 1, 4, 8),
                 location("first.gandr", 2, 13, 17),
-                location("base.gandr", 6, 4, 8),
+                location("base.gandr", 5, 6, 10),
                 location("unopened.gandr", 2, 13, 17),
             ]),
             "the declaration, then the open importer's use, then the uses of the sources no editor \
@@ -11469,7 +11469,7 @@ mod tests
                 serde_json::json!({"newName": "Nought"})
             )["result"],
             serde_json::json!({"changes": {
-                uri("base.gandr"): [edit(1, 4, 8), edit(6, 4, 8)],
+                uri("base.gandr"): [edit(1, 4, 8), edit(5, 6, 10)],
                 uri("first.gandr"): [edit(2, 13, 17)],
                 uri("unopened.gandr"): [edit(2, 13, 17)],
             }}),
@@ -13573,7 +13573,7 @@ mod tests
             Json(
                 r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
                     {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
-                     "text":"def id : Integer => Integer ;\ndef id = thunk { fun (y) { return y } } ;\n"}}}"#,
+                     "text":"def id : Integer -> Integer ;\ndef id = thunk { fun (y) { return y } } ;\n"}}}"#,
             ),
         );
         let ask = |server: &mut Connected, uri: &str, (from, to): (u32, u32)| {
@@ -16002,7 +16002,9 @@ mod tests
 
     /// #1547: a change that arrives while its document's admission waits for
     /// the pool retires it, its line logged as retired, and the change's own
-    /// admission settles whole once the pool frees.
+    /// admission settles whole once the pool frees: the document's own
+    /// declarations cross again, and the prelude's cross or resume from the
+    /// process's store, which other tests in the process fill.
     #[test]
     fn a_change_during_an_admission_retires_it_1547()
     {
@@ -16074,18 +16076,21 @@ mod tests
         else {
             panic!("the change's admission settles once: {:?}", settled.log);
         };
+        let crossing = admitted
+            .to_string()
+            .rsplit_once(", ")
+            .and_then(|(_, crossed)| {
+                let (crossed, of) = crossed
+                    .strip_suffix(" declarations crossed")?
+                    .split_once('/')?;
+                Some((crossed.parse::<usize>().ok()?, of.parse::<usize>().ok()?))
+            });
         assert!(
             admitted.to_string().contains("at version 2: ")
                 && admitted.to_string().contains(", admitted in ")
-                && admitted
-                    .to_string()
-                    .rsplit_once(", ")
-                    .and_then(|(_, crossed)| crossed
-                        .strip_suffix(" declarations crossed")?
-                        .split_once('/'))
-                    .is_some_and(|(crossed, of)| crossed == of),
-            "the change's admission crosses the revision whole, the prelude's among them: \
-             {admitted}"
+                && crossing.is_some_and(|(crossed, of)| crossed >= 2_usize && crossed <= of),
+            "the change's admission settles the revision, its document's two declarations \
+             crossed again: {admitted}"
         );
         assert!(matches!(
             blocking.wait(),

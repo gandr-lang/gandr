@@ -889,7 +889,7 @@ mod tests
             offered.keywords.iter().any(|written| written == keyword)
         };
 
-        let value = at("p)\n  }");
+        let value = at("plus[<] n p)");
         assert_eq!(
             value.names,
             named!([
@@ -1172,10 +1172,10 @@ mod tests
 
         let head = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec plus(n : \
                     Nat, m : Nat) -> -F Nat {\n  match m {\n    | Zero => ";
-        let own = format!("{head}n\n    | Succ(p) => Succ p");
+        let own = format!("{head}n\n    | Succ(p) => Succ (p");
         let own = offered(
             SourceText::from(own.as_str()),
-            SourceText::from("\n  }\n}\n"),
+            SourceText::from(")\n  }\n}\n"),
         );
         assert_eq!(
             own.names,
@@ -1185,7 +1185,7 @@ mod tests
         let sibling = format!("{head}p");
         let sibling = offered(
             SourceText::from(sibling.as_str()),
-            SourceText::from("\n    | Succ(p) => Succ p\n  }\n}\n"),
+            SourceText::from("\n    | Succ(p) => Succ (p)\n  }\n}\n"),
         );
         assert_eq!(
             sibling.names,
@@ -1318,7 +1318,7 @@ mod tests
             word("continue"),
             row(
                 "offer",
-                "offer (${1:value}) { ${2:pattern} => ${3:computation} \\}",
+                "offer (${1:value}) { | ${2:pattern} => ${3:computation} \\}",
             ),
             row(
                 "migrate",
@@ -1341,7 +1341,6 @@ mod tests
             row("abort", "abort (${1:identifier})"),
             word("true"),
             word("false"),
-            word("unit"),
         ];
         assert_eq!(
             table(
@@ -1496,7 +1495,7 @@ mod tests
         };
         let shown = |text: &str| Some(String::from(text));
         assert_eq!(
-            at(")\n  }\n}", LabelsDetailed(true)),
+            at("lus[<] n p)", LabelsDetailed(true)),
             [
                 (
                     String::from("p"),
@@ -1505,8 +1504,8 @@ mod tests
                 ),
                 (
                     String::from("plus"),
-                    shown("plus : Nat => Nat"),
-                    Some((shown(" : Nat => Nat"), None))
+                    shown("plus : Nat -> Nat"),
+                    Some((shown(" : Nat -> Nat"), None))
                 ),
             ],
             "a binder carries its type, in the list and beside its label"
@@ -1543,7 +1542,7 @@ mod tests
             "a value whose head is its name alone carries nothing beside it"
         );
         assert!(
-            at(")\n  }\n}", LabelsDetailed(false))
+            at("lus[<] n p)", LabelsDetailed(false))
                 .iter()
                 .all(|&(_, ref detail, ref beside)| detail.is_some() && beside.is_none()),
             "a client that shows no label details is given the detail alone"

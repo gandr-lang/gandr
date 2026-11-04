@@ -1963,7 +1963,9 @@ where
 /// or nothing where it stands as written. The lowering mints a word's inverse
 /// letter and its empty word as the call a pattern and a type read glued,
 /// `back(loop)` and `Path.here(Base)`; an expression reads that call
-/// juxtaposed, `back (loop)`, as the formatter writes it, an application.
+/// juxtaposed, `back loop` and `Path.here Base`, an application, its operand
+/// bare when it is one name and parenthesised otherwise, `Path.here (spin
+/// Base)`.
 ///
 /// # Specification
 /// trivial.
@@ -1978,7 +1980,17 @@ fn juxtaposed_name(
             Some((head, rest))
                 if !head.is_empty() && !head.ends_with(' ') && rest.ends_with(')') =>
             {
-                Some(Written(Cow::Owned(format!("{head} ({rest}"))))
+                let operand = rest.strip_suffix(')').unwrap_or(rest);
+                let named = !operand.is_empty()
+                    && operand.chars().all(|letter| {
+                        letter.is_alphanumeric() || matches!(letter, '_' | '.' | '\'')
+                    });
+                Some(Written(Cow::Owned(if named {
+                    format!("{head} {operand}")
+                }
+                else {
+                    format!("{head} ({operand})")
+                })))
             },
             Some(_) | None => None,
         },
@@ -3062,8 +3074,6 @@ enum Join
         /// How many operands it joins.
         arity: Arity,
     },
-    /// A tuple of this many components, two or more, `(a, b)`.
-    Tuple(Arity),
     /// The returner of a group of this many results, `-F (A, B)`, `-F ()`.
     Returns(Arity),
     /// The box over this many domains and then its codomain: `() -> C`,
@@ -9370,12 +9380,6 @@ impl Walk<'_, '_>
                     arity: Arity(usize::from(arity)),
                 }))
             },
-            Former::Tuple(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
-                Some(writes(
-                    Production("parenthesized_expression"),
-                    Join::Tuple(Arity(usize::from(arity))),
-                ))
-            },
             Former::Product(arity) => Some(writes(Production("telescope_type"), Join::Braced {
                 brace: Brace::Star,
                 arity: Arity(usize::from(arity)),
@@ -12556,7 +12560,7 @@ impl Walk<'_, '_>
             Join::Prefix(_) | Join::OpenRow { .. } | Join::StaticLambda { .. } | Join::Lambda | Join::Thunk
                 | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::Prefix | Bracket::Dialogue | Bracket::Decompose | Bracket::TypeQuote | Bracket::Break) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
-                | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) | Join::Returns(Arity(count)) | Join::Compose(_, Arity(count)) => Some(count),
+                | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Returns(Arity(count)) | Join::Compose(_, Arity(count)) => Some(count),
             Join::Fill(_, Arity(cells)) => cells.checked_add(1_usize),
             Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
@@ -12585,7 +12589,7 @@ impl Walk<'_, '_>
                     Join::Infix { infix, .. } => infix.binding(),
                     Join::Bracket(bracket) => match bracket.opener(self.surface) { Opener::Parenthesized(_) => Binding::Atom, Opener::Juxtaposed(_) => Binding::Application },
                     Join::Apply(_) | Join::Ua(_) | Join::Compose(..) | Join::Fill(..) => Binding::Application,
-                    Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::Tuple(_) | Join::OpenRow { .. } => Binding::Atom,
+                    Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::OpenRow { .. } => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
@@ -12746,10 +12750,6 @@ impl Walk<'_, '_>
                     joined.ok_or(PresentationError::Unbalanced)?,
                     infix.binding(),
                 )
-            },
-            Join::Tuple(arity) => {
-                let components = self.take(arity)?;
-                (self.listed(&components)?, Binding::Atom)
             },
             Join::Returns(arity) => {
                 let results = self.take(arity)?;

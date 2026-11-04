@@ -132,7 +132,6 @@
 //!   replaces [`rank`] behind the same signature, and the ranking golden
 //!   changes with it.
 
-use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::cell::OnceCell;
@@ -1935,8 +1934,9 @@ impl Labeled<'_>
     /// - ensures: [`Slot::Filled`] when the text ends in a comment, a string or
     ///   a shebang line; otherwise the slot [`ghost`](Self::ghost) reads at the
     ///   text's end, from the top-level form the text ends molded alone, with
-    ///   each layout block open at the end left open ([`open_at_end`]), as a
-    ///   written `{` the text has not closed is.
+    ///   the layout the text ends in read at the cursor ([`at_cursor`]): a
+    ///   block open at the cursor's column stays open, as a written `{` the
+    ///   text has not closed does, and one the cursor stands outside closes.
     /// - fails: never.
     /// - panics: none.
     /// - intension: one molding of the form the text ends and one bounded walk
@@ -1958,8 +1958,8 @@ impl Labeled<'_>
         if lead(self.text, self.labeling.tokens()) != Lead::Code {
             return Slot::Filled;
         }
-        let tokens = open_at_end(self.labeling.tokens());
-        let tokens = tokens.as_ref();
+        let tokens = at_cursor(self);
+        let tokens = tokens.as_slice();
         let mut molder = Molder::new(grammar);
         let mut state = MeldState::new(grammar);
         if let Some(&form) = molder.form_runs(tokens, self.text).last() {
@@ -1976,44 +1976,50 @@ impl Labeled<'_>
     }
 }
 
-/// `tokens`, a text's labeling, with each layout block that is open at the
-/// text's end left open: without the zero-width `;` and `}` the layout pass
-/// writes after the text's last written token. A text cut at a cursor goes on
-/// past the cut, so a block open there is not closed there.
+/// The tokens of `labeled`, a text cut at a cursor, with the layout read as if
+/// the cursor wrote a word: the text goes on past the cut, so a layout block
+/// is closed or separated there only as the next word's column says, and not
+/// because the text ends.
 ///
 /// # Specification
-/// - requires: `tokens` is a labeling, in text order.
-/// - ensures: `tokens` less each [`Lexeme::LayoutSemi`] and
-///   [`Lexeme::LayoutClose`] after the last token that is neither one of them
-///   nor [`Lexeme::Space`]; borrowed when there is none.
+/// - requires: nothing.
+/// - ensures: the labeling of `labeled`'s text followed by [`STAND_IN`], up to
+///   the stand-in's own token: each zero-width `;` and `}` the layout pass
+///   writes before the stand-in is kept, and each it writes after it is not.
 /// - fails: never.
 /// - panics: none.
-/// - economy: one backward scan; a copy only when a closer is dropped.
+/// - economy: one copy of the tokens and one rescan from the cut's line
+///   ([`Labeling::relabel`]).
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Labeled::slot`].
+/// - hypothesis: L3 — as [`Labeled::slot`]: a layout body after `return` and
+///   after an operator offers the names of its braced spelling, and a cursor at
+///   column zero after a layout source's last declaration is at the top level.
 /// - witness: `complete::tests::a_layout_body_offers_as_its_braces_do_4853`
-fn open_at_end(tokens: &[Token]) -> Cow<'_, [Token]>
+/// - witness: `complete::tests::a_keyword_inserts_its_form_as_a_snippet`
+fn at_cursor(labeled: &Labeled<'_>) -> Vec<Token>
 {
-    let closer = |token: &Token| matches!(token.lexeme, Lexeme::LayoutSemi | Lexeme::LayoutClose);
-    let written = tokens
+    let text = <&str>::from(labeled.text);
+    let mut probe = String::with_capacity(text.len().saturating_add(STAND_IN.len()));
+    probe.push_str(text);
+    probe.push_str(STAND_IN);
+    let (labeling, _relabeled) = labeled.labeling.clone().relabel(
+        SourceFragment::from(text),
+        SourceFragment::from(probe.as_str()),
+    );
+    let end = text.len();
+    let tokens = labeling.tokens();
+    let stand_in = tokens
         .iter()
-        .rposition(|token| !closer(token) && token.lexeme != Lexeme::Space)
-        .map_or(0, |last| last.saturating_add(1));
-    let tail = tokens.get(written ..).unwrap_or_default();
-    if !tail.iter().any(closer) {
-        return Cow::Borrowed(tokens);
-    }
-    Cow::Owned(
-        tokens
-            .get(.. written)
-            .unwrap_or_default()
-            .iter()
-            .chain(tail.iter().filter(|token| !closer(token)))
-            .copied()
-            .collect(),
-    )
+        .position(|token| {
+            usize::try_from(token.start).is_ok_and(|start| start == end) && token.start < token.end
+        })
+        .unwrap_or(tokens.len());
+    tokens.get(.. stand_in).unwrap_or_default().to_vec()
 }
+
+/// The word [`at_cursor`] writes at the cursor to read the layout there.
+const STAND_IN: &str = "x";
 
 /// The ghost texts `grammar`, whose forms are `forms`, offers at byte `at` of
 /// `text`, best first.
@@ -2460,7 +2466,7 @@ mod tests
             (
                 "def f(x : Nat) -> -F Nat {\n  match x {",
                 " }\n}",
-                " ${1:pattern} => ${2:computation}",
+                " | ${1:pattern} => ${2:computation}",
             ),
             ("module M where {", "\n}", " ${1:member}"),
             ("", "", "def ${1:identifier} : ${2:type};"),

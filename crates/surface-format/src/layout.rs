@@ -946,8 +946,12 @@ enum Continuation
 /// before it, or when that code is a tile of the block's own form, as a
 /// line-final `=`; it starts a statement in another branch, as a module's
 /// next member does, and the source's indentation decides where a rewrite
-/// wrote the code. A comment is no statement, so code after a comment
-/// the group opens with starts one wherever the comment stands.
+/// wrote the code. In a group a bar opens, an item no deeper than the arm
+/// before it starts a statement, whatever branch holds it: an arm's own
+/// lines stand deeper than its bar, so a data block's member after its
+/// constructors, at the bars' column, is no part of the last one. A comment
+/// is no statement, so code after a comment the group opens with starts one
+/// wherever the comment stands.
 ///
 /// # Specification
 /// trivial.
@@ -1020,7 +1024,7 @@ fn items<'group, 'source>(
                     },
                     (Columns::Read, Some(None)) | (Columns::Unread, Some(_)) => deeper,
                 };
-                if unseparated && continues {
+                if unseparated && continues && (!armed || deeper) {
                     continuation = Continuation::Continued;
                 }
                 else {
