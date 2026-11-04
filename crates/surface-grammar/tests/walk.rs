@@ -69,7 +69,7 @@ use gandr_theory_graphs::WalkChainLength;
 /// (#4932), then by an inner attribute block `@![ … ]` at a theory's member
 /// slot (#3586), then by the carrier written first, `Path(A, a, b)`, leaving
 /// for the bare `Path(a, b)`.
-const BUILT_IN_FINGERPRINT: u64 = 0xee8a_cd0d_a967_bd42;
+const BUILT_IN_FINGERPRINT: u64 = 0x8102_ae27_52ba_20ae;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block

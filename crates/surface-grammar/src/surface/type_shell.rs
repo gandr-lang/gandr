@@ -1396,20 +1396,30 @@ fn entry_shape(sort: Sort) -> Regex
     ])
 }
 
-/// A labelled row's entry: an interface's path, `std.fs.Eff` or `State.Eff`,
-/// standing for its default instance, or `a : I`, the instance of `I` named
-/// `a`, then the sorts it fixes, `State.Eff with sort S = Integer`. The path is
-/// an effect's ([`super::term::effect_path`]): a theory's tiles, or a type,
-/// which reads a package's lowercase path and the `with` after it whole. The
-/// label is an operand, as a telescope's binder is. The manifest tail is the
-/// capability scope's, the same tiles in the same order: its `with` follows
-/// the path and `sort` follows the `with`, so it is decided at its keyword.
+/// An entry of a labelled row. The entry has one of two shapes, and the
+/// second shape has two uses:
+///
+/// | Shape | Example | What it gives |
+/// | --- | --- | --- |
+/// | an interface's path, then the sorts it fixes | `State.Eff with sort S = Integer` | the default instance of the interface |
+/// | a label, a colon and a type | `d : Console` | the instance of the interface that the type spells |
+/// | a label, a colon and a type | `[a : Type] (x : a) -> a` | the implicit binder of a box |
+///
+/// The path is the path of an effect ([`super::term::effect_path`]). It is
+/// the tiles of a theory, or a type. A type reads the lowercase path of a
+/// package and the `with` after it as one node. The type after a label is a
+/// hole. Thus the lowering reads that type as one node, and the `with` of an
+/// interface's sorts reads as part of the node. The label is an operand, as
+/// the binder of a telescope is. The manifest tail has the tiles of the
+/// capability scope in the same order. Its `with` follows the path, and
+/// `sort` follows the `with`. Thus the parser decides the tail at its keyword.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: optionally a hole of the supplied sort and a colon, then an
-///   effect's path, a theory path or a hole of the supplied sort, then any
-///   number of `with sort x = A`, each ending in a hole of the supplied sort.
+/// - ensures: an alternation of two shapes. The first is a hole of the supplied
+///   sort, a colon and a hole of the supplied sort. The second is an effect's
+///   path, a theory path or a hole of the supplied sort, then any number of
+///   `with sort x = A`. Each `with` ends in a hole of the supplied sort.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1419,19 +1429,28 @@ fn entry_shape(sort: Sort) -> Regex
 ///   not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Optional(labelled) if matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|label| matches!(label.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)) && sequence.get(1).is_some_and(|colon| matches!(colon.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":"))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref paths) if paths.first().is_some_and(|path| matches!(path.shape(), RegexShape::Seq(ref path) if path.first().is_some_and(|head| matches!(head.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")))) && paths.get(1).is_some_and(|path| matches!(path.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(manifest) if matches!(manifest.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.first().is_some_and(|with| matches!(with.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "with")) && sequence.last().is_some_and(|fixed| matches!(fixed.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref entries) if entries.len() == 2
+    && entries.first().is_some_and(|labelled| matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3
+        && sequence.first().is_some_and(|label| matches!(label.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty))
+        && sequence.get(1).is_some_and(|colon| matches!(colon.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":"))
+        && sequence.get(2).is_some_and(|typed| matches!(typed.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty))))
+    && entries.get(1).is_some_and(|named| matches!(named.shape(), RegexShape::Seq(ref parts) if parts.len() == 2
+        && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref paths) if paths.first().is_some_and(|path| matches!(path.shape(), RegexShape::Seq(ref path) if path.first().is_some_and(|head| matches!(head.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")))) && paths.get(1).is_some_and(|path| matches!(path.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty))))
+        && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(manifest) if matches!(manifest.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.first().is_some_and(|with| matches!(with.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "with")) && sequence.last().is_some_and(|fixed| matches!(fixed.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)))))))))]
 pub(super) fn row_entry(ty: Sort) -> Regex
 {
-    Regex::seq([
-        Regex::optional(Regex::seq([Regex::sort(ty), tile(TileLabel(":"))])),
-        super::term::effect_path(ty),
-        Regex::repeat(Regex::seq([
-            tile(TileLabel("with")),
-            tile(TileLabel("sort")),
-            tile(TileLabel("type_identifier")),
-            tile(TileLabel("=")),
-            Regex::sort(ty),
-        ])),
+    Regex::alt([
+        Regex::seq([Regex::sort(ty), tile(TileLabel(":")), Regex::sort(ty)]),
+        Regex::seq([
+            super::term::effect_path(ty),
+            Regex::repeat(Regex::seq([
+                tile(TileLabel("with")),
+                tile(TileLabel("sort")),
+                tile(TileLabel("type_identifier")),
+                tile(TileLabel("=")),
+                Regex::sort(ty),
+            ])),
+        ]),
     ])
 }
 

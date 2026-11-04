@@ -1761,6 +1761,46 @@ fn a_telescope_binds_each_entry_in_the_ones_after_it()
 }
 
 #[test]
+fn an_implicit_group_is_its_explicit_twin_4853()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def listed : [a : Type] (x : a) -> a ; def twin : (a : Type, x : a) -> a ; def single : \
+         [a : Type] a -> a ; def two : [a : Type, b : Type] (x : a, y : b) -> b ; def two_twin : \
+         (a : Type, b : Type, x : a, y : b) -> b ;",
+        &mut arena,
+    );
+    let signature = |name: &str| match outcome(&module, name) {
+        DeclarationOutcome::Uncompleted { declared_type } => declared_type,
+        other @ (DeclarationOutcome::Completed { .. }
+        | DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature, not {other:?}"),
+    };
+    for (implicit, explicit, reason) in [
+        ("listed", "twin", "an implicit group before a list"),
+        ("single", "twin", "an implicit group before one type"),
+        ("two", "two_twin", "an implicit group of two entries"),
+    ] {
+        let (implicit, explicit) = (signature(implicit), signature(explicit));
+        let (implicit, explicit) = (arena.value_quote(implicit), arena.value_quote(explicit));
+        assert_eq!(
+            gandr_core_term::equal_certificate_syntax(&arena, implicit, explicit),
+            gandr_core_term::CertificateEquality::Equal,
+            "{reason} is the box its explicit twin writes"
+        );
+    }
+    let source = "def twice : [a : Type, a : Type] (x : a) -> a ;";
+    assert!(
+        matches!(refused(source), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("a")),
+        "an implicit binder is written once"
+    );
+}
+
+#[test]
 fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
 {
     let mut arena = CoreArena::new();

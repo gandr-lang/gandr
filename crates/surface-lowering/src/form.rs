@@ -3762,17 +3762,20 @@ impl WrittenPath
     }
 }
 
-/// The dotted path a type operand spells when it opens with a package's
-/// lowercase name, `std.io.Console.Eff`: each link of the postfix type path
-/// from its head out, a row entry, a capability scope's head and a world's
-/// entry reading it as the tiles of a theory's path read.
+/// The path a type operand spells. The operand is a dotted path that opens
+/// with a package's lowercase name, `std.io.Console.Eff`, read link by link
+/// from its head out. Or the operand is one capitalised name alone, `State`,
+/// as the type of a labelled entry writes a theory. A row entry, the head of a
+/// capability scope and an entry of a world read the path as the tiles of a
+/// theory's path.
 ///
 /// # Specification
 /// - requires: `written` is an operand of `tree`.
-/// - ensures: the path when `written` is a type path whose innermost operand is
-///   a lowercase name, its segments in written order and its last name the
-///   outermost link's; `None` for any other operand, a lowercase name alone
-///   among them.
+/// - ensures: for a type path whose innermost operand is a lowercase name, the
+///   path, with its segments in written order and its last name from the
+///   outermost link. For a capitalised type name alone, the path of that one
+///   name. `None` for any other operand. A lowercase name alone gives `None`,
+///   and a row reads it as its tail.
 /// - fails: the refusal of [`read_pieces`] or [`shape_of`] on a link.
 /// - panics: none.
 ///
@@ -3786,7 +3789,7 @@ impl WrittenPath
 /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
 /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
 /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |path| path.as_ref().is_none_or(|path| !path.prefix.is_empty() && written.span.start() <= path.span().start() && path.span().end() <= written.span.end())))]
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |path| path.as_ref().is_none_or(|path| written.span.start() <= path.span().start() && path.span().end() <= written.span.end())))]
 fn operand_path<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -3852,6 +3855,18 @@ fn operand_path<'source>(
                 target = inner;
             },
             (Former::TypeHead, &[Piece::Tile { at: head, .. }]) if !names.is_empty() => {
+                names.push(head);
+                break;
+            },
+            (
+                Former::TypeHead,
+                &[
+                    Piece::Tile {
+                        label: TileName::TYPE_IDENTIFIER,
+                        at: head,
+                    },
+                ],
+            ) => {
                 names.push(head);
                 break;
             },

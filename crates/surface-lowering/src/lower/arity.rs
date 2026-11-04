@@ -787,6 +787,42 @@ impl<'source> Lowerer<'_, 'source>
         closer: TileName,
     ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
     {
+        let entries = self.listed_entries(site, cursor, closer)?;
+        exhausted(site, cursor)?;
+
+        Ok(entries)
+    }
+
+    /// Read the entries of a type list up to and over `closer`, as
+    /// [`Self::type_entries`] reads them. The pieces after `closer` stay.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the form's opener.
+    /// - ensures: every entry in written order, the cursor just past `closer`.
+    /// - fails: a misplaced key or tile, and a hole's own fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`] and
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Termination
+    /// Every round consumes at least one piece of the finite cursor or
+    /// refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::type_entries`], and an implicit group
+    ///   before the explicit group of a box.
+    /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
+    /// - witness: `lower::arity::tests::an_implicit_group_is_its_explicit_twin_4853`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| matches!(entry.held, Held::Operand(_)))))]
+    fn listed_entries(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+        closer: TileName,
+    ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
+    {
         let mut entries = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(closer) {
             let first = site.one(cursor.operands())?;
@@ -809,7 +845,6 @@ impl<'source> Lowerer<'_, 'source>
             entries.push(entry);
             separated(site, cursor, closer)?;
         }
-        exhausted(site, cursor)?;
 
         Ok(entries)
     }
@@ -3555,18 +3590,24 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Classify a value function space whose domain list names a binder: the
-    /// telescope Π `(x : A, y : B(x)) => C`.
+    /// telescope Π `(x : A, y : B(x)) => C`. An implicit group before the
+    /// domain, `[a : Type] (x : a) -> a`, gives the first entries of the
+    /// telescope. Plicity is the declaration's metadata, so the box is the
+    /// box its explicit twin `(a : Type, x : a) -> a` writes.
     ///
     /// # Specification
     /// - requires: `domain` and `codomain` are the operands of the value
     ///   function space at `site`, whose frame is `frame`.
     /// - ensures: planned when `domain` is a parenthesised list one of whose
-    ///   entries is `k : T`: every entry binds a frame extending the one before
+    ///   entries is `k : T`, or an implicit group as [`Self::implicit_entries`]
+    ///   reads it: the implicit entries come first, then each entry of the
+    ///   explicit list, or the explicit operand alone when it is no
+    ///   parenthesised type. Every entry binds a frame extending the one before
     ///   it, an unnamed entry's under a name no source writes, and its arrow is
-    ///   dependent exactly when a later entry or the codomain names it; each
+    ///   dependent exactly when a later entry or the codomain names it. Each
     ///   entry's type is read as a value type under the frames before it and
     ///   the codomain under all of them, as [`Self::box_output`] reads a box's
-    ///   output; nothing is planned otherwise.
+    ///   output. Nothing is planned otherwise.
     /// - fails: a duplicate definition for a name bound twice; the binder
     ///   policy's refusal; a misplaced key; a hole's own fault.
     /// - panics: none.
@@ -3576,8 +3617,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a telescope whose second type names the first binder,
-    ///   a mixed one, and a binder written twice.
+    ///   a mixed one, a binder written twice, and an implicit group before a
+    ///   list and before one type.
     /// - witness: `lower::arity::tests::a_telescope_binds_each_entry_in_the_ones_after_it`
+    /// - witness: `lower::arity::tests::an_implicit_group_is_its_explicit_twin_4853`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Telescope(..))))]
     pub(super) fn telescope_function(
         &mut self,
@@ -3587,7 +3630,24 @@ impl<'source> Lowerer<'_, 'source>
         codomain: Placed,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
-        let entries = self.domain_entries(domain, frame)?;
+        let entries = match self.implicit_entries(domain, frame)? {
+            Some((mut implicit, explicit)) => {
+                if matches!(
+                    self.form_at(explicit)?,
+                    Some((_, Former::ParenthesizedType))
+                ) {
+                    implicit.extend(self.domain_entries(explicit, frame)?);
+                }
+                else {
+                    implicit.push(Entry {
+                        key: Key::Positional,
+                        held: Held::Operand(explicit),
+                    });
+                }
+                implicit
+            },
+            None => self.domain_entries(domain, frame)?,
+        };
         if !entries
             .iter()
             .any(|entry| matches!(entry.key, Key::Label(..)))
@@ -4433,6 +4493,69 @@ impl<'source> Lowerer<'_, 'source>
                 return Ok(Vec::new());
             }
             self.type_entries(list, &mut cursor, TileName::PAREN_CLOSE)
+        });
+        self.scratch = scratch;
+
+        read
+    }
+
+    /// The implicit group of the domain `domain` under `frame`, and the
+    /// explicit operand after it: `[a : Type] (x : a)` gives the entry `a :
+    /// Type` and the operand `(x : a)`.
+    ///
+    /// # Specification
+    /// - requires: `domain` is the operand written before the box's arrow.
+    /// - ensures: the entries between `[` and `]` in written order and the one
+    ///   operand after `]`, when `domain` is a returner type that opens with
+    ///   `[` and every entry is `k : T`; `None` otherwise. A row of interfaces
+    ///   is no implicit group, so it stays a row the domain refuses.
+    /// - fails: a misplaced key or tile; a hole's own fault.
+    /// - panics: none.
+    /// - executable: none — the entries are read off the syntax tree, which a
+    ///   predicate could check only by repeating the read.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`], [`LoweringRefusal::UnknownMold`]
+    /// and [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an implicit group before a list and before one type.
+    /// - witness: `lower::arity::tests::an_implicit_group_is_its_explicit_twin_4853`
+    fn implicit_entries(
+        &mut self,
+        domain: Placed,
+        frame: Frame,
+    ) -> Result<Option<(Vec<Entry<'source>>, Placed)>, LoweringRefusal<'source>>
+    {
+        let Some((name, Former::ReturnerType)) = self.form_at(domain)?
+        else {
+            return Ok(None);
+        };
+        let group = Site {
+            at: domain,
+            name,
+            reading: Reading::ValueType(frame),
+        };
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, domain.node, &mut scratch).and_then(|()| {
+            if let Maybe::Present(_) = scratch.repair {
+                return Ok(None);
+            }
+            let mut cursor = Cursor::new(&scratch.pieces, domain.span);
+            if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_OPEN) {
+                return Ok(None);
+            }
+            let entries = self.listed_entries(group, &mut cursor, TileName::BRACKET_CLOSE)?;
+            if entries.is_empty()
+                || entries
+                    .iter()
+                    .any(|entry| !matches!(entry.key, Key::Label(..)))
+            {
+                return Ok(None);
+            }
+            let explicit = group.one(cursor.operands())?;
+            exhausted(group, &cursor)?;
+            Ok(Some((entries, explicit)))
         });
         self.scratch = scratch;
 
