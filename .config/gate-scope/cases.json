@@ -224,5 +224,72 @@
       "tasks": [{ "name": "check:tests", "run": ["cargo nextest run"], "depends": [] }]
     },
     "output": "rust: it names check:test-groups, which is no check task"
+  },
+  {
+    "name": "#5014: #5007's diff, one test file and its transcript in one package, scopes the Rust checks to that package",
+    "program": "packages.jq",
+    "input": {
+      "changed": [
+        "crates/workflow-prose/tests/cli.rs",
+        "crates/workflow-prose/tests/debug-traces/cli.a_stale_line_is_refused_and_written_away_5007.txt"
+      ],
+      "packages": [
+        { "name": "gandr-workflow-ledger", "dir": "crates/workflow-ledger", "deps": [] },
+        {
+          "name": "gandr-workflow-prose",
+          "dir": "crates/workflow-prose",
+          "deps": ["gandr-workflow-ledger"]
+        },
+        { "name": "gandr-core-term", "dir": "crates/core-term", "deps": [] }
+      ]
+    },
+    "output": ["gandr-workflow-prose"]
+  },
+  {
+    "name": "#5014: a Cargo.lock change runs the Rust checks over the whole workspace",
+    "program": "packages.jq",
+    "input": {
+      "changed": ["Cargo.lock"],
+      "packages": [
+        { "name": "gandr-workflow-prose", "dir": "crates/workflow-prose", "deps": [] },
+        { "name": "gandr-core-term", "dir": "crates/core-term", "deps": [] }
+      ]
+    },
+    "output": "\"workspace\""
+  },
+  {
+    "name": "#5014: a change grows by every package that depends on it, of any kind, transitively",
+    "program": "packages.jq",
+    "input": {
+      "changed": ["crates/core-term/src/lib.rs", ".config/claims/next.jq"],
+      "packages": [
+        { "name": "gandr-core-term", "dir": "crates/core-term", "deps": [] },
+        { "name": "gandr-kernel-core", "dir": "crates/kernel-core", "deps": ["gandr-core-term"] },
+        { "name": "gandr-lang", "dir": "crates/surface-driver", "deps": ["gandr-kernel-core"] },
+        { "name": "gandr-workflow-prose", "dir": "crates/workflow-prose", "deps": [] }
+      ]
+    },
+    "output": ["gandr-core-term", "gandr-kernel-core", "gandr-lang"]
+  },
+  {
+    "name": "#5014: a workflow-only change scopes no package",
+    "program": "packages.jq",
+    "input": {
+      "changed": [".config/claims/next.jq"],
+      "packages": [{ "name": "gandr-core-term", "dir": "crates/core-term", "deps": [] }]
+    },
+    "output": []
+  },
+  {
+    "name": "#5014: a change every package depends on runs over the whole workspace",
+    "program": "packages.jq",
+    "input": {
+      "changed": ["crates/core-term/src/lib.rs"],
+      "packages": [
+        { "name": "gandr-core-term", "dir": "crates/core-term", "deps": [] },
+        { "name": "gandr-kernel-core", "dir": "crates/kernel-core", "deps": ["gandr-core-term"] }
+      ]
+    },
+    "output": "\"workspace\""
   }
 ]

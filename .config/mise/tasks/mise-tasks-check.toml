@@ -19,14 +19,17 @@
 # It runs the checks the change selects (`.config/gate-scope/select.jq`,
 # #4911): the paths the branch changes against its fork from `origin/main`,
 # mapped by `.config/gate-scope/table.json`. A workflow-only change runs no Rust
-# check, since the merge group runs every check before a landing. `--all` runs
-# every check.
+# check, since the merge group runs every check before a landing. The Rust
+# checks it selects run over the packages the change touches and every
+# package that depends on one (`.config/gate-scope/packages.jq`, #5014),
+# passed as `GATE_SCOPE`; a change to the workspace's own configuration runs
+# them over the whole workspace. `gate:all` runs every check over the whole
+# workspace.
 [check]
-description = "The gates the change selects, or every gate with --all, in one of the host's gate slots"
+description = "The gates the change selects, over the packages it touches and their dependents, in one of the host's gate slots"
 tools.jq = "1.8.1"
 usage = '''
 flag "--no-wait" help="refuse at once, naming the holders, when the lane's lock or every gate slot on the host is held"
-flag "--all" help="run every check, whatever the change touches"
 '''
 run = '''
 {% raw %}#!/usr/bin/env bash
@@ -37,16 +40,37 @@ hold_gate_slot "mise run check"
 NEXTEST_TEST_THREADS=$(gate_threads)
 export NEXTEST_TEST_THREADS
 echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads" >&2
-if [[ ${usage_all:-false} == true ]]; then
-  mise run 'check:*'
-  exit 0
-fi
 selected=$(.config/gate-scope/select.bash)
 mapfile -t checks <<< "$selected"
-echo "check: the change selects ${#checks[@]} of $(mise tasks ls --json | jq '[.[] | select(.name | startswith("check:"))] | length') checks (.config/gate-scope/table.json); --all runs every one" >&2
+echo "check: the change selects ${#checks[@]} of $(mise tasks ls --json | jq '[.[] | select(.name | startswith("check:"))] | length') checks (.config/gate-scope/table.json); \`mise run gate:all\` runs every one over the workspace" >&2
+GATE_SCOPE=$(.config/gate-scope/scope.bash)
+export GATE_SCOPE
 tasks=()
 for check in "${checks[@]}"; do tasks+=("$check" :::); done
 mise run "${tasks[@]:0:${#tasks[@]}-1}"
+{% endraw %}'''
+
+# The whole wall (#5014): every `check:*` task over the whole workspace, in
+# one of the host's gate slots. It takes about half an hour, and the merge
+# group runs it before every landing, so a change runs it only when no
+# package set can scope it. Its name keeps it out of the `check:*` glob, so
+# it never runs itself.
+["gate:all"]
+description = "Every check over the whole workspace, about half an hour; the merge group runs it before every landing"
+usage = '''
+flag "--no-wait" help="refuse at once, naming the holders, when the lane's lock or every gate slot on the host is held"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+source .config/mise/gate.bash
+if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
+hold_gate_slot "mise run gate:all"
+NEXTEST_TEST_THREADS=$(gate_threads)
+export NEXTEST_TEST_THREADS
+echo "gate:all: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads" >&2
+unset GATE_SCOPE
+mise run 'check:*'
 {% endraw %}'''
 
 # Every corpus source stays in the gandr formatter's layout (#492): one
@@ -75,7 +99,7 @@ run = ".config/mise/scope cargo run --locked --quiet --profile test --package ga
 
 ["check:clippy"]
 description = "The clippy half of the lint wall"
-run = ".config/mise/gated .config/mise/scope cargo clippy --workspace --all-targets --locked"
+run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --locked"
 
 # Runtime sentinels exist only with enforcement enabled. Lint them under the
 # same profile, flags and target directory as the cached enforcing test build.
@@ -83,7 +107,7 @@ run = ".config/mise/gated .config/mise/scope cargo clippy --workspace --all-targ
 description = "The clippy wall with specification enforcement"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
-run = ".config/mise/gated .config/mise/scope cargo clippy --workspace --all-targets --locked --profile test -- --deny warnings"
+run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --locked --profile test -- --deny warnings"
 
 # CI's plain Clippy pass lints only the targets that carry plain-only code,
 # `cfg(not(anodized_panic))`, as the plain test lane runs only their tests
@@ -368,7 +392,7 @@ description = "Unit and integration tests over every target, specifications enfo
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
-run = ".config/mise/gated .config/mise/scope cargo nextest run {{ env.CI_SHARD_ARGS | default(value='--workspace') }} --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
+run = ".config/mise/gated .config/mise/scope cargo nextest run {% if env.CI_SHARD_ARGS is defined %}{{ env.CI_SHARD_ARGS }}{% else %}{{ env.GATE_SCOPE | default(value='--workspace') }}{% endif %} --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
 # The enforcing configuration admits the cfg-gated runtime sentinels, so their
 # witnesses enter the inventory. With `CI_WITNESS_LISTINGS` naming a directory
@@ -766,13 +790,13 @@ exit "$status"
 ["check:doc"]
 description = "Private-item rustdoc with every rustdoc lint denied"
 env.RUSTDOCFLAGS = "-D warnings"
-run = ".config/mise/gated .config/mise/scope cargo doc --workspace --all-features --locked --no-deps --document-private-items"
+run = ".config/mise/gated .config/mise/scope cargo doc {{ env.GATE_SCOPE | default(value='--workspace') }} --all-features --locked --no-deps --document-private-items"
 
 # Nextest runs no documentation example, so a stale example compiled nowhere
 # until this gate (#707).
 ["check:doctests"]
 description = "Every documentation example compiles and runs"
-run = ".config/mise/scope cargo test --doc --workspace --locked"
+run = ".config/mise/scope cargo test --doc {{ env.GATE_SCOPE | default(value='--workspace') }} --locked"
 
 ["check:typos"]
 description = "Spelling"
@@ -962,7 +986,7 @@ echo "tracking check OK: $(jq length .config/tracking/cases.json) cases; $(jq le
 
 ["check:tests"]
 description = "Unit and integration tests over every target"
-run = ".config/mise/gated .config/mise/scope cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
+run = ".config/mise/gated .config/mise/scope cargo nextest run {{ env.GATE_SCOPE | default(value='--workspace') }} --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
 # The corpus's two roots, run through the driver as an author runs them: the
 # strict root under `check`, every declaration checking and owing nothing, the
@@ -1569,7 +1593,9 @@ run = ".config/mise/host-lock-cases.bash"
 
 # The checks a change selects (#4911): `.config/gate-scope/cases.json` holds
 # `select.jq` over the table, a workflow-only change selecting no Rust check, a
-# crate's source the whole wall and an unmapped path every check. Then
+# crate's source the whole wall and an unmapped path every check, and
+# `packages.jq` (#5014), #5007's diff scoping its one package, a `Cargo.lock`
+# change the whole workspace and a change growing by its dependents. Then
 # `unmapped.jq` reads the live tasks: a check that builds or runs the toolchain
 # outside every group of the table, or a group naming no check, fails it.
 ["check:gate-scope"]
