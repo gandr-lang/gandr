@@ -1254,6 +1254,73 @@ fn a_path_whose_endpoints_compute_the_point_is_its_words_485()
 }
 
 #[test]
+fn a_path_that_computes_the_point_converts_with_its_words_in_both_checkers_5099()
+{
+    let mut arena = CoreArena::new();
+    let (mut declarations, circle) = one_loop(&mut arena);
+    // `kept = thunk (λx. case x { Base ⇒ return Base })` at constant 3, and
+    // `moved = ⟨cong(kept, loop)⟩` at `Path(S, ⟨kept(Base)⟩, ⟨kept(Base)⟩)`:
+    // `Path.ap(collapse, loop)` as #5099 writes it.
+    let returner = arena.comp_type_returner(circle.carrier);
+    let (kept_type, kept) = case_over(&mut arena, (circle.carrier, returner), circle.point, &[]);
+    declarations.push(definition(ConstantIndex::from(3_usize), kept_type, kept));
+    let function = arena.value_constant(ConstantIndex::from(3_usize));
+    let forced = arena.computation_force(function);
+    let applied = arena.computation_application(forced, circle.point);
+    let start = arena.value_returned(applied);
+    let moved =
+        gandr_core_term::identity::cong(&mut arena, circle.carrier, function, start, circle.named);
+    let moved = arena.value_returned(moved);
+    let at_point = arena.value_type_path(circle.carrier, circle.point, circle.point);
+    let words = arena.value_type_data(ConstantIndex::from(1_usize), vec![]);
+    let over_path = arena.value_type_path(at_point, moved, circle.empty);
+    let over_words = arena.value_type_path(words, moved, circle.empty);
+    let reflexivity = arena.value_here(circle.empty);
+    let rows = [
+        (at_point, moved, "`moved` at the path at the point"),
+        (
+            words,
+            moved,
+            "`moved` at the words the path at the point reads as",
+        ),
+        (
+            over_path,
+            reflexivity,
+            "reflexivity over the path at the point, the carrier written",
+        ),
+        (
+            over_words,
+            reflexivity,
+            "reflexivity over the words, the carrier the checker solves",
+        ),
+    ];
+    for (offset, &(declared, body, _)) in rows.iter().enumerate() {
+        declarations.push(definition(
+            ConstantIndex::from(offset.saturating_add(4)),
+            declared,
+            body,
+        ));
+    }
+    let (report, crossed) = run(&mut arena, &declarations);
+    for (offset, &(.., what)) in rows.iter().enumerate() {
+        let position = offset.saturating_add(4);
+        assert!(
+            matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+            "{what} checks: {:?}",
+            report.judged()[position].verdict()
+        );
+        assert!(
+            matches!(
+                crossed.readmitted()[position].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "and the kernel re-derives it, as the checker read it: {:?}",
+            crossed.readmitted()[position].outcome()
+        );
+    }
+}
+
+#[test]
 fn a_loop_obligation_unfolds_the_arm_s_definitions()
 {
     let mut arena = CoreArena::new();

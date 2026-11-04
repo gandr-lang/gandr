@@ -111,6 +111,7 @@ use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -167,12 +168,13 @@ pub(crate) enum ConversionGoal
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a returned endpoint, a decode of a returned code against
-///   another former, a path type's endpoint pair and the codomains of a
-///   dependent arrow against a plain one are each set aside as the variant that
-///   reads them.
+///   another former, a path type's endpoint pair, the codomains of a dependent
+///   arrow against a plain one and a path type whose endpoints compute its
+///   words' point are each set aside as the variant that reads them.
 /// - witness: `conv::tests::related_pairs_set_aside_path_endpoints`
 /// - witness: `conv::tests::a_decode_of_a_returned_code_is_set_aside_against_another_former`
 /// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
+/// - witness: `presented::tests::a_path_that_computes_its_point_is_set_aside_against_its_words_5099`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SetAside
 {
@@ -192,6 +194,19 @@ pub(crate) enum SetAside
     /// The codomains of a dependent arrow and a plain one whose domains the
     /// walk compares: read in one context, as [`Codomains`] says.
     Codomains(Codomains),
+    /// A type of words against a path type over its sort whose endpoints do
+    /// not spell the words' point: the reader builds the point and reads each
+    /// endpoint against it, as the check of a value at that path does (#485,
+    /// #5099).
+    AtPoint
+    {
+        /// The type of words.
+        words: ConstantIndex,
+        /// The path type's left endpoint.
+        from: ValueId,
+        /// The path type's right endpoint.
+        to: ValueId,
+    },
 }
 
 /// The codomains of a dependent arrow and a plain one, set aside to be
@@ -479,9 +494,10 @@ pub(crate) fn convert_values(
 /// - provides: where the checker's endpoint reading looks: the type
 ///   conversion's own structural walk, finding the returned endpoints, the
 ///   decodes of returned codes, the presented terms, the thunks holding a
-///   β-redex and the dependent arrows met against plain ones that it would
-///   otherwise compare by syntax. Each is then read by
-///   [`crate::replay::read_endpoints`], never compared here.
+///   β-redex, the dependent arrows met against plain ones and the path types
+///   whose endpoints compute their words' point, which it would otherwise
+///   compare by syntax. Each is then read by [`crate::replay::read_endpoints`],
+///   never compared here.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -493,7 +509,8 @@ pub(crate) fn convert_values(
 ///   and against a decode compares its code; a dependent arrow against a plain
 ///   one sets its codomains aside while its domains still separate; a thunk
 ///   pair forcing a thunk literal is set aside, and one forcing none separates
-///   in place.
+///   in place; a path type whose endpoints do not spell its words' point is set
+///   aside against the words.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `element_identity::tests::a_stuck_returned_endpoint_compares_structurally`
 /// - witness: `presented::tests::a_mode_switch_reads_circle_words_by_their_normal_forms`
@@ -501,6 +518,7 @@ pub(crate) fn convert_values(
 /// - witness: `conv::tests::a_presented_constructor_is_set_aside_on_either_side`
 /// - witness: `conv::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
 /// - witness: `conv::tests::a_thunk_pair_forcing_a_thunk_is_set_aside_3733`
+/// - witness: `presented::tests::a_path_that_computes_its_point_is_set_aside_against_its_words_5099`
 #[spec(captures: before = pending.len(), ensures: |ret| pending.len() >= before
     && (ret == Convertibility::Distinct || pending.get(before ..).is_some_and(|set_aside| set_aside.iter().all(|pair| match *pair {
         SetAside::Values(left, right) => [left, right].iter().any(|&side| matches!(arena.value(side), Some(&(Value::Returned(_) | Value::Constructor { .. }))))
@@ -508,6 +526,7 @@ pub(crate) fn convert_values(
         SetAside::Decoded { code, other } => matches!(arena.value(code), Some(&Value::Returned(_)))
             && !matches!(arena.value_type(other), Some(&ValueType::Element { .. }) | None),
         SetAside::Codomains(Codomains { dependent, plain }) => arena.comp_type(dependent).is_some() && arena.comp_type(plain).is_some(),
+        SetAside::AtPoint { from, to, .. } => arena.value(from).is_some() && arena.value(to).is_some(),
     }))))]
 pub(crate) fn pending_endpoints(
     arena: &TermArena,
@@ -936,7 +955,8 @@ fn converge(
                     // A path at the point a type of words' cells loop at is
                     // those words, once presented types are read: both
                     // endpoints spell the point, or one does and the other
-                    // converts with it.
+                    // converts with it, or neither does and each converts with
+                    // the point the reader builds (#485, #5099).
                     (
                         &ValueType::Data {
                             declaration,
@@ -979,6 +999,28 @@ fn converge(
                         }
                         else if at((from, from)) {
                             stack.push(ConversionGoal::Value(to, from));
+                        }
+                        else if let Some(&ValueType::Data {
+                            declaration: sort,
+                            arguments: ref parameters,
+                        }) = arena.value_type(domain)
+                            && parameters.is_empty()
+                            && presentations
+                                .presented(declaration)
+                                .and_then(crate::presented::PresentedType::cells)
+                                .is_some_and(|cells| cells.sort() == sort)
+                            && let Endpoints::Deferred {
+                                ref mut pending, ..
+                            }
+                            | Endpoints::Related {
+                                ref mut pending, ..
+                            } = endpoints
+                        {
+                            pending.push(SetAside::AtPoint {
+                                words: declaration,
+                                from,
+                                to,
+                            });
                         }
                         else {
                             return Convertibility::Distinct;
