@@ -576,28 +576,6 @@ jobs:
             | jq -f .config/pr-stack/rebased.jq)
           echo "replaced head $CI_BEFORE: $reading; rebased=$rebased"
           printf 'rebased=%s\n' "$rebased" >> "$GITHUB_OUTPUT"
-      # A push whose pin files change starts the CI image workflow beside this
-      # run, and that workflow writes the tag this run reads only once its
-      # builds finish, about five minutes later. Read before then, the tag
-      # read as published and every image job failed its pull with `manifest
-      # unknown` (#5128, 2026-11-04 12:03Z and 12:12Z). The lookup waits for
-      # that run with this head to complete, at most about seven minutes; a
-      # head no image run builds answers at once, and a run still going after
-      # the wait leaves the lookup to find the tag missing and build it here.
-      - id: image-run
-        name: wait for this push's CI image build
-        if: ${{ env.GANDR_CI_IMAGE != '' && env.ACT != 'true' && github.event_name == 'push' }}
-        continue-on-error: true
-        shell: bash
-        run: |
-          for wait in 0 15 15 30 30 30 60 60 60 60 60; do
-            sleep "$wait"
-            read -r id status < <(gh api --method GET "repos/$GH_REPO/actions/workflows/ci-image.yml/runs" \
-              -f event=push -f head_sha="$CI_SHA" \
-              --jq '.workflow_runs[0] // {} | "\(.id // "") \(.status // "")"')
-            [[ -z $id || $status == completed ]] && break
-          done
-          echo "CI image run ${id:-none} for $CI_SHA: ${status:-none}"
       - id: image
         name: find the published image
         uses: ./.github/actions/find-image # zizmor: ignore[self-repository]
@@ -717,7 +695,11 @@ jobs:
   ci-image:
     name: build the missing CI image
     needs: prepare
-    if: ${{ needs.prepare.outputs.build == 'true' }}
+    # `prepare` needs the depth gate, which runs on a pull request only, so
+    # the default condition skips this job on a push and in a merge group.
+    # The missing tag then stayed missing, and every image job failed its
+    # pull with `manifest unknown` (#5128).
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.build == 'true' }}
     permissions:
       contents: read
       packages: write
