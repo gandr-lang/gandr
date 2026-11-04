@@ -1448,6 +1448,55 @@
     "output": "{\"failed\":[],\"pending\":[\"check Clippy wall\",\"test the workspace (linux)\"]}"
   },
   {
+    "name": "#5074: a head the CI depth gate stopped reads its cancelled required checks as pending, not failed",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)"],
+      "gated": true
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "startedAt": "2026-11-04T07:30:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "startedAt": "2026-11-04T07:30:00Z"
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[\"check Clippy wall\",\"test the workspace (linux)\"]}"
+  },
+  {
+    "name": "#5074: the same cancelled checks on a head no gate stopped are failed",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "startedAt": "2026-11-04T07:30:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "startedAt": "2026-11-04T07:30:00Z"
+      }
+    ],
+    "output": "{\"failed\":[\"check Clippy wall\",\"test the workspace (linux)\"],\"pending\":[]}"
+  },
+  {
     "name": "a check the rules do not require never holds the landing: the mutants report still running (#1601)",
     "program": "required.jq",
     "args": {

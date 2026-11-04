@@ -9,7 +9,9 @@
 # Input: the head's status check rollup, each a `CheckRun` (`name`,
 # `status`, `conclusion`, `startedAt`) or a `StatusContext` (`context`,
 # `state`, `startedAt`).
-# Arguments: `$required`, the trunk's required contexts.
+# Arguments: `$required`, the trunk's required contexts; optionally
+# `--argjson gated true` for a head the CI depth gate stopped (#5074), whose
+# cancelled checks wait for its promotion and are pending, not failed.
 # Output: `{failed, pending}`, the required contexts that concluded
 # otherwise than success, skipped or neutral, and those not yet concluded or
 # not yet reported, each in `$required`'s order. Both empty: the stack may
@@ -19,6 +21,7 @@ def verdict:
   if .__typename == "StatusContext" then
     if .state == "SUCCESS" then "pass" elif IN(.state; "PENDING", "EXPECTED") then "pending" else "fail" end
   elif .status != "COMPLETED" and (.conclusion // "") == "" then "pending"
+  elif .conclusion == "CANCELLED" and ($ARGS.named.gated // false) then "pending"
   elif IN(.conclusion; "SUCCESS", "SKIPPED", "NEUTRAL") then "pass"
   else "fail"
   end;

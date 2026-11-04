@@ -4184,11 +4184,13 @@ snapshot() {
 # workflow on the same head was not cancelled (`superseded.jq`, #2829): two
 # pull_request events for one head start two runs in the same second, the
 # concurrency group cancels one, whichever id it carries, and its cancelled
-# checks stay listed until the surviving run's jobs start.
+# checks stay listed until the surviving run's jobs start. A head the CI
+# depth gate stopped is not red (`required_reading`, #5074).
 red_check() {
-  local rollup failed red link run superseded
-  rollup=$(pr_reading "${1:-$number}" | rollup_of) || return 1
-  failed=$(jq -c --argjson required "$required" -f "$pr_stack_dir/required.jq" <<< "$rollup" | jq -c .failed)
+  local view rollup failed red link run superseded
+  view=$(pr_reading "${1:-$number}") || return 1
+  rollup=$(rollup_of <<< "$view")
+  failed=$(required_reading "${1:-$number}" "$required" "$view" | jq -c .failed)
   while IFS=$'\t' read -r red link; do
     [[ -n "$red" ]] || continue
     if [[ "$link" =~ /actions/runs/([0-9]+)/ ]]; then

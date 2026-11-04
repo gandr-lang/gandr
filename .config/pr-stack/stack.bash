@@ -869,7 +869,7 @@ wait_required() {
   local required reading
   required=$(required_contexts)
   while :; do
-    reading=$(pr_reading "$1" | rollup_of | jq -c --argjson required "$required" -f "$pr_stack_dir/required.jq")
+    reading=$(required_reading "$1" "$required")
     if [[ $(jq '.failed | length' <<< "$reading") != 0 ]]; then
       echo "#$1's required checks are red: $(jq -r '.failed | join(", ")' <<< "$reading")" >&2
       return 1
@@ -1037,14 +1037,27 @@ queue_stack() {
 }
 
 # Pull request `$1`'s head read against the trunk's required contexts `$2`
-# (`required.jq`) and its mergeability (`state.jq`, #2783): `conflicting`
-# when it conflicts, else `green` when every context passed, `red` when one
-# failed, `pending` otherwise.
+# (`required.jq`), from its reading `$3` or a fresh one. A head the CI depth
+# gate stopped (#5074) reads its cancelled checks as pending: they wait for
+# its promotion. The gate's mark is read only when a context failed.
+required_reading() {
+  local view=${3:-} reading
+  [[ -n $view ]] || view=$(pr_reading "$1") || return 1
+  reading=$(rollup_of <<< "$view" | jq -c --argjson required "$2" -f "$pr_stack_dir/required.jq")
+  if [[ $(jq '.failed | length' <<< "$reading") != 0 ]] && depth_marked "$1" "$(jq -r .headRefOid <<< "$view")"; then
+    reading=$(rollup_of <<< "$view" | jq -c --argjson required "$2" --argjson gated true -f "$pr_stack_dir/required.jq")
+  fi
+  printf '%s\n' "$reading"
+}
+
+# Pull request `$1`'s head read against the trunk's required contexts `$2`
+# (`required_reading`) and its mergeability (`state.jq`, #2783):
+# `conflicting` when it conflicts, else `green` when every context passed,
+# `red` when one failed, `pending` otherwise.
 required_state() {
   local view
   view=$(pr_reading "$1")
-  rollup_of <<< "$view" \
-    | jq -c --argjson required "$2" -f "$pr_stack_dir/required.jq" \
+  required_reading "$1" "$2" "$view" \
     | jq -c --arg mergeable "$(jq -r .mergeable <<< "$view")" '. + {mergeable: $mergeable}' \
     | jq -r -f "$pr_stack_dir/state.jq"
 }
