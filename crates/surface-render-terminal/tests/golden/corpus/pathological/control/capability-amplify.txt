@@ -17,4 +17,5 @@ error[CapabilityAmplified]: this capability grants less than the one expected he
 21 │ │ }
    │ └─┘ checked against `+U (Cap {read} -> -F [std.fs.Eff] Unit)`; while checking the body of this thunk
    │
-   ╰ note: `widen` is refused with CapabilityAmplified, as its expectation states
+   ├ note: `widen` is refused with CapabilityAmplified, as its expectation states
+   ╰ help: use the required capability

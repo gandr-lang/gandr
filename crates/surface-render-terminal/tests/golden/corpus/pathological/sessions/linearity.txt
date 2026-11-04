@@ -148,7 +148,8 @@ error[ArmsDisagree]: the arms of this `offer` or case leave the endpoints in dif
 67 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `seat_arms_leave_it_apart` is refused with ArmsDisagree, as its expectation states
+   ├ note: `seat_arms_leave_it_apart` is refused with ArmsDisagree, as its expectation states
+   ╰ help: leave each arm with the same endpoint states
 
 error[ArmsDisagree]: the arms of this `offer` or case leave the endpoints in different states
    ╭▸ corpus/pathological/sessions/linearity.gandr:74:37
@@ -173,7 +174,8 @@ error[ArmsDisagree]: the arms of this `offer` or case leave the endpoints in dif
 77 │ │ }
    │ └─┘ checked against `Bool => Unit`; while checking the body of this thunk
    │
-   ╰ note: `seat_branches_leave_it_apart` is refused with ArmsDisagree, as its expectation states
+   ├ note: `seat_branches_leave_it_apart` is refused with ArmsDisagree, as its expectation states
+   ╰ help: leave each arm with the same endpoint states
 
 error[UnrestrictedEndpoint]: a declaration cannot have a session type; an endpoint is opened by `fork` or `recv`
    ╭▸ corpus/pathological/sessions/linearity.gandr:80:23

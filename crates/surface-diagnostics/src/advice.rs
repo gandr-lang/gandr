@@ -38,6 +38,7 @@ use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::EndpointMiss;
 use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::RunSource;
+use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::session::ForkSide;
 use gandr_core_checker::session::LinearityDefect;
@@ -210,6 +211,21 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::RulesOverlapCondition { .. } => {
             String::from("add a rule that joins the overlap under its condition")
         },
+        LoweringRefusal::AcrossHandler { .. } => {
+            String::from("leave the handled subject with `return`")
+        },
+        LoweringRefusal::GenericMisplaced { .. } => {
+            String::from("write `Eq.generic(T)` as a definition's whole body")
+        },
+        LoweringRefusal::InertRead { .. } => {
+            String::from("read an inert field only from a manifest step or inert field")
+        },
+        LoweringRefusal::PhaseDependence { .. } => {
+            String::from("make the static member's type depend only on static members")
+        },
+        LoweringRefusal::RulesOverlapSecondOrder { .. } => {
+            String::from("add a rule for the second-order overlap")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::DuplicateSignature { .. }
@@ -230,8 +246,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::MissingPayload { .. }
         | LoweringRefusal::NonValuePayload { .. }
         | LoweringRefusal::ForwardMemberReference { .. }
-        | LoweringRefusal::PhaseDependence { .. }
-        | LoweringRefusal::InertRead { .. }
         | LoweringRefusal::PartialField { .. }
         | LoweringRefusal::NotAFunctor { .. }
         | LoweringRefusal::NotAModel { .. }
@@ -259,16 +273,13 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::DescentOnSeveralParameters { .. }
         | LoweringRefusal::Unreachable { .. }
         | LoweringRefusal::OutsideLoop { .. }
-        | LoweringRefusal::AcrossHandler { .. }
         | LoweringRefusal::WithoutK { .. }
         | LoweringRefusal::DirectedCell { .. }
         | LoweringRefusal::CellNotALoop { .. }
-        | LoweringRefusal::RulesOverlapSecondOrder { .. }
         | LoweringRefusal::RulesDiverge { .. }
         | LoweringRefusal::RulesNeverComplete { .. }
         | LoweringRefusal::RulesUndecided { .. }
         | LoweringRefusal::UnderivedRule { .. }
-        | LoweringRefusal::GenericMisplaced { .. }
         | LoweringRefusal::GenericUncovered { .. }
         | LoweringRefusal::UnknownTactic { .. }
         | LoweringRefusal::BudgetExceeded { .. }
@@ -443,6 +454,7 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::TypeMismatch(_) => String::from(
             "change the term or the type it is checked against, so that the two types agree",
         ),
+        CheckRefusal::CapabilityAmplified(_) => String::from("use the required capability"),
         CheckRefusal::EndpointMismatch {
             miss: EndpointMiss::Unshown,
             ..
@@ -460,6 +472,10 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             "recurse on a field of the parameter, which a match takes apart, and not on the \
              parameter itself",
         ),
+        CheckRefusal::OutOfFragment {
+            former: UnadmittedFormer::Stage,
+            ..
+        } => String::from("write the kernel-visible type without a stage"),
         CheckRefusal::Access {
             defect: AccessDefect::Escaped { by },
             ..
@@ -471,6 +487,10 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             defect: AccessDefect::Lent,
             ..
         } => String::from("use the held value only after the `access` that lends it ends"),
+        CheckRefusal::Access {
+            defect: AccessDefect::HeldCopied,
+            ..
+        } => String::from("wrap the `var[1]` read in `access ... resume`"),
         CheckRefusal::Access {
             defect: AccessDefect::KeptEscaped,
             ..
@@ -486,6 +506,10 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
                 "close the endpoint before the fork half or receive body that bound it ends"
             },
         }),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::ArmsDisagree { .. },
+            ..
+        } => String::from("leave each arm with the same endpoint states"),
         CheckRefusal::RuleNotRespected { .. } => String::from(
             "give the arms equal results on the terms that each of the datatype's rules \
              identifies",
@@ -503,6 +527,7 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::UndecidedCoverage(_) => {
             String::from("replace the pattern hole with a pattern")
         },
+        CheckRefusal::AbsentRecordField(_) => String::from("select a declared record field"),
         CheckRefusal::ImplicitUnsolved { .. } => {
             String::from("supply the implicit by name in brackets before the parentheses")
         },
@@ -667,7 +692,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::UnknownConstructor { .. }
         | CheckRefusal::ConstructorArity(_)
         | CheckRefusal::NonExhaustiveDataCase(_)
-        | CheckRefusal::AbsentRecordField(_)
         | CheckRefusal::AbsentTupleComponent(_)
         | CheckRefusal::MissingRecordField { .. }
         | CheckRefusal::UnknownOperation { .. }
@@ -718,7 +742,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::TacticRefused { .. }
         | CheckRefusal::CapabilityForged { .. }
         | CheckRefusal::LiteralAmbiguous { .. }
-        | CheckRefusal::CapabilityAmplified(_)
         | CheckRefusal::CapabilityOutsideAuthority { .. }
         | CheckRefusal::CapabilityEscaped { .. }
         | CheckRefusal::CapabilityConsumable(_)
@@ -749,7 +772,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 56] = [
+    const WORDED: [&str; 66] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -807,6 +830,16 @@ mod tests
         "RulesUnoriented",
         "UninterfacedMember",
         "ViewNotPlace",
+        "AbsentRecordField",
+        "AcrossHandler",
+        "ArmsDisagree",
+        "CapabilityAmplified",
+        "GenericMisplaced",
+        "HeldCopied",
+        "InertRead",
+        "OutOfFragment.Stage",
+        "PhaseDependence",
+        "RulesOverlapSecondOrder",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

@@ -4,7 +4,8 @@ error[PhaseDependence]: the type `Q` depends on the value `count`; a type depend
 18 │   type Q = Path(Integer, count, 3);
    │                          ━━━━━ a value a type depends on
    │
-   ╰ note: `Q` is refused with PhaseDependence, as its expectation states
+   ├ note: `Q` is refused with PhaseDependence, as its expectation states
+   ╰ help: make the static member's type depend only on static members
 
 error[PhaseDependence]: the type `R` depends on the value `three`; a type depends only on types
    ╭▸ corpus/pathological/modules/phase.gandr:29:26
@@ -12,7 +13,8 @@ error[PhaseDependence]: the type `R` depends on the value `three`; a type depend
 29 │   type R = Path(Integer, three, 3);
    │                          ━━━━━ a value a type depends on
    │
-   ╰ note: `R` is refused with PhaseDependence, as its expectation states
+   ├ note: `R` is refused with PhaseDependence, as its expectation states
+   ╰ help: make the static member's type depend only on static members
 
 error[PhaseDependence]: the type `At` depends on the value `z`; a type depends only on types
    ╭▸ corpus/pathological/modules/phase.gandr:36:23
@@ -20,4 +22,5 @@ error[PhaseDependence]: the type `At` depends on the value `z`; a type depends o
 36 │   type At = Path(S.T, S.z, S.z);
    │                       ━━━ a value a type depends on
    │
-   ╰ note: `At` is refused with PhaseDependence, as its expectation states
+   ├ note: `At` is refused with PhaseDependence, as its expectation states
+   ╰ help: make the static member's type depend only on static members

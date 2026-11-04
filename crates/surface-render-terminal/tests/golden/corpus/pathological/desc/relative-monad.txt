@@ -6,7 +6,8 @@ error[RulesOverlapSecondOrder]: this rule and an earlier one rewrite overlapping
 18 │   rule lossy : ext(ext(m, k), l) <=> ext(m, l);
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts from a rule that substitutes
    │
-   ╰ note: `MonadLossy` is refused with RulesOverlapSecondOrder, as its expectation states
+   ├ note: `MonadLossy` is refused with RulesOverlapSecondOrder, as its expectation states
+   ╰ help: add a rule for the second-order overlap
 
 error[FamilyTelescope]: the type member `T` lands in value types where its component states computation types
    ╭▸ corpus/pathological/desc/relative-monad.gandr:32:8

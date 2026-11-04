@@ -27,7 +27,8 @@ error[HeldCopied]: a value held with `var[1]` is never copied: read it once thro
 18 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `read_held` is refused with HeldCopied, as its expectation states
+   ├ note: `read_held` is refused with HeldCopied, as its expectation states
+   ╰ help: wrap the `var[1]` read in `access ... resume`
 
 error[HeldCopied]: a value held with `var[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
    ╭▸ corpus/pathological/control/held-unique.gandr:25:33
@@ -45,7 +46,8 @@ error[HeldCopied]: a value held with `var[1]` is never copied: read it once thro
 26 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `read_twice` is refused with HeldCopied, as its expectation states
+   ├ note: `read_twice` is refused with HeldCopied, as its expectation states
+   ╰ help: wrap the `var[1]` read in `access ... resume`
 
 error[HeldCopied]: a value held with `var[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
    ╭▸ corpus/pathological/control/held-unique.gandr:32:31
@@ -62,7 +64,8 @@ error[HeldCopied]: a value held with `var[1]` is never copied: read it once thro
 33 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `read_shared` is refused with HeldCopied, as its expectation states
+   ├ note: `read_shared` is refused with HeldCopied, as its expectation states
+   ╰ help: wrap the `var[1]` read in `access ... resume`
 
 error[ViewMoved]: the view's value was read out, so the view ends with `resume`, which writes a value back; `abort` would leave the held slot empty
    ╭▸ corpus/pathological/control/held-unique.gandr:40:36

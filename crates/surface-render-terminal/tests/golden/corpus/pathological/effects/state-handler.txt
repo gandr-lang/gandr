@@ -124,4 +124,5 @@ error[CapabilityAmplified]: this capability grants less than the one expected he
 148 │ │  }
     │ └──┘ checked against `() => Integer`; while checking the body of this thunk
     │
-    ╰ note: `amplifiedAtImplicit` is refused with CapabilityAmplified, as its expectation states
+    ├ note: `amplifiedAtImplicit` is refused with CapabilityAmplified, as its expectation states
+    ╰ help: use the required capability

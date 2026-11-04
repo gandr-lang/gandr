@@ -50,7 +50,8 @@ error[OutOfFragment.Stage]: a stage that refines no data type, names no binder o
 48 │ def integerAt[i : Size](n : Integer[i]) -> Integer {
    │                             ━━━━━━━━━━ no rule for this former
    │
-   ╰ note: `integerAt` is refused with OutOfFragment.Stage, as its expectation states
+   ├ note: `integerAt` is refused with OutOfFragment.Stage, as its expectation states
+   ╰ help: write the kernel-visible type without a stage
 
 error[OutOfFragment.staged_type]: the staged type is not supported yet
    ╭▸ corpus/pathological/data/sized-higher-order.gandr:55:43
@@ -190,4 +191,5 @@ error[OutOfFragment.Stage]: a stage that refines no data type, names no binder o
 135 │ │ }
     │ └─┘ checked against `Nat => Nat`; while checking the body of this thunk
     │
-    ╰ note: `suppliedUnshown` is refused with OutOfFragment.Stage, as its expectation states
+    ├ note: `suppliedUnshown` is refused with OutOfFragment.Stage, as its expectation states
+    ╰ help: write the kernel-visible type without a stage

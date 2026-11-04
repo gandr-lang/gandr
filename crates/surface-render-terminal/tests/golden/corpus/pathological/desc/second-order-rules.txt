@@ -42,4 +42,5 @@ error[RulesOverlapSecondOrder]: this rule and an earlier one rewrite overlapping
 62 │   rule toZero : let(zero(), t) <=> zero();
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts from a rule that substitutes
    │
-   ╰ note: `LetToZero` is refused with RulesOverlapSecondOrder, as its expectation states
+   ├ note: `LetToZero` is refused with RulesOverlapSecondOrder, as its expectation states
+   ╰ help: add a rule for the second-order overlap
