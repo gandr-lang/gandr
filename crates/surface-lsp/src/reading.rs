@@ -11,9 +11,11 @@
 //! made by the first such request after the text last changed
 //! ([`Reading::of`]). From that one parse the highlighter's spans, the
 //! declarations with their form keys, the folds, the selection skeleton, the
-//! calls and the path imports are read and kept. Every later request until
-//! the next change answers from them. A change to the text drops the reading,
-//! so every answer is read off the text the copy holds.
+//! calls and the path imports are read and kept. The reading splits each
+//! comment span at its code fragments that read as gandr, as the `fragment`
+//! module states. Every later request until the next change answers from them.
+//! A change to the text drops the reading, so every answer is read off the
+//! text the copy holds.
 //!
 //! An editor sends the four structural requests after each keystroke, so a
 //! parse per request parses each text four times or more and pays the molder's
@@ -46,6 +48,7 @@ use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
+use crate::fragment::comments_coloured;
 use crate::goto::ranged;
 use crate::outline::Declarer;
 use crate::outline::Skeleton;
@@ -293,7 +296,8 @@ impl Reading
     /// - requires: nothing; any text is admissible input.
     /// - ensures: [`unread::Absent::Unbuilt`] when the grammar did not build,
     ///   [`unread::Absent::Unparsed`] when the parser could not commit a tree;
-    ///   otherwise the highlighter's spans over the tree, sorted, pairwise
+    ///   otherwise the highlighter's spans over the tree, each comment split at
+    ///   its fragments as [`comments_coloured`] splits it, sorted, pairwise
     ///   disjoint and on character boundaries of `text`, its declarations each
     ///   beside its declaring form's key, its folds, its selection skeleton,
     ///   its calls, as [`crate::outline`] and [`Calls::of`] read each off the
@@ -383,7 +387,7 @@ impl Reading
             })
             .collect();
         let mut readout = Readout {
-            spans: roles.highlight(tree).unwrap_or_default(),
+            spans: comments_coloured(tree.source(), roles.highlight(tree).unwrap_or_default()),
             declarations: declared
                 .into_iter()
                 .map(|(declarer, symbol)| match declarer {

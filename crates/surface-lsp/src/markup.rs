@@ -35,14 +35,18 @@
 
 use alloc::format;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset;
+use gandr_surface_render_remote::ByteRange;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::HlSpan;
 use gandr_surface_syntax::SourceText;
 
+use crate::fragment::coloured;
+use crate::fragment::fragments;
 use crate::recheck::grammar;
 use crate::recheck::roles;
 
@@ -129,7 +133,7 @@ impl Host
     ///
     /// # Specification
     /// trivial.
-    fn host(
+    pub fn host(
         self,
         text: SourceText<'_>,
     ) -> (String, ByteOffset)
@@ -420,6 +424,101 @@ impl Code
     }
 }
 
+/// `text`, a declaration's documentation in markdown, written for `markup`.
+/// In HTML, each fragment outside a fenced block that reads as gandr is
+/// coloured inline code, so a hover colours the fragment as the editor does.
+///
+/// # Specification
+/// - requires: nothing; any text is admitted.
+/// - ensures: in markdown, `text` itself. In HTML, `text` with each fragment
+///   that [`fragments`] finds outside a fenced block and that [`coloured`]
+///   colours, its backquotes included, written as [`Code::inline`] writes it
+///   under the fragment's spans. Every other byte stays as it is.
+/// - provides: the documentation half of a hover.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one scan of the text, and one call of [`coloured`] for each
+///   fragment.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a documentation line with a name and a path takes
+///   coloured code for the name and keeps the path as written. A fenced block
+///   stays as it is. The markdown text is unchanged.
+/// - witness: `markup::tests::documentation_colours_its_fragments_in_html`
+/// - witness: `hover::tests::a_documented_fragment_hovers_in_its_editor_colours_4919`
+#[spec(ensures: |ret| markup == Markup::Html || ret == <&str>::from(text))]
+#[must_use]
+pub fn documented(
+    markup: Markup,
+    text: SourceText<'_>,
+) -> String
+{
+    let text = <&str>::from(text);
+    if markup == Markup::Markdown {
+        return String::from(text);
+    }
+    let mut written = String::with_capacity(text.len());
+    let mut cursor = 0_usize;
+    for block in unfenced(SourceText::from(text)) {
+        let from = usize::from(block.start());
+        let Some(prose) = text.get(from .. usize::from(block.end()))
+        else {
+            continue;
+        };
+        for fragment in fragments(SourceText::from(prose)) {
+            let (start, end) = (
+                from.saturating_add(usize::from(fragment.start())),
+                from.saturating_add(usize::from(fragment.end())),
+            );
+            let (Some(before), Some(inner)) = (
+                text.get(cursor .. start.saturating_sub(1)),
+                text.get(start .. end),
+            )
+            else {
+                continue;
+            };
+            let Some(spans) = coloured(SourceText::from(inner))
+            else {
+                continue;
+            };
+            written.push_str(before);
+            let mut code = Code::new(Markup::Html);
+            code.quoted(SourceText::from(inner), ByteOffset::from(0_usize), &spans);
+            written.push_str(&code.inline());
+            cursor = end.saturating_add(1);
+        }
+    }
+    written.push_str(text.get(cursor ..).unwrap_or_default());
+    written
+}
+
+/// The byte ranges of `text` outside its fenced blocks, in order. A line that
+/// starts with three backquotes, after its indentation, opens a block, and the
+/// next such line closes it. A block that no line closes runs to the end.
+///
+/// # Specification
+/// trivial.
+fn unfenced(text: SourceText<'_>) -> Vec<ByteRange>
+{
+    let text = <&str>::from(text);
+    let mut ranges = Vec::new();
+    let mut start = Some(0_usize);
+    let mut at = 0_usize;
+    for line in text.split_inclusive('\n') {
+        if line.trim_start().starts_with("```") {
+            match start.take() {
+                Some(from) => ranges.extend(ByteRange::new(from.into(), at.into())),
+                None => start = Some(at.saturating_add(line.len())),
+            }
+        }
+        at = at.saturating_add(line.len());
+    }
+    if let Some(from) = start {
+        ranges.extend(ByteRange::new(from.into(), text.len().into()));
+    }
+    ranges
+}
+
 /// Push `text` onto `out` with `&`, `<` and `>` escaped.
 ///
 /// # Specification
@@ -454,6 +553,24 @@ mod tests
     use super::Code;
     use super::Host;
     use super::Markup;
+    use super::documented;
+
+    #[test]
+    fn documentation_colours_its_fragments_in_html()
+    {
+        let text = "Applies `apply` to `../x.gandr`.\n\n```gandr\ndef `y` = 1\n```\n";
+        assert_eq!(
+            documented(Markup::Html, SourceText::from(text)),
+            "Applies <code><span style=\"color:var(--vscode-gandr-hover-variable);\">apply</span></code> \
+             to `../x.gandr`.\n\n```gandr\ndef `y` = 1\n```\n",
+            "the name is coloured code, the path stays as written, and the fenced block is unchanged"
+        );
+        assert_eq!(
+            documented(Markup::Markdown, SourceText::from(text)),
+            text,
+            "markdown keeps the documentation as written"
+        );
+    }
 
     #[test]
     fn html_needs_every_tag_it_writes()

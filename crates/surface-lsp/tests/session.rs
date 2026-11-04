@@ -1629,8 +1629,9 @@ mod sweeps
     }
 
     /// Every source `sweep` visits has semantic tokens covering its
-    /// highlighted bytes; the fixed portion also holds the corpus's
-    /// membership to the dispatcher's walk.
+    /// highlighted bytes, each comment split at its coloured fragments. The
+    /// fixed portion also holds the corpus's membership to the dispatcher's
+    /// walk.
     ///
     /// # Specification
     /// trivial.
@@ -1726,7 +1727,10 @@ mod sweeps
             let tree = gandr_surface_parser::parse(&grammar, text.into())
                 .expect("a corpus source parses")
                 .into_tree();
-            let spans = roles.highlight(&tree).expect("a corpus source highlights");
+            let spans = gandr_surface_lsp::comments_coloured(
+                text.into(),
+                roles.highlight(&tree).expect("a corpus source highlights"),
+            );
             expected.clear();
             for span in spans.iter().filter(|span| span.role != HlRole::Other) {
                 let (start, end) = (

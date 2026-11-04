@@ -1,6 +1,6 @@
 # gandr for Visual Studio Code
 
-Language support for `.gandr` sources. The extension registers the `gandr` language and starts the gandr language server, `gandr lsp`, over standard input and output for every `.gandr` file opened from disk. The server publishes the diagnostics `gandr check` prints, answers semantic-token requests with the highlighter's roles, and answers hovers with types coloured by the same roles. A small TextMate grammar colors comments and a few keywords until the server's tokens arrive.
+Language support for `.gandr` sources. The extension registers the `gandr` language and starts the gandr language server, `gandr lsp`, over standard input and output for every `.gandr` file opened from disk. The server publishes the diagnostics `gandr check` prints, answers semantic-token requests with the highlighter's roles, and answers hovers with types coloured by the same roles. A small TextMate grammar colors comments, their backquoted code, and a few keywords until the server's tokens arrive.
 
 ## Contents
 

@@ -583,22 +583,23 @@ impl Style
 ///   where the lowering typed nothing — when the table holds one; else the
 ///   declaration as written, a theory and a module always so; then, after a
 ///   blank line, what a `deprecated` attribute marking the form states, and the
-///   documentation the session filed for the form after another. A root form
-///   that declares nothing — a stray — has no name to hover here. On a member's
-///   name with no entry inside the member, the member as written, about the
-///   name. Else, on a use of a declaration the text writes with no entry inside
-///   the use — the theory an `include`, a `Model(…)` or a `handle` scope names
-///   — as on that declaration's name, about the use; in a run a theory or a
-///   `data` declaration writes that declares nothing — an `include`, a rule —
-///   with no entry inside it and no orientation noted at the position, the same
-///   for the first such use in the run, about the run, and else the run as
-///   written, about it. Else, on the innermost typed node holding the position:
-///   inside a member whose entries are none of them there, the member as
-///   written, about the member; when the node spans a whole declaration — its
-///   body's term written over the declaration, or a module's instantiation
-///   written over the module (#405) — or a root form that declares nothing, as
-///   on that declaration's name, about its head when the position is there and
-///   the node's range otherwise; else a block of its type — a binder's name, a
+///   documentation the session filed for the form after another, as
+///   [`crate::markup::documented`] writes it. A root form that declares nothing
+///   — a stray — has no name to hover here. On a member's name with no entry
+///   inside the member, the member as written, about the name. Else, on a use
+///   of a declaration the text writes with no entry inside the use — the theory
+///   an `include`, a `Model(…)` or a `handle` scope names — as on that
+///   declaration's name, about the use; in a run a theory or a `data`
+///   declaration writes that declares nothing — an `include`, a rule — with no
+///   entry inside it and no orientation noted at the position, the same for the
+///   first such use in the run, about the run, and else the run as written,
+///   about it. Else, on the innermost typed node holding the position: inside a
+///   member whose entries are none of them there, the member as written, about
+///   the member; when the node spans a whole declaration — its body's term
+///   written over the declaration, or a module's instantiation written over the
+///   module (#405) — or a root form that declares nothing, as on that
+///   declaration's name, about its head when the position is there and the
+///   node's range otherwise; else a block of its type — a binder's name, a
 ///   written type's text or a term written as one name before ` : ` — and, for
 ///   a term checked against a type spelled otherwise, that type in a second
 ///   block; for a model standing where a model of a theory its own includes is
@@ -862,7 +863,10 @@ pub fn hover<Store, Blocks>(
         });
         if let Some(documented) = parameter {
             value.push_str("\n\n");
-            value.push_str(<&str>::from(documented));
+            value.push_str(&crate::markup::documented(
+                style.markup,
+                SourceText::from(<&str>::from(documented)),
+            ));
         }
         if let Some(note) = oriented {
             value.push_str("\n\n");
@@ -943,10 +947,11 @@ pub fn hover<Store, Blocks>(
 /// - requires: `quoted` is the document `import` was read from.
 /// - ensures: the import as written in a block; then, for a path the document's
 ///   closure read, the file it reads and, after a blank line, the documentation
-///   that file writes of itself when it writes any; for a path it did not, why:
-///   no file at the path, a file under another root, a file whose imports lead
-///   back to the document, or a file that does not parse; for an address with a
-///   scheme, its tracking line. None when the import's bytes split a character.
+///   that file writes of itself, as [`crate::markup::documented`] writes it,
+///   when it writes any; for a path it did not, why: no file at the path, a
+///   file under another root, a file whose imports lead back to the document,
+///   or a file that does not parse; for an address with a scheme, its tracking
+///   line. None when the import's bytes split a character.
 /// - provides: the import half of [`hover`].
 /// - fails: never.
 /// - panics: none.
@@ -994,7 +999,13 @@ fn imported(
                             .display()
                     );
                     match hovering.table.source_documentation(source) {
-                        Maybe::Present(written) => format!("{read}\n\n{}", written.as_ref()),
+                        Maybe::Present(written) => format!(
+                            "{read}\n\n{}",
+                            crate::markup::documented(
+                                style.markup,
+                                SourceText::from(written.as_ref())
+                            )
+                        ),
                         Maybe::Absent(_) => read,
                     }
                 },
@@ -1041,8 +1052,9 @@ fn imported(
 ///
 /// # Specification
 /// - requires: `quoted` is the document `run` was read from.
-/// - ensures: the document's file name in a block, then `written` after a blank
-///   line, about the run's bytes. None when the run's bytes split a character.
+/// - ensures: the document's file name in a block, then `written` as
+///   [`crate::markup::documented`] writes it after a blank line, about the
+///   run's bytes. None when the run's bytes split a character.
 /// - provides: the head-of-file half of [`hover`].
 /// - fails: never.
 /// - panics: none.
@@ -1076,7 +1088,11 @@ fn own_documentation(
     Some(Hover {
         contents: MarkupContent {
             kind: "markdown",
-            value: format!("{}\n\n{}", code.block(), written.as_ref()),
+            value: format!(
+                "{}\n\n{}",
+                code.block(),
+                crate::markup::documented(style.markup, SourceText::from(written.as_ref()))
+            ),
         },
         range,
     })
@@ -1547,7 +1563,8 @@ impl<'text> Quoted<'text>
 ///   a blank line. Where a `deprecated` attribute marks the form, `deprecated`,
 ///   with the version after `since` and the note after a colon when the
 ///   attribute states them, after a blank line. Then the documentation
-///   `session` filed under the form's key after a blank line.
+///   `session` filed under the form's key, as [`crate::markup::documented`]
+///   writes it, after a blank line.
 /// - provides: the declaration half of [`hover`], and each declaration's block
 ///   on a documentation page ([`crate::doc::page`]).
 /// - fails: never.
@@ -1640,7 +1657,10 @@ pub fn declared<Store, Blocks>(
     }
     if let Some(text) = documented {
         value.push_str("\n\n");
-        value.push_str(text.as_ref());
+        value.push_str(&crate::markup::documented(
+            style.markup,
+            SourceText::from(text.as_ref()),
+        ));
     }
     Hover {
         contents: MarkupContent {
@@ -2739,6 +2759,37 @@ mod tests
             styled(SourceText::from(text.as_str()), at, PLAIN),
             Ok(fenced(SourceText::from("x : Integer"))),
             "the markdown hover is the fenced block it always was"
+        );
+    }
+
+    #[test]
+    fn a_documented_fragment_hovers_in_its_editor_colours_4919()
+    {
+        let html = Style {
+            form: Form::Sugared,
+            spelling: Spelling::Unicode,
+            markup: Markup::Html,
+        };
+        let (text, at) = marker(SourceText::from(
+            "/// Returns `answer`, not `../x.gandr`.\ndef $0answer = 42 ;\n",
+        ));
+        let shown = styled(SourceText::from(text.as_str()), at, html);
+        assert!(
+            shown.as_ref().is_ok_and(|value| value.ends_with(
+                "</code></pre>\n\nReturns <code><span \
+                 style=\"color:var(--vscode-gandr-hover-variable);\">answer</span></code>, not \
+                 `../x.gandr`."
+            )),
+            "a fragment that reads as gandr takes the editor's colour, and a path stays as \
+             written: {shown:?}"
+        );
+        assert_eq!(
+            styled(SourceText::from(text.as_str()), at, PLAIN),
+            Ok(format!(
+                "{}\n\nReturns `answer`, not `../x.gandr`.",
+                fenced(SourceText::from("answer : Integer"))
+            )),
+            "markdown keeps the documentation as written"
         );
     }
 

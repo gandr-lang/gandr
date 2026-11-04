@@ -34,7 +34,9 @@
     "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.2",
     "rimraf": "^6.1.3",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
   },
   "contributes": {
     "configuration": {
@@ -360,6 +362,13 @@
         "language": "gandr",
         "scopeName": "source.gandr",
         "path": "./syntaxes/gandr.tmLanguage.json"
+      },
+      {
+        "scopeName": "code-span.injection.gandr",
+        "path": "./syntaxes/gandr.code-span.tmLanguage.json",
+        "injectTo": [
+          "source.gandr"
+        ]
       }
     ],
     "keybindings": [

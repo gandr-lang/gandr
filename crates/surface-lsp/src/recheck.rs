@@ -2053,6 +2053,22 @@ mod tests
     }
 
     #[test]
+    fn a_comment_s_fragment_sends_its_roles_4919()
+    {
+        let text = "// see `f` and `../x`\ndef f = 42 ;\n";
+        let reading = Reading::of(SourceText::from(text));
+        let index = gandr_surface_render_remote::LineIndex::new(text.into());
+        assert_eq!(
+            encode(&index, reading.spans(), &[], &[]),
+            TokenStream::from(vec![
+                0, 0, 8, 11, 0, 0, 8, 1, 3, 0, 0, 1, 12, 11, 0, 1, 0, 3, 0, 0, 0, 4, 1, 2, 1, 0, 4,
+                2, 9, 0,
+            ]),
+            "`f` in the comment a variable, the path and the rest of the comment a comment"
+        );
+    }
+
+    #[test]
     fn causal_contexts_become_lsp_related_information()
     {
         let uri = DocumentUri::from("file:///strict/mismatch.gandr");

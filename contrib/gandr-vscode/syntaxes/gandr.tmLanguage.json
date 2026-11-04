@@ -17,14 +17,15 @@
     "comments": {
       "patterns": [
         {
-          "comment": "line comments",
+          "comment": "A line comment is a region, so the code-span injection can enter it. It ends at the end of its line. It also ends at the start of a line, where a code span that runs past its line leaves it open.",
           "name": "comment.line.double-slash.gandr",
-          "match": "(//).*$",
-          "captures": {
-            "1": {
+          "begin": "//",
+          "beginCaptures": {
+            "0": {
               "name": "punctuation.definition.comment.gandr"
             }
-          }
+          },
+          "end": "$|^"
         }
       ]
     },
