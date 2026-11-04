@@ -2306,8 +2306,8 @@ struct Attempt
     outer: Vec<Frame>,
     /// The call the bind binds: the stuck focus under the frames inside it.
     call: ComputationId,
-    /// The bind's continuation.
-    body: ComputationId,
+    /// The bind over `call`, of one value or of several.
+    bind: Bound,
     /// What the reduction had come to before the attempt.
     progress: Progress,
 }
@@ -2799,6 +2799,56 @@ enum Frame
     BindAll(gandr_kernel_term::ResultCount, ComputationId),
     /// A projection of this component of a lazy pairing.
     Project(gandr_kernel_term::Component),
+}
+
+/// A bind an endpoint reading in [`Replay::whnf`] reads through: of one value
+/// or of several, into its continuation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Bound
+{
+    /// A bind of one value into this continuation.
+    One(ComputationId),
+    /// A bind of this many values into this continuation.
+    Several(gandr_kernel_term::ResultCount, ComputationId),
+}
+
+impl Bound
+{
+    /// The bind's continuation.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn body(self) -> ComputationId
+    {
+        match self {
+            Self::One(body) | Self::Several(_, body) => body,
+        }
+    }
+
+    /// The values the bind binds: the innermost this many variables of its
+    /// continuation.
+    ///
+    /// # Specification
+    /// trivial.
+    fn count(self) -> gandr_kernel_term::ResultCount
+    {
+        match self {
+            Self::One(_) => gandr_kernel_term::ResultCount::from(1_usize),
+            Self::Several(arity, _) => arity,
+        }
+    }
+
+    /// The bind as the frame over its call.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn frame(self) -> Frame
+    {
+        match self {
+            Self::One(body) => Frame::Bind(body),
+            Self::Several(arity, body) => Frame::BindAll(arity, body),
+        }
+    }
 }
 
 /// Where a goal's forced one-sided rewrites are read from.
@@ -4438,11 +4488,11 @@ where
     ///
     /// # Specification
     /// - requires: `term`'s head is `constant`, defined.
-    /// - ensures: for a computation whose head, under application, bind and
-    ///   projection frames, forces `constant`, whose body is a suspended
-    ///   fixpoint, the fixpoint refolded — its body opened at the constant and
-    ///   weakened past the binder it does not read, its evidence kept — under
-    ///   those frames; otherwise, a bind of several values among them included,
+    /// - ensures: for a computation whose head, under application, bind — of
+    ///   one value or of several — and projection frames, forces `constant`,
+    ///   whose body is a suspended fixpoint, the fixpoint refolded — its body
+    ///   opened at the constant and weakened past the binder it does not read,
+    ///   its evidence kept — under those frames; otherwise
     ///   [`Self::unfold_term`]'s reduct.
     /// - provides: the δ-step of [`Self::normalize_returned`] and of a held
     ///   operand's run in [`Self::reduce`].
@@ -4461,8 +4511,11 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — `spin(S(x)) then spin(a)` against `loop ∷ (spin(x)
     ///   then spin(a))` at the mode switch: unfolded to the bare fixpoint, the
-    ///   recursive call reads `fix f x` and the sides stay apart.
+    ///   recursive call reads `fix f x` and the sides stay apart. Under a bind
+    ///   of several values, the first result of `spin(S(x))` against `loop ∷`
+    ///   the first result of `spin(x)`: not refolded, the sides stay apart.
     /// - witness: `tests::native_formers::a_recursive_call_stuck_at_a_variable_reads_as_its_call_473`
+    /// - witness: `tests::native_formers::a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070`
     #[spec(ensures: |ret| ret.map_or(true, |reduct| matches!((term, reduct), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_)))))]
     fn unfold_refolded(
         &mut self,
@@ -4488,6 +4541,10 @@ where
                 },
                 Some(&Computation::Bind(bound, next)) => {
                     frames.push(Frame::Bind(next));
+                    focus = bound;
+                },
+                Some(&Computation::BindAll { bound, arity, body }) => {
+                    frames.push(Frame::BindAll(arity, body));
                     focus = bound;
                 },
                 Some(&Computation::Project(component, pair)) => {
@@ -8240,10 +8297,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         if frames.is_empty()
                             && matches!(
                                 self.arena.computation(focus.node),
-                                Some(&Computation::Return(_))
+                                Some(&(Computation::Return(_) | Computation::ReturnAll(_)))
                             ) =>
                     {
-                        // The continuation returned: its bind is spent.
+                        // The continuation returned, one value or several: its
+                        // bind is spent.
                         if let Some(tried) = attempts.pop() {
                             frames = tried.outer.into_iter().map(Closure::closed).collect();
                         }
@@ -8271,7 +8329,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         // without end. A link transporting along or of the
                         // chain's endpoint stays over the chain below, and the
                         // next bind out is read over both.
-                        Some(body)
+                        Some(bind)
                             if !first
                                 || matches!(
                                     self.shape(
@@ -8284,16 +8342,16 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                         ref spine
                                     )) if !(matches!(spine.as_slice(), [.., Elimination::PathTransport(_)])
                                         && matches!(
-                                            self.arena.computation(body),
+                                            self.arena.computation(bind.body()),
                                             Some(&Computation::PathTransport { .. })
                                         )
-                                        && self.continuation_of(body) != Continuation::Eliminates)
+                                        && self.continuation_of(bind) != Continuation::Eliminates)
                                 )
                                 || self.reading == Reading::Forced
                                     && self.shut_recursion(call).is_some() =>
                         {
                             if matches!(
-                                self.continuation_of(body),
+                                self.continuation_of(bind),
                                 Continuation::Eliminates | Continuation::Returns
                             ) {
                                 // Read through, this bind restores the elimination
@@ -8303,23 +8361,23 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 // back as the call and expands again. It stays
                                 // over its call, and the next bind out is tried
                                 // over both.
-                                let call = self.arena.computation_bind(call, body);
+                                let call = self.wrap(call, bind.frame());
                                 next = (call, outer, before, false);
                                 continue;
                             }
                             // The continuation runs with the call as a returned
-                            // endpoint for its value, which its binder holds.
-                            let leaf = self.arena.value_returned(call);
-                            let environment =
-                                cells.push(self.arena, Environment::EMPTY, Closure::closed(leaf));
+                            // endpoint for each value it binds: a bind of one
+                            // holds the call, and a bind of several holds, at
+                            // each binder, the call read to that result.
+                            let environment = self.read_through(&mut cells, call, bind);
                             focus = Closure {
-                                node: body,
+                                node: bind.body(),
                                 environment,
                             };
                             attempts.push(Attempt {
                                 outer,
                                 call,
-                                body,
+                                bind,
                                 progress: before,
                             });
                             continue 'reading;
@@ -8327,8 +8385,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         unread => {
                             // No bind is left, or a definition heads the call:
                             // this reading stands as it is.
-                            if let Some(body) = unread {
-                                outer.push(Frame::Bind(body));
+                            if let Some(bind) = unread {
+                                outer.push(bind.frame());
                             }
                             let Some(tried) = attempts.pop()
                             else {
@@ -8369,7 +8427,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             // The enclosing continuation did not return: its bind
                             // stays over its call, and the next bind out is tried
                             // over both.
-                            let call = self.arena.computation_bind(tried.call, tried.body);
+                            let call = self.wrap(tried.call, tried.bind.frame());
                             next = (call, tried.outer, tried.progress, false);
                         },
                     }
@@ -8674,13 +8732,14 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         whole
     }
 
-    /// The innermost bind among `outer`, popped, with `call` under the frames
-    /// inside it; or, with no bind among them, `call` under all of them.
+    /// The innermost bind among `outer`, of one value or of several, popped,
+    /// with `call` under the frames inside it; or, with no bind among them,
+    /// `call` under all of them.
     ///
     /// # Specification
     /// - requires: `outer` holds the frames over `call`, innermost last.
     /// - ensures: the call under every frame popped before the bind, and the
-    ///   bind's body; with no bind, `outer` empty.
+    ///   bind's frame; with no bind, `outer` empty.
     /// - provides: the next bind out an endpoint reading tries in
     ///   [`Self::whnf`].
     /// - fails: never.
@@ -8703,39 +8762,74 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         &mut self,
         call: ComputationId,
         outer: &mut Vec<Frame>,
-    ) -> (ComputationId, Option<ComputationId>)
+    ) -> (ComputationId, Option<Bound>)
     {
         let mut call = call;
         while let Some(frame) = outer.pop() {
-            if let Frame::Bind(body) = frame {
-                return (call, Some(body));
+            match frame {
+                Frame::Bind(body) => return (call, Some(Bound::One(body))),
+                Frame::BindAll(arity, body) => return (call, Some(Bound::Several(arity, body))),
+                Frame::Apply(_) | Frame::Project(_) => call = self.wrap(call, frame),
             }
-            call = self.wrap(call, frame);
         }
         (call, None)
     }
 
-    /// What `body` does with its own bound variable at its head: eliminates
-    /// it, as the continuation `E[x]` of a bind [`Self::bind_returned`]
-    /// builds, returns it as it is, or anything else.
+    /// The environment the continuation of `bind` over the stuck `call` runs
+    /// in when an endpoint reading reads through it: a bind of one value holds
+    /// `⟨call⟩`, and a bind of `n` values holds `⟨(x₁ … xₙ) ← call; return
+    /// xᵢ⟩` at its `i`-th binder, the first outermost, as a return of `n`
+    /// values fills them.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: [`Continuation::Eliminates`] exactly when `body`, under any
+    /// trivial.
+    fn read_through(
+        &mut self,
+        cells: &mut Environments,
+        call: ComputationId,
+        bind: Bound,
+    ) -> Environment
+    {
+        let Bound::Several(arity, _) = bind
+        else {
+            let leaf = self.arena.value_returned(call);
+            return cells.push(self.arena, Environment::EMPTY, Closure::closed(leaf));
+        };
+        let mut environment = Environment::EMPTY;
+        // De Bruijn indices address no more binders than `u32` counts.
+        let width = u32::try_from(usize::from(arity)).unwrap_or(u32::MAX);
+        for result in (0 .. width).rev() {
+            let variable = self.arena.value_variable(DeBruijnIndex::from(result));
+            let read = self.arena.computation_return(variable);
+            let result = self.arena.computation_bind_all(call, arity, read);
+            let leaf = self.arena.value_returned(result);
+            environment = cells.push(self.arena, environment, Closure::closed(leaf));
+        }
+        environment
+    }
+
+    /// What the body of `bind` does with its own bound variables at its head:
+    /// eliminates one, as the continuation `E[x]` of a bind
+    /// [`Self::bind_returned`] builds, returns them as they are, or anything
+    /// else.
+    ///
+    /// # Specification
+    /// - requires: `bind` is a bind frame, of one value or of several.
+    /// - ensures: [`Continuation::Eliminates`] exactly when the body, under any
     ///   applications whose head is no fixpoint and any projections of a lazy
     ///   pairing — the context [`Self::absorbed`] moves under the bind — is a
     ///   force, a projection, a case, a data case, a dependent split or a list
-    ///   fold inspecting the innermost variable, a fixpoint applied to it, or a
-    ///   transport along it or of it — the continuation the transport rows
-    ///   build when they run a returned path or operand;
-    ///   [`Continuation::Returns`] exactly when `body` is `return` of the
-    ///   innermost variable.
+    ///   fold inspecting a variable the bind binds, a fixpoint applied to one,
+    ///   or a transport along one or of one — the continuation the transport
+    ///   rows build when they run a returned path or operand;
+    ///   [`Continuation::Returns`] exactly when the body is `return` of a
+    ///   variable the bind binds, or the return of all of them in their order.
     /// - provides: the binds an endpoint reading in [`Self::whnf`] passes over:
     ///   run with the call as a returned endpoint, an eliminating continuation
     ///   meets that endpoint at its head and binds the same call again, so it
     ///   never returns, and a reading nested into it would never end; read
-    ///   through, a returning one is the call's η-expansion folded back, which
-    ///   the goal expands again without end.
+    ///   through, a returning one is the call's η-expansion folded back, or one
+    ///   of its results read, which the goal expands again without end.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -8743,17 +8837,25 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - hypothesis: L3 — an endpoint whose recursive call waits on another
     ///   call stuck at a variable reads as its arm's constructor over both, as
     ///   the engine reads it; nesting into the bind a fixpoint's gate builds
-    ///   loops until the budget declines the endpoint.
+    ///   loops until the budget declines the endpoint. An endpoint that reads
+    ///   one result of a stuck call stays over its bind.
     /// - witness: `replay::tests::an_endpoint_passes_over_a_bind_its_own_elimination_built`
     /// - witness: `replay::tests::an_endpoint_stays_over_the_eta_expansion_of_its_stuck_call_473`
     /// - witness: `replay::tests::an_endpoint_stays_over_the_run_of_its_transported_operand_473`
-    #[spec(ensures: |ret| ret == Continuation::Other || self.arena.computation(body).is_some())]
+    /// - witness: `tests::native_formers::a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070`
+    #[spec(ensures: |ret| ret == Continuation::Other || self.arena.computation(bind.body()).is_some())]
     fn continuation_of(
         &self,
-        body: ComputationId,
+        bind: Bound,
     ) -> Continuation
     {
-        let mut body = body;
+        let count = usize::from(bind.count());
+        // The variables the bind binds are the innermost `count`.
+        let bound = |value: ValueId| {
+            matches!(self.arena.value(value), Some(&Value::Variable(index))
+                if usize::try_from(u32::from(index)).is_ok_and(|at| at < count))
+        };
+        let mut body = bind.body();
         loop {
             match self.arena.computation(body) {
                 Some(&Computation::Application(head, _))
@@ -8799,14 +8901,26 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         else if let Some(&Computation::PathTransport { path, value, .. }) =
             self.arena.computation(body)
         {
-            let bound = Some(&Value::Variable(DeBruijnIndex::from(0_u32)));
-            if self.arena.value(path) == bound || self.arena.value(value) == bound {
+            if bound(path) || bound(value) {
                 return Continuation::Eliminates;
             }
             return Continuation::Other;
         }
         else if let Some(&Computation::Return(returned)) = self.arena.computation(body) {
-            if self.arena.value(returned) == Some(&Value::Variable(DeBruijnIndex::from(0_u32))) {
+            if bound(returned) {
+                return Continuation::Returns;
+            }
+            return Continuation::Other;
+        }
+        else if let Some(&Computation::ReturnAll(ref returned)) = self.arena.computation(body) {
+            // The binders in their order, the first outermost.
+            let in_order = returned.len() == count
+                && returned.iter().rev().enumerate().all(|(at, &value)| {
+                    u32::try_from(at).is_ok_and(|at| {
+                        self.arena.value(value) == Some(&Value::Variable(DeBruijnIndex::from(at)))
+                    })
+                });
+            if in_order {
                 return Continuation::Returns;
             }
             return Continuation::Other;
@@ -8814,7 +8928,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         else {
             return Continuation::Other;
         };
-        if self.arena.value(inspected) == Some(&Value::Variable(DeBruijnIndex::from(0_u32))) {
+        if bound(inspected) {
             Continuation::Eliminates
         }
         else {
