@@ -1055,13 +1055,30 @@ pub(crate) fn elaborate_roots<'source>(
                 former: Former::Mutual,
                 ..
             } => {
+                let mut families = 0_usize;
+                for piece in &pieces.pieces {
+                    if let Piece::Operand(member) = *piece
+                        && let Some(inner) = tree.node(member.node)
+                        && let Shape::Form {
+                            former: Former::Data,
+                            ..
+                        } = shape_of(grammar, inner)?
+                    {
+                        families = families.saturating_add(1);
+                    }
+                }
+                // A block of fewer than two data families reads as no group,
+                // so it records nothing.
+                let grouping = families >= 2_usize;
                 for piece in pieces.pieces.iter().rev() {
                     if let Piece::Operand(member) = *piece {
                         pending.push(member.node);
-                        let _first = grouped.insert(member.node, groups);
+                        if grouping {
+                            let _first = grouped.insert(member.node, groups);
+                        }
                     }
                 }
-                groups = groups.saturating_add(1);
+                groups = groups.saturating_add(usize::from(grouping));
                 continue;
             },
             Shape::Form {
