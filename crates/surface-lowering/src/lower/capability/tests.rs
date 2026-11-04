@@ -1871,7 +1871,7 @@ const PUT_SKIP: &str = concat!(
     "  sort C : Type;\n",
     "  oper get : (k : pi+ (s : S) . C) --> C;\n",
     "  oper put : (s : S, k : C) --> C;\n",
-    "  rule putPut : put(s, put(u, k)) <=> put(u, k);\n",
+    "  rule putPut : put s (put u k) <=> put u k;\n",
     "  law putSkip : (s : S, k : C) -> Path[.A = C](put s k, k);\n",
     "}\n",
 );

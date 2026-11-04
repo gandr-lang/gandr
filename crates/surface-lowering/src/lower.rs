@@ -9959,23 +9959,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             start,
             end: self.operands.len(),
         };
-        let (stated, answered) = match outputs {
-            Some(_) => (None, None),
-            None => self.stated_value(tuple)?,
-        };
-        if let Some(stated) = stated
-            && let Maybe::Present(components) =
-                self.stated_entries(tuple, stated, Former::TelescopeType, arity::Thunked(false))?
-            && components.len() == members.end.saturating_sub(members.start)
-            && components
-                .iter()
-                .all(|component| matches!(component.key, arity::Key::Positional))
-        {
-            for (position, component) in (members.start .. members.end).zip(&components) {
-                if let Some(&member) = self.operands.get(position) {
-                    self.classify_member(member, component.held.at().node, answered, frame);
-                }
-            }
+        if outputs.is_none() {
+            self.classify_members(tuple, members, frame)?;
         }
         for position in members.start .. members.end {
             if let Some(&member) = self.operands.get(position) {
@@ -10197,18 +10182,69 @@ impl<'run, 'source> Lowerer<'run, 'source>
         )
     }
 
-    /// Give `member`, a list's element or a tuple's member, the type
+    /// Give each member of the eager product at `site` the component its
+    /// stated product writes at the member's place.
+    ///
+    /// # Specification
+    /// - requires: `site` is a tuple or a positional telescope value standing
+    ///   as a value; `members` are its members in written order, and `frame` is
+    ///   theirs.
+    /// - ensures: when the type `site` is written or answered at states a
+    ///   product of as many positional components as `members`, each member
+    ///   takes its component as [`Self::classify_member`] gives it; otherwise
+    ///   no member changes.
+    /// - fails: as [`Self::stated_value`] and [`Self::stated_entries`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::stated_value`] and [`Self::stated_entries`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::classify_member`], for the tuple and for
+    ///   the positional telescope value alike.
+    /// - witness: `lower::native::tests::a_tuple_gives_its_members_the_product_s_components_1877`
+    #[spec(
+        captures: before = (self.classifiers.len(), self.inherited.len()),
+        ensures: |ret| ret.is_err() || (self.classifiers.len() >= before.0 && self.inherited.len() >= before.1),
+    )]
+    fn classify_members(
+        &mut self,
+        site: Site,
+        members: Stretch,
+        frame: Frame,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let (stated, answered) = self.stated_value(site)?;
+        if let Some(stated) = stated
+            && let Maybe::Present(components) =
+                self.stated_entries(site, stated, Former::TelescopeType, arity::Thunked(false))?
+            && components.len() == members.end.saturating_sub(members.start)
+            && components
+                .iter()
+                .all(|component| matches!(component.key, arity::Key::Positional))
+        {
+            for (position, component) in (members.start .. members.end).zip(&components) {
+                if let Some(&member) = self.operands.get(position) {
+                    self.classify_member(member, component.held.at().node, answered, frame);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Give `member`, a list's element or an eager product's member, the type
     /// `component` writes, when it is a form that takes one.
     ///
     /// # Specification
     /// - requires: `component` is read under `answered`'s frame when `answered`
     ///   is present, else under the frame its written classifier was read in;
     ///   `frame` is the member's.
-    /// - ensures: a member written as a constructor, a call, a list or a
-    ///   parenthesised form takes `component` as its written classifier when
-    ///   `answered` is absent, and otherwise inherits the answer returning
-    ///   `component` under `answered`'s frame, carried to `frame`; any other
-    ///   member is left as it was.
+    /// - ensures: a member written as a constructor, a call, a list, a
+    ///   positional telescope value or a parenthesised form takes `component`
+    ///   as its written classifier when `answered` is absent, and otherwise
+    ///   inherits the answer returning `component` under `answered`'s frame,
+    ///   carried to `frame`; any other member is left as it was.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -10235,6 +10271,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     former: Former::Constructor
                         | Former::Call
                         | Former::List
+                        | Former::Telescope
                         | Former::Parenthesized,
                     ..
                 })
@@ -28416,8 +28453,8 @@ def ended() -> -F [Partial] Unit {
                  return y }\ndef bound_apart(a : Type, x : a, y : a) -> -F a { return y }\ndef \
                  three(b : Bool, k m n : Integer) -> -F Integer { return k }\ndef three_apart(b : \
                  Bool, k : Integer, m : Integer, n : Integer) -> -F Integer { return k }\ndef \
-                 linked(a : Type, x y : a, p : Path(a, x, y)) -> -F a { return y }\ndef \
-                 linked_apart(a : Type, x : a, y : a, p : Path(a, x, y)) -> -F a { return y }\n",
+                 linked(a : Type, x y : a, p : Path[.A = a](x, y)) -> -F a { return y }\ndef \
+                 linked_apart(a : Type, x : a, y : a, p : Path[.A = a](x, y)) -> -F a { return y }\n",
             ),
             &mut arena,
         );
@@ -29071,8 +29108,8 @@ def ended() -> -F [Partial] Unit {
                       Integer -> Integer, x : Integer) -> Integer { f x }\ndef used() -> \
                       Integer { apply (fun (y : Integer) { y }) 1 }\ndef twice[m : Type, combine : \
                       (m, m) -> m](x : m) -> m { combine x x }\ndef moved(A : Type, P : A -> Type, x \
-                      : A, y : A, p : Path(A, x, y), v : P(x)) -> P(y) { Path.walk P p v }\ndef rec \
-                      plus : (Nat, Nat) -> Nat where {\n  | Zero, k => k\n  | Succ j, k => Succ \
+                      : A, y : A, p : Path[.A = A](x, y), v : P(x)) -> P(y) { Path.walk P p v }\ndef rec \
+                      plus : (Nat, Nat) -> Nat where {\n  | Zero, k => k\n  | Succ(j), k => Succ \
                       (plus[<] j k)\n}\n";
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(source), &mut arena);
@@ -29331,8 +29368,8 @@ def ended() -> -F [Partial] Unit {
         assert_eq!(
             refusal(SourceText::from("def u = thunk { *{1, 2} ; return 0 } ;")),
             LoweringRefusal::OutOfFragment {
-                span: at(16_usize, 22_usize),
-                form: FormName::TUPLE,
+                span: at(16_usize, 23_usize),
+                form: FormName::from(NamedKind("telescope_expression")),
                 sort: FragmentSort::Computation,
                 boundary: FragmentBoundary::WrongSort,
             },
@@ -29690,7 +29727,7 @@ def ended() -> -F [Partial] Unit {
             "the quoted path type lowers: {:?}",
             lowered[1]
         );
-        let at = text.rfind("same a").expect("the carrier is written");
+        let at = text.rfind("same(a)").expect("the carrier is written");
         let carrier = module
             .origins()
             .value_types()
@@ -29743,7 +29780,7 @@ def ended() -> -F [Partial] Unit {
             "the decoder lowers: {:?}",
             lowered[1]
         );
-        let at = text.find("el[<] a").expect("the carrier is written");
+        let at = text.find("el[<](a)").expect("the carrier is written");
         let carrier = module
             .origins()
             .value_types()
@@ -32093,7 +32130,7 @@ def ended() -> -F [Partial] Unit {
         );
     }
 
-    /// #4732: `-n` written on a natural literal is one negative literal, a
+    /// #4732: `- n` written on a natural literal is one negative literal, a
     /// value with no call, so it stands where a value definition holds it.
     #[test]
     fn a_negated_natural_literal_is_one_negative_literal_4732()
@@ -32124,7 +32161,7 @@ def ended() -> -F [Partial] Unit {
         );
         assert_eq!(
             text.get(usize::from(operator.start()) .. usize::from(operator.end())),
-            Some("-5"),
+            Some("- 5"),
             "the operator span is the folded literal"
         );
         let mut arena = CoreArena::new();

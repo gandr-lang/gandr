@@ -393,7 +393,7 @@ fn funext_lowers_to_its_former()
     let functions = "def id(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  return b\n}\ndef again(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  return b\n}\n";
     let mut arena = CoreArena::new();
     let source = format!(
-        "{functions}def same : Path[.A = +U[ω] (+{{Unit, Unit}} -> -F +{{Unit, Unit}})](id, again);\ndef same = Path.funext(id, again);\n"
+        "{functions}def same : Path[.A = +U[ω] (+{{Unit, Unit}} -> -F +{{Unit, Unit}})](id, again);\ndef same = Path.funext id again;\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, "same".into())
@@ -837,8 +837,8 @@ fn a_suspended_function_cong_lifts_answers_at_its_own_bytes_3787()
         let start = source.find(text).expect("the source writes the text");
         (start, start.saturating_add(text.len()))
     };
-    let thunk = spanned("thunk { fun (q : Path[.A = A](x, y)) { Path.step(q, g) } }");
-    let function = spanned("fun (q : Path[.A = A](x, y)) { Path.step(q, g) }");
+    let thunk = spanned("thunk { fun (q : Path[.A = A](x, y)) { Path.step q g } }");
+    let function = spanned("fun (q : Path[.A = A](x, y)) { Path.step q g }");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let at =
@@ -3293,10 +3293,10 @@ fn a_composite_the_syntax_cannot_read_is_refused()
 {
     let telescope = "(A : Type, x : A, m : Integer, p : Path[.A = A](x, x))";
     let source = format!(
-        "def unary{telescope} -> Path[.A = A](x, x) {{\n  compose[1, 3](chain(1))\n}}\n\
-         def cycled{telescope} -> Path[.A = A](x, x) {{\n  compose[1, 3](cycle(1), p)\n}}\n\
-         def counted{telescope} -> Path[.A = A](x, x) {{\n  compose[1, 3](1, p)\n}}\n\
-         def named{telescope} -> Path[.A = A](x, x) {{\n  compose[1, 3](chain(m), p)\n}}\n"
+        "def unary{telescope} -> Path[.A = A](x, x) {{\n  compose[1, 3] (chain 1)\n}}\n\
+         def cycled{telescope} -> Path[.A = A](x, x) {{\n  compose[1, 3] (cycle 1) p\n}}\n\
+         def counted{telescope} -> Path[.A = A](x, x) {{\n  compose[1, 3] 1 p\n}}\n\
+         def named{telescope} -> Path[.A = A](x, x) {{\n  compose[1, 3] (chain m) p\n}}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -3333,7 +3333,7 @@ fn a_level_two_pasting_reads_its_columns()
         SourceText::from(concat!(
             "def whiskered(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) {\n  compose[4, 9] (chain 2 (1, 0)) (fa, g)\n}\n",
             "def stacked(A : Type, x : A, y : A, f : Path[.A = A](x, y), g : Path[.A = A](x, y), h : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f, g), b : Path[.A = Path[.A = A](x, y)](g, h)) -> Path[.A = Path[.A = A](x, y)](f, h) {\n  compose[4, 9] (chain 1 2) (a, b)\n}\n",
-            "def miscounted(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) {\n  compose[4, 9] (chain 2 *{1, 0, 0}) *{fa, g}\n}\n",
+            "def miscounted(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) {\n  compose[4, 9] (chain 2 (1, 0, 0)) (fa, g)\n}\n",
         )),
         &mut arena,
     );
@@ -3392,7 +3392,7 @@ fn a_fill_lowers_to_its_generator_and_cells()
             "def composite(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z)) -> Path[.A = A](x, z) {\n  Path.step f g\n}\n",
             "def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path[.A = A](x, y)) -> ((g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f g)) {\n  thunk { fun (f) { thunk { fun (g) { Path.here (composite A x y z f g) } } } }\n}\n",
             "def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) {\n  Path.walk (fun (a) { type(Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step a g)) }) fa (Path.here (Path.step fm g))\n}\n",
-            "def firstLifted(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](Path.step (Path.here (Path.step fm g)) (rightWhisker A x y z fm fp fa g), Path.step (rightWhisker A x y z fm fp fa g) (Path.here (Path.step fp g))) {\n  fill[5, 7] (chain 2) (selfComposite A x y z) *{fa, g}\n}\n",
+            "def firstLifted(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](Path.step (Path.here (Path.step fm g)) (rightWhisker A x y z fm fp fa g), Path.step (rightWhisker A x y z fm fp fa g) (Path.here (Path.step fp g))) {\n  fill[5, 7] (chain 2) (selfComposite A x y z) (fa, g)\n}\n",
         )),
         &mut arena,
     );
@@ -3458,8 +3458,8 @@ fn two_sites_of_one_fill_convert_at_the_same_entries_4180()
         SourceText::from(concat!(
             "def composite(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z)) -> Path[.A = A](x, z) {\n  Path.step f g\n}\n",
             "def composedCells(A : Type, x : A, y : A, z : A) -> (f : Path[.A = A](x, y)) -> ((g : Path[.A = A](y, z)) -> Path[.A = A](x, z)) {\n  thunk { fun (f) { thunk { fun (g) { composite A x y z f g } } } }\n}\n",
-            "def cellsTwo(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), p : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f, p), g : Path[.A = A](y, z), q : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g, q)) -> Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step p q) {\n  fill[5, 7] (chain 2) (composedCells A x y z) *{a, b}\n}\n",
-            "def cellsAgain(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), p : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f, p), g : Path[.A = A](y, z), q : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g, q)) -> Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step p q) {\n  fill[5, 7] (chain 2) (composedCells A x y z) *{a, b}\n}\n",
+            "def cellsTwo(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), p : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f, p), g : Path[.A = A](y, z), q : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g, q)) -> Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step p q) {\n  fill[5, 7] (chain 2) (composedCells A x y z) (a, b)\n}\n",
+            "def cellsAgain(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), p : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f, p), g : Path[.A = A](y, z), q : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g, q)) -> Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step p q) {\n  fill[5, 7] (chain 2) (composedCells A x y z) (a, b)\n}\n",
             "def sitesConvert(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), p : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f, p), g : Path[.A = A](y, z), q : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g, q)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step p q)](cellsTwo A x y z f p a g q b, cellsAgain A x y z f p a g q b) {\n  Path.here (cellsTwo A x y z f p a g q b)\n}\n",
         )),
         &mut arena,

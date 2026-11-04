@@ -1955,6 +1955,7 @@ impl<'source> Lowerer<'_, 'source>
         let plan = match arrange(site, entries)? {
             Arranged::Positional(entries) => {
                 let members = self.stored(&entries);
+                self.classify_members(site, members, frame)?;
                 for entry in &entries {
                     self.read(entry.held.at().node, Reading::Value(frame));
                 }

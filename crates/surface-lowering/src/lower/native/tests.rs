@@ -2728,7 +2728,7 @@ fn an_untyped_let_of_a_parameterised_constructor_names_its_parameter_5050()
     let source = alloc::format!("{MAYBE}def kept() -> Maybe(Integer) {{ let x = Some 3; x }}\n");
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let refusal = refusal_of(&module, SurfaceName::from("kept"));
-    let call = source.find("Some(3)").unwrap_or_default();
+    let call = source.find("Some 3").unwrap_or_default();
     assert!(
         matches!(
             refusal,
@@ -2736,7 +2736,7 @@ fn an_untyped_let_of_a_parameterised_constructor_names_its_parameter_5050()
                 if constructor == SurfaceName::from("Some")
                     && parameter == SurfaceName::from("a")
                     && usize::from(span.start()) == call
-                    && usize::from(span.end()) == call.saturating_add("Some(3)".len())
+                    && usize::from(span.end()) == call.saturating_add("Some 3".len())
         ),
         "the refusal names the constructor, its parameter and the call: {refusal:?}"
     );
@@ -3441,10 +3441,10 @@ fn a_tuple_gives_its_members_the_product_s_components_1877()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}def annotated = ((Some 1, None) : Maybe(Integer) * Maybe(Integer)) ;\n\
-         def returned(n : Integer) -> -F (Maybe(Integer) * Maybe(Integer)) {{ (None, Some n) }}\n\
+        "{MAYBE}def annotated = (*{{Some 1, None}} : Maybe(Integer) * Maybe(Integer)) ;\n\
+         def returned(n : Integer) -> -F (Maybe(Integer) * Maybe(Integer)) {{ *{{None, Some n}} }}\n\
          def listed() -> -F List(Maybe(Integer) * Maybe(Integer)) {{ #[*{{Some 1, None}}] }}\n\
-         def nested = ((Some 1, (None, Some 2)) : Maybe(Integer) * (Maybe(Integer) * Maybe(Integer))) ;\n"
+         def nested = (*{{Some 1, *{{None, Some 2}}}} : Maybe(Integer) * (Maybe(Integer) * Maybe(Integer))) ;\n"
     );
     let source = listing(&source);
     let module = listed(&source, &mut arena);
@@ -4194,14 +4194,14 @@ fn a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815()
             "thunk { fun (a) { fun (b) { match a {} } } }",
         ),
         (
-            "(a : One) => Path[.A = One](a, a)",
+            "(a : One) -> Path[.A = One](a, a)",
             "+U ((a : One) -> -F Path[.A = One](a, a))",
-            "thunk { fun (a) { match a { Only => Path.here(Only) } } }",
+            "thunk { fun (a) { match a { | Only => Path.here Only } } }",
         ),
         (
-            "(a : One, Integer) => Path[.A = One](a, a)",
+            "(a : One, Integer) -> Path[.A = One](a, a)",
             "+U ((a : One) -> Integer -> -F Path[.A = One](a, a))",
-            "thunk { fun (x) { fun (n) { match x { Only => Path.here(Only) } } } }",
+            "thunk { fun (x) { fun (n) { match x { | Only => Path.here Only } } } }",
         ),
     ] {
         let mut arena = CoreArena::new();

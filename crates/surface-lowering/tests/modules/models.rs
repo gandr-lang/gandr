@@ -46,7 +46,7 @@ const SETOIDS: &str = "type Ob = Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -
 /// The signature `Model(CatShape)` derives, written out by hand, its laws
 /// stated over the operations of the module `Derived` so the two signatures
 /// name the same constants.
-const WRITTEN: &str = "#{ type Ob : Type[+, 1], type Hom : (a : Ob, b : Ob) => Type, id : (a : Ob) => Hom(a, a), comp : (a : Ob, b : Ob, c : Ob, f : Hom(a, b), g : Hom(b, c)) => Hom(a, c), unitL : (a : Ob, b : Ob, f : Hom(a, b)) => Path[.A = Hom(a, b)](Derived.comp(a, a, b, Derived.id(a), f), f), unitR : (a : Ob, b : Ob, f : Hom(a, b)) => Path[.A = Hom(a, b)](Derived.comp(a, b, b, f, Derived.id(b)), f), assoc : (a : Ob, b : Ob, c : Ob, d : Ob, f : Hom(a, b), g : Hom(b, c), h : Hom(c, d)) => Path[.A = Hom(a, d)](Derived.comp(a, c, d, Derived.comp(a, b, c, f, g), h), Derived.comp(a, b, d, f, Derived.comp(b, c, d, g, h))) }";
+const WRITTEN: &str = "*{ type Ob : Type[+, 1], type Hom : (a : Ob, b : Ob) -> Type, id : (a : Ob) -> Hom(a, a), comp : (a : Ob, b : Ob, c : Ob, f : Hom(a, b), g : Hom(b, c)) -> Hom(a, c), unitL : (a : Ob, b : Ob, f : Hom(a, b)) -> Path[.A = Hom(a, b)](Derived.comp a a b (Derived.id a) f, f), unitR : (a : Ob, b : Ob, f : Hom(a, b)) -> Path[.A = Hom(a, b)](Derived.comp a b b f (Derived.id b), f), assoc : (a : Ob, b : Ob, c : Ob, d : Ob, f : Hom(a, b), g : Hom(b, c), h : Hom(c, d)) -> Path[.A = Hom(a, d)](Derived.comp a c d (Derived.comp a b c f g) h, Derived.comp a b d f (Derived.comp b c d g h)) }";
 
 #[test]
 fn a_derived_signature_states_what_the_written_one_does()
@@ -442,7 +442,7 @@ fn a_model_binder_s_carrier_is_its_projected_sort_2131()
     let stepped = |second: &str, count: &str| {
         let source = format!(
             "{counter}def step(a : Model(Counter), b : {second}, c : a.C) -> -F Integer {{\n  \
-             match b {{\n    | *{{.zero = z, .incr = i, .read = r}} => become r(i({count}))\n  \
+             match b {{\n    | *{{.zero = z, .incr = i, .read = r}} => become r (i {count})\n  \
              }}\n}}\n"
         );
         let mut lowered = lower(source.as_str());
@@ -470,15 +470,15 @@ fn a_model_binder_s_carrier_is_its_projected_sort_2131()
 
     states_the_written_types(
         format!(
-            "{counter}def fixed : (a : Model(Counter) with sort C = Integer) -> (c : a.C) -> \
-             Integer ;\ndef fixedWritten : (a : Model(Counter) with sort C = Integer) -> (c : \
-             Integer) -> Integer ;\ndef open : (x : Type) -> (a : Model(Counter) with sort C = \
-             x) -> (n : Integer) -> (c : a.C) -> x ;\ndef openWritten : (x : Type) -> (a : \
-             Model(Counter) with sort C = x) -> (n : Integer) -> (c : x) -> x ;\ndef named : (x \
-             : Type) -> (a : Model(Counter) with sort C = x) -> (p : Path[.A = Model(Counter) with \
-             sort C = x](a, a)) -> (c : a.C) -> x ;\ndef namedWritten : (x : Type) -> (a : \
-             Model(Counter) with sort C = x) -> (p : Path[.A = Model(Counter) with sort C = x](a, \
-             a)) -> (c : x) -> x ;\n"
+            "{counter}def fixed : (a : Model(Counter) with sort C = Integer, c : a.C) -> \
+             Integer ;\ndef fixedWritten : (a : Model(Counter) with sort C = Integer, c : \
+             Integer) -> Integer ;\ndef open : (x : Type, a : Model(Counter) with sort C = \
+             x, n : Integer, c : a.C) -> x ;\ndef openWritten : (x : Type, a : \
+             Model(Counter) with sort C = x, n : Integer, c : x) -> x ;\ndef named : (x \
+             : Type, a : Model(Counter) with sort C = x, p : Path[.A = Model(Counter) with \
+             sort C = x](a, a), c : a.C) -> x ;\ndef namedWritten : (x : Type, a : \
+             Model(Counter) with sort C = x, p : Path[.A = Model(Counter) with sort C = x](a, \
+             a), c : x) -> x ;\n"
         ),
         &[
             ("fixed", "fixedWritten"),
@@ -811,9 +811,9 @@ fn an_omitted_law_is_discharged_by_the_checker_4112()
 fn a_repaired_model_body_owes_no_law_beside_its_parse_error_5142()
 {
     let source = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : \
-                  Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), \
-                  true);\n  law sym : (a : Carrier, b : Carrier) => Path[.A = Bool](same(a, b), \
-                  same(b, a));\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Cut : \
+                  Carrier) --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](same a a, \
+                  true);\n  law sym : (a : Carrier, b : Carrier) -> Path[.A = Bool](same a b, \
+                  same b a);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Cut : \
                   Model(Same) with sort Carrier = One where {\n  def same(a ";
     let lowered = super::repaired(source);
     let refused: Vec<_> = rows(&lowered)
@@ -850,11 +850,11 @@ fn an_instance_with_a_wrong_law_endpoint_is_refused_naming_the_law()
              : Ob) = Integer;\n  def id(a : Type) -> -F Hom(a, a) {{ return 0 }}\n  def comp(a : \
              Type, b : Type, c : Type, f : Hom(a, b), g : Hom(b, c)) -> -F Hom(a, c) {{ return f \
              }}\n  def unitL(a : Type, b : Type, f : Hom(a, b)) -> -F Path[.A = Hom(a, b)](\
-             {statement}) {{ return Path.here(f) }}\n  def unitR(a : Type, b : Type, f : Hom(a, b)) -> \
-             -F Path[.A = Hom(a, b)](comp(a, b, b, f, id(b)), f) {{ return Path.here(f) }}\n  def assoc(a : \
+             {statement}) {{ return Path.here f }}\n  def unitR(a : Type, b : Type, f : Hom(a, b)) -> \
+             -F Path[.A = Hom(a, b)](comp a b b f (id b), f) {{ return Path.here f }}\n  def assoc(a : \
              Type, b : Type, c : Type, d : Type, f : Hom(a, b), g : Hom(b, c), h : Hom(c, d)) -> \
-             -F Path[.A = Hom(a, d)](comp(a, c, d, comp(a, b, c, f, g), h), comp(a, b, d, f, comp(b, \
-             c, d, g, h))) {{ return Path.here(f) }}\n}}\n"
+             -F Path[.A = Hom(a, d)](comp a c d (comp a b c f g) h, comp a b d f (comp b \
+             c d g h)) {{ return Path.here f }}\n}}\n"
         )
     };
     let judged = |source: &str| {

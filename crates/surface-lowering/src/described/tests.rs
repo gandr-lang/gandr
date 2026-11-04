@@ -259,7 +259,7 @@ fn a_stated_law_answers_at_its_statement_2356()
         "a law's name at the function into the path it concludes"
     );
     assert_eq!(context(&types, refl), ["C", "eq"]);
-    let statement = "(a : C) => Path[.A = Bool](eq(a, a), true)";
+    let statement = "(a : C) -> Path[.A = Bool](eq a a, true)";
     let written = entry(&types, span("law refl", statement), DescribedRole::Type);
     assert!(matches!(ty(written), Some(ValueType::Universe { .. })));
     let binder = entry(&types, span("(a : C) ->", "a"), DescribedRole::Name);

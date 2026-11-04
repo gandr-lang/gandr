@@ -1824,8 +1824,8 @@ fn names_that_share_a_type_are_their_entries_written_apart_4853()
          a) -> a ; def three : (k m n : Integer) -> Integer ; def three_apart : (k : Integer, m : \
          Integer, n : Integer) -> Integer ; def outputs : (m : Integer) -> (q r : Integer) ; def \
          outputs_apart : (m : Integer) -> (q : Integer, r : Integer) ; def linked : (a : Type, x \
-         y : a, p : Path(a, x, y)) -> a ; def linked_apart : (a : Type, x : a, y : a, p : Path(a, \
-         x, y)) -> a ;",
+         y : a, p : Path[.A = a](x, y)) -> a ; def linked_apart : (a : Type, x : a, y : a, p : \
+         Path[.A = a](x, y)) -> a ;",
         &mut arena,
     );
     let signature = |name: &str| match outcome(&module, name) {
