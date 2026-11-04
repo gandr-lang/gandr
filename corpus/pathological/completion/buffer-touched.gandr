@@ -1,6 +1,10 @@
-// An in-flight buffer touched: the buffer moved into a read's submission is
-// used again before the completion hands it back, while the kernel owns it
-// (boats, _Notes on io-uring_, 2020).
+//! An in-flight buffer touched: the buffer moved into a read's submission is
+//! used again before the completion hands it back, while the kernel owns it
+//! [boats-2020-notes_on_io_uring].
+//!
+//! - cites: [boats-2020-notes_on_io_uring]
+//!
+//! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
 
 // The ring's protocol and its entries.
 import "../../model/completion/ring-base.gandr";

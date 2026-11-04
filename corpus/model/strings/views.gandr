@@ -1,14 +1,21 @@
-// A view: a string held for a block is lent to a view for one access, and the
-// view does not own it. The view reads the string it lends, and the access
-// ends it exactly once: `resume` writes a string back, `abort` leaves the held
-// string as it was and runs the access's `unwind` clause. The view lives only
-// for its access, so no annotation names how long it lives (the yield-once
-// accessor of Hylo's subscripts, Racordon and Abrahams, "Borrow checking
-// Hylo", IWACO 2023; boats, "References are like jumps"). A view the program
-// keeps longer is kept in the region of a scope around it, `at c`, and lives as
-// long as that scope: a static extent erased before anything runs (Koronkevich
-// and Bowman, _Type Universes as Kripke Worlds_, ICFP 2025,
-// doi:10.1145/3747532).
+//! A view: a string held for a block is lent to a view for one access, and the
+//! view does not own it. The view reads the string it lends, and the access
+//! ends it exactly once: `resume` writes a string back, `abort` leaves the held
+//! string as it was and runs the access's `unwind` clause. The view lives only
+//! for its access, so no annotation names how long it lives (the yield-once
+//! accessor of Hylo's subscripts, [Racordon-2023-borrow_checking_hylo] and
+//! [boats-2024-references_are_jumps]). A view the program keeps longer is kept
+//! in the region of a scope around it, `at c`, and lives as long as that scope:
+//! a static extent erased before anything runs
+//! [Koronkevich-2025-type_universes_kripke_worlds].
+//!
+//! - cites: [Koronkevich-2025-type_universes_kripke_worlds]
+//! - cites: [Racordon-2023-borrow_checking_hylo]
+//! - cites: [boats-2024-references_are_jumps]
+//!
+//! [Koronkevich-2025-type_universes_kripke_worlds]: https://doi.org/10.1145/3747532 "Koronkevich and Bowman, Type Universes as Kripke Worlds"
+//! [Racordon-2023-borrow_checking_hylo]: https://2023.splashcon.org/details/iwaco-2023-papers/5/Borrow-checking-Hylo "Racordon and Abrahams, Borrow checking Hylo"
+//! [boats-2024-references_are_jumps]: https://without.boats/blog/references-are-like-jumps/ "boats, References are like jumps"
 
 // The lists; the byte lists; the owned bytes; where they live; the writes.
 import "../data/data-base.gandr";

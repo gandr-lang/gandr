@@ -1,18 +1,21 @@
-// One list with two memory layouts, after Ribbit (Baudon, "Algebraic Data
-// Types for High-Performance Computing", PhD thesis, ENS de Lyon, 2024,
-// Example 3.4): the list of `i32` laid out pointer-tagged, one element per
-// pointer, and packed, two elements per pointer with a lone last element
-// inline. A layout is a second data type over the list's code, admitted by
-// an equivalence with the list whose round trips are proved by recursion and
-// replayed by the kernel; `ua` makes each equivalence a path between types,
-// so a program written once over the list runs on either layout by transport
-// and a value moves between layouts along their composite. What is checked is
-// the equivalence. The layouts are data, not bytes: each constructor's
-// comment names the memory type Ribbit gives it, and code emitted from a
-// layout stands outside the trust boundary. `equiv` decides no round trip
-// over a type that holds itself, so each equivalence is written out.
-//
-// - see: #1316
+//! One list with two memory layouts, after Ribbit
+//! [Baudon-2024-algebraic_data_types_highperformance_computing], Example 3.4:
+//! the list of `i32` laid out pointer-tagged, one element per pointer, and
+//! packed, two elements per pointer with a lone last element inline. A layout
+//! is a second data type over the list's code, admitted by an equivalence with
+//! the list whose round trips are proved by recursion and replayed by the
+//! kernel; `ua` makes each equivalence a path between types, so a program
+//! written once over the list runs on either layout by transport and a value
+//! moves between layouts along their composite. What is checked is the
+//! equivalence. The layouts are data, not bytes: each constructor's comment
+//! names the memory type Ribbit gives it, and code emitted from a layout stands
+//! outside the trust boundary. `equiv` decides no round trip over a type that
+//! holds itself, so each equivalence is written out.
+//!
+//! - see: #1316
+//! - cites: [Baudon-2024-algebraic_data_types_highperformance_computing]
+//!
+//! [Baudon-2024-algebraic_data_types_highperformance_computing]: https://doi.org/10.70675/7bb9b51ezf689z4cb5z8d80z794397b5f052 "Baudon, Algebraic Data Types for High-Performance Computing"
 
 /// The list of Ribbit's Example 3.1: empty, or an `i32` before the rest.
 pub data Ints : Type where {

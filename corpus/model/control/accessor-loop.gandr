@@ -1,12 +1,14 @@
-// Loop-carried state. A `while` or a `loop` that names a slot held around it
-// carries the slot through its passes: each pass reads the value the pass
-// before left there, and what follows the loop reads the value the last pass
-// left. The loop is a fold whose accumulator is the slot (Hutton, "A tutorial
-// on the universality and expressiveness of fold", _Journal of Functional
-// Programming_ 9(4), 1999). A loop may run forever, so each function states
-// `Partial` in its row.
-//
-// - see: #1481
+//! Loop-carried state. A `while` or a `loop` that names a slot held around it
+//! carries the slot through its passes: each pass reads the value the pass
+//! before left there, and what follows the loop reads the value the last pass
+//! left. The loop is a fold whose accumulator is the slot
+//! [Hutton-1999-a_tutorial_on_the_universality_and_expressiveness_of_fold]. A
+//! loop may run forever, so each function states `Partial` in its row.
+//!
+//! - see: #1481
+//! - cites: [Hutton-1999-a_tutorial_on_the_universality_and_expressiveness_of_fold]
+//!
+//! [Hutton-1999-a_tutorial_on_the_universality_and_expressiveness_of_fold]: https://doi.org/10.1017/S0956796899003500 "Hutton, A tutorial on the universality and expressiveness of fold"
 
 /// A count held at three and taken down by one on each pass: the condition
 /// reads the value the pass before wrote back, so the loop stops at zero.

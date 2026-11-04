@@ -1,12 +1,15 @@
-// The folds over a list of naturals — its length, appending and mapping — in
-// the spellings an arm admits, each as the sugared form writes it: a `run`
-// that only sequences a call, its result returned or the `return` elided, is
-// written with the call nested in the constructor, and a `run` written inside
-// a constructor's field stays. Each spelling of one fold runs to the same
-// value, and the polymorphic length of `recursive-lists.gandr` checks at the
-// naturals. A structural recursive call stands one stage below the list it
-// was read from (Abel, _Termination checking with types_,
-// doi:10.1051/ita:2004015).
+//! The folds over a list of naturals — its length, appending and mapping — in
+//! the spellings an arm admits, each as the sugared form writes it: a `run`
+//! that only sequences a call, its result returned or the `return` elided, is
+//! written with the call nested in the constructor, and a `run` written inside
+//! a constructor's field stays. Each spelling of one fold runs to the same
+//! value, and the polymorphic length of `recursive-lists.gandr` checks at the
+//! naturals. A structural recursive call stands one stage below the list it was
+//! read from [Abel-2004-termination_checking_with_types].
+//!
+//! - cites: [Abel-2004-termination_checking_with_types]
+//!
+//! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
 
 // The naturals, the numerals two and three, and the lists.
 import "./data-base.gandr";

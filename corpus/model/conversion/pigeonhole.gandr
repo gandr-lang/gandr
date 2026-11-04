@@ -1,17 +1,19 @@
-// A reflected truth-table check shows that three pigeons never sit one to a
-// hole in two holes.
-//
-// Boespflug, Dénès and Grégoire check the pigeonhole principle by a reflected
-// decision procedure. A run of the procedure stands where a proof by cases
-// would.
-//
-// The formula makes each pigeon's place in each hole a variable. The check
-// sets each variable both ways and evaluates the formula under all sixty-four
-// assignments.
-//
-// - see: Boespflug, Dénès and Grégoire, _Full Reduction at Full Throttle_,
-//   CPP 2011, § 4, BDD, which decides by binary decision diagrams instead
-// - see: #2282 — the benchmark set
+//! A reflected truth-table check shows that three pigeons never sit one to a
+//! hole in two holes.
+//!
+//! Boespflug, Dénès and Grégoire check the pigeonhole principle by a reflected
+//! decision procedure. A run of the procedure stands where a proof by cases
+//! would.
+//!
+//! The formula makes each pigeon's place in each hole a variable. The check
+//! sets each variable both ways and evaluates the formula under all sixty-four
+//! assignments.
+//!
+//! - cites: [Boespflug-2011-full_reduction_at_full_throttle], § 4, BDD, which
+//!   decides by binary decision diagrams instead
+//! - see: #2282 — the benchmark set
+//!
+//! [Boespflug-2011-full_reduction_at_full_throttle]: https://doi.org/10.1007/978-3-642-25379-9_26 "Boespflug, Dénès and Grégoire, Full Reduction at Full Throttle"
 
 // The free naturals and the numerals two and three.
 import "../data/data-base.gandr";

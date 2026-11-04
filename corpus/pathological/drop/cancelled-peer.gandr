@@ -1,19 +1,20 @@
-// A peer that has sent everything before its scope abandons the rest leaves
-// the run its clause's answer.
-//
-// The run's scheduler starts a fork's child when the root first waits. Here
-// the child sends both payloads and ends before the clause abandons the
-// root's rest.
-//
-// The root takes the first payload, then the exit abandons its continuation
-// with the second payload still on the channel. No cancellation reaches the
-// ended peer, so the run answers `7`.
-//
-// - see: #3305 — the cancellation hop, which a peer still waiting at the
-//   abandonment needs
-// - see: Fowler, Lindley, Morris and Decova, _Exceptional Asynchronous
-//   Session Types_, POPL 2019, doi:10.1145/3290341 — cancellation reaching
-//   the peer
+//! A peer that has sent everything before its scope abandons the rest leaves
+//! the run its clause's answer.
+//!
+//! The run's scheduler starts a fork's child when the root first waits. Here
+//! the child sends both payloads and ends before the clause abandons the
+//! root's rest.
+//!
+//! The root takes the first payload, then the exit abandons its continuation
+//! with the second payload still on the channel. No cancellation reaches the
+//! ended peer, so the run answers `7`.
+//!
+//! - see: #3305 — the cancellation hop, which a peer still waiting at the
+//!   abandonment needs
+//! - cites: [Fowler-2019-exceptional_asynchronous_session_types] — cancellation
+//!   reaching the peer
+//!
+//! [Fowler-2019-exceptional_asynchronous_session_types]: https://doi.org/10.1145/3290341 "Fowler, Lindley, Morris and Decova, Exceptional Asynchronous Session Types"
 
 // Early exit's host interface.
 import std.process;

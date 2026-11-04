@@ -1,16 +1,19 @@
-// The checker refuses the laws on terms of a category with families.
-// Huang and Angiuli state these laws (_Fat cell structures and generalized
-// algebraic theories_, doi:10.4230/LIPIcs.LICS.2026.58, § 1.1).
-//
-// A law on terms relates two sides whose sorts agree only modulo a law on
-// types. The sort of `subTm(t, id(g))` is `Tm(g, subTy(a, id(g)))`, and the
-// sort of `t` is `Tm(g, a)`.
-//
-// The reading carries an index only as a variable or an operation without
-// indices of its own. The index `subTy(a, id(g))` applies `subTy`, which
-// carries the context of `a`.
-//
-// - see: #5042
+//! The checker refuses the laws on terms of a category with families.
+//! Huang and Angiuli state these laws
+//! [Huang-2026-fat_cell_structures_generalized_algebraic_theories], § 1.1.
+//!
+//! A law on terms relates two sides whose sorts agree only modulo a law on
+//! types. The sort of `subTm(t, id(g))` is `Tm(g, subTy(a, id(g)))`, and the
+//! sort of `t` is `Tm(g, a)`.
+//!
+//! The reading carries an index only as a variable or an operation without
+//! indices of its own. The index `subTy(a, id(g))` applies `subTy`, which
+//! carries the context of `a`.
+//!
+//! - see: #5042
+//! - cites: [Huang-2026-fat_cell_structures_generalized_algebraic_theories]
+//!
+//! [Huang-2026-fat_cell_structures_generalized_algebraic_theories]: https://doi.org/10.4230/LIPIcs.LICS.2026.58 "Huang and Angiuli, Fat Cell Structures and Generalized Algebraic Theories"
 
 /// The CwF signature that the model source declares.
 import "../../model/desc/cwf.gandr";

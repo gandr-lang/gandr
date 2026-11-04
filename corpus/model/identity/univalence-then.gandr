@@ -1,10 +1,15 @@
-// Transport along a composite ending in `ua`: the cubical case table of
-// Cohen, Coquand, Huber and Mörtberg, _Cubical Type Theory: a constructive
-// interpretation of the univalence axiom_ (TYPES 2015, arXiv:1611.02108),
-// § 4.5, read at the universe. `Path.step(p, ua(e))` is the transport of `p` along
-// `ua(e)` in `y. Path(Type, a, y)`, and transport along it moves the operand
-// along `p`, then applies the record's forward map. A first path that does
-// not compute, as `p` here, is carried on as the value it stands for.
+//! Transport along a composite ending in `ua`: the cubical case table of Cohen,
+//! Coquand, Huber and Mörtberg, _Cubical Type Theory: a constructive
+//! interpretation of the univalence axiom_
+//! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom],
+//! § 4.5, read at the universe. `Path.step(p, ua(e))` is the transport of `p`
+//! along `ua(e)` in `y. Path(Type, a, y)`, and transport along it moves the
+//! operand along `p`, then applies the record's forward map. A first path that
+//! does not compute, as `p` here, is carried on as the value it stands for.
+//!
+//! - cites: [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]
+//!
+//! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]: https://arxiv.org/abs/1611.02108 "Cohen, Coquand, Huber and Mörtberg, Cubical Type Theory: a constructive interpretation of the univalence axiom"
 
 // The circle, the presented integers, the winding number and spinning.
 import "./circle-base.gandr";

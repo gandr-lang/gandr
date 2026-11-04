@@ -1,16 +1,20 @@
-// A monad relative to the shift `-F`: a unit returning a value and an
-// extension running a computation into a continuation, over a family of
-// computation types (Altenkirch, Chapman and Uustalu, _Monads need not be
-// endofunctors_, LMCS 11(1), 2015; Jiang, Xue and New, _Notions of
-// stack-manipulating computation and relative monads_, OOPSLA 2025). Its
-// host half is ordinary definitions: the option monad's two operations, a
-// program sequenced through them, and code polymorphic in the carrier. Of
-// the laws, the left unit is a second-order rule and the right unit
-// abstracts the variable the continuation binds; associativity overlaps
-// itself and both units, and every pair joins, so the three are one theory.
-//
-// - see: #2115 — `MonadRightUnit`
-// - see: #2116 — `RelativeMonad`
+//! A monad relative to the shift `-F`: a unit returning a value and an
+//! extension running a computation into a continuation, over a family of
+//! computation types [Altenkirch-2015-monads_need_not_be_endofunctors] and
+//! [Jiang-2025-notions_stackmanipulating_computation_relative_monads]. Its host
+//! half is ordinary definitions: the option monad's two operations, a program
+//! sequenced through them, and code polymorphic in the carrier. Of the laws,
+//! the left unit is a second-order rule and the right unit abstracts the
+//! variable the continuation binds; associativity overlaps itself and both
+//! units, and every pair joins, so the three are one theory.
+//!
+//! - see: #2115 — `MonadRightUnit`
+//! - see: #2116 — `RelativeMonad`
+//! - cites: [Altenkirch-2015-monads_need_not_be_endofunctors]
+//! - cites: [Jiang-2025-notions_stackmanipulating_computation_relative_monads]
+//!
+//! [Altenkirch-2015-monads_need_not_be_endofunctors]: https://doi.org/10.2168/LMCS-11(1:3)2015 "Altenkirch, Chapman and Uustalu, Monads need not be endofunctors"
+//! [Jiang-2025-notions_stackmanipulating_computation_relative_monads]: https://doi.org/10.1145/3720434 "Jiang, Xue and New, Notions of Stack-Manipulating Computation and Relative Monads"
 
 // `Maybe`, the option monad's values.
 import "../data/data-maybe.gandr";

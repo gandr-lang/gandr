@@ -1,9 +1,12 @@
-// A capability a scope introduces lives in that scope's region, and its type
-// says so: `Cap {exit} at c` is the capability living until the scope binding
-// `c` ends. A region is a static extent, ordered by outlives and erased before
-// anything runs (Koronkevich and Bowman, _Type Universes as Kripke Worlds_,
-// ICFP 2025, doi:10.1145/3747532): a value of an outer region may stand in an
-// inner one, never the reverse.
+//! A capability a scope introduces lives in that scope's region, and its type
+//! says so: `Cap {exit} at c` is the capability living until the scope binding
+//! `c` ends. A region is a static extent, ordered by outlives and erased before
+//! anything runs [Koronkevich-2025-type_universes_kripke_worlds]: a value of an
+//! outer region may stand in an inner one, never the reverse.
+//!
+//! - cites: [Koronkevich-2025-type_universes_kripke_worlds]
+//!
+//! [Koronkevich-2025-type_universes_kripke_worlds]: https://doi.org/10.1145/3747532 "Koronkevich and Bowman, Type Universes as Kripke Worlds"
 
 // Early exit's host interface.
 import std.process;

@@ -1,11 +1,16 @@
-// Rules that overlap are admitted when their critical pairs join (Knuth and
-// Bendix's completion; Baader and Nipkow, _Term Rewriting and All That_,
-// Cambridge University Press, 1998, § 6.2): zero a unit of addition on both
-// sides overlaps the recursion on the first argument at `add(Zero, Zero)` and
-// at `add(Succ(m), Zero)`, and both pairs rewrite to one term; associativity
-// overlaps itself, and its one pair joins too.
-//
-// - see: #654 — `Semigroup`
+//! Rules that overlap are admitted when their critical pairs join (the
+//! completion of [Knuth-1970-simple_word_problems_universal_algebras], and
+//! [Baader-1998-term_rewriting_and_all_that], § 6.2): zero a unit of addition
+//! on both sides overlaps the recursion on the first argument at `add(Zero,
+//! Zero)` and at `add(Succ(m), Zero)`, and both pairs rewrite to one term;
+//! associativity overlaps itself, and its one pair joins too.
+//!
+//! - see: #654 — `Semigroup`
+//! - cites: [Knuth-1970-simple_word_problems_universal_algebras]
+//! - cites: [Baader-1998-term_rewriting_and_all_that]
+//!
+//! [Knuth-1970-simple_word_problems_universal_algebras]: https://doi.org/10.1016/B978-0-08-012975-4.50028-X "Knuth and Bendix, Simple Word Problems in Universal Algebras"
+//! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
 
 /// The naturals with addition, zero stated a unit on both sides.
 @[ normalizes("add(Zero, Zero) ~> Zero") ]

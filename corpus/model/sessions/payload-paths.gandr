@@ -1,10 +1,13 @@
-// Two protocols that differ only in how their messages are encoded are one
-// type, once each pair of payload types that differ is paid with a path:
-// bisimilarity up to an equivalence of the payloads, the paths the session
-// certificate carries to the kernel (Gay and Hole, _Subtyping for Session
-// Types in the Pi Calculus_, doi:10.1007/s00236-005-0177-z, relate
-// payloads by type equality; the path generalises the equality to an
-// equivalence).
+//! Two protocols that differ only in how their messages are encoded are one
+//! type, once each pair of payload types that differ is paid with a path:
+//! bisimilarity up to an equivalence of the payloads, the paths the session
+//! certificate carries to the kernel. Gay and Hole
+//! [Gay-2005-subtyping_session_types_pi_calculus] relate payloads by type
+//! equality; the path generalises the equality to an equivalence.
+//!
+//! - cites: [Gay-2005-subtyping_session_types_pi_calculus]
+//!
+//! [Gay-2005-subtyping_session_types_pi_calculus]: https://doi.org/10.1007/s00236-005-0177-z "Gay and Hole, Subtyping for Session Types in the Pi Calculus"
 
 /// A verdict of three cases nested to the right, renested to the left.
 def toLeft(c : Unit + (Unit + Unit)) -> (Unit + Unit) + Unit {

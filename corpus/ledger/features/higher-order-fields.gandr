@@ -4,11 +4,16 @@
 ///
 /// - owes: #2859 — an observation taking an argument
 /// - owes: #2861 — a rule applying a continuation
-// Programs over a state, quotiented by put-put (Plotkin and Power, _Notions
-// of computation determine monads_, 2002, doi:10.1007/3-540-45931-6_24): a
-// read's continuation is a function-valued field, the higher-order
-// descriptions' `Π` (Chapman, Dagand, McBride and Morris, _The Gentle Art of
-// Levitation_, ICFP 2010, doi:10.1145/1863543.1863547).
+//! Programs over a state, quotiented by put-put
+//! [Plotkin-2002-notions_computation_determine_monads]: a read's continuation
+//! is a function-valued field, the higher-order descriptions' `Π`
+//! [Chapman-2010-gentle_art_levitation].
+//!
+//! - cites: [Plotkin-2002-notions_computation_determine_monads]
+//! - cites: [Chapman-2010-gentle_art_levitation]
+//!
+//! [Plotkin-2002-notions_computation_determine_monads]: https://doi.org/10.1007/3-540-45931-6_24 "Plotkin and Power, Notions of computation determine monads"
+//! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
 /// Programs over an integer state: a read hands the state to its
 /// continuation, and a store the next store overwrites is no store.

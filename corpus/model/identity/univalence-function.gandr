@@ -1,9 +1,14 @@
-// Transport of a function along `ua`: the cubical case table of Cohen,
-// Coquand, Huber and Mörtberg, _Cubical Type Theory: a constructive
-// interpretation of the univalence axiom_ (TYPES 2015, arXiv:1611.02108),
-// § 4.5, read at a function type. The argument moves back along the path by
-// the record's left inverse, the function applies, and the result moves
-// forward by the record's map.
+//! Transport of a function along `ua`: the cubical case table of Cohen,
+//! Coquand, Huber and Mörtberg, _Cubical Type Theory: a constructive
+//! interpretation of the univalence axiom_
+//! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom],
+//! § 4.5, read at a function type. The argument moves back along the path by
+//! the record's left inverse, the function applies, and the result moves
+//! forward by the record's map.
+//!
+//! - cites: [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]
+//!
+//! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]: https://arxiv.org/abs/1611.02108 "Cohen, Coquand, Huber and Mörtberg, Cubical Type Theory: a constructive interpretation of the univalence axiom"
 
 // The circle, the presented integers, the winding number and spinning.
 import "./circle-base.gandr";

@@ -1,13 +1,16 @@
-// Structural equality derived from a declaration's levitated code (Chapman,
-// Dagand, McBride and Morris, _The Gentle Art of Levitation_, ICFP 2010,
-// doi:10.1145/1863543.1863547). `Nat`'s code is `1` for `Zero` and `var Nat`
-// for `Succ`; `Tagged`'s is one product of two fields, a builtin `Bool` and
-// `Nat`. `Eq.generic(T)` reads that code — the constructor table, the product
-// spine, a `var` as the recursion and each leaf at the type it names — into
-// closed core the checker judges as written and the kernel replays; the
-// derivation itself is never trusted. A family whose code takes a parameter,
-// or a mutual pair, is refused beside
-// `../../pathological/metaprograms/derive-eq-over-codes.gandr`.
+//! Structural equality derived from a declaration's levitated code
+//! [Chapman-2010-gentle_art_levitation]. `Nat`'s code is `1` for `Zero` and
+//! `var Nat` for `Succ`; `Tagged`'s is one product of two fields, a builtin
+//! `Bool` and `Nat`. `Eq.generic(T)` reads that code — the constructor table,
+//! the product spine, a `var` as the recursion and each leaf at the type it
+//! names — into closed core the checker judges as written and the kernel
+//! replays; the derivation itself is never trusted. A family whose code takes a
+//! parameter, or a mutual pair, is refused beside
+//! `../../pathological/metaprograms/derive-eq-over-codes.gandr`.
+//!
+//! - cites: [Chapman-2010-gentle_art_levitation]
+//!
+//! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
 /// Unary naturals: a unit and a recursive occurrence.
 data Nat : Type where {

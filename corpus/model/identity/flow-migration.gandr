@@ -1,8 +1,11 @@
-// A flow between types given by a translator, after directed univalence
-// (Gratzer, Weinberger and Buchholtz, _Directed univalence in simplicial
-// homotopy type theory_, arXiv:2407.09146, Definition 1.2): riding it moves
-// a record of the old schema to the new, and riding it in the family of
-// lists moves every record of a list.
+//! A flow between types given by a translator, after directed univalence
+//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory],
+//! Definition 1.2: riding it moves a record of the old schema to the new, and
+//! riding it in the family of lists moves every record of a list.
+//!
+//! - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
+//!
+//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
 
 // The native finite lists.
 import std.list (List);

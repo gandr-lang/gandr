@@ -1,10 +1,13 @@
-// What a suspension refuses. A decode of a filled code is rigid, so a value
-// of another type is refused there; a comparison between the decodes of two
-// owed codes has no rigid side, so it is the unifier's question and refused
-// here, not deferred; and a declaration with one comparison waiting and
-// another refused is refused, the refusal winning over the wait (Slattery and
-// Sterling, _Bidirectional Elaborators à la Carte_, arXiv:2607.09564,
-// Corollary 5.2).
+//! What a suspension refuses. A decode of a filled code is rigid, so a value of
+//! another type is refused there; a comparison between the decodes of two owed
+//! codes has no rigid side, so it is the unifier's question and refused here,
+//! not deferred; and a declaration with one comparison waiting and another
+//! refused is refused, the refusal winning over the wait
+//! [Slattery-2026-bidirectional_elaborators_carte], Corollary 5.2.
+//!
+//! - cites: [Slattery-2026-bidirectional_elaborators_carte]
+//!
+//! [Slattery-2026-bidirectional_elaborators_carte]: https://arxiv.org/abs/2607.09564 "Slattery and Sterling, Bidirectional Elaborators à la Carte"
 
 /// A code the module owes.
 @[ owes(1) ]

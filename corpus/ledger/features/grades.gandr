@@ -3,14 +3,17 @@
 /// Not implemented: the emitter reading the grade to drop the holder count on a write-back.
 ///
 /// - owes: #1175
-// A hold at grade one. `var[1] c = e;` holds a value no one else holds: the
-// value is made where the hold stands, and it is never copied while held. An
-// exclusive access moves the value out to its view, the view is read once,
-// and `resume` writes the new value back, so the write-back needs no count of
-// the value's other holders. `var c = e;` holds at the default grade ω, and
-// each read of it copies. The grades are those of graded modal
-// types (Orchard, Liepelt and Eades, "Quantitative program reasoning with
-// graded modal types", ICFP 2019).
+//! A hold at grade one. `var[1] c = e;` holds a value no one else holds: the
+//! value is made where the hold stands, and it is never copied while held. An
+//! exclusive access moves the value out to its view, the view is read once, and
+//! `resume` writes the new value back, so the write-back needs no count of the
+//! value's other holders. `var c = e;` holds at the default grade ω, and each
+//! read of it copies. The grades are those of graded modal types
+//! [Orchard-2019-quantitative_program_reasoning_graded_modal_types].
+//!
+//! - cites: [Orchard-2019-quantitative_program_reasoning_graded_modal_types]
+//!
+//! [Orchard-2019-quantitative_program_reasoning_graded_modal_types]: https://doi.org/10.1145/3341714 "Orchard, Liepelt and Eades, Quantitative Program Reasoning with Graded Modal Types"
 
 // The successor, a call whose type synthesises where a statement binds it.
 import "../../model/control/accessor-counter.gandr" ;

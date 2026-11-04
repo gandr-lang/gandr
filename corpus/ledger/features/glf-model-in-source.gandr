@@ -3,15 +3,18 @@
 /// Not implemented: the λ-calculus single-substitution model as a record, and its syntax model.
 ///
 /// - owes: #640
-// A first-order model of `theory Nat` written in gandr source. For a
-// first-order signature, Kaposi and Xie's first-order models (_Second-Order
-// Generalised Algebraic Theories_, FSCD 2024,
-// doi:10.4230/LIPIcs.FSCD.2024.10) are its algebras: a carrier for the sort
-// and a function per operation. Written in source, the models of `Nat` are
-// the record type `#{nat : Type, zero : () => nat, succ : (n : nat) => nat}`,
-// one field per component of `Model(Nat)` in the order the derivation mints
-// them, and the syntax model, a counting model and a `Model(Nat)` module each
-// inhabit it.
+//! A first-order model of `theory Nat` written in gandr source. For a
+//! first-order signature, Kaposi and Xie's first-order models
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
+//! are its algebras: a carrier for the sort and a function per operation.
+//! Written in source, the models of `Nat` are the record type `#{nat : Type,
+//! zero : () => nat, succ : (n : nat) => nat}`, one field per component of
+//! `Model(Nat)` in the order the derivation mints them, and the syntax model, a
+//! counting model and a `Model(Nat)` module each inhabit it.
+//!
+//! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
+//!
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
 
 // The naturals' signature, `theory Nat`.
 import "../../model/desc/second-order-signatures.gandr" ;

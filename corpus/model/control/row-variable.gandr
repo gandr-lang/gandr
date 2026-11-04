@@ -1,13 +1,17 @@
-// A returner's row may stay open through a row variable, an implicit of the
-// kind `Row`: `log` prints through `std.io.Console.Eff` and leaves the rest of
-// its row to its caller, so one definition is used under every row holding
-// `std.io.Console.Eff`, the variable solved at each call by the row equation, and a
-// handler of `std.io.Console.Eff` takes `[std.io.Console.Eff | r]` to `[r]`, forwarding the rest
-// (Hillerström and Lindley, "Liberating Effects with Rows and Handlers",
-// Type-Driven Development 2016, § 2.5 and § 3.3, T-HANDLER). What refuses is
-// in `../../pathological/control/row-variable.gandr`.
-//
-// - see: #2270
+//! A returner's row may stay open through a row variable, an implicit of the
+//! kind `Row`: `log` prints through `std.io.Console.Eff` and leaves the rest of
+//! its row to its caller, so one definition is used under every row holding
+//! `std.io.Console.Eff`, the variable solved at each call by the row equation,
+//! and a handler of `std.io.Console.Eff` takes `[std.io.Console.Eff | r]` to
+//! `[r]`, forwarding the rest
+//! [Hillerström-2016-liberating_effects_rows_handlers], § 2.5 and § 3.3,
+//! T-HANDLER. What refuses is in
+//! `../../pathological/control/row-variable.gandr`.
+//!
+//! - see: #2270
+//! - cites: [Hillerström-2016-liberating_effects_rows_handlers]
+//!
+//! [Hillerström-2016-liberating_effects_rows_handlers]: https://doi.org/10.1145/2976022.2976033 "Hillerström and Lindley, Liberating Effects with Rows and Handlers"
 
 // The console's host interface.
 import std.io;

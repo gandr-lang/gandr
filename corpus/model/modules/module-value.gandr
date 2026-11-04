@@ -9,8 +9,9 @@
 /// - see: #4485 — a module's name read as its model, `pack` elided
 /// - see: `pathological/modules/module-value.gandr` — a module no model type
 ///   ascribes
-/// - see: Rossberg, Russo and Dreyer, _F-ing Modules_,
-///   doi:10.1017/S0956796814000264 — a module as a first-class value
+/// - cites: [Rossberg-2014-fing_modules] — a module as a first-class value
+///
+/// [Rossberg-2014-fing_modules]: https://doi.org/10.1017/S0956796814000264 "Rossberg, Russo and Dreyer, F-ing Modules"
 
 /// A ticker: a carrier, a start and a step.
 theory Ticker where {

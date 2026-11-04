@@ -1,7 +1,10 @@
-// An enumeration matched on a constructor written with its type: the case
-// reads the scrutinee's type from the annotation and takes the arm its
-// constructor names (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis,
-// 1984).
+//! An enumeration matched on a constructor written with its type: the case
+//! reads the scrutinee's type from the annotation and takes the arm its
+//! constructor names [MartinLof-1984-intuitionistic_type_theory].
+//!
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 // The three colours.
 import "./data-base.gandr";

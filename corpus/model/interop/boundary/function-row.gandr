@@ -1,28 +1,30 @@
-// The Rust extern `f(x: Option<&u32>, n: u32) -> u32` as a function row of
-// the foreign boundary, admitted against its witness records.
-//
-// A function type means a Hoare triple over its arguments' and result's
-// realisers. `Option<&u32>` is realised by the null niche, so `f`'s triple is
-// `deref_or`'s at `u32`. Each argument's and the result's witness record
-// summarises its realisers, read off its code by Rust's default layout.
-//
-// `admit(declared, row)` compares rustc's printed layouts with the records
-// clause by clause, answering `Admitted` or `Unrealised` with the first clause
-// that fails. Each extern below differs from the row in one clause. The
-// checker holds the layout program's integer comparisons as neutrals, so
-// admission is a run here.
-//
-// - see: `ledger/diagnostics/BoundaryUnrealised.Niche.gandr` — an extern block
-//   refused at check time by the clause it fails, `BoundaryUnrealised.<clause>`
-// - see: `pathological/interop/boundary/function-row.gandr` — the predicate
-//   chosen through the layout, refused `Undecided`
-// - see: `model/specification/niche-realizability.gandr` — `deref_or`'s
-//   triple and the tagged layout's equivalence
-// - see: `library/std/src/boundary.gandr` — the row, the witness record and
-//   `admit`
-// - see: `library/std/src/layout.gandr` — Rust's default layout
-// - see: Wagner, Eisbach and Ahmed, _Realistic Realizability: Specifying ABIs
-//   You Can Count On_, OOPSLA 2024, doi:10.1145/3689755, § 3.1 and § 4.2
+//! The Rust extern `f(x: Option<&u32>, n: u32) -> u32` as a function row of
+//! the foreign boundary, admitted against its witness records.
+//!
+//! A function type means a Hoare triple over its arguments' and result's
+//! realisers. `Option<&u32>` is realised by the null niche, so `f`'s triple is
+//! `deref_or`'s at `u32`. Each argument's and the result's witness record
+//! summarises its realisers, read off its code by Rust's default layout.
+//!
+//! `admit(declared, row)` compares rustc's printed layouts with the records
+//! clause by clause, answering `Admitted` or `Unrealised` with the first clause
+//! that fails. Each extern below differs from the row in one clause. The
+//! checker holds the layout program's integer comparisons as neutrals, so
+//! admission is a run here.
+//!
+//! - see: `ledger/diagnostics/BoundaryUnrealised.Niche.gandr` — an extern block
+//!   refused at check time by the clause it fails, `BoundaryUnrealised.<clause>`
+//! - see: `pathological/interop/boundary/function-row.gandr` — the predicate
+//!   chosen through the layout, refused `Undecided`
+//! - see: `model/specification/niche-realizability.gandr` — `deref_or`'s
+//!   triple and the tagged layout's equivalence
+//! - see: `library/std/src/boundary.gandr` — the row, the witness record and
+//!   `admit`
+//! - see: `library/std/src/layout.gandr` — Rust's default layout
+//! - cites: [Wagner-2024-realistic_realizability_specifying_abis_you_can_count],
+//!   § 3.1 and § 4.2
+//!
+//! [Wagner-2024-realistic_realizability_specifying_abis_you_can_count]: https://doi.org/10.1145/3689755 "Wagner, Eisbach and Ahmed, Realistic Realizability: Specifying ABIs You Can Count On"
 
 // The Rust side, built by rustc 1.98.0-nightly (f28ac764c 2026-06-23) for
 // x86_64-unknown-linux-gnu. Its layouts are from `rustc --edition 2024

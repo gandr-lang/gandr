@@ -1,10 +1,13 @@
-// A frame-region buffer orphaned: abandoning a task whose stack holds a
-// pending completion may hand the completion, buffer inside, to a reactor
-// that reaps it later (boats, _Notes on io-uring_, 2020). That is sound only
-// for a buffer the reactor's region outlives, never one living in the
-// abandoned frame.
-//
-// - see: #1183 — `bufferOrphaned`
+//! A frame-region buffer orphaned: abandoning a task whose stack holds a
+//! pending completion may hand the completion, buffer inside, to a reactor that
+//! reaps it later [boats-2020-notes_on_io_uring]. That is sound only for a
+//! buffer the reactor's region outlives, never one living in the abandoned
+//! frame.
+//!
+//! - see: #1183 — `bufferOrphaned`
+//! - cites: [boats-2020-notes_on_io_uring]
+//!
+//! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
 
 // The ring's protocol and its entries.
 import "../../model/completion/ring-base.gandr";

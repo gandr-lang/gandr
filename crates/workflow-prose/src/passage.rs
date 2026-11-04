@@ -4,10 +4,14 @@
 //!
 //! A passage is a paragraph joined onto one line, so a sentence wrapped over
 //! several comment lines parses whole. A list item, a `- see:` reference, a
-//! heading, a table, a fenced block and an indented continuation are not
-//! paragraphs and are left out: their fragments are not sentences. A body is
-//! the exception: each of its list items is a passage of its own.
+//! footer line `[label]: target`, a heading, a table, a fenced block and an
+//! indented continuation are not paragraphs and are left out: their fragments
+//! are not sentences. A body is the exception: each of its list items is a
+//! passage of its own.
 
+extern crate alloc;
+
+use alloc::collections::BTreeSet;
 use core::fmt;
 use std::fs;
 use std::path::Path;
@@ -113,14 +117,21 @@ pub struct Head
 /// Whether the references paragraph keeps its line form.
 ///
 /// # Specification
-/// - provides: the verdict of the head's last paragraph.
+/// - provides: the verdict of the head's last paragraph and its footer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum References
 {
-    /// Every line opens with `- see:` or `- owes:`, or continues one.
+    /// Every line opens with `- see:`, `- owes:` or `- cites:`, or continues
+    /// one, and the footer defines each label a `- cites:` line names, each
+    /// with a quoted title.
     Shaped,
-    /// A line opens with neither.
+    /// A line opens with none of the three.
     Broken,
+    /// The `- cites:` line at this line names a label that no footer line of
+    /// the run defines.
+    Unfooted(Line),
+    /// The footer line at this line gives its target no quoted title.
+    Untitled(Line),
 }
 
 /// The line of a head's first prose paragraph.
@@ -261,9 +272,10 @@ const MARKERS: [&str; 3] = ["//!", "///", "//"];
 /// - requires: nothing.
 /// - ensures: one passage per paragraph of consecutive comment lines of one
 ///   kind, `//!`, `///` or `//`, a paragraph ending at a blank comment line, a
-///   list item, a `- see:` line, a line of another kind or a line that is not a
-///   comment; a list item, a `- see:` line and the indented lines continuing
-///   either are not part of any passage; each passage starts on its first line.
+///   list item, a `- see:` line, a footer line `[label]: target`, a line of
+///   another kind or a line that is not a comment; a list item, a `- see:`
+///   line, the indented lines continuing either and a footer line are not part
+///   of any passage; each passage starts on its first line.
 /// - provides: the comments the sentence rules read.
 /// - fails: never.
 /// - panics: none.
@@ -313,6 +325,10 @@ pub fn comments(
             continue;
         }
         listed = false;
+        if footer_label(Text(comment)).is_some() {
+            paragraph.close();
+            continue;
+        }
         paragraph.push(Line(index.saturating_add(1)), Text(comment));
     }
     paragraph.close();
@@ -324,6 +340,52 @@ const SEE: &str = "- see:";
 
 /// The opening of a references line naming an issue that owes the rest.
 const OWES: &str = "- owes:";
+
+/// The opening of a references line citing a paper through the footer.
+const CITES: &str = "- cites:";
+
+/// A label a footer line defines or a `- cites:` line names, its backticks
+/// removed.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Label<'text>(&'text str);
+
+/// Whether a footer line gives its target a quoted title.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Titled
+{
+    /// `[label]: <target> "<title>"`.
+    Quoted,
+    /// Any other form.
+    Bare,
+}
+
+/// `label` with the backticks around it removed.
+///
+/// # Specification
+/// trivial.
+fn unquoted(label: Text<'_>) -> Label<'_>
+{
+    Label(
+        label
+            .0
+            .strip_prefix('`')
+            .and_then(|quoted| quoted.strip_suffix('`'))
+            .unwrap_or(label.0),
+    )
+}
+
+/// The label the footer line `text` defines, its backticks removed: `text`
+/// opens `[label]:`. `None` for any other line.
+///
+/// # Specification
+/// trivial.
+fn footer_label(text: Text<'_>) -> Option<Label<'_>>
+{
+    let (label, _) = text.0.strip_prefix('[')?.split_once("]:")?;
+    let label = unquoted(Text(label));
+    (!label.0.is_empty()).then_some(label)
+}
 
 /// The kind of one comment line.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -438,15 +500,25 @@ fn runs(text: Text<'_>) -> Vec<Run<'_>>
     found
 }
 
-/// The head facts of `run`.
+/// The head facts of `run`. Its footer, the footer lines and the blank lines
+/// that end it, belongs to the references paragraph and counts as no
+/// paragraph of its own.
 ///
 /// # Specification
 /// trivial.
 fn head_of(run: &Run<'_>) -> Head
 {
+    let body = run
+        .lines
+        .iter()
+        .rposition(|&(_, text)| {
+            !text.trim().is_empty() && footer_label(Text(text.trim())).is_none()
+        })
+        .map_or(0, |last| last.saturating_add(1));
+    let (lines, footer) = run.lines.split_at(body);
     let mut paragraphs: Vec<Vec<(Line, &str)>> = Vec::new();
     let mut open = false;
-    for line in &run.lines {
+    for line in lines {
         if line.1.trim().is_empty() {
             open = false;
             continue;
@@ -457,16 +529,12 @@ fn head_of(run: &Run<'_>) -> Head
         }
         open = true;
     }
+    let opens =
+        |text: &str| text.starts_with(SEE) || text.starts_with(OWES) || text.starts_with(CITES);
+    let continues = |text: &str| opens(text) || text.starts_with(' ') || text.starts_with('\t');
     let listed = paragraphs.last().is_some_and(|lines| {
-        lines
-            .first()
-            .is_some_and(|&(_, text)| text.starts_with(SEE) || text.starts_with(OWES))
-            && lines.iter().all(|&(_, text)| {
-                text.starts_with(SEE)
-                    || text.starts_with(OWES)
-                    || text.starts_with(' ')
-                    || text.starts_with('\t')
-            })
+        lines.first().is_some_and(|&(_, text)| opens(text))
+            && lines.iter().all(|&(_, text)| continues(text))
     });
     let split = if listed {
         paragraphs.len().saturating_sub(1)
@@ -475,26 +543,88 @@ fn head_of(run: &Run<'_>) -> Head
         paragraphs.len().min(3)
     };
     let (prose, references) = paragraphs.split_at(split);
-    let broken = references.iter().flatten().any(|&(_, text)| {
-        !(text.starts_with(SEE)
-            || text.starts_with(OWES)
-            || text.starts_with(' ')
-            || text.starts_with('\t'))
+    let broken = references
+        .iter()
+        .flatten()
+        .any(|&(_, text)| !continues(text));
+    let labels: BTreeSet<Label<'_>> = footer
+        .iter()
+        .filter_map(|&(_, text)| footer_label(Text(text.trim())))
+        .collect();
+    // A `- cites:` item reads its labels from its own line and from the
+    // indented lines that continue it.
+    let unfooted = references.iter().find_map(|paragraph| {
+        paragraph
+            .iter()
+            .enumerate()
+            .find(|&(at, &(_, text))| {
+                text.strip_prefix(CITES).is_some_and(|cites| {
+                    let continued = paragraph
+                        .get(at.saturating_add(1) ..)
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|&(_, more)| more)
+                        .take_while(|more| more.starts_with([' ', '\t']));
+                    let mut named = core::iter::once(cites)
+                        .chain(continued)
+                        .flat_map(|item| cited(Text(item)))
+                        .peekable();
+                    named.peek().is_none() || named.any(|label| !labels.contains(&label))
+                })
+            })
+            .map(|(_, &(line, _))| line)
     });
+    let untitled = footer
+        .iter()
+        .find(|&&(_, text)| {
+            footer_label(Text(text.trim())).is_some() && titled(Text(text.trim())) == Titled::Bare
+        })
+        .map(|&(line, _)| line);
     Head {
         line: run.lines.first().map_or(Line(1), |&(line, _)| line),
         paragraphs: paragraphs.len(),
-        references: if broken {
-            References::Broken
-        }
-        else {
-            References::Shaped
+        references: match (broken, unfooted, untitled) {
+            (true, ..) => References::Broken,
+            (false, Some(line), _) => References::Unfooted(line),
+            (false, None, Some(line)) => References::Untitled(line),
+            (false, None, None) => References::Shaped,
         },
         what: prose
             .first()
             .and_then(|lines| lines.first().map(|&(line, _)| WhatLine::At(line)))
             .unwrap_or(WhatLine::None),
     }
+}
+
+/// The labels a `- cites:` line names after its opening, `cites`: each
+/// bracketed label, its backticks removed.
+///
+/// # Specification
+/// trivial.
+fn cited(cites: Text<'_>) -> impl Iterator<Item = Label<'_>>
+{
+    cites
+        .0
+        .split('[')
+        .skip(1)
+        .filter_map(|rest| rest.split_once(']').map(|(label, _)| unquoted(Text(label))))
+}
+
+/// Whether the footer line `text` gives its target a quoted title, the form
+/// a reference definition of `CommonMark` admits: `[label]: <target>
+/// "<title>"`.
+///
+/// # Specification
+/// trivial.
+fn titled(text: Text<'_>) -> Titled
+{
+    let quoted = text
+        .0
+        .split_once("]:")
+        .and_then(|(_, rest)| rest.trim().strip_suffix('"'))
+        .and_then(|quoted| quoted.split_once(" \""))
+        .is_some_and(|(target, title)| !target.trim().is_empty() && !title.trim().is_empty());
+    if quoted { Titled::Quoted } else { Titled::Bare }
 }
 
 /// The item comments among `runs`, each naming the prose passages it holds.
@@ -1190,6 +1320,7 @@ fn walk(
 mod tests
 {
     use super::Advice;
+    use super::Head;
     use super::Line;
     use super::Opened;
     use super::Placed;
@@ -1279,6 +1410,84 @@ mod tests
         assert!(
             matches!(shape.opened, Opened::Run(_)) && shape.items.is_empty(),
             "a `//` head is judged and a later `//` run is no item"
+        );
+    }
+
+    #[test]
+    fn a_head_cites_through_its_footer()
+    {
+        let head = |references: &str| {
+            let text = format!(
+                "//! Pairs sum.\n//!\n//! Why.\n//!\n//! How.\n//!\n{references}\n\ndef x = 1;\n"
+            );
+            let passages = comments(Text("corpus/a.gandr"), Text(&text));
+            let shape = comment_shape(Text("corpus/a.gandr"), Text(&text), &passages);
+            let Opened::Run(head) = shape.opened
+            else {
+                panic!("the source opens on a head");
+            };
+            (head, passages.len())
+        };
+        assert_eq!(
+            head(
+                "//! - see: #1 — x\n//! - cites: [Dybjer-1994-inductive_families]\n//!\n//! \
+                 [Dybjer-1994-inductive_families]: https://doi.org/10.1007/BF01211308 \"Dybjer, \
+                 Inductive families\""
+            ),
+            (
+                Head {
+                    line: Line(1),
+                    paragraphs: 4,
+                    references: References::Shaped,
+                    what: WhatLine::At(Line(1)),
+                },
+                3
+            ),
+            "the footer belongs to the references paragraph and is no passage"
+        );
+        assert_eq!(
+            head(
+                "//! - cites: [Missing-2020]\n//!\n//! [Other-2020]: https://example.org \"Other\""
+            )
+            .0
+            .references,
+            References::Unfooted(Line(7)),
+            "a label no footer line defines is refused at its `- cites:` line"
+        );
+        assert_eq!(
+            head(
+                "//! - cites: [Dybjer-1994]\n//!\n//! [Dybjer-1994]: https://doi.org/10.1007/BF01211308 — \
+                 Dybjer, Inductive families"
+            )
+            .0
+            .references,
+            References::Untitled(Line(9)),
+            "a footer line whose title is not quoted is refused at its line"
+        );
+        assert_eq!(
+            head(
+                "//! - cites:\n//!   [Dybjer-1994], § 3\n//!\n//! [Dybjer-1994]: https://doi.org/10.1007/BF01211308 \
+                 \"Dybjer, Inductive families\""
+            )
+            .0
+            .references,
+            References::Shaped,
+            "a `- cites:` item reads its label from the line that continues it"
+        );
+        assert_eq!(
+            head(
+                "//! - cites: [Dybjer-1994]\n//!   and [Missing-2020]\n//!\n//! [Dybjer-1994]: \
+                 https://doi.org/10.1007/BF01211308 \"Dybjer, Inductive families\""
+            )
+            .0
+            .references,
+            References::Unfooted(Line(7)),
+            "a label on a continuing line with no footer line is refused at its item"
+        );
+        assert_eq!(
+            head("//! - cites:").0.references,
+            References::Unfooted(Line(7)),
+            "a `- cites:` line naming no label is refused"
         );
     }
 

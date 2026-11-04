@@ -1,21 +1,22 @@
-// Univalence at the corollas of a magma's signature, written by hand and
-// checked against the derived `ua[1, 4]`.
-//
-// The hand definition shows what `ua` builds: reflexivity at the unit for
-// the empty shape, then one `equiv` per corolla, nested to the right. Its
-// directed twin is the same shape for flows, one `Flow.into` per corolla.
-//
-// The module states the hand path beside the derived one and checks that
-// they convert. Transport and a ride along each move the binary corolla's
-// boolean. A ride that would reverse the flow is refused.
-//
-// - see: `pathological/higher-cells/ua-by-hand-unnatural.gandr` — the
-//   naturality `ua` checks beyond the hand definition
-// - see: `ua-corolla-strata.gandr` — the Segal certification from degree two
-// - see: Shulman, _Univalence for Inverse Diagrams and Homotopy Canonicity_,
-//   doi:10.1017/S0960129514000565
-// - see: Gratzer, Weinberger and Buchholtz, _Directed univalence in
-//   simplicial homotopy type theory_, arXiv:2407.09146
+//! Univalence at the corollas of a magma's signature, written by hand and
+//! checked against the derived `ua[1, 4]`.
+//!
+//! The hand definition shows what `ua` builds: reflexivity at the unit for
+//! the empty shape, then one `equiv` per corolla, nested to the right. Its
+//! directed twin is the same shape for flows, one `Flow.into` per corolla.
+//!
+//! The module states the hand path beside the derived one and checks that
+//! they convert. Transport and a ride along each move the binary corolla's
+//! boolean. A ride that would reverse the flow is refused.
+//!
+//! - see: `pathological/higher-cells/ua-by-hand-unnatural.gandr` — the
+//!   naturality `ua` checks beyond the hand definition
+//! - see: `ua-corolla-strata.gandr` — the Segal certification from degree two
+//! - cites: [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]
+//! - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
+//!
+//! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]: https://doi.org/10.1017/S0960129514000565 "Shulman, Univalence for Inverse Diagrams and Homotopy Canonicity"
+//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
 
 // The magma, the swap and the unit's identity.
 import "./magma-base.gandr";

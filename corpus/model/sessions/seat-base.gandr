@@ -1,10 +1,13 @@
-// The sessions subject's shared declarations, written once and imported by
-// every source that reads them (`import "./seat-base.gandr";`): a seat's
-// protocol as a recursive session type (Honda, Vasconcelos and Kubo,
-// _Language Primitives and Type Discipline for Structured
-// Communication-Based Programming_, doi:10.1007/BFb0053567) — a dispatch
-// received, then reports and the choice to continue or retire, or a handoff
-// that ends it — and the messages a seat exchanges.
+//! The sessions subject's shared declarations, written once and imported by
+//! every source that reads them (`import "./seat-base.gandr";`): a seat's
+//! protocol as a recursive session type
+//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]
+//! — a dispatch received, then reports and the choice to continue or retire, or
+//! a handoff that ends it — and the messages a seat exchanges.
+//!
+//! - cites: [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]
+//!
+//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]: https://doi.org/10.1007/BFb0053567 "Honda, Vasconcelos and Kubo, Language Primitives and Type Discipline for Structured Communication-Based Programming"
 
 /// A seat: its message types sealed behind the interface, the protocol it
 /// serves, and one message of each type. A report is marked `mobile`: its

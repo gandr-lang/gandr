@@ -1,6 +1,9 @@
-// An enumeration of three constructors read as a description (Chapman,
-// Dagand, McBride and Morris, _The Gentle Art of Levitation_,
-// doi:10.1145/1863543.1863547).
+//! An enumeration of three constructors read as a description
+//! [Chapman-2010-gentle_art_levitation].
+//!
+//! - cites: [Chapman-2010-gentle_art_levitation]
+//!
+//! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
 /// A traffic signal: stop, go or wait.
 data Traffic : Type where {

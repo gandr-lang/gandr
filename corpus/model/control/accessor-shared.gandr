@@ -1,9 +1,13 @@
-// Shared access. `access shared c as w { … }` lends a held value to a
-// read-only view: the body reads `w` and `c` alike, nothing is written back,
-// and the view ends with its body, so it takes no `resume`, `abort` or
-// `unwind`. The value is frozen for the body: shared views nest, and an
-// exclusive access waits until they end. The loan follows Rust's shared
-// borrow (_The Rust Reference_, § Borrow operators).
+//! Shared access. `access shared c as w { … }` lends a held value to a
+//! read-only view: the body reads `w` and `c` alike, nothing is written back,
+//! and the view ends with its body, so it takes no `resume`, `abort` or
+//! `unwind`. The value is frozen for the body: shared views nest, and an
+//! exclusive access waits until they end. The loan follows Rust's shared borrow
+//! [Rust-reference], § Borrow operators.
+//!
+//! - cites: [Rust-reference]
+//!
+//! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
 
 /// A shared view beside its held value: both read the one value.
 @[ runs("6") ]

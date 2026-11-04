@@ -1,12 +1,14 @@
-// A string's methods: a module member whose first parameter is its receiver,
-// `self`, written with the mode the receiver is lent in, called off a held
-// string as `s.len()`. A call is the access its mode names: a shared receiver
-// is lent for reading, an exclusive one, written with no mode, is lent and
-// written back, and a consumed one is taken, ending its hold (the `let`,
-// `inout` and `sink` conventions of Racordon and Abrahams, "Borrow checking
-// Hylo", IWACO 2023).
-//
-// - see: #1488 — `takenInOneArm`
+//! A string's methods: a module member whose first parameter is its receiver,
+//! `self`, written with the mode the receiver is lent in, called off a held
+//! string as `s.len()`. A call is the access its mode names: a shared receiver
+//! is lent for reading, an exclusive one, written with no mode, is lent and
+//! written back, and a consumed one is taken, ending its hold (the `let`,
+//! `inout` and `sink` conventions of [Racordon-2023-borrow_checking_hylo]).
+//!
+//! - see: #1488 — `takenInOneArm`
+//! - cites: [Racordon-2023-borrow_checking_hylo]
+//!
+//! [Racordon-2023-borrow_checking_hylo]: https://2023.splashcon.org/details/iwaco-2023-papers/5/Borrow-checking-Hylo "Racordon and Abrahams, Borrow checking Hylo"
 
 // The lists; the byte lists; the owned bytes; the writes.
 import "../data/data-base.gandr";

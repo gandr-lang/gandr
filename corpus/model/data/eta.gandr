@@ -1,9 +1,12 @@
-// η for products and records: a pair is the pair of its own projections and
-// a record the record of its own fields, as a function is the abstraction of
-// its own application (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis,
-// 1984). A neutral at a product, a record or a dependent pair converts to the
-// tuple of its projections on either side, so reflexivity at the neutral
-// proves the path.
+//! η for products and records: a pair is the pair of its own projections and a
+//! record the record of its own fields, as a function is the abstraction of its
+//! own application [MartinLof-1984-intuitionistic_type_theory]. A neutral at a
+//! product, a record or a dependent pair converts to the tuple of its
+//! projections on either side, so reflexivity at the neutral proves the path.
+//!
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 /// A pair is the pair of its projections.
 def etaPair(e : Integer * Integer) -> Path(Integer * Integer, (e.0, e.1), e) {

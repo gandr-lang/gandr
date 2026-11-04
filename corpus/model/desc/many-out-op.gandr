@@ -1,8 +1,11 @@
-// An operation with two outputs, division with remainder on the naturals,
-// defined by rules over a helper that walks the dividend (Baader and Nipkow,
-// _Term Rewriting and All That_, Cambridge University Press, 1998, § 4.1):
-// a closed division normalizes to its quotient and remainder, and a run binds
-// both.
+//! An operation with two outputs, division with remainder on the naturals,
+//! defined by rules over a helper that walks the dividend
+//! [Baader-1998-term_rewriting_and_all_that], § 4.1: a closed division
+//! normalizes to its quotient and remainder, and a run binds both.
+//!
+//! - cites: [Baader-1998-term_rewriting_and_all_that]
+//!
+//! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
 
 /// The naturals with division and remainder, both outputs named.
 @[ normalizes("divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero))) ~> (Succ(Succ(Zero)), Succ(Zero))") ]

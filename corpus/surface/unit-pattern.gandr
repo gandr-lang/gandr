@@ -1,6 +1,10 @@
-// The unit value matched by its pattern: `unit` in a case arm matches the one
-// value of `Unit`, so a case on a unit takes that arm (Pierce, _Types and
-// Programming Languages_, MIT Press, 2002, § 11.2).
+//! The unit value matched by its pattern: `unit` in a case arm matches the one
+//! value of `Unit`, so a case on a unit takes that arm
+//! [Pierce-2002-types_and_programming_languages], § 11.2.
+//!
+//! - cites: [Pierce-2002-types_and_programming_languages]
+//!
+//! [Pierce-2002-types_and_programming_languages]: https://www.cis.upenn.edu/~bcpierce/tapl/ "Pierce, Types and Programming Languages"
 
 /// Forty-two, read off the one arm a unit takes.
 def answer(u : Unit) -> Integer {

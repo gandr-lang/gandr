@@ -1,6 +1,10 @@
-// A handle leaked: Rust's `mem::forget` is safe and never runs the value's
-// destructor (_The Rust Standard Library_, `std::mem::forget`), so a
-// descriptor can outlive every holder; here the holder must close it.
+//! A handle leaked: Rust's `mem::forget` is safe and never runs the value's
+//! destructor [Rust-std], `std::mem::forget`, so a descriptor can outlive every
+//! holder; here the holder must close it.
+//!
+//! - cites: [Rust-std]
+//!
+//! [Rust-std]: https://doc.rust-lang.org/std/ "The Rust Project, The Rust Standard Library"
 
 // The file's protocols.
 import "../../model/moves/file-base.gandr";

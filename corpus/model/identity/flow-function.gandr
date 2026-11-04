@@ -1,8 +1,12 @@
-// A flow between function types, after directed univalence (Gratzer,
-// Weinberger and Buchholtz, _Directed univalence in simplicial homotopy type
-// theory_, arXiv:2407.09146): a flow from the old schema to the new, given by
-// its translator, turns a reader of the new schema into a reader of the old
-// one, contravariant in the argument and constant in the result.
+//! A flow between function types, after directed univalence
+//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: a flow
+//! from the old schema to the new, given by its translator, turns a reader of
+//! the new schema into a reader of the old one, contravariant in the argument
+//! and constant in the result.
+//!
+//! - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
+//!
+//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
 
 /// A record schema with its fields swapped, the reader of its ages carried
 /// back to the old schema along the upgrade.

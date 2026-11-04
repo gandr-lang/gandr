@@ -5,16 +5,19 @@
 /// - owes: #2759 — the order named as a definition
 /// - owes: #2754 — a precondition through a scope
 /// - owes: #4128 — the monad's laws beside its order
-// A program over state is specified by the predicate transformer its
-// observation computes, `((A, S) => Type, S) => Type`: from a postcondition
-// on the answer and the final state, and an initial state, to the
-// precondition the program needs there (Maillard et al., "Dijkstra Monads
-// for All", ICFP 2019, § 3.4, uncurried, with propositions read as types).
-// The observation is written twice. As a handler, each clause the image of
-// its operation, the scope is checked as a model of state's laws. As a fold
-// of the program's tree, the normaliser computes the precondition and the
-// kernel replays it, so a program pairs with evidence that its transformer
-// is below its specification.
+//! A program over state is specified by the predicate transformer its
+//! observation computes, `((A, S) => Type, S) => Type`: from a postcondition on
+//! the answer and the final state, and an initial state, to the precondition
+//! the program needs there [Maillard-2019-dijkstra_monads_all], § 3.4,
+//! uncurried, with propositions read as types. The observation is written
+//! twice. As a handler, each clause the image of its operation, the scope is
+//! checked as a model of state's laws. As a fold of the program's tree, the
+//! normaliser computes the precondition and the kernel replays it, so a program
+//! pairs with evidence that its transformer is below its specification.
+//!
+//! - cites: [Maillard-2019-dijkstra_monads_all]
+//!
+//! [Maillard-2019-dijkstra_monads_all]: https://doi.org/10.1145/3341708 "Maillard et al., Dijkstra Monads for All"
 
 // `StateLaws`.
 import "../../model/effects/state.gandr" ;

@@ -1,16 +1,22 @@
-// Second-order rules. A rule whose right side applies a variable that a
-// binding port of its left side binds instantiates it: `t(u)` substitutes `u`
-// for the variable `t`'s port binds, one argument per bound variable (Klop,
-// van Oostrom and van Raamsdonk, _Combinatory reduction systems: introduction
-// and survey_, TCS 121, 1993). The rules terminate by the higher-order
-// recursive path order (Jouannaud and Rubio, _The higher-order recursive path
-// ordering_, LICS 1999): the instantiation is below an application that holds
-// the variable and every argument directly. A pair a second-order rule takes
-// part in is found by pattern unification and joined in the second-order
-// reading (Mayr and Nipkow, _Higher-order rewrite systems and their
-// confluence_, TCS 192, 1998).
-//
-// - see: #2328 — `LetOverlap`
+//! Second-order rules. A rule whose right side applies a variable that a
+//! binding port of its left side binds instantiates it: `t(u)` substitutes `u`
+//! for the variable `t`'s port binds, one argument per bound variable
+//! [Klop-1993-combinatory_reduction_systems_introduction_and_survey]. The rules
+//! terminate by the higher-order recursive path order
+//! [Jouannaud-1999-the_higher_order_recursive_path_ordering]: the instantiation
+//! is below an application that holds the variable and every argument directly.
+//! A pair a second-order rule takes part in is found by pattern unification and
+//! joined in the second-order reading
+//! [Mayr-1998-higher_order_rewrite_systems_and_their_confluence].
+//!
+//! - see: #2328 — `LetOverlap`
+//! - cites: [Jouannaud-1999-the_higher_order_recursive_path_ordering]
+//! - cites: [Klop-1993-combinatory_reduction_systems_introduction_and_survey]
+//! - cites: [Mayr-1998-higher_order_rewrite_systems_and_their_confluence]
+//!
+//! [Jouannaud-1999-the_higher_order_recursive_path_ordering]: https://doi.org/10.1109/LICS.1999.782635 "Jouannaud and Rubio, The higher-order recursive path ordering"
+//! [Klop-1993-combinatory_reduction_systems_introduction_and_survey]: https://doi.org/10.1016/0304-3975(93)90091-7 "Klop, van Oostrom and van Raamsdonk, Combinatory reduction systems: introduction and survey"
+//! [Mayr-1998-higher_order_rewrite_systems_and_their_confluence]: https://doi.org/10.1016/S0304-3975(97)00143-6 "Mayr and Nipkow, Higher-order rewrite systems and their confluence"
 
 /// ζ: `let` binds a term over its body, and its rule substitutes the bound
 /// term into the body.

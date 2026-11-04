@@ -1,8 +1,11 @@
-// A seat's protocol run between two endpoints (Honda, Vasconcelos and Kubo,
-// _Language Primitives and Type Discipline for Structured
-// Communication-Based Programming_, doi:10.1007/BFb0053567): `fork` opens a
-// channel at the seat's session type, the forked side serves it, and the
-// desk drives its dual through every branch the seat may take.
+//! A seat's protocol run between two endpoints
+//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]:
+//! `fork` opens a channel at the seat's session type, the forked side serves
+//! it, and the desk drives its dual through every branch the seat may take.
+//!
+//! - cites: [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]
+//!
+//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]: https://doi.org/10.1007/BFb0053567 "Honda, Vasconcelos and Kubo, Language Primitives and Type Discipline for Structured Communication-Based Programming"
 
 // The seat's protocol and its messages.
 import "./seat-base.gandr";

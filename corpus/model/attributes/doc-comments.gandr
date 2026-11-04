@@ -1,9 +1,11 @@
-// Doc comments and the `doc` attribute, after the intra-doc links of rustdoc.
-// A `[name]` in either resolves to a declaration of the source. A `[label]`
-// resolves to a footer line `[label]: target` at the end of its run. A link
-// that resolves to neither is refused.
-//
-// - see: _The rustdoc book_, § Linking to items by name
+//! Doc comments and the `doc` attribute, after the intra-doc links of rustdoc.
+//! A `[name]` in either resolves to a declaration of the source. A `[label]`
+//! resolves to a footer line `[label]: target` at the end of its run. A link
+//! that resolves to neither is refused.
+//!
+//! - cites: [Rust-rustdoc_book], § Linking to items by name
+//!
+//! [Rust-rustdoc_book]: https://doc.rust-lang.org/rustdoc/ "The Rust Project, The rustdoc book"
 
 /// Returns its argument; [echo] does the same.
 def identity(x : Integer) -> Integer {

@@ -1,26 +1,28 @@
-// The null niche as a realizability predicate. A type's realisers are a
-// predicate on a word and a heap, `V⟦T⟧ : (Nat, Heap) => Type`; the heap is
-// data, the separating conjunction a sigma over a disjoint split and
-// points-to a singleton, so the normaliser computes every assertion and the
-// kernel replays every declaration here (Wagner, Eisbach and Ahmed,
-// "Realistic Realizability: Specifying ABIs You Can Count On", OOPSLA 2024,
-// doi:10.1145/3689755, § 4.2). `Option<&T>` is one word, null or a
-// reference; its realisers are equivalent at every heap to those of the
-// two-word tagged layout, and the marshallers between the two meet their
-// triples. A C function specified by hand, `deref_or`, is met by the niche;
-// its `_Nonnull` neighbour is refused, in
-// `../../pathological/specification/niche-realizability.gandr`.
-//
-// Words are `Nat`, null `Zero`, so a case on a word reduces; a triple is
-// `P(h) => wp(c, Q, h)`, and a pure marshaller's precondition is its
-// postcondition at its answer. Departing from § 4.2: both layouts are words
-// by value rather than objects behind a reference count, so there is no
-// `size` and no count; there is no later modality; and a triple is stated at
-// the heap it owns, with no frame rule over it. Where a realiser runs to
-// `emp(h)` the proofs case on the heap.
-//
-// - see: #2832
-// - see: #327 — `derefOrWp`
+//! The null niche as a realizability predicate. A type's realisers are a
+//! predicate on a word and a heap, `V⟦T⟧ : (Nat, Heap) => Type`; the heap is
+//! data, the separating conjunction a sigma over a disjoint split and points-to
+//! a singleton, so the normaliser computes every assertion and the kernel
+//! replays every declaration here
+//! [Wagner-2024-realistic_realizability_specifying_abis_you_can_count], § 4.2.
+//! `Option<&T>` is one word, null or a reference; its realisers are equivalent
+//! at every heap to those of the two-word tagged layout, and the marshallers
+//! between the two meet their triples. A C function specified by hand,
+//! `deref_or`, is met by the niche; its `_Nonnull` neighbour is refused, in
+//! `../../pathological/specification/niche-realizability.gandr`.
+//!
+//! Words are `Nat`, null `Zero`, so a case on a word reduces; a triple is
+//! `P(h) => wp(c, Q, h)`, and a pure marshaller's precondition is its
+//! postcondition at its answer. Departing from § 4.2: both layouts are words
+//! by value rather than objects behind a reference count, so there is no
+//! `size` and no count; there is no later modality; and a triple is stated at
+//! the heap it owns, with no frame rule over it. Where a realiser runs to
+//! `emp(h)` the proofs case on the heap.
+//!
+//! - see: #2832
+//! - see: #327 — `derefOrWp`
+//! - cites: [Wagner-2024-realistic_realizability_specifying_abis_you_can_count]
+//!
+//! [Wagner-2024-realistic_realizability_specifying_abis_you_can_count]: https://doi.org/10.1145/3689755 "Wagner, Eisbach and Ahmed, Realistic Realizability: Specifying ABIs You Can Count On"
 
 // `Nat`.
 import "../data/data-base.gandr";

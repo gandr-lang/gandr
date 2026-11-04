@@ -1,11 +1,14 @@
-// The higher-cells subject's shared declarations, written once and imported
-// by every source that reads them (`import "./magma-base.gandr";`): the
-// magma signature whose two corollas `ua` reads, and the translators its
-// models' tables are given by — the swap of the booleans, the identity on
-// them, and the identity on the unit's one injection. A `ua[n, k]` path is
-// derived degree by degree over the signature's matching objects (Shulman,
-// _Univalence for Inverse Diagrams and Homotopy Canonicity_,
-// doi:10.1017/S0960129514000565).
+//! The higher-cells subject's shared declarations, written once and imported by
+//! every source that reads them (`import "./magma-base.gandr";`): the magma
+//! signature whose two corollas `ua` reads, and the translators its models'
+//! tables are given by — the swap of the booleans, the identity on them, and
+//! the identity on the unit's one injection. A `ua[n, k]` path is derived
+//! degree by degree over the signature's matching objects
+//! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity].
+//!
+//! - cites: [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]
+//!
+//! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]: https://doi.org/10.1017/S0960129514000565 "Shulman, Univalence for Inverse Diagrams and Homotopy Canonicity"
 
 /// A magma: one sort, a binary operation and a constant.
 pub theory Magma where {

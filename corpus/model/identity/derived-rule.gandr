@@ -1,12 +1,15 @@
-// A rule a theory's completion derives, stated as a declaration of its own
-// and proved for every model: `rule T.r : l <=> r;` holds when the
-// theory's completed rules rewrite both sides to one normal form, and the
-// rewrites are the proof. The group's laws derive the inverse of a product:
-// each rule completion derived on the way is proved first, from the two paths
-// of its certificate, then the statement from both sides' rewrites to their
-// common normal form (Knuth and Bendix, _Simple Word Problems in Universal
-// Algebras_, 1970, § 7). The rule is read at a model as the theory's member
-// `Group.invMul`.
+//! A rule a theory's completion derives, stated as a declaration of its own and
+//! proved for every model: `rule T.r : l <=> r;` holds when the theory's
+//! completed rules rewrite both sides to one normal form, and the rewrites are
+//! the proof. The group's laws derive the inverse of a product: each rule
+//! completion derived on the way is proved first, from the two paths of its
+//! certificate, then the statement from both sides' rewrites to their common
+//! normal form [Knuth-1970-simple_word_problems_universal_algebras], § 7. The
+//! rule is read at a model as the theory's member `Group.invMul`.
+//!
+//! - cites: [Knuth-1970-simple_word_problems_universal_algebras]
+//!
+//! [Knuth-1970-simple_word_problems_universal_algebras]: https://doi.org/10.1016/B978-0-08-012975-4.50028-X "Knuth and Bendix, Simple Word Problems in Universal Algebras"
 
 // The group's unit, associativity and inverse laws.
 import "./group-laws.gandr";

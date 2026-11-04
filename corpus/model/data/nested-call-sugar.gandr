@@ -1,8 +1,11 @@
-// A recursive call nested in the constructor an arm returns: `S(S(dbl[<](x)))`
-// is sugar for running the call, then returning the constructors over its
-// value. Each fold respects the integers' rules, so it is defined on the
-// quotient (Altenkirch et al., _Quotient inductive-inductive types_,
-// doi:10.1007/978-3-319-89366-2_16).
+//! A recursive call nested in the constructor an arm returns: `S(S(dbl[<](x)))`
+//! is sugar for running the call, then returning the constructors over its
+//! value. Each fold respects the integers' rules, so it is defined on the
+//! quotient [Altenkirch-2018-quotient_inductive_inductive_types].
+//!
+//! - cites: [Altenkirch-2018-quotient_inductive_inductive_types]
+//!
+//! [Altenkirch-2018-quotient_inductive_inductive_types]: https://doi.org/10.1007/978-3-319-89366-2_16 "Altenkirch et al., Quotient inductive-inductive types"
 
 // The presented integers.
 import "./data-base.gandr";

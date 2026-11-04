@@ -1,7 +1,10 @@
-// A data type with two parameters: the sum of two types, each constructor
-// injecting one side. A match on a constructor written with its type takes
-// the arm that constructor names (Martin-Löf, _Intuitionistic Type Theory_,
-// Bibliopolis, 1984).
+//! A data type with two parameters: the sum of two types, each constructor
+//! injecting one side. A match on a constructor written with its type takes the
+//! arm that constructor names [MartinLof-1984-intuitionistic_type_theory].
+//!
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 /// The sum of `a` and `b`: a value of either side, tagged by its constructor.
 data Either(a : Type, b : Type) : Type where {

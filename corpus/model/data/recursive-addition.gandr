@@ -1,11 +1,15 @@
-// Addition on the naturals in the spellings an arm admits, each as the sugared
-// form writes it: a `run` that only sequences the recursive call, its result
-// returned or the `return` elided, is written with the call nested in the
-// constructor it returns (the base's `plus`), and a `run` written inside a
-// constructor's field stays. Each spelling runs to the same value. A structural
-// recursive call stands one stage below the term it was read from (Abel,
-// _Termination checking with types_, doi:10.1051/ita:2004015). The lists'
-// folds are `recursive-lists.gandr` and `recursive-nat-lists.gandr`.
+//! Addition on the naturals in the spellings an arm admits, each as the sugared
+//! form writes it: a `run` that only sequences the recursive call, its result
+//! returned or the `return` elided, is written with the call nested in the
+//! constructor it returns (the base's `plus`), and a `run` written inside a
+//! constructor's field stays. Each spelling runs to the same value. A
+//! structural recursive call stands one stage below the term it was read from
+//! [Abel-2004-termination_checking_with_types]. The lists' folds are
+//! `recursive-lists.gandr` and `recursive-nat-lists.gandr`.
+//!
+//! - cites: [Abel-2004-termination_checking_with_types]
+//!
+//! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
 
 // The naturals, their addition with the recursive call nested, and the
 // numerals two and three.

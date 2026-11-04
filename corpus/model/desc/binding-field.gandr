@@ -1,12 +1,16 @@
-// The binding field in rule terms (Kaposi and Xie, _Second-Order Generalised
-// Algebraic Theories_, FSCD 2024, doi:10.4230/LIPIcs.FSCD.2024.10). At a port
-// written `pi+ (x : S) . T` a rule writes `bind x . t` for the field the port
-// binds: `x` is a variable of the representable sort `S`, which substitution
-// instantiates. At a port written `bind (a : N) . T` the same spelling
-// abstracts the atom `a` (`bind-term.gandr`), which swapping renames. The port
-// decides which: the value of `Theory` keeps a field as `Bind` and its variable
-// as `Bvar`, an abstraction as `Abs` and its atom as `Occ`, so a program tells
-// the two binders apart by `case`.
+//! The binding field in rule terms
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics].
+//! At a port written `pi+ (x : S) . T` a rule writes `bind x . t` for the field
+//! the port binds: `x` is a variable of the representable sort `S`, which
+//! substitution instantiates. At a port written `bind (a : N) . T` the same
+//! spelling abstracts the atom `a` (`bind-term.gandr`), which swapping renames.
+//! The port decides which: the value of `Theory` keeps a field as `Bind` and
+//! its variable as `Bvar`, an abstraction as `Abs` and its atom as `Occ`, so a
+//! program tells the two binders apart by `case`.
+//!
+//! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
+//!
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
 
 /// A receive on a restricted channel: `nu` abstracts the channel `c`, and
 /// `listen`'s continuation is a field binding the value `x` received on it.

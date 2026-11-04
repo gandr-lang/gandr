@@ -1,8 +1,11 @@
-// A module ascribed a transparent signature, after ML's translucent sums
-// (Harper and Lillibridge, _A Type-Theoretic Approach to Higher-Order
-// Modules with Sharing_, POPL 1994, doi:10.1145/174675.176927): the
-// signature states its type's definition, so the members are read at the
-// integers outside the module.
+//! A module ascribed a transparent signature, after ML's translucent sums
+//! [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]:
+//! the signature states its type's definition, so the members are read at the
+//! integers outside the module.
+//!
+//! - cites: [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]
+//!
+//! [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]: https://doi.org/10.1145/174675.176927 "Harper and Lillibridge, A Type-Theoretic Approach to Higher-Order Modules with Sharing"
 
 /// The integers under addition, the signature exposing its type as
 /// `Integer`.

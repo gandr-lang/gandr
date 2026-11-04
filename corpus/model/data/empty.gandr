@@ -1,14 +1,17 @@
-// The empty type and the apartness rule. `Empty` is a data type with no
-// constructor, so a match on it has no arm and answers whatever type it is
-// asked for: `A -> Empty` is how "not A" is spelled. A path between two terms
-// of a data type is eliminated the same way when the terms are apart: their
-// type's rules converge, and their normal forms first differ at two distinct
-// constructors, so no path joins them and a match on one has no arm either
-// (Coquand, _Pattern matching with dependent types_, 1992).
-//
-// - see: #534 — `viaLambda`, `viaStated`
-// - see: #1944 — `viaBare`, `viaBareStated`
-// - see: #1948 — `viaArgument`, `viaArgumentStated`
+//! The empty type and the apartness rule. `Empty` is a data type with no
+//! constructor, so a match on it has no arm and answers whatever type it is
+//! asked for: `A -> Empty` is how "not A" is spelled. A path between two terms
+//! of a data type is eliminated the same way when the terms are apart: their
+//! type's rules converge, and their normal forms first differ at two distinct
+//! constructors, so no path joins them and a match on one has no arm either
+//! [Coquand-1992-pattern_matching_with_dependent_types].
+//!
+//! - see: #534 — `viaLambda`, `viaStated`
+//! - see: #1944 — `viaBare`, `viaBareStated`
+//! - see: #1948 — `viaArgument`, `viaArgumentStated`
+//! - cites: [Coquand-1992-pattern_matching_with_dependent_types]
+//!
+//! [Coquand-1992-pattern_matching_with_dependent_types]: https://wonks.github.io/type-theory-reading-group/papers/proc92-coquand.pdf "Coquand, Pattern matching with dependent types"
 
 // The presented integers.
 import "./data-base.gandr";

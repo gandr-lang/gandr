@@ -4,12 +4,18 @@
 ///
 /// - owes: #1561 — the model of an abstracting operation
 /// - owes: #1934 — deciding a critical pair under a freshness condition
-// Atom sorts (Pitts, _Nominal Sets_, CUP 2013; Gabbay and Mathijssen,
-// _Nominal (universal) algebra_, JLC 2009). A sort classified `Atom` is
-// orbit-infinite, with equality and swapping its only structure: an operation
-// takes an atom, and none returns one. Each block is a value of `Theory` that
-// keeps the atom sort as an `Atom` link of its sort chain, so a program reads
-// it back by `case`.
+//! Atom sorts [Pitts-2013-nominal_sets_names_symmetry_computer_science] and
+//! [Gabbay-2009-nominal_universal_algebra]. A sort classified `Atom` is
+//! orbit-infinite, with equality and swapping its only structure: an operation
+//! takes an atom, and none returns one. Each block is a value of `Theory` that
+//! keeps the atom sort as an `Atom` link of its sort chain, so a program reads
+//! it back by `case`.
+//!
+//! - cites: [Pitts-2013-nominal_sets_names_symmetry_computer_science]
+//! - cites: [Gabbay-2009-nominal_universal_algebra]
+//!
+//! [Pitts-2013-nominal_sets_names_symmetry_computer_science]: https://doi.org/10.1017/CBO9781139084673 "Pitts, Nominal Sets: Names and Symmetry in Computer Science"
+//! [Gabbay-2009-nominal_universal_algebra]: https://doi.org/10.1093/logcom/exp033 "Gabbay and Mathijssen, Nominal (Universal) Algebra: Equational Logic with Names and Binding"
 
 /// One atom sort and nothing else.
 @[ checks ]

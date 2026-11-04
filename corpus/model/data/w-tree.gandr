@@ -1,9 +1,13 @@
-// Well-founded trees branching through a function, after Martin-Löf's
-// W-types. A node holds a function from a type of branches to its subtrees,
-// so the family occurs to the right of an arrow, never to its left: strictly
-// positive. A fold reaches each subtree by applying that function and recurses
-// on the result, one stage below the node it came from (Martin-Löf,
-// _Constructive mathematics and computer programming_, 1982).
+//! Well-founded trees branching through a function, after Martin-Löf's W-types.
+//! A node holds a function from a type of branches to its subtrees, so the
+//! family occurs to the right of an arrow, never to its left: strictly
+//! positive. A fold reaches each subtree by applying that function and recurses
+//! on the result, one stage below the node it came from
+//! [MartinLof-1982-constructive_mathematics_and_computer_programming].
+//!
+//! - cites: [MartinLof-1982-constructive_mathematics_and_computer_programming]
+//!
+//! [MartinLof-1982-constructive_mathematics_and_computer_programming]: https://doi.org/10.1016/S0049-237X(09)70189-2 "Martin-Löf, Constructive Mathematics and Computer Programming"
 
 // The naturals the fold counts in, their addition, and the two branches.
 import "./data-base.gandr";

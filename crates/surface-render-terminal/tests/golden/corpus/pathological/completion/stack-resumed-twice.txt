@@ -1,19 +1,19 @@
 error[ContinuationUsedTwice]: the continuation is resumed or abandoned a second time
-   ╭▸ corpus/pathological/completion/stack-resumed-twice.gandr:31:50
+   ╭▸ corpus/pathological/completion/stack-resumed-twice.gandr:34:50
    │
-18 │ ┌  def resumedTwice() -> Unit {
-19 │ │┌   handle c : std.process.Exit.Eff {
-20 │ ││     let ring = fork (kernel : Ring.Submission) {
-21 │ ││       let sqe = recv(kernel);
-22 │ ││       send(kernel, Ring.done);
+21 │ ┌  def resumedTwice() -> Unit {
+22 │ │┌   handle c : std.process.Exit.Eff {
+23 │ ││     let ring = fork (kernel : Ring.Submission) {
+24 │ ││       let sqe = recv(kernel);
+25 │ ││       send(kernel, Ring.done);
    ┆ ┆┆
-31 │ ││     oper exit(code, k) => { let first = k(unit); k(unit) }
+34 │ ││     oper exit(code, k) => { let first = k(unit); k(unit) }
    │ ││                             ┬──                  ━━━━━━━ a continuation already ended
    │ ││                             │
    │ ││                             checked against `-F Unit`; while checking the body under this binding; binds first : Unit
-32 │ ││   }
+35 │ ││   }
    │ │└───┘ checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack(-F Unit, -F Unit)
-33 │ │  }
+36 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
    ├ note: `resumedTwice` is refused with ContinuationUsedTwice, as its expectation states

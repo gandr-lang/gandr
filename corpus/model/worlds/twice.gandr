@@ -1,17 +1,21 @@
-// Two migrations to one world, a value held at the seat and read there again.
-//
-// It witnesses a capture crossing in: the second migration's body reads what
-// the first held at the seat.
-//
-// The first migration holds a value at the seat and brings its handle back.
-// `let n at seat` opens the handle, binding what it holds at the seat, and the
-// second migration reads it there. In one process a handle is its content, and
-// each crossing, in or back, is a commit then a deref.
-//
-// - see: Murphy, Crary and Harper, "Type-Safe Distributed Programming with
-//   ML5", TGC 2007, § 3
-// - see: Rainey et al., "LoCalMem", PACMPL 10 (ICFP 2026), § 5
-// - see: `open.gandr` — what crosses back from one migration
+//! Two migrations to one world, a value held at the seat and read there again.
+//!
+//! It witnesses a capture crossing in: the second migration's body reads what
+//! the first held at the seat.
+//!
+//! The first migration holds a value at the seat and brings its handle back.
+//! `let n at seat` opens the handle, binding what it holds at the seat, and the
+//! second migration reads it there. In one process a handle is its content, and
+//! each crossing, in or back, is a commit then a deref.
+//!
+//! - cites: [Vii-2007-typesafe_distributed_programming_ml5], § 3
+//! - cites:
+//!   [Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory],
+//!   § 5
+//! - see: `open.gandr` — what crosses back from one migration
+//!
+//! [Vii-2007-typesafe_distributed_programming_ml5]: https://doi.org/10.1007/978-3-540-78663-4_9 "Murphy, Crary and Harper, Type-Safe Distributed Programming with ML5"
+//! [Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory]: https://doi.org/10.1145/3828688 "Rainey et al., LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory"
 
 // The operator's and the seat's worlds, each declaration's entry.
 import "./seat-and-operator.gandr";

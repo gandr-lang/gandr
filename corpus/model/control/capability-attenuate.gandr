@@ -1,8 +1,12 @@
-// Capability attenuation, after the object-capability discipline (Dennis and
-// Van Horn, _Programming Semantics for Multiprogrammed Computations_,
-// doi:10.1145/365230.365252; Miller, _Robust Composition_, 2006): a
-// capability holding more operations is passed where one holding fewer is
-// asked, and a holder cannot use an operation its capability does not hold.
+//! Capability attenuation, after the object-capability discipline of Dennis
+//! and Van Horn [Dennis-1966-programming_semantics_for_multiprogrammed_computations]
+//! and of Miller's thesis, 2006: a capability holding more operations is passed
+//! where one holding fewer is asked, and a holder cannot use an operation its
+//! capability does not hold.
+//!
+//! - cites: [Dennis-1966-programming_semantics_for_multiprogrammed_computations]
+//!
+//! [Dennis-1966-programming_semantics_for_multiprogrammed_computations]: https://doi.org/10.1145/365230.365252 "Dennis and Van Horn, Programming Semantics for Multiprogrammed Computations"
 
 // The filesystem's host interface.
 import std.fs;

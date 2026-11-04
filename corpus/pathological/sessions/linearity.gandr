@@ -24,7 +24,12 @@ def seat_closed_in_a_thunk() -> Unit {
 }
 
 /// An end sent over a session leaves its sender, so closing it after the send
-/// acts on a spent slot (Honda, Vasconcelos and Kubo, doi:10.1007/BFb0053567).
+/// acts on a spent slot
+/// [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming].
+///
+/// - cites: [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]
+///
+/// [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]: https://doi.org/10.1007/BFb0053567 "Honda, Vasconcelos and Kubo, Language Primitives and Type Discipline for Structured Communication-Based Programming"
 @[ refuses("UsedAfterClose") ]
 def seat_closed_after_delegating() -> Unit {
   let desk = fork (seat : !end. end) {

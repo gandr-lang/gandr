@@ -1,13 +1,16 @@
-// Each rule's cell counts how many times its right side writes each hole its
-// left side binds: the hole's Lipschitz constant under the step, the factor by
-// which one step can stretch a distance between two instances of the hole
-// (Gavazzo and Di Florio, _Quantitative and Metric Rewriting_, 2022, § 8.2).
-// `gandr cells` reports the counts of every cell. `mirror` writes each
-// subshrub once and is strictly linear; `left` drops `r`, a constant of zero;
-// `twice` and `thrice` write `t` two and three times, so their steps are
-// duplicating. A count is reported, never refused.
-//
-// - see: #2788
+//! Each rule's cell counts how many times its right side writes each hole its
+//! left side binds: the hole's Lipschitz constant under the step, the factor by
+//! which one step can stretch a distance between two instances of the hole
+//! [Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems],
+//! § 8.2. `gandr cells` reports the counts of every cell. `mirror` writes each
+//! subshrub once and is strictly linear; `left` drops `r`, a constant of zero;
+//! `twice` and `thrice` write `t` two and three times, so their steps are
+//! duplicating. A count is reported, never refused.
+//!
+//! - see: #2788
+//! - cites: [Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems]
+//!
+//! [Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems]: https://arxiv.org/abs/2206.13610 "Gavazzo and Di Florio, Quantitative and Metric Rewriting: Abstract, Non-Expansive, and Graded Systems"
 
 /// Binary shrubs, with operations writing a subshrub zero to three times.
 @[ normalizes("thrice(Leaf) ~> Node(Leaf, Node(Leaf, Leaf))") ]

@@ -1,10 +1,12 @@
-// A statement inside a block a binder reads. The statement is a split of its
-// unit result, and a split whose components its body's type does not read
-// synthesises that type, as a bind does: an elimination whose principal
-// premise synthesises synthesises (Dunfield and Krishnaswami, "Bidirectional
-// Typing", ACM Computing Surveys 54(5), 2021, doi:10.1145/3450952).
-//
-// - see: #1374 — `statement`
+//! A statement inside a block a binder reads. The statement is a split of its
+//! unit result, and a split whose components its body's type does not read
+//! synthesises that type, as a bind does: an elimination whose principal
+//! premise synthesises synthesises [Dunfield-2019-bidirectional_typing].
+//!
+//! - see: #1374 — `statement`
+//! - cites: [Dunfield-2019-bidirectional_typing]
+//!
+//! [Dunfield-2019-bidirectional_typing]: https://doi.org/10.1145/3450952 "Dunfield and Krishnaswami, Bidirectional Typing"
 
 // Early exit's host interface.
 import std.process;

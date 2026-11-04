@@ -1,7 +1,10 @@
-// A presented type whose operation is given by a rule, a face between two
-// terms (Baader and Nipkow, _Term Rewriting and All That_, Cambridge
-// University Press, 1998, § 4.1): the identity operation at zero rewrites to
-// zero.
+//! A presented type whose operation is given by a rule, a face between two
+//! terms [Baader-1998-term_rewriting_and_all_that], § 4.1: the identity
+//! operation at zero rewrites to zero.
+//!
+//! - cites: [Baader-1998-term_rewriting_and_all_that]
+//!
+//! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
 
 /// Zero and an identity operation, its value at zero given by a rule.
 data NatTheory : Type where {

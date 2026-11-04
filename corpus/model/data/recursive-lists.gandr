@@ -1,13 +1,16 @@
-// The folds over a polymorphic list — its length, appending and mapping — in
-// the spellings an arm admits, each as the sugared form writes it: a `run`
-// that only sequences a call, its result returned or the `return` elided, is
-// written with the call nested in the constructor it returns. A structural
-// recursive call stands one stage below the list it was read from (Abel,
-// _Termination checking with types_, doi:10.1051/ita:2004015); the list is
-// the polymorphic one of Martin-Löf's type theory. A fold may take the
-// element type implicitly, `[a : Type]`: its recursive call omits `a` and
-// passes the function's own. They run at the naturals in
-// `recursive-nat-lists.gandr`.
+//! The folds over a polymorphic list — its length, appending and mapping — in
+//! the spellings an arm admits, each as the sugared form writes it: a `run`
+//! that only sequences a call, its result returned or the `return` elided, is
+//! written with the call nested in the constructor it returns. A structural
+//! recursive call stands one stage below the list it was read from
+//! [Abel-2004-termination_checking_with_types]; the list is the polymorphic one
+//! of Martin-Löf's type theory. A fold may take the element type implicitly,
+//! `[a : Type]`: its recursive call omits `a` and passes the function's own.
+//! They run at the naturals in `recursive-nat-lists.gandr`.
+//!
+//! - cites: [Abel-2004-termination_checking_with_types]
+//!
+//! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
 
 // The naturals and the lists.
 import "./data-base.gandr";

@@ -3,11 +3,15 @@
 /// Not implemented: a size measure for a fixpoint.
 ///
 /// - owes: #392
-// A rule written as an equation, `<=>`: one term spelled two ways, with the
-// left side the one a reader would rewrite to. The order of terms chooses the
-// direction, so `x <=> S(P(x))` still runs `S(P(x))` to `x` (Huet, _Confluent
-// reductions_, doi:10.1145/322217.322230). The integers are named apart from
-// the base's, whose rules are written the other way round.
+//! A rule written as an equation, `<=>`: one term spelled two ways, with the
+//! left side the one a reader would rewrite to. The order of terms chooses the
+//! direction, so `x <=> S(P(x))` still runs `S(P(x))` to `x`
+//! [Huet-1980-confluent_reductions]. The integers are named apart from the
+//! base's, whose rules are written the other way round.
+//!
+//! - cites: [Huet-1980-confluent_reductions]
+//!
+//! [Huet-1980-confluent_reductions]: https://doi.org/10.1145/322217.322230 "Huet, Confluent reductions"
 
 /// The integers with their first rule written smaller side first.
 @[ normalizes("S(P(Z)) ~> Z") ]

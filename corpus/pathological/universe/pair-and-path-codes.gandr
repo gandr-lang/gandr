@@ -1,16 +1,18 @@
-// A Tarski universe closed under dependent pairs, with the decoder arm that
-// stays refused.
-//
-// Martin-Löf's universe is closed under dependent functions, dependent pairs
-// and identity types. Each such code decodes to a family at the decodes of
-// its fields. A decode thus stands as a family's argument.
-//
-// A run binds a decode as a type of its own. A field at the code's decode
-// then stands apart from it.
-//
-// - see: `model/universe/pair-and-path-codes.gandr` — the pair and path
-//   codes with their decodes in place, admitted
-// - see: Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984
+//! A Tarski universe closed under dependent pairs, with the decoder arm that
+//! stays refused.
+//!
+//! Martin-Löf's universe is closed under dependent functions, dependent pairs
+//! and identity types. Each such code decodes to a family at the decodes of
+//! its fields. A decode thus stands as a family's argument.
+//!
+//! A run binds a decode as a type of its own. A field at the code's decode
+//! then stands apart from it.
+//!
+//! - see: `model/universe/pair-and-path-codes.gandr` — the pair and path
+//!   codes with their decodes in place, admitted
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 // The naturals.
 import "../../model/data/data-base.gandr";

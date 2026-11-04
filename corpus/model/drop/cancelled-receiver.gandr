@@ -1,18 +1,19 @@
-// A peer still waiting when its counterpart abandons the rest is cancelled,
-// and the run answers its clause's value.
-//
-// The abandoned rest held an end whose protocol had not ended, so it owed
-// its peer a cancellation. The peer's next action on its own end observes it
-// and abandons the peer's continuation in turn.
-//
-// Each program below abandons its root's rest through an exit clause that
-// answers `7`. A peer parked at a receive is readied and abandoned, and an
-// end queued at an abandoned end is cancelled with it.
-//
-// - see: #3305 — the cancellation hop
-// - see: Fowler, Lindley, Morris and Decova, _Exceptional Asynchronous
-//   Session Types_, POPL 2019, doi:10.1145/3290341 — cancellation reaching
-//   the peer and every end left in a cancelled end's buffer
+//! A peer still waiting when its counterpart abandons the rest is cancelled,
+//! and the run answers its clause's value.
+//!
+//! The abandoned rest held an end whose protocol had not ended, so it owed
+//! its peer a cancellation. The peer's next action on its own end observes it
+//! and abandons the peer's continuation in turn.
+//!
+//! Each program below abandons its root's rest through an exit clause that
+//! answers `7`. A peer parked at a receive is readied and abandoned, and an
+//! end queued at an abandoned end is cancelled with it.
+//!
+//! - see: #3305 — the cancellation hop
+//! - cites: [Fowler-2019-exceptional_asynchronous_session_types] — cancellation
+//!   reaching the peer and every end left in a cancelled end's buffer
+//!
+//! [Fowler-2019-exceptional_asynchronous_session_types]: https://doi.org/10.1145/3290341 "Fowler, Lindley, Morris and Decova, Exceptional Asynchronous Session Types"
 
 // Early exit's host interface.
 import std.process;

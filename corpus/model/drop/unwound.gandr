@@ -1,11 +1,14 @@
-// An abandoned stack runs the unwind of each access it captured, innermost
-// first, in place of the write-back it never reaches; its other frames never
-// run. Each captured frame's destructor runs in reverse order (Congard,
-// Munch-Maccagnoni and Douence, _Linear Effects, Exceptions, and Resource
-// Safety_, 2025, arXiv:2510.23517). An unwind that calls a declaration owed
-// its body blames the run, which shows the abandonment ran it.
-//
-// - see: #1334 — `unwound`
+//! An abandoned stack runs the unwind of each access it captured, innermost
+//! first, in place of the write-back it never reaches; its other frames never
+//! run. Each captured frame's destructor runs in reverse order
+//! [Congard-2025-linear_effects_exceptions_and_resource_safety]. An unwind that
+//! calls a declaration owed its body blames the run, which shows the
+//! abandonment ran it.
+//!
+//! - see: #1334 — `unwound`
+//! - cites: [Congard-2025-linear_effects_exceptions_and_resource_safety]
+//!
+//! [Congard-2025-linear_effects_exceptions_and_resource_safety]: https://arxiv.org/abs/2510.23517 "Congard, Munch-Maccagnoni and Douence, Linear Effects, Exceptions, and Resource Safety"
 
 // The native finite lists.
 import std.list (List);

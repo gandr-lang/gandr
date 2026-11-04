@@ -1,10 +1,12 @@
-// A held value is read as any variable is: its type is the slot's, known
-// where the hold binds it. A return synthesises the pure returner of what its
-// value synthesises, the mode-correct reading of an introduction whose premise
-// synthesises (Dunfield and Krishnaswami, "Bidirectional Typing", ACM
-// Computing Surveys 54(5), 2021, doi:10.1145/3450952).
-//
-// - see: #1142 — `bound`
+//! A held value is read as any variable is: its type is the slot's, known where
+//! the hold binds it. A return synthesises the pure returner of what its value
+//! synthesises, the mode-correct reading of an introduction whose premise
+//! synthesises [Dunfield-2019-bidirectional_typing].
+//!
+//! - see: #1142 — `bound`
+//! - cites: [Dunfield-2019-bidirectional_typing]
+//!
+//! [Dunfield-2019-bidirectional_typing]: https://doi.org/10.1145/3450952 "Dunfield and Krishnaswami, Bidirectional Typing"
 
 /// A held value returned to a statement that binds it: the binder states no
 /// type, and the read synthesises the slot's.

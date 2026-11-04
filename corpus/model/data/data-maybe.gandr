@@ -1,10 +1,12 @@
-// A data type with one parameter: an optional value, absent or present. A
-// match on a constructor written with its type takes the arm that
-// constructor names (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis,
-// 1984).
-//
-// - see: #616 — `kept`
-// - see: #1855 — `keptTally`, `keptDuo`
+//! A data type with one parameter: an optional value, absent or present. A
+//! match on a constructor written with its type takes the arm that constructor
+//! names [MartinLof-1984-intuitionistic_type_theory].
+//!
+//! - see: #616 — `kept`
+//! - see: #1855 — `keptTally`, `keptDuo`
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 /// An optional `a`: none, or some value.
 pub data Maybe(a : Type) : Type where {

@@ -1,15 +1,18 @@
-// A functor over a theory's models: a parameter written `(S :
-// Model(T))` takes the signature the theory `T` derives, its sorts abstract
-// in the body and its operations values at the types the theory states, and
-// an application matches its argument against that signature by name, so a
-// module ascribed the record signature the theory presents is an argument
-// as a model is. After Kaposi and Xie (_Second-Order Generalised Algebraic
-// Theories: Signatures and First-Order Semantics_, FSCD 2024,
-// doi:10.4230/LIPIcs.FSCD.2024.10), under which a module signature is a
-// theory and a parameterised module the static half of a functor.
-//
-// - see: #1226
-// - see: #1764 — `Reassociating`
+//! A functor over a theory's models: a parameter written `(S : Model(T))` takes
+//! the signature the theory `T` derives, its sorts abstract in the body and its
+//! operations values at the types the theory states, and an application matches
+//! its argument against that signature by name, so a module ascribed the record
+//! signature the theory presents is an argument as a model is. After Kaposi and
+//! Xie
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics],
+//! under which a module signature is a theory and a parameterised module the
+//! static half of a functor.
+//!
+//! - see: #1226
+//! - see: #1764 — `Reassociating`
+//! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
+//!
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories: Signatures and First-Order Semantics"
 
 /// A magma: a carrier and a binary operation on it.
 theory Mag where {

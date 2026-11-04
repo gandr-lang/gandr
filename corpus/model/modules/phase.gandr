@@ -1,11 +1,15 @@
-// The phase distinction (Sterling and Harper, _Logical relations as types:
-// proof-relevant parametricity for program modules_, doi:10.1145/3474834):
-// a module's type members are its static part and its values its dynamic
-// part, ordered static below dynamic. A member reads only members at or
-// below its own phase, so a type reads types and static data, and a value
-// reads both. A type member reading a module's or a parameter's value is
-// refused by name at the value (`PhaseDependence`), stated beside it in
-// `../../pathological/modules/phase.gandr`.
+//! The phase distinction
+//! [Sterling-2021-logical_relations_types_proofrelevant_parametricity_program_modules]:
+//! a module's type members are its static part and its values its dynamic part,
+//! ordered static below dynamic. A member reads only members at or below its
+//! own phase, so a type reads types and static data, and a value reads both. A
+//! type member reading a module's or a parameter's value is refused by name at
+//! the value (`PhaseDependence`), stated beside it in
+//! `../../pathological/modules/phase.gandr`.
+//!
+//! - cites: [Sterling-2021-logical_relations_types_proofrelevant_parametricity_program_modules]
+//!
+//! [Sterling-2021-logical_relations_types_proofrelevant_parametricity_program_modules]: https://doi.org/10.1145/3474834 "Sterling and Harper, Logical relations as types: proof-relevant parametricity for program modules"
 
 /// A sign, closed data whose constructors are static.
 data Sign : Type where {

@@ -1,14 +1,18 @@
-// One ascription path for a module and a theory: a module is a
-// model of a theory, `module M : Model(T)` ascribes it transparently and
-// `module M :> Model(T)` seals it, the theory's sorts abstract outside. A
-// theory with no laws is an ML signature; the same ascription checks a
-// theory with laws, whose members are the module's proofs. After Kaposi and
-// Xie (_Second-Order Generalised Algebraic Theories_, FSCD 2024,
-// doi:10.4230/LIPIcs.FSCD.2024.10), whose first-order models are a
-// theory's algebras, and Rossberg, Russo and Dreyer (_F-ing Modules_,
-// doi:10.1017/S0956796814000264) for sealing as opaque ascription.
-//
-// - see: #746
+//! One ascription path for a module and a theory: a module is a model of a
+//! theory, `module M : Model(T)` ascribes it transparently and `module M :>
+//! Model(T)` seals it, the theory's sorts abstract outside. A theory with no
+//! laws is an ML signature; the same ascription checks a theory with laws,
+//! whose members are the module's proofs. After Kaposi and Xie
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics],
+//! whose first-order models are a theory's algebras, and Rossberg, Russo and
+//! Dreyer [Rossberg-2014-fing_modules] for sealing as opaque ascription.
+//!
+//! - see: #746
+//! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
+//! - cites: [Rossberg-2014-fing_modules]
+//!
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories: Signatures and First-Order Semantics"
+//! [Rossberg-2014-fing_modules]: https://doi.org/10.1017/S0956796814000264 "Rossberg, Russo and Dreyer, F-ing Modules"
 
 /// A counter: a carrier, a start and a step. No laws: an ML signature.
 pub theory Counter where {

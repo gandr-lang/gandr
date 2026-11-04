@@ -1,12 +1,19 @@
-// Representation independence of two structures, after Sterling, Gratzer and
-// Birkedal (_Towards univalent reference types_, § 5, the counters
-// `posCounter ≡ negCounter`) and the structure identity principle in
-// Sterling's _Reflexive graph lenses in univalent foundations_ (§ 4,
-// arXiv:2404.07854): a structure is a record over a carrier, its identity is
-// read field by field, and two structures whose carriers are equivalent, the
-// fields carried along, are one. The identity of a product is the product of
-// its factors' identities, and the identity of a dependent pair is a path
-// between the first components and, over it, one between the second.
+//! Representation independence of two structures, after Sterling, Gratzer and
+//! Birkedal [Sterling-2023-univalent_reference_types], § 5, the counters
+//! `posCounter ≡ negCounter` and the structure identity principle in Sterling's
+//! _Reflexive graph lenses in univalent foundations_
+//! [Sterling-2026-reflexive_graph_lenses_univalent_foundations]: a structure is
+//! a record over a carrier, its identity is read field by field, and two
+//! structures whose carriers are equivalent, the fields carried along, are one.
+//! The identity of a product is the product of its factors' identities, and the
+//! identity of a dependent pair is a path between the first components and,
+//! over it, one between the second.
+//!
+//! - cites: [Sterling-2026-reflexive_graph_lenses_univalent_foundations]
+//! - cites: [Sterling-2023-univalent_reference_types]
+//!
+//! [Sterling-2026-reflexive_graph_lenses_univalent_foundations]: https://arxiv.org/abs/2404.07854 "Sterling, Reflexive Graph Lenses in Univalent Foundations"
+//! [Sterling-2023-univalent_reference_types]: https://doi.org/10.4230/LIPIcs.CSL.2024.19 "Sterling, Gratzer and Birkedal, Towards univalent reference types"
 
 // The booleans' path to themselves by negation, `negation`.
 import "./transport-list.gandr";

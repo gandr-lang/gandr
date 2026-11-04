@@ -1,23 +1,25 @@
-// Rose trees: a node holds its children, in two forms. Written directly, a
-// node holds a `List` of nodes: the list's parameter is strictly positive, so
-// each child stands below the node and the family declares; a measure
-// recurses through the list's `map`, which a call instantiates at the
-// children's stage, and a run passes `map` the children's type as a
-// code. Written as a block, a node holds a forest and a forest
-// is empty or a tree before a forest: the two families name each other, so
-// they are one block, admitted as one and sharing one stage; and the two
-// measures name each other, so they are one fixpoint over the sum of their
-// domains, each measure that fixpoint at its own summand. A measure may take a
-// parameter after the tree, and the fixpoint passes it on. A call through
-// either stands one stage below the node or forest it was read from (Abel,
-// _Termination checking with types_, doi:10.1051/ita:2004015). What the direct
-// form refuses is in `../../pathological/data/rose.gandr`.
-//
-// - see: #3722 — a measure passes a parameter after the tree to its sibling,
-//   by which `treeWeight` and `forestWeight` check
-// - see: #517 — `Bush`
-// - see: #393 — `nodes`
-// - see: #452 — `shrub_nodes`, `grown_nodes`
+//! Rose trees: a node holds its children, in two forms. Written directly, a
+//! node holds a `List` of nodes: the list's parameter is strictly positive, so
+//! each child stands below the node and the family declares; a measure recurses
+//! through the list's `map`, which a call instantiates at the children's stage,
+//! and a run passes `map` the children's type as a code. Written as a block, a
+//! node holds a forest and a forest is empty or a tree before a forest: the two
+//! families name each other, so they are one block, admitted as one and sharing
+//! one stage; and the two measures name each other, so they are one fixpoint
+//! over the sum of their domains, each measure that fixpoint at its own
+//! summand. A measure may take a parameter after the tree, and the fixpoint
+//! passes it on. A call through either stands one stage below the node or
+//! forest it was read from [Abel-2004-termination_checking_with_types]. What
+//! the direct form refuses is in `../../pathological/data/rose.gandr`.
+//!
+//! - see: #3722 — a measure passes a parameter after the tree to its sibling,
+//!   by which `treeWeight` and `forestWeight` check
+//! - see: #517 — `Bush`
+//! - see: #393 — `nodes`
+//! - see: #452 — `shrub_nodes`, `grown_nodes`
+//! - cites: [Abel-2004-termination_checking_with_types]
+//!
+//! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
 
 // The naturals the measures count in, their addition, and the lists the
 // direct form nests through.

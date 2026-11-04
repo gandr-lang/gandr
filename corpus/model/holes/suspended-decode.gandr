@@ -1,11 +1,14 @@
-// A judgement blocked on an owed hole waits; it is not refused. A value at
-// the decode of a code the module owes cannot be checked until the code is
-// filled — filling it with `Integer` settles the comparison, filling it with
-// `String` refutes it — so the checker suspends the declaration, records the
-// hole it waits on, and owes that hole until a fill resumes it (Slattery and
-// Sterling, _Bidirectional Elaborators à la Carte_, arXiv:2607.09564, Exegesis
-// 6.6: suspension, not failure). The same declarations over a filled code
-// check.
+//! A judgement blocked on an owed hole waits; it is not refused. A value at the
+//! decode of a code the module owes cannot be checked until the code is filled
+//! — filling it with `Integer` settles the comparison, filling it with `String`
+//! refutes it — so the checker suspends the declaration, records the hole it
+//! waits on, and owes that hole until a fill resumes it
+//! [Slattery-2026-bidirectional_elaborators_carte], Exegesis 6.6: suspension,
+//! not failure. The same declarations over a filled code check.
+//!
+//! - cites: [Slattery-2026-bidirectional_elaborators_carte]
+//!
+//! [Slattery-2026-bidirectional_elaborators_carte]: https://arxiv.org/abs/2607.09564 "Slattery and Sterling, Bidirectional Elaborators à la Carte"
 
 /// A code the module owes: a type to be named later.
 @[ owes(1) ]
