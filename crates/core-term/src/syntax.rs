@@ -1975,17 +1975,18 @@ fn unstaged(
 }
 
 /// The computation `id` forces when it forces a value that holds its
-/// computation in place, `id` itself otherwise: `force (returned c)` is the
+/// computation in place, `id` itself otherwise. `force (returned c)` is the
 /// head the checker writes where a type applies a component of a dependent
-/// pair, and `c` the one a call on the selection lowers to; both print as the
-/// selection called. A forced thunk literal is its body, and so is a forced
-/// lambda nested where a value is read, which the force decides as a thunk;
-/// the printer writes each as the computation.
+/// pair. `c` is the head a call on the selection lowers to. A label spelling
+/// lowers the same projection nested. Both print as the selection called.
+/// A forced thunk literal is its body. A forced lambda nested where a value
+/// is read is its body. The printer writes each as the computation.
 ///
 /// # Specification
-/// - requires: nothing; an unreadable id is returned as it is.
-/// - ensures: `c` for `force (returned c)` and `force (thunk c)`, and for
-///   `force (nested c)` when `c` is a lambda; `id` for any other.
+/// - requires: nothing. An unreadable id is returned as it is.
+/// - ensures: `c` for `force (returned c)` and `force (thunk c)`. `c` for
+///   `force (nested c)` when `c` is a lambda or a projection. `id` for any
+///   other.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -2006,7 +2007,14 @@ fn forced_computation(
     match arena.value(forced) {
         Some(&(Value::Returned(body) | Value::Thunk(body))) => body,
         Some(&Value::Nested(body))
-            if matches!(arena.computation(body), Some(&Computation::Lambda(_))) =>
+            if matches!(
+                arena.computation(body),
+                Some(
+                    &Computation::Lambda(_)
+                        | &Computation::TupleProjection(..)
+                        | &Computation::RecordProjection(..)
+                )
+            ) =>
         {
             body
         },
@@ -5147,6 +5155,15 @@ mod tests
         let checked = called(&mut arena, forced);
         let selection = selected(&mut arena);
         let lowered = called(&mut arena, selection);
+        let nested = arena.value_nested(projected);
+        let nested = arena.computation_force(nested);
+        let nested = called(&mut arena, nested);
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, checked, nested),
+            CertificateEquality::Equal,
+            "a forced nested projection reads as the checker's head"
+        );
+
         let other = arena.computation_force(point);
         let elsewhere = called(&mut arena, other);
         assert_eq!(
@@ -5174,7 +5191,8 @@ mod tests
     /// #2325: a call whose head forces a function literal, a thunk or a
     /// lambda nested where a value is read, reads as the call of the lambda
     /// the printer writes, even where the literal's body neither returns nor
-    /// calls; a forced nested computation that is no lambda stays different.
+    /// calls. A forced nested computation that is no lambda and no projection
+    /// stays different.
     #[test]
     fn a_forced_literal_reads_as_its_computation_2325()
     {
@@ -5224,7 +5242,7 @@ mod tests
         assert_eq!(
             equal_type_reading(&arena, &signatures, other, forcing),
             CertificateEquality::Different,
-            "a forced nested computation that is no lambda stays itself"
+            "a forced nested computation that is no lambda and no projection stays itself"
         );
     }
 
