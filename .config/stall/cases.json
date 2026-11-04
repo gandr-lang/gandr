@@ -2483,5 +2483,132 @@
       "line": "STALL seat-idle theory 20m: no open pull request and no claim it holds; run `mise run claim:next theory`"
     },
     "output": "STALL seat-idle theory 20m: no open pull request and no claim it holds; run `mise run claim:next theory`. Decide: page the seat to claim; assign its next work"
+  },
+  {
+    "name": "#5116: a cancelled check on a head the CI depth gate stopped reads pending, a failure on it still fails, and a mark naming another head leaves its cancelled check failed (#5074)",
+    "program": "facts.jq",
+    "input": {
+      "pullRequests": {
+        "nodes": [
+          {
+            "number": 5112,
+            "isDraft": false,
+            "author": {
+              "__typename": "User",
+              "login": "agent-shade"
+            },
+            "headRefName": "lane-5112",
+            "baseRefName": "main",
+            "headRefOid": "5c57",
+            "createdAt": "2026-11-04T09:00:00Z",
+            "mergeable": "MERGEABLE",
+            "isInMergeQueue": false,
+            "mergeQueueEntry": null,
+            "closingIssuesReferences": {
+              "nodes": []
+            },
+            "comments": {
+              "nodes": [
+                {
+                  "body": "The CI depth gate stopped this head.\n\n<!-- landing:pr-depth:5c57 -->"
+                }
+              ]
+            },
+            "timelineItems": {
+              "nodes": []
+            },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "statusCheckRollup": {
+                      "contexts": {
+                        "nodes": [
+                          {
+                            "__typename": "CheckRun",
+                            "name": "test",
+                            "status": "COMPLETED",
+                            "conclusion": "CANCELLED",
+                            "startedAt": "2026-11-04T09:39:00Z",
+                            "completedAt": "2026-11-04T09:40:00Z"
+                          },
+                          {
+                            "__typename": "CheckRun",
+                            "name": "lint",
+                            "status": "COMPLETED",
+                            "conclusion": "FAILURE",
+                            "startedAt": "2026-11-04T09:39:00Z",
+                            "completedAt": "2026-11-04T09:40:00Z"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "number": 5111,
+            "isDraft": false,
+            "author": {
+              "__typename": "User",
+              "login": "agent-shade"
+            },
+            "headRefName": "lane-5111",
+            "baseRefName": "main",
+            "headRefOid": "5361",
+            "createdAt": "2026-11-04T09:00:00Z",
+            "mergeable": "MERGEABLE",
+            "isInMergeQueue": false,
+            "mergeQueueEntry": null,
+            "closingIssuesReferences": {
+              "nodes": []
+            },
+            "comments": {
+              "nodes": [
+                {
+                  "body": "<!-- landing:pr-depth:0ld -->"
+                }
+              ]
+            },
+            "timelineItems": {
+              "nodes": []
+            },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "statusCheckRollup": {
+                      "contexts": {
+                        "nodes": [
+                          {
+                            "__typename": "CheckRun",
+                            "name": "test",
+                            "status": "COMPLETED",
+                            "conclusion": "CANCELLED",
+                            "startedAt": "2026-11-04T09:39:00Z",
+                            "completedAt": "2026-11-04T09:40:00Z"
+                          },
+                          {
+                            "__typename": "CheckRun",
+                            "name": "lint",
+                            "status": "COMPLETED",
+                            "conclusion": "FAILURE",
+                            "startedAt": "2026-11-04T09:39:00Z",
+                            "completedAt": "2026-11-04T09:40:00Z"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "output": "{\"prs\":[{\"number\":5112,\"draft\":false,\"bot\":false,\"head\":\"lane-5112\",\"base\":\"main\",\"oid\":\"5c57\",\"created\":1793782800,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"queue\":null,\"removals\":[],\"claims\":[],\"checks\":[{\"name\":\"test\",\"verdict\":\"pending\",\"conclusion\":\"CANCELLED\",\"started\":1793785140,\"completed\":1793785200},{\"name\":\"lint\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793785140,\"completed\":1793785200}]},{\"number\":5111,\"draft\":false,\"bot\":false,\"head\":\"lane-5111\",\"base\":\"main\",\"oid\":\"5361\",\"created\":1793782800,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"queue\":null,\"removals\":[],\"claims\":[],\"checks\":[{\"name\":\"test\",\"verdict\":\"fail\",\"conclusion\":\"CANCELLED\",\"started\":1793785140,\"completed\":1793785200},{\"name\":\"lint\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793785140,\"completed\":1793785200}]}],\"merged\":[],\"filed\":[],\"claimed\":[]}"
   }
 ]
