@@ -2243,9 +2243,10 @@ fn carried_value(
 ///
 /// # Specification
 /// - requires: as [`environment`].
-/// - ensures: the substituted computation. `carried` gains one pair per node
-///   the substitution changed, as
-///   [`gandr_core_term::substitute_environment_traced`] reports it.
+/// - ensures: the substituted computation, a copy of an entry at each
+///   occurrence it replaces, so each written occurrence reads back to its own
+///   node (#5092). `carried` gains one pair per node the substitution changed,
+///   as [`gandr_core_term::substitute_environment_copied_traced`] reports it.
 /// - fails: as [`environment`].
 /// - panics: none.
 ///
@@ -2266,7 +2267,7 @@ fn carried_computation(
 ) -> Result<ComputationId, CheckRefusal>
 {
     let entries = environment(arena, depths, replaced)?;
-    match gandr_core_term::substitute_environment_traced(
+    match gandr_core_term::substitute_environment_copied_traced(
         arena,
         TermId::Computation(subject),
         &entries,

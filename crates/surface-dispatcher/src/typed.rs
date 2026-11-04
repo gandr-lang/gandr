@@ -7441,6 +7441,37 @@ mod tests
         );
     }
 
+    /// #5092: an arm that solves two index equations keeps the entry of each
+    /// name its body writes, at the name's own bytes.
+    #[test]
+    fn a_refined_arm_keeps_the_entry_of_each_name_its_body_writes_5092()
+    {
+        let written = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\
+                       data Two : (p : Nat, q : Nat) --> Type where {\n  | T : (x : Nat, y : Nat) \
+                       --> Two(x, y)\n}\ndata At2 : (p : Nat, q : Nat) --> Type where {\n  | A2 : \
+                       (x : Nat, y : Nat) --> At2(x, y)\n}\ndef pair(p : Nat, q : Nat, t : Two(p, \
+                       q)) -> At2(p, q) {\n  match t { T(x, y) => A2(x, y) }\n}\n";
+        let table = table(SourceText::from(written));
+        let call = written
+            .rfind("A2(x, y)")
+            .expect("the arm's body is written");
+        let own = |at: usize| {
+            table
+                .answering(ByteOffset::from(at))
+                .map(|span| (usize::from(span.start()), usize::from(span.end())))
+        };
+        let x = call.saturating_add(3_usize);
+        let y = call.saturating_add(6_usize);
+        assert_eq!(
+            (own(x), own(y)),
+            (
+                Some((x, x.saturating_add(1_usize))),
+                Some((y, y.saturating_add(1_usize)))
+            ),
+            "each name the arm's body writes answers at its own bytes"
+        );
+    }
+
     /// #1487: the name of a recursive call, written with its claim as
     /// `plus[<]`, reads as the force that runs the call, as any called name
     /// does.
