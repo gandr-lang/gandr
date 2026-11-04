@@ -8,4 +8,5 @@ error[NonCovariantMotive]: a flow runs one way: `Flow.ride` may use the moving e
 17 │ │   }
    │ └───┘ checked against `() => Flow(Type, Integer * String, String * Integer)`; while checking the body of this thunk
    │
-   ╰ note: `downgrade` is refused with NonCovariantMotive, as its expectation states
+   ├ note: `downgrade` is refused with NonCovariantMotive, as its expectation states
+   ╰ help: use the moving endpoint only where a run of it is produced

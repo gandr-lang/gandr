@@ -4,4 +4,5 @@ error[ModelAmbiguous]: more than one module in scope answers the model implicit 
 31 │ def ambiguous() -> Integer { pointOf(3) }
    │                              ━━━━━━━━━━ a model implicit more than one module answers
    │
-   ╰ note: `ambiguous` is refused with ModelAmbiguous, as its expectation states
+   ├ note: `ambiguous` is refused with ModelAmbiguous, as its expectation states
+   ╰ help: supply the intended model by name in brackets before the parentheses

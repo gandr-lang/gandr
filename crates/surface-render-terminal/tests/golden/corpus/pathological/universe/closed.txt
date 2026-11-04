@@ -44,4 +44,5 @@ error[OutOfFragment.Arity]: the type variable cannot take 0 operands
 54 │ def unapplied(c : U) -> -F el { return c }
    │                            ━━ the wrong number of operands
    │
-   ╰ note: `unapplied` is refused with OutOfFragment.Arity, as its expectation states
+   ├ note: `unapplied` is refused with OutOfFragment.Arity, as its expectation states
+   ╰ help: give the form its declared number of operands

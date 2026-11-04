@@ -4,4 +4,5 @@ error[UninterfacedMember]: the theory cannot stand as the interface its handler 
 11 │   handle st : Stored {
    │               ━━━━━━ a member the handler cannot read as an operation
    │
-   ╰ note: `unfixed` is refused with UninterfacedMember, as its expectation states
+   ├ note: `unfixed` is refused with UninterfacedMember, as its expectation states
+   ╰ help: give the theory an unfixed carrier sort and operations that return it

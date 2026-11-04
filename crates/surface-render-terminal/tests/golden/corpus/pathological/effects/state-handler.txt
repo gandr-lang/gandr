@@ -22,7 +22,8 @@ error[UninterfacedMember]: the theory cannot stand as the interface its handler 
 18 │   handle st : State.Eff {
    │               ━━━━━━━━━ a member the handler cannot read as an operation
    │
-   ╰ note: `unfixed` is refused with UninterfacedMember, as its expectation states
+   ├ note: `unfixed` is refused with UninterfacedMember, as its expectation states
+   ╰ help: give the theory an unfixed carrier sort and operations that return it
 
 error[UninterfacedMember]: the theory cannot stand as the interface its handler reads at `C`, which is the sort the operations return, which the handler's answer fixes
    ╭▸ corpus/pathological/effects/state-handler.gandr:31:15
@@ -30,7 +31,8 @@ error[UninterfacedMember]: the theory cannot stand as the interface its handler 
 31 │   handle st : State.Eff with sort S = Integer with sort C = Integer {
    │               ━━━━━━━━━ a member the handler cannot read as an operation
    │
-   ╰ note: `carrierFixed` is refused with UninterfacedMember, as its expectation states
+   ├ note: `carrierFixed` is refused with UninterfacedMember, as its expectation states
+   ╰ help: give the theory an unfixed carrier sort and operations that return it
 
 error[UnresolvedName]: `T` is not defined
    ╭▸ corpus/pathological/effects/state-handler.gandr:43:35
@@ -103,7 +105,8 @@ error[ModelAmbiguous]: more than one module in scope is a model of `State.Eff` a
 119 │ ┃   }
     │ ┗━━━┛ a model implicit more than one module answers
     │
-    ╰ note: `ambiguousInScope` is refused with ModelAmbiguous, as its expectation states
+    ├ note: `ambiguousInScope` is refused with ModelAmbiguous, as its expectation states
+    ╰ help: supply the intended model by name in brackets before the parentheses
 
 error[CapabilityAmplified]: this capability grants less than the one expected here
     ╭▸ corpus/pathological/effects/state-handler.gandr:142:5

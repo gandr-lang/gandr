@@ -6,4 +6,5 @@ error[RulesOverlapCondition]: this rule and an earlier one rewrite overlapping t
 11 │   rule vacant : nu(bind a . nil()) <=> nil();
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
    │
-   ╰ note: `VacantOverlap` is refused with RulesOverlapCondition, as its expectation states
+   ├ note: `VacantOverlap` is refused with RulesOverlapCondition, as its expectation states
+   ╰ help: add a rule that joins the overlap under its condition

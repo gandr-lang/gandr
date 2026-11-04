@@ -4,4 +4,5 @@ error[NotSynthesisable]: the type of a computation written where a value is read
 3 │ def in_infix = ? + 1;
   │                ━━━━━ needs a type to be checked against
   │
-  ╰ note: `in_infix` is refused with NotSynthesisable, as its expectation states
+  ├ note: `in_infix` is refused with NotSynthesisable, as its expectation states
+  ╰ help: write a type ascription for this form

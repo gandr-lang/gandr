@@ -8,4 +8,5 @@ error[NonCovariantMotive]: a flow runs one way: `Flow.ride` may use the moving e
 16 │ │   }
    │ └───┘ checked; while checking the body of this thunk
    │
-   ╰ note: `reversed` is refused with NonCovariantMotive, as its expectation states
+   ├ note: `reversed` is refused with NonCovariantMotive, as its expectation states
+   ╰ help: use the moving endpoint only where a run of it is produced

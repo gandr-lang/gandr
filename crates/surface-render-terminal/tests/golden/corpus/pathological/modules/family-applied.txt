@@ -4,7 +4,8 @@ error[OutOfFragment.Arity]: the type path cannot take 2 operands
 23 │ def twice(x : Shapes.Same(Integer, Bool)) -> Integer { 0 }
    │               ━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
    │
-   ╰ note: `twice` is refused with OutOfFragment.Arity, as its expectation states
+   ├ note: `twice` is refused with OutOfFragment.Arity, as its expectation states
+   ╰ help: give the form its declared number of operands
 
 error[OutOfFragment.Arity]: the type path cannot take 1 operands
    ╭▸ corpus/pathological/modules/family-applied.gandr:27:14
@@ -12,7 +13,8 @@ error[OutOfFragment.Arity]: the type path cannot take 1 operands
 27 │ def flat(x : Shapes.Count(Integer)) -> Integer { 0 }
    │              ━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
    │
-   ╰ note: `flat` is refused with OutOfFragment.Arity, as its expectation states
+   ├ note: `flat` is refused with OutOfFragment.Arity, as its expectation states
+   ╰ help: give the form its declared number of operands
 
 error[OutOfFragment.projection_expression]: the type path is not supported yet
    ╭▸ corpus/pathological/modules/family-applied.gandr:31:18

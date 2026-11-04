@@ -22,7 +22,8 @@ error[ModelAmbiguous]: more than one module in scope answers the model implicit 
 52 │ def twin() -> Integer { stepped(4) }
    │                         ━━━━━━━━━━ a model implicit more than one module answers
    │
-   ╰ note: `twin` is refused with ModelAmbiguous, as its expectation states
+   ├ note: `twin` is refused with ModelAmbiguous, as its expectation states
+   ╰ help: supply the intended model by name in brackets before the parentheses
 
 error[ModelAmbiguous]: more than one module in scope answers the model implicit `s` this call to `fromZero` omits: `Up` and `Tens`; supply the one meant as `fromZero[.s = …](…)`
    ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:65:29
@@ -30,7 +31,8 @@ error[ModelAmbiguous]: more than one module in scope answers the model implicit 
 65 │ def manifest() -> Integer { fromZero() }
    │                             ━━━━━━━━━━ a model implicit more than one module answers
    │
-   ╰ note: `manifest` is refused with ModelAmbiguous, as its expectation states
+   ├ note: `manifest` is refused with ModelAmbiguous, as its expectation states
+   ╰ help: supply the intended model by name in brackets before the parentheses
 
 error[ModelUnanswered]: no module in scope answers the model implicit `s` this call to `fromText` omits at the types its arguments force: `Up` and `Tens` do not; supply one as `fromText[s = …](…)`
    ╭▸ corpus/pathological/modules/model-implicit-resolution.gandr:74:30

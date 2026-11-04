@@ -133,6 +133,10 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             ..
         } => format!("write {sort} in this position"),
         LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from("give the form its declared number of operands"),
+        LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::Unbound,
             ..
         } => String::from(
@@ -191,6 +195,21 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::NonExhaustiveMatch { .. } => String::from(
             "add an arm for the values that no arm matches, or a last arm that matches any value",
         ),
+        LoweringRefusal::UninterfacedMember { .. } => {
+            String::from("give the theory an unfixed carrier sort and operations that return it")
+        },
+        LoweringRefusal::ViewNotPlace { .. } => {
+            String::from("return a place of `self` with type `View[m](a)`")
+        },
+        LoweringRefusal::RulesUnoriented { .. } => {
+            String::from("make the rule's right side smaller than its left in the path order")
+        },
+        LoweringRefusal::RulesNonLinear { .. } => {
+            String::from("use each variable once on the rule's left side")
+        },
+        LoweringRefusal::RulesOverlapCondition { .. } => {
+            String::from("add a rule that joins the overlap under its condition")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::DuplicateSignature { .. }
@@ -220,7 +239,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::UnreadAscription { .. }
         | LoweringRefusal::UnreadCells { .. }
         | LoweringRefusal::UnstatedComponent { .. }
-        | LoweringRefusal::UninterfacedMember { .. }
         | LoweringRefusal::UndescribedMember { .. }
         | LoweringRefusal::FamilyTelescope { .. }
         | LoweringRefusal::ImplicitTelescope { .. }
@@ -234,7 +252,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::EntryType { .. }
         | LoweringRefusal::StrayReceiverMode { .. }
         | LoweringRefusal::AmbiguousMethod { .. }
-        | LoweringRefusal::ViewNotPlace { .. }
         | LoweringRefusal::ViewOfNoPlace { .. }
         | LoweringRefusal::MismatchedPattern { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
@@ -246,10 +263,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::WithoutK { .. }
         | LoweringRefusal::DirectedCell { .. }
         | LoweringRefusal::CellNotALoop { .. }
-        | LoweringRefusal::RulesUnoriented { .. }
-        | LoweringRefusal::RulesNonLinear { .. }
         | LoweringRefusal::RulesOverlapSecondOrder { .. }
-        | LoweringRefusal::RulesOverlapCondition { .. }
         | LoweringRefusal::RulesDiverge { .. }
         | LoweringRefusal::RulesNeverComplete { .. }
         | LoweringRefusal::RulesUndecided { .. }
@@ -612,6 +626,18 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             "declare a module that is a model of the theory at these types, or supply one by name \
              in brackets",
         ),
+        CheckRefusal::RuleNotPresentable { .. } => String::from(
+            "write each rule with a declared constructor at its head and its declared field count",
+        ),
+        CheckRefusal::NotSynthesisable { .. } => {
+            String::from("write a type ascription for this form")
+        },
+        CheckRefusal::ModelAmbiguous { .. } => {
+            String::from("supply the intended model by name in brackets before the parentheses")
+        },
+        CheckRefusal::NonCovariantMotive { .. } => {
+            String::from("use the moving endpoint only where a run of it is produced")
+        },
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::UnenclosedRun {
             source: RunSource::Written,
@@ -620,7 +646,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::NotADataType(_)
         | CheckRefusal::DataKindNotUniverse(_)
         | CheckRefusal::DataFieldLevel { .. }
-        | CheckRefusal::RuleNotPresentable { .. }
         | CheckRefusal::LoopNotRespected { .. }
         | CheckRefusal::LoopUndecided { .. }
         | CheckRefusal::AbstractKindNotUniverse(_)
@@ -654,7 +679,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::FillUncertified { .. }
         | CheckRefusal::GeneratorFamilyUnsupported { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
-        | CheckRefusal::NotSynthesisable { .. }
         | CheckRefusal::UnknownConstant { .. }
         | CheckRefusal::OutOfFragment { .. }
         | CheckRefusal::UnboundIndex { .. }
@@ -681,7 +705,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::Access { .. }
         | CheckRefusal::Codata { .. }
         | CheckRefusal::Located { .. }
-        | CheckRefusal::ModelAmbiguous { .. }
         | CheckRefusal::TacticRefused { .. }
         | CheckRefusal::CapabilityForged { .. }
         | CheckRefusal::LiteralAmbiguous { .. }
@@ -696,7 +719,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::SessionCodeExpected { .. }
         | CheckRefusal::OpenSessionPayload { .. }
         | CheckRefusal::UnassertedLaw { .. }
-        | CheckRefusal::NonCovariantMotive { .. }
         | CheckRefusal::RideUnsupported { .. }
         | CheckRefusal::DialogueUnmatched { .. }
         | CheckRefusal::DialogueInverted { .. }
@@ -717,7 +739,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 46] = [
+    const WORDED: [&str; 56] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -765,6 +787,16 @@ mod tests
         "HeldCaptured",
         "HeldKept",
         "IllTypedPayload",
+        "ModelAmbiguous",
+        "NonCovariantMotive",
+        "NotSynthesisable",
+        "OutOfFragment.Arity",
+        "RuleNotPresentable",
+        "RulesNonLinear",
+        "RulesOverlapCondition",
+        "RulesUnoriented",
+        "UninterfacedMember",
+        "ViewNotPlace",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

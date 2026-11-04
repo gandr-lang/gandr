@@ -4,7 +4,8 @@ error[NotSynthesisable]: the type of a decimal literal cannot be inferred where 
 11 │ def low = 0.2;
    │           ━━━ needs a type to be checked against
    │
-   ╰ note: `low` is refused with NotSynthesisable, as its expectation states
+   ├ note: `low` is refused with NotSynthesisable, as its expectation states
+   ╰ help: write a type ascription for this form
 
 error[NotSynthesisable]: the type of a decimal literal cannot be inferred where it stands
    ╭▸ corpus/pathological/basics/fractions.gandr:15:13
@@ -12,7 +13,8 @@ error[NotSynthesisable]: the type of a decimal literal cannot be inferred where 
 15 │ def small = 1e-3;
    │             ━━━━ needs a type to be checked against
    │
-   ╰ note: `small` is refused with NotSynthesisable, as its expectation states
+   ├ note: `small` is refused with NotSynthesisable, as its expectation states
+   ╰ help: write a type ascription for this form
 
 error[OutOfFragment.typed_number]: the typed number is not supported yet
    ╭▸ corpus/pathological/basics/fractions.gandr:19:14
