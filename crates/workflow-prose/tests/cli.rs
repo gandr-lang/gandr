@@ -75,7 +75,8 @@ fn a_new_finding_is_refused_with_its_fix()
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         "corpus/a.gandr:1: Tense: \"The kernel reduced the term.\" — state it in the present \
-         tense\n"
+         tense\ncorpus/a.gandr:1: Head: \"the head is not four paragraphs\" — open the source on \
+         four paragraphs: what, why, how and references\n"
     );
     std::fs::remove_dir_all(&root).unwrap();
 }
@@ -149,22 +150,29 @@ fn a_stale_line_is_refused_and_written_away()
     assert_eq!(output.status.code(), Some(1_i32));
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "corpus/prose.ledger: stale line `corpus/a.gandr Tense 0123456789abcdef`: no finding \
-         matches it; run `mise run check:prose --write`\n"
+        "corpus/a.gandr:1: Head: \"the head is not four paragraphs\" — open the source on four \
+         paragraphs: what, why, how and references\ncorpus/prose.ledger: stale line \
+         `corpus/a.gandr Tense 0123456789abcdef`: no finding matches it; run `mise run \
+         check:prose --write`\n"
     );
     let written = run!(root, ["--write"], "");
     assert!(written.status.success());
     assert_eq!(
         String::from_utf8_lossy(&written.stdout),
-        "prose: wrote 0 ledger lines\n"
+        "prose: wrote 1 ledger lines\n"
     );
     let ledger = std::fs::read_to_string(root.join("corpus/prose.ledger")).unwrap();
-    assert!(ledger.lines().all(|line| line.starts_with('#')), "{ledger}");
+    let lines: Vec<_> = ledger
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .collect();
+    assert_eq!(lines.len(), 1, "{ledger}");
+    assert!(lines[0].starts_with("corpus/a.gandr Head "), "{ledger}");
     let again = run!(root, NO_ARGS, "");
     assert!(again.status.success());
     assert_eq!(
         String::from_utf8_lossy(&again.stdout),
-        "prose: 0 findings, every one in the ledger\n"
+        "prose: 1 findings, every one in the ledger\n"
     );
     std::fs::remove_dir_all(&root).unwrap();
 }
@@ -177,7 +185,7 @@ fn a_written_finding_passes_until_its_sentence_is_fixed()
     let ledger = std::fs::read_to_string(root.join("corpus/prose.ledger")).unwrap();
     assert_eq!(
         ledger.lines().filter(|line| !line.starts_with('#')).count(),
-        1,
+        2,
         "{ledger}"
     );
     assert!(run!(root, NO_ARGS, "").status.success());
