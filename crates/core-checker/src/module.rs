@@ -1554,8 +1554,10 @@ fn decide(
     let mut signed = finish(context, outer);
     let direction = match direction {
         Ok(direction) => direction,
-        // The signature's refusal keeps the binders it stood under.
+        // The signature's refusal keeps the binders it stood under, and
+        // names what the solver bound while it formed.
         Err(failure) => {
+            let failure = solved_failure(context, failure);
             let _home = context.binders().relocate(World::Host);
             let refusal = failure.refusal();
             return Decision {
@@ -1683,6 +1685,8 @@ fn decide(
                 )),
                 (judged, _) => judged,
             };
+            // A refusal names what the solver bound before it.
+            let judged = judged.map_err(|failure| solved_failure(context, failure));
             relating = context.take_relating();
             restating = context.take_restating();
             residue = context.deferrals_mut().take();
@@ -2307,6 +2311,54 @@ where
         }
     }
     subject
+}
+
+/// `failure` with each type its refusal compares read through every solution
+/// the solver holds now. A hole the solver left unbound stays a hole.
+///
+/// # Specification
+/// - requires: `context`'s deferrals are those of the run that refused.
+/// - ensures: `failure` whose [`Failure::solved`] reads each type its refusal
+///   compares through [`crate::elaboration::Deferrals::bound`], as
+///   [`solved_type`] reads it under the binders the failure stood under, where
+///   a solution changes one; the refusal itself unchanged.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a mismatch at a call whose argument bound its implicit
+///   reads the found type at the solution.
+/// - witness: `module::tests::a_refusal_names_the_implicit_its_call_solved_5033`
+#[spec(
+    captures: refusal = failure.refusal(),
+    ensures: |ret| ret.refusal() == refusal,
+)]
+fn solved_failure(
+    context: &mut CheckingContext<'_>,
+    failure: Failure,
+) -> Failure
+{
+    let bound = context.deferrals().bound(context.arena());
+    if bound.is_empty() {
+        return failure;
+    }
+    let depth = gandr_core_term::BinderDepth::from(failure.hypotheses().len());
+    let compared = failure.refusal().compared();
+    let mut read = |side| match side {
+        Maybe::Present(written) => {
+            Maybe::Present(solved_type(context.arena_mut(), (written, depth), &bound))
+        },
+        absent @ Maybe::Absent(_) => absent,
+    };
+    let solved = crate::refusal::Compared {
+        expected: read(compared.expected),
+        found: read(compared.found),
+    };
+    if solved == compared {
+        failure
+    }
+    else {
+        failure.solved_as(solved)
+    }
 }
 
 /// The failure of a body whose call omits an implicit the solver left

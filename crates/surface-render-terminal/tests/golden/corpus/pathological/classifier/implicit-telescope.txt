@@ -67,7 +67,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 40 │ def disagreeing() -> Unit { same(3) }
    │ ┬────────────────────┬──────┯━━━━━━──
    │ │                    │      │
-   │ │                    │      its type does not convert: expected `-F Unit`, found `-F ?`
+   │ │                    │      its type does not convert: expected `-F Unit`, found `-F Integer`
    │ │                    the type it is checked against
    │ checked against `() => Unit`; while checking the body of this thunk
    │
@@ -134,7 +134,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 94 │ def disagreeingSigned : Path(Integer, same(unit), 3) = Path.here(3);
    │                         ┬────┬────────┯━━━━━━━━━────
    │                         │    │        │
-   │                         │    │        its type does not convert: expected `Integer`, found `?`
+   │                         │    │        its type does not convert: expected `Integer`, found `Unit`
    │                         │    the type it is checked against
    │                         formed; while checking the remaining parts of this
    │

@@ -802,23 +802,83 @@ impl Deferrals
     {
         let mut solutions = BTreeMap::new();
         for &at in &self.nominated {
-            let Some(meta) = self.decoded(arena, Side::Value(at))
-            else {
-                return Err((at, Unsolved::Dangling));
-            };
-            match (
-                arena.value(at),
-                self.metas.solution(meta),
-                self.metas.scope(meta),
-            ) {
-                (Some(&Value::Hole(hole)), Maybe::Present(solution), Maybe::Present(scope)) => {
-                    let _first = solutions.insert(hole, (solution, scope));
-                },
-                (_, Maybe::Present(_) | Maybe::Absent(_), Maybe::Present(_) | Maybe::Absent(_)) => {
-                    return Err((at, self.unsolved(arena, meta)));
-                },
-            }
+            let (hole, solution) = self.binding(arena, at).map_err(|unsolved| (at, unsolved))?;
+            let _first = solutions.insert(hole, solution);
         }
+        self.extend_answered(&mut solutions);
+        Ok(solutions)
+    }
+
+    /// Each nominated hole the running judgement met that the solver bound,
+    /// with its solution and the binders it is written under; each hole a
+    /// slot's resolution answered; and each hole a splice wrote, with its
+    /// tactic's answer. A hole the solver left unbound is left out.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: what [`Self::solutions`] answers when every met hole is
+    ///   bound; otherwise the same entries less each hole left unbound.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refusal after a call whose argument binds its
+    ///   implicit names the solution, where [`Self::solutions`] answers nothing
+    ///   while a later hole is unbound.
+    /// - witness: `module::tests::a_refusal_names_the_implicit_its_call_solved_5033`
+    #[spec(ensures: |ret| ret.len() <= self.nominated.len().saturating_add(self.answered.len()).saturating_add(self.spliced.len()))]
+    pub fn bound(
+        &self,
+        arena: &CoreArena,
+    ) -> BTreeMap<HoleId, (ValueId, Binders)>
+    {
+        let mut bound: BTreeMap<HoleId, (ValueId, Binders)> = self
+            .nominated
+            .iter()
+            .filter_map(|&at| self.binding(arena, at).ok())
+            .collect();
+        self.extend_answered(&mut bound);
+        bound
+    }
+
+    /// The hole the nominated node `at` stands for, with the solver's solution
+    /// and the binders it is written under, or why the solver left it
+    /// unbound.
+    ///
+    /// # Specification
+    /// trivial.
+    fn binding(
+        &self,
+        arena: &CoreArena,
+        at: ValueId,
+    ) -> Result<(HoleId, (ValueId, Binders)), Unsolved>
+    {
+        let meta = self
+            .decoded(arena, Side::Value(at))
+            .ok_or(Unsolved::Dangling)?;
+        match (
+            arena.value(at),
+            self.metas.solution(meta),
+            self.metas.scope(meta),
+        ) {
+            (Some(&Value::Hole(hole)), Maybe::Present(solution), Maybe::Present(scope)) => {
+                Ok((hole, (solution, scope)))
+            },
+            (_, Maybe::Present(_) | Maybe::Absent(_), Maybe::Present(_) | Maybe::Absent(_)) => {
+                Err(self.unsolved(arena, meta))
+            },
+        }
+    }
+
+    /// Add to `solutions` each hole a slot's resolution answered, and each
+    /// hole a splice wrote that `solutions` does not hold.
+    ///
+    /// # Specification
+    /// trivial.
+    fn extend_answered(
+        &self,
+        solutions: &mut BTreeMap<HoleId, (ValueId, Binders)>,
+    )
+    {
         // A candidate's components are closed, so each reads the same under
         // any binders the hole stands beneath.
         solutions.extend(
@@ -829,7 +889,6 @@ impl Deferrals
         for (&hole, &fill) in &self.spliced {
             let _first = solutions.entry(hole).or_insert(fill);
         }
-        Ok(solutions)
     }
 
     /// Resolve each slot of `models` the running judgement met to the one

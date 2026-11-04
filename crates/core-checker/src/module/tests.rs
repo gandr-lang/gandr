@@ -3768,3 +3768,78 @@ fn a_hosted_law_is_admitted_only_where_the_host_asserts_it_2302()
         );
     }
 }
+
+/// #5033: a refusal after a call whose argument bound the call's implicit
+/// names the solution, never the hole. `same` at `unit` returns `Unit`, and
+/// the body is checked at `F Integer`.
+#[test]
+fn a_refusal_names_the_implicit_its_call_solved_5033()
+{
+    use gandr_core_term::Zone;
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::NominationIndex;
+
+    // def same : U ((a : Type) -> El a -> F (El a)) = thunk λ λ. return x ;
+    // def wrongly : U (F Integer) = thunk ((force same) ?a) unit ;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let element = arena.value_type_element(bound, Level::zero());
+    let returns_element = arena.comp_type_returner(element);
+    let arrow = arena.comp_type_arrow(element, returns_element);
+    let polymorphic = arena.comp_type_pi(small, arrow);
+    let same_type = arena.value_type_thunk(polymorphic);
+    let returned = arena.computation_return(bound);
+    let inner = arena.computation_lambda(returned);
+    let outer = arena.computation_lambda(inner);
+    let same = arena.value_thunk(outer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let suspended = arena.value_type_thunk(returns_integer);
+    let unit = arena.value_unit();
+    let hole = arena.value_hole(
+        HoleId::nominated(NominationIndex::from(0_u32)).expect("the first nominated name"),
+    );
+    let constant = arena.value_constant(ConstantIndex::from(0_usize));
+    let forced = arena.computation_force(constant);
+    let head = arena.computation_application(forced, hole);
+    let applied = arena.computation_application(head, unit);
+    let call = arena.value_thunk(applied);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let report = check_module(&mut context, &[
+        declaration(At(0), Maybe::Present(same_type), Maybe::Present(same)),
+        declaration(At(1), Maybe::Present(suspended), Maybe::Present(call)),
+    ]);
+    let failure = &report.failures()[&ConstantIndex::from(1_usize)];
+    let Maybe::Present(crate::refusal::TypeNode::Computation(found)) =
+        failure.refusal().compared().found
+    else {
+        panic!(
+            "the mismatch names the computation type it found: {:?}",
+            failure.refusal()
+        );
+    };
+    let crate::refusal::TypeNode::Computation(solved) =
+        failure.solved(crate::refusal::TypeNode::Computation(found))
+    else {
+        panic!("the found type reads as a computation type: {failure:?}");
+    };
+    let arena = context.arena();
+    let returned = |at| match arena.comp_type(at) {
+        Some(&gandr_core_term::CompType::Returner { result, .. }) => arena.value_type(result),
+        _ => None,
+    };
+    assert!(
+        matches!(
+            returned(found),
+            Some(gandr_core_term::ValueType::Element { .. })
+        ),
+        "as written, the call returns the decode of the hole: {:?}",
+        returned(found)
+    );
+    assert!(
+        matches!(returned(solved), Some(gandr_core_term::ValueType::Product(fields)) if fields.is_empty()),
+        "as solved, it returns the unit the argument bound: {:?}",
+        returned(solved)
+    );
+}

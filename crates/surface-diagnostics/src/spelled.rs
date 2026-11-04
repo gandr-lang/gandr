@@ -298,15 +298,16 @@ impl TypeSpellings
     ///   outside it, each read as [`constant_names`] reads it for the source
     ///   holding the declaration whose refusal or failure names the type; a
     ///   dependent arrow's binder is named as the source writes it, where it
-    ///   captures nothing; a type a failure names is spelled under the
-    ///   hypotheses it stands under, each by the name
-    ///   [`crate::frame::contexts`] gives it, and in the regions it stands in,
-    ///   each by its scope's capability or its hold's slot as written, and at
-    ///   its definition's region binders, each by its name in the telescope, a
-    ///   failure's first naming of a node winning; a type the printer cannot
-    ///   spell, or whose line is wider than a page of [`SPELLING_WIDTH`]
-    ///   columns, is left unkeyed, and is never laid out; nothing else is
-    ///   keyed.
+    ///   captures nothing; a compared type that [`Failure::solved`] reads
+    ///   through a solution is keyed as written and spelled as solved; a type a
+    ///   failure names is spelled under the hypotheses it stands under, each by
+    ///   the name [`crate::frame::contexts`] gives it, and in the regions it
+    ///   stands in, each by its scope's capability or its hold's slot as
+    ///   written, and at its definition's region binders, each by its name in
+    ///   the telescope, a failure's first naming of a node winning; a type the
+    ///   printer cannot spell, or whose line is wider than a page of
+    ///   [`SPELLING_WIDTH`] columns, is left unkeyed, and is never laid out;
+    ///   nothing else is keyed.
     /// - provides: the spellings a diagnostic reads a refusal's types from once
     ///   the arena is gone.
     /// - fails: never.
@@ -471,6 +472,9 @@ fn spell<'failure>(
     // Each type named, with the source that reads it: the one holding the
     // declaration whose refusal or failure names it.
     let mut named: Vec<(TypeNode, Scoped, SourceIndex)> = Vec::new();
+    // Each compared type a failure reads through the solver's solutions:
+    // keyed as written, spelled as solved.
+    let mut solved: BTreeMap<TypeNode, TypeNode> = BTreeMap::new();
     let unit = module.unit();
     let holders: BTreeMap<ConstantIndex, SourceIndex> = module
         .declarations()
@@ -489,6 +493,16 @@ fn spell<'failure>(
             .unwrap_or_else(|| unit.last())
     };
     for (&constant, failure) in failures {
+        let compared = failure.refusal().compared();
+        solved.extend(
+            [compared.expected, compared.found]
+                .into_iter()
+                .filter_map(|side| match side {
+                    Maybe::Present(written) => Some((written, failure.solved(written))),
+                    Maybe::Absent(_) => None,
+                })
+                .filter(|&(written, read)| written != read),
+        );
         let reader = reader_of(constant);
         bindings.push(
             module
@@ -753,7 +767,7 @@ fn spell<'failure>(
         else {
             continue;
         };
-        let root = match node {
+        let root = match solved.get(&node).copied().unwrap_or(node) {
             TypeNode::Value(id) => CoreNode::ValueType(id),
             TypeNode::Computation(id) => CoreNode::CompType(id),
         };

@@ -101,7 +101,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 74 │ ┃│   Path(Circle, Base, Base),
 75 │ ┃│   _
 76 │ ┃│ ));
-   │ ┗│━│┛ its type does not convert: expected `Path(Type, Path(Circle, Base, Base), Unit)`, found `Path(Type, Path(Circle, Base, Base), _)`
+   │ ┗│━│┛ its type does not convert: expected `Path(Type, Path(Circle, Base, Base), Unit)`, found `Path(Type, Path(Circle, Base, Base), Int)`
    │  └─┤
    │    the type it synthesises
    │

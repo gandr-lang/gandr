@@ -686,16 +686,21 @@ pub struct Failure
     /// The refusal.
     refusal: CheckRefusal,
     /// The frames pending, outermost first.
-    obligations: Vec<Obligation>,
+    obligations: Box<[Obligation]>,
     /// The goal under way.
     pursuit: Pursuit,
     /// The binders the run had opened, outermost first. Boxed slices, not
     /// vectors: a failure is returned by value on every refused path, and
-    /// the two capacities it would never use kept it past the size an error
-    /// is passed at cheaply.
+    /// the capacities it would never use kept it past the size an error is
+    /// passed at cheaply.
     hypotheses: Box<[ValueTypeId]>,
     /// The endpoints the run had bound, outermost first.
     endpoints: Box<[LiveEndpoint]>,
+    /// The types the refusal compares, read through the solutions the
+    /// solver held when it refused; none when no solution changed either.
+    /// One thin box, so the failure stays at the size an error is passed
+    /// at cheaply.
+    solved: Option<Box<crate::refusal::Compared>>,
 }
 
 impl Failure
@@ -716,10 +721,11 @@ impl Failure
     {
         Self {
             refusal,
-            obligations,
+            obligations: obligations.into_boxed_slice(),
             pursuit,
             hypotheses: hypotheses.into_boxed_slice(),
             endpoints: endpoints.into_boxed_slice(),
+            solved: None,
         }
     }
 
@@ -735,10 +741,11 @@ impl Failure
     {
         Self {
             refusal,
-            obligations: Vec::new(),
+            obligations: Box::default(),
             pursuit,
             hypotheses: Box::default(),
             endpoints: Box::default(),
+            solved: None,
         }
     }
 
@@ -773,6 +780,55 @@ impl Failure
             hypotheses: outer.into_boxed_slice(),
             ..self
         }
+    }
+
+    /// This failure with the types its refusal compares read as `solved`;
+    /// the refusal, its frames, its pursuit, its binders and its endpoints
+    /// unchanged.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn solved_as(
+        self,
+        solved: crate::refusal::Compared,
+    ) -> Self
+    {
+        Self {
+            solved: Some(Box::new(solved)),
+            ..self
+        }
+    }
+
+    /// `written`, a type the refusal compares, as the solutions the solver
+    /// held at the refusal read it; `written` itself when no solution
+    /// changed it or the refusal does not compare it. The refusal keeps the
+    /// type as written, so a face finds where the source wrote it, and
+    /// spells it as solved.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn solved(
+        &self,
+        written: TypeNode,
+    ) -> TypeNode
+    {
+        let Some(solved) = self.solved.as_deref()
+        else {
+            return written;
+        };
+        let compared = self.refusal.compared();
+        [
+            (compared.expected, solved.expected),
+            (compared.found, solved.found),
+        ]
+        .into_iter()
+        .find_map(|sides| match sides {
+            (Maybe::Present(side), Maybe::Present(read)) if side == written => Some(read),
+            _ => None,
+        })
+        .unwrap_or(written)
     }
 
     /// The refusal.
