@@ -1,6 +1,6 @@
 //! The transports of the derived path operations a source writes, as its
-//! lowering derived them, for the explicit spelling of `Path.step(p, q)`,
-//! `Path.back(p)` and `Path.ap(f, p)`.
+//! lowering derived them, for the explicit spelling of `Path.step p q`,
+//! `Path.back p` and `Path.ap f p`.
 //!
 //! `Path.step(p, q)` is the transport `Path.walk(fun (y) { Path[.A = A](a, y)
 //! }, q, p)`, `Path.back(p)` is `Path.walk(fun (y) { Path[.A = A](y, a) }, p,
@@ -13,14 +13,14 @@
 //! third the value it moves, under the names the source writes for the binders
 //! around the operation. An operation whose transport the printer cannot spell
 //! faithfully — one standing under a binder the source names nothing — has
-//! none, keeps its spelling and is reported. `Path.step(p, q)` lowers to the
+//! none, keeps its spelling and is reported. `Path.step p q` lowers to the
 //! composite of its two cells, which returns the transport above as the fold it
 //! realises: the fold is read at the composite's own node.
 //!
 //! # References
 //!
-//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: `Path.step(p, q)`
-//!   is the composite at the 2-chain, whose explicit spelling is the fold it
+//! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: `Path.step p q` is
+//!   the composite at the 2-chain, whose explicit spelling is the fold it
 //!   realises.
 
 use alloc::collections::BTreeSet;
@@ -80,7 +80,7 @@ pub enum Spaced
 pub enum Standing
 {
     /// A transport returned as a value: the printer writes it
-    /// `Path.step(p, q)`.
+    /// `Path.step p q`.
     Returned,
     /// A transport otherwise, a body's last step among them: the printer
     /// writes it as written.
@@ -112,7 +112,7 @@ pub struct Motives
     /// The transports the lowering derived and the printer spells.
     derived: Vec<Derived>,
     /// The spans of the transports, written or derived, the lowering returns
-    /// as values: those the printer writes as `Path.step(p, q)`. A transport
+    /// as values: those the printer writes as `Path.step p q`. A transport
     /// standing as a computation, a body's last step, it writes as written.
     returned: Vec<ByteSpan>,
     /// The spans of the flow composites, which the core holds as written.
@@ -417,8 +417,10 @@ pub fn within(
     ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).ok()
 }
 
-/// The tokens of the first and the third argument of `Path.walk(…)` as
-/// `text` spells it: the motive and the value it moves.
+/// The tokens of the first and the third argument of `Path.walk (m) q p` as
+/// `text` spells it: the motive and the value it moves, each without the
+/// parenthesis that holds it as an argument. Whitespace outside every
+/// bracket separates the arguments.
 ///
 /// # Specification
 /// trivial.
@@ -434,25 +436,26 @@ fn arguments(spelled: SourceFragment<'_>) -> Option<(Vec<Token>, Vec<Token>)>
             text.get(usize::try_from(token.start).ok()? .. usize::try_from(token.end).ok()?)?;
         Some((token.lexeme, written))
     });
-    let (Some((_, "Path")), Some((_, ".")), Some((_, "walk")), Some((_, "("))) =
-        (read.next(), read.next(), read.next(), read.next())
+    let (Some((_, "Path")), Some((_, ".")), Some((_, "walk"))) =
+        (read.next(), read.next(), read.next())
     else {
         return None;
     };
     for (lexeme, written) in read {
         if lexeme == Lexeme::Space {
+            if depth == 0
+                && arguments
+                    .get(index)
+                    .is_some_and(|argument| !argument.is_empty())
+            {
+                index = index.checked_add(1_usize)?;
+            }
             spaced = Spaced::Yes;
             continue;
         }
         match written {
-            "," if depth == 0 => {
-                index = index.checked_add(1_usize)?;
-                spaced = Spaced::No;
-                continue;
-            },
             ")" | "]" | "}" if depth == 0 => break,
-            "(" | "type(" | "[" | "#[" | ".#[" | "{" | "*{" | ".*{" | "#{" | ".#{" | "+{"
-            | "&{" => {
+            "(" | "type(" | "[" | "#[" | ".#[" | "{" | "*{" | ".*{" | "+{" | "&{" => {
                 depth = depth.saturating_add(1);
             },
             ")" | "]" | "}" => depth = depth.checked_sub(1)?,
@@ -474,7 +477,46 @@ fn arguments(spelled: SourceFragment<'_>) -> Option<(Vec<Token>, Vec<Token>)>
         spaced = Spaced::No;
     }
     let [motive, _, value] = arguments;
+    let (motive, value) = (unparenthesized(motive), unparenthesized(value));
     (!motive.is_empty() && !value.is_empty()).then_some((motive, value))
+}
+
+/// `tokens` without the parenthesis around all of them, when one opens at
+/// the first and closes at the last; `tokens` as they are otherwise.
+///
+/// # Specification
+/// trivial.
+fn unparenthesized(tokens: Vec<Token>) -> Vec<Token>
+{
+    let (Some(first), Some(last)) = (tokens.first(), tokens.last())
+    else {
+        return tokens;
+    };
+    if first.text != "(" || last.text != ")" || tokens.len() < 2 {
+        return tokens;
+    }
+    // The first parenthesis closes at the last token only when the depth it
+    // opens stays above zero before it.
+    let mut depth = 0_usize;
+    let closes_last = tokens.iter().enumerate().all(|(at, token)| {
+        match token.text.as_str() {
+            "(" | "type(" | "[" | "#[" | ".#[" | "{" | "*{" | ".*{" | "+{" | "&{" => {
+                depth = depth.saturating_add(1);
+            },
+            ")" | "]" | "}" => depth = depth.saturating_sub(1),
+            _ => {},
+        }
+        depth > 0 || at.saturating_add(1) == tokens.len()
+    });
+    if !closes_last {
+        return tokens;
+    }
+    let mut inner: Vec<Token> = tokens.into_iter().skip(1).collect();
+    let _close = inner.pop();
+    if let Some(head) = inner.first_mut() {
+        head.spaced = Spaced::No;
+    }
+    inner
 }
 
 /// The tokens of `spelled`, each with whether the printer wrote whitespace

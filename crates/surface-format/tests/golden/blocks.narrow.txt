@@ -1,38 +1,34 @@
 data Either(
   a : Type,
   b : Type
-) : Type where {
+) : Type where
   | Left : (x : a) --> Either(a, b)
   | Right : (y : b) --> Either(a, b)
-}
 
-def from_left() -> -F Integer {
-  match (Left(5) : Either(
+def from_left() -> -F Integer =
+  match (Left 5 : Either(
     Integer,
     String
   )) {
-    Left(x) => return x,
-    Right(y) => return 0
+    | Left(x) => return x
+    | Right(y) => return 0
   }
-}
 
-module Facts : #{
-  inner : #{answer : Integer},
+module Facts : *{
+  inner : *{answer : Integer},
   total : Integer
-} where {
+} where
   def base = 40;
-  module inner : #{ answer : Integer } where {
+  module inner : *{ answer : Integer } where
     def answer = base + 1;
-  }
 
   def total = inner.answer + 1;
-}
 
 def pairs = thunk {
   fun (m) {
     fun (k) {
       let p = force m;
-      become (force k)(1)
+      become (force k) 1
     }
   }
 };

@@ -34,18 +34,18 @@ use gandr_surface_syntax::SourceText;
 /// Every pair of the table in the explicit spelling, nested and
 /// parenthesised where the sugar needs it.
 const EXPLICIT: &str = "\
-def pair : #{Integer, String};
-def triple : #{Integer, String, Unit};
-def choice : +{Integer, #{String, Unit}};
-def nested : #{+{Integer, String}, Unit};
+def pair : *{Integer, String};
+def triple : *{Integer, String, Unit};
+def choice : +{Integer, *{String, Unit}};
+def nested : *{+{Integer, String}, Unit};
 def lazy : +U &{-F Integer, -F Integer, -F String};
 def right : +U &{-F Integer, &{-F Integer, -F String}};
 def mixed : +U &{&{-F Integer, -F Integer}, -F String};
 def step : +U (Integer -> String -> -F Unit);
 def dependent : +U ((a : Type) -> a -> -F a);
 def thunked : +U (-F Integer);
-def returned : +U (Integer -> -F #{Integer, String});
-def tuple = #{1, #{2, \"b\"}};
+def returned : +U (Integer -> -F *{Integer, String});
+def tuple = *{1, *{2, \"b\"}};
 ";
 
 /// [`EXPLICIT`] in the sugared spelling, as the presentation printer
@@ -672,7 +672,7 @@ fn a_stated_binder_in_cong_formats_once_as_explicit_4671()
 /// reflexivity the lowering derived, spelled as the printer spells them;
 /// sugared back, the transport is the operation again, the map as written.
 /// #1003: the inverse is taken at the circle's point, where the reflexivity
-/// it moves is the empty word a written `Path.here(Base)` reads as.
+/// it moves is the empty word a written `Path.here Base` reads as.
 #[test]
 fn an_inverse_and_an_action_on_a_path_move_both_ways_778()
 {
@@ -762,7 +762,7 @@ fn an_action_under_a_quoted_motive_moves_both_ways_4645()
     let back = spelled(&grammar, explicit.as_str(), Form::Sugared, Selection::Every);
     assert_eq!(
         (
-            back.matches("Path.ap(F, a)").count(),
+            back.matches("Path.ap F a").count(),
             back.contains("Path.walk")
         ),
         (3_usize, false),
@@ -1325,7 +1325,7 @@ fn a_manifest_carrier_is_parenthesised_as_the_printer_writes_it_2246()
     let explicit =
         format!("{theory}def endo : Model(Pointed) with sort M = +U (Integer -> -F Integer);\n");
     let sugared =
-        format!("{theory}def endo : Model(Pointed) with sort M = (Integer => Integer);\n");
+        format!("{theory}def endo : Model(Pointed) with sort M = (Integer -> Integer);\n");
     for (source, form, expected) in [
         (&explicit, Form::Sugared, &sugared),
         (&sugared, Form::Explicit, &explicit),
@@ -1351,7 +1351,7 @@ data Nat : Type where {
   | Succ : (n : Nat) --> Nat
 }
 
-def onType(t: Type) -> -F Type {
+def onType(t : Type) -> -F Type {
   return (+U (t -> -F t))
 }
 
@@ -1389,14 +1389,14 @@ fn a_sugared_source_keeps_every_comment_with_its_construct()
     let grammar = grammar();
     let source = "\
 /// A choice, the second arm a pair.
-def choice : +{Integer, /* a pair */ #{String, Unit}};
+def choice : +{Integer, /* a pair */ *{String, Unit}};
 
 def both : +U &{
   -F Integer, // eager first
   -F String
 };
 
-def pair = #{1, /* second */ \"a\"};
+def pair = *{1, /* second */ \"a\"};
 ";
     let sugared = "\
 /// A choice, the second arm a pair.
@@ -1430,12 +1430,12 @@ fn a_declared_form_wins_over_the_option()
             "explicit",
             Form::Sugared,
             "Integer * String",
-            "#{Integer, String}",
+            "*{Integer, String}",
         ),
         (
             "sugared",
             Form::Explicit,
-            "#{Integer, String}",
+            "*{Integer, String}",
             "Integer * String",
         ),
     ] {
@@ -1459,11 +1459,11 @@ fn a_match_over_a_stated_sum_is_sugared_791()
     let grammar = grammar();
     let matched = |stated: &str, exit: &str, result: &str| {
         format!(
-            "def pick(t : {stated}) -> {result} {{\n  match t {{\n    +{{.1 = x}} => {exit}x,\n    _ => {exit}0\n  }}\n}}"
+            "def pick(t : {stated}) -> {result} {{\n  match t {{\n    | +{{.1 = x}} => {exit}x\n    | _ => {exit}0\n  }}\n}}"
         )
     };
     let source = format!(
-        "{}\n\ndef pair : #{{Integer, String}} ;\n",
+        "{}\n\ndef pair : *{{Integer, String}} ;\n",
         matched("+{Integer, Integer}", "return ", "-F Integer")
     );
     let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
@@ -1507,7 +1507,7 @@ fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
         (formatted.text().as_ref(), formatted.withdrawn()),
         (
             source
-                .replace("#{Integer, String}", "Integer * String")
+                .replace("*{Integer, String}", "Integer * String")
                 .replace("-> -F Integer", "-> Integer")
                 .replace("return 0", "0")
                 .as_str(),
@@ -1620,15 +1620,15 @@ def stayUp(a : Nat) -> -F Path[.A = Nat](Succ a, Succ a) {
 fn a_selection_runs_only_the_rewrites_it_names()
 {
     let grammar = grammar();
-    let source = "def pair : Integer * String ;\ndef tuple = *{1, 2} ;\n";
+    let source = "def pair : Integer * String ;\ndef choice : Integer + String ;\n";
     assert_eq!(
         spelled(
             &grammar,
             source,
             Form::Explicit,
-            Selection::Only(&[RewriteName::Tuple])
+            Selection::Only(&[RewriteName::Sum])
         ),
-        "def pair : Integer * String;\ndef tuple = *{1, 2};\n"
+        "def pair : Integer * String;\ndef choice : +{Integer, String};\n"
     );
 }
 
@@ -1639,10 +1639,10 @@ fn a_selection_runs_only_the_rewrites_it_names()
 fn a_respaced_root_expression_keeps_the_rewrite_beside_it()
 {
     let grammar = grammar();
-    let source = "def pair : Integer * String;\ndef s = #{b = 1};\n#{ s | b = 2 }\n";
+    let source = "def pair : Integer * String;\ndef s = *{b = 1};\n*{ s | b = 2 }\n";
     assert_eq!(
         spelled(&grammar, source, Form::Explicit, Selection::Every),
-        "def pair : #{Integer, String};\ndef s = #{b = 1};\n#{s | b = 2}\n"
+        "def pair : *{Integer, String};\ndef s = *{b = 1};\n*{s | b = 2}\n"
     );
 }
 
@@ -1730,7 +1730,7 @@ fn a_linear_run_follows_the_checker_s_elaborations()
             .collect();
         (formatted.into_text(), withdrawn)
     };
-    let written = source.replace("\n  let m = twice(n);\n  Succ(m)\n", "\n  Succ(twice(n))\n");
+    let written = source.replace("\n  let m = twice n;\n  Succ m\n", "\n  Succ (twice n)\n");
     assert_eq!(
         format(Answer::Alike),
         (written, Vec::new()),
@@ -1790,7 +1790,7 @@ fn a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255()
     };
     assert_eq!(
         format(Some(Answer::Alike)),
-        (source.replace("return twice(n)", "twice(n)"), Vec::new()),
+        (source.replace("return twice n", "twice n"), Vec::new()),
         "elaborated alike, the tail is the call"
     );
     assert_eq!(
@@ -1822,23 +1822,23 @@ fn the_runs_ending_a_block_are_written_away_together()
     let grammar = grammar();
     let head = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                 \n\
-                def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
+                def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
                 \n\
-                def both(m : Nat, k : Nat) -> Nat { Succ(m) }\n\
+                def both(m : Nat, k : Nat) -> Nat { Succ m }\n\
                 \n\
                 def field(n : Nat) -> Nat {\n";
     for (body, written) in [
         (
-            "  let m = twice(n) ;\n  let k = twice(n) ;\n  both(m, k)\n",
-            "  both(twice(n), twice(n))\n",
+            "  let m = twice n ;\n  let k = twice n ;\n  both m k\n",
+            "  both (twice n) (twice n)\n",
         ),
         (
-            "  let m = twice(n) ;\n  // between\n  let k = twice(n) ;\n  both(m, k)\n",
-            "  // between\n  both(twice(n), twice(n))\n",
+            "  let m = twice n ;\n  // between\n  let k = twice n ;\n  both m k\n",
+            "  // between\n  both (twice n) (twice n)\n",
         ),
         (
-            "  let m = twice(n) ;\n  let k = twice(m) ;\n  both(k, m)\n",
-            "  let m = twice(n);\n  both(twice(m), m)\n",
+            "  let m = twice n ;\n  let k = twice m ;\n  both k m\n",
+            "  let m = twice n;\n  both (twice m) m\n",
         ),
     ] {
         let source = format!("{head}{body}}}\n");
@@ -1973,7 +1973,6 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "product",
             "sum",
             "lazy-product",
-            "tuple",
             "value-function",
             "default-grade",
             "path-composite",
@@ -2020,7 +2019,7 @@ fn a_rewrite_is_checked_beside_every_kind_of_declaration()
     assert_eq!(formatted.withdrawn(), &[]);
     assert_eq!(
         formatted.into_text(),
-        source.replace("#{Integer, String}", "Integer * String")
+        source.replace("*{Integer, String}", "Integer * String")
     );
 }
 
@@ -2062,11 +2061,11 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
             .collect();
         (formatted.into_text(), withdrawn)
     };
-    let aliased = source.replace("+U (-F Nat)", "() => Nat");
+    let aliased = source.replace("+U (-F Nat)", "() -> Nat");
     assert_eq!(
         format(Some(Answer::Alike)),
         (
-            aliased.replace("call(thunk { twice(n) })", "call(twice(n))"),
+            aliased.replace("call (thunk { twice n })", "call (twice n)"),
             Vec::new()
         ),
         "elaborated alike, the thunk is left for the checker to insert"
@@ -2086,23 +2085,23 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
     // body.
     for (body, written) in [
         (
-            "thunk { become twice(n) }",
-            "call(thunk { become twice(n) })",
+            "thunk { become twice n }",
+            "call (thunk { become twice n })",
         ),
         (
-            "thunk // owned\n  { twice(n) }",
-            "call(\n  thunk // owned\n  { twice(n) }\n)",
+            "thunk // owned\n  { twice n }",
+            "call (\n  thunk // owned\n  { twice n }\n)",
         ),
         (
-            "thunk { let m = twice(n) ; return m }",
-            "call(thunk { let m = twice(n); m })",
+            "thunk { let m = twice n ; return m }",
+            "call (thunk { let m = twice n; m })",
         ),
         (
-            "thunk {\n    // kept\n    twice(n)\n  }",
-            "call(\n  // kept\n  twice(n)\n)",
+            "thunk {\n    // kept\n    twice n\n  }",
+            "call (\n  // kept\n  twice n\n)",
         ),
     ] {
-        let source = source.replace("thunk { twice(n) }", body);
+        let source = source.replace("thunk { twice n }", body);
         let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
         let oracle = Oracle {
             answer: Answer::Alike,
@@ -2112,7 +2111,7 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
             .expect("the source formats");
         assert_eq!(
             formatted.into_text(),
-            aliased.replace("call(thunk { twice(n) })", written),
+            aliased.replace("call (thunk { twice n })", written),
             "{body}"
         );
     }
@@ -2433,7 +2432,7 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
                   \x20 // parts them\n\
                   \x20 def three = 3 ;\n\
                   \n\
-                  \x20 def four : () => Integer ;\n\
+                  \x20 def four : () -> Integer ;\n\
                   \x20 def four = thunk { 4 } ;\n\
                   \n\
                   \x20 module Inner where {\n\

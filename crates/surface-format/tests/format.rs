@@ -141,10 +141,10 @@ fn the_loop_forms_keep_their_written_spelling()
 fn top_level_forms_and_comments_keep_their_lines()
 {
     let grammar = grammar();
-    let source = "#!/usr/bin/env gandr\n\n\n// leading\ndef a = 1 ; def b = 2 ; // trailing\n\n\n\n/* own */\nf(a)   ;\ng(b);";
+    let source = "#!/usr/bin/env gandr\n\n\n// leading\ndef a = 1 ; def b = 2 ; // trailing\n\n\n\n/* own */\n(f a)   ;\n(g b);";
     assert_eq!(
         text(&grammar, source, WIDE),
-        "#!/usr/bin/env gandr\n\n// leading\ndef a = 1;\ndef b = 2; // trailing\n\n/* own */\nf(a);\ng(b);\n",
+        "#!/usr/bin/env gandr\n\n// leading\ndef a = 1;\ndef b = 2; // trailing\n\n/* own */\n(f a);\n(g b);\n",
         "forms take a line each, a trailing comment stays, a blank line is kept once, and a statement keeps its separator"
     );
     assert_eq!(text(&grammar, "", WIDE), "", "an empty source stays empty");
@@ -205,8 +205,8 @@ fn the_printer_decides_every_inner_space()
 {
     let grammar = grammar();
     let source = "@[checks]\n\
-                  def  f ( x:Integer , y : Integer ) -> -F Integer{ return x+y ;}\n\
-                  def p = *{ a = 1 , b = - 2 } ;\n\
+                  def  f ( x  :  Integer , y : Integer ) -> -F Integer{ return x  +  y ;}\n\
+                  def p = *{ a = 1 , b = -   2 } ;\n\
                   def q : +{ A : Integer , B : Unit } ;\n\
                   def g[ r : Row ]( k : Integer ) -> [ Partial | r ] Unit { pure *{} }\n\
                   def l = fun( x ){ x } ;\n\
@@ -220,7 +220,7 @@ fn the_printer_decides_every_inner_space()
         text(&grammar, source, WIDE),
         "@[ checks ]\n\
          def f(x : Integer, y : Integer) -> -F Integer { return x + y; }\n\
-         def p = *{a = 1, b = -2};\n\
+         def p = *{a = 1, b = - 2};\n\
          def q : +{A : Integer, B : Unit};\n\
          def g[r : Row](k : Integer) -> [Partial | r] Unit { pure *{} }\n\
          def l = fun (x) { x };\n\
@@ -259,8 +259,8 @@ fn a_separator_written_on_the_next_line_joins_its_statement()
 {
     let grammar = grammar();
     assert_eq!(
-        text(&grammar, "f(a)\n;\ng(b)\n\n;", WIDE),
-        "f(a);\ng(b);\n",
+        text(&grammar, "(f a)\n;\n(g b)\n\n;", WIDE),
+        "(f a);\n(g b);\n",
         "a separator after a break or a blank line ends the statement on its line"
     );
 }
@@ -365,7 +365,7 @@ fn a_source_split_evenly_between_endings_keeps_line_feeds()
 fn pieces_place_each_top_level_form()
 {
     let grammar = grammar();
-    let source = "def  a = 1 ;  // note  // note\ndef b = 2 ;\n";
+    let source = "def  a = 1 ;  // note\ndef b = 2 ;\n";
     let formatted = formatted(&grammar, source, WIDE);
     let text = <&str>::from(formatted.text());
     let spans: Vec<(&str, &str)> = formatted
@@ -384,10 +384,7 @@ fn pieces_place_each_top_level_form()
     assert_eq!(
         spans,
         [
-            (
-                "def  a = 1 ;  // note  // note",
-                "def a = 1; // note // note"
-            ),
+            ("def  a = 1 ;  // note", "def a = 1; // note"),
             ("def b = 2 ;", "def b = 2;")
         ],
         "a form's piece runs from its first token to its trailing comment"

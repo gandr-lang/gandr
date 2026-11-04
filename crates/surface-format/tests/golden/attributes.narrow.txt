@@ -5,9 +5,8 @@
   note("a note long enough to break the block at a narrow page")
 ]
 @[ doc("Squares its argument.") ]
-def square(x : Integer) -> -F Integer {
+def square(x : Integer) -> -F Integer =
   return (x * x)
-}
 
 @[ checks ]
 def greet = "hello, ${ name }!";

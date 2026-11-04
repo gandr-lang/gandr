@@ -14,11 +14,11 @@ def shorthand = *{n = 3,s = "x"} ;
 def bumped = *{point | n = 4} ;
 def sigma : *{k : Integer, v : k} ;
 def last(t : *{Integer, Integer, Integer}) -> -F Integer =
-  match t { *{x,y,z} => return z }
+  match t { | *{x,y,z} => return z }
 def punned(r : *{n : Integer, s : String}) -> -F String =
-  match r { *{.n,.s} => return s }
+  match r { | *{.n,.s} => return s }
 def renamed(r : *{n : Integer, s : String}) -> -F Integer =
-  match r { *{.n = m} => return m }
+  match r { | *{.n = m} => return m }
 def absurd(x : +{  }) -> -F Integer { match x {} }
 def only : +{Integer} ;
 def only = +{.0 = 1} ;

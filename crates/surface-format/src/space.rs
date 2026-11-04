@@ -63,13 +63,6 @@ const FACE: &[RCtxStep] = &[RCtxStep {
 /// same.
 const SIGNATURES: [&str; 2] = ["module_declaration", "nested_module_member"];
 
-/// The rules a `<` or `>` marks the bound or direction it touches in.
-const MARKS: [&str; 3] = [
-    "staged_type",
-    "instantiation.direction.descent",
-    "instantiation.direction.productivity",
-];
-
 /// The keywords whose parenthesis lists binders, one space after the keyword:
 /// `fun (x)`, `fork (seat : end)`, `bind (a : Name)`, `pi+ (x : A)`.
 const BINDERS: [&str; 4] = ["fun", "fork", "bind", "pi+"];
@@ -84,9 +77,11 @@ pub enum Context
     /// package's world, a world's requirement or a site's offer, a theory's
     /// bracketed parameters.
     Operand,
-    /// An operator touching what follows it: a negation, a session's `!` or
-    /// `?`, a universe's `+` or `-`, a staged bound's `<` or `>`, a lambda's
-    /// `\`, a rest pattern's `..` and a splice's `~`.
+    /// An operator touching what follows it: a session's `!` or `?`, a
+    /// universe's `+` or `-`, a lambda's `\`, a rest pattern's `..` and a
+    /// splice's `~`. A negation's `-` and a staged or directed `<` or `>` are
+    /// no prefixes: written against their operand, `-2` or `<i`, each is one
+    /// token, a name.
     Prefix,
     /// A `.` ending a binder or a session's message.
     Binding,
@@ -141,10 +136,9 @@ impl Context
             },
             "{" if rule == "theory_declaration" && before == FACE => Self::Telescope,
             "*{" | "#{" if SIGNATURES.contains(&rule) => Self::Signature,
-            "-" if rule == "unary_expression" || rule == "universe_type" => Self::Prefix,
+            "-" if rule == "universe_type" => Self::Prefix,
             "+" if rule == "universe_type" => Self::Prefix,
             "?" if rule == "receive_session_type" => Self::Prefix,
-            "<" | ">" if MARKS.contains(&rule) => Self::Prefix,
             "!" | "\\" | ".." | "~" => Self::Prefix,
             _ => Self::Plain,
         }
@@ -294,12 +288,13 @@ fn applied(left: Token<'_>) -> Wordlike
 /// - requires: `left` stands directly before `right` on one line, and neither
 ///   is the bracket of a group the other is the first or last element of.
 /// - ensures: a `,` or `;` touches what stands before it and is followed by one
-///   space; a comment has one space on either side; a `.` or a selector `.#[`
-///   or `.#{` touches the word or bracket before it, and a `.` the word after
-///   it unless it ends a binder; a prefix operator touches what follows it; a
-///   `(` or `[` touches the word or hugging bracket before it, unless it opens
-///   an operand or the binders of `fun`, `fork`, `bind` or `pi+`; any other two
-///   are one space apart.
+///   space; a comment has one space on either side; an application's empty
+///   juxtaposition tile has one space before it and none after it; a `.` or a
+///   selector `.#[` or `.*{` touches the word or bracket before it, and a `.`
+///   the word after it unless it ends a binder; a prefix operator touches what
+///   follows it; a `(` or `[` touches the word or hugging bracket before it,
+///   unless it opens an operand or the binders of `fun`, `fork`, `bind` or
+///   `pi+`; any other two are one space apart.
 /// - provides: the space [`crate::layout`] writes between two elements of a
 ///   line.
 /// - fails: never.
@@ -330,6 +325,15 @@ pub fn join(
     }
     if left.kind == Kind::Comment || right.kind == Kind::Comment {
         return Join::Space;
+    }
+    // An application's own tile, its juxtaposition, is empty: one space
+    // stands before it and none after it, so its head and its argument stand
+    // one space apart.
+    if right.kind == Kind::Token && right_text.is_empty() {
+        return Join::Space;
+    }
+    if left.kind == Kind::Token && left_text.is_empty() {
+        return Join::Touch;
     }
     if (right.kind == Kind::Token && right_text == "."
         || right.kind == Kind::Open && matches!(right_text, ".#[" | ".*{" | ".#{"))

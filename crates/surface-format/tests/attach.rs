@@ -132,7 +132,7 @@ fn a_comment_on_its_own_line_leads_the_form_below_it()
                 "// why",
                 CommentKind::Line,
                 Role::Leading,
-                "call_expression"
+                "application_expression"
             )),
         ),
         "a comment on its own line before material leads it, in the form holding that \

@@ -67,6 +67,55 @@ pub struct Leaf<'source>
     /// The part a token plays where its text alone does not decide its
     /// spacing.
     pub context: Context,
+    /// The part a token plays in a layout block.
+    pub offside: Offside,
+    /// Where it stands among the items of the block around it; none outside
+    /// every block, and for a leaf a rewrite wrote.
+    pub branch: Option<Branch>,
+}
+
+/// Where a leaf stands among the items of a block: of the innermost block
+/// that holds it, between a form's `{` or layout block's open and its close,
+/// the child of that form holding the leaf. A form's own open and close, and
+/// its tiles outside the block, stand in the block around the form. Two
+/// leaves under one child stand in one item, as the column rule reads them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Branch
+{
+    /// That child.
+    pub node: NodeIndex,
+    /// Whether the leaf is that child itself: a tile of the form whose block
+    /// holds it, as a line-final `=` that leaves its statement to the next
+    /// line.
+    pub direct: Direct,
+}
+
+/// Whether a leaf is a tile of the node that opens the block around it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Direct
+{
+    /// It is not: a node below holds it.
+    No,
+    /// It is.
+    Yes,
+}
+
+/// The part a token plays in a layout block, whose extent the column rule
+/// decides: the layout pass reads a line-final `=` as a block's open and
+/// writes the other parts with no text, each on the tile of the bracket or
+/// separator it stands for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Offside
+{
+    /// None: the token is written as its tile reads.
+    Written,
+    /// It opens a block: a line-final `=`, or the empty open after a
+    /// line-final `where` or a `match` head.
+    Opens,
+    /// The empty separator between two of a block's lines.
+    Separates,
+    /// The empty close of a block.
+    Closes,
 }
 
 /// Whether a leaf is documentation's material.
@@ -128,10 +177,12 @@ impl Leaves<'_>
 /// - ensures: one leaf per tile, layout leaf and nonempty grout, except that a
 ///   form [`VERBATIM_RULES`] names is one [`Material::Verbatim`] leaf over its
 ///   span and the layout inside that span is dropped; leaves are in ascending,
-///   disjoint offset order. A leaf under the root's child at `c` belongs to the
-///   form `c` unless it is layout directly under the root. A top-level form
-///   holding grout or a minted close, or whose leaves' extent meets an
-///   obligation's span, is listed as repaired.
+///   disjoint offset order, and empty leaves at one offset in the tree's
+///   preorder, so a layout block's close stands before the separator of the
+///   block around it. A leaf under the root's child at `c` belongs to the form
+///   `c` unless it is layout directly under the root. A top-level form holding
+///   grout or a minted close, or whose leaves' extent meets an obligation's
+///   span, is listed as repaired.
 /// - provides: the formatter's only reading of the tree.
 /// - fails: never.
 /// - panics: none.
@@ -155,11 +206,13 @@ pub fn flatten<'source>(
 {
     let mut leaves: Vec<Leaf<'source>> = Vec::new();
     let mut repaired: Vec<NodeIndex> = Vec::new();
-    let mut pending: Vec<(NodeIndex, Owner, Documentation)> = tree
-        .children(tree.root())
-        .map(|child| (child, Owner::Form(child), Documentation::Outside))
-        .collect();
-    while let Some((at, owner, documentation)) = pending.pop() {
+    let mut pending: Vec<(NodeIndex, Owner, Documentation, Option<Branch>)> = Vec::new();
+    in_order(
+        &mut pending,
+        tree.children(tree.root())
+            .map(|child| (child, Owner::Form(child), Documentation::Outside, None)),
+    );
+    while let Some((at, owner, documentation, branch)) = pending.pop() {
         let Some(node) = tree.node(at)
         else {
             continue;
@@ -172,18 +225,44 @@ pub fn flatten<'source>(
             NodeLabel::Meld(mold) => match copied(grammar, mold) {
                 Copied::Verbatim => Material::Verbatim,
                 Copied::LaidOut => {
-                    pending.extend(tree.children(at).map(|child| (child, owner, documentation)));
+                    // The children between a `{` of the form and its `}`
+                    // stand in the form's block, each its own branch; the
+                    // others stand in the block around the form.
+                    let mut inside = Inside::No;
+                    in_order(
+                        &mut pending,
+                        tree.children(at).map(|child| {
+                            let here = match (inside, tile_label(grammar, tree, child)) {
+                                (Inside::No, Some("{")) => {
+                                    inside = Inside::Yes;
+                                    branch
+                                },
+                                (Inside::Yes, Some("}")) => {
+                                    inside = Inside::No;
+                                    branch
+                                },
+                                (Inside::Yes, _) => Some(branch_of(tree, child)),
+                                (Inside::No, _) => branch,
+                            };
+                            (child, owner, documentation, here)
+                        }),
+                    );
                     continue;
                 },
             },
             NodeLabel::Wald => {
-                pending.extend(tree.children(at).map(|child| (child, owner, documentation)));
+                in_order(
+                    &mut pending,
+                    tree.children(at)
+                        .map(|child| (child, owner, documentation, branch)),
+                );
                 continue;
             },
             NodeLabel::Doc => {
-                pending.extend(
+                in_order(
+                    &mut pending,
                     tree.children(at)
-                        .map(|child| (child, owner, Documentation::Inside(at))),
+                        .map(|child| (child, owner, Documentation::Inside(at), branch)),
                 );
                 continue;
             },
@@ -209,20 +288,23 @@ pub fn flatten<'source>(
             ) if form == at => Owner::Root,
             (owner, _) => owner,
         };
-        let context = match node.label() {
-            NodeLabel::Tile(mold) => grammar.rule_of(mold).map_or(Context::Plain, |rule| {
-                let before = grammar
-                    .mold(mold)
-                    .and_then(|def| grammar.step(def.rctx, Dir::Left))
-                    .unwrap_or_default();
-                Context::of(rule.name(), text, before)
-            }),
+        let (context, offside) = match node.label() {
+            NodeLabel::Tile(mold) => {
+                let context = grammar.rule_of(mold).map_or(Context::Plain, |rule| {
+                    let before = grammar
+                        .mold(mold)
+                        .and_then(|def| grammar.step(def.rctx, Dir::Left))
+                        .unwrap_or_default();
+                    Context::of(rule.name(), text, before)
+                });
+                (context, offside_of(grammar, mold, text))
+            },
             NodeLabel::Wald
             | NodeLabel::Meld(_)
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. }
             | NodeLabel::Space
-            | NodeLabel::Doc => Context::Plain,
+            | NodeLabel::Doc => (Context::Plain, Offside::Written),
         };
         leaves.push(Leaf {
             span: node.span(),
@@ -231,8 +313,12 @@ pub fn flatten<'source>(
             owner,
             documentation,
             context,
+            offside,
+            branch,
         });
     }
+    // The walk visits in preorder and the sort is stable, so empty leaves at
+    // one offset keep the tree's order.
     leaves.sort_by_key(|leaf| (leaf.span.start(), leaf.span.end()));
     let mut kept: Vec<Leaf<'source>> = Vec::with_capacity(leaves.len());
     for leaf in leaves {
@@ -256,6 +342,81 @@ pub fn flatten<'source>(
     Leaves {
         leaves: kept,
         repaired,
+    }
+}
+
+/// Push `children` onto the walk's stack `pending` so it pops them in order,
+/// the first child first.
+///
+/// # Specification
+/// trivial.
+fn in_order<T>(
+    pending: &mut Vec<T>,
+    children: impl Iterator<Item = T>,
+)
+{
+    let from = pending.len();
+    pending.extend(children);
+    if let Some(pushed) = pending.get_mut(from ..) {
+        pushed.reverse();
+    }
+}
+
+/// Whether the walk stands inside the block a form opens.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Inside
+{
+    /// It does not.
+    No,
+    /// It does: a `{` of the form opened it and no `}` has closed it.
+    Yes,
+}
+
+/// The label of the tile at `at`, or none for any other node.
+///
+/// # Specification
+/// trivial.
+fn tile_label(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'_>,
+    at: NodeIndex,
+) -> Option<&'static str>
+{
+    match tree.node(at)?.label() {
+        NodeLabel::Tile(mold) => grammar.mold(mold).ok().map(|def| def.label),
+        NodeLabel::Wald
+        | NodeLabel::Meld(_)
+        | NodeLabel::Grout { .. }
+        | NodeLabel::GhostClose { .. }
+        | NodeLabel::Space
+        | NodeLabel::Doc => None,
+    }
+}
+
+/// The branch a child `child` of a node that opens a block begins.
+///
+/// # Specification
+/// trivial.
+fn branch_of(
+    tree: &SyntaxTree<'_>,
+    child: NodeIndex,
+) -> Branch
+{
+    let direct = match tree.node(child).map(|node| node.label()) {
+        Some(NodeLabel::Tile(_)) => Direct::Yes,
+        Some(
+            NodeLabel::Wald
+            | NodeLabel::Meld(_)
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::Space
+            | NodeLabel::Doc,
+        )
+        | None => Direct::No,
+    };
+    Branch {
+        node: child,
+        direct,
     }
 }
 
@@ -289,6 +450,30 @@ pub fn copied(
     }
     else {
         Copied::LaidOut
+    }
+}
+
+/// The part the tile `mold`, written `text`, plays in a layout block: a tile
+/// of a `{`, `;` or `}` written otherwise is the layout pass's.
+///
+/// # Specification
+/// trivial.
+fn offside_of(
+    grammar: &Pbg,
+    mold: MoldId,
+    text: SourceFragment<'_>,
+) -> Offside
+{
+    let Ok(label) = grammar.mold(mold).map(|def| def.label)
+    else {
+        return Offside::Written;
+    };
+    let text = <&str>::from(text);
+    match (label, text.is_empty()) {
+        ("{", _) if text != "{" => Offside::Opens,
+        (";", true) => Offside::Separates,
+        ("}", true) => Offside::Closes,
+        _ => Offside::Written,
     }
 }
 

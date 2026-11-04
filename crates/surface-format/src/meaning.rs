@@ -2,7 +2,7 @@
 //! one arena, compared declaration by declaration.
 //!
 //! A layout keeps every token, so the content digest is its check. A rewrite
-//! changes tokens on purpose — `#{A, B}` for `A * B` — and the digest with
+//! changes tokens on purpose — `*{A, B}` for `A * B` — and the digest with
 //! them, so its check is the lowering: the rewritten text lowers to what the
 //! source lowers to. The two lowerings share an arena and admit their
 //! declarations at the same positions, so a reference to a declaration is one
