@@ -28,6 +28,7 @@ err=$(mktemp)
 trap 'rm -f "$err"' EXIT
 if ! index=$(inspect "$image"); then
   if missing "$(< "$err")"; then
+    echo "lookup: $image is missing: $(< "$err")" >&2
     echo found=false
     exit 0
   fi
@@ -47,4 +48,5 @@ while IFS= read -r digest; do
     exit 1
   fi
 done < <(jq -r '.manifests[]?.digest' <<< "$index")
+echo "lookup: $image is published, its index and the $(jq '[.manifests[]?] | length' <<< "$index") manifests it lists served" >&2
 echo found=true
