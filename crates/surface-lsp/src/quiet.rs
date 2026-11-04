@@ -436,8 +436,8 @@ pub enum Met<'later>
 #[derive(Debug)]
 enum Read
 {
-    /// A message, classified.
-    Message(Classified),
+    /// A message, classified, and whether the input held bytes past it.
+    Message(Classified, Behind),
     /// Files changed on disk.
     Changed(Vec<PathBuf>),
     /// Files another connection's editor changed.
@@ -471,12 +471,13 @@ fn queue(
     read: Read,
     queued: &mut VecDeque<Classified>,
     (changed, edited): (&mut BTreeSet<PathBuf>, &mut BTreeSet<PathBuf>),
-    (proposed, admitted): (&mut Proposed, &mut Woken),
+    (proposed, admitted, behind): (&mut Proposed, &mut Woken, &mut Behind),
 ) -> Option<End>
 {
     match read {
-        Read::Message(message) => {
+        Read::Message(message, past) => {
             queued.push_back(message);
+            *behind = past;
             None
         },
         Read::Changed(paths) => {
@@ -509,6 +510,33 @@ struct Proposed(bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Woken(bool);
+
+/// Whether an input holds bytes past the last message the reader took: the
+/// start of a frame the client wrote with it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Behind(pub bool);
+
+/// An input that says whether it holds bytes it read and did not hand out.
+pub trait Unread
+{
+    /// Whether bytes the input read are still to be handed out.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unread(&self) -> Behind;
+}
+
+impl<Inner: ?Sized> Unread for std::io::BufReader<Inner>
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn unread(&self) -> Behind
+    {
+        Behind(!self.buffer().is_empty())
+    }
+}
 
 /// Where a paced loop takes what it meets: its reader's messages and a
 /// watch's changes.
@@ -616,18 +644,21 @@ impl Changes
 /// - ensures: frames are read as they arrive, on a scoped thread that
 ///   classifies each once and stops after `exit`, at the stream's end or at its
 ///   first fault; each message is handed to `visit` as [`Met::Frame`], in
-///   order, with every message already read after it; the files a watch hands
-///   `inbox` through [`Inbox::changes`] are gathered, sorted and without
-///   repeats, and handed to `visit` as [`Met::Changed`] before the next
-///   message, the files another connection's editor changed as [`Met::Edited`]
-///   after them, and the fills another connection kept as one [`Met::Proposed`]
-///   after those, and the admissions its connection started that ended, through
-///   [`Changes::admitted`], as one [`Met::Admitted`] after that; while nothing
-///   waits, each document whose deadline in the [`Deadlines`] `visit` arms
-///   passes is handed to `visit` as [`Met::Quiet`], disarmed; a stream closed
-///   at a frame boundary, or ended by `exit`, is [`Met::Closed`] once every
-///   message before it was handed over, whether or not a watch still holds a
-///   handle. The first break `visit` returns is returned.
+///   order, with every message already read after it; while the input holds
+///   bytes past the last message read, the loop waits for the frames those
+///   bytes start, so the frames of one write are handed over together; the
+///   files a watch hands `inbox` through [`Inbox::changes`] are gathered,
+///   sorted and without repeats, and handed to `visit` as [`Met::Changed`]
+///   before the next message, the files another connection's editor changed as
+///   [`Met::Edited`] after them, and the fills another connection kept as one
+///   [`Met::Proposed`] after those, and the admissions its connection started
+///   that ended, through [`Changes::admitted`], as one [`Met::Admitted`] after
+///   that; while nothing waits, each document whose deadline in the
+///   [`Deadlines`] `visit` arms passes is handed to `visit` as [`Met::Quiet`],
+///   disarmed; a stream closed at a frame boundary, or ended by `exit`, is
+///   [`Met::Closed`] once every message before it was handed over, whether or
+///   not a watch still holds a handle. The first break `visit` returns is
+///   returned.
 /// - provides: the loop of [`crate::serve`] and of each hub connection, the
 ///   later messages a request is withdrawn by, and the hub's watch's way in.
 /// - fails: the first [`TransportFault`] of the stream, once every message
@@ -643,12 +674,14 @@ impl Changes
 /// - hypothesis: L2 — every served editor session runs here; L3 — a held
 ///   diagnostic publishes after the interval with no frame sent, a session ends
 ///   at `exit` and at a closed stream, nothing past `exit` is read, a message
-///   read while the one before was handled is handed over with it, and a
-///   watch's changes reach the loop gathered.
+///   read while the one before was handled is handed over with it, a write
+///   whose second part comes a moment after its first is handed over whole, and
+///   a watch's changes reach the loop gathered.
 /// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
 /// - witness: `tests::session::a_session_round_trips_over_in_memory_streams`
 /// - witness: `tests::session::a_stream_closed_without_exit_ends_abruptly`
 /// - witness: `quiet::tests::a_message_read_while_another_is_handled_comes_with_it`
+/// - witness: `quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124`
 /// - witness: `quiet::tests::nothing_past_exit_is_read`
 /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
 #[cfg_attr(
@@ -665,7 +698,7 @@ pub fn paced<Input, Visit, Ended>(
     mut visit: Visit,
 ) -> Result<Ended, TransportFault>
 where
-    Input: BufRead + Send,
+    Input: BufRead + Unread + Send,
     Visit: FnMut(Met<'_>, &mut Deadlines) -> Result<ControlFlow<Ended>, TransportFault>,
 {
     let Inbox {
@@ -679,12 +712,12 @@ where
                     Ok(Maybe::Present(body)) => {
                         let message = classify(&body);
                         let Last(last) = ends(&message);
-                        (Read::Message(message), last)
+                        (Read::Message(message, input.unread()), last)
                     },
                     Ok(Maybe::Absent(_)) => (Read::Closed, true),
                     Err(fault) => (Read::Fault(fault), true),
                 };
-                let ended = matches!(frame, Read::Message(_)) && last;
+                let ended = matches!(frame, Read::Message(..)) && last;
                 if read.send(frame).is_err() || last {
                     if ended {
                         // A watch's handle keeps the channel open, so the
@@ -702,6 +735,7 @@ where
         let mut edited: BTreeSet<PathBuf> = BTreeSet::new();
         let mut proposed = Proposed::default();
         let mut admitted = Woken::default();
+        let mut behind = Behind::default();
         let mut end: Option<End> = None;
         loop {
             if queued.is_empty()
@@ -728,7 +762,7 @@ where
                                 frame,
                                 &mut queued,
                                 (&mut changed, &mut edited),
-                                (&mut proposed, &mut admitted),
+                                (&mut proposed, &mut admitted, &mut behind),
                             );
                             break;
                         },
@@ -756,10 +790,23 @@ where
                     frame,
                     &mut queued,
                     (&mut changed, &mut edited),
-                    (&mut proposed, &mut admitted),
+                    (&mut proposed, &mut admitted, &mut behind),
                 ) {
                     let _first = end.get_or_insert(ended);
                 }
+            }
+            // A message read with bytes past it waits for the frames those
+            // bytes start, so what the client wrote at once is handed over
+            // whole.
+            while behind == Behind(true) && end.is_none() {
+                end = frames.recv().map_or(Some(End::Closed), |frame| {
+                    queue(
+                        frame,
+                        &mut queued,
+                        (&mut changed, &mut edited),
+                        (&mut proposed, &mut admitted, &mut behind),
+                    )
+                });
             }
             if !changed.is_empty() {
                 let paths: Vec<PathBuf> = core::mem::take(&mut changed).into_iter().collect();
@@ -844,7 +891,7 @@ pub mod tests
             .try_iter()
             .filter_map(|read| match read {
                 super::Read::Changed(paths) => Some(paths),
-                super::Read::Message(_)
+                super::Read::Message(..)
                 | super::Read::Edited(_)
                 | super::Read::Proposed
                 | super::Read::Admitted
@@ -1125,6 +1172,87 @@ pub mod tests
             handed.get(1).map(|&(_, later)| later),
             Some(1_usize),
             "the request comes with the cancellation read while the message before it was handled"
+        );
+    }
+
+    /// A stream's part that comes a moment after the part before it, as a
+    /// pipe hands the rest of one write to a second read.
+    struct Pausing
+    {
+        /// The bytes of the part.
+        rest: io::Cursor<Vec<u8>>,
+        /// Whether the pause was waited out.
+        paused: bool,
+    }
+
+    impl std::io::Read for Pausing
+    {
+        /// Wait out the pause at the first read, then read on.
+        ///
+        /// # Specification
+        /// trivial.
+        fn read(
+            &mut self,
+            buf: &mut [u8],
+        ) -> std::io::Result<usize>
+        {
+            if !self.paused {
+                self.paused = true;
+                std::thread::sleep(core::time::Duration::from_millis(50));
+            }
+            self.rest.read(buf)
+        }
+    }
+
+    /// #5124: a write whose first read holds one frame and the start of the
+    /// next is handed over whole, the first message with the second, though
+    /// the rest of the write comes a moment later.
+    #[test]
+    fn a_write_read_in_two_parts_is_handed_over_whole_5124()
+    {
+        use std::io::Read as _;
+
+        let bytes = framed(&[
+            Json(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#),
+            Json(r#"{"jsonrpc":"2.0","id":1,"method":"shutdown"}"#),
+        ]);
+        let first = r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#.len();
+        let cut = bytes
+            .as_ref()
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .map(|header| {
+                header
+                    .saturating_add(4)
+                    .saturating_add(first)
+                    .saturating_add(8)
+            })
+            .expect("the first frame has a header");
+        let (head, tail) = bytes.as_ref().split_at(cut);
+        let mut input = std::io::BufReader::new(io::Cursor::new(head.to_vec()).chain(Pausing {
+            rest: io::Cursor::new(tail.to_vec()),
+            paused: false,
+        }));
+        let mut handed: Vec<usize> = Vec::new();
+        super::paced(&mut input, super::Inbox::default(), |met, _deadlines| {
+            Ok(match met {
+                super::Met::Frame { later, .. } => {
+                    handed.push(later.len());
+                    core::ops::ControlFlow::Continue(())
+                },
+                super::Met::Quiet(_)
+                | super::Met::Changed(_)
+                | super::Met::Edited(_)
+                | super::Met::Proposed
+                | super::Met::Admitted => core::ops::ControlFlow::Continue(()),
+                super::Met::Closed => core::ops::ControlFlow::Break(()),
+            })
+        })
+        .expect("the stream reads");
+        assert_eq!(
+            handed,
+            [1_usize, 0_usize],
+            "the first message comes with the second, whose start was read with it"
         );
     }
 }

@@ -265,6 +265,7 @@ use crate::quiet::Holding;
 use crate::quiet::Inbox;
 use crate::quiet::Met;
 use crate::quiet::QUIET;
+use crate::quiet::Unread;
 use crate::quiet::formless;
 use crate::quiet::paced;
 use crate::quiet::publishable;
@@ -9048,7 +9049,7 @@ pub fn serve<Input, Output, Log>(
     workspace: Workspace,
 ) -> Result<Served, TransportFault>
 where
-    Input: BufRead + Send,
+    Input: BufRead + Unread + Send,
     Output: Write,
     Log: Write,
 {
@@ -17146,7 +17147,7 @@ mod tests
             "the kept fill records that it settles the document"
         );
         let mut met = Vec::new();
-        let mut nothing: &[u8] = &[];
+        let mut nothing = std::io::BufReader::new(&[][..]);
         let _ended = crate::quiet::paced(&mut nothing, inbox, |seen, _deadlines| {
             let closed = matches!(seen, crate::quiet::Met::Closed);
             met.push(format!("{seen:?}"));
