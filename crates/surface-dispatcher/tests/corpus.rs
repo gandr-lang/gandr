@@ -662,6 +662,43 @@ fn l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus()
     }
 }
 
+/// Throwaway (#4853): every unsettled stated run, one per line.
+#[test]
+fn throwaway_dump_unsettled_runs_4853()
+{
+    for tree in [Tree::Model, Tree::Pathological] {
+        each_settled(tree, |path, composed| {
+            let Composed::Settled { ref report, .. } = *composed
+            else {
+                return;
+            };
+            for declaration in report.declarations() {
+                let (
+                    &Stated::Verdict(
+                        Outcome::Runs(ref spelled) | Outcome::RunsTracing(ref spelled, _),
+                    ),
+                    Settlement::Unsettled,
+                ) = (declaration.stated(), declaration.settlement())
+                else {
+                    continue;
+                };
+                let produced = match declaration.outcome() {
+                    Outcome::Runs(ran) | Outcome::RunsTracing(ran, _) => {
+                        format!("RAN\t{:?}", <RunSpelling as AsRef<str>>::as_ref(&ran))
+                    },
+                    other => format!("OTHER\t{:?}", other.to_string()),
+                };
+                std::println!(
+                    "UNSETTLED\t{}\t{}\t{:?}\t{produced}",
+                    path.display(),
+                    declaration.name(),
+                    <RunSpelling as AsRef<str>>::as_ref(spelled)
+                );
+            }
+        });
+    }
+}
+
 /// Every accepted declaration of `tree` that did not focus for a reason
 /// other than being a code, element identity, unfinished or a session
 /// action, and the sources that composed.
@@ -903,17 +940,17 @@ def short(x : Nat) -> -F Nat { return x }
         vec![
             (
                 String::from("Either"),
-                read("(Flag, Nat)"),
+                read("*{Flag, Nat}"),
                 Settlement::Settled
             ),
             (
                 String::from("side"),
-                read("(Either, Nat)"),
+                read("*{Either, Nat}"),
                 Settlement::Settled
             ),
             (
                 String::from("marked"),
-                read("(side, Nat, Flag, Either)"),
+                read("*{side, Nat, Flag, Either}"),
                 Settlement::Settled
             ),
             (String::from("answer"), read("()"), Settlement::Settled),

@@ -559,10 +559,10 @@ fn a_run_spells_its_value_by_its_own_type_past_a_namesake_3125()
 #[test]
 fn a_stated_web_the_run_does_not_produce_is_unsettled_3338()
 {
-    let asked_first = "series(event(right, 0), event(left, 0), event(left, 1), \
-                       parallel(event(left, 2), series(event(right, 1), event(right, 2))))";
-    let spoke_first = "series(event(left, 0), event(right, 0), event(right, 1), \
-                       parallel(series(event(left, 1), event(left, 2)), event(right, 2)))";
+    let asked_first = "series (event right 0) (event left 0) (event left 1) (parallel (event \
+                       left 2) (series (event right 1) (event right 2)))";
+    let spoke_first = "series (event left 0) (event right 0) (event right 1) (parallel (series \
+                       (event left 1) (event left 2)) (event right 2))";
     let text = format!(
         "@[ runs(\"unit\"), traces(decomposes task ({asked_first})) ]\ndef swapped() -> Unit \
          {{\n  let asked = fork (task : !String. ?String. end) {{\n    send(task, \"notes\");\n    \
@@ -761,9 +761,9 @@ fn a_second_check_replays_the_strata_the_first_kept_4034()
         Text::from(
             "pub theory Magma where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
              oper one : () --> (z : M);\n}\n\npub def exchange(b : Bool) -> Bool {\n  match b {\n    \
-             true => +{.1 = unit},\n    false => +{.0 = unit}\n  }\n}\n\npub def keep(e : +{Unit}) \
-             -> +{Unit} {\n  e\n}\n\ndef six = ua[6, 6](Magma, Magma, #{.mul = exchange, .one = \
-             keep}, #{.mul = exchange, .one = keep});\n",
+             true => +{.1 = *{}},\n    false => +{.0 = *{}}\n  }\n}\n\npub def keep(e : +{Unit}) \
+             -> +{Unit} {\n  e\n}\n\ndef six = ua[6, 6](Magma, Magma, *{.mul = exchange, .one = \
+             keep}, *{.mul = exchange, .one = keep});\n",
         ),
     );
     let home = scratch.0.join("configuration");
@@ -806,7 +806,7 @@ fn a_second_check_replays_the_strata_the_first_kept_4034()
 fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
 {
     let scratch = Scratch::new(Path::new("lint"));
-    let elided = "def kept(n: Integer) -> -F Integer { n }\ndef called(n: Integer) -> -F \
+    let elided = "def kept(n : Integer) -> -F Integer { n }\ndef called(n : Integer) -> -F \
                       Integer { kept n }\n";
     let source = scratch.file(Path::new("exits.gandr"), Text::from(elided));
     let check = Path::new("check");
@@ -861,7 +861,7 @@ fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
     }
     assert_eq!(
         fixed,
-        "def kept(n: Integer) -> -F Integer { return n }\ndef called(n: Integer) -> -F \
+        "def kept(n : Integer) -> -F Integer { return n }\ndef called(n : Integer) -> -F \
              Integer { become kept n }\n"
     );
     std::fs::write(&source, &fixed).expect("the fixed source is written");
@@ -881,11 +881,11 @@ fn check_measures_each_declaration_a_source_writes()
     let scratch = Scratch::new(Path::new("measure"));
     let _base = scratch.file(
         Path::new("base.gandr"),
-        Text::from("pub def one(n: Integer) -> -F Integer { n }\n"),
+        Text::from("pub def one(n : Integer) -> -F Integer { n }\n"),
     );
     let _top = scratch.file(
         Path::new("top.gandr"),
-        Text::from("import \"./base.gandr\" ;\ndef two(n: Integer) -> -F Integer { one n }\n"),
+        Text::from("import \"./base.gandr\" ;\ndef two(n : Integer) -> -F Integer { one n }\n"),
     );
     // A key and a verdict cache of the test's own: the shared ones hold the
     // receipts other tests leave, so a first run would recall `one`.
@@ -1051,7 +1051,7 @@ fn the_runs_lint_reaches_a_pure_run_unless_its_effects_option_narrows_it()
     let source = scratch.file(
         Path::new("runs.gandr"),
         Text::from(
-            "def id(n: Integer) -> -F Integer { n }\ndef twice(n: Integer) -> -F Integer { \
+            "def id(n : Integer) -> -F Integer { n }\ndef twice(n : Integer) -> -F Integer { \
                  id (id n) }\n",
         ),
     );

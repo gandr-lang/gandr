@@ -3792,14 +3792,14 @@ def copy = answer ;
 def identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ;
 def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fun (x) { fun (y) { return x } } } ;
 def applied : +U (-F Integer) ; def applied = thunk { become (force identity) answer } ;
-def chosen : +U (-F Integer) ; def chosen = thunk { become ((force first) answer) 7 } ;
+def chosen : +U (-F Integer) ; def chosen = thunk { become (force first) answer 7 } ;
 def delayed : +U (-F String) ; def delayed = thunk { return "later" } ;
 def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { return 1 } } ;"#,
         );
         for (name, spelled) in [
             ("answer", "42"),
             ("greeting", r#""a \"quoted\"\nline""#),
-            ("nothing", "unit"),
+            ("nothing", "*{}"),
             ("copy", "42"),
             ("identity", "fun (a) { a }"),
             ("first", "fun (a) { fun (b) { a } }"),
@@ -3841,7 +3841,7 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
         let mut console = Captured::default();
         assert_eq!(
             printing.evaluate_printing(greet, &mut console).to_string(),
-            "unit",
+            "*{}",
             "the run returns the unit"
         );
         assert_eq!(console.lines(), ["a", "b"], "each line, in order");
@@ -3850,7 +3850,7 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
             printing
                 .evaluate_printing_on(greet, Engine::Executor, &mut executed)
                 .map(|evaluation| evaluation.to_string()),
-            Ok(String::from("unit")),
+            Ok(String::from("*{}")),
             "the executor alone runs it alike"
         );
         assert_eq!(executed.lines(), ["a", "b"], "and prints alike");
@@ -3894,13 +3894,13 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
             [
                 channel(
                     "a",
-                    "series(event(right, 0), event(left, 0), event(left, 1), \
-                     parallel(event(left, 2), series(event(right, 1), event(right, 2))))"
+                    "series (event right 0) (event left 0) (event left 1) (parallel (event left \
+                     2) (series (event right 1) (event right 2)))"
                 ),
                 channel(
                     "b",
-                    "series(event(left, 0), parallel(event(left, 1), series(event(right, 0), \
-                     event(right, 1))))"
+                    "series (event left 0) (parallel (event left 1) (series (event right 0) \
+                     (event right 1)))"
                 ),
             ],
             "each channel by its fork's protocol binder, in the order forked"
@@ -3917,8 +3917,8 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
              Path[.A = Circle](Base, Base)) ; def once = thunk { loop } ;",
         );
         for (spelling, spelled) in [
-            (Spelling::Unicode, "loop ∷ Path.here(Base)"),
-            (Spelling::Ascii, "loop :: Path.here(Base)"),
+            (Spelling::Unicode, "loop ∷ Path.here (Base)"),
+            (Spelling::Ascii, "loop :: Path.here (Base)"),
         ] {
             words.spell_in(spelling);
             assert_eq!(
@@ -3937,10 +3937,10 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     fn a_run_answering_an_unmarked_sealed_type_is_opaque_at_its_seal_3375()
     {
         let listed = crate::tests::Listed::new(SourceText::from(
-            "import std.list (List) ;\npub module Secret :> #{ type T, seal : String => T } where \
+            "import std.list (List) ;\npub module Secret :> *{ type T, seal : String -> T } where \
              {\n  type T = String;\n  def seal(text : String) -> String { text }\n}\npub module \
-             Counter :> #{ type T, zero : T } where {\n  type T = Integer;\n  def zero = 0;\n}\npub \
-             module Seat :> #{ mobile type Report, progress : Report } where {\n  type Report = \
+             Counter :> *{ type T, zero : T } where {\n  type T = Integer;\n  def zero = 0;\n}\npub \
+             module Seat :> *{ mobile type Report, progress : Report } where {\n  type Report = \
              String;\n  def progress = \"progress\";\n}\ndef returned() -> Secret.T { \
              Secret.seal(\"x\") }\ndef listed() -> List(Secret.T) {\n  let s = \
              Secret.seal(\"z\");\n  pure #[s]\n}\ndef reported() -> Seat.Report { pure \
@@ -3948,8 +3948,8 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
         ));
         let mut sealed = listed_program(&listed);
         for (path, spelled) in [
-            ("returned", "⟨opaque at Secret⟩ : () => Secret.T"),
-            ("listed", "⟨opaque at Secret⟩ : () => List(Secret.T)"),
+            ("returned", "⟨opaque at Secret⟩ : () -> Secret.T"),
+            ("listed", "⟨opaque at Secret⟩ : () -> List(Secret.T)"),
             ("reported", "\"progress\""),
             ("Counter.zero", "0"),
         ] {
@@ -4191,7 +4191,7 @@ def kept : +U (-F (+U (-F Path[.A = Integer](1, 1)))) ; def kept = thunk { retur
         }
         assert_eq!(
             run(&mut laws, SurfaceName::from("kept")).to_string(),
-            "thunk { law((thunk { fun (a) { a } }, thunk { fun (a) { a } })) }",
+            "thunk { law (thunk { fun (a) { a } }, thunk { fun (a) { a } }) }",
             "a run that carries the unfocused body without reaching it returns"
         );
     }
@@ -4268,7 +4268,7 @@ module Stepped : Model(Pointed) where {
             run(&mut hiding, SurfaceName::from("z")),
             Evaluation::Sealed(SealedRun {
                 module: String::from("Stepped"),
-                declared: String::from("Integer => Integer"),
+                declared: String::from("Integer -> Integer"),
             }),
             "`z` runs to a function applying `step`, which the signature hides"
         );
@@ -4719,8 +4719,8 @@ def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
         let mut program = program(PICK);
         for (name, delivered) in [
             ("zero", "Zero"),
-            ("one", "Succ(Zero)"),
-            ("three", "Succ(Succ(Zero))"),
+            ("one", "Succ Zero"),
+            ("three", "Succ (Succ Zero)"),
         ] {
             let evaluation = run(&mut program, SurfaceName::from(name));
             assert_eq!(

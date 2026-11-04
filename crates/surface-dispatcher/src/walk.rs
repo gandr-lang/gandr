@@ -2488,7 +2488,7 @@ pub mod tests
         scratch.file(
             Path::new("corpus/fixture/pending/form.gandr"),
             SourceText::from(
-                "module M : #{ x: Integer, z: Integer } where { def x = 1; }\ndef broken = missing ;",
+                "module M : *{ x : Integer, z : Integer } where { def x = 1; }\ndef broken = missing ;",
             ),
         );
         scratch.file(

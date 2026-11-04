@@ -220,7 +220,7 @@ const BOUNDARY_CLAUSES: [BoundaryClause; 7_usize] = [
 const ADMITTED_RUN: &str = "Admitted";
 
 /// What a boundary check's run spells before the clause it refuses by.
-const UNREALISED_RUN: &str = "Unrealised(";
+const UNREALISED_RUN: &str = "Unrealised ";
 
 /// The refusal this crate raises.
 ///
@@ -273,9 +273,10 @@ impl CorpusRefusal
     /// # Specification
     /// - requires: `ran` spells the run of a check `std.boundary`'s
     ///   `admitBlock` answers.
-    /// - ensures: nothing for `Admitted`; for `Unrealised(c…)` the clause the
-    ///   constructor `c` names; for any other spelling, a run that stopped
-    ///   short of an admission, [`BoundaryClause::Unanswered`].
+    /// - ensures: nothing for `Admitted`; for `Unrealised c`, or `Unrealised (c
+    ///   …)` when the clause names a place, the clause the constructor `c`
+    ///   names; for any other spelling, a run that stopped short of an
+    ///   admission, [`BoundaryClause::Unanswered`].
     /// - provides: the produced side of a boundary check's settlement.
     /// - fails: never; a spelling naming no clause is the unanswered one.
     /// - panics: none.
@@ -304,10 +305,18 @@ impl CorpusRefusal
         let clause = ran
             .strip_prefix(UNREALISED_RUN)
             .and_then(|named| {
+                let (named, grouped) = named
+                    .strip_prefix('(')
+                    .map_or((named, false), |inner| (inner, true));
                 BOUNDARY_CLAUSES.into_iter().find(|clause| {
-                    named
-                        .strip_prefix(clause.tag().0)
-                        .is_some_and(|after| after.starts_with(['(', ')']))
+                    named.strip_prefix(clause.tag().0).is_some_and(|after| {
+                        if grouped {
+                            after.starts_with([' ', ')'])
+                        }
+                        else {
+                            after.is_empty()
+                        }
+                    })
                 })
             })
             .unwrap_or(BoundaryClause::Unanswered);
@@ -3339,14 +3348,16 @@ mod tests
         let at = span(ByteOffset::from(3_usize), ByteOffset::from(19_usize));
         let rows = [
             ("Admitted", None),
-            ("Unrealised(Size(Argument(1)))", Some(BoundaryClause::Size)),
-            ("Unrealised(Align(Result))", Some(BoundaryClause::Align)),
-            ("Unrealised(Arity)", Some(BoundaryClause::Arity)),
-            ("Unrealised(Members)", Some(BoundaryClause::Members)),
+            ("Unrealised (Size (Argument 1))", Some(BoundaryClause::Size)),
+            ("Unrealised (Align Result)", Some(BoundaryClause::Align)),
+            ("Unrealised Arity", Some(BoundaryClause::Arity)),
+            ("Unrealised Members", Some(BoundaryClause::Members)),
             (
-                "Unrealised(Sizes(Result))",
+                "Unrealised (Sizes Result)",
                 Some(BoundaryClause::Unanswered),
             ),
+            ("Unrealised Arityx", Some(BoundaryClause::Unanswered)),
+            ("Unrealised(Arity)", Some(BoundaryClause::Unanswered)),
             ("ran out of fuel", Some(BoundaryClause::Unanswered)),
             ("Admitted ", Some(BoundaryClause::Unanswered)),
         ];

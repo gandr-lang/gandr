@@ -2336,7 +2336,7 @@ mod tests
     fn the_defect_rows_answer_as_wanted()
     {
         let tools = tools();
-        let body = "def f(x: Integer) -> -F Integer {";
+        let body = "def f(x : Integer) -> -F Integer {";
         // The body's closer is written, on the cursor's line or the next: the
         // body's contents are what is missing, and no `}` is repeated.
         for after in ["}", "\n}"] {
@@ -2354,7 +2354,7 @@ mod tests
         // An open signature offers the body, and the return type before it.
         let found = between(
             &tools,
-            SourceText::from("def f(x: Integer"),
+            SourceText::from("def f(x : Integer"),
             SourceText::from(""),
         );
         assert_eq!(
@@ -2405,7 +2405,7 @@ mod tests
         for (before, after, first) in [
             ("def x = thunk { return", " }", " ${1:value}"),
             ("def x = thunk {", " }", " ${1:computation}"),
-            ("def f(x: Nat) -> -F Nat { let y = ", "", "${1:value}; \\}"),
+            ("def f(x : Nat) -> -F Nat { let y = ", "", "${1:value}; \\}"),
             ("def g :", "", " ${1:type};"),
             ("def g : Integer ≃", "", " ${1:type};"),
             ("def g : Integer <~>", "", " ${1:type};"),
@@ -2413,7 +2413,7 @@ mod tests
             ("def g : Integer ⇝", "", " ${1:type};"),
             ("def g : Integer ~~>", "", " ${1:type};"),
             (
-                "def f(x: Nat) -> -F Nat {\n  match x {",
+                "def f(x : Nat) -> -F Nat {\n  match x {",
                 " }\n}",
                 " ${1:pattern} => ${2:computation}",
             ),
@@ -2439,11 +2439,11 @@ mod tests
     {
         let text = concat!(
             "/// A doc line.\n",
-            "def greet(name: String) -> -F String {\n",
+            "def greet(name : String) -> -F String {\n",
             "  /* a block\n",
             "     comment */ return \"hello ${name}, \\\"quoted\\\" ${ { 1 } }\";\n",
             "}\n",
-            "def g : Integer ⇝ Integer; // a trailing comment // a trailing comment\n",
+            "def g : Integer ⇝ Integer; // a trailing comment\n",
             "def x = (1 + #[2, 3]) /* open",
         );
         let whole = Labeled::new(SourceText::from(text));
@@ -2492,16 +2492,13 @@ mod tests
     {
         let tools = tools();
         for (before, first) in [
+            ("def x = 1; // note", "\ndef ${1:identifier} : ${2:type};"),
             (
-                "def x = 1; // note // note",
-                "\ndef ${1:identifier} : ${2:type};",
-            ),
-            (
-                "def x = 1; /* note /* note",
+                "def x = 1; /* note /* note /* note /* note",
                 " */ def ${1:identifier} : ${2:type};",
             ),
             (
-                "def x = 1; /* note */ /* note */",
+                "def x = 1; /* note */ /* note */ /* note */ /* note */",
                 " def ${1:identifier} : ${2:type};",
             ),
             ("def x = // note", "\n${1:value};"),
@@ -2526,11 +2523,11 @@ mod tests
         let tools = tools();
         let mut rendered = String::new();
         for (before, after) in [
-            ("def f(x: Integer) -> -F Integer {", "\n}"),
-            ("def f(x: Integer", ""),
+            ("def f(x : Integer) -> -F Integer {", "\n}"),
+            ("def f(x : Integer", ""),
             ("def x = (", ")"),
             ("def x = ", "answer;"),
-            ("def f(x: Nat) -> -F Nat {\n  match x {", " }\n}"),
+            ("def f(x : Nat) -> -F Nat {\n  match x {", " }\n}"),
             ("data Nat : Type where {\n  | Zero", "\n}"),
             ("def x = (", ") + 1;"),
             ("def x = (", "1 + 2)"),
@@ -2554,7 +2551,7 @@ mod tests
             }
         }
         expect![[r##"
-            "def f(x: Integer) -> -F Integer {" ‸ "\n}"
+            "def f(x : Integer) -> -F Integer {" ‸ "\n}"
               " ${1:computation}"
               " pure ${1:value}"
               " return ${1:value}"
@@ -2563,7 +2560,7 @@ mod tests
               " import ${1:identifier};"
               " force ${1:value}"
               " ${1:computation} = ${2:value};"
-            "def f(x: Integer" ‸ ""
+            "def f(x : Integer" ‸ ""
               ") { ${1:computation} \\}"
               ") -> ${1:type} { ${2:computation} \\}"
               ", ${1:identifier}) { ${2:computation} \\}"
@@ -2587,7 +2584,7 @@ mod tests
               "pure "
               "return "
               "become "
-            "def f(x: Nat) -> -F Nat {\n  match x {" ‸ " }\n}"
+            "def f(x : Nat) -> -F Nat {\n  match x {" ‸ " }\n}"
               " ${1:pattern} => ${2:computation}"
               " _ => ${1:computation}"
               " | ${1:pattern} => ${2:computation}"

@@ -99,7 +99,7 @@ const APPLICATION: &str = "def b : +U (-F Integer) ;\ndef b = thunk { become (pu
                                ;\n";
 
 /// A mismatch under a `let` binder.
-const BOUND: &str = "def id(x: Integer) -> -F Integer { return x }\ndef f(n: Integer) -> -F \
+const BOUND: &str = "def id(x : Integer) -> -F Integer { return x }\ndef f(n : Integer) -> -F \
                          String { let m = id n ; return m }\n";
 
 /// Unary naturals, addition, Fibonacci both ways and two closed points.
@@ -638,7 +638,7 @@ fn a_mismatch_label_spells_both_types()
     );
     let head = label(&only(
         Path::new("spelled.gandr"),
-        SourceText::from("def f(xs: Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
+        SourceText::from("def f(xs : Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
     ));
     assert!(
         !head.contains(": "),
@@ -1909,7 +1909,7 @@ fn an_unlocated_report_claims_no_span()
 #[test]
 fn a_return_position_failure_points_at_the_returned_value()
 {
-    let text = "def g(v: Integer) -> -F String { return v }\n";
+    let text = "def g(v : Integer) -> -F String { return v }\n";
     let diagnostic = only(Path::new("returned.gandr"), SourceText::from(text));
     assert_eq!(
         diagnostic.span,
@@ -1926,7 +1926,7 @@ fn a_return_position_failure_points_at_the_returned_value()
 #[test]
 fn repeated_equal_siblings_point_at_the_right_occurrence()
 {
-    let text = "def h(a: String, b: Integer) -> -F Integer { return b }\ndef k(u: Integer) \
+    let text = "def h(a : String, b : Integer) -> -F Integer { return b }\ndef k(u : Integer) \
                     -> -F Integer { become h \"no\" \"no\" }\n";
     assert_eq!(
         only(Path::new("siblings.gandr"), SourceText::from(text)).span,
@@ -1959,7 +1959,7 @@ fn an_ambiguous_model_slot_names_every_module_that_answers_it_739()
 #[test]
 fn a_shadowed_builtin_is_a_warning()
 {
-    let text = "def add : Integer ;\ndef add = 1 ;\ndef f(int: Integer) -> -F Integer { return \
+    let text = "def add : Integer ;\ndef add = 1 ;\ndef f(int : Integer) -> -F Integer { return \
                     int }\ndef g : Integer ;\ndef g = missing ;\n";
     let checked = printed(
         Path::new("shadow.gandr"),
@@ -2115,7 +2115,7 @@ fn a_deprecated_use_is_a_finding_naming_its_note()
 #[test]
 fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
 {
-    let text = "@[ explicit_exits ]\ndef kept(n: Integer) -> -F Integer { n }\ndef called(n: \
+    let text = "@[ explicit_exits ]\ndef kept(n : Integer) -> -F Integer { n }\ndef called(n : \
                     Integer) -> -F Integer { kept n }\n";
     let path = Path::new("exits.gandr");
     let tail = |needle: &str| {
@@ -2221,7 +2221,7 @@ fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
     }
     assert_eq!(
         fixed,
-        "@[ explicit_exits ]\ndef kept(n: Integer) -> -F Integer { return n }\ndef called(n: \
+        "@[ explicit_exits ]\ndef kept(n : Integer) -> -F Integer { return n }\ndef called(n : \
              Integer) -> -F Integer { become kept n }\n"
     );
     let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));
@@ -2237,10 +2237,10 @@ fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
 #[test]
 fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
 {
-    let text = "def id(n: Integer) -> -F Integer { n }\n@[ explicit_runs ]\ndef nested(n: \
-                    Integer) -> -F Integer { id (id n) }\ndef returned(n: Integer) -> -F Integer \
-                    { return id n }\ndef leading(n: Integer) -> -F Integer { id n + 1 }\ndef \
-                    grouped(n: Integer) -> -F Integer { return n + 1 }\n";
+    let text = "def id(n : Integer) -> -F Integer { n }\n@[ explicit_runs ]\ndef nested(n : \
+                    Integer) -> -F Integer { id (id n) }\ndef returned(n : Integer) -> -F Integer \
+                    { return id n }\ndef leading(n : Integer) -> -F Integer { id n + 1 }\ndef \
+                    grouped(n : Integer) -> -F Integer { return n + 1 }\n";
     let path = Path::new("runs.gandr");
     let call = |context: &str, offset: usize| {
         let start = text
@@ -2334,9 +2334,9 @@ fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
     }
     assert_eq!(
         fixed,
-        "def id(n: Integer) -> -F Integer { n }\n@[ explicit_runs ]\ndef nested(n: Integer) \
-             -> -F Integer { id (run id n) }\ndef returned(n: Integer) -> -F Integer { return run \
-             id n }\ndef leading(n: Integer) -> -F Integer { run id n + 1 }\ndef grouped(n: \
+        "def id(n : Integer) -> -F Integer { n }\n@[ explicit_runs ]\ndef nested(n : Integer) \
+             -> -F Integer { id (run id n) }\ndef returned(n : Integer) -> -F Integer { return run \
+             id n }\ndef leading(n : Integer) -> -F Integer { run id n + 1 }\ndef grouped(n : \
              Integer) -> -F Integer { return run (n + 1) }\n"
     );
     let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));
@@ -2355,7 +2355,7 @@ fn refusals_of_one_class_label_what_their_locus_is()
     let mismatch = only(Path::new("mismatch.gandr"), SourceText::from(MISMATCH));
     let head = only(
         Path::new("head.gandr"),
-        SourceText::from("def f(xs: Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
+        SourceText::from("def f(xs : Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
     );
     assert_eq!(
         (mismatch.detail.class, head.detail.class),

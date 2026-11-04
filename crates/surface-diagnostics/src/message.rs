@@ -407,7 +407,7 @@ fn lowered(
                      what the block answers; remove the written answer",
                 ),
                 FragmentBoundary::EmptyList => f.write_str(
-                    "`()` is an empty list, never the unit; write the unit value as `unit` and \
+                    "`()` is an empty list, never the unit; write the unit value as `*{}` and \
                      its type as `Unit`",
                 ),
                 FragmentBoundary::Endpoint => f.write_str(

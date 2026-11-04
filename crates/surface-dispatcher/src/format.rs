@@ -1019,10 +1019,10 @@ mod tests
             (
                 tokens(&source)
                     .replace(
-                        "multiplies(endoMonoid)",
+                        "multipliesendoMonoid",
                         "multiplies(Monoid.Semigroup(endoMonoid))"
                     )
-                    .replace("multiplies(m)", "multiplies(UnitAndZero.Semigroup(m))"),
+                    .replace("multipliesm", "multiplies(UnitAndZero.Semigroup(m))"),
                 Vec::new()
             ),
             "the explicit form writes the reduct the checker applies, the diamond's by the \
@@ -1085,7 +1085,7 @@ mod tests
         let mut expected = tokens(&source);
         for (written, applied) in [
             (
-                "observe(upManifest)",
+                "observe upManifest",
                 "observe(forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter))",
             ),
             (
@@ -1093,20 +1093,20 @@ mod tests
                 "(forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter) : Model(Counter))",
             ),
             (
-                "observe(negatedManifest)",
+                "observe negatedManifest",
                 "observe(forget[sort C = +{Unit, Bool}](negatedManifest) at Model(Counter))",
             ),
             (
-                "observeShown(upReadings)",
+                "observeShown upReadings",
                 "observeShown(forget[sort R = Integer](upReadings) at Model(ReadCounter))",
             ),
             (
-                "observeShown(upBoth)",
+                "observeShown upBoth",
                 "observeShown(forget[sort C = +{Unit, Bool}, sort R = Integer](upBoth) at \
                  Model(ReadCounter))",
             ),
             (
-                "observeShown(negatedBoth)",
+                "observeShown negatedBoth",
                 "observeShown(forget[sort C = +{Unit, Bool}, sort R = Integer](negatedBoth) at \
                  Model(ReadCounter))",
             ),

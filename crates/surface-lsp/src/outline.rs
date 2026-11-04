@@ -1617,7 +1617,7 @@ mod tests
     #[test]
     fn multi_line_forms_and_documentation_fold()
     {
-        let source = "/// One.\n/// Two.\ndef f(x: Integer) -> -F Integer {\n  return x\n}\n\
+        let source = "/// One.\n/// Two.\ndef f(x : Integer) -> -F Integer {\n  return x\n}\n\
                       def g = 1 ;\n/* a\n   block */\ndef h = 2 ;\n\
                       theory T where {\n  sort M : Type;\n  boundary Square {\n    tl, tr, bl, br\n  \
                       };\n  oper mul :\n    (M, M) => M;\n}\ndef k =\n  1 ;\n";
@@ -1640,7 +1640,7 @@ mod tests
             answered,
             [
                 (0, 1, Some("comment"), None),
-                (2, 4, None, shown("def f(x: Integer) -> -F Integer { … }")),
+                (2, 4, None, shown("def f(x : Integer) -> -F Integer { … }")),
                 (6, 7, Some("comment"), None),
                 (9, 16, None, shown("theory T where { … }")),
                 (11, 13, None, shown("  boundary Square { … }")),

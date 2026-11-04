@@ -45,16 +45,16 @@ def strideOf(size : Integer, align : Integer) -> Integer =
 pub def summary(c : Code) -> Witness =
   match c
     | Plain(s) => match structLayout (Field "0" s Done)
-      Layout(size, align, _p) => Witness size (strideOf size align) align Bitwise
+      | Layout(size, align, _p) => Witness size (strideOf size align) align Bitwise
     | Sum(vs) => match enumLayout vs
-      EnumLayout(size, align, _d, _a) => Witness size (strideOf size align) align Bitwise
+      | EnumLayout(size, align, _d, _a) => Witness size (strideOf size align) align Bitwise
 
 /// Whether a code's layout keeps its discriminant in a niche.
 pub def niched(c : Code) -> Bool =
   match c
     | Plain(_s) => false
     | Sum(vs) => match enumLayout vs
-      EnumLayout(_size, _align, d, _a) => match d
+      | EnumLayout(_size, _align, d, _a) => match d
         | InNiche(_o) => true
         | _ => false
 
@@ -130,15 +130,15 @@ def agree(a : Bool, b : Bool) -> Bool =
 /// size, then alignment, then the niche, then the handling.
 pub def check(p : Printed, c : Code, place : Position) -> Admission =
   match p
-    Printed(size, align, inNiche, drops) => match summary c
-      Witness(s, _stride, a, h) => match size == s
+    | Printed(size, align, inNiche, drops) => match summary c
+      | Witness(s, _stride, a, h) => match size == s
         | false => Unrealised (Size place)
         | true => match align == a
           | false => Unrealised (Align place)
           | true => match agree inNiche (niched c)
             | false => Unrealised (Niche place)
             | true => match h
-              Bitwise => match drops
+              | Bitwise => match drops
                 | true => Unrealised (Destroy place)
                 | false => Admitted
 
@@ -157,8 +157,8 @@ def rec admitArgs(ps : Params, cs : Codes, i : Integer) -> Admission =
 /// A declared signature against a row: the arguments, then the result.
 pub def admit(d : Declared, r : Row) -> Admission =
   match d
-    Declared(ps, res) => match r
-      Row(cs, rc) => match admitArgs ps cs 0
+    | Declared(ps, res) => match r
+      | Row(cs, rc) => match admitArgs ps cs 0
         | Admitted => check res rc Result
         | Unrealised(cl) => Unrealised cl
 
@@ -180,7 +180,7 @@ pub data Signature : Type where
 /// here travels bitwise, so none needs drop.
 pub def printed(c : Code) -> Printed =
   match summary c
-    Witness(size, _stride, align, _h) => Printed size align (niched c) false
+    | Witness(size, _stride, align, _h) => Printed size align (niched c) false
 
 /// The printed layout of each parameter's code, in order.
 def rec printedParams(cs : Coded) -> Params =
@@ -192,7 +192,7 @@ def rec printedParams(cs : Coded) -> Params =
 /// declaration, and admission compares it with the row.
 pub def admitSignature(s : Signature, r : Row) -> Admission =
   match s
-    Signature(ps, res) => admit (Declared (printedParams ps) (printed res)) r
+    | Signature(ps, res) => admit (Declared (printedParams ps) (printed res)) r
 
 /// An `extern "rust"` block's members' signatures, in written order.
 pub data Signatures : Type where

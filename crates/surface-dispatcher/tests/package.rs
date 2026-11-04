@@ -751,6 +751,29 @@ fn a_model_s_sources_is_the_literal_discovery_reads_4916()
             "`{sources}` reads as {read:?}"
         );
     }
+    // A laid-out model reads as a braced one: the labeler writes its block's
+    // brackets as tokens that spell nothing, at depth one as `{` and `}` are.
+    let laid_out = |sources: &str| {
+        std::fs::write(
+            directory.join("package.gandr"),
+            format!("module Package where\n  def name = \"p\";\n  {sources}\n"),
+        )
+        .expect("the package source is written");
+        match Package::discover(&directory) {
+            Maybe::Present(package) => package.stated().map(Path::to_path_buf),
+            Maybe::Absent(_) => panic!("the scratch package is found"),
+        }
+    };
+    assert_eq!(
+        laid_out("def sources = \"src\";"),
+        Some(PathBuf::from("src")),
+        "a laid-out model's `sources` reads"
+    );
+    assert_eq!(
+        laid_out("module Inner where\n    def sources = \"src\";"),
+        None,
+        "a laid-out nested module's `sources` reads none"
+    );
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
 }
 

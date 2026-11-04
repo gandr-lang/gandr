@@ -1196,7 +1196,7 @@ mod tests
         for (file, text) in [
             (
                 "syntax/match-expression.gandr",
-                "// `match_expression`\ndef a = match x { y => y } ;\n",
+                "// `match_expression`\ndef a = match x { | y => y } ;\n",
             ),
             (
                 "syntax/block.gandr",

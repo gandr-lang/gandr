@@ -413,7 +413,7 @@ fn a_hole_in_a_payload_stops_only_its_own_constructor()
 {
     let mut written = Written::new(
         &alloc::format!(
-            "{MAYBE}def pick(m : Maybe) -> -F Integer {{ match m {{ Just(?) => return 0, Nothing => return 1 }} }}\n"
+            "{MAYBE}def pick(m : Maybe) -> -F Integer {{ match m {{ | Just(?) => return 0 | Nothing => return 1 }} }}\n"
         ),
         "pick",
     );

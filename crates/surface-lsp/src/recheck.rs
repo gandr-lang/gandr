@@ -2112,7 +2112,7 @@ mod tests
     fn related_information_is_the_annotations_then_the_located_contexts()
     {
         let uri = DocumentUri::from("file:///strict/returned.gandr");
-        let text = "def g(v: Integer) -> -F String { return v }\n";
+        let text = "def g(v : Integer) -> -F String { return v }\n";
         let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
@@ -2319,7 +2319,7 @@ mod tests
     fn a_refusal_publishes_its_label_note_and_help()
     {
         let uri = DocumentUri::from("file:///strict/head.gandr");
-        let text = "def f(xs: Vec(Integer)) -> -F Integer {\n  pure 1\n}\n";
+        let text = "def f(xs : Vec(Integer)) -> -F Integer {\n  pure 1\n}\n";
         let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
@@ -2383,7 +2383,7 @@ mod tests
         );
         let malformed = checked(
             &DocumentUri::from("file:///strict/head.gandr"),
-            SourceText::from("def f(xs: Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
+            SourceText::from("def f(xs : Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
         );
         assert!(
             malformed
@@ -2398,7 +2398,7 @@ mod tests
     fn one_refusal_is_published_at_every_verbosity()
     {
         let uri = DocumentUri::from("file:///strict/head.gandr");
-        let text = SourceText::from("def f(xs: Vec(Integer)) -> -F Integer {\n  return 1\n}\n");
+        let text = SourceText::from("def f(xs : Vec(Integer)) -> -F Integer {\n  return 1\n}\n");
         let [user, detailed, debug, json] = [
             Verbosity::User,
             Verbosity::Detailed,

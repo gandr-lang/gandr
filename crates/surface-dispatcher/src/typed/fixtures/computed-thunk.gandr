@@ -20,4 +20,4 @@ def delta(
   v : args(d, (DeltaC(a, f) : IR(d)), x, t)
 ) -> Unit =
   match v
-    MkSig(h, r) => keep d (f (thunk { fun (z) { t (h z) } })) x t r
+    | MkSig(h, r) => keep d (f (thunk { fun (z) { t (h z) } })) x t r

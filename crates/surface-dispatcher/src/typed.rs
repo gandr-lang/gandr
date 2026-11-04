@@ -4697,7 +4697,7 @@ impl TypeTable
                 || format!(" : {} ;\n", signature(node, spelled)),
                 |under| {
                     format!(
-                        "{}({}read_back_it : {}) -> -F Unit {{ return unit }}\n",
+                        "{}({}read_back_it : {}) -> -F Unit {{ return *{{}} }}\n",
                         under.implicits,
                         under.parameters,
                         signature(node, spelled),
@@ -6383,16 +6383,16 @@ mod tests
         assert_eq!(at("rule unitL"), None, "nor does a rule's keyword");
         assert_eq!(
             at("Semigroup;\n  oper one"),
-            named("Semigroup where {", "Semigroup"),
+            named("Semigroup where\n", "Semigroup"),
             "an include names the theory it includes"
         );
         assert_eq!(
-            at("Monoid) where {"),
-            named("Monoid where {", "Monoid"),
+            at("Monoid) where"),
+            named("Monoid where\n", "Monoid"),
             "a model ascription's argument names the theory, not a member of the module"
         );
         assert_eq!(
-            at("mul(one(), x) ==> x;\n  rule unitR"),
+            at("mul (one ()) x ==> x;\n  rule unitR"),
             named("mul : (x", "mul"),
             "an operation a rule applies names the operation, here the included one"
         );
@@ -6420,17 +6420,17 @@ mod tests
             ))
         };
         assert_eq!(
-            at("m {"),
+            at("m\n"),
             named("m : Nat)", "m"),
             "a parameter's use, its binder"
         );
         assert_eq!(
-            at("n,\n"),
+            at("n\n"),
             named("n : Nat,", "n"),
             "the other parameter's use, its binder"
         );
         assert_eq!(
-            at("p))"),
+            at("p)\n"),
             named("p) =>", "p"),
             "a pattern variable's use, its pattern"
         );
@@ -6440,7 +6440,7 @@ mod tests
             "a declaration's use, its name"
         );
         assert_eq!(
-            at("Succ(plus"),
+            at("Succ (plus"),
             named("Succ : (n :", "Succ"),
             "a constructor in a term, its name in the family"
         );
@@ -6450,7 +6450,7 @@ mod tests
             "a constructor in a pattern, its name in the family"
         );
         assert_eq!(
-            at("Zero))"),
+            at("Zero) ;"),
             named("Zero : Nat", "Zero"),
             "a constructor inside another's argument answers itself"
         );
@@ -6489,10 +6489,10 @@ mod tests
         };
         let pair = |used: &str, at: &str| (String::from(used), String::from(at));
         assert_eq!(
-            within("Succ(plus[<](n, p))"),
+            within("Succ (plus[<] n p)"),
             [
                 pair("Succ", "Succ"),
-                pair("Succ(plus[<](n, p))", "Succ"),
+                pair("Succ (plus[<] n p)", "Succ"),
                 pair("plus", "plus"),
                 pair("plus[<]", "plus"),
                 pair("n", "n"),
@@ -6501,7 +6501,7 @@ mod tests
             "each use the index keeps, a call's whole application and its staged head beside their names, in order"
         );
         assert_eq!(
-            within("Succ(pl"),
+            within("Succ (pl"),
             [pair("Succ", "Succ")],
             "a name the range cuts is not answered"
         );
@@ -6538,7 +6538,7 @@ mod tests
             "the loop's source, the point it writes"
         );
         assert_eq!(
-            at("Base\n}\ndef"),
+            at("Base\ndef"),
             named("Base : Circle", "Base"),
             "the loop's target, the point it writes"
         );
@@ -6575,7 +6575,7 @@ mod tests
             "a constant constructor's result, its family"
         );
         assert_eq!(
-            at("Nat\n}"),
+            at("Nat\ndata Vec"),
             named("Nat : Type", "Nat"),
             "a constructor's result after its fields, its family"
         );
@@ -6611,11 +6611,11 @@ mod tests
     #[test]
     fn a_refused_declaration_s_uses_refer_to_their_sites_836()
     {
-        let typing = REFERRED.replace("Succ(Succ(Zero))", "Succ()");
+        let typing = REFERRED.replace("Succ (Succ Zero)", "Succ ()");
         let referred = SourceText::from(typing.as_str());
         let table = table(referred);
         assert_eq!(
-            refers(&table, referred, SourceText::from("Succ()")),
+            refers(&table, referred, SourceText::from("Succ ()")),
             Some(site(
                 referred,
                 SourceText::from("Succ : (n :"),
@@ -6633,13 +6633,13 @@ mod tests
         let referred = SourceText::from(REFERRED);
         let table = table(referred);
         assert_eq!(
-            refers(&table, referred, SourceText::from("n, p)")),
+            refers(&table, referred, SourceText::from("n p)")),
             Some(site(
                 referred,
                 SourceText::from("n : Nat,"),
                 SourceText::from("n"),
             )),
-            "the leading `n` of `plus[<](n, p)`, the parameter `n`"
+            "the leading `n` of `plus[<] n p`, the parameter `n`"
         );
     }
 
@@ -6664,17 +6664,17 @@ mod tests
         };
         assert_eq!(
             uses("n : Nat,"),
-            [at("n,\n"), at("n, p)")],
+            [at("n\n"), at("n p)")],
             "a parameter: its use in an arm and in the recursive call"
         );
         assert_eq!(
             uses("m : Nat)"),
-            [at("m {")],
+            [at("m\n")],
             "the other parameter: its one use"
         );
         assert_eq!(
             uses("p) =>"),
-            [at("p))")],
+            [at("p)\n")],
             "a pattern variable: its one use"
         );
         assert_eq!(
@@ -6686,14 +6686,14 @@ mod tests
             uses("Succ : (n :"),
             [
                 at("Succ(p)"),
-                at("Succ(plus"),
-                at("Succ(Succ"),
-                at("Succ(Zero")
+                at("Succ (plus"),
+                at("Succ (Succ"),
+                at("Succ Zero")
             ],
             "a constructor: in a pattern and in terms, nested ones included"
         );
         assert!(
-            matches!(table.named_at(at("m {")), Maybe::Absent(_)),
+            matches!(table.named_at(at("m\n")), Maybe::Absent(_)),
             "a use is no declaring name"
         );
     }
@@ -6770,7 +6770,7 @@ mod tests
             SourceText::from("Nat : Type"),
             SourceText::from("Nat"),
         )]);
-        assert_eq!(at("m {"), nat, "a parameter's use, at its type's family");
+        assert_eq!(at("m\n"), nat, "a parameter's use, at its type's family");
         assert_eq!(
             at("plus[<]"),
             nat,
@@ -7097,7 +7097,7 @@ mod tests
         };
         assert_eq!(
             table
-                .binders_at(found(typing, SourceText::from("pl)")))
+                .binders_at(found(typing, SourceText::from("pl\n")))
                 .map(|(_, site)| site.start())
                 .collect::<Vec<_>>(),
             ["p) =>", "m : Nat)", "plus(", "n : Nat,"]
@@ -7105,17 +7105,17 @@ mod tests
             "each binder at its own written name, the arm's before the function's"
         );
         assert_eq!(
-            at("pl)"),
+            at("pl\n"),
             ["p", "m", "plus", "n"],
             "the arm's binder, then the function's"
         );
         assert_eq!(
-            at("n,\n"),
+            at("n\n"),
             ["m", "plus", "n"],
             "a sibling arm never sees `p`"
         );
         assert_eq!(
-            at("Nat) --> Nat\n}"),
+            at("Nat) --> Nat\ndef"),
             Vec::<String>::new(),
             "a family's constructor reads under no binder"
         );
@@ -7484,8 +7484,8 @@ mod tests
         assert_eq!(
             reprinted,
             [(
-                String::from("Cons(Zero, Nil)"),
-                Maybe::Present(String::from("Cons(Zero, Nil)"))
+                String::from("Cons Zero Nil"),
+                Maybe::Present(String::from("Cons Zero Nil"))
             )],
             "the member's value reprints under its own declaration's type"
         );
@@ -7495,7 +7495,7 @@ mod tests
     fn every_kind_of_node_is_typed_where_it_was_written()
     {
         let source =
-            SourceText::from("def f(x: Integer) -> -F Integer { return x }\n\ndef g = 1 ;");
+            SourceText::from("def f(x : Integer) -> -F Integer { return x }\n\ndef g = 1 ;");
         let table = table(source);
         let at = |needle: &'static str| answer(&table, source, SourceText::from(needle));
         assert_eq!(
@@ -7504,7 +7504,7 @@ mod tests
             "the use is a term of its binder's type"
         );
         assert_eq!(
-            at("x:"),
+            at("x :"),
             agreed(Subject::Binder, SourceText::from("Integer")),
             "the binder is spelled at its use's type"
         );
@@ -7683,7 +7683,7 @@ mod tests
     fn the_binders_in_a_window_answer_alone()
     {
         let source = SourceText::from(
-            "def id : Integer -> Integer ;\ndef id = thunk { fun (y) { return y } } ;\ndef f(x: \
+            "def id : Integer -> Integer ;\ndef id = thunk { fun (y) { return y } } ;\ndef f(x : \
              Integer) -> -F Integer { return x }\n",
         );
         let table = table(source);
@@ -7791,7 +7791,7 @@ mod tests
             ("Type[-]", false, "a computation universe"),
             ("-F Nat", false, "a computation type"),
             (
-                "Nat => Nat",
+                "Nat -> Nat",
                 true,
                 "a declaration's thunked function type, sugared",
             ),
@@ -7855,7 +7855,7 @@ mod tests
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
-        for spelled in ["s.C", "s.C => s.C", "s.C => Integer"] {
+        for spelled in ["s.C", "s.C -> s.C", "s.C -> Integer"] {
             let trips: Vec<&RoundTrip> = read
                 .iter()
                 .filter(|read| read.spelled == spelled)
@@ -7924,7 +7924,7 @@ mod tests
         let source = SourceText::from("def answer : Integer ; def answer = *{} ;");
         let table = table(source);
         assert_eq!(
-            answer(&table, source, SourceText::from("unit")),
+            answer(&table, source, SourceText::from("*{}")),
             Maybe::Present(Answer {
                 subject: Subject::Term,
                 ty: String::from("Unit"),
@@ -7968,12 +7968,12 @@ mod tests
             }
         };
         assert_eq!(
-            crossed("multiplies(m)", "multiplies(".len()),
+            crossed("multiplies m", "multiplies ".len()),
             Ok(String::from("Monoid.Semigroup(m)")),
             "the model the call is given crosses by the monoid's reduct"
         );
         assert_eq!(
-            crossed("multiplies(m)", 0),
+            crossed("multiplies m", 0),
             Err(Some(crossed::Absent::Uncrossed)),
             "the function the call heads crosses by nothing"
         );
@@ -8029,7 +8029,7 @@ mod tests
             at("match p"),
             (
                 String::from(
-                    "match p {\n    here => return 0,\n    loop ∷ q => return 1,\n    back(loop) ∷ q => return 2\n  }"
+                    "match p {\n    | here => return 0\n    | loop ∷ q => return 1\n    | back(loop) ∷ q => return 2\n  }"
                 ),
                 Subject::Term,
                 String::from("?")
@@ -8074,7 +8074,7 @@ mod tests
         );
         assert_eq!(
             at("S(x) => {"),
-            pattern("S", "Int => Int"),
+            pattern("S", "Int -> Int"),
             "a constructor's name at its type"
         );
         assert_eq!(
@@ -8193,10 +8193,10 @@ mod tests
     fn a_part_of_a_product_or_a_binary_sum_answers_at_its_component()
     {
         let source = SourceText::from(concat!(
-            "def last(t : #{Integer, Bool, Integer}) -> -F Integer {\n",
-            "  match t {\n    #{x, y, z} => return z\n  }\n}\n",
+            "def last(t : *{Integer, Bool, Integer}) -> -F Integer {\n",
+            "  match t {\n    | *{x, y, z} => return z\n  }\n}\n",
             "def side(c : Integer) -> -F Integer {\n  let small = c < 128;\n",
-            "  match small {\n    +{.0 = u} => 1,\n    +{.1 = v} => 2\n  }\n}\n",
+            "  match small {\n    | +{.0 = u} => 1\n    | +{.1 = v} => 2\n  }\n}\n",
         ));
         let table = table(source);
         for (needle, ty) in [("y, z}", "Bool"), ("u} =>", "Unit"), ("v} =>", "Unit")] {
@@ -8215,10 +8215,10 @@ mod tests
     fn an_unread_binder_of_a_plain_record_answers_at_its_field_1883()
     {
         let source = SourceText::from(concat!(
-            "def low(r : #{low : Integer, high : Bool}) -> -F Integer {\n",
-            "  match r {\n    #{.high = h, .low = l} => return l\n  }\n}\n",
-            "def first(r : #{low : Integer, high : Bool}) -> -F Integer {\n",
-            "  match r {\n    #{p, q} => return p\n  }\n}\n",
+            "def low(r : *{low : Integer, high : Bool}) -> -F Integer {\n",
+            "  match r {\n    | *{.high = h, .low = l} => return l\n  }\n}\n",
+            "def first(r : *{low : Integer, high : Bool}) -> -F Integer {\n",
+            "  match r {\n    | *{p, q} => return p\n  }\n}\n",
         ));
         let table = table(source);
         for (needle, ty) in [("h, .low", "Bool"), ("q} =>", "Bool")] {
@@ -8239,14 +8239,14 @@ mod tests
         let source = SourceText::from(concat!(
             "import std.list (List) ;\n",
             "def shortLength(xs : List(Integer)) -> -F Integer {\n",
-            "  match xs {\n    #[] => 0,\n    #[a] => 1,\n    #[c, d] => 2,\n    _ => 3\n  }\n}\n",
+            "  match xs {\n    | #[] => 0\n    | #[a] => 1\n    | #[c, d] => 2\n    | _ => 3\n  }\n}\n",
             "def secondOf(xs : List(Integer)) -> -F Integer {\n",
-            "  match xs {\n    #[_, b, ..rest] => b,\n    _ => 0\n  }\n}\n",
+            "  match xs {\n    | #[_, b, ..rest] => b\n    | _ => 0\n  }\n}\n",
             "def headed(xs : List(Integer)) -> -F Integer {\n",
-            "  match xs {\n    all @ #[h, .._] => become shortLength(all),\n    #[] => 0\n  }\n}\n",
+            "  match xs {\n    | all @ #[h, .._] => become shortLength(all)\n    | #[] => 0\n  }\n}\n",
             "theory Semigroup where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\n",
             "def multiplies(s : Model(Semigroup)) -> -F Integer {\n",
-            "  match s {\n    #{.mul = m} => 0\n  }\n}\n",
+            "  match s {\n    | *{.mul = m} => 0\n  }\n}\n",
             "def bound() -> -F Integer {\n  let *{p, n} = *{(true : Bool), 2};\n  n\n}\n",
             "def split() -> -F Integer {\n",
             "  let (y, z) : Integer * Integer = (1, 2);\n  y\n}\n",
@@ -8268,7 +8268,7 @@ mod tests
             ("rest] =>", "List(Integer)"),
             ("h, .._", "Integer"),
             ("all @ #[h", "List(Integer)"),
-            ("p, n)", "Bool"),
+            ("p, n}", "Bool"),
             ("z) :", "Integer"),
             ("m} =>", "+U (M -> M -> -F M)"),
         ] {
@@ -8320,7 +8320,7 @@ mod tests
         let source = SourceText::from(concat!(
             "def twice : Type -> Type ;\ndef twice = fun (Y) { type(Y * Y) } ;\n\n",
             "def twiceFirst(p : twice(Integer)) -> -F Integer {\n",
-            "  match p {\n    #{c, d} => return c\n  }\n}\n",
+            "  match p {\n    | *{c, d} => return c\n  }\n}\n",
         ));
         let table = table(source);
         assert_eq!(
@@ -8347,7 +8347,7 @@ mod tests
         ));
         let table = table(source);
         assert_eq!(
-            answer(&table, source, SourceText::from("g(to(x))")),
+            answer(&table, source, SourceText::from("g (to x)")),
             Maybe::Present(Answer {
                 subject: Subject::Term,
                 ty: String::from("+U (b -> -F a)"),
@@ -8369,7 +8369,7 @@ mod tests
         ));
         let table = table(source);
         assert_eq!(
-            answer(&table, source, SourceText::from("#{y, q}")),
+            answer(&table, source, SourceText::from("*{y, q}")),
             Maybe::Present(Answer {
                 subject: Subject::Binder,
                 ty: String::from("#{y : Integer, q : Path[.A = Integer](x, y)}"),
@@ -8379,7 +8379,7 @@ mod tests
              outer pattern writes, with the labels it was written with (#558, #1613)"
         );
         assert_eq!(
-            answer(&table, source, SourceText::from("#{x, y, q}")),
+            answer(&table, source, SourceText::from("*{x, y, q}")),
             Maybe::Present(Answer {
                 subject: Subject::Binder,
                 ty: String::from("#{x : Integer, y : Integer, q : Path[.A = Integer](x, y)}"),
@@ -8427,7 +8427,7 @@ mod tests
     {
         let source = SourceText::from(concat!(
             "module Point :> *{ type T, z : T } where {\n  type T = Integer;\n  def z = 0;\n}\n",
-            "module Square(S : #{ type T, z : T }) :> #{ type U, w : U } where {\n",
+            "module Square(S : *{ type T, z : T }) :> *{ type U, w : U } where {\n",
             "  type U = S.T * S.T;\n  def w = (S.z, S.z);\n}\n",
             "module Squared = Square(Point) ;\n",
             "module Pointed(R : *{ type V, y : V }) where {\n  type At = Path[.A = R.V](R.y, R.y);\n}\n",
@@ -8654,8 +8654,8 @@ mod tests
             ("dom", Subject::Binder, "Ob"),
             ("id :", Subject::Binder, "+U ((a : Ob) -> -F Hom(a, a))"),
             ("Hom(a, a);", Subject::Type, "Type"),
-            ("id(a) ==>", Subject::Term, "+U ((a : Ob) -> -F Hom(a, a))"),
-            ("(a) ==>", Subject::Term, "Hom(a, a)"),
+            ("id a ==>", Subject::Term, "+U ((a : Ob) -> -F Hom(a, a))"),
+            (" a ==>", Subject::Term, "Hom(a, a)"),
         ];
         for (needle, subject, ty) in rows {
             assert_eq!(
@@ -8673,9 +8673,9 @@ mod tests
         // names; their terms once answered there, over binders the naming
         // fallback called after the theory (`CatShape => CatShape`).
         let source = SourceText::from(
-            "theory Cat where {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : \
+            "theory Cat where {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a : \
              Ob) --> Hom(a, a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  \
-             rule unitL : comp(id(a), f) <=> f;\n}\n\nmodule Fns : Model(Cat) where {\n  type Ob = \
+             rule unitL : comp (id a) f <=> f;\n}\n\nmodule Fns : Model(Cat) where {\n  type Ob = \
              Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : \
              t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t \
              -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    let y = f(x);\n    become \
@@ -8692,7 +8692,7 @@ mod tests
             Maybe::Absent(typing::Absent::Untyped)
         );
         assert_eq!(
-            answer(&table, source, SourceText::from("id(p), f), f)")),
+            answer(&table, source, SourceText::from("id p) f, f)")),
             agreed(
                 Subject::Term,
                 SourceText::from("+U ((a : Type) -> -F (+U (a -> -F a)))")
@@ -8921,15 +8921,15 @@ mod tests
         let scope = |name: &str, theory: &str| {
             format!(
                 "def {name}() -> -F Integer {{\n  handle st : {theory} with sort S = Integer {{\n    \
-                 let a = st.get();\n    let b = st.get();\n    pure a + b\n  }} with {{\n    \
-                 pure(x) => pure x,\n    oper get(k) => k(4)\n  }}\n}}\n\n"
+                 let a = st.get ();\n    let b = st.get ();\n    pure a + b\n  }} with {{\n    \
+                 | pure(x) => pure x\n    | oper get(k) => k 4\n  }}\n}}\n\n"
             )
         };
         let text = format!(
             "{}{}{}{}",
             theory(
                 "StateGetGet",
-                "  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, \
+                "  rule getGet : get (bind s . (get (bind t . (k s t)))) <=> get (bind s . (k s \
                  s));\n"
             ),
             theory("State", ""),
@@ -8959,8 +8959,8 @@ mod tests
         };
         for name in ["def once", "def twice"] {
             let (Some(kept), Some(second)) = (
-                at(name, "st.get();\n    let b"),
-                at(name, "st.get();\n    pure"),
+                at(name, "st.get ();\n    let b"),
+                at(name, "st.get ();\n    pure"),
             )
             else {
                 panic!("`{name}`: both reads' instance names answer");
@@ -9019,7 +9019,7 @@ mod tests
         let table = table(source);
         assert_eq!(
             answer(&table, source, SourceText::from("p =")),
-            agreed(Subject::Binder, SourceText::from("#{Integer, Integer}")),
+            agreed(Subject::Binder, SourceText::from("*{Integer, Integer}")),
             "the unused binder answers at what the decode returns"
         );
     }
@@ -9036,8 +9036,8 @@ mod tests
         );
         let table = table(source);
         assert_eq!(
-            answer(&table, source, SourceText::from("(a, b) =")),
-            agreed(Subject::Binder, SourceText::from("#{Nat, Nat}")),
+            answer(&table, source, SourceText::from("*{a, b} =")),
+            agreed(Subject::Binder, SourceText::from("*{Nat, Nat}")),
             "the tuple pattern at what `pair` returns"
         );
     }
@@ -9169,8 +9169,8 @@ mod tests
     fn a_type_instantiated_at_a_function_literal_reads_back_675()
     {
         let source = SourceText::from(
-            "def typeSelf : Type ≃ Type ;\ndef typeSelf = #{thunk { fun (x) { return x } }, \
-             #{#{thunk { fun (x) { return x } }, thunk { fun (x) { Path.here(x) } }}, #{thunk { fun (y) \
+            "def typeSelf : Type ≃ Type ;\ndef typeSelf = *{thunk { fun (x) { return x } }, \
+             *{*{thunk { fun (x) { return x } }, thunk { fun (x) { Path.here(x) } }}, *{thunk { fun (y) \
              { return y } }, thunk { fun (y) { Path.here(y) } }}}} ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -9231,10 +9231,10 @@ mod tests
     {
         let source = SourceText::from(
             "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\n\ndata T : Type where {\n  | V : T\n}\n\ndef \
-             ext(g : N) -> -F N { return S(g) }\n\ndef k(g : N, t : T) -> -F T { return t }\n\ndef \
-             w : #{c : Type, tm : +U (c -> -F Type), e : (g : c) => c, a : (g : c, t : tm(e(g))) \
-             => tm(g), b : (g : c, t : tm(e(g))) => tm(g)} ;\ndef w = #{N, #{thunk { fun (g) { \
-             return T } }, #{ext, #{k, k}}}} ;\n",
+             ext(g : N) -> -F N { return S g }\n\ndef k(g : N, t : T) -> -F T { return t }\n\ndef \
+             w : *{c : Type, tm : +U (c -> -F Type), e : (g : c) -> c, a : (g : c, t : tm(e(g))) \
+             -> tm(g), b : (g : c, t : tm(e(g))) -> tm(g)} ;\ndef w = *{N, *{thunk { fun (g) { \
+             return T } }, *{ext, *{k, k}}}} ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let trips: Vec<(String, RoundTrip)> = table(source)
@@ -9244,7 +9244,7 @@ mod tests
             .collect();
         let product: Vec<&RoundTrip> = trips
             .iter()
-            .filter(|&&(ref spelled, _)| spelled == "((N, T) => T) * ((N, T) => T)")
+            .filter(|&&(ref spelled, _)| spelled == "((N, T) -> T) * ((N, T) -> T)")
             .map(|&(_, ref trip)| trip)
             .collect();
         assert!(
@@ -9261,10 +9261,10 @@ mod tests
     {
         let source = SourceText::from(
             "data N : Type where {\n  | Z : N\n  | S : (n : N) --> N\n}\n\ndata T : Type where {\n  | V : T\n}\n\ndef \
-             ext(g : N) -> -F N { return S(g) }\n\ndef k(g : N, t : T) -> -F T { return t }\n\ndef \
-             w : #{c : Type, tm : +U (c -> -F Type), e : (g : c) => c, a : (g : c, t : tm(e(g))) \
-             => tm(g), b : (g : c, t : tm(e(g))) => tm(g)} ;\ndef w = #{N, #{thunk { fun (g) { \
-             return T } }, #{ext, #{k, k}}}} ;\n",
+             ext(g : N) -> -F N { return S g }\n\ndef k(g : N, t : T) -> -F T { return t }\n\ndef \
+             w : *{c : Type, tm : +U (c -> -F Type), e : (g : c) -> c, a : (g : c, t : tm(e(g))) \
+             -> tm(g), b : (g : c, t : tm(e(g))) -> tm(g)} ;\ndef w = *{N, *{thunk { fun (g) { \
+             return T } }, *{ext, *{k, k}}}} ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let trips: Vec<(String, RoundTrip)> = table(source)
@@ -9274,7 +9274,7 @@ mod tests
             .collect();
         let record: Vec<&RoundTrip> = trips
             .iter()
-            .filter(|&&(ref spelled, _)| spelled == "(N => N) * (((N, T) => T) * ((N, T) => T))")
+            .filter(|&&(ref spelled, _)| spelled == "(N -> N) * (((N, T) -> T) * ((N, T) -> T))")
             .map(|&(_, ref trip)| trip)
             .collect();
         assert!(
@@ -9473,7 +9473,7 @@ mod tests
             table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
         let nested: Vec<&super::ReadBack> = reads
             .iter()
-            .filter(|back| back.spelled.contains("#{a : A, b : #{"))
+            .filter(|back| back.spelled.contains("*{a : A, b : *{"))
             .collect();
         assert!(
             nested.is_empty(),
@@ -9497,7 +9497,7 @@ mod tests
                 .iter()
                 .filter(|back| {
                     matches!(back.site, ReadSite::Own(span) if usize::from(span.start()) == at)
-                        && back.spelled.contains("#{")
+                        && back.spelled.contains("*{")
                 })
                 .collect();
             assert!(
@@ -9610,7 +9610,7 @@ mod tests
             .iter()
             .filter(|back| {
                 back.spelled
-                    .contains("fill[1, 3](chain(1), selfLoop(A, x, y), fa)")
+                    .contains("fill[1, 3] (chain 1) (selfLoop A x y) fa")
             })
             .collect();
         assert!(
@@ -9727,7 +9727,7 @@ mod tests
         assert!(
             reads
                 .iter()
-                .any(|&(ref spelled, _)| spelled.contains("Path.walk(")),
+                .any(|&(ref spelled, _)| spelled.contains("Path.walk (")),
             "a printed type holds the image: {reads:?}"
         );
         let unread: Vec<_> = reads
@@ -9754,10 +9754,10 @@ mod tests
     fn a_record_ending_in_a_record_of_a_shared_label_reprints_as_a_record_3010()
     {
         let source = SourceText::from(
-            "type Plain = #{d : String, s : String};\ntype Long = #{a : String, b : String, c : \
+            "type Plain = *{d : String, s : String};\ntype Long = *{a : String, b : String, c : \
              String, d : String, e : String, f : String, g : String, i : Plain};\ndef long : Long \
-             = #{a = \"a\", b = \"b\", c = \"c\", d = \"d\", e = \"e\", f = \"f\", g = \"g\", i = \
-             #{d = \"d\", s = \"s\"}};\n",
+             = *{a = \"a\", b = \"b\", c = \"c\", d = \"d\", e = \"e\", f = \"f\", g = \"g\", i = \
+             *{d = \"d\", s = \"s\"}};\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<(String, Maybe<String, super::reprinted::Absent>)> = table(source)
@@ -9922,7 +9922,7 @@ mod tests
         let grammar = built_in().expect("the built-in grammar builds");
         let table = table(source);
         let at = <&str>::from(source)
-            .find("unit ;")
+            .find("*{} ;")
             .expect("the term is written");
         let sides: Vec<(ReadSite, String)> = table
             .read_back(&grammar, PageWidth::from(80_u32), Form::Explicit.into())
@@ -9981,7 +9981,7 @@ mod tests
             "the freshness a cons's evidence is at reads the declaration `fresh`"
         );
         assert_eq!(
-            trip("elD[<](d, a) => UD(d)"),
+            trip("elD[<](d, a) -> UD(d)"),
             Some(RoundTrip::Open),
             "the field's decode is the binder, written after its uniform parameter"
         );
@@ -9999,8 +9999,8 @@ mod tests
             .collect();
         assert!(
             matches!(sides.as_slice(), [
-                (ReadSite::Own(_), "unloop[<](a) => Loop"),
-                (ReadSite::CheckedAgainst(_), "unloop(a) => Loop")
+                (ReadSite::Own(_), "unloop[<](a) -> Loop"),
+                (ReadSite::CheckedAgainst(_), "unloop(a) -> Loop")
             ]),
             "the field reads at the binder's decode, then at the declaration's: {sides:?}"
         );
@@ -10079,7 +10079,7 @@ mod tests
         let table = table(source);
         let start = |needle: &str| REFERRED.find(needle).expect("the needle is written");
         let declared = start("plus(");
-        let used = start("n, p)");
+        let used = start("n p)");
         assert!(
             matches!(
                 table.named_at(ByteOffset::from(declared)),
@@ -10238,10 +10238,10 @@ mod tests
         let table = table(source);
         let read: Vec<(&str, String)> = [
             "FZ(_)",
-            "_) => Z,",
+            "_) => Z\n    | FS",
             "VC(k, _, t)",
             "_, t)",
-            "_) => S(k)",
+            "_) => S k",
             "_) => y",
             "MkBox(_)",
             "_) => Z\n",
@@ -10259,13 +10259,13 @@ mod tests
             read,
             [
                 ("FZ(_)", String::from("+U ((a : N) -> -F Fin(S(a)))")),
-                ("_) => Z,", String::from("N")),
+                ("_) => Z\n    | FS", String::from("N")),
                 (
                     "VC(k, _, t)",
                     String::from("+U ((a : N) -> N -> V(N, a) -> -F V(N, S(a)))")
                 ),
                 ("_, t)", String::from("N")),
-                ("_) => S(k)", String::from("V(N, k)")),
+                ("_) => S k", String::from("V(N, k)")),
                 ("_) => y", String::from("V(N, _)")),
                 ("MkBox(_)", String::from("+U (N -> -F Box(N))")),
                 ("_) => Z\n", String::from("N")),
@@ -10322,12 +10322,12 @@ mod tests
         let undecided = Some(String::from(
             "a pattern hole leaves the match's arm undecided",
         ));
-        let (alone, judged) = refusals("Red => return 0, ? => return 1");
+        let (alone, judged) = refusals("| Red => return 0 | ? => return 1");
         assert!(
             alone.contains(&undecided) && alone == judged,
             "the match left to a pattern hole is refused alike in both tables: {alone:?} and {judged:?}"
         );
-        let (alone, judged) = refusals("Red => return 0, Green => return 1, Blue => return 2");
+        let (alone, judged) = refusals("| Red => return 0 | Green => return 1 | Blue => return 2");
         assert!(
             alone.iter().all(Option::is_none) && alone == judged,
             "the match with every arm written is refused in neither table: {alone:?} and {judged:?}"

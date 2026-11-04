@@ -57,7 +57,7 @@ const APPLICATION: &str = "def b : +U (-F Integer) ;\ndef b = thunk { become (pu
                                ;\n";
 
 /// A mismatch under a `let` binder.
-const BOUND: &str = "def id(x: Integer) -> -F Integer { return x }\ndef f(n: Integer) -> -F \
+const BOUND: &str = "def id(x : Integer) -> -F Integer { return x }\ndef f(n : Integer) -> -F \
                          String { let m = id n ; return m }\n";
 
 /// A fresh scratch directory, removed when dropped.
@@ -500,7 +500,9 @@ fn the_other_kinds_render_as_their_goldens()
             only(
                 Path::new("exits.gandr"),
                 SourceRoot::Strict,
-                SourceText::from("@[ explicit_exits ]\ndef kept(n: Integer) -> -F Integer { n }\n"),
+                SourceText::from(
+                    "@[ explicit_exits ]\ndef kept(n : Integer) -> -F Integer { n }\n",
+                ),
                 Verb::Check(Goals::Gated),
             ),
             expect_file!["golden/explicit-exits.txt"],

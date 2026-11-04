@@ -13838,7 +13838,7 @@ mod tests
             let _answered = send(&mut server, Json(&initialize));
             let open = r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
                 {"uri":"file:///tmp/folded.gandr","languageId":"gandr","version":1,
-                 "text":"def f(x: Integer) -> -F Integer {\n  return x\n}\n"}}}"#;
+                 "text":"def f(x : Integer) -> -F Integer {\n  return x\n}\n"}}}"#;
             let _published = send(&mut server, Json(open));
             let request = r#"{"jsonrpc":"2.0","id":9,"method":"textDocument/foldingRange",
                 "params":{"textDocument":{"uri":"file:///tmp/folded.gandr"}}}"#;
@@ -13850,7 +13850,7 @@ mod tests
         assert_eq!(
             folds(r#"{"textDocument":{"foldingRange":{"foldingRange":{"collapsedText":true}}}}"#),
             wire(Json(
-                r#"[{"startLine":0,"endLine":2,"collapsedText":"def f(x: Integer) -> -F Integer { … }"}]"#
+                r#"[{"startLine":0,"endLine":2,"collapsedText":"def f(x : Integer) -> -F Integer { … }"}]"#
             )),
             "a client that takes collapsed text is shown the function's head"
         );
@@ -15741,7 +15741,7 @@ mod tests
             Json(
                 r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
                     "uri":"file:///tmp/f.gandr","languageId":"gandr","version":1,
-                    "text":"def f(x: Integer) -> -F Integer { return x }\n"}}}"#,
+                    "text":"def f(x : Integer) -> -F Integer { return x }\n"}}}"#,
             ),
         );
         let hovered = |server: &mut Connected| {

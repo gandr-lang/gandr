@@ -385,7 +385,7 @@ fn constructor_change_is_one_replace()
 #[test]
 fn comp_constructor_change_is_one_replace()
 {
-    let function = "def f(x: Integer) -> -F Integer { return x }\n";
+    let function = "def f(x : Integer) -> -F Integer { return x }\n";
     let base = snapshot(&format!("{function}def v = thunk {{ return 1 }} ;\n"));
     let edited = snapshot(&format!(
         "{function}def v = thunk {{ become (force f)(1) }} ;\n"
@@ -482,8 +482,8 @@ fn edit_locus_contains_the_diff()
 #[test]
 fn multi_point_edit_localizes_to_the_common_ancestor()
 {
-    let functions = "def f(x: Integer) -> -F Integer { return x }\n\
-                     def g(x: Integer) -> -F Integer { return x }\n\
+    let functions = "def f(x : Integer) -> -F Integer { return x }\n\
+                     def g(x : Integer) -> -F Integer { return x }\n\
                      def shown : +U (-F Integer) ;\n";
     let base = snapshot(&format!(
         "{functions}def shown = thunk {{ become (force f)(1) }} ;\n"
@@ -554,7 +554,7 @@ fn growing_a_tuple_replaces_it_325()
         snapshot(&format!(
             "module Schema where {{\n  type Old = *{{String, Integer}};\n  type New = *{{Integer, \
              String}};\n  @[ checks ]\n  def anonymise(old : Old) -> -F New {{\n    match old \
-             {{\n      *{{name, age}} => return *{{age, {component}}}\n    }}\n  }}\n}}\n"
+             {{\n      | *{{name, age}} => return *{{age, {component}}}\n    }}\n  }}\n}}\n"
         ))
     };
     let (base, edited) = (revision(""), revision("\"\""));

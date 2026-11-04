@@ -5552,25 +5552,25 @@ def wrong = "text" ;"#,
         let mut lowerings = LoweringCount::default();
         for (source, refused, expected) in [
             (
-                "def bad = 1 ^ 2 ;\ndef good = 2 ;",
+                "def bad = 1 ′ 2 ;\ndef good = 2 ;",
                 false,
-                &[(gandr_surface_parser::Oblig::UnmoldedTok, 12_usize, 13_usize)][..],
+                &[(gandr_surface_parser::Oblig::UnmoldedTok, 12_usize, 15_usize)][..],
             ),
             ("def good = 2 ;", false, &[][..]),
             (
-                "def bad = 1 ^ 2 ;\npure 3",
+                "def bad = 1 ′ 2 ;\npure 3",
                 false,
-                &[(gandr_surface_parser::Oblig::UnmoldedTok, 12_usize, 13_usize)][..],
+                &[(gandr_surface_parser::Oblig::UnmoldedTok, 12_usize, 15_usize)][..],
             ),
             (
-                "pure 1 ^ 2",
+                "pure 1 ′ 2",
                 true,
-                &[(gandr_surface_parser::Oblig::UnmoldedTok, 7_usize, 8_usize)][..],
+                &[(gandr_surface_parser::Oblig::UnmoldedTok, 7_usize, 10_usize)][..],
             ),
             (
-                "^",
+                "′",
                 true,
-                &[(gandr_surface_parser::Oblig::UnmoldedTok, 0_usize, 1_usize)][..],
+                &[(gandr_surface_parser::Oblig::UnmoldedTok, 0_usize, 3_usize)][..],
             ),
         ] {
             let lowering = lower_source(&grammar, SourceText::from(source), &mut lowerings)
@@ -5635,7 +5635,7 @@ def wrong = "text" ;"#,
                 r#"@[ refuses("ImplicitTelescope") ] def f[a : Type] = 1 ;
 @[ refuses("UnresolvedName") ] def g = missing ;
 def h = 1 ;
-module M : #{ x: Integer, z: Integer } where { def x = 1; }"#,
+module M : *{ x : Integer, z : Integer } where { def x = 1; }"#,
             ),
             &mut lowerings,
         );
@@ -5680,7 +5680,7 @@ module M : #{ x: Integer, z: Integer } where { def x = 1; }"#,
     fn a_tail_without_a_result_type_lowers_unsigned()
     {
         let grammar = grammar();
-        let source = SourceText::from("def f(x: Integer) { return x }");
+        let source = SourceText::from("def f(x : Integer) { return x }");
         let tree = parse(&grammar, source).expect("parses").into_tree();
         let mut arena = CoreArena::new();
         let module = lower_module(
@@ -6707,10 +6707,10 @@ def delivered() -> -F Unit {
     {
         let grammar = grammar();
         let source = SourceText::from(
-            "module A : #{ x: Integer, p: Integer } where { def x = 1; }\n\
+            "module A : *{ x : Integer, p : Integer } where { def x = 1; }\n\
              def broken = missing ;\n\
              def value = 3 ;\n\
-             module B : #{ y: Integer, q: Integer } where { def y = 1; }",
+             module B : *{ y : Integer, q : Integer } where { def y = 1; }",
         );
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, .. } = lower_source(&grammar, source, &mut lowerings)
@@ -6811,9 +6811,9 @@ def delivered() -> -F Unit {
         };
         for (written, expected) in [
             ("kept", "fun (a) { a }"),
-            ("called", "fun (a) { kept(a) }"),
-            ("sequenced", "fun (a) { let b = kept(a) ; kept(b) }"),
-            ("suspended", "fun (a) { thunk { kept(a) } }"),
+            ("called", "fun (a) { kept a }"),
+            ("sequenced", "fun (a) { let b = kept a ; kept b }"),
+            ("suspended", "fun (a) { thunk { kept a } }"),
         ] {
             let (elided, restated) = (format!("{written}_elided"), format!("{written}_printed"));
             for name in [written, elided.as_str(), restated.as_str()] {
@@ -6839,7 +6839,7 @@ def delivered() -> -F Unit {
         // wildcard at the same place rather than as a call short of an
         // argument.
         let grammar = grammar();
-        let written = "fun (a) { idAt(_, a) }";
+        let written = "fun (a) { idAt _ a }";
         let text = format!(
             "def idAt(a : Type, y : a) -> -F a {{ return y }}\ndef loose : +U (Integer -> -F \
              Integer) ;\ndef loose = thunk {{ {written} }} ;\n"
@@ -6896,25 +6896,25 @@ def delivered() -> -F Unit {
     fn the_sugared_form_reads_back_to_the_term_it_prints()
     {
         let types = [
-            ("+U (-F Integer)", "() => Integer"),
-            ("+U (Integer -> -F String)", "Integer => String"),
+            ("+U (-F Integer)", "() -> Integer"),
+            ("+U (Integer -> -F String)", "Integer -> String"),
             (
                 "+U (Integer -> String -> -F Unit)",
-                "(Integer, String) => Unit",
+                "(Integer, String) -> Unit",
             ),
             (
                 "+U (+U (Integer -> -F Integer) -> -F Integer)",
-                "(Integer => Integer) => Integer",
+                "(Integer -> Integer) -> Integer",
             ),
             (
                 "+U (Integer -> -F (+U (-F Integer)))",
-                "Integer => () => Integer",
+                "Integer -> (() -> Integer)",
             ),
-            ("#{Integer, String, Unit}", "Integer * String * Unit"),
-            ("#{#{Integer, String}, Unit}", "(Integer * String) * Unit"),
+            ("*{Integer, String, Unit}", "Integer * String * Unit"),
+            ("*{*{Integer, String}, Unit}", "(Integer * String) * Unit"),
             ("+{Integer, +{String, Unit}}", "Integer + (String + Unit)"),
-            ("+{#{Integer, String}, Unit}", "Integer * String + Unit"),
-            ("#{+{Integer, String}, Unit}", "(Integer + String) * Unit"),
+            ("+{*{Integer, String}, Unit}", "Integer * String + Unit"),
+            ("*{+{Integer, String}, Unit}", "(Integer + String) * Unit"),
             (
                 "+U (&{-F Integer, &{-F Unit, -F String}})",
                 "+U (-F Integer & (-F Unit & -F String))",
@@ -6928,8 +6928,8 @@ def delivered() -> -F Unit {
                 "+U ((-F Integer & -F Unit) & -F String)",
             ),
             (
-                "+U (#{Integer, String} -> -F +{Integer, Unit})",
-                "Integer * String => Integer + Unit",
+                "+U (*{Integer, String} -> -F +{Integer, Unit})",
+                "Integer * String -> Integer + Unit",
             ),
         ];
         let mut written = types
@@ -7123,11 +7123,11 @@ def delivered() -> -F Unit {
             (presentation.to_string(), presentation.fidelity())
         };
         for (name, expected) in [
-            ("bound", "fun (a) { let b = kept(a) ; kept(b) }"),
-            ("nested", "fun (a) { kept(kept(a)) }"),
-            ("nested_printed", "fun (a) { kept(kept(a)) }"),
-            ("written", "fun (a) { kept(run kept(a)) }"),
-            ("written_printed", "fun (a) { kept(run kept(a)) }"),
+            ("bound", "fun (a) { let b = kept a ; kept b }"),
+            ("nested", "fun (a) { kept (kept a) }"),
+            ("nested_printed", "fun (a) { kept (kept a) }"),
+            ("written", "fun (a) { kept (run (kept a)) }"),
+            ("written_printed", "fun (a) { kept (run (kept a)) }"),
         ] {
             assert_eq!(
                 printed(name),
@@ -7220,8 +7220,8 @@ def delivered() -> -F Unit {
             .naming(&constructors)
             .within(&context);
         for (source, expected) in [
-            (plain.restoring(&restoration), "fun (a) { S(S(dbl(a))) }"),
-            (plain, "fun (a) { let b = dbl(a) ; S(S(b)) }"),
+            (plain.restoring(&restoration), "fun (a) { S (S (dbl a)) }"),
+            (plain, "fun (a) { let b = dbl a ; S (S b) }"),
         ] {
             let presentation = present_computation(
                 &source,
@@ -8107,8 +8107,8 @@ def delivered() -> -F Unit {
              ULevel : Nat -> Type {\n    NatV : (n : Nat) --> ULevel(n);\n    TypeV : (n : Nat) \
              --> ULevel(Succ(n));\n    PiV : (n : Nat, a : ULevel(n), b : +U (elLevel(n, a) -> \
              -F ULevel(n))) --> ULevel(n);\n  }\n\n  def rec elLevel(n : Nat, u : ULevel(n)) -> \
-             -F Type {\n    match u {\n      NatV(m) => return Nat,\n      TypeV(m) => return \
-             (ULevel(m)),\n      PiV(m, a, b) => return (+U ((x : elLevel[<](m, a)) -> -F \
+             -F Type {\n    match u {\n      | NatV(m) => return Nat\n      | TypeV(m) => return \
+             (ULevel(m))\n      | PiV(m, a, b) => return (+U ((x : elLevel[<](m, a)) -> -F \
              elLevel[<](m, b(x))))\n    }\n  }\n}\n",
         );
         let typed = crate::typed::TypeTable::of(&grammar, source).expect("the source types");

@@ -699,7 +699,7 @@ pub fn render(statements: &[Stmt]) -> String
         if let Body::Function(literal) = statement.body {
             writeln!(
                 text,
-                "def d{name}(x: Integer) -> -F Integer {{ return {literal} }}"
+                "def d{name}(x : Integer) -> -F Integer {{ return {literal} }}"
             )
             .expect("a string takes every write");
             continue;

@@ -2563,7 +2563,7 @@ mod tests
                 (0_usize, 0_usize),
             ),
             (
-                r#"@[ checks ] def f(x: Integer) -> -F Integer { return x }"#,
+                r#"@[ checks ] def f(x : Integer) -> -F Integer { return x }"#,
                 Settlement::Settled,
                 (0_usize, 0_usize),
             ),
@@ -3072,19 +3072,19 @@ mod tests
             ),
             (
                 "",
-                "Unrealised(Size(Argument(1)))",
+                "Unrealised (Size (Argument 1))",
                 Outcome::Refuses(size),
                 Settlement::Unsettled,
             ),
             (
                 r#", refuses("BoundaryUnrealised.Size")"#,
-                "Unrealised(Size(Argument(1)))",
+                "Unrealised (Size (Argument 1))",
                 Outcome::Refuses(size),
                 Settlement::Settled,
             ),
             (
                 r#", refuses("BoundaryUnrealised.Size")"#,
-                "Unrealised(Members)",
+                "Unrealised Members",
                 Outcome::Refuses(RefusalName::BoundaryUnrealised(
                     crate::refusal::BoundaryClause::Members.tag(),
                 )),
@@ -3193,7 +3193,7 @@ mod tests
         ) -> RunSpelling
         {
             self.0.push(("decompose", usize::from(constant)));
-            RunSpelling::from(format!("event(left, {})", usize::from(constant)))
+            RunSpelling::from(format!("event left {}", usize::from(constant)))
         }
 
         /// Records a traced run, spells it by position, and plays one
@@ -3211,12 +3211,12 @@ mod tests
                 run: ran_at(constant),
                 channels: Vec::from([Channel {
                     name: String::from("c"),
-                    web: RunSpelling::from(format!("event(left, {})", usize::from(constant))),
+                    web: RunSpelling::from(format!("event left {}", usize::from(constant))),
                 }]),
             }
         }
 
-        /// Records what a declaration reads and spells it as `(Nat, side)`
+        /// Records what a declaration reads and spells it as `*{Nat, side}`
         /// whatever the position.
         ///
         /// # Specification
@@ -3227,7 +3227,7 @@ mod tests
         ) -> RunSpelling
         {
             self.0.push(("reads", usize::from(constant)));
-            RunSpelling::from(String::from("(Nat, side)"))
+            RunSpelling::from(String::from("*{Nat, side}"))
         }
     }
 
@@ -3238,7 +3238,7 @@ mod tests
     #[test]
     fn a_web_settles_against_the_dialogue_s_decomposition_2077()
     {
-        let web = |at: &str| Outcome::Decomposes(RunSpelling::from(format!("event(left, {at})")));
+        let web = |at: &str| Outcome::Decomposes(RunSpelling::from(format!("event left {at}")));
         let rows = [
             (
                 CorpusRoot::Strict,
@@ -3313,28 +3313,28 @@ mod tests
             (
                 CorpusRoot::Strict,
                 "@[ reads(*{side, Nat}) ] def a = 3 ;",
-                read("(side, Nat)"),
+                read("*{side, Nat}"),
                 Settlement::Settled,
                 &[("reads", 0_usize)][..],
             ),
             (
                 CorpusRoot::Fixture,
                 "@[ reads(Nat) ] def a = 3 ;",
-                read("(Nat, side)"),
+                read("*{Nat, side}"),
                 Settlement::Unsettled,
                 &[("reads", 0_usize)][..],
             ),
             (
                 CorpusRoot::Fixture,
                 "@[ reads(*{Nat, side, Nat}) ] data D : Type where { | E : D }",
-                read("(Nat, side, Nat)"),
+                read("*{Nat, side, Nat}"),
                 Settlement::Settled,
                 &[("reads", 0_usize)][..],
             ),
             (
                 CorpusRoot::Fixture,
                 "@[ reads(()) ] def a = 3 ;",
-                read("(Nat, side)"),
+                read("*{Nat, side}"),
                 Settlement::Unsettled,
                 &[("reads", 0_usize)][..],
             ),
@@ -3414,7 +3414,7 @@ mod tests
             (
                 CorpusRoot::Strict,
                 "@[ runs(\"ran at 0\"), traces(decomposes c (event left 0)) ] def a = 3 ;",
-                tracing("ran at 0", &[("c", "event(left, 0)")]),
+                tracing("ran at 0", &[("c", "event left 0")]),
                 Settlement::Settled,
             ),
             (
@@ -3426,7 +3426,7 @@ mod tests
             (
                 CorpusRoot::Fixture,
                 "@[ runs(\"ran at 0\"), traces(decomposes c (event left 1)) ] def a = 3 ;",
-                tracing("ran at 0", &[("c", "event(left, 0)")]),
+                tracing("ran at 0", &[("c", "event left 0")]),
                 Settlement::Unsettled,
             ),
             (
@@ -3438,14 +3438,14 @@ mod tests
             (
                 CorpusRoot::Fixture,
                 "@[ runs(\"ran at 1\"), traces(decomposes c (event left 0)) ] def a = 3 ;",
-                tracing("ran at 0", &[("c", "event(left, 0)")]),
+                tracing("ran at 0", &[("c", "event left 0")]),
                 Settlement::Unsettled,
             ),
             (
                 CorpusRoot::Fixture,
                 "@[ runs(\"ran at 0\"), traces(decomposes c (event left 0)), traces(primes d 0) \
                  ] def a = 3 ;",
-                tracing("ran at 0", &[("c", "event(left, 0)"), ("d", "unplayed")]),
+                tracing("ran at 0", &[("c", "event left 0"), ("d", "unplayed")]),
                 Settlement::Unsettled,
             ),
         ];
@@ -3568,8 +3568,8 @@ data NatUnits : Type where {{
 }}"#
             )
         };
-        let joins = "rule : add(m, Zero) ==> m;";
-        let parts = "rule : add(m, Zero) ==> Succ(m);";
+        let joins = "rule : add m Zero ==> m;";
+        let parts = "rule : add m Zero ==> Succ m;";
         let normalizes = |line: &str| Outcome::Normalizes(RunSpelling::from(String::from(line)));
         let rows = [
             (

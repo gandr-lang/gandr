@@ -316,7 +316,6 @@ const SIGNED: &[RewriteName] = &[
     RewriteName::Product,
     RewriteName::Sum,
     RewriteName::LazyProduct,
-    RewriteName::Tuple,
     RewriteName::ValueFunction,
     RewriteName::DefaultGrade,
     RewriteName::PathComposite,

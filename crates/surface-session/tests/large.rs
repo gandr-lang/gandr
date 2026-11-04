@@ -323,7 +323,7 @@ pub fn module(
             2 => {
                 shape.push(format!("def t{i} : +U (-F Integer) ;"));
                 shape.push(format!(
-                    "def t{i} = thunk {{ id({}) (Integer) (v{}) }} ;",
+                    "def t{i} = thunk {{ ((id ({})) (Integer)) (v{}) }} ;",
                     i.saturating_sub(1),
                     i.saturating_sub(2)
                 ));

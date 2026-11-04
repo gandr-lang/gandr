@@ -1202,7 +1202,7 @@ mod tests
         let report = sweep(&pbg, &scratch).expect("the sweep runs");
         std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
         let unresolved = [
-            ("run-expression.gandr", 157_usize, "rec", Mutation::Deleted),
+            ("run-expression.gandr", 161_usize, "rec", Mutation::Deleted),
             (
                 "path-step.gandr",
                 124,
@@ -1282,8 +1282,8 @@ mod tests
                 "loop",
                 Mutation::Deleted,
             ),
-            ("rec-block.gandr", 174, "rec", Mutation::Deleted),
-            ("rec-block.gandr", 302, "rec", Mutation::Deleted),
+            ("rec-block.gandr", 178, "rec", Mutation::Deleted),
+            ("rec-block.gandr", 301, "rec", Mutation::Deleted),
             ("parenthesized-type.gandr", 102, "thunk", Mutation::Deleted),
         ];
         for &(exemplar, at, tile, ref mutation) in &licensed {

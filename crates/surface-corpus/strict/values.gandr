@@ -4,7 +4,7 @@ def answer : Integer = 42;
 @[ runs("\"hello, gandr\"") ]
 def greeting : String = "hello, gandr";
 
-@[ runs("unit") ]
+@[ runs("*{}") ]
 def nothing : Unit = *{};
 
 @[ runs("42") ]

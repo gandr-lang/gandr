@@ -401,9 +401,9 @@ mod tests
             SourceText::from(
                 "pub data Tree : Type where {\n  | Leaf : Tree\n  | Node : (l : Tree, r : Tree) --> Tree\n  \
                  oper left : (t : Tree) --> Tree;\n  oper twice : (t : Tree) --> Tree;\n  oper thrice : (t \
-                 : Tree) --> Tree;\n  rule : left(Leaf) ==> Leaf;\n  rule : left(Node(l, r)) ==> \
-                 l;\n  rule : twice(t) ==> Node(t, t);\n  rule : thrice(t) ==> Node(t, Node(t, \
-                 t));\n}\n",
+                 : Tree) --> Tree;\n  rule : left(Leaf) ==> Leaf;\n  rule : left (Node l r) ==> \
+                 l;\n  rule : twice t ==> Node t t;\n  rule : thrice t ==> Node t (Node t \
+                 t);\n}\n",
             ),
         );
         // The importer lowers over `Tree`, whose cells are the other step's.
@@ -438,9 +438,9 @@ mod tests
                     "1:5: cell 0 frame, strictly linear: v 1, beta 1",
                     "1:5: cell 1 frame, strictly linear: v 1, beta 1",
                     "7:21: cell 2 rule, strictly linear: $ret 1",
-                    "8:27: cell 3 rule, erasing: l 1, r 0, $ret 1",
-                    "9:19: cell 4 rule, duplicating 2: t 2, $ret 1",
-                    "10:20: cell 5 rule, duplicating 3: t 3, $ret 1",
+                    "8:26: cell 3 rule, erasing: l 1, r 0, $ret 1",
+                    "9:18: cell 4 rule, duplicating 2: t 2, $ret 1",
+                    "10:19: cell 5 rule, duplicating 3: t 3, $ret 1",
                 ])
             ),
             (

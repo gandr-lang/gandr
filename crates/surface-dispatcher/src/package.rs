@@ -353,24 +353,26 @@ quenchant_shape::reason_enum! {
 
 /// The string literal `source`, a package source, writes for its `Package`
 /// model's `sources`, as a path: the string after `def sources =` directly in
-/// the braces of the module named `Package`, the module [`Manifest::of`]
-/// reads each field of. None when that module writes none, or writes an
-/// escape.
+/// the block of the module named `Package`, the module [`Manifest::of`]
+/// reads each field of. The block is braced or laid out: the labeler writes a
+/// laid-out block's brackets as tokens of their own, which spell nothing.
+/// None when that module writes none, or writes an escape.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: read off the labeler's tokens, the layout and comments skipped,
-///   the first `def sources = "<text>"` at depth one of the braces after the
-///   first `module Package`; its `<text>` as written, empty for `""`; none when
-///   the string holds an escape or the form is another.
+/// - ensures: read off the labeler's tokens, the spaces and comments skipped,
+///   the first `def sources = "<text>"` at depth one of the block after the
+///   first `module Package`, braced or laid out; its `<text>` as written, empty
+///   for `""`; none when the string holds an escape or the form is another.
 /// - provides: the directory discovery reads before any source is checked.
 /// - fails: never; an unread field is none.
 /// - panics: none.
 /// - executable: none — the clause restates the scan.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `src`, `.` and the empty string read as written; a
-///   computed `sources`, an escaped one and one in a nested module read none.
+/// - hypothesis: L3 — `src`, `.` and the empty string read as written, in a
+///   braced block and in a laid-out one; a computed `sources`, an escaped one
+///   and one in a nested module read none.
 /// - witness: `tests::package::a_model_s_sources_is_the_literal_discovery_reads_4916`
 fn stated_sources(source: SourceFragment<'_>) -> Option<PathBuf>
 {
@@ -380,43 +382,52 @@ fn stated_sources(source: SourceFragment<'_>) -> Option<PathBuf>
         .map(|token| (token.lexeme, <&str>::from(token.text(&source))))
         .collect();
     let spelled = |at: usize| tokens.get(at).map(|&(_, spelled)| spelled);
+    let opens = |at: usize| {
+        tokens
+            .get(at)
+            .is_some_and(|&(lexeme, spelled)| lexeme == Lexeme::LayoutOpen || spelled == "{")
+    };
+    let closes = |at: usize| {
+        tokens
+            .get(at)
+            .is_some_and(|&(lexeme, spelled)| lexeme == Lexeme::LayoutClose || spelled == "}")
+    };
     let named = (0 .. tokens.len()).find(|&at| {
         spelled(at) == Some("module") && spelled(at.saturating_add(1)) == Some("Package")
     })?;
-    let open = (named .. tokens.len()).find(|&at| spelled(at) == Some("{"))?;
+    let open = (named .. tokens.len()).find(|&at| opens(at))?;
     let mut depth = 0_usize;
     for at in open .. tokens.len() {
-        match spelled(at) {
-            Some("{") => depth = depth.saturating_add(1),
-            Some("}") => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return None;
-                }
-            },
-            Some("def")
-                if depth == 1
-                    && spelled(at.saturating_add(1)) == Some(SOURCES)
-                    && spelled(at.saturating_add(2)) == Some("=") =>
-            {
-                let quoted = at.saturating_add(3);
-                return match (
-                    tokens.get(quoted),
-                    tokens.get(quoted.saturating_add(1)),
-                    tokens.get(quoted.saturating_add(2)),
-                ) {
-                    (Some(&(Lexeme::Quote, _)), Some(&(Lexeme::Quote, _)), _) => {
-                        Some(PathBuf::new())
-                    },
-                    (
-                        Some(&(Lexeme::Quote, _)),
-                        Some(&(Lexeme::StringFragment, written)),
-                        Some(&(Lexeme::Quote, _)),
-                    ) => Some(PathBuf::from(written)),
-                    _ => None,
-                };
-            },
-            _ => {},
+        if opens(at) {
+            depth = depth.saturating_add(1);
+            continue;
+        }
+        if closes(at) {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                return None;
+            }
+            continue;
+        }
+        if spelled(at) == Some("def")
+            && depth == 1
+            && spelled(at.saturating_add(1)) == Some(SOURCES)
+            && spelled(at.saturating_add(2)) == Some("=")
+        {
+            let quoted = at.saturating_add(3);
+            return match (
+                tokens.get(quoted),
+                tokens.get(quoted.saturating_add(1)),
+                tokens.get(quoted.saturating_add(2)),
+            ) {
+                (Some(&(Lexeme::Quote, _)), Some(&(Lexeme::Quote, _)), _) => Some(PathBuf::new()),
+                (
+                    Some(&(Lexeme::Quote, _)),
+                    Some(&(Lexeme::StringFragment, written)),
+                    Some(&(Lexeme::Quote, _)),
+                ) => Some(PathBuf::from(written)),
+                _ => None,
+            };
         }
     }
     None
