@@ -2712,6 +2712,46 @@ impl TypeTable
                 entry.standing = Standing::Closed;
             }
         }
+        // A prefix minus folded onto a number plans one literal at the
+        // operator. The operand number holds no term of its own. The table
+        // answers it at the literal's type, at its own span (#4958).
+        if !origins.covers().is_empty() {
+            let mut by_span: BTreeMap<ByteSpan, usize> = BTreeMap::new();
+            for (index, entry) in entries.iter().enumerate() {
+                by_span
+                    .entry(entry.span)
+                    .and_modify(|held| {
+                        let term = entries
+                            .get(*held)
+                            .is_some_and(|found| found.subject == Subject::Term);
+                        if !term && entry.subject == Subject::Term {
+                            *held = index;
+                        }
+                    })
+                    .or_insert(index);
+            }
+            let mut added = Vec::new();
+            for &(operator, operand) in origins.covers() {
+                if by_span.contains_key(&operand) {
+                    continue;
+                }
+                let Some(&index) = by_span.get(&operator)
+                else {
+                    continue;
+                };
+                let Some(found) = entries.get(index)
+                else {
+                    continue;
+                };
+                added.push(Entry {
+                    span: operand,
+                    subject: Subject::Term,
+                    provenance: Provenance::Written,
+                    ..found.clone()
+                });
+            }
+            entries.extend(added);
+        }
         let entries: Vec<Entry> = entries
             .into_iter()
             .filter_map(|entry| {
@@ -7388,6 +7428,38 @@ mod tests
             at("\n\n"),
             Maybe::Absent(typing::Absent::Untyped),
             "layout between declarations is no node's"
+        );
+    }
+
+    /// #4958: the digit of a negated literal answers at its own span, and the
+    /// operator keeps the entry of the negative literal.
+    #[test]
+    fn a_negated_literal_s_number_answers_at_its_own_span_4958()
+    {
+        let written = "def integerOrder() -> Bool { -4 < 9 }\n";
+        let source = SourceText::from(written);
+        let table = table(source);
+        let start = written.find("-4").expect("the negated literal is written");
+        let digit = ByteOffset::from(start.saturating_add(1));
+        let text =
+            |span: ByteSpan| written.get(usize::from(span.start()) .. usize::from(span.end()));
+        let answered = table.answering(digit);
+        assert_eq!(
+            answered.and_then(text),
+            Some("4"),
+            "the digit answers at its own span, not the operator's: {answered:?}"
+        );
+        let minus = table.answering(ByteOffset::from(start));
+        assert_eq!(
+            minus.and_then(text),
+            Some("-4"),
+            "the operator keeps the negative literal: {minus:?}"
+        );
+        let nine = written.find('9').expect("the other literal is written");
+        assert_eq!(
+            table.answering(ByteOffset::from(nine)).and_then(text),
+            Some("9"),
+            "a positive literal still answers at its own span"
         );
     }
 

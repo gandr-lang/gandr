@@ -751,6 +751,10 @@ pub struct OriginTable
     /// Each label written against an entry, with what it labels, in the
     /// order lowered.
     labels: Vec<Label>,
+    /// Each prefix minus folded onto a number. The first span is the
+    /// operator. The second span is the operand. The literal is one value at
+    /// the operator. The operand answers at that value's type.
+    covers: Vec<(ByteSpan, ByteSpan)>,
     /// Each type and stated index a data declaration writes, by its bytes,
     /// with the names of the binders it is read under, outermost first, in
     /// the order lowered: a data declaration has no term whose binders name
@@ -2282,6 +2286,44 @@ impl OriginTable
     pub fn labels(&self) -> &[Label]
     {
         &self.labels
+    }
+
+    /// Record that the operand written at `operand` of a prefix minus folded
+    /// onto a number answers at the literal planned at `operator`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the pair is appended, so [`Self::covers`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `-5` records the operator span beside the digit span.
+    /// - witness: `lower::tests::a_negated_natural_literal_is_one_negative_literal_4732`
+    #[spec(
+        captures: before = self.covers.len(),
+        ensures: self.covers.len() == before.saturating_add(1),
+    )]
+    #[inline]
+    pub fn record_cover(
+        &mut self,
+        operator: ByteSpan,
+        operand: ByteSpan,
+    )
+    {
+        self.covers.push((operator, operand));
+    }
+
+    /// Each prefix minus folded onto a number, the operator span beside the
+    /// operand span, in the order lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn covers(&self) -> &[(ByteSpan, ByteSpan)]
+    {
+        &self.covers
     }
 
     /// Record that the data declaration's type or stated index written at
