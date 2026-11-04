@@ -232,14 +232,14 @@ fn a_law_keeps_its_statement_in_either_form_2384()
 theory Lawful where {
   sort C : Type;
   oper next : +U (C -> -F C);
-  law trivial : (a : C) => Path(Bool, true, true);
+  law trivial : (a : C) => Path[.A = Bool](true, true);
 }
 ";
     let sugared = "\
 theory Lawful where {
   sort C : Type;
   oper next : C => C;
-  law trivial : (a : C) => Path(Bool, true, true);
+  law trivial : (a : C) => Path[.A = Bool](true, true);
 }
 ";
     for (source, form, expected) in [
@@ -568,14 +568,13 @@ fn the_path_composite_moves_both_ways()
 {
     let grammar = grammar();
     let sugared = format!(
-        "{CIRCLE}def thrice : Path(Path(Circle, Base, Base), Path.step(loop, Path.step(loop, loop)), Path.here(Base)) ;\n"
+        "{CIRCLE}def thrice : Path[.A = Path[.A = Circle](Base, Base)](Path.step(loop, Path.step(loop, loop)), Path.here(Base)) ;\n"
     );
     let explicit = format!(
-        "{CIRCLE}def thrice : Path(
-  Path(Circle, Base, Base),
+        "{CIRCLE}def thrice : Path[.A = Path[.A = Circle](Base, Base)](
   Path.walk(
-    fun (a) {{ Path(Circle, Base, a) }},
-    Path.walk(fun (a) {{ Path(Circle, Base, a) }}, loop, loop),
+    fun (a) {{ type(Path[.A = Circle](Base, a)) }},
+    Path.walk(fun (a) {{ type(Path[.A = Circle](Base, a)) }}, loop, loop),
     loop
   ),
   Path.here(Base)
@@ -583,8 +582,7 @@ fn the_path_composite_moves_both_ways()
 "
     );
     let back = format!(
-        "{CIRCLE}def thrice : Path(
-  Path(Circle, Base, Base),
+        "{CIRCLE}def thrice : Path[.A = Path[.A = Circle](Base, Base)](
   Path.step(loop, Path.step(loop, loop)),
   Path.here(Base)
 );
@@ -605,7 +603,7 @@ fn the_path_composite_moves_both_ways()
 }
 
 /// A derived motive formats once as explicit (#3891). Its lambda's stated
-/// parameter is the binder's type, `fun (c : Path(A, x, y))`, not the
+/// parameter is the binder's type, `fun (c : Path[.A = A](x, y))`, not the
 /// statement the printer once wrote for it (#3943).
 #[test]
 fn a_statement_in_a_derived_motive_formats_once_as_explicit_3891()
@@ -616,17 +614,17 @@ fn a_statement_in_a_derived_motive_formats_once_as_explicit_3891()
   x : A,
   y : A,
   z : A,
-  f1 : Path(A, x, y),
-  f2 : Path(A, x, y),
-  a : Path(Path(A, x, y), f1, f2),
-  g : Path(A, y, z)
-) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {
-  Path.ap((thunk { fun (q : Path(A, x, y)) { Path.step(q, g) } } : Path(A, x, y) => Path(A, x, z)), a)
+  f1 : Path[.A = A](x, y),
+  f2 : Path[.A = A](x, y),
+  a : Path[.A = Path[.A = A](x, y)](f1, f2),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
+  Path.ap((thunk { fun (q : Path[.A = A](x, y)) { Path.step(q, g) } } : Path[.A = A](x, y) => Path[.A = A](x, z)), a)
 }
 ";
     let once = spelled(&grammar, source, Form::Explicit, Selection::Every);
     assert!(
-        once.contains("fun (c : Path(A, x, y)) {"),
+        once.contains("fun (c : Path[.A = A](x, y)) {"),
         "the motive's lambda states its parameter's type: {once}"
     );
     assert_eq!(
@@ -649,17 +647,17 @@ fn a_stated_binder_in_cong_formats_once_as_explicit_4671()
   x : A,
   y : A,
   z : A,
-  f1 : Path(A, x, y),
-  f2 : Path(A, x, y),
-  a : Path(Path(A, x, y), f1, f2),
-  g : Path(A, y, z)
-) -> Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {
-  Path.ap(fun (q : Path(A, x, y)) { Path.step(q, g) }, a)
+  f1 : Path[.A = A](x, y),
+  f2 : Path[.A = A](x, y),
+  a : Path[.A = Path[.A = A](x, y)](f1, f2),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
+  Path.ap(fun (q : Path[.A = A](x, y)) { Path.step(q, g) }, a)
 }
 ";
     let once = spelled(&grammar, source, Form::Explicit, Selection::Every);
     assert!(
-        once.contains("= pure b; Path.walk("),
+        once.contains("= pure b;\n"),
         "the motive's bind touches its `;`: {once}"
     );
     assert_eq!(
@@ -684,9 +682,9 @@ fn an_inverse_and_an_action_on_a_path_move_both_ways_778()
   x
 }}
 
-def undone : Path(Path(Circle, Base, Base), Path.back(loop), Path.back(loop)) ;
+def undone : Path[.A = Path[.A = Circle](Base, Base)](Path.back(loop), Path.back(loop)) ;
 
-def spun : Path(Path(Circle, Base, Base), Path.ap(spin, loop), Path.ap(spin, loop)) ;
+def spun : Path[.A = Path[.A = Circle](Base, Base)](Path.ap(spin, loop), Path.ap(spin, loop)) ;
 "
     );
     let explicit = format!(
@@ -694,16 +692,14 @@ def spun : Path(Path(Circle, Base, Base), Path.ap(spin, loop), Path.ap(spin, loo
   x
 }}
 
-def undone : Path(
-  Path(Circle, Base, Base),
-  Path.walk(fun (a) {{ Path(Circle, a, Base) }}, loop, Path.here(Base)),
-  Path.walk(fun (a) {{ Path(Circle, a, Base) }}, loop, Path.here(Base))
+def undone : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.walk(fun (a) {{ type(Path[.A = Circle](a, Base)) }}, loop, Path.here(Base)),
+  Path.walk(fun (a) {{ type(Path[.A = Circle](a, Base)) }}, loop, Path.here(Base))
 );
 
-def spun : Path(
-  Path(Circle, Base, Base),
-  Path.walk(fun (a) {{ Path(Circle, spin(Base), spin(a)) }}, loop, Path.here(spin(Base))),
-  Path.walk(fun (a) {{ Path(Circle, spin(Base), spin(a)) }}, loop, Path.here(spin(Base)))
+def spun : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.walk(fun (a) {{ type(Path[.A = Circle](spin(Base), spin(a))) }}, loop, Path.here(spin(Base))),
+  Path.walk(fun (a) {{ type(Path[.A = Circle](spin(Base), spin(a))) }}, loop, Path.here(spin(Base)))
 );
 "
     );
@@ -712,14 +708,12 @@ def spun : Path(
   x
 }}
 
-def undone : Path(
-  Path(Circle, Base, Base),
+def undone : Path[.A = Path[.A = Circle](Base, Base)](
   Path.back(loop),
   Path.back(loop)
 );
 
-def spun : Path(
-  Path(Circle, Base, Base),
+def spun : Path[.A = Path[.A = Circle](Base, Base)](
   Path.ap(spin, loop),
   Path.ap(spin, loop)
 );
@@ -752,17 +746,17 @@ fn an_action_under_a_quoted_motive_moves_both_ways_4645()
   x : A,
   y : A,
   w : A,
-  f1 : Path(A, x, y),
-  f2 : Path(A, x, y),
-  a : Path(Path(A, x, y), f1, f2),
-  F : Path(A, x, y) => Path(A, x, w)
-) -> Path(Path(Path(A, x, w), F(f1), F(f2)), Path.ap(F, a), Path.ap(F, a)) {
+  f1 : Path[.A = A](x, y),
+  f2 : Path[.A = A](x, y),
+  a : Path[.A = Path[.A = A](x, y)](f1, f2),
+  F : Path[.A = A](x, y) => Path[.A = A](x, w)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](F(f1), F(f2))](Path.ap(F, a), Path.ap(F, a)) {
   Path.here(Path.ap(F, a))
 }
 ";
     let explicit = spelled(&grammar, source, Form::Explicit, Selection::Every);
     assert!(
-        explicit.contains("{ type(Path(Path(A, x, w), F(f1), F(b))) }"),
+        explicit.contains("{ type(Path[.A = Path[.A = A](x, w)](F(f1), F(b))) }"),
         "the motive is quoted: {explicit}"
     );
     let back = spelled(&grammar, explicit.as_str(), Form::Sugared, Selection::Every);
@@ -785,19 +779,19 @@ fn a_composite_read_as_a_value_moves_both_ways_985()
 {
     let grammar = grammar();
     let sugared = format!(
-        "{CIRCLE}def two : Path(Circle, Base, Base) = Path.step(loop, loop);
+        "{CIRCLE}def two : Path[.A = Circle](Base, Base) = Path.step(loop, loop);
 
-def undone : Path(Circle, Base, Base) = Path.back(Path.step(loop, loop));
+def undone : Path[.A = Circle](Base, Base) = Path.back(Path.step(loop, loop));
 "
     );
     let explicit = format!(
-        "{CIRCLE}def two : Path(Circle, Base, Base);
-def two = Path.walk(fun (a) {{ Path(Circle, Base, a) }}, loop, loop);
+        "{CIRCLE}def two : Path[.A = Circle](Base, Base);
+def two = Path.walk(fun (a) {{ type(Path[.A = Circle](Base, a)) }}, loop, loop);
 
-def undone : Path(Circle, Base, Base);
+def undone : Path[.A = Circle](Base, Base);
 def undone = Path.walk(
-  fun (a) {{ Path(Circle, a, Base) }},
-  Path.walk(fun (a) {{ Path(Circle, Base, a) }}, loop, loop),
+  fun (a) {{ type(Path[.A = Circle](a, Base)) }},
+  Path.walk(fun (a) {{ type(Path[.A = Circle](Base, a)) }}, loop, loop),
   Path.here(Base)
 );
 "
@@ -824,8 +818,8 @@ fn a_transport_standing_as_a_computation_keeps_its_spelling()
 {
     let grammar = grammar();
     let source = format!(
-        "{CIRCLE}def twice(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {{
-  Path.walk(fun (a) {{ Path(Circle, Base, a) }}, p, p)
+        "{CIRCLE}def twice(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) {{
+  Path.walk(fun (a) {{ type(Path[.A = Circle](Base, a)) }}, p, p)
 }}
 "
     );
@@ -848,12 +842,12 @@ fn a_derived_operand_of_a_kept_transport_keeps_its_transport()
 {
     let grammar = grammar();
     for body in [
-        "Path.walk(fun (a) { Path(Circle, Base, a) }, Path.walk(fun (a) { Path(Circle, Base, a) }, p, p), p)",
-        "Path.walk(fun (a) { Path(Circle, Base, a) }, p, Path.walk(fun (a) { Path(Circle, a, Base) }, \
-         Path.walk(fun (a) { Path(Circle, Base, a) }, p, p), Path.here(Base)))",
+        "Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, p, p), p)",
+        "Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, p, Path.walk(fun (a) { type(Path[.A = Circle](a, Base)) }, \
+         Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, p, p), Path.here(Base)))",
     ] {
         let source = format!(
-            "{CIRCLE}def twice(p: Path(Circle, Base, Base)) -> Path(Circle, Base, Base) \
+            "{CIRCLE}def twice(p: Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) \
              {{\n  {body}\n}}\n"
         );
         let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
@@ -930,8 +924,8 @@ fn a_rule_s_outputs_are_not_a_tuple()
 fn a_composite_s_cells_are_not_a_tuple_3957()
 {
     let grammar = grammar();
-    let source = "def cells(a : Type, x : a, y : a, z : a, w : a, p : Path(a, x, y), q : Path(a, \
-                  y, z), r : Path(a, z, w)) -> Path(a, x, w) {\n  compose[5, 7](chain(3), (p, \
+    let source = "def cells(a : Type, x : a, y : a, z : a, w : a, p : Path[.A = a](x, y), q : Path[.A = a](\
+                  y, z), r : Path[.A = a](z, w)) -> Path[.A = a](x, w) {\n  compose[5, 7](chain(3), (p, \
                   q, r))\n}\n\ndef pair = (1, 2) ;\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
@@ -961,8 +955,8 @@ fn a_composite_s_cells_are_not_a_tuple_3957()
 fn a_fill_s_cells_are_not_a_tuple_4075()
 {
     let grammar = grammar();
-    let source = "def lifted(a : Type, x : a, y : a, z : a, fa : Path(a, x, y), g : Path(a, y, \
-                  z)) -> Path(a, x, z) {\n  fill[5, 7](chain(2), selfComposite(a, x, y, z), (fa, \
+    let source = "def lifted(a : Type, x : a, y : a, z : a, fa : Path[.A = a](x, y), g : Path[.A = a](y, \
+                  z)) -> Path[.A = a](x, z) {\n  fill[5, 7](chain(2), selfComposite(a, x, y, z), (fa, \
                   g))\n}\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
@@ -990,8 +984,8 @@ fn a_fill_s_cells_are_not_a_tuple_4075()
 fn a_level_two_shape_s_heights_are_not_a_tuple_4475()
 {
     let grammar = grammar();
-    let source = "def w(a : Type, x : a, y : a, z : a, fm : Path(a, x, y), fp : Path(a, x, y), fa \
-                  : Path(Path(a, x, y), fm, fp), g : Path(a, y, z)) -> Path(a, x, z) {\n  \
+    let source = "def w(a : Type, x : a, y : a, z : a, fm : Path[.A = a](x, y), fp : Path[.A = a](x, y), fa \
+                  : Path[.A = Path[.A = a](x, y)](fm, fp), g : Path[.A = a](y, z)) -> Path[.A = a](x, z) {\n  \
                   compose[5, 11](chain(2, (1, 0)), (fa, g))\n}\n\ndef pair = (1, 0) ;\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
@@ -1022,9 +1016,9 @@ fn a_composite_of_flows_keeps_its_then()
 {
     let grammar = grammar();
     let source = "module Evolution where {\n  type Old = +{ report : !String. end };\n  type New = +{ \
-                  report : !String. end, pause : end };\n  def sub : Flow(Type, Old, New);\n  \
-                  def sub = Flow.sim(Old, New);\n  def kept : Flow(Type, Old, Old);\n  def kept = \
-                  Flow.stay(Old);\n  def widened() -> -F Flow(Type, Old, New) {\n    become Path.step(kept, \
+                  report : !String. end, pause : end };\n  def sub : Flow[.A = Type](Old, New);\n  \
+                  def sub = Flow.sim(Old, New);\n  def kept : Flow[.A = Type](Old, Old);\n  def kept = \
+                  Flow.stay(Old);\n  def widened() -> -F Flow[.A = Type](Old, New) {\n    become Path.step(kept, \
                   sub)\n  }\n}\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid_out = format(&grammar, &parsed, FormatOptions::default())
@@ -1050,12 +1044,12 @@ fn a_transport_along_no_path_motive_keeps_its_spelling()
     for value in [
         "Path.walk(fun (a) { Integer }, loop, 5)",
         "Path.walk(+U (Circle -> -F Integer), loop, 5)",
-        "Path.walk(fun (a) { Path(Circle, a, a) }, loop, Path.here(Base))",
-        "Path.walk(fun (a) { Path(Circle, Base, Base) }, loop, Path.here(Base))",
-        "Path.walk(fun (a) { Path(Circle, a, Base) }, loop, loop)",
-        "Path.walk(fun (a) { Path(Circle, Base, a) }, loop)",
+        "Path.walk(fun (a) { type(Path[.A = Circle](a, a)) }, loop, Path.here(Base))",
+        "Path.walk(fun (a) { type(Path[.A = Circle](Base, Base)) }, loop, Path.here(Base))",
+        "Path.walk(fun (a) { type(Path[.A = Circle](a, Base)) }, loop, loop)",
+        "Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, loop)",
     ] {
-        let source = format!("{CIRCLE}def moved : Integer = {value};\n");
+        let source = format!("{CIRCLE}def m : Integer = {value};\n");
         assert_eq!(
             spelled(&grammar, source.as_str(), Form::Sugared, Selection::Every),
             source
@@ -1072,11 +1066,11 @@ fn a_composite_under_a_parameter_takes_its_motive_803()
 {
     let grammar = grammar();
     let source = format!(
-        "{CIRCLE}def onward(x: Circle, q: Path(Circle, x, Base)) -> -F Path(Circle, x, Base) {{
+        "{CIRCLE}def onward(x: Circle, q: Path[.A = Circle](x, Base)) -> -F Path[.A = Circle](x, Base) {{
   Path.step(q, Path.here(Base))
 }}
 
-def stated(x: Circle, q: Path(Circle, x, Base)) -> -F Path(Path(Circle, x, Base), Path.step(q, Path.here(Base)), Path.step(q, Path.here(Base))) {{
+def stated(x: Circle, q: Path[.A = Circle](x, Base)) -> -F Path[.A = Path[.A = Circle](x, Base)](Path.step(q, Path.here(Base)), Path.step(q, Path.here(Base))) {{
   Path.here(Path.step(q, Path.here(Base)))
 }}
 "
@@ -1094,16 +1088,15 @@ def stated(x: Circle, q: Path(Circle, x, Base)) -> -F Path(Path(Circle, x, Base)
           | loop : Base <-> Base
         }
 
-        def onward(x : Circle, q : Path(Circle, x, Base)) -> -F Path(Circle, x, Base) {
-          Path.walk(fun (a) { Path(Circle, x, a) }, Path.here(Base), q)
+        def onward(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Circle](x, Base) {
+          Path.walk(fun (a) { type(Path[.A = Circle](x, a)) }, Path.here(Base), q)
         }
 
-        def stated(x : Circle, q : Path(Circle, x, Base)) -> -F Path(
-          Path(Circle, x, Base),
-          Path.walk(fun (a) { Path(Circle, x, a) }, Path.here(Base), q),
-          Path.walk(fun (a) { Path(Circle, x, a) }, Path.here(Base), q)
+        def stated(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Path[.A = Circle](x, Base)](
+          Path.walk(fun (a) { type(Path[.A = Circle](x, a)) }, Path.here(Base), q),
+          Path.walk(fun (a) { type(Path[.A = Circle](x, a)) }, Path.here(Base), q)
         ) {
-          Path.here(Path.walk(fun (a) { Path(Circle, x, a) }, Path.here(Base), q))
+          Path.here(Path.walk(fun (a) { type(Path[.A = Circle](x, a)) }, Path.here(Base), q))
         }
     "#]]
     .assert_eq(formatted.text().as_ref());
@@ -1118,11 +1111,11 @@ fn a_composite_beside_a_call_takes_its_own_motive_3772()
 {
     let grammar = grammar();
     let source = format!(
-        "{CIRCLE}def twice(q: Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), Path.step(q, q), Path.step(q, q)) {{
+        "{CIRCLE}def twice(q: Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q)) {{
   Path.here(Path.step(q, q))
 }}
 
-def beside(q: Path(Circle, Base, Base), r: Path(Path(Circle, Base, Base), Path.step(q, q), Path.step(q, q))) -> -F Path(Path(Circle, Base, Base), Path.step(q, q), Path.step(q, q)) {{
+def beside(q: Path[.A = Circle](Base, Base), r: Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q))) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q)) {{
   Path.step(r, twice(q))
 }}
 "
@@ -1140,29 +1133,29 @@ def beside(q: Path(Circle, Base, Base), r: Path(Path(Circle, Base, Base), Path.s
           | loop : Base <-> Base
         }
 
-        def twice(q : Path(Circle, Base, Base)) -> -F Path(
-          Path(Circle, Base, Base),
-          Path.walk(fun (a) { Path(Circle, Base, a) }, q, q),
-          Path.walk(fun (a) { Path(Circle, Base, a) }, q, q)
+        def twice(q : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](
+          Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q),
+          Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q)
         ) {
-          Path.here(Path.walk(fun (a) { Path(Circle, Base, a) }, q, q))
+          Path.here(Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q))
         }
 
         def beside(
-          q : Path(Circle, Base, Base),
-          r : Path(
-            Path(Circle, Base, Base),
-            Path.walk(fun (a) { Path(Circle, Base, a) }, q, q),
-            Path.walk(fun (a) { Path(Circle, Base, a) }, q, q)
+          q : Path[.A = Circle](Base, Base),
+          r : Path[.A = Path[.A = Circle](Base, Base)](
+            Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q),
+            Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q)
           )
-        ) -> -F Path(
-          Path(Circle, Base, Base),
-          Path.walk(fun (a) { Path(Circle, Base, a) }, q, q),
-          Path.walk(fun (a) { Path(Circle, Base, a) }, q, q)
+        ) -> -F Path[.A = Path[.A = Circle](Base, Base)](
+          Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q),
+          Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q)
         ) {
           Path.walk(
             fun (a) {
-              type(Path(Path(Circle, Base, Base), Path.walk(fun (b) { Path(Circle, Base, b) }, q, q), a))
+              type(Path[.A = Path[.A = Circle](Base, Base)](
+                Path.walk(fun (b) { type(Path[.A = Circle](Base, b)) }, q, q),
+                a
+              ))
             },
             twice(q),
             r
@@ -1187,8 +1180,7 @@ fn a_functor_s_composite_takes_no_motive_from_its_instantiation_2166()
 }
 
 module Reassociating(S : Model(Semi)) where {
-  def reassoc(x : S.M, y : S.M, z : S.M) -> -F Path(
-    S.M,
+  def reassoc(x : S.M, y : S.M, z : S.M) -> -F Path[.A = S.M](
     S.mul(x, S.mul(y, z)),
     S.mul(S.mul(x, y), z)
   ) {
@@ -1201,8 +1193,7 @@ module OnePoint : Model(Semi) where {
 
   def mul(a : Unit, b : Unit) -> -F Unit { unit }
 
-  def assoc(x : Unit, y : Unit, z : Unit) -> -F Path(
-    Unit,
+  def assoc(x : Unit, y : Unit, z : Unit) -> -F Path[.A = Unit](
     mul(mul(x, y), z),
     mul(x, mul(y, z))
   ) {
@@ -1228,9 +1219,9 @@ module OnePointReassociated = Reassociating(OnePoint);
 fn a_composite_of_types_sugars_back_803()
 {
     let grammar = grammar();
-    let source = "def joined(a: Type, b: Type, c: Type, p: Path(Type, a, b), q: Path(Type, b, c)) -> -F \
-                  Path(Path(Type, a, c), Path.walk(fun (d) { Path(Type, a, d) }, q, p), Path.walk(fun (d) { \
-                  Path(Type, a, d) }, q, p)) {\n  Path.here(Path.walk(fun (d) { Path(Type, a, d) }, q, p))\n}\n";
+    let source = "def joined(a: Type, b: Type, c: Type, p: Path[.A = Type](a, b), q: Path[.A = Type](b, c)) -> -F \
+                  Path[.A = Path[.A = Type](a, c)](Path.walk(fun (d) { type(Path[.A = Type](a, d)) }, q, p), Path.walk(fun (d) { \
+                  type(Path[.A = Type](a, d)) }, q, p)) {\n  Path.here(Path.walk(fun (d) { type(Path[.A = Type](a, d)) }, q, p))\n}\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1239,11 +1230,13 @@ fn a_composite_of_types_sugars_back_803()
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), &[]);
     expect![[r#"
-        def joined(a : Type, b : Type, c : Type, p : Path(Type, a, b), q : Path(Type, b, c)) -> Path(
-          Path(Type, a, c),
-          Path.step(p, q),
-          Path.step(p, q)
-        ) {
+        def joined(
+          a : Type,
+          b : Type,
+          c : Type,
+          p : Path[.A = Type](a, b),
+          q : Path[.A = Type](b, c)
+        ) -> Path[.A = Path[.A = Type](a, c)](Path.step(p, q), Path.step(p, q)) {
           Path.here(Path.step(p, q))
         }
     "#]]
@@ -1266,9 +1259,9 @@ data Nat : Type where {
   | Succ : (n : Nat) --> Nat
 }
 
-def kept(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Nat, b, a) {
+def kept(a: Nat, b: Nat, q: Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) {
   become Path.walk(
-    +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a)),
+    +U ((y : Nat) -> (z : Path[.A = Nat](a, y)) -> -F Path[.A = Nat](y, a)),
     q,
     Path.here(a),
     Path.here(q),
@@ -1289,9 +1282,9 @@ def kept(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Nat, b, a) {
           | Succ : (n : Nat) --> Nat
         }
 
-        def kept(a : Nat, b : Nat, q : Path(Nat, a, b)) -> Path(Nat, b, a) {
+        def kept(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) {
           become Path.walk(
-            (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a),
+            (y : Nat, Path[.A = Nat](a, y)) => Path[.A = Nat](y, a),
             q,
             Path.here(a),
             Path.here(q),
@@ -1363,7 +1356,7 @@ def onType(t: Type) -> -F Type {
   return (+U (t -> -F t))
 }
 
-def flat(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
+def flat(a: Nat, b: Nat, q: Path[.A = Nat](a, b), v: Nat) -> -F Nat {
   become Path.walk(+U (Nat -> -F Nat), q, v, v, v)
 }
 ";
@@ -1377,7 +1370,7 @@ def flat(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
           return (t => t)
         }
 
-        def flat(a : Nat, b : Nat, q : Path(Nat, a, b), v : Nat) -> Nat {
+        def flat(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> Nat {
           become Path.walk(Nat => Nat, q, v, v, v)
         }
     "#]]
@@ -1531,7 +1524,7 @@ fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
 fn an_importing_source_is_rewritten_beside_its_imports()
 {
     let grammar = grammar();
-    let source = "import \"./circle.gandr\";\n\ndef twice : Path(Path(Circle, Base, Base), Path.step(loop, loop), Path.here(Base));\n";
+    let source = "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle](Base, Base)](Path.step(loop, loop), Path.here(Base));\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Explicit,
@@ -1554,9 +1547,8 @@ fn an_importing_source_is_rewritten_beside_its_imports()
     assert_eq!(formatted.withdrawn(), []);
     assert_eq!(
         formatted.into_text(),
-        "import \"./circle.gandr\";\n\ndef twice : Path(
-  Path(Circle, Base, Base),
-  Path.walk(fun (a) { Path(Circle, Base, a) }, loop, loop),
+        "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, loop, loop),
   Path.here(Base)
 );
 "
@@ -1595,9 +1587,9 @@ def next(n : Nat) -> -F Nat {
   Succ(n)
 }
 
-def stay : (a : Nat) => Path(Nat, a, a) ;
+def stay : (a : Nat) => Path[.A = Nat](a, a) ;
 
-def stayUp(a : Nat) -> -F Path(Nat, Succ(a), Succ(a)) {
+def stayUp(a : Nat) -> -F Path[.A = Nat](Succ(a), Succ(a)) {
   Path.step(Path.ap(next, Flow.stay(a)), Path.here(Succ(a)))
 }
 ";
@@ -1618,7 +1610,7 @@ def stayUp(a : Nat) -> -F Path(Nat, Succ(a), Succ(a)) {
         formatted
             .text()
             .as_ref()
-            .contains("def stay : +U ((a : Nat) -> -F Path(Nat, a, a));"),
+            .contains("def stay : +U ((a : Nat) -> -F Path[.A = Nat](a, a));"),
         "{}",
         formatted.text()
     );

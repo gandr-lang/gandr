@@ -114,11 +114,11 @@ const FIBONACCI: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n 
                          -> Nat {\n  Succ(Succ(Succ(Succ(plus(five(), plus(five(), five()))))))\n}\n";
 
 /// Both definitions at nineteen: equal, but past the conversion's step budget.
-const FIBONACCI_AGREE: &str = "def agree() -> Path(Nat, fib(nineteen()), fibFrom(nineteen(), \
+const FIBONACCI_AGREE: &str = "def agree() -> Path[.A = Nat](fib(nineteen()), fibFrom(nineteen(), \
                                Zero, Succ(Zero))) {\n  Path.here(fib(nineteen()))\n}\n";
 
 /// Fibonacci at five against the iteration started one step on: apart.
-const FIBONACCI_APART: &str = "def apart() -> Path(Nat, fib(five()), fibFrom(five(), Succ(Zero), \
+const FIBONACCI_APART: &str = "def apart() -> Path[.A = Nat](fib(five()), fibFrom(five(), Succ(Zero), \
                                Succ(Zero))) {\n  Path.here(fib(five()))\n}\n";
 
 /// A fresh scratch directory, removed when dropped.
@@ -652,13 +652,13 @@ fn a_mismatch_spells_the_constructors_its_type_mentions()
     let mismatch = only(
         Path::new("constructed.gandr"),
         SourceText::from(
-            "data Box : Type where {\n  | Wrap : (n : Integer) --> Box\n}\ndef wrapped : Path(Box, \
+            "data Box : Type where {\n  | Wrap : (n : Integer) --> Box\n}\ndef wrapped : Path[.A = Box](\
                  Wrap(4), Wrap(5)) ;\ndef wrapped = 1 ;\n",
         ),
     );
     assert_eq!(
         mismatch.detail.compared.expected,
-        Maybe::Present(String::from("Path(Box, Wrap(4), Wrap(5))")),
+        Maybe::Present(String::from("Path[.A = Box](Wrap(4), Wrap(5))")),
         "a constructor value is spelled by the name its declaration writes"
     );
 }
@@ -673,7 +673,7 @@ fn a_word_spells_by_its_letters()
     assert_eq!(
         mismatch.detail.compared.expected,
         Maybe::Present(String::from(
-            "Path(Path(Circle, Base, Base), back(loop) ∷ Path.here(Base), Path.here(Base))"
+            "Path[.A = Path[.A = Circle](Base, Base)](back(loop) ∷ Path.here(Base), Path.here(Base))"
         )),
         "a word's type is its path type, a letter conses before the rest, and the empty \
              word is `here` at the point"
@@ -685,7 +685,7 @@ fn a_word_spells_by_its_letters()
     assert_eq!(
         preceded.detail.compared.expected,
         Maybe::Present(String::from(
-            "Path(Path(Circle, Base, Base), back(loop) ∷ Path.here(Base), Path.here(Base))"
+            "Path[.A = Path[.A = Circle](Base, Base)](back(loop) ∷ Path.here(Base), Path.here(Base))"
         )),
         "the point is spelled by its own family's constructors, not an earlier family's"
     );
@@ -934,15 +934,15 @@ fn a_model_implicit_s_components_are_named_by_their_paths_2364()
 
 /// A dependent record's field variable under `≃` is one node in each copy of
 /// the record the relation abbreviates; at the depth its type was judged, the
-/// written side's `Path(b, x, y)`, it stands under the parameter and the
+/// written side's `Path[.A = b](x, y)`, it stands under the parameter and the
 /// fields before it, not under the first copy the walk reached (#1515).
 #[test]
 fn a_shared_field_variable_answers_at_the_depth_it_was_judged_1515()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let text = SourceText::from(
-        "def selfEquiv(b : Type) -> -F (#{ x : b, y : b, p : Path(b, x, y) } ≃ #{ x : b, y : b, \
-         p : Path(b, x, y) }) {\n  (\n    thunk { fun (w) { w } },\n    ((thunk { fun (w) { w } }, \
+        "def selfEquiv(b : Type) -> -F (#{ x : b, y : b, p : Path[.A = b](x, y) } ≃ #{ x : b, y : b, \
+         p : Path[.A = b](x, y) }) {\n  (\n    thunk { fun (w) { w } },\n    ((thunk { fun (w) { w } }, \
          thunk { fun (w) { Path.here(w) } }), (thunk { fun (w) { w } }, thunk { fun (w) { Path.here(w) } }))\n  \
          )\n}\n",
     );
@@ -954,9 +954,9 @@ fn a_shared_field_variable_answers_at_the_depth_it_was_judged_1515()
         panic!("the source is one module");
     };
     let used = <&str>::from(text)
-        .find("Path(b, x, y)")
+        .find("Path[.A = b](x, y)")
         .expect("the record's last field reads the earlier ones")
-        .saturating_add(8);
+        .saturating_add("Path[.A = b](".len());
     let variables: Vec<_> = module
         .origins()
         .values()
@@ -1112,8 +1112,8 @@ fn a_loop_arm_is_named_by_its_loop_823()
         ),
         (
             String::from(
-                "fun (a) { match a { Base => Base, loop => Path.walk(fun (b) { Path(Circle, b, Base) }, \
-                 loop, Path.here(Base)) } }"
+                "fun (a) { match a { Base => Base, loop => Path.walk(fun (b) { type(Path[.A = Circle](b, Base)) }, \
+                 loop, Path.here(Base)\n    ) } }"
             ),
             Fidelity::Faithful,
             true
@@ -3226,8 +3226,8 @@ fn a_words_point_spells_its_constructors_arguments()
     assert_eq!(
         points,
         [
-            "Path(Nat, Succ(Zero), Succ(Zero))",
-            "Path(Nat, Pair(Zero, Zero), Pair(Zero, Zero))",
+            "Path[.A = Nat](Succ(Zero), Succ(Zero))",
+            "Path[.A = Nat](Pair(Zero, Zero), Pair(Zero, Zero))",
         ],
         "a point spells each constructor's arguments, comma-separated"
     );
@@ -3494,7 +3494,7 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
 fn a_mistake_is_reported_before_what_it_causes_2048()
 {
     let text = "import std.list (List) ;\ndat Circle : Type {\n  Base : Circle;\n}\ndef twice : \
-                Path(Circle, Base, Base) ;\ndef twice = refl(Base) ;\ndef none(xs : List()) -> -F \
+                Path[.A = Circle](Base, Base) ;\ndef twice = refl(Base) ;\ndef none(xs : List()) -> -F \
                 Unit { pure unit }\n";
     // The source lists `List` from `std.list`, so it is walked from a file,
     // which lays it after the module it imports (#4520).

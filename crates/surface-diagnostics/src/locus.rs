@@ -1992,13 +1992,13 @@ impl fmt::Display for Shape
             ExpectedShape::Product => "an eager product `A * B`",
             ExpectedShape::Sigma => "a dependent record `#{x : A, y : B(x)}`",
             ExpectedShape::StaticPi => "a type operator's classifier `K -> J`",
-            ExpectedShape::Path => "an element path type `Path(A, a, b)`",
+            ExpectedShape::Path => "an element path type `Path[.A = A](a, b)`",
             ExpectedShape::Telescope => "a telescope motive `Π (y : A). Π (z : B). F C`",
             ExpectedShape::Session => {
                 "a session type `!A >> S`, `?A >> S`, `+{l : S}`, `&{l : S}` or `end`"
             },
             ExpectedShape::Capability => "a capability `Cap {op, …}`",
-            ExpectedShape::Flow => "a flow type `Flow(A, a, b)`",
+            ExpectedShape::Flow => "a flow type `Flow[.A = A](a, b)`",
             ExpectedShape::Run => "a run type `Run(s)` or a prefix type `Prefix(s)`",
             ExpectedShape::Dialogue => "a dialogue type `Dialogue(s)`",
         })

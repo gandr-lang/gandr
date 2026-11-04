@@ -110,7 +110,7 @@ fn migration(arena: &mut CoreArena) -> Migration
     }
 }
 
-/// `Flow(Type, ⌜from⌝, ⌜to⌝)`.
+/// `Flow[.A = Type](⌜from⌝, ⌜to⌝)`.
 ///
 /// # Specification
 /// trivial.

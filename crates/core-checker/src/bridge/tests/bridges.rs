@@ -132,7 +132,7 @@ fn judged(
 #[test]
 fn a_bridge_at_the_universe_is_a_relation_in_both_checkers()
 {
-    // `Bridge(U₀, ⌜Unit⌝, ⌜String⌝)` is the type of relations `El ⌜Unit⌝ →
+    // `Bridge[.A = U₀](⌜Unit⌝, ⌜String⌝)` is the type of relations `El ⌜Unit⌝ →
     // El ⌜String⌝ → U₀`, and the total relation inhabits it; at `U₁` between
     // two quotes of `U₀` the same; at `U₀ × U₀` a relation per component. No
     // reflexivity: `here` is refused, and so is `()`, which is no relation.
@@ -190,7 +190,7 @@ fn a_bridge_at_the_universe_is_a_relation_in_both_checkers()
 #[test]
 fn a_bridge_crosses_as_the_kernel_s_bridge_node()
 {
-    // def b : Bridge(U₀, ⌜Unit⌝, ⌜Unit⌝) = λ_ _. return ⌜Unit⌝ ;
+    // def b : Bridge[.A = U₀](⌜Unit⌝, ⌜Unit⌝) = λ_ _. return ⌜Unit⌝ ;
     let mut arena = CoreArena::new();
     let small = universe(&mut arena, LevelConstant::from(0_u64));
     let unit_type = arena.value_type_unit();
@@ -558,7 +558,7 @@ fn the_codes_outside_the_bridge_fold_are_refused_by_name()
 fn a_funext_at_a_bridge_crosses_as_a_higher_evaluation()
 {
     // def not, not_not, same : U (+{(), ()} -> F +{(), ()}) ;
-    // def twice : Bridge(U (…), not_not, same) = funext(not_not, same) ;
+    // def twice : Bridge[.A = U (…)](not_not, same) = funext(not_not, same) ;
     // The functions agree at every input, so they are bridged, and the kernel
     // replays the evaluation in its bridge fold.
     let mut arena = CoreArena::new();

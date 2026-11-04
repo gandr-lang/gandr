@@ -846,7 +846,7 @@ pub fn compose(
     arena.value_compose(composite, cells.into(), realised)
 }
 
-/// A path type as the level-two realisation reads it: `Path(carrier, left,
+/// A path type as the level-two realisation reads it: `Path[.A = carrier](left,
 /// right)`.
 ///
 /// # Specification
@@ -897,8 +897,8 @@ struct Folded
 /// - requires: `cells` are the composite's cells in column order, each beside
 ///   the path type it stands at, all in one context.
 /// - ensures: a [`Value::Compose`] holding the cells in order and the fold as
-///   its realisation, beside `Path(Path(A, x₀, xₘ), s, t)`, `s` and `t` the
-///   `then` folds of the columns' sources and targets.
+///   its realisation, beside `Path[.A = Path[.A = A](x₀, xₘ)](s, t)`, `s` and
+///   `t` the `then` folds of the columns' sources and targets.
 /// - fails: none for a pasting that is no level-two shape, cells of another
 ///   count than it reads, or a 2-cell whose carrier is no path type.
 /// - panics: none.

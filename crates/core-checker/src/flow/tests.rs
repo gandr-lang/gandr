@@ -502,7 +502,8 @@ fn each_refusal_is_named()
     let (reversed, narrower) =
         statement(&mut arena, At(1), SessionRelation::Subtyping, (wide, end));
     let (sub, _) = statement(&mut arena, At(2), SessionRelation::Subtyping, (end, wide));
-    // ride(fun (X) { Flow(Type, X, ⌜End⌝) }, sub, stay(⌜End⌝)) would reverse `sub`.
+    // ride(fun (X) { Flow[.A = Type](X, ⌜End⌝) }, sub, stay(⌜End⌝)) would reverse
+    // `sub`.
     let sub_constant = arena.value_constant(ConstantIndex::from(2_usize));
     let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let type_universe = universe(&mut arena);
@@ -1043,8 +1044,8 @@ fn stays_and_composites_record_their_simulation()
 #[test]
 fn a_flow_above_level_zero_crosses_as_the_kernels_flow_at_its_universe_1628()
 {
-    // def kept : Flow(Type[+, 1], Type, Type) = stay(Type) ;
-    // def twice : Flow(Type[+, 1], Type, Type) = kept then kept ;
+    // def kept : Flow[.A = Type[+, 1]](Type, Type) = stay(Type) ;
+    // def twice : Flow[.A = Type[+, 1]](Type, Type) = kept then kept ;
     let mut arena = CoreArena::new();
     let small = universe(&mut arena);
     let large = arena.value_type_universe(
@@ -1085,8 +1086,8 @@ fn a_flow_above_level_zero_crosses_as_the_kernels_flow_at_its_universe_1628()
 #[test]
 fn a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837()
 {
-    // def kept : Flow(Type[+, 1], Type, Type) = stay(Type) ;
-    // def same : Path(Type[+, 1], Type, Type) = here(Type) ;
+    // def kept : Flow[.A = Type[+, 1]](Type, Type) = stay(Type) ;
+    // def same : Path[.A = Type[+, 1]](Type, Type) = here(Type) ;
     // def rode : () => Type = thunk { ride(fun (X) { X }, kept, Integer) } ;
     // def moved : () => Type = thunk { transport(fun (X) { X }, same, Integer) } ;
     // def small : () => Integer = thunk { ride(fun (X) { X }, stay(Integer), 0) } ;

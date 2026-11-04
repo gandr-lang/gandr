@@ -17,15 +17,17 @@ import "../../model/higher-cells/ua-type.gandr";
 /// `ua` of the identity record at reflexivity, read as reflexivity: the case
 /// `J` leaves of `uaEta`, refused.
 @[ refuses("EndpointMismatch") ]
-def uaEtaRefl(a : Type) -> Path(Path(Type, a, a), ua(idtoequiv(a, a, Path.here(a))), Path.here(a)) {
+def uaEtaRefl(a : Type) -> Path[.A = Path[.A = Type](a, a)](
+  ua(idtoequiv(a, a, Path.here(a))),
+  Path.here(a)
+) {
   Path.here(Path.here(a))
 }
 
 /// `ua` of the packaged stratum path, read as the path itself: refused at the
 /// stratum code as at reflexivity.
 @[ refuses("EndpointMismatch") ]
-def uaEtaStratum() -> Path(
-  Path(Type, AtStratum.Tel, AtStratum.Tel),
+def uaEtaStratum() -> Path[.A = Path[.A = Type](AtStratum.Tel, AtStratum.Tel)](
   ua(idtoequiv(AtStratum.Tel, AtStratum.Tel, AtStratum.opposite)),
   AtStratum.opposite
 ) {
@@ -40,7 +42,7 @@ def funextFromHomotopy(
   b : Type,
   f : a => b,
   g : a => b,
-  h : (x : a) => Path(b, f(x), g(x))
-) -> Path(a => b, f, g) {
+  h : (x : a) => Path[.A = b](f(x), g(x))
+) -> Path[.A = a => b](f, g) {
   Path.funext(f, g)
 }

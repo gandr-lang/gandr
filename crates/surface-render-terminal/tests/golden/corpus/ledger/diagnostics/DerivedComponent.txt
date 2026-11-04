@@ -4,7 +4,7 @@ error[DerivedComponent]: the theory `Involution` derives `invFour`, so a model o
 10 │ rule Involution.invFour : inv(inv(inv(inv(x)))) <=> x;
    │ ────────────────────────────────────────────────────── the derivation that fills it
    ┆
-17 │   def invFour(x : Integer) -> Path(Integer, inv(inv(inv(inv(x)))), x) { Path.here(x) }
+17 │   def invFour(x : Integer) -> Path(inv(inv(inv(inv(x)))), x) { Path.here(x) }
    │       ━━━━━━━ a component its theory's derivation fills
    │
    ├ note: `invFour` is refused with DerivedComponent, as its expectation states

@@ -41,8 +41,8 @@
 //! travel as an ordinary presented declaration that also carries its cells, so
 //! conversion modulo rules, the respect check and the replay read them as they
 //! read any presented type, one stratum up; the cells are what lets the
-//! checker and the kernel read `Path(T, a, a)` as the words at `a`, and what
-//! the kernel re-mints the table and the rules from.
+//! checker and the kernel read `Path[.A = T](a, a)` as the words at `a`, and
+//! what the kernel re-mints the table and the rules from.
 //!
 //! **Alternatives.** A primitive word node with its own conversion would
 //! duplicate the rewriting presented types already have; the cells on the

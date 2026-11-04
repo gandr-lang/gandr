@@ -28,21 +28,21 @@ module Versions where {
   }
   /// The flow from the first version to the second.
   @[ checks ]
-  def first : Flow(Type, V1, V2) = Flow.into(toV2);
+  def first : Flow[.A = Type](V1, V2) = Flow.into(toV2);
   /// The flow from the second version to the third.
   @[ checks ]
-  def second : Flow(Type, V2, V3) = Flow.into(toV3);
+  def second : Flow[.A = Type](V2, V3) = Flow.into(toV3);
   /// The stationary flow at the first version.
   @[ checks ]
-  def kept : Flow(Type, V1, V1) = Flow.stay(V1);
+  def kept : Flow[.A = Type](V1, V1) = Flow.stay(V1);
   /// The stationary flow, then the first.
   @[ checks ]
-  def early() -> Flow(Type, V1, V2) {
+  def early() -> Flow[.A = Type](V1, V2) {
     Flow.then(kept, first)
   }
   /// Both translations in sequence.
   @[ checks ]
-  def both() -> Flow(Type, V1, V3) {
+  def both() -> Flow[.A = Type](V1, V3) {
     let start = early();
     Flow.then(start, second)
   }

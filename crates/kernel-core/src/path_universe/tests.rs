@@ -1706,7 +1706,7 @@ fn record(
     arena.value_tuple(&[to, inverses])
 }
 
-/// `Path(Type, ⌜T⌝, ⌜T⌝)` at the level-zero value universe.
+/// `Path[.A = Type](⌜T⌝, ⌜T⌝)` at the level-zero value universe.
 ///
 /// # Specification
 /// trivial.
@@ -1828,8 +1828,8 @@ fn univalence_is_admitted_on_its_record()
 }
 
 /// #1064: an element transport follows a native path written in place, whose
-/// type is `Path_U(a, b)`, as it follows one declared at `Path(U₀, a, b)`: the
-/// two are readings of one classifier at the level-zero value universe. The
+/// type is `Path_U(a, b)`, as it follows one declared at `Path[.A = U₀](a, b)`:
+/// the two are readings of one classifier at the level-zero value universe. The
 /// transport read the written path's type as an identity and refused it by
 /// shape.
 #[test]

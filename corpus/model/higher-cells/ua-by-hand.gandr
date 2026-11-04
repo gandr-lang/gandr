@@ -34,34 +34,32 @@ module ByHand where {
 
   /// The same path written by hand.
   @[ checks ]
-  def opposite_by_hand : Path(Type, Tel, Tel) = Path.product(
+  def opposite_by_hand : Path[.A = Type](Tel, Tel) = Path.product(
     Path.here(Unit),
     Path.product(equiv(keep, keep), equiv(exchange, exchange))
   );
 
   /// The derived and the hand path convert.
   @[ checks ]
-  def same : Path(Path(Type, Tel, Tel), opposite, opposite_by_hand) = Path.here(opposite);
+  def same : Path[.A = Path[.A = Type](Tel, Tel)](opposite, opposite_by_hand) = Path.here(opposite);
 
   /// Transport along the hand path swaps the binary corolla's boolean.
   @[ checks ]
-  def moves : Path(
-    Tel,
+  def moves : Path[.A = Tel](
     Path.walk(fun (X) { X }, opposite_by_hand, (unit, (+{.0 = unit}, +{.0 = unit}))),
     (unit, (+{.0 = unit}, +{.1 = unit}))
   ) = Path.here((unit, (+{.0 = unit}, +{.1 = unit})));
 
   /// Transport along either path gives the same telescope.
   @[ checks ]
-  def alike : Path(
-    Tel,
+  def alike : Path[.A = Tel](
     Path.walk(fun (X) { X }, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
     Path.walk(fun (X) { X }, opposite_by_hand, (unit, (+{.0 = unit}, +{.0 = unit})))
   ) = Path.here((unit, (+{.0 = unit}, +{.1 = unit})));
 
   /// The directed twin written by hand.
   @[ checks ]
-  def opposite_dir_by_hand : Flow(Type, Tel, Tel) = Flow.product(
+  def opposite_dir_by_hand : Flow[.A = Type](Tel, Tel) = Flow.product(
     Flow.stay(Unit),
     Flow.product(Flow.into(keep), Flow.into(exchange))
   );
@@ -78,15 +76,14 @@ module ByHand where {
 
   /// Riding moves the telescope as transport does.
   @[ checks ]
-  def rides : Path(
-    Tel,
+  def rides : Path[.A = Tel](
     Flow.ride(fun (X) { X }, opposite_dir_by_hand, (unit, (+{.0 = unit}, +{.0 = unit}))),
     (unit, (+{.0 = unit}, +{.1 = unit}))
   ) = Path.here((unit, (+{.0 = unit}, +{.1 = unit})));
 
   /// A ride that would reverse the flow reads it contravariantly, refused.
   @[ refuses("NonCovariantMotive") ]
-  def reversed() -> Flow(Type, Tel, Tel) {
-    Flow.ride(fun (X) { Flow(Type, X, Tel) }, opposite_dir_by_hand, Flow.stay(Tel))
+  def reversed() -> Flow[.A = Type](Tel, Tel) {
+    Flow.ride(fun (X) { type(Flow[.A = Type](X, Tel)) }, opposite_dir_by_hand, Flow.stay(Tel))
   }
 }

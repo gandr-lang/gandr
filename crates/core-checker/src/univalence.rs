@@ -3,18 +3,18 @@
 //!
 //! # The rule
 //!
-//! Checked against `Path(Type, a, b)`, `ua(e)` checks `e` against the
+//! Checked against `Path[.A = Type](a, b)`, `ua(e)` checks `e` against the
 //! bi-invertible record `A ≃ B` over the types the two codes denote: `T` for
 //! a quote `⌜T⌝`, `El c` for any other code `c`. Anywhere else `ua(e)`
-//! synthesises `Path(Type, a, b)` when `e` synthesises a dependent pair whose
-//! first factor is the thunk type `U (A → F B)` of a pure non-dependent arrow,
-//! `e` checks against `A ≃ B`, and `a` and `b`, the codes of `A` and `B`, check
-//! against `Type`; a type `El c` has the code `c`, any other type its quote.
-//! The record's fields are the evidence: a section or a retraction that does
-//! not hold is a field that does not check, refused where the record is, and
-//! a code above `Type` is refused where the code is. Nothing is decided by
-//! computation, so the codes may be variables, path types or anything else the
-//! universe holds.
+//! synthesises `Path[.A = Type](a, b)` when `e` synthesises a dependent pair
+//! whose first factor is the thunk type `U (A → F B)` of a pure non-dependent
+//! arrow, `e` checks against `A ≃ B`, and `a` and `b`, the codes of `A` and
+//! `B`, check against `Type`; a type `El c` has the code `c`, any other type
+//! its quote. The record's fields are the evidence: a section or a retraction
+//! that does not hold is a field that does not check, refused where the record
+//! is, and a code above `Type` is refused where the code is. Nothing is decided
+//! by computation, so the codes may be variables, path types or anything else
+//! the universe holds.
 //!
 //! The core node carries, beside the record, the forward map `thunk (λx. f ←
 //! e.0; force f x)` the lowering derives from it
@@ -30,9 +30,9 @@
 //! - **Evidence, not computation.** The choice is the record's laws checked as
 //!   its fields. The alternative, extending the round-trip coverage of
 //!   `equiv(f, g)` to every code, was declined: coverage is finite only over
-//!   the first-order stratum, and a code like `Path(Circle, base, base)` has no
-//!   finite coverage. Reversal: univalence proved as a theorem of the kernel,
-//!   after which `ua` is a definition and this rule a derived one.
+//!   the first-order stratum, and a code like `Path[.A = Circle](base, base)`
+//!   has no finite coverage. Reversal: univalence proved as a theorem of the
+//!   kernel, after which `ua` is a definition and this rule a derived one.
 //! - **Checked against its path type, synthesised from its record elsewhere.**
 //!   The expected type names both codes, so a record literal checks; away from
 //!   one, the record names both types through its forward map's type, as
@@ -137,9 +137,9 @@ fn code_of(
 /// - [`CheckRefusal`] — as above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a record literal checked against `Path(Type, a, b)` reads
-///   `⌜Bool⌝` as the booleans and two variables as their decodes, which the
-///   identity map does not relate; quoting a variable, or decoding a quote,
+/// - hypothesis: L3 — a record literal checked against `Path[.A = Type](a, b)`
+///   reads `⌜Bool⌝` as the booleans and two variables as their decodes, which
+///   the identity map does not relate; quoting a variable, or decoding a quote,
 ///   changes the record type the literal checks against.
 /// - witness: `univalence::tests::a_record_whose_law_fails_does_not_build_a_path`
 #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|&denoted| context.arena().value_type(denoted).is_some()))]
@@ -197,10 +197,10 @@ fn derived(
 /// # Specification
 /// - requires: `forward` is the map the node carries for `record`; both and
 ///   `expected` stand under the judgement's binders.
-/// - ensures: for `expected` an identity `Path(Type, a, b)` at the level-zero
-///   value universe, [`Reading::Record`] at the bi-invertible record type over
-///   the types `a` and `b` denote and at `Path(Type, a, b)` written afresh;
-///   [`Reading::Synthesised`] for any other type.
+/// - ensures: for `expected` an identity `Path[.A = Type](a, b)` at the
+///   level-zero value universe, [`Reading::Record`] at the bi-invertible record
+///   type over the types `a` and `b` denote and at `Path[.A = Type](a, b)`
+///   written afresh; [`Reading::Synthesised`] for any other type.
 /// - provides: the checking reading of the `ua` rule, which admits a record
 ///   literal.
 /// - fails: [`CheckRefusal::MachineInvariant`] for a carried map other than the
@@ -212,8 +212,8 @@ fn derived(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a record literal whose section fails is refused against
-///   `Path(Type, ⌜Bool⌝, ⌜Bool⌝)` and one whose laws hold checks; reading the
-///   record type off the wrong endpoint admits it or refuses it elsewhere.
+///   `Path[.A = Type](⌜Bool⌝, ⌜Bool⌝)` and one whose laws hold checks; reading
+///   the record type off the wrong endpoint admits it or refuses it elsewhere.
 /// - witness: `univalence::tests::a_record_whose_law_fails_does_not_build_a_path`
 #[spec(ensures: |ret| match ret {
     | Ok(Reading::Record { record, path }) => context.arena().value_type(record).is_some() && context.arena().value_type(path).is_some(),
@@ -261,8 +261,8 @@ pub fn checked(
 /// # Specification
 /// - requires: `classifier` is the type `record` synthesised; `forward` is the
 ///   map the node carries; all stand under the judgement's binders.
-/// - ensures: the path type `Path(Type, a, b)` over the codes of the two types
-///   the classifier's first factor relates, and the checks of the record
+/// - ensures: the path type `Path[.A = Type](a, b)` over the codes of the two
+///   types the classifier's first factor relates, and the checks of the record
 ///   against `A ≃ B` — the classifier itself when it is that type to the syntax
 ///   — and of `a` and `b` against `Type`, in that order.
 /// - provides: what the judgement's `ua` rule checks before it synthesises the

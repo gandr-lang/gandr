@@ -69,7 +69,7 @@ def rec wp(
 def incrSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s + 1) }
 
 /// The counter ends at one.
-def isOne(_x : Unit, s : Integer) -> Type { return Path(Integer, s, 1) }
+def isOne(_x : Unit, s : Integer) -> Type { return Path(s, 1) }
 
 /// The increment paired with evidence that its transformer is below its
 /// specification at `isOne`.

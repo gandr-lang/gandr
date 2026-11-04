@@ -23,7 +23,7 @@ def same(b : Unit + Unit) -> -F (Unit + Unit) {
 }
 
 @[ checks ]
-def negation : Path(Type, Bool, Bool) ;
+def negation : Path[.A = Type](Bool, Bool) ;
 
 def negation = equiv(not, not) ;
 
@@ -45,7 +45,7 @@ def flip_flag(entry : Bool * List(Bool)) -> -F (Bool * List(Bool)) {
 }
 
 @[ checks ]
-def flagged : Path(Type, Bool * List(Bool), Bool * List(Bool)) ;
+def flagged : Path[.A = Type](Bool * List(Bool), Bool * List(Bool)) ;
 
 def flagged = equiv(flip_flag, flip_flag) ;
 

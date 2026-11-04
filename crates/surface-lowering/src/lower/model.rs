@@ -14,12 +14,12 @@
 //! function from them to its sort: `k : (s : R) -> C` binds
 //! `+U ((s : R) -> -F C)`, Π over a variable a later variable's sort or `C`
 //! names and an arrow over any other. A law mints the same telescope into the
-//! returner of `Path(S, l, r)`, an application `g(t₁, …)` in either endpoint
-//! as the returned call of the member `g` names, `↑((force g) t₁ …)`, as the
-//! written endpoint lowers. A sort mints as what its component reads: the
-//! member's type for a strengthened sort, the atom for a sealed one, and the
-//! family's type over the index terms for an indexed one. The derived type is
-//! therefore the written signature's, node for node, and the checker sees no
+//! returner of `Path[.A = S](l, r)`, an application `g(t₁, …)` in either
+//! endpoint as the returned call of the member `g` names, `↑((force g) t₁ …)`,
+//! as the written endpoint lowers. A sort mints as what its component reads:
+//! the member's type for a strengthened sort, the atom for a sealed one, and
+//! the family's type over the index terms for an indexed one. The derived type
+//! is therefore the written signature's, node for node, and the checker sees no
 //! difference between the two.
 //!
 //! # A module packs as the record its members give

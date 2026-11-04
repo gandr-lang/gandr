@@ -3946,7 +3946,7 @@ where
                     },
                 },
                 // A univalence checked at an identity at the value universe,
-                // `Path(Type, a, b)` or the native `Path_U(a, b)`, checks its
+                // `Path[.A = Type](a, b)` or the native `Path_U(a, b)`, checks its
                 // record at the bi-invertible record the two codes name, so a
                 // record literal checks; anywhere else it is synthesised and
                 // converted.
@@ -3998,7 +3998,7 @@ where
                     // other converts with it is those words: the value checks at
                     // the words, and the path then converts with them. A path
                     // whose endpoints both compute the point without spelling
-                    // it, `Path(Circle, mul(Base, Base), mul(Base, Base))`,
+                    // it, `Path[.A = Circle](mul(Base, Base), mul(Base, Base))`,
                     // checks at the words of the one type of words over its
                     // sort, and converts with the path at that point, which
                     // pairs each endpoint with the point (#485).
@@ -6260,7 +6260,7 @@ where
                     goal = Goal::CheckValue(second, second_type);
                     continue 'expand;
                 },
-                // At the level-zero universe `Flow(U₀, x, y)` and `Flow_U(x,
+                // At the level-zero universe `Flow[.A = U₀](x, y)` and `Flow_U(x,
                 // y)` are two readings of one classifier: a flow synthesizing
                 // either checks at the other.
                 Frame::ConvertValue(expected) => {

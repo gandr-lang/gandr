@@ -167,8 +167,8 @@ quenchant_shape::reason_enum! {
 ///
 /// Over the representation `R` at the kind's level `l`: `relation` at `U(R →
 /// R → F U_l)`, `reflexivity` at `U(Π (x : R). F El(⟨relation x x⟩))`, and
-/// `law` at `U(Π (a b : R). Π (r : El(⟨relation a b⟩)). F Path(Σ (y : R).
-/// El(⟨relation a y⟩), (b, r), (a, ⟨reflexivity a⟩)))`, every element of the
+/// `law` at `U(Π (a b : R). Π (r : El(⟨relation a b⟩)). F Path[.A = Σ (y : R).
+/// El(⟨relation a y⟩)]((b, r), (a, ⟨reflexivity a⟩)))`, every element of the
 /// singleton at `a` its centre. Each is a closed value.
 ///
 /// # Specification

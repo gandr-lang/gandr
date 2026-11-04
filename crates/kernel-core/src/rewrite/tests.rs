@@ -660,7 +660,7 @@ fn an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it()
     let g = arena.value_variable(DeBruijnIndex::from(2_u32));
     let call = arena.computation_application(forced, g);
     let argument = arena.value_returned(call);
-    // `Path(Unit, ⟨force(head) at⟩, at)`: a returned code as an endpoint.
+    // `Path[.A = Unit](⟨force(head) at⟩, at)`: a returned code as an endpoint.
     let endpoint = |arena: &mut TermArena, head: u32, at: ValueId| {
         let head = arena.value_variable(DeBruijnIndex::from(head));
         let forced = arena.computation_force(head);

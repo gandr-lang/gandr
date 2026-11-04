@@ -4,16 +4,16 @@
 //! # One eliminator, three derivations
 //!
 //! The vocabulary has one way to use a path, [`Computation::PathTransport`]:
-//! `tr(P, p, x)` carries `x : P[a]` along `p : Path(A, a, b)` to `P[b]`. The
-//! three operations a program reaches for are transports whose motive is
-//! itself a path type, the based family `y. Path(A, a, y)` being the second
-//! component of the singleton `Σ y. Path(A, a, y)`:
+//! `tr(P, p, x)` carries `x : P[a]` along `p : Path[.A = A](a, b)` to `P[b]`.
+//! The three operations a program reaches for are transports whose motive is
+//! itself a path type, the based family `y. Path[.A = A](a, y)` being the
+//! second component of the singleton `Σ y. Path[.A = A](a, y)`:
 //!
 //! | operation | motive | from |
 //! |---|---|---|
-//! | `back(p) : Path(A, b, a)` | `y. Path(A, y, a)` | `here(a)` |
-//! | `then(p, q) : Path(A, a, c)` | `y. Path(A, a, y)`, along `q` | `p` |
-//! | `cong(f, p) : Path(B, f a, f b)` | `y. Path(B, f a, f y)` | `here(f a)` |
+//! | `back(p) : Path[.A = A](b, a)` | `y. Path[.A = A](y, a)` | `here(a)` |
+//! | `then(p, q) : Path[.A = A](a, c)` | `y. Path[.A = A](a, y)`, along `q` | `p` |
+//! | `cong(f, p) : Path[.A = B](f a, f b)` | `y. Path[.A = B](f a, f y)` | `here(f a)` |
 //!
 //! Each builds its transport over the arena and returns it, so the evaluator,
 //! the checker and the kernel boundary meet only `tr`, `here` and `Path`.
@@ -31,9 +31,9 @@
 //!   evaluation rule, typing rule and kernel tag, three places for the laws to
 //!   drift apart, and a primitive `J`, whose motive ranges over the path as
 //!   well as its endpoint: `J` is the telescope transport of
-//!   [`Computation::TelescopeTransport`] in the singleton `(y : A, q : Path(A,
-//!   a, y))`, starting at `here(a)` and moving along `here(p)`. Reversal: an
-//!   operation whose derived form costs too much to normalise earns a node,
+//!   [`Computation::TelescopeTransport`] in the singleton `(y : A, q : Path[.A
+//!   = A]( a, y))`, starting at `here(a)` and moving along `here(p)`. Reversal:
+//!   an operation whose derived form costs too much to normalise earns a node,
 //!   with its law as the node's evaluation rule.
 //! - **A motive that depends on the path is a telescope.**
 //!   [`Computation::PathTransport`]'s motive is one value type under one
@@ -60,11 +60,11 @@
 //!   function of a function is the same construction one level up.
 //! - **`back` along a flow is the symmetry ride.** [`back_flow`] is `back`'s
 //!   derivation in the flow family: [`Computation::Ride`] of `stay(a)` along `f
-//!   : Flow(A, a, b)` in `y. Flow(A, y, a)`. Its motive reads the moving
-//!   endpoint as a source, contravariantly, and the checker refuses every such
-//!   ride, so a flow has no inverse by the rule that lets it ride at all. The
-//!   alternative, refusing `back` in the lowering when its answer is a flow,
-//!   names no rule. Reversal: none while a flow runs one way.
+//!   : Flow[.A = A](a, b)` in `y. Flow[.A = A](y, a)`. Its motive reads the
+//!   moving endpoint as a source, contravariantly, and the checker refuses
+//!   every such ride, so a flow has no inverse by the rule that lets it ride at
+//!   all. The alternative, refusing `back` in the lowering when its answer is a
+//!   flow, names no rule. Reversal: none while a flow runs one way.
 
 use anodized::spec;
 use gandr_kernel_term::DeBruijnIndex;
@@ -100,7 +100,7 @@ pub enum Relation
     /// The equivalence `A ≃ B`: the record of a map with a left and a right
     /// inverse.
     Equivalence,
-    /// The flow `A ⇝ B` between two types, `Flow(Type, A, B)`.
+    /// The flow `A ⇝ B` between two types, `Flow[.A = Type](A, B)`.
     Flow,
 }
 
@@ -152,7 +152,7 @@ enum Trip
     Retraction,
 }
 
-/// The type of a round trip over `carrier`, `(x : C) => Path(C,
+/// The type of a round trip over `carrier`, `(x : C) => Path[.A = C](
 /// outer(inner(x)), x)`, its two maps the innermost two binders.
 ///
 /// # Specification
@@ -162,7 +162,7 @@ enum Trip
 ///   two maps, returning the path over `carrier` shifted past the binder too,
 ///   from the outer map of `trip` applied to the inner one applied to the bound
 ///   point, each application the value its computation returns, to the bound
-///   point: the core the written `(x : C) => Path(C, outer(inner(x)), x)`
+///   point: the core the written `(x : C) => Path[.A = C](outer(inner(x)), x)`
 ///   lowers to.
 /// - fails: never.
 /// - panics: none.
@@ -206,9 +206,10 @@ fn round_trip(
 /// # Specification
 /// - requires: `from` and `to` are value types of `arena` in one context.
 /// - ensures: the core the written `#{into : +U (A -> -F B), from : +U (B -> -F
-///   A), sect : (a : A) => Path(A, from(into(a)), a), retr : (b : B) => Path(B,
-///   into(from(b)), b)}` lowers to: `Σ into. Σ from. sect × retr`, each
-///   occurrence of `A` and `B` shifted past the binders it stands under.
+///   A), sect : (a : A) => Path[.A = A](from(into(a)), a), retr : (b : B) =>
+///   Path[.A = B]( into(from(b)), b)}` lowers to: `Σ into. Σ from. sect ×
+///   retr`, each occurrence of `A` and `B` shifted past the binders it stands
+///   under.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -242,10 +243,10 @@ pub fn quasi_inverse(
 /// # Specification
 /// - requires: `from` and `to` are value types of `arena` in one context.
 /// - ensures: the core the written `#{into : +U (A -> -F B), linv : #{from : +U
-///   (B -> -F A), sect : (a : A) => Path(A, from(into(a)), a)}, rinv : #{from :
-///   +U (B -> -F A), retr : (b : B) => Path(B, into(from(b)), b)}}` lowers to:
-///   `Σ into. (Σ from. sect) × (Σ from. retr)`, each occurrence of `A` and `B`
-///   shifted past the binders it stands under.
+///   (B -> -F A), sect : (a : A) => Path[.A = A](from(into(a)), a)}, rinv :
+///   #{from : +U (B -> -F A), retr : (b : B) => Path[.A = B](into(from(b)),
+///   b)}}` lowers to: `Σ into. (Σ from. sect) × (Σ from. retr)`, each
+///   occurrence of `A` and `B` shifted past the binders it stands under.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -324,14 +325,14 @@ fn moving(arena: &mut CoreArena) -> ValueId
     arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))
 }
 
-/// `back(p) : Path(A, b, a)` for `p : Path(A, a, b)`: transport of `here(a)`
-/// along `p` in the family `y. Path(A, y, a)`.
+/// `back(p) : Path[.A = A](b, a)` for `p : Path[.A = A](a, b)`: transport of
+/// `here(a)` along `p` in the family `y. Path[.A = A](y, a)`.
 ///
 /// # Specification
 /// - requires: `carrier` and `fixed` are read in the context the result stands
 ///   in, `fixed` being the path's left endpoint, which is the derived path's
 ///   right one.
-/// - ensures: the transport `tr(y. Path(A↑, y, a↑), path, here(a))`, the
+/// - ensures: the transport `tr(y. Path[.A = A↑](y, a↑), path, here(a))`, the
 ///   carrier and the endpoint shifted past the motive's binder.
 /// - provides: the inverse of a path, derived.
 /// - fails: never.
@@ -362,16 +363,16 @@ pub fn back(
     back_from(arena, carrier, fixed, base, path)
 }
 
-/// `back(p) : Path(A, b, a)` for `p : Path(A, a, b)`, moving `reflexivity`, a
-/// reflexivity at `a`: the transport of `reflexivity` along `p` in the family
-/// `y. Path(A, y, a)`.
+/// `back(p) : Path[.A = A](b, a)` for `p : Path[.A = A](a, b)`, moving
+/// `reflexivity`, a reflexivity at `a`: the transport of `reflexivity` along
+/// `p` in the family `y. Path[.A = A](y, a)`.
 ///
 /// # Specification
 /// - requires: as [`back`]; `reflexivity` is read in the context the result
-///   stands in, and stands at `Path(A, a, a)`: `here(a)`, or the empty word
-///   where `a` is a looped point.
-/// - ensures: the transport `tr(y. Path(A↑, y, a↑), path, reflexivity)`, the
-///   carrier and the endpoint shifted past the motive's binder.
+///   stands in, and stands at `Path[.A = A](a, a)`: `here(a)`, or the empty
+///   word where `a` is a looped point.
+/// - ensures: the transport `tr(y. Path[.A = A↑](y, a↑), path, reflexivity)`,
+///   the carrier and the endpoint shifted past the motive's binder.
 /// - provides: the inverse of a path, derived from a reflexivity its caller
 ///   reads.
 /// - fails: never.
@@ -399,13 +400,14 @@ pub fn back_from(
     arena.computation_path_transport(motive, path, reflexivity)
 }
 
-/// `then(p, q) : Path(A, a, c)` for `p : Path(A, a, b)` and `q : Path(A, b,
-/// c)`: transport of `p` along `q` in the family `y. Path(A, a, y)`.
+/// `then(p, q) : Path[.A = A](a, c)` for `p : Path[.A = A](a, b)` and `q :
+/// Path[.A = A](b, c)`: transport of `p` along `q` in the family `y. Path[.A =
+/// A](a, y)`.
 ///
 /// # Specification
 /// - requires: `carrier` and `start` are read in the context the result stands
 ///   in, `start` being the first path's left endpoint.
-/// - ensures: the transport `tr(y. Path(A↑, a↑, y), second, first)`.
+/// - ensures: the transport `tr(y. Path[.A = A↑](a↑, y), second, first)`.
 /// - provides: the composite of two paths, derived.
 /// - fails: never.
 /// - panics: none.
@@ -460,8 +462,8 @@ pub enum Whisker
 /// # Specification
 /// - requires: `ends` are the carrier and the two outer ends of the composite,
 ///   all in one context with the paths.
-/// - ensures: `tr(q. Path(Path(A, x, z)↑, (first then second)↑, ⟨m(q)⟩), path,
-///   here(first then second))`, returned, `m` the composing map.
+/// - ensures: `tr(q. Path[.A = Path[.A = A](x, z)↑]((first then second)↑,
+///   ⟨m(q)⟩), path, here(first then second))`, returned, `m` the composing map.
 /// - provides: `whiskerRight` and `whiskerLeft`, the filler generator's lifts
 ///   and the horizontal fold of a level-two composite.
 /// - fails: never.
@@ -505,14 +507,14 @@ pub fn whisker(
     arena.value_returned(transported)
 }
 
-/// `back(f)` for `f : Flow(A, a, b)`: the ride of `stay(a)` along `f` in the
-/// family `y. Flow(A, y, a)`, the symmetry a flow does not have.
+/// `back(f)` for `f : Flow[.A = A](a, b)`: the ride of `stay(a)` along `f` in
+/// the family `y. Flow[.A = A](y, a)`, the symmetry a flow does not have.
 ///
 /// # Specification
 /// - requires: `carrier` and `fixed` are read in the context the result stands
 ///   in, `fixed` being the flow's source, which is the reversed flow's target.
-/// - ensures: the ride `ride(y. Flow(A↑, y, a↑), flow, stay(a))`, the carrier
-///   and the endpoint shifted past the motive's binder.
+/// - ensures: the ride `ride(y. Flow[.A = A↑](y, a↑), flow, stay(a))`, the
+///   carrier and the endpoint shifted past the motive's binder.
 /// - provides: `back` spelled along a flow, which the checker refuses: the
 ///   motive reads its moving endpoint as a source, contravariantly.
 /// - fails: never.
@@ -545,16 +547,16 @@ pub fn back_flow(
     arena.computation_ride(motive, flow, base)
 }
 
-/// `cong(f, p) : Path(B, f a, f b)` for `f : U(A → F B)` and `p : Path(A, a,
-/// b)`: transport of `here(f a)` along `p` in the family `y. Path(B, f a, f
-/// y)`.
+/// `cong(f, p) : Path[.A = B](f a, f b)` for `f : U(A → F B)` and `p : Path[.A
+/// = A](a, b)`: transport of `here(f a)` along `p` in the family `y. Path[.A =
+/// B](f a, f y)`.
 ///
 /// # Specification
 /// - requires: `codomain`, `function` and `start` are read in the context the
 ///   result stands in; `start` is the image of the path's left endpoint, the
 ///   derived path's left endpoint, and the transport's typing checks that it
 ///   converts to `f a`.
-/// - ensures: the transport `tr(y. Path(B↑, start↑, ⟨force f↑ y⟩), path,
+/// - ensures: the transport `tr(y. Path[.A = B↑](start↑, ⟨force f↑ y⟩), path,
 ///   here(start))`, the moving image a compound endpoint.
 /// - provides: the action of a function on a path, derived.
 /// - fails: never.
@@ -593,8 +595,8 @@ pub fn cong(
 /// - requires: `codomain`, `start` and `path` are read in the context the
 ///   result stands in, and `lifted` is the map read one binder deeper, as
 ///   [`shift_value`] by one lifts it.
-/// - ensures: the transport `tr(y. Path(B↑, start↑, ⟨force lifted y⟩), path,
-///   here(start))`, whose motive forces `lifted` itself.
+/// - ensures: the transport `tr(y. Path[.A = B↑](start↑, ⟨force lifted y⟩),
+///   path, here(start))`, whose motive forces `lifted` itself.
 /// - provides: the action of a function on a path, its map's lift chosen by the
 ///   caller.
 /// - fails: never.

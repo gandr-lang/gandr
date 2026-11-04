@@ -272,8 +272,9 @@ pub enum Value
         /// order.
         payload_paths: ValueId,
     },
-    /// Directed reflexivity `stay(a)`: inhabits `Flow(A, a, a)`, `Flow_U(a,
-    /// a)` at a code, and every flow whose endpoints convert with `a`.
+    /// Directed reflexivity `stay(a)`: inhabits `Flow[.A = A](a, a)`,
+    /// `Flow_U(a, a)` at a code, and every flow whose endpoints convert
+    /// with `a`.
     Stay
     {
         /// The point `a`.
@@ -343,8 +344,8 @@ pub enum Value
     /// admitted on the record's laws as its evidence. The identity is not
     /// carried: it is the record's type that names the two codes.
     Univalence(ValueId),
-    /// The diagonal `here(a)`, inhabiting `Path(A, a, a)` and every identity
-    /// whose endpoints convert with `a`.
+    /// The diagonal `here(a)`, inhabiting `Path[.A = A](a, a)` and every
+    /// identity whose endpoints convert with `a`.
     Here
     {
         /// The point `a`.
@@ -628,7 +629,7 @@ pub enum Computation
     },
     /// Transport a value along a universe path.
     Transport(ValueId, ValueId),
-    /// Dependent transport along an element path: given `path : Path(A, a,
+    /// Dependent transport along an element path: given `path : Path[.A = A](a,
     /// b)` and `value : P[a]`, computes `F P[b]`.
     PathTransport
     {
@@ -640,9 +641,10 @@ pub enum Computation
         value: ValueId,
     },
     /// Transport over a two-entry telescope along a path in it: given the
-    /// motive `Π (y : A). Π (z : B). F C`, `path : Path(A, a, b)`, `start :
-    /// B[a]`, `over` a path from `start` carried along `path` in `B` to some
-    /// `end : B[b]`, and `value : C[a, start]`, computes `F C[b, end]`.
+    /// motive `Π (y : A). Π (z : B). F C`, `path : Path[.A = A](a, b)`, `start
+    /// : B[a]`, `over` a path from `start` carried along `path` in `B` to
+    /// some `end : B[b]`, and `value : C[a, start]`, computes `F C[b,
+    /// end]`.
     TelescopeTransport
     {
         /// The motive, the dependent arrow over the telescope `(y : A, z :
@@ -657,9 +659,10 @@ pub enum Computation
         /// The value at the source point of the telescope.
         value: ValueId,
     },
-    /// Directed transport `ride`: given `flow` from `x` to `y` — a `Flow(A,
-    /// x, y)`, or a `Flow_U(x, y)` over the level-zero universe — and `value :
-    /// P[x]` for a motive `P` covariant in its binder, computes `F P[y]`.
+    /// Directed transport `ride`: given `flow` from `x` to `y` — a `Flow[.A =
+    /// A]( x, y)`, or a `Flow_U(x, y)` over the level-zero universe — and
+    /// `value : P[x]` for a motive `P` covariant in its binder, computes `F
+    /// P[y]`.
     Ride
     {
         /// The family `P`, a value type under one value binder: the moving

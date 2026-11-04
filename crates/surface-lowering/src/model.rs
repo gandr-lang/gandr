@@ -62,11 +62,11 @@
 //! rule's variables are inferred the same way from the terms it relates, each
 //! application elaborated with the implicit arguments its operation binds, so
 //! `comp(id(a), f) ==> f` is the law
-//! `(a : Ob, b : Ob, f : Hom(a, b)) => Path(Hom(a, b), comp(a, a, b, id(a), f),
-//! f)`: the variables standing in another variable's sort first, in the order a
-//! walk of the rule's written variables meets them, each sort before its
-//! variable, then the rest in order of first occurrence. A variable a rule
-//! leaves unnamed takes the first letter the rule does not write.
+//! `(a : Ob, b : Ob, f : Hom(a, b)) => Path[.A = Hom(a, b)](comp(a, a, b,
+//! id(a), f), f)`: the variables standing in another variable's sort first, in
+//! the order a walk of the rule's written variables meets them, each sort
+//! before its variable, then the rest in order of first occurrence. A variable
+//! a rule leaves unnamed takes the first letter the rule does not write.
 //!
 //! - Choice: first-order unification over index terms, run as one explicit
 //!   worklist. Alternatives: requiring every implicit argument written, which
@@ -410,8 +410,8 @@ pub struct Presentation
 }
 
 /// A law a theory states as the path type a model proves it at: `law sym :
-/// (a : Carrier, b : Carrier) => Path(Bool, eq(a, b), eq(b, a))`, an equation
-/// no rule orients.
+/// (a : Carrier, b : Carrier) => Path[.A = Bool](eq(a, b), eq(b, a))`, an
+/// equation no rule orients.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -443,7 +443,7 @@ pub struct StatedLaw
     pub right: FreeTerm,
 }
 
-/// A path a law assumes, `p : Path(Bool, eq(a, b), true)`: an argument of
+/// A path a law assumes, `p : Path[.A = Bool](eq(a, b), true)`: an argument of
 /// the law's proof no later type names.
 ///
 /// # Specification

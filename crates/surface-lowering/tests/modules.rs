@@ -1998,7 +1998,7 @@ fn an_attributed_top_level_type_member_is_read_as_the_plain_one_4464()
 fn a_type_member_s_refusal_is_reported_once_1087()
 {
     let source = "module M : #{ count : Integer, type Q } where {\n  def count = 3;\n  @[ checks ] type Q \
-                  = Path(Integer, count, 3);\n}\n";
+                  = Path[.A = Integer](count, 3);\n}\n";
     let found = rows(&lower(source));
     let refused: Vec<Role> = found
         .iter()
@@ -4063,7 +4063,7 @@ fn a_forward_member_reference_is_refused_by_position()
     );
     forward(
         "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\nmodule M where { def w : \
-             Path(Circle, Base, Base) ; def w = loop ∷ Path.here(Base) ; def loop = 1 ; }",
+             Path[.A = Circle](Base, Base) ; def w = loop ∷ Path.here(Base) ; def loop = 1 ; }",
         "M.w",
         "loop",
         1_usize,
@@ -4124,26 +4124,26 @@ fn a_type_member_reads_types_and_never_values()
         );
     };
     phase(
-        "module M where {\n  def count = 3;\n  type Q = Path(Integer, count, 3);\n}\n",
+        "module M where {\n  def count = 3;\n  type Q = Path[.A = Integer](count, 3);\n}\n",
         "Q",
         "count",
         ("count", 1_usize),
     );
     phase(
-        "module M where {\n  def count = 3;\n  module N where { type Q = Path(Integer, M.count, 3); }\n}\n",
+        "module M where {\n  def count = 3;\n  module N where { type Q = Path[.A = Integer](M.count, 3); }\n}\n",
         "Q",
         "count",
         ("M.count", 0_usize),
     );
     phase(
-        "module S :> #{ type T, z : T, type P = Path(T, z, z) } where {\n  type T = Integer;\n  def \
-         z = 0;\n  type P = Path(Integer, 0, 0);\n}\n",
+        "module S :> #{ type T, z : T, type P = Path[.A = T](z, z) } where {\n  type T = Integer;\n  def \
+         z = 0;\n  type P = Path[.A = Integer](0, 0);\n}\n",
         "P",
         "z",
         ("z", 1_usize),
     );
     let static_only = "data Bit : Type where { | Low : Bit | High : Bit }\nmodule M where {\n  type Three = \
-                       Path(Integer, 3, 3);\n  type Lowered = Path(Bit, Low, Low);\n  def three \
+                       Path[.A = Integer](3, 3);\n  type Lowered = Path[.A = Bit](Low, Low);\n  def three \
                        : Three ;\n  def three = Path.here(3);\n}\n";
     let mut lowered = lower(static_only);
     let found = rows(&lowered);

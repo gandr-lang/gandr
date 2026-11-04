@@ -5,7 +5,7 @@
 //! transport along it is transport along each letter in turn, first letter
 //! first: `tr(P, ℓ ∷ u, v) = tr(P, u, tr(P, ℓ, v))`, the empty word moving
 //! nothing. Along one letter `ℓ`, the book's lemma 2.11.2 computes a path
-//! family `y. Path(C, l(y), r(y))` whose carrier `C` never reads `y` by
+//! family `y. Path[.A = C](l(y), r(y))` whose carrier `C` never reads `y` by
 //! conjugation: `tr(P, ℓ, v) = l(ℓ)⁻¹ · v · r(ℓ)`, where an endpoint acts on
 //! the letter by what it is —
 //!
@@ -29,8 +29,8 @@
 //! body is no case over the sort, or a piece that does not splice keeps the
 //! transport where the evaluator had it, so it sticks as it did.
 //!
-//! **`then` appends on its first word.** In the singleton family `y. Path(C,
-//! a, y)` — `p then q` is `p` transported along `q` there — a path no row
+//! **`then` appends on its first word.** In the singleton family `y. Path[.A =
+//! C]( a, y)` — `p then q` is `p` transported along `q` there — a path no row
 //! above reads, a parameter or a word that does not splice, still moves the
 //! empty word and a letter-headed word, as the free model's append computes
 //! on its first argument: `tr(P, q, ε) = q` and `tr(P, q, ℓ ∷ p) = ℓ ∷ tr(P,
@@ -1177,13 +1177,13 @@ fn loop_arm(
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the loop transports reflexivity to itself in `y.
-///   Path(Circle, Base, y)`, conjugates the loop to itself in `y. Path(Circle,
-///   y, y)`, a word of two letters takes two steps, and a map with a loop arm
-///   carries the loop to the arm's image. Over every pairing of a fixed, a
-///   moving and a called endpoint, words of up to two letters and the named
-///   loop, spelled and named operands land on the word the free group computes,
-///   a named operand under a called endpoint included.
+/// - hypothesis: L3 — the loop transports reflexivity to itself in `y. Path[.A
+///   = Circle](Base, y)`, conjugates the loop to itself in `y. Path[.A =
+///   Circle]( y, y)`, a word of two letters takes two steps, and a map with a
+///   loop arm carries the loop to the arm's image. Over every pairing of a
+///   fixed, a moving and a called endpoint, words of up to two letters and the
+///   named loop, spelled and named operands land on the word the free group
+///   computes, a named operand under a called endpoint included.
 /// - witness: `eval::words::tests::transport_along_the_loop_moves_the_endpoint`
 /// - witness: `eval::words::tests::the_loop_conjugates_a_loop_to_itself`
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
@@ -1298,14 +1298,14 @@ pub(super) fn transport(
 /// # Specification
 /// - requires: `path` is the evaluated path and `value` the evaluated operand
 ///   of a transport in `motive`, both already taken off the value stack.
-/// - ensures: in a family `y. Path(C, a, y)` whose carrier and left endpoint
-///   never read `y`, [`Moved::Stepped`] with `path` returned when `value` is
-///   the empty word — `tr(P, q, here(a)) ⇝ q` — with the transport of the rest
-///   bound into `w. return ℓ ∷ w` when `value` is `ℓ ∷ p` — `tr(P, q, ℓ ∷ p) ⇝
-///   ℓ ∷ tr(P, q, p)`, a letter looping at the one point — with the operand
-///   reread when a definition names it, and supplied again as what it returns
-///   when the run holds it as a call; [`Moved::Unmoved`] with the machine
-///   unchanged otherwise.
+/// - ensures: in a family `y. Path[.A = C](a, y)` whose carrier and left
+///   endpoint never read `y`, [`Moved::Stepped`] with `path` returned when
+///   `value` is the empty word — `tr(P, q, here(a)) ⇝ q` — with the transport
+///   of the rest bound into `w. return ℓ ∷ w` when `value` is `ℓ ∷ p` — `tr(P,
+///   q, ℓ ∷ p) ⇝ ℓ ∷ tr(P, q, p)`, a letter looping at the one point — with the
+///   operand reread when a definition names it, and supplied again as what it
+///   returns when the run holds it as a call; [`Moved::Unmoved`] with the
+///   machine unchanged otherwise.
 /// - fails: as [`head`] and [`family_actions`].
 /// - panics: none.
 ///

@@ -27,7 +27,7 @@ def flippedModel : Model(Toggle) = flippedToggle;
 
 /// The two models are one along negation: the carriers by negation, the start
 /// carried to `true`, and each operation carried to the other's.
-def oneModel : Path(Model(Toggle), plainModel, flippedModel) = (
+def oneModel : Path(plainModel, flippedModel) = (
   negation,
   (Path.here(+{.1 = unit}), (stepped, reread))
 );
@@ -35,7 +35,7 @@ def oneModel : Path(Model(Toggle), plainModel, flippedModel) = (
 /// The start left unmoved does not relate the models: negation carries `false`
 /// to `true`, so `Path.here(false)` is no path from the carried start to `true`.
 @[ refuses("EndpointMismatch") ]
-def startUnmoved : Path(Model(Toggle), plainModel, flippedModel) = (
+def startUnmoved : Path(plainModel, flippedModel) = (
   negation,
   (Path.here(+{.0 = unit}), (stepped, reread))
 );

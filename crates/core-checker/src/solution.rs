@@ -1904,8 +1904,8 @@ fn sides(
 /// The thunk's path runs from the solution to the variable, and a staged
 /// binder's path from the variable to the solution. Where one of them runs
 /// against the equation, the reversal of the equation is bound first: `here`
-/// at the left side, carried along the equation in the family `λz. Path(I, z,
-/// left)`.
+/// at the left side, carried along the equation in the family `λz. Path[.A =
+/// I](z, left)`.
 ///
 /// # Specification
 /// - requires: `inner` is read inside the thunk of `solved`.

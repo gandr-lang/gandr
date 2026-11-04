@@ -31,16 +31,16 @@ pub def rec double(n : Nat) -> Nat {
 def doubledTwo : () => Nat = double(two);
 
 /// One step of `double` is `plusTwo` of the call, as the arm writes it.
-def doubleStep(n : Nat) -> Path(Nat, double(Succ(n)), plusTwo(double(n))) {
+def doubleStep(n : Nat) -> Path(double(Succ(n)), plusTwo(double(n))) {
   Path.here(plusTwo(double(n)))
 }
 
 /// The same step with `plusTwo` unfolded: two successors over the call.
-def doubleStepUnfolded(n : Nat) -> Path(Nat, double(Succ(n)), Succ(Succ(double(n)))) {
+def doubleStepUnfolded(n : Nat) -> Path(double(Succ(n)), Succ(Succ(double(n)))) {
   Path.here(Succ(Succ(double(n))))
 }
 
 /// Two steps, each arm handing its call on to `plusTwo`.
-def doubleTwoSteps(n : Nat) -> Path(Nat, double(Succ(Succ(n))), plusTwo(plusTwo(double(n)))) {
+def doubleTwoSteps(n : Nat) -> Path(double(Succ(Succ(n))), plusTwo(plusTwo(double(n)))) {
   Path.here(plusTwo(plusTwo(double(n))))
 }

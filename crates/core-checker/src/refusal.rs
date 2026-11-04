@@ -115,7 +115,7 @@ pub enum ExpectedShape
     With,
     /// A native universe-path classifier.
     PathUniverse,
-    /// An element path type `Path(A, a, b)`: what reflexivity is checked
+    /// An element path type `Path[.A = A](a, b)`: what reflexivity is checked
     /// against and what a transported path must synthesise.
     Path,
     /// A sum classifier.
@@ -155,8 +155,8 @@ pub enum ExpectedShape
     Capability,
     /// A session type: what a fork's protocol annotation must denote.
     Session,
-    /// A directed identity `Flow(A, a, b)`: what a ride moves along and what
-    /// a composite's two flows must synthesise.
+    /// A directed identity `Flow[.A = A](a, b)`: what a ride moves along and
+    /// what a composite's two flows must synthesise.
     Flow,
     /// A run type `Run(S)` or a prefix type `Prefix(S)`: what a recorded run is
     /// checked against.

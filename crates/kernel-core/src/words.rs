@@ -17,31 +17,31 @@
 //!   meeting one runs it: `tr(P, w, ⟨c⟩) ⇝ y ← c; tr(P↑, w↑, y)` and `tr(P,
 //!   ⟨c⟩, v) ⇝ w ← c; tr(P↑, w, v↑)`; the empty word's row first of all, since
 //!   it reads neither side's run;
-//! - along one letter in a path family `y. Path(C, l, r)` whose carrier never
-//!   reads `y`, by conjugation (the book's lemma 2.11.2), `l(ℓ)⁻¹ · v · r(ℓ)`:
-//!   with both endpoints fixed or moving the word is spliced at once; with an
-//!   endpoint through a chain of calls the reduct binds the endpoint's image
-//!   and transports along it in the family `z. Path(C, z, r(pt))` for the left
-//!   one and `z. Path(C, l(pt), z)` for the right one, whose rows are again the
-//!   fixed and moving ones.
-//! - in a singleton family `y. Path(C, a, y)`, where no row above reads the
-//!   path, by the word moved, as `then` appends on its first word: `tr(P, q, ε)
-//!   ⇝ return q`, `tr(P, ⟨c⟩, ε) ⇝ c`, and `tr(P, q, ℓ ∷ p) ⇝ return ℓ ∷ ⟨tr(P,
-//!   q, p)⟩`, the rest's transport held as the value it returns, as the
+//! - along one letter in a path family `y. Path[.A = C](l, r)` whose carrier
+//!   never reads `y`, by conjugation (the book's lemma 2.11.2), `l(ℓ)⁻¹ · v ·
+//!   r(ℓ)`: with both endpoints fixed or moving the word is spliced at once;
+//!   with an endpoint through a chain of calls the reduct binds the endpoint's
+//!   image and transports along it in the family `z. Path[.A = C](z, r(pt))`
+//!   for the left one and `z. Path[.A = C](l(pt), z)` for the right one, whose
+//!   rows are again the fixed and moving ones.
+//! - in a singleton family `y. Path[.A = C](a, y)`, where no row above reads
+//!   the path, by the word moved, as `then` appends on its first word: `tr(P,
+//!   q, ε) ⇝ return q`, `tr(P, ⟨c⟩, ε) ⇝ c`, and `tr(P, q, ℓ ∷ p) ⇝ return ℓ ∷
+//!   ⟨tr(P, q, p)⟩`, the rest's transport held as the value it returns, as the
 //!   evaluator reads a stuck one under its letter.
 //!
 //! An endpoint's image of a letter is one image per occurrence of the binder,
 //! the leftmost first, each appended after the one before by the transport in
-//! `z. Path(C, l(pt), z)`. Along one occurrence, the innermost function's
+//! `z. Path[.A = C](l(pt), z)`. Along one occurrence, the innermost function's
 //! image is the loop arm its case carries for the letter's loop — inverted
-//! along the family `z. Path(C, z, l(pt))` for an inverse letter, reflexivity
-//! for a case with no loop arm — or, for a case over another argument, the
-//! branch that argument's constructor selects: the letter where it returns
-//! the occurrence's argument, reflexivity where it ignores it, and the run of
-//! that argument first where it is a call. Each further function's image of
-//! that word is its `cong`: the transport along it in `y. Path(C, l(pt), ⟨f
-//! y⟩)`. The functions are read through the evaluator's admitted bodies, the
-//! reading cong fusion takes
+//! along the family `z. Path[.A = C](z, l(pt))` for an inverse letter,
+//! reflexivity for a case with no loop arm — or, for a case over another
+//! argument, the branch that argument's constructor selects: the letter where
+//! it returns the occurrence's argument, reflexivity where it ignores it, and
+//! the run of that argument first where it is a call. Each further function's
+//! image of that word is its `cong`: the transport along it in `y. Path[.A =
+//! C](l(pt), ⟨f y⟩)`. The functions are read through the evaluator's admitted
+//! bodies, the reading cong fusion takes
 //! ([`mod@crate::replay`]'s `Replay::fuse`): a loop obligation is decided
 //! δ-free, and the image of a loop under a map out of the circle exists only in
 //! its definition. A configuration no row reads sticks.
@@ -448,8 +448,8 @@ fn relettered(
 /// - measure: the letters left.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — conjugation at `Path(Circle, x, x)` inverts the loop on
-///   the left; a word left uninverted would not cancel.
+/// - hypothesis: L3 — conjugation at `Path[.A = Circle](x, x)` inverts the loop
+///   on the left; a word left uninverted would not cancel.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_none_or(|built| spelled(arena, presentations, built).is_some()))]
 fn inverted(
@@ -485,8 +485,8 @@ fn inverted(
 /// - measure: the letters left.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — reflexivity at `Path(Circle, Base, x)` becomes the loop
-///   only when the empty word is spliced before it.
+/// - hypothesis: L3 — reflexivity at `Path[.A = Circle](Base, x)` becomes the
+///   loop only when the empty word is spliced before it.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_none_or(|built| arena.value(built).is_some()))]
 fn concatenated(
@@ -742,7 +742,7 @@ pub fn point(
 ///   presentation carries free cells over the sort `S` looping at the closed
 ///   point `pt` ([`point`]), the path type `Presentations::words` reads as
 ///   those words; `(U₀, x, y)` for `ty` a `PathUniverse(x, y)`, the level-zero
-///   value universe at which `Path(U₀, x, y)` and `Path_U(x, y)` are two
+///   value universe at which `Path[.A = U₀](x, y)` and `Path_U(x, y)` are two
 ///   readings of one classifier, as `equiv` checks at either; the parts of a
 ///   `Path` type otherwise.
 /// - provides: the reading the element and telescope transports give the path
@@ -957,9 +957,9 @@ where
 ///   its fields and the arguments substituted and the moving one a binder `y`,
 ///   is `return y`, and `return rest` when it is `return v` for a `v` that
 ///   ignores `y`; for `fixed[over]` the returned call `⟨c⟩`, `x ← c; tr(y.
-///   Path(C, fixed, ⟨f … x … y …⟩), letter, here(fixed))`, the case's function
-///   applied at `x` where the case is over and at `y` where the letter moves,
-///   which the next step reads at `x`'s constructor; `None` otherwise.
+///   Path[.A = C](fixed, ⟨f … x … y …⟩), letter, here(fixed))`, the case's
+///   function applied at `x` where the case is over and at `y` where the letter
+///   moves, which the next step reads at `x`'s constructor; `None` otherwise.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -987,7 +987,7 @@ where
     let selector = *fixed.get(over.0)?;
     let count = fixed.len();
     if let Some(&Value::Returned(call)) = arena.value(selector) {
-        // `x ← c; tr(y. Path(C, fixed, ⟨f … x … y …⟩), letter, here(fixed))`:
+        // `x ← c; tr(y. Path[.A = C](fixed, ⟨f … x … y …⟩), letter, here(fixed))`:
         // `x` one binder in, `y` two.
         let two = BinderDepth::from(2_u32);
         let one = BinderDepth::from(1_u32);
@@ -1074,9 +1074,9 @@ where
     None
 }
 
-/// The family `z. Path(C, z, fixed)` or `z. Path(C, fixed, z)`, read `depth`
-/// binders under where `carrier` and `fixed` stand, the moving endpoint on
-/// `moving`'s side.
+/// The family `z. Path[.A = C](z, fixed)` or `z. Path[.A = C](fixed, z)`, read
+/// `depth` binders under where `carrier` and `fixed` stand, the moving endpoint
+/// on `moving`'s side.
 ///
 /// # Specification
 /// trivial.
@@ -1110,7 +1110,7 @@ where
 ///   a value standing where the transport does; `at` the loop's point there;
 ///   `routes` read by [`routes`] under the family's binder.
 /// - ensures: the first route's [`route_image`], and each later route's bound
-///   after it and appended to it, `tr(z. Path(C, fixed, z), wₖ, w)`.
+///   after it and appended to it, `tr(z. Path[.A = C](fixed, z), wₖ, w)`.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1145,7 +1145,7 @@ where
         )?;
         built = Some(built.map_or(next, |before| {
             // `w · wₖ`: `wₖ` bound one binder in, `w` two, the append the
-            // transport of `w` along `wₖ` in `z. Path(C, fixed, z)`.
+            // transport of `w` along `wₖ` in `z. Path[.A = C](fixed, z)`.
             let one = BinderDepth::from(1_u32);
             let lifted = shift_computation(arena, table, memo, next, BinderDepth::NONE, one);
             let family = path_family(
@@ -1173,11 +1173,11 @@ where
 /// - requires: as [`image`]; `walk` is one of [`Routes::walks`].
 /// - ensures: the innermost call's loop arm for the letter where its case is
 ///   over the moving argument, its other arguments at the point — inverted
-///   along `z. Path(C, z, fixed)` for an inverse letter, the letter's empty
-///   word for a case with no loop arm — or [`select`]'s reading where the case
-///   is over another argument; bound into each further call's cong of it, the
-///   transport along it in `y. Path(C, fixed, ⟨f … y …⟩)` from `here(fixed)`,
-///   every argument off the route at the point.
+///   along `z. Path[.A = C](z, fixed)` for an inverse letter, the letter's
+///   empty word for a case with no loop arm — or [`select`]'s reading where the
+///   case is over another argument; bound into each further call's cong of it,
+///   the transport along it in `y. Path[.A = C](fixed, ⟨f … y …⟩)` from
+///   `here(fixed)`, every argument off the route at the point.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1317,9 +1317,9 @@ where
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the loop moves reflexivity to the loop in `y. Path(S,
-///   Base, y)`, conjugates a loop to itself in `y. Path(S, y, y)`, and a map
-///   with a loop arm carries the loop to the arm's image, as the loop
+/// - hypothesis: L3 — the loop moves reflexivity to the loop in `y. Path[.A =
+///   S]( Base, y)`, conjugates a loop to itself in `y. Path[.A = S](y, y)`, and
+///   a map with a loop arm carries the loop to the arm's image, as the loop
 ///   obligations the witnesses admit and refuse read them; a composite along
 ///   the inverse's returned transport runs that path and cancels to the empty
 ///   word; a word of two letters moves a path one letter at a time, appended on
@@ -1468,7 +1468,7 @@ where
     else {
         return Reduction::Stuck;
     };
-    // `w = l(ℓ)⁻¹ · v`, along the left image in `z. Path(C, z, r(pt))`.
+    // `w = l(ℓ)⁻¹ · v`, along the left image in `z. Path[.A = C](z, r(pt))`.
     let before = left_image.map(|left_image| {
         let family = path_family(
             arena,
@@ -1489,7 +1489,7 @@ where
         let moved = arena.computation_path_transport(family, bound, lifted);
         arena.computation_bind(left_image, moved)
     });
-    // `w · r(ℓ)`, along the right image in `z. Path(C, l(pt), z)`.
+    // `w · r(ℓ)`, along the right image in `z. Path[.A = C](l(pt), z)`.
     let reduct = match (before, right_image) {
         (Some(before), None) => before,
         (None, Some(right_image)) => {
@@ -1585,10 +1585,10 @@ where
 ///
 /// # Specification
 /// - requires: nothing; an ill-typed term reduces or sticks without panicking.
-/// - ensures: in a family `y. Path(C, a, y)` whose carrier and left endpoint
-///   never read `y`, `Reduced` with the path returned when the operand is the
-///   empty word — `tr(P, q, ε) ⇝ return q`, and `tr(P, ⟨c⟩, ε) ⇝ c` for a
-///   returned path, as the evaluator returns a held one — with the operand's
+/// - ensures: in a family `y. Path[.A = C](a, y)` whose carrier and left
+///   endpoint never read `y`, `Reduced` with the path returned when the operand
+///   is the empty word — `tr(P, q, ε) ⇝ return q`, and `tr(P, ⟨c⟩, ε) ⇝ c` for
+///   a returned path, as the evaluator returns a held one — with the operand's
 ///   first letter returned before the rest's transport, held as the value it
 ///   returns, when the operand is `ℓ ∷ p` — `tr(P, q, ℓ ∷ p) ⇝ return ℓ ∷
 ///   ⟨tr(P, q, p)⟩`, a letter looping at the one point — and with the operand
@@ -1648,9 +1648,9 @@ pub fn appended(
     }
 }
 
-/// The left endpoint of `motive` when it is a singleton family `y. Path(C, a,
-/// y)` whose carrier and left endpoint never read `y`: the family the append
-/// rows read.
+/// The left endpoint of `motive` when it is a singleton family `y. Path[.A =
+/// C](a, y)` whose carrier and left endpoint never read `y`: the family the
+/// append rows read.
 ///
 /// # Specification
 /// - requires: nothing; an ill-typed motive reads as `None`.

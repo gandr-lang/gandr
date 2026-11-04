@@ -27,7 +27,6 @@ def rec substLifting(t : Term, s : Env) -> Term {
 
 /// Two substitutions at an abstraction, both unfolded once.
 def substLiftingTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> Path(
-  Term,
   substLifting(substLifting(Lam(b), s1), s2),
   Lam(substLifting(substLifting(b, liftOf(s1)), liftOf(s2)))
 ) {

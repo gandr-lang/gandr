@@ -7,7 +7,7 @@
 //! `pathProduct(p, q)` synthesises from its two components, each a path of
 //! the universe in either of its two readings: the native `Path_U(⌜A⌝, ⌜A′⌝)`
 //! the checker's own forms synthesise, or the element identity
-//! `Path(Type, ⌜A⌝, ⌜A′⌝)` at the value universe of level zero that
+//! `Path[.A = Type](⌜A⌝, ⌜A′⌝)` at the value universe of level zero that
 //! `here(⌜A⌝)`, `equiv(f, g)` and `ua[n, k]` synthesise. Every endpoint is a
 //! quoted closed first-order code, as [`crate::formation::path_code`] reads
 //! one. From `p` relating `⌜A⌝` to `⌜A′⌝` and `q` relating `⌜B⌝` to `⌜B′⌝` the
@@ -44,7 +44,7 @@
 //! # The directed product
 //!
 //! `flowProduct(p, q)` synthesises from two components, each a flow of the
-//! universe `Flow(Type, ⌜A⌝, ⌜A′⌝)` at the value universe of level zero —
+//! universe `Flow[.A = Type](⌜A⌝, ⌜A′⌝)` at the value universe of level zero —
 //! what `stay(⌜A⌝)`, `forward(f)`, a composite and an inner flow product
 //! synthesise — between quoted closed first-order codes. From `p` relating
 //! `⌜A⌝` to `⌜A′⌝` and `q` relating `⌜B⌝` to `⌜B′⌝` the product flows from
@@ -117,8 +117,8 @@ pub enum Reading
 {
     /// The native `Path_U(⌜A⌝, ⌜A′⌝)`.
     Native,
-    /// The element identity `Path(Type, ⌜A⌝, ⌜A′⌝)` at the value universe of
-    /// level zero.
+    /// The element identity `Path[.A = Type](⌜A⌝, ⌜A′⌝)` at the value universe
+    /// of level zero.
     Element,
 }
 
@@ -140,8 +140,8 @@ pub struct Component
 /// # Specification
 /// - requires: `classifier` is the type `at` synthesised.
 /// - ensures: the two decoded endpoint codes of `Path_U(⌜A⌝, ⌜A′⌝)`, read as
-///   [`Reading::Native`], or of `Path(Type, ⌜A⌝, ⌜A′⌝)` at the value universe
-///   of level zero, read as [`Reading::Element`].
+///   [`Reading::Native`], or of `Path[.A = Type](⌜A⌝, ⌜A′⌝)` at the value
+///   universe of level zero, read as [`Reading::Element`].
 /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting a universe path,
 ///   for any other classifier; [`CheckRefusal::PathCode`] for an endpoint that
 ///   is no quoted closed first-order code; the unfolding's refusal.
@@ -308,8 +308,8 @@ pub fn classifier(
 ///
 /// # Specification
 /// - requires: `classifier` is the type `at` synthesised.
-/// - ensures: the two decoded endpoint codes of `Flow(Type, ⌜A⌝, ⌜A′⌝)` at the
-///   value universe of level zero, source first.
+/// - ensures: the two decoded endpoint codes of `Flow[.A = Type](⌜A⌝, ⌜A′⌝)` at
+///   the value universe of level zero, source first.
 /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting a flow, for any
 ///   other classifier; [`CheckRefusal::PathCode`] for an endpoint that is no
 ///   quoted closed first-order code; the unfolding's refusal.
@@ -399,8 +399,8 @@ pub fn flow_component(
 /// The flow type a flow product of `first` and `second` synthesises.
 ///
 /// # Specification
-/// - ensures: `Flow(Type, ⌜A × B⌝, ⌜A′ × B′⌝)` at the value universe of level
-///   zero, from the components' sources `A`, `B` and targets `A′`, `B′`.
+/// - ensures: `Flow[.A = Type](⌜A × B⌝, ⌜A′ × B′⌝)` at the value universe of
+///   level zero, from the components' sources `A`, `B` and targets `A′`, `B′`.
 /// - panics: none.
 /// - executable: none — the minted node is compared by the judgement that
 ///   checks the product against its declared type.

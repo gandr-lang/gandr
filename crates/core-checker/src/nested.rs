@@ -73,10 +73,10 @@
 //! dependent function's argument under the types after it — stands as the
 //! value it returns, `⟨c⟩`, rather than a bind's variable: the variable is
 //! opaque, so `#{f(Base), cong(f, loop)}` at `#{point : Int, around :
-//! Path(Int, point, point)}` would check its second component at `Path(Int,
-//! x, x)` for a fresh `x`, which `f(Base)`'s path does not reach. A returned
-//! value is what a compound endpoint already is, and it computes the same
-//! value as the bind for a computation that performs nothing. An effectful
+//! Path[.A = Int](point, point)}` would check its second component at `Path[.A
+//! = Int]( x, x)` for a fresh `x`, which `f(Base)`'s path does not reach. A
+//! returned value is what a compound endpoint already is, and it computes the
+//! same value as the bind for a computation that performs nothing. An effectful
 //! run still binds, in written order. The alternative was a bind whose
 //! variable the body's types unfold to its computation, a let the core does
 //! not have. Reversal: such a let.

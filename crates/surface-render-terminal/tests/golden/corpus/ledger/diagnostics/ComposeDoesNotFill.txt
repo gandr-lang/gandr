@@ -1,19 +1,19 @@
 error[ComposeDoesNotFill]: a composite needs its cells to meet end to end along the chain
    ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:9:3
    │
- 8 │   def apart(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, x, z)) -> Path(A, x, z) {
-   │   │         ┬         ┬      ┬      ┬      ┬                  ─ checked against `Path(A, x, z) -> -F Path(A, x, z)`; while checking the body of this function; binds q : Path(A, x, z)
+ 8 │   def apart(A : Type, x : A, y : A, z : A, p : Path(x, y), q : Path(x, z)) -> Path(x, z) {
+   │   │         ┬         ┬      ┬      ┬      ┬               ─ checked against `Path[.A = A](x, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds q : Path[.A = A](x, z)
    │   │         │         │      │      │      │
-   │   │         │         │      │      │      checked against `Path(A, x, y) -> Path(A, x, z) -> -F Path(A, x, z)`; while checking the body of this function; binds p : Path(A, x, y)
-   │   │         │         │      │      checked against `(z : A) -> Path(A, x, y) -> Path(A, x, z) -> -F Path(A, x, z)`; while checking the body of this function; binds z : A
-   │   │         │         │      checked against `(y : A) -> (z : A) -> Path(A, x, y) -> Path(A, x, z) -> -F Path(A, x, z)`; while checking the body of this function; binds y : A
-   │   │         │         checked against `(x : A) -> (y : A) -> (z : A) -> Path(A, x, y) -> Path(A, x, z) -> -F Path(A, x, z)`; while checking the body of this function; binds x : A
-   │ ┌─┘         checked against `(A : Type) -> (x : A) -> (y : A) -> (z : A) -> Path(A, x, y) -> Path(A, x, z) -> -F Path(A, x, z)`; while checking the body of this function; binds A : Type
+   │   │         │         │      │      │      checked against `Path[.A = A](x, y) -> Path[.A = A](x, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds p : Path[.A = A](x, y)
+   │   │         │         │      │      checked against `(a : A) -> Path[.A = A](x, y) -> Path[.A = A](x, a) -> -F Path[.A = A](x, a)`; while checking the body of this function; binds z : A
+   │   │         │         │      checked against `(a : A) -> (b : A) -> Path[.A = A](x, a) -> Path[.A = A](x, b) -> -F Path[.A = A](x, b)`; while checking the body of this function; binds y : A
+   │   │         │         checked against `(a : A) -> (b : A) -> (c : A) -> Path[.A = A](a, b) -> Path[.A = A](a, c) -> -F Path[.A = A](a, c)`; while checking the body of this function; binds x : A
+   │ ┌─┘         checked; while checking the body of this function; binds A : Type
    │ │
  9 │ │   compose[3, 5](chain(2), (p, q))
    │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ cells that do not fill the chain
 10 │ │ }
-   │ └─┘ checked against `(A : Type, x : A, y : A, z : A, Path(A, x, y), Path(A, x, z)) => Path(A, x, z)`; while checking the body of this thunk
+   │ └─┘ checked against `(a : Type, b : a, c : a, d : a, Path[.A = a](b, c), Path[.A = a](b, d)) => Path[.A = a](b, d)`; while checking the body of this thunk
    │
    ├ note: `apart` is refused with ComposeDoesNotFill, as its expectation states
    ╰ help: start each cell at the point where the cell before it ends
@@ -21,14 +21,14 @@ error[ComposeDoesNotFill]: a composite needs its cells to meet end to end along 
 error[ComposeDoesNotFill]: a composite needs each column's 2-cells to meet end to end
    ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:19:3
    │
-18 │   def columnApart(A : Type, x : A, y : A, f : Path(A, x, y), g : Path(A, x, y), h : Path(A, x, y), k : Path(A, x, y), a : Path(Path(A, x, y), f, g), b : Pa…
-   │   │               ┬         ┬      ┬      ┬                  ┬                  ┬                  ┬                  ┬                              ─ checked against `Path(Path(A, x, y), h, k) -> -F Path(Path(A, x, y), f, k)`; while checking the body of this function; binds b : Path(Path(A, x, y), h, k)
-   │   │               │         │      │      │                  │                  │                  │                  │
-   │   │               │         │      │      │                  │                  │                  │                  checked against `Path(Path(A, x, y), f, g) -> Path(Path(A, x, y), h, k) -> -F Path(Path(A, x, y), f, k)`; while checking the body of this function; binds a : Path(Path(A, x, y), f, g)
-   │   │               │         │      │      │                  │                  │                  checked; while checking the body of this function; binds k : Path(A, x, y)
-   │   │               │         │      │      │                  │                  checked; while checking the body of this function; binds h : Path(A, x, y)
-   │   │               │         │      │      │                  checked; while checking the body of this function; binds g : Path(A, x, y)
-   │   │               │         │      │      checked; while checking the body of this function; binds f : Path(A, x, y)
+18 │   def columnApart(A : Type, x : A, y : A, f : Path(x, y), g : Path(x, y), h : Path(x, y), k : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), b : Pa…
+   │   │               ┬         ┬      ┬      ┬               ┬               ┬               ┬               ┬                                        ─ checked against `Path[.A = Path[.A = A](x, y)](h, k) -> -F Path[.A = Path[.A = A](x, y)](f, k)`; while checking the body of this function; binds b : Path[.A = Path[.A = A](x, y)](h, k)
+   │   │               │         │      │      │               │               │               │               │
+   │   │               │         │      │      │               │               │               │               checked; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
+   │   │               │         │      │      │               │               │               checked; while checking the body of this function; binds k : Path[.A = A](x, y)
+   │   │               │         │      │      │               │               checked; while checking the body of this function; binds h : Path[.A = A](x, y)
+   │   │               │         │      │      │               checked; while checking the body of this function; binds g : Path[.A = A](x, y)
+   │   │               │         │      │      checked; while checking the body of this function; binds f : Path[.A = A](x, y)
    │   │               │         │      checked; while checking the body of this function; binds y : A
    │   │               │         checked; while checking the body of this function; binds x : A
    │ ┌─┘               checked; while checking the body of this function; binds A : Type

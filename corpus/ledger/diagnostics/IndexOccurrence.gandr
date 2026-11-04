@@ -2,5 +2,5 @@
 @[ refuses("IndexOccurrence") ]
 data Coded : Type where {
   | Base : Coded
-  | Looped : (p : Path(Type, Coded, Coded)) --> Coded
+  | Looped : (p : Path[.A = Type](Coded, Coded)) --> Coded
 }

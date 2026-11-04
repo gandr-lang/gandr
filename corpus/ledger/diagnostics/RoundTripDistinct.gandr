@@ -18,6 +18,6 @@ def same(b : Unit + Unit) -> -F (Unit + Unit) {
 }
 
 @[ refuses("RoundTripDistinct") ]
-def collapse_bool : Path(Type, Bool, Bool) ;
+def collapse_bool : Path[.A = Type](Bool, Bool) ;
 
 def collapse_bool = equiv(not, same) ;

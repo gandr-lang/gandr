@@ -725,7 +725,7 @@ fn theory_member() -> Regex
             t(TileLabel("is")),
             t(TileLabel("identifier")),
         ]),
-        // `law sym : (a : Carrier, b : Carrier) => Path(Bool, eq(a, b), eq(b,
+        // `law sym : (a : Carrier, b : Carrier) => Path[.A = Bool](eq(a, b), eq(b,
         // a))` — an equation no rule orients, stated as the path type a model
         // proves it at; the rule decision never reads it.
         seq([

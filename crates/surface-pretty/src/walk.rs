@@ -1341,8 +1341,8 @@ where
             carrier,
             left,
             right,
-        } => Vec::from([value_type(carrier), bare(left), bare(right)]),
-        Former::Flow {
+        }
+        | Former::Flow {
             carrier,
             left,
             right,
@@ -4132,7 +4132,7 @@ fn passing<Node>(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Derived<Node>
 {
-    /// `Path.step(p, q)`: `Path.walk(fun (y) { Path(A, a, y) }, q, p)`.
+    /// `Path.step(p, q)`: `Path.walk(fun (y) { Path[.A = A](a, y) }, q, p)`.
     Composite
     {
         /// The first path, the transported value.
@@ -4140,9 +4140,10 @@ enum Derived<Node>
         /// The second path, along which it moves.
         path: Node,
     },
-    /// `Path.back(p)`: `Path.walk(fun (y) { Path(A, y, a) }, p, Path.here(a))`.
+    /// `Path.back(p)`: `Path.walk(fun (y) { Path[.A = A](y, a) }, p,
+    /// Path.here(a))`.
     Inverse(Node),
-    /// `Path.ap(f, p)`: `Path.walk(fun (y) { Path(B, f(a), f(y)) }, p,
+    /// `Path.ap(f, p)`: `Path.walk(fun (y) { Path[.A = B](f(a), f(y)) }, p,
     /// Path.here(f(a)))`.
     Congruence
     {
@@ -4154,10 +4155,10 @@ enum Derived<Node>
 }
 
 /// The derived path operation `body` is the transport of: a path transport
-/// whose motive is `Path(A, a, y)` over its own binder `y` (a composite), or
-/// `Path(A, y, a)` moving reflexivity, `Path.here(a)` or the empty word at a
-/// looped point `a` (an inverse), or `Path(B, f(a), f(y))` moving `here` (an
-/// action on a path), where every other part of the
+/// whose motive is `Path[.A = A](a, y)` over its own binder `y` (a composite),
+/// or `Path[.A = A](y, a)` moving reflexivity, `Path.here(a)` or the empty word
+/// at a looped point `a` (an inverse), or `Path[.A = B](f(a), f(y))` moving
+/// `here` (an action on a path), where every other part of the
 /// motive names no `y`.
 ///
 /// # Specification
@@ -4229,7 +4230,7 @@ where
         )
     };
     let reflexive = matches!(source.read(value), Former::Here(_));
-    // A nullary constructor at `Path(A, a, a)` is the empty word of the words
+    // A nullary constructor at `Path[.A = A](a, a)` is the empty word of the words
     // at a looped point `a`, which an inverse moves there.
     let empty = matches!(source.read(value), Former::Constructor { arity, .. } if usize::from(arity) == 0_usize);
     // The map applied and returned, as an action's endpoints are: `f(x)`.
@@ -4267,12 +4268,12 @@ where
         true
     };
     // The parts of the motive that must not name its binder, with the
-    // operation they make.
+    // operation they make. A carrier the motive omits names nothing.
     let (operation, apart) = if moving(right) && starts {
-        (Derived::Composite { value, path }, [carrier, left, carrier])
+        (Derived::Composite { value, path }, [left, left])
     }
     else if moving(left) && (reflexive || empty) {
-        (Derived::Inverse(path), [carrier, right, carrier])
+        (Derived::Inverse(path), [right, right])
     }
     else if reflexive
         && let Some((map, argument)) = image(right)
@@ -4280,17 +4281,17 @@ where
         && let Some((fixed, _)) = image(left)
         && same(map, fixed)
     {
-        (Derived::Congruence { map, path }, [carrier, left, map])
+        (Derived::Congruence { map, path }, [left, map])
     }
     else {
         return None;
     };
-    let [ty, endpoint, other] = apart;
+    let [endpoint, other] = apart;
     let mut pending = Vec::from([
-        (ty, Admits::ValueType, 0_usize),
         (endpoint, Admits::Value, 0_usize),
         (other, Admits::Value, 0_usize),
     ]);
+    pending.extend(carrier.map(|ty| (ty, Admits::ValueType, 0_usize)));
     let mut visits = 0_u32;
     while let Some((node, admits, above)) = pending.pop() {
         visits = visits
@@ -7694,9 +7695,9 @@ impl Walk<'_, '_>
     /// labelled record type `#{a : A}` or a telescope type `#{a : A, b : B}`,
     /// whose entries an expression does not read; a model type, `Model(T)` or
     /// `Model(T) with sort C = A`, which no expression reads; a product
-    /// written as such a chain, `A * B`; or a path type whose carrier is no
-    /// bare name, `Path(Maybe(Nat), a, b)`, whose carrier an expression reads
-    /// as a call where a value type is expected (#3279).
+    /// written as such a chain, `A * B`; or a path-shaped type that supplies
+    /// its carrier by name, `Path[.A = Integer](a, b)`, whose bracket an
+    /// expression reads as an instantiation.
     ///
     /// # Specification
     /// - requires: nothing; `source` may be malformed.
@@ -7705,9 +7706,8 @@ impl Walk<'_, '_>
     ///   one or more components that is not `Bool`; as a lazy product or a
     ///   labelled record type of one or more components; as a telescope type;
     ///   as a model type; in the sugared `form`, as a product of two or more
-    ///   components; or as a path type whose carrier reads as none of a base
-    ///   type, a sealed abstract type, a family or a product at arity zero,
-    ///   `Bool`, or a decoded variable or constant.
+    ///   components; or as a path, bridge or flow type whose carrier the source
+    ///   wrote.
     /// - provides: the heads [`Self::unread_as_expression`] looks for.
     /// - fails: never.
     /// - panics: none.
@@ -7717,9 +7717,8 @@ impl Walk<'_, '_>
     ///   values, in both forms, distinguish the braced spellings from the bare
     ///   ones; a product, a sum and a lazy product chain quoted alone and as an
     ///   argument distinguish the sugared chains from the explicit braces an
-    ///   expression reads; a path type quoted over a family application, over a
-    ///   nullary family and over a base type distinguish a carrier an
-    ///   expression reads as a call from a bare name.
+    ///   expression reads; a path type quoted over a written carrier and over
+    ///   an omitted one distinguish the supplied form from the bare call.
     /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
     /// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
     /// - witness: `tests::goldens::a_quoted_record_type_is_quoted_1459`
@@ -7735,13 +7734,7 @@ impl Walk<'_, '_>
         | Former::With(arity) | Former::RecordType(arity) => usize::from(arity) >= 1_usize,
         | Former::Sigma { .. } | Former::Model { .. } => true,
         | Former::Product(arity) => form == Form::Sugared && usize::from(arity) >= 2_usize,
-        | Former::Path { carrier, .. } => match source.read(carrier) {
-            | Former::BaseType(_) | Former::Abstract(_) => false,
-            | Former::Data { arity, .. } | Former::Product(arity) => usize::from(arity) != 0_usize,
-            | Former::Sum(_) => named_sum(source, carrier).is_none(),
-            | Former::Element(value) => !matches!(source.read(value), Former::Variable { .. } | Former::Constant(_)),
-            | _ => true,
-        },
+        | Former::Path { carrier, .. } | Former::Bridge { carrier, .. } | Former::Flow { carrier, .. } => carrier.is_some(),
         | _ => false,
     })]
     fn unread_head<S>(
@@ -7787,17 +7780,14 @@ impl Walk<'_, '_>
         else if let Former::Product(arity) = former {
             form == Form::Sugared && usize::from(arity) >= 2_usize
         }
-        // An expression reads a path type's carrier as an expression too: a
-        // name stands for the type it names, but anything else, such as a
-        // family applied to its arguments, is a call where a value type is
-        // expected (#3279).
-        else if let Former::Path { carrier, .. } = former {
-            let carried = source.read(carrier);
-            let named = matches!(carried, Former::BaseType(_) | Former::Abstract(_))
-                || matches!(carried, Former::Data { arity, .. } | Former::Product(arity) if usize::from(arity) == 0_usize)
-                || (matches!(carried, Former::Sum(_)) && named_sum(source, carrier).is_some())
-                || matches!(carried, Former::Element(value) if matches!(source.read(value), Former::Variable { .. } | Former::Constant(_)));
-            !named
+        // An expression reads `Path(x, y)` as a call, but not the carrier a
+        // path-shaped type supplies by name, `Path[.A = A](x, y)`: there it
+        // reads the bracket as an instantiation, whose names are lowercase.
+        else if let Former::Path { carrier, .. }
+        | Former::Bridge { carrier, .. }
+        | Former::Flow { carrier, .. } = former
+        {
+            carrier.is_some()
         }
         else {
             false
@@ -10950,8 +10940,8 @@ impl Walk<'_, '_>
     /// - requires: `former` is what `source` reads at `node`, a former
     ///   [`children`] answers child slots for at a position admitting `admits`.
     /// - ensures: one more parts list, whose pieces are the former's children
-    ///   in reading order: `Path(A, x, y)`; a family or a constructor as its
-    ///   name, applied to its components when it has any, a parameterised
+    ///   in reading order: `Path[.A = A](x, y)`; a family or a constructor as
+    ///   its name, applied to its components when it has any, a parameterised
     ///   constructor written against its family as [`children`] reads its
     ///   classifier; a primitive as a call of its name, an operation performed
     ///   as the call `I.op(v)` through its interface's name, but a string
@@ -11067,32 +11057,56 @@ impl Walk<'_, '_>
             }
             let _ = parts.part(Part::Close);
         };
+        // `Path[.A = Bool](alike(a, a), true)`: the carrier is the head's
+        // implicit `A`, supplied by name, and the two endpoints follow. An
+        // endpoint the source wrote as a word holds the word ascribed `Bool`,
+        // which spells as the word.
+        let supplied = |parts: &mut Parts, head: &str| {
+            let _ = parts
+                .text(format!("{head}[.A = "))
+                .piece(Binding::ARGUMENT)
+                .text("](")
+                .piece(Binding::ARGUMENT)
+                .text(",")
+                .part(Part::Space)
+                .piece(Binding::ARGUMENT)
+                .part(Part::Tight)
+                .text(")");
+        };
         let binding = match *former {
-            // `Path(Bool, alike(a, a), true)`: an endpoint the source wrote as
-            // a word holds the word ascribed `Bool`, which spells as the word.
-            Former::Path { .. } => {
-                let _ = parts.text("Path(").piece(Binding::ARGUMENT);
-                for _end in 0_usize .. 2_usize {
-                    let _ = parts.text(",").part(Part::Space).piece(Binding::ARGUMENT);
-                }
-                let _ = parts.part(Part::Tight).text(")");
+            // `Path(x, y)`, `Bridge(x, y)` and `Flow(x, y)`: a carrier the
+            // source omitted reads back as nothing. A path or a bridge spells
+            // through its own production, its endpoints terms; a flow is a
+            // type application.
+            Former::Path { carrier: None, .. } => {
+                let _ = parts.text("Path").arguments(Arity(2_usize));
                 writes(Production("path_type"), Binding::Atom)
             },
-            // `Flow(x, y)`: a carrier the source omitted reads back as nothing.
-            Former::Flow { carrier, .. } => {
-                let operands = if carrier.is_some() { 3_usize } else { 2_usize };
-                let _ = parts.text("Flow").arguments(Arity(operands));
+            Former::Bridge { carrier: None, .. } => {
+                let _ = parts.text("Bridge").arguments(Arity(2_usize));
+                writes(Production("bridge_type"), Binding::Atom)
+            },
+            Former::Flow { carrier: None, .. } => {
+                let _ = parts.text("Flow").arguments(Arity(2_usize));
                 writes(Production("type_application"), Binding::Atom)
             },
-            // `Bridge(List(Integer), [1, 2], [1, 2])`: its endpoints are terms,
-            // as a path's are, so it spells through its own production.
-            Former::Bridge { .. } => {
-                let _ = parts.text("Bridge(").piece(Binding::ARGUMENT);
-                for _end in 0_usize .. 2_usize {
-                    let _ = parts.text(",").part(Part::Space).piece(Binding::ARGUMENT);
-                }
-                let _ = parts.part(Part::Tight).text(")");
+            Former::Path {
+                carrier: Some(_), ..
+            } => {
+                supplied(&mut parts, "Path");
+                writes(Production("path_type"), Binding::Atom)
+            },
+            Former::Bridge {
+                carrier: Some(_), ..
+            } => {
+                supplied(&mut parts, "Bridge");
                 writes(Production("bridge_type"), Binding::Atom)
+            },
+            Former::Flow {
+                carrier: Some(_), ..
+            } => {
+                supplied(&mut parts, "Flow");
+                writes(Production("flow_type"), Binding::Atom)
             },
             Former::Relation { relation, .. } => {
                 let spelled = relation_spelled(relation);

@@ -861,7 +861,7 @@ fn printed_names(held: &[Vec<Option<String>>]) -> Vec<Vec<Option<Name<'_>>>>
 ///
 /// A name is the declaration's path from the top level, its segments joined
 /// by `.`; a position no declaration holds is the empty name. The words of a
-/// family's loops are named by the path type they read as, `Path(Circle,
+/// family's loops are named by the path type they read as, `Path[.A = Circle](
 /// Base, Base)`, so a word's type spells as it is written and its letters are
 /// not looked up under its family's name.
 ///
@@ -912,7 +912,7 @@ pub fn constant_paths(module: &LoweredModule<'_>) -> Vec<String>
         if let Maybe::Present((sort, point)) = words_point(module, declaration) {
             let family = paths.get(usize::from(sort)).cloned().unwrap_or_default();
             if let Some(slot) = paths.get_mut(usize::from(declaration.constant())) {
-                *slot = alloc::format!("Path({family}, {point}, {point})");
+                *slot = alloc::format!("Path[.A = {family}]({point}, {point})");
             }
         }
     }

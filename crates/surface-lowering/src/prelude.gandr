@@ -3,14 +3,14 @@
 pub theory PartialEq where {
   sort Carrier : Type;
   oper eq : (a : Carrier, b : Carrier) --> Bool;
-  law sym : (a : Carrier, b : Carrier) => Path(Bool, eq(a, b), eq(b, a));
+  law sym : (a : Carrier, b : Carrier) => Path[.A = Bool](eq(a, b), eq(b, a));
 }
 
 /// Decidable equality over a carrier: a partial equality every value is
 /// equal to itself in.
 pub theory Eq where {
   include PartialEq;
-  law refl : (a : Carrier) => Path(Bool, eq(a, a), true);
+  law refl : (a : Carrier) => Path[.A = Bool](eq(a, a), true);
 }
 
 /// Structural equality from `T`'s constructors, and its laws.

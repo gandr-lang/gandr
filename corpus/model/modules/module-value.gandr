@@ -43,7 +43,7 @@ def packed : Model(Ticker) = pack Up at Model(Ticker);
 def named : Model(Ticker) = Up;
 
 /// The two spellings are one value.
-def namedIsPacked() -> Path(Model(Ticker), named, packed) { Path.here(named) }
+def namedIsPacked() -> Path(named, packed) { Path.here(named) }
 
 /// One step of any ticker, through its model.
 def ticked(c : Model(Ticker), n : c.C) -> c.C {

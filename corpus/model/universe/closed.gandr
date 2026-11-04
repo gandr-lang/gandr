@@ -49,7 +49,7 @@ def endoBare(a : Type, n : Nat) -> -F Type { return (+U (a -> -F a)) }
 /// The loops at a value of a decoded type, quoted in a body. The carrier
 /// `el(u)` reads as the type its call returns, where `x` stands.
 @[ checks ]
-def loopAt(u : U, x : el(u)) -> -F Type { return (Path(el(u), x, x)) }
+def loopAt(u : U, x : el(u)) -> -F Type { return (Path(x, x)) }
 
 /// The functions from a code to its decode, quoted in a body: the codomain
 /// `el(c)` names the arrow's own binder, which no signature type names, so

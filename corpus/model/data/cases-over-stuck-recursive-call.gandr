@@ -56,7 +56,7 @@ def rec look(n : Nat, k : Nat) -> Maybe(Nat) {
 def wrappedRec(
   a : Nat,
   b : Nat
-) -> Path(Maybe(Nat), outer(first(look(a, b))), outer(second(look(a, b)))) {
+) -> Path(outer(first(look(a, b))), outer(second(look(a, b)))) {
   Path.here(outer(first(look(a, b))))
 }
 
@@ -64,6 +64,6 @@ def wrappedRec(
 def twinRec(
   a : Nat,
   b : Nat
-) -> Path(Maybe(Nat), outer(first(look(a, b))), outerTwin(first(look(a, b)))) {
+) -> Path(outer(first(look(a, b))), outerTwin(first(look(a, b)))) {
   Path.here(outer(first(look(a, b))))
 }

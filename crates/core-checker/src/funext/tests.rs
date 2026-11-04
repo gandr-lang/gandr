@@ -80,7 +80,7 @@ fn judged(
     check_module(&mut context, &module)
 }
 
-/// `funext(c_left, c_right) : Path(classifier, c_left, c_right)` at
+/// `funext(c_left, c_right) : Path[.A = classifier](c_left, c_right)` at
 /// `position`, with its `funext` node.
 ///
 /// # Specification

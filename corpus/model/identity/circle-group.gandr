@@ -25,13 +25,16 @@ import "./int-sum.gandr";
 
 /// Spinning a successor is one loop more (cubical's `intLoop-sucℤ`), by
 /// computation.
-def spinUp(n : Int) -> Path(Path(Circle, Base, Base), spin(S(n)), loop ∷ spin(n)) {
+def spinUp(n : Int) -> Path[.A = Path[.A = Circle](Base, Base)](spin(S(n)), loop ∷ spin(n)) {
   Path.here(loop ∷ spin(n))
 }
 
 /// Spinning a predecessor is one inverse loop more (cubical's
 /// `intLoop-predℤ`), by computation.
-def spinDown(n : Int) -> Path(Path(Circle, Base, Base), spin(P(n)), back(loop) ∷ spin(n)) {
+def spinDown(n : Int) -> Path[.A = Path[.A = Circle](Base, Base)](
+  spin(P(n)),
+  back(loop) ∷ spin(n)
+) {
   Path.here(back(loop) ∷ spin(n))
 }
 
@@ -45,7 +48,7 @@ def spinDown(n : Int) -> Path(Path(Circle, Base, Base), spin(P(n)), back(loop) �
 def rec spinHom(
   a : Int,
   b : Int
-) -> Path(Path(Circle, Base, Base), spin(plus(a, b)), Path.step(spin(b), spin(a))) {
+) -> Path[.A = Path[.A = Circle](Base, Base)](spin(plus(a, b)), Path.step(spin(b), spin(a))) {
   match b {
     Z => Path.here(spin(a)),
     S(x) => Path.ap(loopOn, spinHom[<](a, x)),
@@ -62,9 +65,9 @@ def rec spinHom(
 /// written types, and the kernel reads its endpoint
 /// `plus(wind(q), wind(p))` as the call it returns.
 def rec windHom(
-  q : Path(Circle, Base, Base),
-  p : Path(Circle, Base, Base)
-) -> Path(Int, wind(Path.step(p, q)), plus(wind(q), wind(p))) {
+  q : Path[.A = Circle](Base, Base),
+  p : Path[.A = Circle](Base, Base)
+) -> Path[.A = Int](wind(Path.step(p, q)), plus(wind(q), wind(p))) {
   match p {
     here => Path.here(wind(q)),
     loop ∷ r => Path.ap(up, windHom[<](q, r)),
@@ -76,11 +79,16 @@ def rec windHom(
 /// derives: a static motive whose endpoints call the group's operations, each
 /// call the value it returns, as the kernel replays it.
 def spunComm(
-  p : Path(Circle, Base, Base),
-  q : Path(Circle, Base, Base)
-) -> Path(Path(Circle, Base, Base), spin(plus(wind(q), wind(p))), spin(plus(wind(p), wind(q)))) {
+  p : Path[.A = Circle](Base, Base),
+  q : Path[.A = Circle](Base, Base)
+) -> Path[.A = Path[.A = Circle](Base, Base)](
+  spin(plus(wind(q), wind(p))),
+  spin(plus(wind(p), wind(q)))
+) {
   Path.walk(
-    fun (a) { Path(Path(Circle, Base, Base), spin(plus(wind(q), wind(p))), spin(a)) },
+    fun (a) {
+      type(Path[.A = Path[.A = Circle](Base, Base)](spin(plus(wind(q), wind(p))), spin(a)))
+    },
     plusComm(wind(q), wind(p)),
     Path.here(spin(plus(wind(q), wind(p))))
   )
@@ -91,9 +99,9 @@ def spunComm(
 /// by `plusComm`. Each lemma is read at its written result, and the
 /// calls in the types stand as what they return.
 def comm(
-  p : Path(Circle, Base, Base),
-  q : Path(Circle, Base, Base)
-) -> Path(Path(Circle, Base, Base), Path.step(p, q), Path.step(q, p)) {
+  p : Path[.A = Circle](Base, Base),
+  q : Path[.A = Circle](Base, Base)
+) -> Path[.A = Path[.A = Circle](Base, Base)](Path.step(p, q), Path.step(q, p)) {
   compose[9, 11](chain(5), (
     Path.back(sect(Path.step(p, q))),
     Path.ap(spin, windHom(q, p)),

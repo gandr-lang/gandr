@@ -3570,22 +3570,23 @@ where
     /// that composes to the identity, read as the computation the bind runs;
     /// every other term unchanged.
     ///
-    /// A **link** is a transport of a reflexivity in a family `y. Path(D, l,
-    /// r)` whose carrier and left endpoint never read `y`; a **chain** is a
-    /// link along a path `p`, under binds whose continuations are each one
-    /// link along the path the bind binds, the family reading no other index.
-    /// The chain is the path `p` when its composite right endpoint `rₙ[y :=
-    /// … r₁]` reads as `y` — normalized by [`Self::normalize_returned`], the
-    /// kernel's own evaluator, and taken to its presented normal form by
-    /// [`Self::present`]: transport along `cong(f, p)` is transport along `p`
-    /// in the family pulled back along `f`, and a family whose right endpoint
-    /// is its binder is the singleton, whose transport of a reflexivity is
-    /// the path. A **run** is the continuations of the binds outside some
-    /// bind `M to x. …`, each a link along the path the bind binds, the
-    /// innermost along `x`. A run whose composite right endpoint reads as
-    /// `y` is `return x` by the same singleton, so the bind is `M to x.
-    /// return x`, which the η-law of bind reads as `M`. A chain over `p` is
-    /// read first, then the longest run that composes to the identity.
+    /// A **link** is a transport of a reflexivity in a family `y. Path[.A =
+    /// D](l, r)` whose carrier and left endpoint never read `y`; a
+    /// **chain** is a link along a path `p`, under binds whose
+    /// continuations are each one link along the path the bind binds, the
+    /// family reading no other index. The chain is the path `p` when its
+    /// composite right endpoint `rₙ[y := … r₁]` reads as `y` — normalized
+    /// by [`Self::normalize_returned`], the kernel's own evaluator, and
+    /// taken to its presented normal form by [`Self::present`]: transport along
+    /// `cong(f, p)` is transport along `p` in the family pulled back along
+    /// `f`, and a family whose right endpoint is its binder is the
+    /// singleton, whose transport of a reflexivity is the path. A **run**
+    /// is the continuations of the binds outside some bind `M to x. …`,
+    /// each a link along the path the bind binds, the innermost along `x`.
+    /// A run whose composite right endpoint reads as `y` is `return x` by
+    /// the same singleton, so the bind is `M to x. return x`, which the
+    /// η-law of bind reads as `M`. A chain over `p` is read first, then the
+    /// longest run that composes to the identity.
     ///
     /// **Choice.** The chain is read as the engine reads it, by the forced
     /// replay of its composite: the reading chooses nothing — the evaluator
@@ -3787,7 +3788,7 @@ where
     /// tr(P, q, ⟨tr(P, p, v)⟩)`.
     ///
     /// `p then q` is the transport of `p` along `q` in a **link**, a family `y.
-    /// Path(D, l, y)` whose carrier and left endpoint ignore the binder. A
+    /// Path[.A = D](l, y)` whose carrier and left endpoint ignore the binder. A
     /// transport runs a returned operand first, then a returned path, so the
     /// transport along a stuck composite stands at one of three weak heads.
     /// The frames outside the focus that move its result, each a bind into `y.
@@ -4112,8 +4113,8 @@ where
     }
 
     /// `motive` read as a link whose right endpoint is its binder, `y.
-    /// Path(D, l, y)`, the family `then` transports in; [`Linked::Other`] for
-    /// any other family.
+    /// Path[.A = D](l, y)`, the family `then` transports in; [`Linked::Other`]
+    /// for any other family.
     ///
     /// # Specification
     /// trivial.
@@ -9444,7 +9445,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// evaluator evaluates the operand to that held call, and its append
     /// runs it. A transport stuck on a held call of a definition runs that
     /// call (`runs_on`) when the append does not read its family, which is
-    /// any but `y. Path(C, a, y)`: `back(assoc(…))` reads on to `here(…)`.
+    /// any but `y. Path[.A = C](a, y)`: `back(assoc(…))` reads on to `here(…)`.
     /// Anywhere else the evaluator delivers what `c` returns, and a run that
     /// returns nothing leaves a held endpoint (`read_from`,
     /// `held_endpoint`). A transport along a reflexivity at a point no

@@ -74,7 +74,7 @@ fn judged(
     check_module(&mut context, &module)
 }
 
-/// `Path(Type, ⌜code⌝, ⌜code⌝)`.
+/// `Path[.A = Type](⌜code⌝, ⌜code⌝)`.
 ///
 /// # Specification
 /// trivial.
@@ -88,7 +88,7 @@ fn identity(
     arena.value_type_path(universe, quoted, quoted)
 }
 
-/// `equiv(c_forward, c_backward) : Path(Type, ⌜Bool⌝, ⌜Bool⌝)` at
+/// `equiv(c_forward, c_backward) : Path[.A = Type](⌜Bool⌝, ⌜Bool⌝)` at
 /// `position`, with its `equiv` node.
 ///
 /// # Specification

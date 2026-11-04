@@ -17,7 +17,7 @@ import "./circle-apart.gandr";
 /// The unit squared: `mul(Base, Base)` computes the point without spelling
 /// it, so the path from it to itself is the circle's words, and reflexivity
 /// at the point inhabits it.
-def unitSquared : Path(Circle, mul(Base, Base), mul(Base, Base)) = Path.here(Base);
+def unitSquared : Path(mul(Base, Base), mul(Base, Base)) = Path.here(Base);
 
 /// Rotating by `b` and back is the identity (cubical's `rotInv-1`, `b · a ·
 /// invLooper b ≡ a`, `_·_` associating to the left). The obligation over `a`
@@ -26,7 +26,7 @@ def unitSquared : Path(Circle, mul(Base, Base), mul(Base, Base)) = Path.here(Bas
 /// through both of the outer `mul`'s arguments, the loop then its inverse.
 /// The square of the two loops is not owed: the paths of the circle are its
 /// words, a set.
-def rotInv1(a : Circle, b : Circle) -> Path(Circle, mul(mul(b, a), invLooper(b)), a) {
+def rotInv1(a : Circle, b : Circle) -> Path[.A = Circle](mul(mul(b, a), invLooper(b)), a) {
   match a {
     Base => match b {
       Base => Path.here(Base)
@@ -36,7 +36,7 @@ def rotInv1(a : Circle, b : Circle) -> Path(Circle, mul(mul(b, a), invLooper(b))
 
 /// Rotating back by `b` and forth is the identity (cubical's `rotInv-2`),
 /// held as `rotInv1` is.
-def rotInv2(a : Circle, b : Circle) -> Path(Circle, mul(mul(invLooper(b), a), b), a) {
+def rotInv2(a : Circle, b : Circle) -> Path[.A = Circle](mul(mul(invLooper(b), a), b), a) {
   match a {
     Base => match b {
       Base => Path.here(Base)
@@ -46,7 +46,10 @@ def rotInv2(a : Circle, b : Circle) -> Path(Circle, mul(mul(invLooper(b), a), b)
 
 /// Dividing by `b` after it undoes it (cubical's `rotInv-3`), held as
 /// `rotInv1` is.
-def rotInv3(a : Circle, b : Circle) -> Path(Circle, mul(b, invLooper(mul(invLooper(a), b))), a) {
+def rotInv3(a : Circle, b : Circle) -> Path[.A = Circle](
+  mul(b, invLooper(mul(invLooper(a), b))),
+  a
+) {
   match a {
     Base => match b {
       Base => Path.here(Base)
@@ -56,7 +59,10 @@ def rotInv3(a : Circle, b : Circle) -> Path(Circle, mul(b, invLooper(mul(invLoop
 
 /// Dividing by `b` before it undoes it (cubical's `rotInv-4`), held as
 /// `rotInv1` is.
-def rotInv4(a : Circle, b : Circle) -> Path(Circle, mul(invLooper(mul(b, invLooper(a))), b), a) {
+def rotInv4(a : Circle, b : Circle) -> Path[.A = Circle](
+  mul(invLooper(mul(b, invLooper(a))), b),
+  a
+) {
   match a {
     Base => match b {
       Base => Path.here(Base)
@@ -65,14 +71,14 @@ def rotInv4(a : Circle, b : Circle) -> Path(Circle, mul(invLooper(mul(b, invLoop
 }
 
 /// A loop at every point, evaluated at the point.
-def atBase(f : (x : Circle) => Path(Circle, x, x)) -> Path(Circle, Base, Base) {
+def atBase(f : (x : Circle) => Path[.A = Circle](x, x)) -> Path[.A = Circle](Base, Base) {
   f(Base)
 }
 
 /// Every point's loop is not every point's reflexivity (the book's Lemma
 /// 6.4.2, cubical's `rotLoop` against `refl`): a path between the two
 /// functions, evaluated at the point, would make the loop the empty word.
-def distinct(e : Path((x : Circle) => Path(Circle, x, x), selfloop, selfrefl)) -> Empty {
+def distinct(e : Path(selfloop, selfrefl)) -> Empty {
   loop_apart(Path.ap(atBase, e))
 }
 
@@ -80,13 +86,13 @@ def distinct(e : Path((x : Circle) => Path(Circle, x, x), selfloop, selfrefl)) -
 /// half of cubical's `IsoFunSpaceS¹`, `S1/Properties.agda`). The record binds
 /// the point's call before the loop's image is checked, and the image's type
 /// reads the point through what that call returns.
-def toLoop(f : Circle => Int) -> #{point : Int, around : Path(Int, point, point)} {
+def toLoop(f : Circle => Int) -> #{point : Int, around : Path[.A = Int](point, point)} {
   (f(Base), Path.ap(f, loop))
 }
 
 /// A point and a loop at it make a map out of the circle, at a point of it: a
 /// non-dependent case whose loop arm is the given loop.
-pub def fromLoopAt(x : Int, p : Path(Int, x, x), c : Circle) -> Int {
+pub def fromLoopAt(x : Int, p : Path(x, x), c : Circle) -> Int {
   match c {
     Base => x,
     loop => p
@@ -96,6 +102,6 @@ pub def fromLoopAt(x : Int, p : Path(Int, x, x), c : Circle) -> Int {
 /// A point and a loop at it make a map out of the circle (the backward half
 /// of `IsoFunSpaceS¹`), curried: from the record, the point's projection is
 /// bound before the loop's type reads it, as in `toLoop`.
-def fromLoop(x : Int, p : Path(Int, x, x)) -> Circle => Int {
+def fromLoop(x : Int, p : Path(x, x)) -> Circle => Int {
   thunk { fun (c) { fromLoopAt(x, p, c) } }
 }

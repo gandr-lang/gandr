@@ -2,7 +2,6 @@
 /// variables no coverage reaches, and the rule decides closed functions only.
 @[ refuses("FunextUnsupported") ]
 def open(f : Unit + Unit => Unit + Unit) -> Path(
-  Unit + Unit => Unit + Unit,
   f,
   f
 ) {

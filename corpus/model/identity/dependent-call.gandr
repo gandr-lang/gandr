@@ -16,7 +16,7 @@ import "./circle-rotation.gandr";
 
 /// A map's image of the loop, at the map's image of the point: `Path.ap` of the
 /// parameter `f` along the loop.
-def loopImage(f : Circle => Int) -> Path(Int, f(Base), f(Base)) {
+def loopImage(f : Circle => Int) -> Path[.A = Int](f(Base), f(Base)) {
   Path.ap(f, loop)
 }
 
@@ -26,7 +26,7 @@ def loopImage(f : Circle => Int) -> Path(Int, f(Base), f(Base)) {
 /// `Path.ap(f, loop)` itself.
 def toLoopThroughImage(f : Circle => Int) -> #{
   point : Int,
-  around : Path(Int, point, point)
+  around : Path[.A = Int](point, point)
 } {
   (f(Base), loopImage(f))
 }
@@ -35,13 +35,13 @@ def toLoopThroughImage(f : Circle => Int) -> #{
 @[ refuses("TypeMismatch") ]
 def toOtherLoop(f : Circle => Int, g : Circle => Int) -> #{
   point : Int,
-  around : Path(Int, point, point)
+  around : Path[.A = Int](point, point)
 } {
   (f(Base), loopImage(g))
 }
 
 /// A record's projections as the arguments of that map: the second
 /// parameter's type reads the first argument, the projection `r.point`.
-def fromRecord(r : #{point : Int, around : Path(Int, point, point)}, c : Circle) -> Int {
+def fromRecord(r : #{point : Int, around : Path[.A = Int](point, point)}, c : Circle) -> Int {
   fromLoopAt(r.point, r.around, c)
 }

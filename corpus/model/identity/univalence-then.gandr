@@ -3,7 +3,7 @@
 //! interpretation of the univalence axiom_
 //! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom],
 //! § 4.5, read at the universe. `Path.step(p, ua(e))` is the transport of `p`
-//! along `ua(e)` in `y. Path(Type, a, y)`, and transport along it moves the
+//! along `ua(e)` in `y. Path[.A = Type](a, y)`, and transport along it moves the
 //! operand along `p`, then applies the record's forward map. A first path that
 //! does not compute, as `p` here, is carried on as the value it stands for.
 //!
@@ -22,34 +22,38 @@ def thenBeta(
   a : Type,
   b : Type,
   c : Type,
-  p : Path(Type, a, b),
+  p : Path[.A = Type](a, b),
   e : b ≃ c,
   x : a
-) -> Path(c, fwdAlong(a, c, Path.step(p, ua(e)), x), fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x))) {
+) -> Path[.A = c](
+  fwdAlong(a, c, Path.step(p, ua(e)), x),
+  fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x))
+) {
   Path.here(fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x)))
 }
 
 /// Transport along a path from the loops at the point to the integers, then
 /// back along it.
 def loopsRound(
-  p : Path(Type, Path(Circle, Base, Base), Int),
-  x : Path(Circle, Base, Base)
-) -> Path(Circle, Base, Base) {
+  p : Path[.A = Type](Path[.A = Circle](Base, Base), Int),
+  x : Path[.A = Circle](Base, Base)
+) -> Path[.A = Circle](Base, Base) {
   Path.walk(fun (X) { X }, Path.step(p, Path.back(p)), x)
 }
 
 /// A loop carried to the integers and back again is the loop, by a run.
 @[ runs("loop ∷ Path.here(Base)") ]
-def roundRun : () => Path(Circle, Base, Base) = loopsRound(loopsAreIntegers, loop);
+def roundRun : () => Path[.A = Circle](Base, Base) = loopsRound(loopsAreIntegers, loop);
 
 /// The round trip named, its type stated. `Path.step` and `Path.back` read the type
 /// `loopsAreIntegers` states.
-def loopsAndBack : Path(
-  Type,
-  Path(Circle, Base, Base),
-  Path(Circle, Base, Base)
+def loopsAndBack : Path[.A = Type](
+  Path[.A = Circle](Base, Base),
+  Path[.A = Circle](Base, Base)
 ) = Path.step(loopsAreIntegers, Path.back(loopsAreIntegers));
 
 /// A loop carried along the named round trip is the loop, by a run.
 @[ runs("loop ∷ Path.here(Base)") ]
-def namedRoundRun() -> Path(Circle, Base, Base) { Path.walk(fun (X) { X }, loopsAndBack, loop) }
+def namedRoundRun() -> Path[.A = Circle](Base, Base) {
+  Path.walk(fun (X) { X }, loopsAndBack, loop)
+}

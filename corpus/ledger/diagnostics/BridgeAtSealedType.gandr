@@ -9,4 +9,4 @@ module Hidden :> #{ type T, one : T } where {
 }
 
 @[ refuses("BridgeAtSealedType") ]
-def hiddenOne : Bridge(Hidden.T, Hidden.one, Hidden.one) = unit;
+def hiddenOne : Bridge(Hidden.one, Hidden.one) = unit;

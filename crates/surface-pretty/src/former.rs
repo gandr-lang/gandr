@@ -752,11 +752,13 @@ pub enum Former<'source, Node>
         /// How many cells the source answers after the generator.
         cells: Arity,
     },
-    /// Element identity `Path(A, x, y)`: the carrier and the two endpoints.
+    /// Element identity `Path[.A = A](x, y)`: the carrier and the two
+    /// endpoints, or `Path(x, y)` where the source omits the carrier.
     Path
     {
-        /// The carrier, a value type.
-        carrier: Node,
+        /// The carrier, a value type; none where the source omits it, so the
+        /// checker solves a hole the type nominated for it.
+        carrier: Option<Node>,
         /// The left endpoint.
         left: Node,
         /// The right endpoint.
@@ -800,8 +802,8 @@ pub enum Former<'source, Node>
         /// source that reads back needs.
         classifier: Option<Node>,
     },
-    /// Directed identity `Flow(A, x, y)`: the carrier and the two endpoints,
-    /// or `Flow(x, y)` where the source omits the carrier.
+    /// Directed identity `Flow[.A = A](x, y)`: the carrier and the two
+    /// endpoints, or `Flow(x, y)` where the source omits the carrier.
     Flow
     {
         /// The carrier, a value type; none where the source omits it, so the
@@ -812,12 +814,13 @@ pub enum Former<'source, Node>
         /// The target endpoint.
         right: Node,
     },
-    /// Parametric relatedness `Bridge(A, a, b)`: the carrier and the two
-    /// endpoints.
+    /// Parametric relatedness `Bridge[.A = A](a, b)`: the carrier and the two
+    /// endpoints, or `Bridge(a, b)` where the source omits the carrier.
     Bridge
     {
-        /// The carrier, a value type.
-        carrier: Node,
+        /// The carrier, a value type; none where the source omits it, so the
+        /// checker solves a hole the type nominated for it.
+        carrier: Option<Node>,
         /// The left endpoint.
         left: Node,
         /// The right endpoint.

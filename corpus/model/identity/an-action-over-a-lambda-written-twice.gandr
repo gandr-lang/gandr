@@ -16,7 +16,10 @@
 /// - see: #3976 — the checker declined two such motives over captures laid out apart
 
 /// The action of `F` on `p`.
-def act(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(B, F(x), F(y)) {
+def act(A : Type, B : Type, F : A => B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](
+  F(x),
+  F(y)
+) {
   Path.ap(F, p)
 }
 
@@ -26,12 +29,19 @@ def apThen(
   x : A,
   y : A,
   z : A,
-  fm : Path(A, x, y),
-  fp : Path(A, x, y),
-  fa : Path(Path(A, x, y), fm, fp),
-  g : Path(A, y, z)
-) -> Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)) {
-  act(Path(A, x, y), Path(A, x, z), fun (q : Path(A, x, y)) { Path.step(q, g) }, fm, fp, fa)
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g)) {
+  act(
+    type(Path[.A = A](x, y)),
+    type(Path[.A = A](x, z)),
+    fun (q : Path[.A = A](x, y)) { Path.step(q, g) },
+    fm,
+    fp,
+    fa
+  )
 }
 
 /// The same action, the lambda written again.
@@ -40,12 +50,19 @@ def apThenAgain(
   x : A,
   y : A,
   z : A,
-  fm : Path(A, x, y),
-  fp : Path(A, x, y),
-  fa : Path(Path(A, x, y), fm, fp),
-  g : Path(A, y, z)
-) -> Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)) {
-  act(Path(A, x, y), Path(A, x, z), fun (q : Path(A, x, y)) { Path.step(q, g) }, fm, fp, fa)
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g)) {
+  act(
+    type(Path[.A = A](x, y)),
+    type(Path[.A = A](x, z)),
+    fun (q : Path[.A = A](x, y)) { Path.step(q, g) },
+    fm,
+    fp,
+    fa
+  )
 }
 
 /// The action over the lambda written twice: a reflexivity relates the two.
@@ -54,12 +71,11 @@ def writtenTwice(
   x : A,
   y : A,
   z : A,
-  fm : Path(A, x, y),
-  fp : Path(A, x, y),
-  fa : Path(Path(A, x, y), fm, fp),
-  g : Path(A, y, z)
-) -> Path(
-  Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)),
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g))](
   apThen(A, x, y, z, fm, fp, fa, g),
   apThenAgain(A, x, y, z, fm, fp, fa, g)
 ) {
@@ -72,14 +88,20 @@ def bindsOneMore(
   x : A,
   y : A,
   z : A,
-  fm : Path(A, x, y),
-  fp : Path(A, x, y),
-  fa : Path(Path(A, x, y), fm, fp),
-  g : Path(A, y, z),
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z),
   _w : A
-) -> Path(
-  Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)),
-  act(Path(A, x, y), Path(A, x, z), fun (q : Path(A, x, y)) { Path.step(q, g) }, fm, fp, fa),
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g))](
+  act(
+    type(Path[.A = A](x, y)),
+    type(Path[.A = A](x, z)),
+    fun (q : Path[.A = A](x, y)) { Path.step(q, g) },
+    fm,
+    fp,
+    fa
+  ),
   apThen(A, x, y, z, fm, fp, fa, g)
 ) {
   Path.here(apThen(A, x, y, z, fm, fp, fa, g))
@@ -92,13 +114,19 @@ def bindsOneBetween(
   y : A,
   z : A,
   _w : A,
-  fm : Path(A, x, y),
-  fp : Path(A, x, y),
-  fa : Path(Path(A, x, y), fm, fp),
-  g : Path(A, y, z)
-) -> Path(
-  Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)),
-  act(Path(A, x, y), Path(A, x, z), fun (q : Path(A, x, y)) { Path.step(q, g) }, fm, fp, fa),
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g))](
+  act(
+    type(Path[.A = A](x, y)),
+    type(Path[.A = A](x, z)),
+    fun (q : Path[.A = A](x, y)) { Path.step(q, g) },
+    fm,
+    fp,
+    fa
+  ),
   apThen(A, x, y, z, fm, fp, fa, g)
 ) {
   Path.here(apThen(A, x, y, z, fm, fp, fa, g))
@@ -110,13 +138,19 @@ def bindsGFirst(
   x : A,
   y : A,
   z : A,
-  g : Path(A, y, z),
-  fm : Path(A, x, y),
-  fp : Path(A, x, y),
-  fa : Path(Path(A, x, y), fm, fp)
-) -> Path(
-  Path(Path(A, x, z), Path.step(fm, g), Path.step(fp, g)),
-  act(Path(A, x, y), Path(A, x, z), fun (q : Path(A, x, y)) { Path.step(q, g) }, fm, fp, fa),
+  g : Path[.A = A](y, z),
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g))](
+  act(
+    type(Path[.A = A](x, y)),
+    type(Path[.A = A](x, z)),
+    fun (q : Path[.A = A](x, y)) { Path.step(q, g) },
+    fm,
+    fp,
+    fa
+  ),
   apThen(A, x, y, z, fm, fp, fa, g)
 ) {
   Path.here(apThen(A, x, y, z, fm, fp, fa, g))

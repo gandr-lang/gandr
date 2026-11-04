@@ -54,7 +54,7 @@ fn a_branch_binds_a_field_only_where_its_result_names_it()
 }
 
 /// A family indexed by the unit type whose one constructor `Mark(u)` stands
-/// at its field: the branch at `Mark` binds `u`, then `Path(Unit, u, ())`
+/// at its field: the branch at `Mark` binds `u`, then `Path[.A = Unit](u, ())`
 /// from that stated index to the scrutinee's, and the closed result. The
 /// field is a Π because the equation names it; the equation an arrow
 /// because the result names neither.
@@ -254,7 +254,7 @@ fn a_dependent_field_checks_at_the_value_of_the_field_it_names()
 #[test]
 fn a_refused_field_keeps_the_binders_it_was_formed_under_4028()
 {
-    // `Bad(p : Integer) { b : (x : Integer, y : Path(Integer, x, ())) }`: the
+    // `Bad(p : Integer) { b : (x : Integer, y : Path[.A = Integer](x, ())) }`: the
     // second field's endpoint `()` is no integer.
     let mut arena = CoreArena::new();
     let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());

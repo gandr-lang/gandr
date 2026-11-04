@@ -1,7 +1,7 @@
 // The circle's loop space, presented at the term stratum: `Loop(x)` is "x,
 // then the loop" and `Unloop(x)` "x, then its inverse", with the two
 // cancellations as rules, so these terms are, one stratum down, the words
-// that `Path(Circle, Base, Base)` is in `circle.gandr`, the book's circle
+// that `Path[.A = Circle](Base, Base)` is in `circle.gandr`, the book's circle
 // (§ 8.1). Conversion reads a word by its normal form, and a fold out of the
 // words is admitted only when it respects both rules, as the mirror does and
 // a case that tells a loop from its inverse does not. `loop-winding.gandr`
@@ -28,17 +28,17 @@ pub def around(c : Words) -> Words {
 def built() -> Words { around(Loop(Nil)) }
 
 /// Conversion reads a word by its normal form: a cancelled loop is a loop.
-def cancelled_word : Path(Words, Loop(Unloop(Loop(Nil))), Loop(Nil)) = Path.here(Loop(Nil));
+def cancelled_word : Path[.A = Words](Loop(Unloop(Loop(Nil))), Loop(Nil)) = Path.here(Loop(Nil));
 
 /// A path between words stands at the path between their normal forms.
-def respelled : Path(Words, Loop(Nil), Loop(Nil)) = cancelled_word;
+def respelled : Path[.A = Words](Loop(Nil), Loop(Nil)) = cancelled_word;
 
 /// Two words that both cancel to the empty word are one word.
-def both_cancel : Path(Words, Unloop(Loop(Nil)), Loop(Unloop(Nil))) = Path.here(Nil);
+def both_cancel : Path[.A = Words](Unloop(Loop(Nil)), Loop(Unloop(Nil))) = Path.here(Nil);
 
 /// No rule identifies a loop with the empty word.
 @[ refuses("EndpointMismatch") ]
-def loop_not_nil : Path(Words, Loop(Nil), Nil) = Path.here(Nil);
+def loop_not_nil : Path[.A = Words](Loop(Nil), Nil) = Path.here(Nil);
 
 /// A case that tells a loop from its inverse, refused: `Unloop(Loop(Nil))`
 /// and `Loop(Unloop(Nil))` are one word, which it would read as 2 and 1.
@@ -55,7 +55,7 @@ def tell_words(c : Words) -> Integer {
 /// `tell_words` refused its applications do not compute, and the endpoints
 /// differ.
 @[ refuses("EndpointMismatch") ]
-def two_is_one() -> Path(Integer, 2, 1) {
+def two_is_one() -> Path[.A = Integer](2, 1) {
   Path.ap(tell_words, both_cancel)
 }
 
@@ -78,11 +78,10 @@ def mirrored() -> Words { mirror(Loop(Nil)) }
 /// form, `Loop(Unloop(Nil))` is `Nil`, whose mirror is `Nil`; unfolded
 /// letter by letter, the mirror is `Unloop(Loop(Nil))`, which is `Nil`
 /// again. The two readings agree because the mirror respects the rules.
-def mirror_cancelled : Path(Words, mirror(Loop(Unloop(Nil))), Nil) = Path.here(Nil);
+def mirror_cancelled : Path[.A = Words](mirror(Loop(Unloop(Nil))), Nil) = Path.here(Nil);
 
 /// The mirror of a respelled loop is the inverse of the loop.
-def mirror_respelled : Path(
-  Words,
+def mirror_respelled : Path[.A = Words](
   mirror(Loop(Unloop(Loop(Nil)))),
   Unloop(Nil)
 ) = Path.here(Unloop(Nil));

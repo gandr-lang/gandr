@@ -5,13 +5,13 @@
 //! declaration `T`, the derivation writes
 //!
 //! ```text
-//! refl_T : U (Π a : T. F Path(Bool, ⟨E a a⟩, true))
-//! refl_T = thunk (λa. case a as s. F Path(Bool, ⟨E s s⟩, true)
+//! refl_T : U (Π a : T. F Path[.A = Bool](⟨E a a⟩, true))
+//! refl_T = thunk (λa. case a as s. F Path[.A = Bool](⟨E s s⟩, true)
 //!            { c_i ↦ λx̄. cong(x̄ ≐ x̄ ↦ true) })
 //!
-//! sym_T  : U (Π a b : T. F Path(Bool, ⟨E a b⟩, ⟨E b a⟩))
-//! sym_T  = thunk (λa b. case a as s. F Path(Bool, ⟨E s b⟩, ⟨E b s⟩)
-//!            { c_i ↦ λx̄. case b as t. F Path(Bool, ⟨E (c_i x̄) t⟩, ⟨E t (c_i x̄)⟩)
+//! sym_T  : U (Π a b : T. F Path[.A = Bool](⟨E a b⟩, ⟨E b a⟩))
+//! sym_T  = thunk (λa b. case a as s. F Path[.A = Bool](⟨E s b⟩, ⟨E b s⟩)
+//!            { c_i ↦ λx̄. case b as t. F Path[.A = Bool](⟨E (c_i x̄) t⟩, ⟨E t (c_i x̄)⟩)
 //!                { c_i ↦ λȳ. cong(x̄ ≐ ȳ ↦ ȳ ≐ x̄)
 //!                ; c_k ↦ λz̄. return here(false) } })
 //! ```
@@ -20,14 +20,14 @@
 //! written in place, as the equality writes another declaration's. A
 //! constructor's branch of `E` is the sequential conjunction `K(t̄) = r ← t_1;
 //! case r { K(t_2 …) ; return false }` of its fields' comparisons, and
-//! `cong(t̄ ↦ s̄)` proves `Path(Bool, ⟨K(t̄)⟩, ⟨K(s̄)⟩)` from a proof `π_j :
-//! Path(Bool, ⟨t_j⟩, ⟨s_j⟩)` of each comparison, by congruence, from the last
-//! comparison back:
+//! `cong(t̄ ↦ s̄)` proves `Path[.A = Bool](⟨K(t̄)⟩, ⟨K(s̄)⟩)` from a proof `π_j :
+//! Path[.A = Bool](⟨t_j⟩, ⟨s_j⟩)` of each comparison, by congruence, from the
+//! last comparison back:
 //!
 //! ```text
 //! cong_j = p ← π_j; q ← cong_{j+1};
-//!          a ← transport(λz. Path(Bool, ⟨K_j(t̄)⟩, ⟨case z { K_{j+1}(t̄) ; false }⟩), p, here(⟨K_j(t̄)⟩));
-//!          transport(λw. Path(Bool, ⟨K_j(t̄)⟩, ⟨case ⟨s_j⟩ { return w ; false }⟩), q, a)
+//!          a ← transport(λz. Path[.A = Bool](⟨K_j(t̄)⟩, ⟨case z { K_{j+1}(t̄) ; false }⟩), p, here(⟨K_j(t̄)⟩));
+//!          transport(λw. Path[.A = Bool](⟨K_j(t̄)⟩, ⟨case ⟨s_j⟩ { return w ; false }⟩), q, a)
 //! ```
 //!
 //! The first transport rewrites the comparison and the second the rest of the
@@ -89,9 +89,9 @@ mod tests;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Statement
 {
-    /// `(a) => Path(Bool, E(a, a), true)`.
+    /// `(a) => Path[.A = Bool](E(a, a), true)`.
     Reflexive,
-    /// `(a, b) => Path(Bool, E(a, b), E(b, a))`.
+    /// `(a, b) => Path[.A = Bool](E(a, b), E(b, a))`.
     Symmetric,
 }
 
@@ -531,8 +531,9 @@ impl Proving<'_, '_, '_, '_>
         Ok(continued)
     }
 
-    /// The proof of `compared`, `depth` binders deep: `Path(Bool, ⟨t⟩, true)`
-    /// for reflexivity, `Path(Bool, ⟨t⟩, ⟨t swapped⟩)` for symmetry.
+    /// The proof of `compared`, `depth` binders deep: `Path[.A = Bool](⟨t⟩,
+    /// true)` for reflexivity, `Path[.A = Bool](⟨t⟩, ⟨t swapped⟩)` for
+    /// symmetry.
     ///
     /// # Specification
     /// - requires: `compared`'s levels are below `depth`, and a nested
@@ -587,7 +588,7 @@ impl Proving<'_, '_, '_, '_>
         })
     }
 
-    /// `Path(Bool, ⟨K(comparisons)⟩, ⟨K(targets)⟩)` by congruence, the
+    /// `Path[.A = Bool](⟨K(comparisons)⟩, ⟨K(targets)⟩)` by congruence, the
     /// first comparison's proof bound `depth` binders deep.
     ///
     /// # Specification

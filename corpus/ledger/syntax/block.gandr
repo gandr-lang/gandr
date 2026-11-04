@@ -14,7 +14,7 @@ def answer() -> -F Integer {
 
 /// A name a `let` binds reads as the value itself.
 @[ checks ]
-def three() -> -F Path(Integer, 3, 3) {
+def three() -> -F Path(3, 3) {
   let x = 3;
   return Path.here(x)
 }

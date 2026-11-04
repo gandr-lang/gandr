@@ -1,12 +1,13 @@
 //! A case over a sort its words loop at owes each loop.
 //!
 //! A data declaration's loop `loop : Base <-> Base` mints a type of words over
-//! the sort, and `Path(Circle, Base, Base)` reads as those words. A case over
-//! the sort itself, `case x { Base => b }`, reads only its points, so without
-//! an obligation for the loop it would eliminate the circle as if it had no
-//! loop: at the motive `Path(Circle, Base, x)` it would prove the circle
-//! contractible. The book's dependent eliminator takes, beside `b : P(Base)`,
-//! a path `ℓ : transport(P, loop, b) = b` per loop, and the case owes the same:
+//! the sort, and `Path[.A = Circle](Base, Base)` reads as those words. A case
+//! over the sort itself, `case x { Base => b }`, reads only its points, so
+//! without an obligation for the loop it would eliminate the circle as if it
+//! had no loop: at the motive `Path[.A = Circle](Base, x)` it would prove the
+//! circle contractible. The book's dependent eliminator takes, beside `b :
+//! P(Base)`, a path `ℓ : transport(P, loop, b) = b` per loop, and the case owes
+//! the same:
 //!
 //! - **no loop arm**: `transport(P, loop, b) ≡ b`, decided by conversion with
 //!   every definition unfolding, so an arm answering with a definition at the
@@ -14,9 +15,9 @@
 //!   the right side spelled as the transport along the empty word so that an
 //!   answer a definition names (`Base => loop`) meets its word on both sides;
 //! - **a loop arm per loop**: the arm `loop => e` is checked at the dependent
-//!   path `Path(P(Base), transport(P, loop, b), b)` and nothing else is owed;
-//!   for a non-dependent case, at `Path(B, b, b)`, where the arm chooses the
-//!   loop's image (`invLooper`'s `loop => back(loop)`).
+//!   path `Path[.A = P(Base)](transport(P, loop, b), b)` and nothing else is
+//!   owed; for a non-dependent case, at `Path[.A = B](b, b)`, where the arm
+//!   chooses the loop's image (`invLooper`'s `loop => back(loop)`).
 //!
 //! `b` is the value the point's branch returns, or the case at the point,
 //! its scrutinee replaced by the point's term, where the branch computes
@@ -203,10 +204,10 @@ pub fn loops(
 /// - measure: the loops left.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — over the circle, `Base => here(Base)` at `Path(Circle,
-///   Base, x)` is refused at its loop while the same arm at `Path(Circle, x,
-///   x)` and `Base => loop` there are admitted, a non-dependent case owes
-///   nothing, and a dependent family that is no returner is refused.
+/// - hypothesis: L3 — over the circle, `Base => here(Base)` at `Path[.A =
+///   Circle]( Base, x)` is refused at its loop while the same arm at `Path[.A =
+///   Circle](x, x)` and `Base => loop` there are admitted, a non-dependent case
+///   owes nothing, and a dependent family that is no returner is refused.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::LoopNotRespected { at: refused, .. } | CheckRefusal::LoopUndecided { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 pub fn respected(
@@ -510,8 +511,8 @@ fn scrutinees(
 /// # Specification
 /// - requires: `family` is the motive's returner type under the scrutinee's
 ///   binder.
-/// - ensures: `Some(D)` exactly when `family` is `Path(D, l, r)` for such a
-///   `D`; `None` otherwise.
+/// - ensures: `Some(D)` exactly when `family` is `Path[.A = D](l, r)` for such
+///   a `D`; `None` otherwise.
 /// - fails: as [`crate::former::signature`].
 /// - panics: none.
 ///
@@ -550,8 +551,8 @@ fn presented_set(
 
 /// The type the loop arm for `owed` of the case `at` over `datatype` checks
 /// at: the path over the loop from the case's answer at the point carried
-/// along it to that answer, `F Path(A[pt], ⟨transport(A, ℓ, b)⟩, b)`, and
-/// `F Path(A, b, b)` for a motive that ignores its binder.
+/// along it to that answer, `F Path[.A = A[pt]](⟨transport(A, ℓ, b)⟩, b)`, and
+/// `F Path[.A = A](b, b)` for a motive that ignores its binder.
 ///
 /// # Specification
 /// - requires: `at` is a data case over `datatype`, whose signature is
@@ -572,9 +573,9 @@ fn presented_set(
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `invLooper`'s arm `loop => back(loop)` checks at
-///   `Path(Circle, Base, Base)` read through its constant family, and a
-///   dependent arm at the wrong endpoints is refused.
+/// - hypothesis: L3 — `invLooper`'s arm `loop => back(loop)` checks at `Path[.A
+///   = Circle](Base, Base)` read through its constant family, and a dependent
+///   arm at the wrong endpoints is refused.
 /// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::LoopNotRespected { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]

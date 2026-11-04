@@ -1023,7 +1023,7 @@ fn unchanged_paths_keep_their_ids_beside_a_lift()
 #[test]
 fn a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837()
 {
-    // def kept : Flow(Type[+, 1], Type, Type) = stay(Type) ;
+    // def kept : Flow[.A = Type[+, 1]](Type, Type) = stay(Type) ;
     // def rode : () => Type = ? ; filled as thunk { ride(fun (X) { X }, kept,
     // Integer) }
     let mut arena = CoreArena::new();
@@ -1152,7 +1152,7 @@ fn two_arguments_disagreeing_on_an_implicit_are_apart_1216()
 #[test]
 fn an_open_end_is_solved_from_its_point_1979()
 {
-    // `(here(0) : Path(Integer, 0, _))`: two rigid values are conversion's;
+    // `(here(0) : Path[.A = Integer](0, _))`: two rigid values are conversion's;
     // the open end against the point that reaches it is bound to the point;
     // a second, different point is then refuted against the same end.
     let mut arena = CoreArena::new();

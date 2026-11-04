@@ -2,11 +2,11 @@ error[NonCovariantMotive]: a flow runs one way: `Flow.ride` may use the moving e
    ╭▸ corpus/pathological/identity/flow-symmetry.gandr:15:5
    │
 13 │ ┌   @[ refuses("NonCovariantMotive") ]
-14 │ │   def reversed() -> Flow(Type, New, Old) {
-15 │ │     Flow.ride(fun (X) { Flow(Type, X, Old) }, upgrade, Flow.stay(Old))
-   │ │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the moving endpoint other than covariantly
+14 │ │   def reversed() -> Flow[.A = Type](New, Old) {
+15 │ │     Flow.ride(fun (X) { type(Flow[.A = Type](X, Old)) }, upgrade, Flow.stay(Old))
+   │ │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the moving endpoint other than covariantly
 16 │ │   }
-   │ └───┘ checked against `() => Flow(Type, Integer * String, String * Integer)`; while checking the body of this thunk
+   │ └───┘ checked against `() => Flow[.A = Type](Integer * String, String * Integer)`; while checking the body of this thunk
    │
    ├ note: `reversed` is refused with NonCovariantMotive, as its expectation states
    ╰ help: use the moving endpoint only where a run of it is produced

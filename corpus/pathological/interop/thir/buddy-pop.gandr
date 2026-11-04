@@ -28,9 +28,8 @@ def popShared(
   order : Nat,
   b : Nat,
   rest : Ixs,
-  h : Path(Maybe(Val), (Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
+  h : Path((Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
   held : Path(
-    Maybe(Val),
     (Some(headOf(rest)) : Maybe(Val)),
     below(Down(b, Down(Zero, Here)), Tree(blocks))
   ),
@@ -56,9 +55,8 @@ def popListedAsEmpty(
   order : Nat,
   b : Nat,
   rest : Ixs,
-  h : Path(Maybe(Val), (Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
+  h : Path((Some(SomeV(IntV(b))) : Maybe(Val)), nth(heads, order)),
   held : Path(
-    Maybe(Val),
     (Some(headOf(rest)) : Maybe(Val)),
     below(Down(b, Down(Zero, Here)), Tree(blocks))
   ),

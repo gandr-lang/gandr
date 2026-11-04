@@ -1515,10 +1515,10 @@ fn an_ascribed_binary_natural_spells_as_its_numeral_3287()
 }
 
 /// A path type's endpoint the source wrote as a word spells as the word,
-/// `Path(Bool, true, false)`: the checked type holds the word ascribed `Bool`,
-/// as the lowering mints it, so a hover and a law's statement read as written
-/// (#2407, #3350). A bare injection keeps its injection, which is what reads
-/// back to it.
+/// `Path[.A = Bool](true, false)`: the checked type holds the word ascribed
+/// `Bool`, as the lowering mints it, so a hover and a law's statement read as
+/// written (#2407, #3350). A bare injection keeps its injection, which is what
+/// reads back to it.
 #[test]
 fn a_truth_value_at_a_path_endpoint_spells_as_its_word_2407()
 {
@@ -1534,8 +1534,8 @@ fn a_truth_value_at_a_path_endpoint_spells_as_its_word_2407()
     let bare = core.value_type_path(boolean, first, second);
     let source = CoreSource::new(&core, &[]);
     for (ty, expected) in [
-        (between, "Path(Bool, true, false)"),
-        (bare, "Path(Bool, +{.0 = unit}, +{.1 = unit})"),
+        (between, "Path[.A = Bool](true, false)"),
+        (bare, "Path[.A = Bool](+{.0 = unit}, +{.1 = unit})"),
     ] {
         assert_eq!(
             spelled(&source, Root::Type(CoreNode::ValueType(ty))),
@@ -1705,11 +1705,11 @@ fn every_type_former_spells_as_the_grammar_writes_it()
         (CoreNode::ValueType(list), "List(Integer)"),
         (
             CoreNode::CompType(returns_path),
-            "-F Path(List(Integer), small, 1)",
+            "-F Path[.A = List(Integer)](small, 1)",
         ),
         (
             CoreNode::CompType(returns_flow),
-            "-F Flow(List(Integer), small, 1)",
+            "-F Flow[.A = List(Integer)](small, 1)",
         ),
         (CoreNode::ValueType(prefix), "Prefix(small)"),
         (CoreNode::CompType(two_results), "-F (Integer, String)"),
@@ -1739,12 +1739,12 @@ fn every_type_former_spells_as_the_grammar_writes_it()
     let within = CoreSource::new(&core, &names).within(&context);
     assert_eq!(
         spelled(&within, Root::Type(CoreNode::CompType(over_context))),
-        faithful(Written("(a : Integer) -> -F Path(Integer, a, y)")),
+        faithful(Written("(a : Integer) -> -F Path[.A = Integer](a, y)")),
         "a variable past the opened binder reads its context binder's name"
     );
     assert_eq!(
         spelled(&within, Root::Type(CoreNode::ValueType(unnamed))),
-        approximate(Written("Path(Integer, x, ?)")),
+        approximate(Written("Path[.A = Integer](x, ?)")),
         "an unnamed context binder spells `?`"
     );
     for unprintable in ["", "x\ty"] {
@@ -1752,7 +1752,7 @@ fn every_type_former_spells_as_the_grammar_writes_it()
         let within = CoreSource::new(&core, &names).within(&context);
         assert_eq!(
             spelled(&within, Root::Type(CoreNode::ValueType(unnamed))),
-            approximate(Written("Path(Integer, ?, ?)")),
+            approximate(Written("Path[.A = Integer](?, ?)")),
             "a context binder named {unprintable:?} spells `?`"
         );
     }
@@ -1997,8 +1997,8 @@ fn a_primed_name_has_no_ascii_spelling_782()
         ),
         (
             Root::Type(CoreNode::CompType(over_context)),
-            faithful(Written("(n′ : Integer) -> -F Path(Integer, n′, y′)")),
-            approximate(Written("(a : Integer) -> -F Path(Integer, a, ?)")),
+            faithful(Written("(n′ : Integer) -> -F Path[.A = Integer](n′, y′)")),
+            approximate(Written("(a : Integer) -> -F Path[.A = Integer](a, ?)")),
         ),
     ] {
         assert_eq!(
@@ -2576,7 +2576,7 @@ fn a_selection_off_a_dependent_record_spells_its_label_3971()
     let names = [Name::from("t")];
     let mut core = CoreArena::new();
     let integer = core.value_type_base(BaseType::Integer);
-    // `#{x : Integer, y : Integer, z : Path(Integer, x, y)}`.
+    // `#{x : Integer, y : Integer, z : Path[.A = Integer](x, y)}`.
     let x = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let y = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let between = core.value_type_path(integer, x, y);
@@ -2616,8 +2616,8 @@ fn a_selection_off_a_dependent_record_spells_its_label_3971()
             Root::Type(CoreNode::CompType(arrow))
         ),
         faithful(Written(
-            "(r : #{x : Integer, y : Integer, z : Path(Integer, x, y)}) -> -F \
-             Path(Path(Integer, r.x, r.y), r.z,\n  r.z)"
+            "(r : #{x : Integer, y : Integer, z : Path[.A = Integer](x, y)}) ->\n  -F \
+             Path[.A = Path[.A = Integer](r.x, r.y)](r.z, r.z)"
         )),
     );
 }
@@ -2632,7 +2632,7 @@ fn a_selection_off_a_context_binder_s_record_spells_its_label_4139()
     let names = [Name::from("t")];
     let mut core = CoreArena::new();
     let integer = core.value_type_base(BaseType::Integer);
-    // `#{x : Integer, y : Integer, z : Path(Integer, x, y)}`.
+    // `#{x : Integer, y : Integer, z : Path[.A = Integer](x, y)}`.
     let x = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let y = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let between = core.value_type_path(integer, x, y);
@@ -2664,9 +2664,12 @@ fn a_selection_off_a_context_binder_s_record_spells_its_label_4139()
     for (source, expected) in [
         (
             source.typing(&typed),
-            faithful(Written("Path(Integer, r.x, r.y)")),
+            faithful(Written("Path[.A = Integer](r.x, r.y)")),
         ),
-        (source, approximate(Written("Path(Integer, r.0, (r.1).0)"))),
+        (
+            source,
+            approximate(Written("Path[.A = Integer](r.0, (r.1).0)")),
+        ),
     ] {
         assert_eq!(
             spelled(&source, Root::Type(CoreNode::ValueType(along))),
@@ -3407,10 +3410,13 @@ fn a_quoted_telescope_type_is_quoted_1514()
     let argument = core.value_stay(telescope);
     let source = CoreSource::new(&core, &[]);
     for (root, spelling) in [
-        (telescope, "type(#{a : Integer, b : Path(Integer, a, a)})"),
+        (
+            telescope,
+            "type(#{a : Integer, b : Path[.A = Integer](a, a)})",
+        ),
         (
             argument,
-            "Flow.stay(type(#{a : Integer, b : Path(Integer, a, a)}))",
+            "Flow.stay(type(#{a : Integer, b : Path[.A = Integer](a, a)}))",
         ),
     ] {
         for form in [Form::Sugared, Form::Explicit] {
@@ -3424,11 +3430,10 @@ fn a_quoted_telescope_type_is_quoted_1514()
     }
 }
 
-/// #3279: an expression reads a path type's carrier as an expression, so a
-/// quoted path type over a family applied to its arguments is written
-/// `type(Path(…))` where an expression stands, alone and as an argument:
-/// bare, `Maybe(Nat)` is a call where a value type is expected. A path type
-/// over a bare name, a nullary family or a base type, stays bare.
+/// #3279: an expression reads `Path[` as the instantiation of a function, so
+/// a quoted path type that supplies its carrier is written `type(Path[.A =
+/// …](…))` where an expression stands, alone and as an argument, whatever
+/// its carrier is: a family application, a nullary family or a base type.
 #[test]
 fn a_path_type_over_a_family_application_is_quoted_3279()
 {
@@ -3454,10 +3459,10 @@ fn a_path_type_over_a_family_application_is_quoted_3279()
     let over_base = core.value_quote(over_base);
     let source = CoreSource::new(&core, &names);
     for (root, spelling) in [
-        (over_application, "type(Path(Maybe(Nat), a, c))"),
-        (argument, "Flow.stay(type(Path(Maybe(Nat), a, c)))"),
-        (over_nullary, "Path(Nat, a, c)"),
-        (over_base, "Path(Integer, a, c)"),
+        (over_application, "type(Path[.A = Maybe(Nat)](a, c))"),
+        (argument, "Flow.stay(type(Path[.A = Maybe(Nat)](a, c)))"),
+        (over_nullary, "type(Path[.A = Nat](a, c))"),
+        (over_base, "type(Path[.A = Integer](a, c))"),
     ] {
         for form in [Form::Sugared, Form::Explicit] {
             let presented = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -3605,16 +3610,16 @@ fn a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102()
     for (root, sugared, explicit) in [
         (
             in_thunk,
-            "Path(Unit * Integer => Unit * Integer, fun (a) { pick(type(Unit * Integer), a) }, fun \
+            "Path[.A = Unit * Integer => Unit * Integer](fun (a) { pick(type(Unit * Integer), a) }, fun \
              (a) { pick(type(Unit * Integer), a) })",
-            "Path(+U (#{Unit, Integer} -> -F #{Unit, Integer}), fun (a) { pick(#{Unit, Integer}, \
+            "Path[.A = +U (#{Unit, Integer} -> -F #{Unit, Integer})](fun (a) { pick(#{Unit, Integer}, \
              a) }, fun (a) { pick(#{Unit, Integer}, a) })",
         ),
         (
             at_endpoint,
-            "Path(Unit * Integer, pick(type(Unit * Integer), held), pick(type(Unit * Integer), \
+            "Path[.A = Unit * Integer](pick(type(Unit * Integer), held), pick(type(Unit * Integer), \
              held))",
-            "Path(#{Unit, Integer}, pick(#{Unit, Integer}, held), pick(#{Unit, Integer}, held))",
+            "Path[.A = #{Unit, Integer}](pick(#{Unit, Integer}, held), pick(#{Unit, Integer}, held))",
         ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -4516,12 +4521,12 @@ fn a_returned_composite_of_paths_is_written_as_a_step_754()
         (
             composite,
             Form::Explicit,
-            "Path.walk(fun (a) { Path(Circle, base, a) }, loop, loop)",
+            "Path.walk(fun (a) { type(Path[.A = Circle](base, a)) }, loop, loop)",
         ),
         (
             transported,
             Form::Sugared,
-            "Path.walk(fun (a) { Path(Circle, a, a) }, loop, loop)",
+            "Path.walk(fun (a) { type(Path[.A = Circle](a, a)) }, loop, loop)",
         ),
     ] {
         let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -4568,7 +4573,7 @@ fn a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218()
         (agreeing, "Path.step(Path.here(base), loop)"),
         (
             apart,
-            "Path.walk(fun (a) { Path(Circle, other, a) }, loop, Path.here(base))",
+            "Path.walk(fun (a) { type(Path[.A = Circle](other, a)) }, loop, Path.here(base))",
         ),
         (squared, "Path.step(Path.here(Path.here(base)), loop)"),
     ] {
@@ -4622,8 +4627,8 @@ fn a_composite_a_transport_moves_stays_explicit_815()
     );
     assert_eq!(
         rendered.as_ref(),
-        "Path.walk(fun (a) { Path(Circle, a, a) }, Path.walk(fun (a) { Path(Circle, base, a) }, loop, loop), \
-         Path.walk(fun (a) { Path(Circle, base, a) }, loop, loop))"
+        "Path.walk(fun (a) { type(Path[.A = Circle](a, a)) }, Path.walk(fun (a) { type(Path[.A = Circle](base, a)) }, loop, loop), \
+         Path.walk(fun (a) { type(Path[.A = Circle](base, a)) }, loop, loop))"
     );
     let rendered = presented_in(
         &source,
@@ -4662,7 +4667,7 @@ fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
     let mapped = gandr_core_term::identity::cong(&mut core, circle, parameter, start, around);
     let mapped = core.value_returned(mapped);
     // A transport whose fixed endpoint is no image of the map is no action:
-    // `Path.ap(spin, loop)` would derive `Path(Circle, spin(base), spin(a))`.
+    // `Path.ap(spin, loop)` would derive `Path[.A = Circle](spin(base), spin(a))`.
     let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let forced = core.computation_force(spin);
     let applied = core.computation_application(forced, bound);
@@ -4687,19 +4692,19 @@ fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
         (
             inverse,
             Form::Explicit,
-            "Path.walk(fun (a) { Path(Circle, a, base) }, loop, Path.here(base))",
+            "Path.walk(fun (a) { type(Path[.A = Circle](a, base)) }, loop, Path.here(base))",
         ),
         (action, Form::Sugared, "Path.ap(spin, loop)"),
         (
             action,
             Form::Explicit,
-            "Path.walk(fun (a) { Path(Circle, spin(base), spin(a)) }, loop, Path.here(spin(base)))",
+            "Path.walk(fun (a) { type(Path[.A = Circle](spin(base), spin(a))) }, loop, Path.here(spin(base)))",
         ),
         (mapped, Form::Sugared, "Path.ap(f, loop)"),
         (
             unmapped,
             Form::Sugared,
-            "Path.walk(fun (a) { Path(Circle, base, spin(a)) }, loop, Path.here(base))",
+            "Path.walk(fun (a) { type(Path[.A = Circle](base, spin(a))) }, loop, Path.here(base))",
         ),
     ] {
         let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -5908,7 +5913,7 @@ fn no_thunk_is_left_out_below_a_type_3972()
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(endpoints))),
         faithful(Written(
-            "Path(+U (-F Integer), thunk { kept(thunk { twice(1) }) }, thunk { kept(thunk { twice(1) }) })"
+            "Path[.A = +U (-F Integer)](thunk { kept(thunk { twice(1) }) }, thunk { kept(thunk { twice(1) }) })"
         )),
         "a call inside an endpoint's thunk keeps its argument's thunk"
     );
@@ -7101,7 +7106,7 @@ fn a_stated_parameter_spells_as_written_3943()
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(path))),
         faithful(Written(
-            "Path(+U (Integer -> -F Integer), fun (a : Integer) { a }, fun (a : Integer) { a })"
+            "Path[.A = +U (Integer -> -F Integer)](fun (a : Integer) { a }, fun (a : Integer) { a })"
         )),
         "a path between stated lambdas writes their parameters' types"
     );
@@ -7140,13 +7145,13 @@ fn a_returned_typed_bind_in_an_argument_is_a_block_3942()
     for (root, sugared, explicit) in [
         (
             over_integer,
-            "Path(Integer, { let a : Integer = pure held ; pure a }, held)",
-            "Path(Integer, { let a : Integer = pure held ; pure a }, held)",
+            "Path[.A = Integer]({ let a : Integer = pure held ; pure a }, held)",
+            "Path[.A = Integer]({ let a : Integer = pure held ; pure a }, held)",
         ),
         (
             over_universe,
-            "Path(Type, { let a : Type = pure type(Unit * Integer) ; pure a }, Unit * Integer)",
-            "Path(Type, { let a : Type = pure #{Unit, Integer} ; pure a }, #{Unit, Integer})",
+            "Path[.A = Type]({ let a : Type = pure type(Unit * Integer) ; pure a }, Unit * Integer)",
+            "Path[.A = Type]({ let a : Type = pure #{Unit, Integer} ; pure a }, #{Unit, Integer})",
         ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -7196,7 +7201,7 @@ fn a_statement_outside_its_block_is_a_block_3972()
     );
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(path))).0,
-        "Path(Integer, { let a = pure 1 ; pure a }, kept)",
+        "Path[.A = Integer]({ let a = pure 1 ; pure a }, kept)",
         "a path's endpoint takes the statements as a block"
     );
 }

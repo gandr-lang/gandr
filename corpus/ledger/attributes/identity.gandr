@@ -5,8 +5,7 @@ def related(a : Unit, b : Unit) -> -F Type { return Unit }
 @[ checks ]
 def reflexive(a : Unit) -> -F related(a, a) { return unit }
 @[ checks ]
-def contraction(a : Unit, b : Unit, r : related(a, b)) -> -F Path(
-  #{ y : Unit, s : related(a, y) },
+def contraction(a : Unit, b : Unit, r : related(a, b)) -> -F Path[.A = #{ y : Unit, s : related(a, y) }](
   (b, r),
   (a, reflexive(a))
 ) {

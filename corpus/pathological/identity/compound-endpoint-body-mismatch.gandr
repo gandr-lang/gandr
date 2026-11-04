@@ -3,6 +3,6 @@ def dbl(x : Integer) -> Integer {
 }
 
 @[ refuses("TypeMismatch") ]
-def refuted(x : Integer) -> Path(Integer, dbl(x), x) {
+def refuted(x : Integer) -> Path(dbl(x), x) {
   5
 }

@@ -67,14 +67,15 @@ use gandr_theory_graphs::WalkChainLength;
 /// element index read only through its selector, `.#[ … ]` (#4944), then by
 /// a path-shaped type's carrier supplied by name, `Path[.A = C](a, b)`
 /// (#4932), then by an inner attribute block `@![ … ]` at a theory's member
-/// slot (#3586).
-const BUILT_IN_FINGERPRINT: u64 = 0x3e13_75ba_27da_1780;
+/// slot (#3586), then by the carrier written first, `Path(A, a, b)`, leaving
+/// for the bare `Path(a, b)`.
+const BUILT_IN_FINGERPRINT: u64 = 0xfd20_a864_ade4_4c72;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3001);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2980);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 91;
@@ -97,12 +98,12 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (")", 141),
     ("*", 2),
     ("*=", 15),
-    ("+", 11),
+    ("+", 9),
     ("++", 1),
     ("+=", 15),
     ("+U", 1),
-    (",", 289),
-    ("-", 8),
+    (",", 283),
+    ("-", 6),
     ("-->", 31),
     ("-=", 15),
     ("->", 12),
@@ -121,7 +122,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("<=", 1),
     ("<=>", 27),
     ("<>", 1),
-    ("=", 141),
+    ("=", 138),
     ("==", 1),
     ("==>", 27),
     ("=>", 45),
@@ -145,13 +146,13 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Path", 1),
     ("String", 1),
     ("Symbol", 1),
-    ("Type", 6),
+    ("Type", 4),
     ("Type+", 1),
     ("Unit", 1),
     ("Unknown", 1),
     ("Void", 1),
-    ("[", 61),
-    ("]", 78),
+    ("[", 59),
+    ("]", 76),
     ("_", 48),
     ("abort", 1),
     ("access", 1),
@@ -217,7 +218,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("mu", 1),
     ("newline", 1),
     ("node", 3),
-    ("number", 59),
+    ("number", 57),
     ("obs", 1),
     ("offer", 1),
     ("offers", 1),

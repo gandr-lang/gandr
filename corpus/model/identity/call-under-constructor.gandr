@@ -13,7 +13,7 @@ import "./int-sum.gandr";
 
 /// At `P(x)` the endpoint `S(plus(Z, P(x)))` is `S(P(plus(Z, x)))`, which the
 /// first rule reads as the call `plus(Z, x)` itself.
-def rec underSuccessor(b : Int) -> Path(Int, S(plus(Z, b)), S(b)) {
+def rec underSuccessor(b : Int) -> Path[.A = Int](S(plus(Z, b)), S(b)) {
   match b {
     Z => Path.here(S(Z)),
     S(x) => Path.ap(up, underSuccessor[<](x)),
@@ -24,7 +24,7 @@ def rec underSuccessor(b : Int) -> Path(Int, S(plus(Z, b)), S(b)) {
 /// Reflexivity at `S(Z)` is no path to `Z`: the zero arm is refused, so
 /// reading the endpoint admits no path the rules do not.
 @[ refuses("EndpointMismatch") ]
-def rec offByOne(b : Int) -> Path(Int, S(plus(Z, b)), b) {
+def rec offByOne(b : Int) -> Path[.A = Int](S(plus(Z, b)), b) {
   match b {
     Z => Path.here(S(Z)),
     S(x) => Path.ap(up, offByOne[<](x)),

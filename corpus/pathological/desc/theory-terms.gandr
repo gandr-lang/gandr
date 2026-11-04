@@ -61,7 +61,7 @@ theory Idem where {
   /// The one operation.
   oper twice : (x : M) --> M;
   /// The stated law, a path the terms would carry as their cell.
-  law settles : (x : M) => Path(M, twice(twice(x)), twice(x));
+  law settles : (x : M) => Path[.A = M](twice(twice(x)), twice(x));
 }
 
 /// Terms of a theory stating a law stand outside the slice.

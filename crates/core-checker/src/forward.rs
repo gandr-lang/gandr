@@ -4,12 +4,12 @@
 //!
 //! # The rule
 //!
-//! `forward(f)` synthesises `Flow(Type, ⌜A⌝, ⌜B⌝)` when `f` synthesises the
-//! thunk type `U (A → F B)` of a pure non-dependent arrow, `f` is closed, both
-//! codes are first-order — the unit type, the base atoms, sums of at least one
-//! summand, products of any arity and lists, as `equiv`'s — and the image of
-//! `f` at every pattern of `A`'s coverage is leaf-natural. The coverage is the
-//! one `equiv` decides over and the kernel replays: the unit value, a fresh
+//! `forward(f)` synthesises `Flow[.A = Type](⌜A⌝, ⌜B⌝)` when `f` synthesises
+//! the thunk type `U (A → F B)` of a pure non-dependent arrow, `f` is closed,
+//! both codes are first-order — the unit type, the base atoms, sums of at least
+//! one summand, products of any arity and lists, as `equiv`'s — and the image
+//! of `f` at every pattern of `A`'s coverage is leaf-natural. The coverage is
+//! the one `equiv` decides over and the kernel replays: the unit value, a fresh
 //! variable at a base atom, each summand's patterns injected first summand
 //! first, each tuple crossing its components' patterns lexicographically, and
 //! a list unfolded one cell: the empty list, then each element pattern consed
@@ -30,17 +30,17 @@
 //! before the kernel sees it. There is no round trip: a flow demands no
 //! inverse.
 //!
-//! `arrow(d, c)` synthesises `Flow(Type, ⌜U (A → F B)⌝, ⌜U (A' → F B')⌝)` from
-//! `d : Flow(Type, A', A)` and `c : Flow(Type, B, B')`: the domain flow runs
-//! from the target's argument code to the source's, contravariantly, and the
-//! codomain flow from the source's result code to the target's, covariantly —
-//! the variance an arrow fixes at each position. Riding a function `g` along
-//! it gives `λa'. a ← ride(El, d, a'); b ← g a; ride(El, c, b)`, the kernel's
-//! function row. Checked against a flow between two function codes, a boundary
-//! whose flow does not run the way its position fixes is
-//! [`CheckRefusal::Boundary`], naming that boundary: a domain flow written
-//! covariantly, from the source's argument to the target's, is the misdirected
-//! boundary. A boundary code outside the first-order vocabulary is
+//! `arrow(d, c)` synthesises `Flow[.A = Type](⌜U (A → F B)⌝, ⌜U (A' → F B')⌝)`
+//! from `d : Flow[.A = Type](A', A)` and `c : Flow[.A = Type](B, B')`: the
+//! domain flow runs from the target's argument code to the source's,
+//! contravariantly, and the codomain flow from the source's result code to the
+//! target's, covariantly — the variance an arrow fixes at each position. Riding
+//! a function `g` along it gives `λa'. a ← ride(El, d, a'); b ← g a; ride(El,
+//! c, b)`, the kernel's function row. Checked against a flow between two
+//! function codes, a boundary whose flow does not run the way its position
+//! fixes is [`CheckRefusal::Boundary`], naming that boundary: a domain flow
+//! written covariantly, from the source's argument to the target's, is the
+//! misdirected boundary. A boundary code outside the first-order vocabulary is
 //! [`CheckRefusal::ForwardUnsupported`]: an argument code that is itself a
 //! function or universe code is outside the function clause, which would make
 //! an argument variable occur at both variances.
@@ -57,13 +57,13 @@
 //! # What a consumer may assume
 //!
 //! A value's schema evolution is a `forward` from the old code to the new; the
-//! compatibility of the two is the `Flow(Type, Old, New)` the core decides and
-//! the kernel replays; the move of a value is `ride(fun (X) { X }, migration,
-//! v)`, and of a value inside any first-order container a ride whose motive is
-//! that container over `X`. Two migrations compose by `then`, and a function
-//! moves along `arrow(d, c)` by riding its argument back and its result
-//! forward. Nothing reverses a flow: a migration that must also run backward is
-//! two flows, or an `equiv`.
+//! compatibility of the two is the `Flow[.A = Type](Old, New)` the core decides
+//! and the kernel replays; the move of a value is `ride(fun (X) { X },
+//! migration, v)`, and of a value inside any first-order container a ride whose
+//! motive is that container over `X`. Two migrations compose by `then`, and a
+//! function moves along `arrow(d, c)` by riding its argument back and its
+//! result forward. Nothing reverses a flow: a migration that must also run
+//! backward is two flows, or an `equiv`.
 
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
@@ -99,7 +99,7 @@ mod tests;
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Forward
 {
-    /// `Flow(Type, ⌜A⌝, ⌜B⌝)`.
+    /// `Flow[.A = Type](⌜A⌝, ⌜B⌝)`.
     classifier: ValueTypeId,
     /// `thunk(λⁿ. return o)` at each pattern, in coverage order.
     images: Arc<[ValueId]>,
@@ -110,7 +110,7 @@ pub struct Forward
 
 impl Forward
 {
-    /// The flow type the statement inhabits, `Flow(Type, ⌜A⌝, ⌜B⌝)`.
+    /// The flow type the statement inhabits, `Flow[.A = Type](⌜A⌝, ⌜B⌝)`.
     ///
     /// # Specification
     /// trivial.
@@ -218,8 +218,8 @@ pub fn codes(
 /// # Specification
 /// - requires: `translator` synthesised `U (A → F B)` under the judgement's
 ///   binders.
-/// - ensures: on success the classifier `Flow(Type, ⌜A⌝, ⌜B⌝)` and, at each
-///   pattern of `A`'s coverage in the kernel's order, the image `thunk(λⁿ.
+/// - ensures: on success the classifier `Flow[.A = Type](⌜A⌝, ⌜B⌝)` and, at
+///   each pattern of `A`'s coverage in the kernel's order, the image `thunk(λⁿ.
 ///   return o)` of the translator and the machine's trace that the translator
 ///   applied to the pattern converts to returning `o`; at a cell of a list
 ///   source whose translator recurses into the tail, the image `thunk(λⁿ. λr.
@@ -422,7 +422,7 @@ fn recursive(
     Ok((arena.value_thunk(image), dialogue))
 }
 
-/// `Flow(Type, ⌜from⌝, ⌜to⌝)`.
+/// `Flow[.A = Type](⌜from⌝, ⌜to⌝)`.
 ///
 /// # Specification
 /// trivial.
@@ -935,8 +935,8 @@ fn function_code(
 /// # Specification
 /// - requires: `domain` synthesised `domain_type` and `codomain` synthesised
 ///   `codomain_type`, both under the judgement's binders.
-/// - ensures: from `domain : Flow(Type, A', A)` and `codomain : Flow(Type, B,
-///   B')`, `Flow(Type, ⌜U (A → F B)⌝, ⌜U (A' → F B')⌝)`.
+/// - ensures: from `domain : Flow[.A = Type](A', A)` and `codomain : Flow[.A =
+///   Type](B, B')`, `Flow[.A = Type](⌜U (A → F B)⌝, ⌜U (A' → F B')⌝)`.
 /// - fails: [`CheckRefusal::ShapeMismatch`] wanting a flow at a boundary whose
 ///   type is no flow type; [`CheckRefusal::ForwardUnsupported`] at `at` for a
 ///   boundary code that is no first-order code; the unfolding's refusal.
@@ -982,8 +982,8 @@ pub fn arrow(
 /// # Specification
 /// - requires: `at` is `arrow(domain, codomain)` and synthesised `synthesised`
 ///   by [`arrow`], so its source is `⌜U (Y → F Z)⌝` and its target `⌜U (X → F
-///   W)⌝` for a domain of type `Flow(Type, X, Y)` and a codomain of type
-///   `Flow(Type, Z, W)`.
+///   W)⌝` for a domain of type `Flow[.A = Type](X, Y)` and a codomain of type
+///   `Flow[.A = Type](Z, W)`.
 /// - ensures: success when the synthesised type converts to `expected`.
 ///   Otherwise, when `expected` is a flow between two function codes `U (A → F
 ///   B)` and `U (A' → F B')`, the domain's flow `X ⇝ Y` is compared against `A'

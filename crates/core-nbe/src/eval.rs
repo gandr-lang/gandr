@@ -6576,14 +6576,15 @@ fn step_transport(
 ///   before the next, and returns the run with every move and label kept, by
 ///   [`move_payloads`]; the decode of the motive's own binder hands a universe
 ///   path — a certificate, a product of them or a univalence — to native
-///   transport; the singleton `y. Path(D, l, y)`, its carrier and left endpoint
-///   closed over the binder, read against reflexivity returns the path itself;
-///   a word moves by the rules of the `words` module, and in that singleton a
-///   path no word rule reads moves the empty word or a letter-headed word by
-///   appending on it; a function motive along `ua(e)`, `equiv(f, g)` or a held
-///   transport returns the thunk [`CompBody::TransportFunction`] holds,
-///   wherever [`function_parts`] reads its motives; along a stuck composite `p
-///   then q`, read by [`composite_legs`], the transport along `p` bound into
+///   transport; the singleton `y. Path[.A = D](l, y)`, its carrier and left
+///   endpoint closed over the binder, read against reflexivity returns the path
+///   itself; a word moves by the rules of the `words` module, and in that
+///   singleton a path no word rule reads moves the empty word or a
+///   letter-headed word by appending on it; a function motive along `ua(e)`,
+///   `equiv(f, g)` or a held transport returns the thunk
+///   [`CompBody::TransportFunction`] holds, wherever [`function_parts`] reads
+///   its motives; along a stuck composite `p then q`, read by
+///   [`composite_legs`], the transport along `p` bound into
 ///   [`CompBody::AlongThen`]'s along `q`; any other configuration over a held
 ///   operand — a returned computation, read by [`held_endpoint`] — stacks the
 ///   transport on the operand's spine, as the kernel runs a returned operand
@@ -6849,7 +6850,7 @@ fn step_path_transport(
                     return Ok(());
                 },
                 // `back(p)` along a universe path is held as the transport
-                // that forms it, in `y. Path(U, y, c)` from `here(c)`.
+                // that forms it, in `y. Path[.A = U](y, c)` from `here(c)`.
                 crate::identity::TransportFamily::Reversed
                     if matches!(
                         carried,
@@ -6867,7 +6868,7 @@ fn step_path_transport(
             }
         },
         // `q then p` along a universe path `p` is held as the transport that
-        // forms it, in `y. Path(U, c, y)` from `q`.
+        // forms it, in `y. Path[.A = U](c, y)` from `q`.
         (Some(&ValueType::Path { .. }), _)
             if matches!(
                 carried,
@@ -7088,7 +7089,7 @@ fn along_legs(
 }
 
 /// The two paths of a stuck composite: a held endpoint whose computation is a
-/// transport in the singleton `y. Path(D, l, y)` that no rule moved.
+/// transport in the singleton `y. Path[.A = D](l, y)` that no rule moved.
 ///
 /// The composite `p then q` is that transport of `p` along `q`. Stuck on `q`,
 /// its neutral ends in a path transport of `p`. Stuck on `p`, a held or a
@@ -7556,8 +7557,8 @@ fn held_family(
 ///   argument along the domain flow, applies the function and rides the result
 ///   along the codomain flow, and a flow product rides a pair's left component
 ///   along its first flow, then the right along its second, and pairs them; at
-///   the singleton `y. Flow(D, l, y)` a `stay` value returns the flow and any
-///   other value composes with it. A part stuck on a definition holds every
+///   the singleton `y. Flow[.A = D](l, y)` a `stay` value returns the flow and
+///   any other value composes with it. A part stuck on a definition holds every
 ///   part after it, as the kernel's reduct binds it. A session simulation
 ///   returns the run unchanged — the checker admitted it by the protocol's
 ///   simulation, and runs move between related sessions as themselves. Any
@@ -8369,9 +8370,9 @@ fn move_payloads(
 ///   when both identities are reflexivity the operand returns unchanged; when
 ///   only the path is `here(c)` the operand transports along the identity over
 ///   it in the fibre `z. C[c, z]`; along any other path, into a returned type
-///   `Path(A, l, r)` at a carrier whose identities [`carrier_fibre`] reads as
-///   the unit type, it returns the unit, that fibre's one inhabitant; over any
-///   other stuck path the transport stacks on the path's spine.
+///   `Path[.A = A](l, r)` at a carrier whose identities [`carrier_fibre`] reads
+///   as the unit type, it returns the unit, that fibre's one inhabitant; over
+///   any other stuck path the transport stacks on the path's spine.
 /// - provides: the telescope transport's computation rules, a subset of the
 ///   kernel's, and its stuck form.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing operand, or a motive

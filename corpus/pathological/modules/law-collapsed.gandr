@@ -22,7 +22,7 @@ theory Collapsed where {
   /// The loops.
   sort Loop : Type;
   /// Any two loops are one path.
-  law one : (p : Loop, q : Loop) => Path(Loop, p, q);
+  law one : (p : Loop, q : Loop) => Path[.A = Loop](p, q);
 }
 
 /// Two integers differ, so no proof exists and no host asserts one.
@@ -49,5 +49,8 @@ theory WithK where {
   /// The carrier.
   sort Carrier : Type;
   /// Every loop at a point is reflexivity: a path between paths.
-  law k : (a : Carrier, p : Path(Carrier, a, a)) => Path(Path(Carrier, a, a), p, Path.here(a));
+  law k : (a : Carrier, p : Path[.A = Carrier](a, a)) => Path[.A = Path[.A = Carrier](a, a)](
+    p,
+    Path.here(a)
+  );
 }

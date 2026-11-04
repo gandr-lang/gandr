@@ -28,7 +28,6 @@ def rec iterate(n : Nat, s : Nat => Nat, z : Nat) -> Nat {
 
 /// Sixteen sixteens count as many applications as two products of sixteen and eight.
 def countsCommute(s : Nat => Nat, z : Nat) -> Path(
-  Nat,
   iterate(times(sixteen, sixteen), s, z),
   iterate(plus(times(sixteen, eight), times(eight, sixteen)), s, z)
 ) {

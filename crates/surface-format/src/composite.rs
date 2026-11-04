@@ -2,16 +2,16 @@
 //! lowering derived them, for the explicit spelling of `Path.step(p, q)`,
 //! `Path.back(p)` and `Path.ap(f, p)`.
 //!
-//! `Path.step(p, q)` is the transport `Path.walk(fun (y) { Path(A, a, y) }, q,
-//! p)`, `Path.back(p)` is `Path.walk(fun (y) { Path(A, y, a) }, p,
-//! Path.here(a))` and `Path.ap(f, p)` is `Path.walk(fun (y) { Path(B, f(a),
-//! f(y)) }, p, Path.here(f(a)))`: their carrier and fixed endpoint the type of
-//! `p`, which the lowering derives from the operands; the syntax does not hold
-//! them. So the explicit spelling reads them from the lowering: the transport
-//! the lowering minted at the operation's span, spelled through the shared
-//! printer in the explicit form, its first argument the motive and its third
-//! the value it moves, under the names the source writes for the binders around
-//! the operation. An operation whose transport the printer cannot spell
+//! `Path.step(p, q)` is the transport `Path.walk(fun (y) { Path[.A = A](a, y)
+//! }, q, p)`, `Path.back(p)` is `Path.walk(fun (y) { Path[.A = A](y, a) }, p,
+//! Path.here(a))` and `Path.ap(f, p)` is `Path.walk(fun (y) { Path[.A =
+//! B](f(a), f(y)) }, p, Path.here(f(a)))`: their carrier and fixed endpoint the
+//! type of `p`, which the lowering derives from the operands; the syntax does
+//! not hold them. So the explicit spelling reads them from the lowering: the
+//! transport the lowering minted at the operation's span, spelled through the
+//! shared printer in the explicit form, its first argument the motive and its
+//! third the value it moves, under the names the source writes for the binders
+//! around the operation. An operation whose transport the printer cannot spell
 //! faithfully — one standing under a binder the source names nothing — has
 //! none, keeps its spelling and is reported. `Path.step(p, q)` lowers to the
 //! composite of its two cells, which returns the transport above as the fold it

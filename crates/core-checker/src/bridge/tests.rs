@@ -2347,10 +2347,10 @@ enum Stated
 /// An atom over `Unit` whose module declares the relation `Unit`, its
 /// reflexivity `()` and the law contracting every singleton onto its centre
 /// by `((), ())`, the atom's interface naming them as `stated`; under
-/// [`Stated::ByPaths`] the relation `Path(Unit, a, b)` and the reflexivity
+/// [`Stated::ByPaths`] the relation `Path[.A = Unit](a, b)` and the reflexivity
 /// `here(a)` instead. Two points made inside the seal; past it the
 /// relation's evidence `()` between them as an identity at the atom, and two
-/// transports in the singleton family `y. Path(atom, first, y)`: along
+/// transports in the singleton family `y. Path[.A = atom](first, y)`: along
 /// `here(first)` returning its operand, and along that evidence moving
 /// `here(first)` to the evidence.
 ///
@@ -2527,8 +2527,8 @@ fn a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers()
 }
 
 /// `transport` in the family of paths back to the atom's first point, `(y :
-/// atom, z : Path(atom, first, y)) => Path(atom, y, first)`, along the
-/// relation's evidence from `here(first)`, declared equal to `()` by the
+/// atom, z : Path[.A = atom](first, y)) => Path[.A = atom](y, first)`, along
+/// the relation's evidence from `here(first)`, declared equal to `()` by the
 /// unit's reflexivity, at the declaration after [`interfaced_atom_module`]'s.
 ///
 /// # Specification
@@ -3948,10 +3948,10 @@ fn every_former_outside_the_fragment_is_refused_by_name()
 fn element_identity_and_a_compound_endpoint_are_readmitted()
 {
     // def id        : U (Integer -> F Integer) = thunk { \x. return x } ;
-    // def same      : Path(Integer, 0, 0) = here(0) ;
-    // def moved     : U (F Path(Integer, 0, 0))
-    //               = thunk { tr(y. Path(Integer, 0, y), here(0), here(0)) } ;
-    // def compound  : Path(Integer, (id 0), 0) = here(0) ;
+    // def same      : Path[.A = Integer](0, 0) = here(0) ;
+    // def moved     : U (F Path[.A = Integer](0, 0))
+    //               = thunk { tr(y. Path[.A = Integer](0, y), here(0), here(0)) } ;
+    // def compound  : Path[.A = Integer]((id 0), 0) = here(0) ;
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let returns_integer = arena.comp_type_returner(integer);
@@ -4053,9 +4053,9 @@ fn element_identity_and_a_compound_endpoint_are_readmitted()
 #[test]
 fn a_reflexive_transport_at_a_path_motive_is_readmitted_336()
 {
-    // def moved_end : Path(Path(Integer, 0, 0),
-    //                      ⟨tr(x. Path(Integer, x, x), here(0), here(0))⟩, here(0))
-    //               = here(here(0)) ;
+    // def moved_end : Path[.A = Path[.A = Integer](0, 0)](
+    //                      ⟨tr(x. Path[.A = Integer](x, x), here(0), here(0))⟩,
+    // here(0))               = here(here(0)) ;
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let zero = arena.value_literal(integer_literal());
@@ -4091,12 +4091,12 @@ fn a_reflexive_transport_at_a_path_motive_is_readmitted_336()
 #[test]
 fn a_dependent_pair_and_its_identity_are_readmitted()
 {
-    // def ring   : Σ (n : Integer). Path(Integer, n, n) = #{0, here(0)} ;
-    // def lap    : U (Π (p : Σ…). F Path(Integer, ⟨p.0⟩, ⟨p.0⟩))
+    // def ring   : Σ (n : Integer). Path[.A = Integer](n, n) = #{0, here(0)} ;
+    // def lap    : U (Π (p : Σ…). F Path[.A = Integer](⟨p.0⟩, ⟨p.0⟩))
     //            = thunk { \p. split p under F Path(…) as (m, w). return w } ;
-    // def second : U (Π (p : Σ…). F Path(Integer, ⟨p.0⟩, ⟨p.0⟩))
+    // def second : U (Π (p : Σ…). F Path[.A = Integer](⟨p.0⟩, ⟨p.0⟩))
     //            = thunk { \p. p.1 } ;
-    // def both   : Path(Σ…, #{0, here(0)}, #{0, here(0)})
+    // def both   : Path[.A = Σ…](#{0, here(0)}, #{0, here(0)})
     //            = #{here(0), here(here(0))} ;
     // def moved  : U (F Integer) = thunk { tr(s. Integer, both, 0) } ;
     let mut arena = CoreArena::new();
@@ -4186,7 +4186,7 @@ fn a_dependent_pair_and_its_identity_are_readmitted()
 fn a_funext_crosses_as_a_higher_evaluation()
 {
     // def not, not_not, same : U (+{(), ()} -> F +{(), ()}) ;
-    // def twice : Path(U (…), not_not, same) = funext(not_not, same) ;
+    // def twice : Path[.A = U (…)](not_not, same) = funext(not_not, same) ;
     let mut arena = CoreArena::new();
     let functions = crate::fixture::booleans(&mut arena);
     let [not_not, same] =
@@ -4254,7 +4254,7 @@ fn a_funext_crosses_as_a_higher_evaluation()
 fn a_funext_returning_a_literal_crosses_with_the_literal()
 {
     // def f, g : U (() -> F T) = λ_. return c ;
-    // def same : Path(U (…), f, g) = funext(f, g) ;
+    // def same : Path[.A = U (…)](f, g) = funext(f, g) ;
     for (atom, literal) in [
         (BaseType::Integer, integer_literal()),
         (BaseType::String, text_literal()),
@@ -4305,7 +4305,7 @@ fn a_funext_returning_a_pair_or_a_constant_crosses_with_it()
 {
     // def c : Integer = 0 ;
     // def f, g : U (() -> F T) = λ_. return v ;
-    // def same : Path(U (…), f, g) = funext(f, g) ;
+    // def same : Path[.A = U (…)](f, g) = funext(f, g) ;
     for returns_pair in [true, false] {
         let mut arena = CoreArena::new();
         let unit_type = arena.value_type_unit();
@@ -4369,7 +4369,7 @@ fn a_funext_returning_a_constructor_crosses_with_it()
 {
     // data Two : Type where { | Both : (a : Integer, b : Integer) --> Two } ;
     // def f, g : U (() -> F Two) = λ_. return Both(0, 0) ;
-    // def same : Path(U (…), f, g) = funext(f, g) ;
+    // def same : Path[.A = U (…)](f, g) = funext(f, g) ;
     use alloc::sync::Arc;
 
     use gandr_core_term::DataSignature;
@@ -4433,8 +4433,9 @@ fn a_quantified_funext_crosses_as_a_quantified_evaluation()
     // def bound = λh. x ← h(true); return x ;
     // def twice = λh. x ← h(true); h(x) ;
     // def twice_bound = λh. x ← h(true); y ← h(x); return y ;
-    // def eta : Path(U (…), at_truth, bound) = funext(at_truth, bound) ;
-    // def nested : Path(U (…), twice, twice_bound) = funext(twice, twice_bound) ;
+    // def eta : Path[.A = U (…)](at_truth, bound) = funext(at_truth, bound) ;
+    // def nested : Path[.A = U (…)](twice, twice_bound) = funext(twice,
+    // twice_bound) ;
     /// How one extensionality crossed.
     #[derive(Debug, Eq, PartialEq)]
     enum Crossed
@@ -4560,7 +4561,7 @@ fn a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints()
 {
     // def k : U (Integer -> F Integer) = thunk { \x. return x } ;
     // def j : U (Integer -> F Integer) = k ;
-    // def law : Path(U (…), thunk { force j }, k) = here(k) ;
+    // def law : Path[.A = U (…)](thunk { force j }, k) = here(k) ;
     // Relating `k` to `thunk { force j }` unfolds `j` under the thunk, a
     // step only the recorded dialogue names.
     let mut arena = CoreArena::new();
@@ -4626,7 +4627,7 @@ fn a_reflexivity_carries_its_right_endpoint_s_dialogue()
 {
     // def k : U (Integer -> F Integer) = thunk { \x. return x } ;
     // def j : U (Integer -> F Integer) = k ;
-    // def law : Path(U (…), k, thunk { force j }) = here(k) ;
+    // def law : Path[.A = U (…)](k, thunk { force j }) = here(k) ;
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let returns = arena.comp_type_returner(integer);
@@ -4678,8 +4679,8 @@ fn an_ascription_crosses_with_the_endpoints_it_related()
 {
     // def k : U (Integer -> F Integer) = thunk { \x. return x } ;
     // def j : U (Integer -> F Integer) = k ;
-    // def given : Path(U (…), thunk { force j }, k) = here(k) ;
-    // def law : Path(U (…), k, k) = given ;
+    // def given : Path[.A = U (…)](thunk { force j }, k) = here(k) ;
+    // def law : Path[.A = U (…)](k, k) = given ;
     // The ascription converts the two path types only through `j`'s body
     // under the thunk, which the kernel's forced reading does not unfold.
     let mut arena = CoreArena::new();
@@ -4735,7 +4736,7 @@ fn an_ascription_crosses_with_the_endpoints_it_related()
     ));
 }
 
-/// `Flow(Type, ⌜Bool⌝, ⌜Bool⌝)`, `El(x)` and Bool's two constructors, over
+/// `Flow[.A = Type](⌜Bool⌝, ⌜Bool⌝)`, `El(x)` and Bool's two constructors, over
 /// [`crate::fixture::booleans`].
 ///
 /// # Specification
@@ -4786,8 +4787,8 @@ fn checks_and_readmits(
 fn a_ride_along_a_named_flow_crosses_with_the_flows_unfolding()
 {
     // def not : U (Bool -> F Bool) = \b. case b of { .0 -> .1 ; .1 -> .0 } ;
-    // def flip : Flow(Type, Bool, Bool) = forward(not) ;
-    // def flipped : Path(Bool, ride(fun (X) { X }, flip, .0), .1) = here(.1) ;
+    // def flip : Flow[.A = Type](Bool, Bool) = forward(not) ;
+    // def flipped : Path[.A = Bool](ride(fun (X) { X }, flip, .0), .1) = here(.1) ;
     // The ride is stuck on `flip` until `flip` unfolds: a step only the
     // recorded dialogue names.
     let mut arena = CoreArena::new();
@@ -4817,10 +4818,10 @@ fn a_ride_along_a_named_flow_crosses_with_the_flows_unfolding()
 fn a_ride_through_named_translators_crosses_with_their_unfoldings_308()
 {
     // def not : U (Bool -> F Bool) = \b. case b of { .0 -> .1 ; .1 -> .0 } ;
-    // def both : Path(#{Bool, Bool},
+    // def both : Path[.A = #{Bool, Bool}](
     //   ride(fun (X) { X }, flowProduct(forward(not), forward(not)), #{.0, .1}),
     //   #{.1, .0}) = here(#{.1, .0}) ;
-    // def each : Path(#{Bool, Bool},
+    // def each : Path[.A = #{Bool, Bool}](
     //   ride(fun (X) { type(#{X, X}) }, forward(not), #{.0, .1}), #{.1, .0})
     //   = here(#{.1, .0}) ;
     // Each component's translator is the definition `not`, which unfolds
@@ -4859,7 +4860,7 @@ fn a_ride_through_named_translators_crosses_with_their_unfoldings_308()
 fn an_equiv_crosses_as_a_universe_path()
 {
     // def not : U (+{(), ()} -> F +{(), ()}) ;
-    // def negation : Path(Type, +{(), ()}, +{(), ()}) = equiv(not, not) ;
+    // def negation : Path[.A = Type](+{(), ()}, +{(), ()}) = equiv(not, not) ;
     let mut arena = CoreArena::new();
     let functions = crate::fixture::booleans(&mut arena);
     let not = arena.value_constant(ConstantIndex::from(0_usize));
@@ -4932,9 +4933,9 @@ fn an_equiv_crosses_as_a_universe_path()
 fn a_funext_through_a_named_equivalence_crosses_with_its_unfolding_1335()
 {
     // def not : U (+{(), ()} -> F +{(), ()}) ;
-    // def negation : Path(Type, +{(), ()}, +{(), ()}) = equiv(not, not) ;
-    // def stepped : Path(U (…), ⟨tr(t. U (El t -> F El t), negation, not)⟩, not)
-    //   = funext(⟨tr(…)⟩, not) ;
+    // def negation : Path[.A = Type](+{(), ()}, +{(), ()}) = equiv(not, not) ;
+    // def stepped : Path[.A = U (…)](⟨tr(t. U (El t -> F El t), negation, not)⟩,
+    // not)   = funext(⟨tr(…)⟩, not) ;
     // The function carried along the named path runs through `negation`'s
     // definition; the trace the checker records for each input names that
     // unfolding, or the kernel's replay cannot reach the carried function.
@@ -5292,9 +5293,9 @@ fn an_ascription_solves_the_wildcard_its_type_holds_1979()
     use gandr_core_term::hole::HoleId;
     use gandr_core_term::hole::NominationIndex;
 
-    // def p       : Path(Integer, 0, 0) = here(0) ;
-    // def met     : Path(Integer, 0, 0) = (p : Path(Integer, 0, ?a)) ;
-    // def reached = (here(0) : Path(Integer, 0, ?b)) ;
+    // def p       : Path[.A = Integer](0, 0) = here(0) ;
+    // def met     : Path[.A = Integer](0, 0) = (p : Path[.A = Integer](0, ?a)) ;
+    // def reached = (here(0) : Path[.A = Integer](0, ?b)) ;
     // The value bridge meets `?a` against `p`'s right end. `reached` has no
     // signature to meet its type at, so only reflexivity, meeting `?b`
     // against its point, solves `?b`.
@@ -7172,7 +7173,7 @@ fn each_former_the_kernel_refuses_names_its_issue()
     }
 }
 
-/// `here(⟨force F true⟩)` against `Path(Bool, ⟨force F true⟩, ⟨int.eq(x2,
+/// `here(⟨force F true⟩)` against `Path[.A = Bool](⟨force F true⟩, ⟨int.eq(x2,
 /// x2)⟩)`, where the case `F` reduces at `true` to the native call the right
 /// endpoint writes, checks and crosses: the call over open arguments stands as
 /// a neutral both endpoints reach, run by neither (#2378). The twin whose
@@ -7371,9 +7372,9 @@ fn nominated_holes<const COUNT: usize>() -> [gandr_core_term::hole::HoleId; COUN
 fn an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391()
 {
     // def met : U ((x : Integer) -> (y : Integer)
-    //   -> F Path(Integer, ⟨via ?o0 x y⟩, ⟨via ?o1 x y⟩))
+    //   -> F Path[.A = Integer](⟨via ?o0 x y⟩, ⟨via ?o1 x y⟩))
     //   = thunk λx λy. return here(⟨via ?o2 x y⟩) ;
-    // def turned : … Path(Integer, ⟨via ?o3 x y⟩, ⟨via ?o4 y x⟩) …
+    // def turned : … Path[.A = Integer](⟨via ?o3 x y⟩, ⟨via ?o4 y x⟩) …
     //   = thunk λx λy. return here(⟨via ?o5 x y⟩) ;
     let mut arena = CoreArena::new();
     let ([first, via], candidate) = via_an_omitted_model(&mut arena);
@@ -7442,9 +7443,10 @@ fn an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391()
 fn a_path_type_over_an_omitted_model_converts_once_resolved_2391()
 {
     // def kept : U ((x : Integer) -> (y : Integer)
-    //   -> (p : Path(Integer, ⟨via ?o0 x y⟩, ⟨via ?o1 x y⟩))
-    //   -> F Path(Integer, ⟨via ?o2 x y⟩, ⟨via ?o3 x y⟩)) = thunk λx λy λp. return
-    // p ; def turned : … -> F Path(Integer, ⟨via ?o6 y x⟩, ⟨via ?o7 y x⟩)) … ;
+    //   -> (p : Path[.A = Integer](⟨via ?o0 x y⟩, ⟨via ?o1 x y⟩))
+    //   -> F Path[.A = Integer](⟨via ?o2 x y⟩, ⟨via ?o3 x y⟩)) = thunk λx λy λp.
+    // return p ; def turned : … -> F Path[.A = Integer](⟨via ?o6 y x⟩, ⟨via ?o7
+    // y x⟩)) … ;
     let mut arena = CoreArena::new();
     let ([first, via], candidate) = via_an_omitted_model(&mut arena);
     let integer = arena.value_type_base(BaseType::Integer);

@@ -45,7 +45,7 @@ module Rename where {
   }
   /// The flow from the old type to the new, by its translator.
   @[ checks ]
-  def renamed : Flow(Type, Old, Other) = Flow.into(toOther);
+  def renamed : Flow[.A = Type](Old, Other) = Flow.into(toOther);
   /// One value ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> Other {
@@ -68,7 +68,7 @@ pub module Shapes where {
   }
   /// The flow from the old shapes to the new.
   @[ checks ]
-  def redrawn : Flow(Type, Shape, Figure) = Flow.into(toFigure);
+  def redrawn : Flow[.A = Type](Shape, Figure) = Flow.into(toFigure);
   /// A list of shapes ridden along the flow in the family of lists.
   @[ checks ]
   def all(shapes : List(Shape)) -> List(Figure) {

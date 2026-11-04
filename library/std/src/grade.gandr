@@ -3,7 +3,7 @@
 //
 // An algebra of grades is a model of `Grade`, its order a function over closed
 // data. So `gandr check` decides by conversion whether one grade covers
-// another. A path `Path(Bool, Count.le(x, y), true)` checks exactly when the
+// another. A path `Path[.A = Bool](Count.le(x, y), true)` checks exactly when the
 // order holds, and the kernel replays it.
 //
 // An algebra over the native `Integer` is no such model, since the kernel

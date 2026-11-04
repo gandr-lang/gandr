@@ -24,12 +24,12 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ ││                    │                           │               │
    │ ││                    │                           │               its type does not convert: expected `Vec(a, m)`, found `Vec(a, ?)`
    │ ││                    │                           checked against `-F a`; while checking the argument of this application
-   │ ││                    checked against `-F a`; while checking the body of this function; binds _ : Nat, _ : a, _ : Vec(a, ?), _ : Path(Nat, Succ(?), Succ(m))
+   │ ││                    checked against `-F a`; while checking the body of this function; binds _ : Nat, _ : a, _ : Vec(a, ?), _ : Path[.A = Nat](Succ(?), Succ(m))
 53 │ ││   }
-   │ │└───┘ checked against `-F a`; while checking the body of this function; binds m : Nat, j : Fin(m), _ : Path(Nat, Succ(m), n)
+   │ │└───┘ checked against `-F a`; while checking the body of this function; binds m : Nat, j : Fin(m), _ : Path[.A = Nat](Succ(m), n)
 54 │ │  }
    │ └──┘ checked against `(a : Type, n : Nat, Vec(a, n), Fin(n)) => a`; while checking the body of this function; binds lookup : (b : Nat, Vec(a, b), Fin(b)) => a
    │
-   ├ note: while checking the body under this binding; binds _ : Path(Nat, n, Succ(m))
+   ├ note: while checking the body under this binding; binds _ : Path[.A = Nat](n, Succ(m))
    ├ note: `lookup` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

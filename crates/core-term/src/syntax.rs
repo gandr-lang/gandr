@@ -366,33 +366,34 @@ pub enum Value
         evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
     },
     /// Reflexivity `here(a)`: the canonical element of the element identity
-    /// `Path(A, a, a)`, checked against a path type whose two endpoints convert
-    /// to `a`.
+    /// `Path[.A = A](a, a)`, checked against a path type whose two endpoints
+    /// convert to `a`.
     Here(ValueId),
-    /// Function extensionality `funext(f, g)`: an element of `Path(U (A → F
-    /// B), f, g)` for two closed functions that return the same value at
+    /// Function extensionality `funext(f, g)`: an element of `Path[.A = U (A →
+    /// F B)](f, g)` for two closed functions that return the same value at
     /// every input the domain's coverage reaches. The checker decides it by
     /// computation, and the kernel replays it as a higher evaluation; it is
     /// inert, as a native path certificate is.
     Funext(ValueId, ValueId),
-    /// A universe equivalence `equiv(f, g)`: an element of `Path(U, a, b)` for
-    /// two closed translators `f : U (A → F B)` and `g : U (B → F A)`, `a` and
-    /// `b` the quotes of `A` and `B`, whose round trips return their input at
-    /// every pattern either code's coverage reaches. The checker decides it by
-    /// computation, and the kernel admits it as the native universe path its
-    /// fibre is; it is inert, as a native path certificate is.
+    /// A universe equivalence `equiv(f, g)`: an element of `Path[.A = U](a, b)`
+    /// for two closed translators `f : U (A → F B)` and `g : U (B → F A)`,
+    /// `a` and `b` the quotes of `A` and `B`, whose round trips return
+    /// their input at every pattern either code's coverage reaches. The
+    /// checker decides it by computation, and the kernel admits it as the
+    /// native universe path its fibre is; it is inert, as a native path
+    /// certificate is.
     Equiv(ValueId, ValueId),
     /// Univalence `ua(e)`, written `Univalence(e, f)`: an element of
-    /// `Path(U, a, b)` for a bi-invertible map `e : A ≃ B`, `a` and `b` the
-    /// codes of `A` and `B`, at any two codes of the level-zero value universe.
-    /// The record's laws are its evidence; the kernel checks them as the
-    /// record's fields and decides nothing. `f` is the record's forward map
-    /// `thunk (λx. e.0 x)`, derived by the lowering from `e` so that transport
-    /// along the path applies it; the bridge drops it and the kernel derives
-    /// the same map from the record.
+    /// `Path[.A = U](a, b)` for a bi-invertible map `e : A ≃ B`, `a` and `b`
+    /// the codes of `A` and `B`, at any two codes of the level-zero value
+    /// universe. The record's laws are its evidence; the kernel checks them
+    /// as the record's fields and decides nothing. `f` is the record's
+    /// forward map `thunk (λx. e.0 x)`, derived by the lowering from `e` so
+    /// that transport along the path applies it; the bridge drops it and
+    /// the kernel derives the same map from the record.
     Univalence(ValueId, ValueId),
     /// Univalence at a stated stratum, `ua[n, k](a, b, f, g)`: an element of
-    /// `Path(U, ⌜Tel a⌝, ⌜Tel b⌝)` for two descriptions read as graphical
+    /// `Path[.A = U](⌜Tel a⌝, ⌜Tel b⌝)` for two descriptions read as graphical
     /// species, `Tel` the telescope of their elements at each corolla of the
     /// catalogue, and a record of translators each way keyed by generator. The
     /// checker decides it at the stratum and records the path it derives, and
@@ -411,11 +412,11 @@ pub enum Value
         backward: ValueId,
     },
     /// Unbiased composition at a stated stratum, `compose[n, k](Γ, d)`: an
-    /// element of `Path(A, x₀, xₘ)` for cells `cᵢ : Path(A, xᵢ₋₁, xᵢ)` that
-    /// fill the shape Γ, in vertex order. The checker certifies the stratum,
-    /// reads Γ as a shape of it and checks the cells fill it; the value is
-    /// what `realised`, the lowering's left-nested `then` fold of the cells,
-    /// returns, and evaluation and the kernel read that fold.
+    /// element of `Path[.A = A](x₀, xₘ)` for cells `cᵢ : Path[.A = A](xᵢ₋₁,
+    /// xᵢ)` that fill the shape Γ, in vertex order. The checker certifies
+    /// the stratum, reads Γ as a shape of it and checks the cells fill it;
+    /// the value is what `realised`, the lowering's left-nested `then` fold
+    /// of the cells, returns, and evaluation and the kernel read that fold.
     Compose
     {
         /// The stratum and the shape the composite is made at.
@@ -445,15 +446,16 @@ pub enum Value
         cells: alloc::boxed::Box<[ValueId]>,
     },
     /// A session identity statement between two session codes: `bisim(a, b)`,
-    /// an element of `Path(Type, a, b)` when the protocols are bisimilar, or
-    /// `sim(a, b)`, an element of `Flow(Type, a, b)` when `a` is a Gay–Hole
-    /// subtype of `b`. The checker decides it with the session engine and
-    /// records the relation, and the kernel replays that relation as a native
-    /// session path or session flow; it is inert, as a native certificate is.
-    /// `bisim(a, b, p)` relates two protocols whose payload types differ at
-    /// some pairs the relation meets: `p` is a path between the two types of
-    /// the one such pair, or a tuple of them, one per pair in the order the
-    /// relation meets them, each standing for a native certificate.
+    /// an element of `Path[.A = Type](a, b)` when the protocols are bisimilar,
+    /// or `sim(a, b)`, an element of `Flow[.A = Type](a, b)` when `a` is a
+    /// Gay–Hole subtype of `b`. The checker decides it with the session
+    /// engine and records the relation, and the kernel replays that
+    /// relation as a native session path or session flow; it is inert, as a
+    /// native certificate is. `bisim(a, b, p)` relates two protocols whose
+    /// payload types differ at some pairs the relation meets: `p` is a path
+    /// between the two types of the one such pair, or a tuple of them, one
+    /// per pair in the order the relation meets them, each standing for a
+    /// native certificate.
     SessionRelated
     {
         /// The identity claimed.
@@ -467,18 +469,18 @@ pub enum Value
         /// tuple of paths for several.
         payloads: ValueId,
     },
-    /// Directed reflexivity `stay(a)`: the canonical element of `Flow(A, a,
-    /// a)`.
+    /// Directed reflexivity `stay(a)`: the canonical element of `Flow[.A =
+    /// A](a, a)`.
     Stay(ValueId),
-    /// Directed composition `then(f, g)`: given `f : Flow(A, a, b)` and `g :
-    /// Flow(A, b, c)`, an element of `Flow(A, a, c)`.
+    /// Directed composition `then(f, g)`: given `f : Flow[.A = A](a, b)` and `g
+    /// : Flow[.A = A](b, c)`, an element of `Flow[.A = A](a, c)`.
     Then(ValueId, ValueId),
     /// The componentwise product `flowProduct(p, q)` of two universe flows:
-    /// from `p : Flow(Type, a, a')` and `q : Flow(Type, b, b')` an element of
-    /// `Flow(Type, #{a, b}, #{a', b'})`, the directed twin of
-    /// [`Self::PathProduct`].
+    /// from `p : Flow[.A = Type](a, a')` and `q : Flow[.A = Type](b, b')` an
+    /// element of `Flow[.A = Type](#{a, b}, #{a', b'})`, the directed twin
+    /// of [`Self::PathProduct`].
     FlowProduct(ValueId, ValueId),
-    /// A forward flow `forward(f)`: an element of `Flow(Type, a, b)` for a
+    /// A forward flow `forward(f)`: an element of `Flow[.A = Type](a, b)` for a
     /// closed translator `f : U (A → F B)` between first-order codes, `a` and
     /// `b` the quotes of `A` and `B`, whose output at every pattern of `A`'s
     /// coverage is leaf-natural. No inverse is asked. The checker decides it by
@@ -486,10 +488,11 @@ pub enum Value
     /// inert, as a native certificate is.
     Forward(ValueId),
     /// The arrow's action on two boundary flows, `arrow(d, c)`: an element of
-    /// `Flow(Type, ⌜U (A → F B)⌝, ⌜U (A' → F B')⌝)` from a domain flow `d :
-    /// Flow(Type, A', A)`, which runs against the arrow, and a codomain flow
-    /// `c : Flow(Type, B, B')`, which runs with it. The kernel replays it as
-    /// its function certificate; it is inert, as a native certificate is.
+    /// `Flow[.A = Type](⌜U (A → F B)⌝, ⌜U (A' → F B')⌝)` from a domain flow `d
+    /// : Flow[.A = Type](A', A)`, which runs against the arrow, and a
+    /// codomain flow `c : Flow[.A = Type](B, B')`, which runs with it. The
+    /// kernel replays it as its function certificate; it is inert, as a
+    /// native certificate is.
     FunctionFlow(ValueId, ValueId),
     /// A recorded run `recorded(m₁, …, mₙ)`: one endpoint's complete trace,
     /// each payload a value. It checks against `Run(s)` by replay of its
@@ -790,9 +793,9 @@ pub enum Computation
     },
     /// Transport a value along a native universe path.
     Transport(ValueId, ValueId),
-    /// Transport `tr(P, p, x)` along an element path: given `p : Path(A, a,
-    /// b)` and `x : P[a]`, it returns `P[b]`. The motive `P` is a value type
-    /// under one intuitionistic binder of the carrier `A`.
+    /// Transport `tr(P, p, x)` along an element path: given `p : Path[.A =
+    /// A](a, b)` and `x : P[a]`, it returns `P[b]`. The motive `P` is a
+    /// value type under one intuitionistic binder of the carrier `A`.
     PathTransport
     {
         /// The motive, under one intuitionistic binder: the moving endpoint.
@@ -803,10 +806,10 @@ pub enum Computation
         /// left endpoint.
         value: ValueId,
     },
-    /// Directed transport `ride(P, f, x)` along a flow: given `f : Flow(A, a,
-    /// b)` and `x : P[a]`, it returns `P[b]`. The motive `P` is a value type
-    /// under one intuitionistic binder of the carrier `A`, in which the
-    /// binder occurs only covariantly.
+    /// Directed transport `ride(P, f, x)` along a flow: given `f : Flow[.A =
+    /// A](a, b)` and `x : P[a]`, it returns `P[b]`. The motive `P` is a
+    /// value type under one intuitionistic binder of the carrier `A`, in
+    /// which the binder occurs only covariantly.
     Ride
     {
         /// The motive, under one intuitionistic binder: the moving endpoint.
@@ -819,11 +822,11 @@ pub enum Computation
     /// `decompose(d)`: returns the modular decomposition of the dialogue
     /// `d`'s causal web, a [`Value::Web`].
     Decompose(ValueId),
-    /// Transport over a two-entry telescope: given `p : Path(A, a, b)`, `z₀ :
-    /// B[a]`, `q : Path(B[b], ⟨tr(B, p, z₀)⟩, z₁)` and `x : C[a, z₀]`, it
-    /// returns `C[b, z₁]`. The motive is the dependent arrow `Π (y : A). Π (z
-    /// : B). F C`: the path moves the first entry and `q`, an identity over
-    /// it, the second.
+    /// Transport over a two-entry telescope: given `p : Path[.A = A](a, b)`,
+    /// `z₀ : B[a]`, `q : Path[.A = B[b]](⟨tr(B, p, z₀)⟩, z₁)` and `x : C[a,
+    /// z₀]`, it returns `C[b, z₁]`. The motive is the dependent arrow `Π (y
+    /// : A). Π (z : B). F C`: the path moves the first entry and `q`, an
+    /// identity over it, the second.
     TelescopeTransport
     {
         /// The motive, whose arrows bind the telescope's two entries.
@@ -1080,8 +1083,8 @@ pub enum ValueType
     Record(BTreeMap<FieldLabel, ValueTypeId>),
     /// Certified equivalences between two quoted closed first-order codes.
     PathUniverse(ValueId, ValueId),
-    /// Element identity `Path(A, a, b)`: the type of paths from `a` to `b` in
-    /// the value type `A`. It is a type of its own, never unfolded into
+    /// Element identity `Path[.A = A](a, b)`: the type of paths from `a` to `b`
+    /// in the value type `A`. It is a type of its own, never unfolded into
     /// another former; the evaluator's identity recursion classifies, carrier
     /// by carrier, the type its paths correspond to.
     Path
@@ -1093,9 +1096,9 @@ pub enum ValueType
         /// The right endpoint.
         right: ValueId,
     },
-    /// Directed identity `Flow(A, a, b)`: the type of forward-only flows from
-    /// `a` to `b` in the value type `A`. It has no inverse: a flow transports
-    /// along itself in one direction only.
+    /// Directed identity `Flow[.A = A](a, b)`: the type of forward-only flows
+    /// from `a` to `b` in the value type `A`. It has no inverse: a flow
+    /// transports along itself in one direction only.
     Flow
     {
         /// The carrier the two endpoints inhabit.
@@ -1105,10 +1108,11 @@ pub enum ValueType
         /// The target endpoint.
         target: ValueId,
     },
-    /// Bridge `Bridge(A, a, b)`: the type of bridges from `a` to `b` in the
-    /// value type `A`, formed as a path type is. It grants no reflexivity of
-    /// its own, no transport and no `J`; the evaluator's identity recursion
-    /// in bridge mode classifies, carrier by carrier, what its bridges are.
+    /// Bridge `Bridge[.A = A](a, b)`: the type of bridges from `a` to `b` in
+    /// the value type `A`, formed as a path type is. It grants no
+    /// reflexivity of its own, no transport and no `J`; the evaluator's
+    /// identity recursion in bridge mode classifies, carrier by carrier,
+    /// what its bridges are.
     Bridge
     {
         /// The carrier the two endpoints inhabit.
@@ -1855,8 +1859,8 @@ fn read_free(
 /// - requires: `signatures` holds the data declarations the types name.
 /// - ensures: [`CertificateEquality::Equal`] exactly when every reached pair,
 ///   each value type read at its base when it is staged, agrees in syntax after
-///   path evidence is erased, is `Data(words, [])` against `Path(S, a, b)` with
-///   [`identified_words`] reading the path as `words`, in either order, is
+///   path evidence is erased, is `Data(words, [])` against `Path[.A = S](a, b)`
+///   with [`identified_words`] reading the path as `words`, in either order, is
 ///   `here(p)` against the empty word of such words at a point `p` spells
 ///   ([`empty_word`]), in either order, or is two session types whose
 ///   protocols, each unfolded at its recursion, take the same action at every
@@ -2651,7 +2655,7 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The type of words the path type `Path(carrier, left, right)` reads as.
+/// The type of words the path type `Path[.A = carrier](left, right)` reads as.
 ///
 /// The declaration among `signatures` whose free cells loop at a point both
 /// endpoints spell, over the parameterless data type `carrier` is as written.
@@ -5143,7 +5147,7 @@ mod tests
         let selected = |arena: &mut crate::CoreArena| {
             arena.computation_tuple_projection(pair, gandr_kernel_term::Component::from(0_usize))
         };
-        // `Path(Nat, head(x), x)`.
+        // `Path[.A = Nat](head(x), x)`.
         let called = |arena: &mut crate::CoreArena, head: ComputationId| {
             let call = arena.computation_application(head, point);
             let value = arena.value_returned(call);
@@ -5204,7 +5208,7 @@ mod tests
         let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let forces = arena.computation_force(bound);
         let literal = arena.computation_lambda(forces);
-        // `Path(Nat, head(x), x)`.
+        // `Path[.A = Nat](head(x), x)`.
         let called = |arena: &mut crate::CoreArena, head: ComputationId| {
             let call = arena.computation_application(head, point);
             let value = arena.value_returned(call);

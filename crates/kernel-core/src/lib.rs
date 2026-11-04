@@ -154,7 +154,7 @@
 //! certificate evidence. Transport is computation whose claims the kernel
 //! replays. Identity on elements and the bridge mode share a code fold;
 //! element identity, the bridge, its guarded higher field and higher
-//! evaluation are persisted syntax, as is the directed family: `Flow(A, x,
+//! evaluation are persisted syntax, as is the directed family: `Flow[.A = A](x,
 //! y)`, `stay`, sequential `then` and `ride` under a covariant motive, with
 //! forward, function and session certificates at `Flow_U`. List has a finite
 //! native code and guarded, borrowed inhabitants observed only to a supplied
@@ -187,8 +187,8 @@
 //! # Element identity
 //!
 //! Element identity is persisted kernel syntax over the one identity fold.
-//! [`element_identity`] forms `Path(A, a, b)` at any `A`, the identity at an
-//! open type a neutral fibre; an introduction checks at the fold's native
+//! [`element_identity`] forms `Path[.A = A](a, b)` at any `A`, the identity at
+//! an open type a neutral fibre; an introduction checks at the fold's native
 //! fibre, `here` by the kernel's own conversion, a returned endpoint at the
 //! returner its computation synthesizes, transport at its motive instantiated
 //! by substitution, a higher field through its stated depth, a higher
@@ -198,8 +198,8 @@
 //! checking machine owes every nested check as a goal on its own stack, and
 //! the replay computes transport and related application by the fold's
 //! clauses. Each decision, with its alternatives and reversal, is stated in
-//! that module. The fold's bridge reading is `Bridge(A, a, b)`, formed like
-//! `Path` and checked at the bridge fold's fibre, with no reflexivity,
+//! that module. The fold's bridge reading is `Bridge[.A = A](a, b)`, formed
+//! like `Path` and checked at the bridge fold's fibre, with no reflexivity,
 //! transport or J; its clauses' decision is [`identity_recursion`]'s.
 //!
 //! **A motive that depends on the path is a telescope, carried by its own
@@ -208,7 +208,7 @@
 //! telescope transport `tr₂(M, p, z₀, q, v)` carries, besides the path and the
 //! value, the family element `z₀` at the source and the identity `q` over
 //! the path. The checker reads both entries off the motive, checks `z₀` at
-//! `B[a]`, requires `q` to synthesize `Path(B[b], ⟨tr(y. B, p, z₀)⟩, z₁)`,
+//! `B[a]`, requires `q` to synthesize `Path[.A = B[b]](⟨tr(y. B, p, z₀)⟩, z₁)`,
 //! refusing it by name (`IdentityError::NotOver`) otherwise, checks `v` at
 //! `C[a, z₀]` and returns `C[b, z₁]`, each instance by iterated single
 //! substitution, outer binder first; a motive of any other shape is a
@@ -216,9 +216,9 @@
 //! two clauses: `here` along both identities returns the value, and `here(c)`
 //! along the path transports the value along `q` in the fibre `z. C[c, z]`;
 //! everything else sticks. `J` is not a node: it is this transport in the
-//! singleton, `tr₂(Π y. Π q : Path(A, a, y). F C, p, here(a), here(p), d)`,
-//! whose identity over the path checks because the singleton clause carries
-//! `here(a)` to `p`. The alternatives were widening the one-binder
+//! singleton, `tr₂(Π y. Π q : Path[.A = A](a, y). F C, p, here(a), here(p),
+//! d)`, whose identity over the path checks because the singleton clause
+//! carries `here(a)` to `p`. The alternatives were widening the one-binder
 //! transport's motive to a telescope, which would change what a persisted
 //! node means, and a primitive `J`, which the identity fold does not need.
 //! Reversal: once Σ is kernel syntax, the telescope transport is the
@@ -227,8 +227,8 @@
 //! # The trusted equality reflexivity reads
 //!
 //! Type conversion stays the structural comparison above. Term equality the
-//! kernel decides with no engine's trace, `here(c)` against `Path(A, a, b)`
-//! first of all, is `conv::convert_values`: α-equality, then
+//! kernel decides with no engine's trace, `here(c)` against `Path[.A = A](a,
+//! b)` first of all, is `conv::convert_values`: α-equality, then
 //! [`replay::convert`], the replay's own loop run with no trace. That loop
 //! fires only the rules the shapes force — weak head reduction, transport
 //! along a stuck composite read along each of its paths, forcing, the η laws,
@@ -241,10 +241,10 @@
 //! **Choice.** One conversion, the replay's, so the kernel admits every
 //! reflexivity the engine's normalizer admits by those laws: the core admits
 //! ⇒ the kernel admits. **Alternatives.** Structural equality alone, which
-//! refuses `here(f)` at `Path(_, f to x. return x, f)` though the core admits
-//! it; a normalizing equality of the kernel's own, a second trusted conversion
-//! beside the replay's. **Reversal.** Endpoints related only through a
-//! constant's body take an engine trace through [`replay()`] rather than a δ
+//! refuses `here(f)` at `Path[.A = _](f to x. return x, f)` though the core
+//! admits it; a normalizing equality of the kernel's own, a second trusted
+//! conversion beside the replay's. **Reversal.** Endpoints related only through
+//! a constant's body take an engine trace through [`replay()`] rather than a δ
 //! rule in the forced loop, as reflexivity's do. The witness is
 //! `element_identity::tests::reflexivity_converts_its_endpoints_by_the_laws_of_bind`.
 //!
@@ -348,10 +348,10 @@
 //! number sends `Loop(Unloop(x))` to `turn(unturn(f(x)))`, which no
 //! conversion reduces to `f(x)` on a variable. A definition may name one law
 //! per rule (kernel-term's `Declaration::laws`, the additive declaration kind
-//! `0x09`): a declaration whose type is `Path(C, a, b)` behind one parameter
-//! per pattern variable. Where the δ-free test fails for rule `i`, law `i` is
-//! instantiated at the rule's variables as the fold reads them — `F(x)`
-//! returned where a variable stands at the folded type, the variable
+//! `0x09`): a declaration whose type is `Path[.A = C](a, b)` behind one
+//! parameter per pattern variable. Where the δ-free test fails for rule `i`,
+//! law `i` is instantiated at the rule's variables as the fold reads them —
+//! `F(x)` returned where a variable stands at the folded type, the variable
 //! elsewhere — and its endpoints must convert with `F(l)` and `F(r)`, each
 //! read with its runs in place or bound ahead as elaboration binds them
 //! ([`mod@check`]'s respect module). Nothing is searched and no trace is
@@ -373,8 +373,8 @@
 //! in the surface corpus.
 //!
 //! **Two terms of a data type are apart when their normal forms differ at a
-//! constructor.** A case of no branch over a scrutinee of `Path(A, a, b)`, `A`
-//! a data type, answers any motive when `a` and `b` are apart
+//! constructor.** A case of no branch over a scrutinee of `Path[.A = A](a, b)`,
+//! `A` a data type, answers any motive when `a` and `b` are apart
 //! ([`presented`] § Apartness): the kernel joins every critical pair of `A`'s
 //! rules itself, reads each endpoint where `A` stands — a constructor of `A`
 //! a node, a reference to a definition its body, anything else a leaf —

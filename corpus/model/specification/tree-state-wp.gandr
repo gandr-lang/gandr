@@ -49,11 +49,11 @@ pub def rec wp(
 pub def incrSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s + 1) }
 
 /// The counter ends at one.
-pub def isOne(_x : Unit, s : Integer) -> Type { return Path(Integer, s, 1) }
+pub def isOne(_x : Unit, s : Integer) -> Type { return Path(s, 1) }
 
 /// The increment paired with evidence that its transformer is below its
 /// specification at `isOne`: the second entry's type reads the program, and
-/// both sides unfold to `Path(Integer, s + 1, 1)`.
+/// both sides unfold to `Path[.A = Integer](s + 1, 1)`.
 def incrSpecified : #{
   m : Prog(Either(StateOp, Void), Unit),
   meets : (s : Integer, incrSpec(isOne, s)) => wp(m, isOne, s)

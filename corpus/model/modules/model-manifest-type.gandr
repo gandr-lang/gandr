@@ -36,7 +36,7 @@ def toRight(c : (Unit + Unit) + Unit) -> Unit + (Unit + Unit) {
 }
 
 /// The two nestings are one type, the two maps inverse by computation.
-def nestings : Path(Type, Unit + (Unit + Unit), (Unit + Unit) + Unit) = equiv(toLeft, toRight);
+def nestings : Path[.A = Type](Unit + (Unit + Unit), (Unit + Unit) + Unit) = equiv(toLeft, toRight);
 
 /// The counters whose carrier is `x`.
 def countersOn(x : Type) -> Type {
@@ -45,8 +45,7 @@ def countersOn(x : Type) -> Type {
 
 /// The counters over either nesting are one type: two sharings that differ
 /// by an equivalence are one.
-def oneSharing() -> Path(
-  Type,
+def oneSharing() -> Path[.A = Type](
   Model(Counter) with sort C = Unit + (Unit + Unit),
   Model(Counter) with sort C = (Unit + Unit) + Unit
 ) { Path.ap(countersOn, nestings) }

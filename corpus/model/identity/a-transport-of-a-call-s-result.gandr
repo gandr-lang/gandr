@@ -16,20 +16,30 @@ def handedBack(B : Type, b : B) -> B {
 }
 
 /// Two transports in a family of loops, their values one unfolding apart.
-def transportInALoopFamily(B : Type, x : B, y : B, p : Path(B, x, y), v : Path(B, x, x)) -> Path(
-  Path(B, y, y),
-  Path.walk(fun (z) { Path(B, z, z) }, p, v),
-  Path.walk(fun (z) { Path(B, z, z) }, p, handedBack(Path(B, x, x), v))
+def transportInALoopFamily(
+  B : Type,
+  x : B,
+  y : B,
+  p : Path(x, y),
+  v : Path(x, x)
+) -> Path[.A = Path[.A = B](y, y)](
+  Path.walk(fun (z) { type(Path[.A = B](z, z)) }, p, v),
+  Path.walk(fun (z) { type(Path[.A = B](z, z)) }, p, handedBack(Path(x, x), v))
 ) {
-  Path.here(Path.walk(fun (z) { Path(B, z, z) }, p, v))
+  Path.here(Path.walk(fun (z) { type(Path[.A = B](z, z)) }, p, v))
 }
 
 /// Two transports in a family of paths to a fixed point, their values one
 /// unfolding apart.
-def transportInAFreeFamily(B : Type, x : B, y : B, p : Path(B, x, y), v : Path(B, x, x)) -> Path(
-  Path(B, y, x),
-  Path.walk(fun (z) { Path(B, z, x) }, p, v),
-  Path.walk(fun (z) { Path(B, z, x) }, p, handedBack(Path(B, x, x), v))
+def transportInAFreeFamily(
+  B : Type,
+  x : B,
+  y : B,
+  p : Path(x, y),
+  v : Path(x, x)
+) -> Path[.A = Path[.A = B](y, x)](
+  Path.walk(fun (z) { type(Path[.A = B](z, x)) }, p, v),
+  Path.walk(fun (z) { type(Path[.A = B](z, x)) }, p, handedBack(Path(x, x), v))
 ) {
-  Path.here(Path.walk(fun (z) { Path(B, z, x) }, p, v))
+  Path.here(Path.walk(fun (z) { type(Path[.A = B](z, x)) }, p, v))
 }

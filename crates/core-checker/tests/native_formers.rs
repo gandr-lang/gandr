@@ -746,13 +746,13 @@ fn a_loop_is_a_word_at_its_path_in_both_checkers()
             .into(),
         OriginToken::from(1_usize),
     );
-    // `loop : Path(S, base, base)`, the word of its one letter.
+    // `loop : Path[.A = S](base, base)`, the word of its one letter.
     let empty = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![]);
     let letter = arena.value_constructor(own, ConstructorTag::from(1_usize), vec![empty]);
     // Read back at the words' own type.
     let named = arena.value_constant(ConstantIndex::from(2_usize));
     // `fix f. λp. case p { here ⇒ return here; g ∷ q ⇒ r ← f(q); return
-    // g ∷ r; … }` at `Path(S, base, base) → F Path(S, base, base)`.
+    // g ∷ r; … }` at `Path[.A = S](base, base) → F Path[.A = S](base, base)`.
     let motive = arena.comp_type_returner(path);
     let nil = arena.computation_return(empty);
     let mut arm = |tag: usize| {
@@ -854,7 +854,7 @@ struct OneLoop
 
 /// The one-point sort at constant 0, the words of one loop at its point at
 /// constant 1, and `loop` at constant 2, the word of its one letter at
-/// `Path(S, Base, Base)`.
+/// `Path[.A = S](Base, Base)`.
 ///
 /// # Specification
 /// trivial.
@@ -956,7 +956,7 @@ fn a_case_over_the_circle_owes_its_loop_377()
         let constant = ConstantIndex::from(position.saturating_add(3));
         declarations.push(definition(constant, declared, body));
     }
-    // The family `x ↦ Unit → F (Path(S, x, x))`, dependent and no returner,
+    // The family `x ↦ Unit → F (Path[.A = S](x, x))`, dependent and no returner,
     // owed at the loop and refused with an arm for the loop alike.
     let unit = arena.value_type_unit();
     let behind = arena.comp_type_arrow(unit, looped);
@@ -1104,12 +1104,12 @@ fn base(
 #[derive(Clone, Copy, Debug)]
 enum Nested
 {
-    /// `F Path(S, a, a)`.
+    /// `F Path[.A = S](a, a)`.
     Looped,
-    /// `F Path(S, Base, a)`.
+    /// `F Path[.A = S](Base, a)`.
     Joined,
-    /// `F U (Path(S, a, a) → F Path(S, a, a))`: a fibre that reads `a` and
-    /// is no path type over the sort.
+    /// `F U (Path[.A = S](a, a) → F Path[.A = S](a, a))`: a fibre that reads
+    /// `a` and is no path type over the sort.
     Endomaps,
 }
 
@@ -1191,7 +1191,7 @@ fn a_nested_loop_obligation_owes_its_square_off_a_set_464()
 {
     let mut arena = CoreArena::new();
     let (mut declarations, circle) = one_loop(&mut arena);
-    // `U (Path(S, a, a) → F Path(S, a, a))`, answered by the identity at
+    // `U (Path[.A = S](a, a) → F Path[.A = S](a, a))`, answered by the identity at
     // the point.
     let p = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let identity = arena.computation_return(p);
@@ -1226,7 +1226,7 @@ fn a_path_whose_endpoints_compute_the_point_is_its_words_485()
     let returner = arena.comp_type_returner(circle.carrier);
     let (kept_type, kept) = case_over(&mut arena, (circle.carrier, returner), circle.point, &[]);
     declarations.push(definition(ConstantIndex::from(3_usize), kept_type, kept));
-    // `thunk (return ε)` at `U F Path(S, ⟨kept(Base)⟩, ⟨kept(Base)⟩)`: the
+    // `thunk (return ε)` at `U F Path[.A = S](⟨kept(Base)⟩, ⟨kept(Base)⟩)`: the
     // empty word, reflexivity at the point as the surface lowers it,
     // synthesises the words and crosses to the path.
     let function = arena.value_constant(ConstantIndex::from(3_usize));
@@ -1338,9 +1338,9 @@ fn a_loop_obligation_unfolds_the_arm_s_definitions()
     let looped = arena.comp_type_returner(looped);
     let joined = arena.value_type_path(circle.carrier, circle.point, x);
     let joined = arena.comp_type_returner(joined);
-    // `λx. case x { Base ⇒ force stay }` at `Path(S, x, x)`, whose answer
+    // `λx. case x { Base ⇒ force stay }` at `Path[.A = S](x, x)`, whose answer
     // conjugation by the loop fixes once `stay` unfolds, and at
-    // `Path(S, Base, x)`, which the loop carries to the loop however far
+    // `Path[.A = S](Base, x)`, which the loop carries to the loop however far
     // `stay` unfolds.
     for (position, motive) in [(4_usize, looped), (5_usize, joined)] {
         let named = arena.value_constant(ConstantIndex::from(3_usize));
@@ -1556,7 +1556,7 @@ fn an_absurd_case_rests_on_apart_endpoints_in_both_checkers()
     let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
     let empty = arena.value_type_data(ConstantIndex::from(1_usize), vec![]);
     let base = word(&mut arena, &[]);
-    // `λe. case e {}` at `Path(Circle, left, right) → F Empty`, its type,
+    // `λe. case e {}` at `Path[.A = Circle](left, right) → F Empty`, its type,
     // its lambda and its case.
     let absurd = |arena: &mut CoreArena, left: ValueId, right: ValueId| {
         let path = arena.value_type_path(own, left, right);
@@ -1588,7 +1588,7 @@ fn an_absurd_case_rests_on_apart_endpoints_in_both_checkers()
     let cancelled = word(&mut arena, &[looped, unlooped]);
     let formed = absurd(&mut arena, cancelled, base);
     let (agree, agree_type, agree_case) = thunked(&mut arena, formed);
-    // `λx. λe. case e {}` at `(x : Circle) → Path(Circle, Loop(x), Base)
+    // `λx. λe. case e {}` at `(x : Circle) → Path[.A = Circle](Loop(x), Base)
     // → F Empty`: an endpoint holds a variable of the circle.
     let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let open_word = arena.value_constructor(own, looped, vec![variable]);
@@ -2705,7 +2705,7 @@ fn an_arm_is_refined_by_its_index_equation_in_both_checkers_3483()
     let (boxed, indexed) = (ConstantIndex::from(1_usize), ConstantIndex::from(2_usize));
     let yes = arena.value_constructor(code, yes_tag, vec![]);
     // `I : T -> Type { Made : I(Yes); }`: an arm on `Made` binds the equation
-    // `Path(T, Yes, t)` past its fields.
+    // `Path[.A = T](Yes, t)` past its fields.
     let family = Declaration::data(
         indexed,
         DataSignature::new(vec![], vec![vec![]], kind)
@@ -3180,7 +3180,7 @@ fn a_refusal_inside_a_refined_arm_names_the_written_term_3694()
     );
 }
 
-/// `same(u : T, v : B(u), w : Unit) -> Path(B(u), v, v)`, its `Yes` arm
+/// `same(u : T, v : B(u), w : Unit) -> Path[.A = B(u)](v, v)`, its `Yes` arm
 /// `_ ← return unit; return here(v)` and its `No` arm `return here(v)`: the
 /// case reads `v` at each arm through a copy, and the typed run reads each
 /// written term of the `Yes` arm back in the arm's written context.
@@ -3205,7 +3205,7 @@ fn a_refined_arm_types_its_written_terms_in_their_own_context_3483()
     let same_type = arena.comp_type_pi(box_at_u, same_type);
     let same_type = arena.comp_type_pi(code, same_type);
     let same_type = arena.value_type_thunk(same_type);
-    // The motive under the scrutinee's binder: `Path(B(s), v, v)`.
+    // The motive under the scrutinee's binder: `Path[.A = B(s)](v, v)`.
     let scrutinised = variable(&mut arena, 0);
     let box_scrutinised = arena.value_type_data(boxed, vec![scrutinised]);
     let v_motive = variable(&mut arena, 2);
@@ -3297,8 +3297,8 @@ fn three(arena: &mut CoreArena) -> ValueId
     ))
 }
 
-/// `def name : U (F Path(Integer, 3, 3)) = thunk { bind(return bound, return
-/// here(x)) }`, the reflexivity reading the bind's binder.
+/// `def name : U (F Path[.A = Integer](3, 3)) = thunk { bind(return bound,
+/// return here(x)) }`, the reflexivity reading the bind's binder.
 ///
 /// # Specification
 /// trivial.
@@ -3326,7 +3326,7 @@ fn reflexivity_under_a_bind(
 fn a_returned_value_defines_the_binder_it_binds()
 {
     let mut arena = CoreArena::new();
-    // `let x = 3; return here(x)` at `Path(Integer, 3, 3)`: the type reads the
+    // `let x = 3; return here(x)` at `Path[.A = Integer](3, 3)`: the type reads the
     // binder, which stands for the value it binds.
     let value = three(&mut arena);
     let declaration = reflexivity_under_a_bind(&mut arena, ConstantIndex::from(0_usize), value);

@@ -1,29 +1,29 @@
 //! Cong fusion: a chain of congs whose functions compose to the identity
 //! returns the path it starts from.
 //!
-//! `cong(f, p)` is derived: the transport `tr(y. Path(B, s, ⟨f y⟩), p,
-//! here(s))` of reflexivity at the start `s` along `p : Path(A, a, b)`, in
+//! `cong(f, p)` is derived: the transport `tr(y. Path[.A = B](s, ⟨f y⟩), p,
+//! here(s))` of reflexivity at the start `s` along `p : Path[.A = A](a, b)`, in
 //! the family whose right endpoint moves by `f`. Along a stuck path it is
 //! stuck, and so is a cong of it: `let q = cong(f, p); cong(g, q)` stands as
-//! the transport along `p` with the bind into `q. tr(y. Path(C, t, ⟨g y⟩), q,
-//! here(t))` on its spine. Two laws of the path type relate such a chain to
+//! the transport along `p` with the bind into `q. tr(y. Path[.A = C](t, ⟨g y⟩),
+//! q, here(t))` on its spine. Two laws of the path type relate such a chain to
 //! its path:
 //!
 //! - **functoriality**: `cong(g, cong(f, p)) = cong(g ∘ f, p)`, transport along
 //!   `cong(f, p)` being transport along `p` in the family pulled back along
 //!   `f`;
 //! - **identity**: `cong(id, p) = p`, the singleton row of transport — `tr(y.
-//!   Path(D, l, y), p, here(l))` returns `p` — at a family whose right endpoint
-//!   is its binder once it computes.
+//!   Path[.A = D](l, y), p, here(l))` returns `p` — at a family whose right
+//!   endpoint is its binder once it computes.
 //!
 //! [`fused`] decides the composite of the two that conversion needs: a chain
 //! whose functions compose to the identity returns its path.
 //!
 //! # The reading
 //!
-//! A **link** is a transport of a reflexivity in a family `y. Path(D, l, r)`
-//! whose carrier `D` and left endpoint `l` never read `y`. A **cong chain** is
-//! a link stuck on a path `p`, followed on the spine by binds whose
+//! A **link** is a transport of a reflexivity in a family `y. Path[.A = D](l,
+//! r)` whose carrier `D` and left endpoint `l` never read `y`. A **cong chain**
+//! is a link stuck on a path `p`, followed on the spine by binds whose
 //! continuations are each one link along the path the bind binds, its family
 //! reading no other index the bind opened. The chain **fuses** when its
 //! composite right endpoint `rₙ[y := … r₁[y := y]]`, read at a variable `y` no
@@ -153,15 +153,15 @@ enum Family
 ///   `fresh` is a binder level no side of the goal mentions.
 /// - ensures: [`Fusion::Fused`] with a value standing for `p` exactly when
 ///   `computation` is a neutral whose spine is a path transport of a
-///   reflexivity stuck on `p`, in a family `y. Path(D, l, r₁)` with `D` and `l`
-///   closed over `y`, followed by binds each of whose continuations is one such
-///   transport along the index the bind opens, its family reading no other
-///   index the continuation opened — and the composite `rₙ[y := … r₁[y := y]]`,
-///   evaluated at a rigid variable at `fresh` under [`Definitions::manifest`]
-///   and taken to its presented normal form, is that variable with an empty
-///   spine; [`Fusion::Exhausted`] when the reading ran out of `fuel` first;
-///   [`Fusion::Kept`] otherwise. Each evaluation step and each node the normal
-///   form compared or copied costs one unit of `fuel`.
+///   reflexivity stuck on `p`, in a family `y. Path[.A = D](l, r₁)` with `D`
+///   and `l` closed over `y`, followed by binds each of whose continuations is
+///   one such transport along the index the bind opens, its family reading no
+///   other index the continuation opened — and the composite `rₙ[y := … r₁[y :=
+///   y]]`, evaluated at a rigid variable at `fresh` under
+///   [`Definitions::manifest`] and taken to its presented normal form, is that
+///   variable with an empty spine; [`Fusion::Exhausted`] when the reading ran
+///   out of `fuel` first; [`Fusion::Kept`] otherwise. Each evaluation step and
+///   each node the normal form compared or copied costs one unit of `fuel`.
 /// - provides: cong fusion to the identity, the forced step conversion takes
 ///   before it plans a pair.
 /// - fails: [`ConversionFault::Domain`] for a node or closure the arena does

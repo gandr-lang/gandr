@@ -88,12 +88,12 @@
 //!
 //! `Value::Univalence(e)`, the surface's `ua(e)`, is the second route to an
 //! identity between two codes of `Type`, beside the decided certificate. It is
-//! admitted on evidence, at any two codes: checked at `Path(Type, a, b)`, the
-//! record `e` checks at the bi-invertible record over the types `a` and `b`
+//! admitted on evidence, at any two codes: checked at `Path[.A = Type](a, b)`,
+//! the record `e` checks at the bi-invertible record over the types `a` and `b`
 //! denote (`univalence_record`: `T` for `⌜T⌝`, `El c` for any other code);
 //! anywhere else `e` synthesises a dependent pair whose first factor is a map
-//! `U (A → F B)`, the identity is `Path(Type, a, b)` at the codes of `A` and
-//! `B` (`univalence_reading`), its formation checks both codes at `Type`,
+//! `U (A → F B)`, the identity is `Path[.A = Type](a, b)` at the codes of `A`
+//! and `B` (`univalence_reading`), its formation checks both codes at `Type`,
 //! and `e` checks at the record. The record's section and retraction are
 //! fields, so a law that does not hold is a field that does not check. The
 //! node carries the record alone: its type names the identity, so a
@@ -104,7 +104,7 @@
 //! **Choice.** The record's laws are the evidence, not a decision.
 //! **Alternative.** Extending the decided enumeration to every code was
 //! declined: finite constructor coverage exists only on the first-order
-//! stratum, and a code like `Path(Circle, base, base)` has none.
+//! stratum, and a code like `Path[.A = Circle](base, base)` has none.
 //! **Reversal.** Univalence proved as a theorem of the kernel (#520), after
 //! which `ua` is a definition and this rule a derived one.
 //!
@@ -533,9 +533,10 @@ pub fn beta(
 }
 
 /// The two codes of `path_type` when it is an identity between codes of the
-/// level-zero value universe, under either reading: `Path(Type, a, b)` or the
-/// native `Path_U(a, b)`. These are the identities `ua(e)` checks against, so a
-/// univalence pays a bisimilarity's payload pair, whose obligation is native.
+/// level-zero value universe, under either reading: `Path[.A = Type](a, b)` or
+/// the native `Path_U(a, b)`. These are the identities `ua(e)` checks against,
+/// so a univalence pays a bisimilarity's payload pair, whose obligation is
+/// native.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -549,9 +550,9 @@ pub fn beta(
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a record literal checks against `Path(Type, ⌜List Bool⌝,
-///   ⌜List Bool⌝)` and against `Path_U` at the same codes, and an identity at
-///   the booleans is refused by name.
+/// - hypothesis: L3 — a record literal checks against `Path[.A = Type](⌜List
+///   Bool⌝, ⌜List Bool⌝)` and against `Path_U` at the same codes, and an
+///   identity at the booleans is refused by name.
 /// - witness: `path_universe::tests::univalence_is_admitted_on_its_record`
 #[spec(ensures: |ret| match ret {
     Ok((left, right)) => match arena.value_type(path_type) {
@@ -594,12 +595,12 @@ pub(crate) fn identity_codes(
 ///
 /// # Specification
 /// - requires: nothing; formation of `path_type` is the caller's.
-/// - ensures: for `path_type = Path(Type, a, b)` at the level-zero value
+/// - ensures: for `path_type = Path[.A = Type](a, b)` at the level-zero value
 ///   universe, or `Path_U(a, b)`, the record over `A` and `B`, where a quoted
 ///   code `⌜T⌝` denotes `T` and any other code `c` the decode `El c`; `sect` is
-///   `(x : A) → F Path(A, g(to(x)), x)` and `retr` is `(y : B) → F Path(B,
-///   to(h(y)), y)`, each application the value its computation returns and each
-///   type shifted past the binders it stands under.
+///   `(x : A) → F Path[.A = A](g(to(x)), x)` and `retr` is `(y : B) → F Path[.A
+///   = B]( to(h(y)), y)`, each application the value its computation returns
+///   and each type shifted past the binders it stands under.
 /// - provides: the one statement of the laws the kernel admits univalence on;
 ///   the checker's record is the same tree, so the bridge passes it unchanged.
 /// - fails: [`PathError::ExpectedPath`] naming `path_type` when it is no
@@ -660,9 +661,9 @@ pub(crate) fn univalence_record(
 /// # Specification
 /// - requires: nothing; `classifier` is the type the record synthesised.
 /// - ensures: for `classifier` a dependent pair whose first factor is the thunk
-///   `U (A → F B)` of a non-dependent arrow, the identity `Path(Type, a, b)` at
-///   the level-zero value universe between the codes of `A` and `B` — `c` for
-///   `El c`, the quote of any other type — and the record type
+///   `U (A → F B)` of a non-dependent arrow, the identity `Path[.A = Type](a,
+///   b)` at the level-zero value universe between the codes of `A` and `B` —
+///   `c` for `El c`, the quote of any other type — and the record type
 ///   [`univalence_record`] states at it, in that order.
 /// - provides: the synthesising reading of `ua(e)`: the record's own type names
 ///   the two codes, so the node carries nothing else.
@@ -674,10 +675,10 @@ pub(crate) fn univalence_record(
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a record of `Path(Circle, base, base) ≃ Int` names both
-///   codes as quotes and a record over two bound codes names the variables;
-///   reading the codes off the wrong side of the map, or quoting a decode,
-///   synthesises an identity the checker's does not convert with.
+/// - hypothesis: L3 — a record of `Path[.A = Circle](base, base) ≃ Int` names
+///   both codes as quotes and a record over two bound codes names the
+///   variables; reading the codes off the wrong side of the map, or quoting a
+///   decode, synthesises an identity the checker's does not convert with.
 /// - witness: `path_universe::tests::univalence_is_admitted_on_its_record`
 #[spec(ensures: |ret| match ret {
     Ok((path_type, record)) => matches!(arena.value_type(path_type), Some(&ValueType::Path { .. })) && matches!(arena.value_type(record), Some(&ValueType::Sigma { .. })),
@@ -793,7 +794,7 @@ enum Trip
     Retraction,
 }
 
-/// The law `U ((x : C) → F Path(C, outer(inner(x)), x))` over `carrier`,
+/// The law `U ((x : C) → F Path[.A = C](outer(inner(x)), x))` over `carrier`,
 /// standing past the forward map and the inverse.
 ///
 /// # Specification

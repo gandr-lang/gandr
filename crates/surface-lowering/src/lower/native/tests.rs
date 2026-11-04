@@ -439,7 +439,7 @@ fn an_annotation_at_a_statement_is_of_the_wrong_sort()
 #[test]
 fn a_constructor_is_no_value_inside_its_own_family()
 {
-    let source = "data T : Type where { | A : T | B : (x : Path(T, A, A)) --> T }\n";
+    let source = "data T : Type where { | A : T | B : (x : Path[.A = T](A, A)) --> T }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let start = source.find("A, A").expect("the endpoint is written");
@@ -1165,7 +1165,7 @@ fn a_descent_inside_a_record_type_stages_its_match_s_parameter_3087()
     let mut arena = CoreArena::new();
     let source = alloc::format!(
         "{NAT}def rec noPath(p : Nat, v : Nat, v1 : Nat) -> Type {{ match p {{ Zero => return Unit, Succ(rest) => return type(#{{ inner : noPath[<](rest, v, v1) }}) }} }}\n\
-         def rec twoParams(p : Nat, v1 : Nat) -> Type {{ match p {{ Zero => return Path(Nat, v1, v1), Succ(rest) => return type(#{{ inner : twoParams[<](rest, v1) }}) }} }}\n"
+         def rec twoParams(p : Nat, v1 : Nat) -> Type {{ match p {{ Zero => return type(Path[.A = Nat](v1, v1)), Succ(rest) => return type(#{{ inner : twoParams[<](rest, v1) }}) }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     for name in ["noPath", "twoParams"].map(SurfaceName::from) {
@@ -4059,7 +4059,7 @@ fn a_match_of_no_arms_switches_on_empty_data_and_on_a_path()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "data Empty : Type where {{}}\ndata Nada(a : Type) : Type where {{}}\n{COLOR}def absurd(v : Empty) -> -F Integer {{ match v {{}} }}\ndef stated(v : Empty) -> -F Integer {{ match v -> -F Integer {{}} }}\ndef apart(e : Path(Color, Red, Blue)) -> -F Empty {{ match e {{}} }}\ndef paren(v : (Empty)) -> -F Integer {{ match v {{}} }}\ndef wrapped(e : (Path(Color, Red, Blue))) -> -F Empty {{ match e {{}} }}\ndef applied(v : Nada(Integer)) -> -F Integer {{ match v {{}} }}\n"
+        "data Empty : Type where {{}}\ndata Nada(a : Type) : Type where {{}}\n{COLOR}def absurd(v : Empty) -> -F Integer {{ match v {{}} }}\ndef stated(v : Empty) -> -F Integer {{ match v -> -F Integer {{}} }}\ndef apart(e : Path[.A = Color](Red, Blue)) -> -F Empty {{ match e {{}} }}\ndef paren(v : (Empty)) -> -F Integer {{ match v {{}} }}\ndef wrapped(e : (Path[.A = Color](Red, Blue))) -> -F Empty {{ match e {{}} }}\ndef applied(v : Nada(Integer)) -> -F Integer {{ match v {{}} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     for name in ["absurd", "stated", "apart", "paren", "wrapped", "applied"] {
@@ -4188,13 +4188,13 @@ fn a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815()
             "thunk { fun (a) { fun (b) { match a {} } } }",
         ),
         (
-            "(a : One) => Path(One, a, a)",
-            "+U ((a : One) -> -F Path(One, a, a))",
+            "(a : One) => Path[.A = One](a, a)",
+            "+U ((a : One) -> -F Path[.A = One](a, a))",
             "thunk { fun (a) { match a { Only => Path.here(Only) } } }",
         ),
         (
-            "(a : One, Integer) => Path(One, a, a)",
-            "+U ((a : One) -> Integer -> -F Path(One, a, a))",
+            "(a : One, Integer) => Path[.A = One](a, a)",
+            "+U ((a : One) -> Integer -> -F Path[.A = One](a, a))",
             "thunk { fun (x) { fun (n) { match x { Only => Path.here(Only) } } } }",
         ),
     ] {
@@ -4595,9 +4595,9 @@ fn a_pattern_at_a_dependent_record_splits_it_under_its_motive()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def eta(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Path(#{n : Integer, v : Path(Integer, n, n)}, p, p) { match p { #{m, w} => return Path.here(#{m, w}) } }\n",
-            "def rebuilt(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F #{n : Integer, v : Path(Integer, n, n)} { match p { #{.v = w, .n = m} => return #{m, w} } }\n",
-            "def last(t : #{a : Integer, b : Integer, c : Path(Integer, a, a)}) -> -F Path(Integer, t.a, t.a) { match t { #{.c = z} => return z } }\n",
+            "def eta(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Path[.A = #{n : Integer, v : Path[.A = Integer](n, n)}](p, p) { match p { #{m, w} => return Path.here(#{m, w}) } }\n",
+            "def rebuilt(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> -F #{n : Integer, v : Path[.A = Integer](n, n)} { match p { #{.v = w, .n = m} => return #{m, w} } }\n",
+            "def last(t : #{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> -F Path[.A = Integer](t.a, t.a) { match t { #{.c = z} => return z } }\n",
         )),
         &mut arena,
     );
@@ -4644,7 +4644,7 @@ fn a_call_as_the_scrutinee_splits_the_record_it_returns_1141()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(concat!(
-            "def tagged(n : Integer) -> -F #{m : Integer, v : Path(Integer, m, m)} { return #{n, Path.here(n)} }\n",
+            "def tagged(n : Integer) -> -F #{m : Integer, v : Path[.A = Integer](m, m)} { return #{n, Path.here(n)} }\n",
             "def tag() -> -F Integer { match tagged(5) { #{m, w} => return m } }\n",
             "def bound() -> -F Integer { let t = tagged(5); match t { #{m, w} => return m } }\n",
         )),
@@ -4691,7 +4691,7 @@ fn a_case_over_a_variable_answers_its_motive_at_each_constructor()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def next(n : Nat) -> -F Nat {{ return Succ(n) }}\ndef rec still(n : Nat) -> -F Path(Nat, n, n) {{ match n {{ Zero => return Path.here(n), Succ(p) => {{ let q = still[<](p); become Path.ap(next, q) }} }} }}\ndef kept(n : Nat, m : Nat) -> -F Path(Nat, m, m) {{ match n {{ Zero => return Path.here(m), Succ(p) => return Path.here(m) }} }}\ndata Circle : Type where {{ | Base : Circle | loop : Base <-> Base }}\ndef loopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {{ return loop ∷ p }}\ndef unloopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {{ return back(loop) ∷ p }}\ndef rec looped(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p, p) {{ match p {{ here => return Path.here(p), loop ∷ q => {{ let r = looped[<](q); become Path.ap(loopOn, r) }}, back(loop) ∷ q => {{ let r = looped[<](q); become Path.ap(unloopOn, r) }} }} }}\n"
+        "{NAT}def next(n : Nat) -> -F Nat {{ return Succ(n) }}\ndef rec still(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ Zero => return Path.here(n), Succ(p) => {{ let q = still[<](p); become Path.ap(next, q) }} }} }}\ndef kept(n : Nat, m : Nat) -> -F Path[.A = Nat](m, m) {{ match n {{ Zero => return Path.here(m), Succ(p) => return Path.here(m) }} }}\ndata Circle : Type where {{ | Base : Circle | loop : Base <-> Base }}\ndef loopOn(p : Path[.A = Circle](Base, Base)) -> -F Path[.A = Circle](Base, Base) {{ return loop ∷ p }}\ndef unloopOn(p : Path[.A = Circle](Base, Base)) -> -F Path[.A = Circle](Base, Base) {{ return back(loop) ∷ p }}\ndef rec looped(p : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](p, p) {{ match p {{ here => return Path.here(p), loop ∷ q => {{ let r = looped[<](q); become Path.ap(loopOn, r) }}, back(loop) ∷ q => {{ let r = looped[<](q); become Path.ap(unloopOn, r) }} }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let cased = |arena: &CoreArena, name: &str| {
@@ -4789,9 +4789,9 @@ fn a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def inner(n : Nat) -> -F Path(Nat, n, n) {{ match n {{ Zero => return Path.here(Zero), Succ(m) => match m {{ Zero => return Path.here(Succ(Zero)), Succ(k) => return Path.here(Succ(Succ(k))) }} }} }}\n\
-         def named(n : Nat) -> -F Path(Nat, n, n) {{ match n {{ Zero => return Path.here(Zero), Succ(m) => match m {{ Zero => return Path.here(n), Succ(k) => return Path.here(n) }} }} }}\n\
-         def deep(n : Nat) -> -F Path(Nat, n, n) {{ match n {{ Zero => return Path.here(Zero), Succ(m) => match m {{ Zero => return Path.here(Succ(Zero)), Succ(k) => match k {{ Zero => return Path.here(Succ(Succ(Zero))), Succ(j) => return Path.here(Succ(Succ(Succ(j)))) }} }} }} }}\n"
+        "{NAT}def inner(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ Zero => return Path.here(Zero), Succ(m) => match m {{ Zero => return Path.here(Succ(Zero)), Succ(k) => return Path.here(Succ(Succ(k))) }} }} }}\n\
+         def named(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ Zero => return Path.here(Zero), Succ(m) => match m {{ Zero => return Path.here(n), Succ(k) => return Path.here(n) }} }} }}\n\
+         def deep(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ Zero => return Path.here(Zero), Succ(m) => match m {{ Zero => return Path.here(Succ(Zero)), Succ(k) => match k {{ Zero => return Path.here(Succ(Succ(Zero))), Succ(j) => return Path.here(Succ(Succ(Succ(j)))) }} }} }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let inner = tail_of(&arena, body_named(&module, SurfaceName::from("inner")));
@@ -4829,7 +4829,7 @@ fn an_arm_leaving_a_field_unnamed_passes_the_answer_as_written_2994()
     let mut arena = CoreArena::new();
     let source = alloc::format!(
         "{NAT}data Pair : Type where {{ | Mk : (a : Nat, b : Nat) --> Pair }}\n\
-         def half(p : Pair) -> -F Path(Pair, p, p) {{ match p {{ Mk(a, _) => match a {{ Zero => return Path.here(p), Succ(c) => return Path.here(p) }} }} }}\n"
+         def half(p : Pair) -> -F Path[.A = Pair](p, p) {{ match p {{ Mk(a, _) => match a {{ Zero => return Path.here(p), Succ(c) => return Path.here(p) }} }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let _lowered = body_named(&module, SurfaceName::from("half"));
@@ -4847,10 +4847,10 @@ fn an_arm_variable_at_a_switched_field_reads_its_constructor_3008()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{NAT}def two(n : Nat) -> -F Path(Nat, n, n) {{ match n {{ Zero => return Path.here(Zero), Succ(Zero) => return Path.here(Succ(Zero)), Succ(m) => return Path.here(Succ(m)) }} }}\n\
-         def named(n : Nat) -> -F Path(Nat, n, n) {{ match n {{ Zero => return Path.here(n), Succ(Zero) => return Path.here(n), Succ(_) => return Path.here(n) }} }}\n\
-         def whole(n : Nat) -> -F Path(Nat, n, n) {{ match n {{ Zero => return Path.here(Zero), m => return Path.here(m) }} }}\n\
-         def unnamed(n : Nat) -> -F Path(Nat, n, n) {{ match n {{ Zero => return Path.here(Zero), Succ(Zero) => return Path.here(Succ(Zero)), Succ(Succ(k)) => match k {{ Zero => return Path.here(Succ(Succ(Zero))), Succ(j) => return Path.here(Succ(Succ(Succ(j)))) }} }} }}\n"
+        "{NAT}def two(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ Zero => return Path.here(Zero), Succ(Zero) => return Path.here(Succ(Zero)), Succ(m) => return Path.here(Succ(m)) }} }}\n\
+         def named(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ Zero => return Path.here(n), Succ(Zero) => return Path.here(n), Succ(_) => return Path.here(n) }} }}\n\
+         def whole(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ Zero => return Path.here(Zero), m => return Path.here(m) }} }}\n\
+         def unnamed(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ Zero => return Path.here(Zero), Succ(Zero) => return Path.here(Succ(Zero)), Succ(Succ(k)) => match k {{ Zero => return Path.here(Succ(Succ(Zero))), Succ(j) => return Path.here(Succ(Succ(Succ(j)))) }} }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert_accepted(&judged(&module, &mut arena));
@@ -5033,7 +5033,7 @@ fn a_case_over_a_family_of_parameters_reads_its_answer_unabstracted()
 {
     let mut arena = CoreArena::new();
     let source = "data Box(a : Type) : Type where { | Put : (x : a) --> Box(a) }\ndef same(b : \
-                  Box(Integer)) -> -F Path(Box(Integer), b, b) { match b { Put(x) => return \
+                  Box(Integer)) -> -F Path[.A = Box(Integer)](b, b) { match b { Put(x) => return \
                   Path.here(b) } }\n";
     let module = lowered(SourceText::from(source), &mut arena);
     let tail = tail_of(&arena, body_named(&module, SurfaceName::from("same")));
@@ -5231,8 +5231,8 @@ fn a_leaf_copy_of_a_copy_keeps_the_use_naming_its_binder_451()
 {
     let source = concat!(
         "data Int : Type where { | Z : Int | S : (x : Int) --> Int }\n",
-        "def r(n : Int) -> -F Path(Int, n, n) { Path.here(n) }\n",
-        "def f(a : Int, b : Int) -> -F Path(Int, a, a) { match b { Z => Path.back(r(a)), S(x) => Path.back(r(a)) } }\n",
+        "def r(n : Int) -> -F Path[.A = Int](n, n) { Path.here(n) }\n",
+        "def f(a : Int, b : Int) -> -F Path[.A = Int](a, a) { match b { Z => Path.back(r(a)), S(x) => Path.back(r(a)) } }\n",
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
@@ -5678,7 +5678,7 @@ fn a_cell_between_terms_is_a_loop_or_refused_by_name()
 #[test]
 fn only_back_inverts_a_letter()
 {
-    let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef bad : Path(Circle, \
+    let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef bad : Path[.A = Circle](\
                   Base, Base) ;\ndef bad = here(loop) ∷ loop ;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
@@ -5705,7 +5705,7 @@ fn a_letter_naming_nothing_is_unresolved_1997()
     // `lop` names no loop and nothing else: the letter is unresolved at its
     // name, plain or inside `back`, and `turn`, a declaration other than a
     // loop, is still no letter.
-    let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef turn : Integer ;\ndef turn = 1 ;\ndef plain : Path(Circle, Base, Base) ;\ndef plain = lop ∷ Path.here(Base) ;\ndef inverse : Path(Circle, Base, Base) ;\ndef inverse = back(lop) ∷ Path.here(Base) ;\ndef other : Path(Circle, Base, Base) ;\ndef other = turn ∷ Path.here(Base) ;\n";
+    let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef turn : Integer ;\ndef turn = 1 ;\ndef plain : Path[.A = Circle](Base, Base) ;\ndef plain = lop ∷ Path.here(Base) ;\ndef inverse : Path[.A = Circle](Base, Base) ;\ndef inverse = back(lop) ∷ Path.here(Base) ;\ndef other : Path[.A = Circle](Base, Base) ;\ndef other = turn ∷ Path.here(Base) ;\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     for (declaration, written) in [("plain", "lop ∷"), ("inverse", "lop) ∷")] {
@@ -5738,7 +5738,7 @@ fn a_letter_naming_nothing_is_unresolved_1997()
 #[test]
 fn a_word_conses_its_letters_and_matches_them()
 {
-    let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef empty : Path(Circle, Base, Base) ;\ndef empty = Path.here(Base) ;\ndef word : Path(Circle, Base, Base) ;\ndef word = back(loop) ∷ loop ;\ndef rec size(p : Path(Circle, Base, Base)) -> -F Integer {\n  match p {\n    here => return 0,\n    loop ∷ q => become size[<](q),\n    back(loop) ∷ q => become size[<](q)\n  }\n}\n";
+    let source = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef empty : Path[.A = Circle](Base, Base) ;\ndef empty = Path.here(Base) ;\ndef word : Path[.A = Circle](Base, Base) ;\ndef word = back(loop) ∷ loop ;\ndef rec size(p : Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    here => return 0,\n    loop ∷ q => become size[<](q),\n    back(loop) ∷ q => become size[<](q)\n  }\n}\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let words = module

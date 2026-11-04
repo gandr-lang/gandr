@@ -255,7 +255,7 @@ pub enum SealScope
 /// representation `R`, at the level `l` of its kind: `relation` at
 /// `U(R → R → F U_l)`, `reflexivity` at `U(Π (x : R). F El(⟨relation x
 /// x⟩))`, and `law` at `U(Π (a : R). Π (b : R). Π (r : El(⟨relation a b⟩)).
-/// F Path(Σ (y : R). El(⟨relation a y⟩), (b, r), (a, ⟨reflexivity a⟩)))`:
+/// F Path[.A = Σ (y : R). El(⟨relation a y⟩)]((b, r), (a, ⟨reflexivity a⟩)))`:
 /// every element of the singleton at `a` is the centre `(a, reflexivity a)`.
 /// A bridge at the atom reads `relation` as its fibre and `reflexivity` as its
 /// diagonal. An identity at the atom reads them the same way when the law is
@@ -754,8 +754,8 @@ impl From<Vec<NameSegment>> for StructuredName
 ///
 /// A definition's declared type and the type its body synthesises can be
 /// path types whose endpoints are compound terms related only through a
-/// constant's body: `Path(H, comp(p, p, q, id(p), f), f)` against
-/// `Path(H, comp(p, q, q, f, id(q)), f)`. The kernel's forced reading
+/// constant's body: `Path[.A = H](comp(p, p, q, id(p), f), f)` against
+/// `Path[.A = H](comp(p, q, q, f, id(q)), f)`. The kernel's forced reading
 /// normalizes neither endpoint far enough to compare them, so the producer
 /// hands over the reading it found, and the kernel replays it at that pair.
 ///

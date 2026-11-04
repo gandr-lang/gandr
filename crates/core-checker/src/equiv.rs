@@ -3,11 +3,11 @@
 //!
 //! # The rule
 //!
-//! `equiv(f, g)` synthesises `Path(Type, ⌜A⌝, ⌜B⌝)` when `f` synthesises the
-//! thunk type `U (A → F B)` of a pure non-dependent arrow, `g` checks against
-//! `U (B → F A)`, both translators are closed, `A` and `B` are codes of the
-//! native universe-path vocabulary, and both round trips return their input.
-//! The vocabulary is the unit type, the base atoms, sums of at least one
+//! `equiv(f, g)` synthesises `Path[.A = Type](⌜A⌝, ⌜B⌝)` when `f` synthesises
+//! the thunk type `U (A → F B)` of a pure non-dependent arrow, `g` checks
+//! against `U (B → F A)`, both translators are closed, `A` and `B` are codes of
+//! the native universe-path vocabulary, and both round trips return their
+//! input. The vocabulary is the unit type, the base atoms, sums of at least one
 //! summand, products of any arity, lists of a code in it, and the free,
 //! unindexed data types whose fields are codes in it and that do not recur
 //! inside their own fields. A round trip is decided at every pattern the
@@ -47,16 +47,16 @@
 //!   kernel cannot read. Reversal: none while the kernel's universe path
 //!   certifies by replayed round trips.
 //! - **The identity at the universe, not a second path type.** `equiv` inhabits
-//!   `Path(Type, A, B)`, the element identity whose fibre the kernel computes
-//!   as its universe path, so transport along it is element transport in any
-//!   motive over the universe. The alternative was a written `Path_U` former
-//!   beside it, which element transport would not read and the surface would
-//!   spell twice. Reversal: a universe stratum whose fibre is not the native
-//!   universe path.
+//!   `Path[.A = Type](A, B)`, the element identity whose fibre the kernel
+//!   computes as its universe path, so transport along it is element transport
+//!   in any motive over the universe. The alternative was a written `Path_U`
+//!   former beside it, which element transport would not read and the surface
+//!   would spell twice. Reversal: a universe stratum whose fibre is not the
+//!   native universe path.
 //! - **Synthesised from its forward translator.** `f` names both codes, so the
 //!   backward translator checks against the arrow they determine. Reversal: a
-//!   checking rule against `Path(Type, A, B)` reads the codes from the expected
-//!   type instead, and admits a λ as the forward translator.
+//!   checking rule against `Path[.A = Type](A, B)` reads the codes from the
+//!   expected type instead, and admits a λ as the forward translator.
 
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
@@ -134,7 +134,7 @@ impl Equivalence
         &self.evidence
     }
 
-    /// The identity the equivalence inhabits, `Path(Type, ⌜A⌝, ⌜B⌝)`.
+    /// The identity the equivalence inhabits, `Path[.A = Type](⌜A⌝, ⌜B⌝)`.
     ///
     /// # Specification
     /// - ensures: a path type over the value universe at level zero whose

@@ -269,8 +269,8 @@ impl Relation
     ///   Product has all component combinations; discrete Base shares a fresh
     ///   rigid variable after eliminating its equality premise; a function
     ///   coordinate at a thunk type `T` binds two functions and their relation,
-    ///   `f₀ f₁ : T` and `p : Path(T, f₀, f₁)`, or `p : Bridge(T, f₀, f₁)` in
-    ///   bridge mode, and relates `f₀` to `f₁` by `p`; in bridge mode a
+    ///   `f₀ f₁ : T` and `p : Path[.A = T](f₀, f₁)`, or `p : Bridge[.A = T](f₀,
+    ///   f₁)` in bridge mode, and relates `f₀` to `f₁` by `p`; in bridge mode a
     ///   universe coordinate at `U` binds two codes and a relation between
     ///   their elements, `X₀ X₁ : U` and `R : U(El X₀ → El X₁ → F U)`. No Base
     ///   inhabitants, functions or codes are sampled.
@@ -832,14 +832,14 @@ impl Relation
     ///   under the telescope, as its closed normal form; each form is a thunk
     ///   of one lambda per telescope entry over `force f a` or `x ← force f a;
     ///   K`, whose head is the left or the right function the premise at the
-    ///   step's fibre binds — that premise the persisted `Path(T, f₀, f₁)` a
-    ///   function coordinate's coverage bound — at one input up to conversion,
-    ///   owed at `T`'s argument type. The step then opens one branch per
-    ///   pattern [`Self::patterns_at`] generates for `T`'s result relation,
-    ///   extending the telescope by the pattern's binders and continuing each
-    ///   side at its own output: `return o`, or `K` with `x` instantiated at
-    ///   `o`. The pattern's premise evidence is owed first, at the argument
-    ///   fibre, in the pattern's telescope.
+    ///   step's fibre binds — that premise the persisted `Path[.A = T](f₀, f₁)`
+    ///   a function coordinate's coverage bound — at one input up to
+    ///   conversion, owed at `T`'s argument type. The step then opens one
+    ///   branch per pattern [`Self::patterns_at`] generates for `T`'s result
+    ///   relation, extending the telescope by the pattern's binders and
+    ///   continuing each side at its own output: `return o`, or `K` with `x`
+    ///   instantiated at `o`. The pattern's premise evidence is owed first, at
+    ///   the argument fibre, in the pattern's telescope.
     /// - provides: the checking machine's reading of a persisted quantified
     ///   evaluation. An application step is sound because `p` relates the two
     ///   functions at related inputs, and one input up to conversion is related
@@ -1617,10 +1617,10 @@ struct Stuck
 /// The thunk type the premise at `fibre` relates two functions of.
 ///
 /// # Specification
-/// - ensures: `T` when the telescope entry `fibre` counts to is `Path(T, x₁,
-///   x₀)` in identity mode, or `Bridge(T, x₁, x₀)` in bridge mode, over the two
-///   entries just before it — the premise a function coordinate's coverage
-///   binds.
+/// - ensures: `T` when the telescope entry `fibre` counts to is `Path[.A =
+///   T](x₁, x₀)` in identity mode, or `Bridge[.A = T](x₁, x₀)` in bridge mode,
+///   over the two entries just before it — the premise a function coordinate's
+///   coverage binds.
 /// - fails: `QuantifiedStep` naming `component` when the entry is past the
 ///   telescope or is not such a premise.
 /// - panics: none.

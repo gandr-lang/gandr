@@ -1342,7 +1342,7 @@ fn an_admission_resumes_the_declarations_a_revision_left_alone_2102()
     let revision = |three: &str, four: &str, after: &str| {
         format!(
             "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = {three} ;\ndef five : \
-             Path(Integer, three, 1) ;\ndef five = Path.here(1) ;\ndef four : Integer ;\ndef four = \
+             Path[.A = Integer](three, 1) ;\ndef five = Path.here(1) ;\ndef four : Integer ;\ndef four = \
              {four} ;\n{after}"
         )
     };

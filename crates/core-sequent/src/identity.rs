@@ -30,18 +30,18 @@
 //! syntax by the kernel's rows in their order: at the decode of the motive's
 //! own binder `M` is `force t v`; a product rides each component by its own
 //! action, a sum its payload under its summand, a list each element by a
-//! native fold; the singleton `y. Flow(D, l, y)` composes the ridden flow with
-//! `t`; any other motive — one that ignores its binder, a run type, a family
-//! over an element carrier — returns the value unchanged. That last row is
-//! exact: the checker refuses at a universe carrier every motive no row
+//! native fold; the singleton `y. Flow[.A = D](l, y)` composes the ridden flow
+//! with `t`; any other motive — one that ignores its binder, a run type, a
+//! family over an element carrier — returns the value unchanged. That last row
+//! is exact: the checker refuses at a universe carrier every motive no row
 //! computes, and over an element carrier every closed flow is a stay or a
 //! composite of stays, whose action is the identity.
 //!
 //! # Paths between types
 //!
-//! A path `p : Path(Type, A, B)` runs as the pair `(to, from)` of `to : U (A →
-//! F B)` and `from : U (B → F A)`. A pair of two functions is a value the IL
-//! already has, so a path adds no former to it.
+//! A path `p : Path[.A = Type](A, B)` runs as the pair `(to, from)` of `to : U
+//! (A → F B)` and `from : U (B → F A)`. A pair of two functions is a value the
+//! IL already has, so a path adds no former to it.
 //!
 //! | Core | Producer |
 //! |---|---|
@@ -79,14 +79,14 @@
 //! force(M_A) s a; y ← force v x; force(M_B) p y)`: the argument moves back
 //! by its own action at the reversed pair, the function applies, and the
 //! result moves forward. A path between types whose moving endpoints are the
-//! binder, `y. Path(Type, y, c)`, `y. Path(Type, a, y)` or `y. Path(Type, y,
-//! y)`, composes the moved path's maps with `p`'s on the ends that move:
-//! the new forward map runs `p.1` first when the left end moves, then the
-//! moved path's forward map, then `p.0` when the right end moves, and the
-//! new backward map runs `p.1` first when the right end moves, then the
-//! moved path's backward map, then `p.0` when the left end moves. A run of a
-//! quoted session with no recursion, `y. Run(S)`, moves each payload by its
-//! payload type's action and keeps the moves and labels: the core has no
+//! binder, `y. Path[.A = Type](y, c)`, `y. Path[.A = Type](a, y)` or `y.
+//! Path[.A = Type](y, y)`, composes the moved path's maps with `p`'s on the
+//! ends that move: the new forward map runs `p.1` first when the left end
+//! moves, then the moved path's forward map, then `p.0` when the right end
+//! moves, and the new backward map runs `p.1` first when the right end moves,
+//! then the moved path's backward map, then `p.0` when the left end moves. A
+//! run of a quoted session with no recursion, `y. Run(S)`, moves each payload
+//! by its payload type's action and keeps the moves and labels: the core has no
 //! eliminator for a run, so the action's body is the IL's match on the run,
 //! one arm per complete run the protocol admits ([`RunCase`]); a recursive
 //! session admits unboundedly many and is refused by name. Any other motive
@@ -455,8 +455,8 @@ enum Row<'core>
     Sum(&'core [ValueTypeId]),
     /// A list: each element moves, in order.
     List(ValueTypeId),
-    /// The flow singleton `y. Flow(D, l, y)`: the ridden flow composes with
-    /// the image.
+    /// The flow singleton `y. Flow[.A = D](l, y)`: the ridden flow composes
+    /// with the image.
     Singleton,
     /// A function `U(A → F B)` into a returner that performs no effect: the
     /// argument moves back by its own action at the reversed pair, the
@@ -485,11 +485,11 @@ enum Row<'core>
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Moving
 {
-    /// The left endpoint alone, as in `y. Path(Type, y, c)`.
+    /// The left endpoint alone, as in `y. Path[.A = Type](y, c)`.
     Left,
-    /// The right endpoint alone, as in `y. Path(Type, a, y)`.
+    /// The right endpoint alone, as in `y. Path[.A = Type](a, y)`.
     Right,
-    /// Both endpoints, as in `y. Path(Type, y, y)`.
+    /// Both endpoints, as in `y. Path[.A = Type](y, y)`.
     Both,
 }
 
@@ -805,18 +805,18 @@ fn pure_result(
     effects.signatures().next().is_none().then_some(result)
 }
 
-/// The row of the path motive part `node`, `Path(carrier, left, right)`,
+/// The row of the path motive part `node`, `Path[.A = carrier](left, right)`,
 /// when it is a path between types whose moving endpoints are the binder.
 ///
 /// # Specification
-/// - requires: `node` is the part `Path(carrier, left, right)` of `core`.
+/// - requires: `node` is the part `Path[.A = carrier](left, right)` of `core`.
 /// - ensures: [`Row::Ends`] naming the endpoints that are the moving binder
 ///   when the carrier is a universe, at least one endpoint moves and the part
 ///   with each moving endpoint replaced by a closed value reads no binder;
 ///   `None` for an element carrier, whose paths are not pairs of maps, and for
 ///   an endpoint built from the binder.
 /// - provides: the rows `back` and `then` transport along, the families `y.
-///   Path(U, y, c)` and `y. Path(U, a, y)`.
+///   Path[.A = U](y, c)` and `y. Path[.A = U](a, y)`.
 /// - fails: [`Unread::Dangling`] for a part that does not import.
 /// - panics: none.
 ///

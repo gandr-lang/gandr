@@ -22,7 +22,7 @@ import "../../model/identity/circle.gandr";
 /// inverse's round trip: `pick(collapse(x))` is `Yes` at every `x`, so
 /// reflexivity at `x` does not reach it.
 @[ refuses("EndpointMismatch") ]
-def collapsedPath : Path(Type, Two, One) = ua((
+def collapsedPath : Path[.A = Type](Two, One) = ua((
   collapse,
   ((pick, thunk { fun (x) { Path.here(x) } }), (pick, single))
 ));
@@ -36,7 +36,7 @@ def alongTypeSelf(e : Type ≃ Type, x : Type) -> Type {
 }
 
 /// A record written out where nothing names the path it builds, refused at
-/// the `ua`: away from `Path(Type, a, b)` the record's own type names the
+/// the `ua`: away from `Path[.A = Type](a, b)` the record's own type names the
 /// codes, and a literal synthesises a product of its parts' types, not the
 /// dependent pair `a ≃ b` is.
 @[ refuses("ShapeMismatch") ]
@@ -45,9 +45,9 @@ def alongLiteral(
   b : Type,
   t : a => b,
   g : b => a,
-  s : (x : a) => Path(a, g(t(x)), x),
+  s : (x : a) => Path[.A = a](g(t(x)), x),
   h : b => a,
-  r : (y : b) => Path(b, t(h(y)), y),
+  r : (y : b) => Path[.A = b](t(h(y)), y),
   x : a
 ) -> b {
   Path.walk(fun (X) { X }, ua((t, ((g, s), (h, r)))), x)
@@ -57,8 +57,7 @@ def alongLiteral(
 /// reflexivity: no rule relates `ua` of the packaged transport to the path it
 /// packages, so the model source owes it as `uaEta`.
 @[ refuses("EndpointMismatch") ]
-def uaEtaByConversion(a : Type) -> Path(
-  Path(Type, a, a),
+def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type](a, a)](
   ua(idtoequiv(a, a, Path.here(a))),
   Path.here(a)
 ) {
@@ -69,8 +68,10 @@ def uaEtaByConversion(a : Type) -> Path(
 /// wildcard, declared to end at the unit type: `ua(winding)` forces the
 /// wildcard to the integers, which the unit type is not.
 @[ refuses("TypeMismatch") ]
-def loopsAreUnit : Path(Type, Path(Circle, Base, Base), Unit) = (ua(winding) : Path(
-  Type,
-  Path(Circle, Base, Base),
+def loopsAreUnit : Path[.A = Type](
+  Path[.A = Circle](Base, Base),
+  Unit
+) = (ua(winding) : Path[.A = Type](
+  Path[.A = Circle](Base, Base),
   _
 ));

@@ -70,7 +70,7 @@ def sameAt(t : Type, y : t) -> t { same(y) }
 
 /// `same(3)` in a declared type: the argument `3` determines `a` where the
 /// type forms.
-def sameSigned : Path(Integer, same(3), 3) = Path.here(3);
+def sameSigned : Path(same(3), 3) = Path.here(3);
 
 /// A function taking a function of a type and a value of it, the result type
 /// of that function implicit.

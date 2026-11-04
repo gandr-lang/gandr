@@ -1,19 +1,19 @@
 error[ComposeUncertified]: `compose` needs a stratum the chain sub-site certifies
    ╭▸ corpus/ledger/diagnostics/ComposeUncertified.gandr:9:3
    │
- 8 │   def uncertified(A : Type, x : A, y : A, z : A, p : Path(A, x, y), q : Path(A, y, z)) -> Path(A, x, z) {
-   │   │               ┬         ┬      ┬      ┬      ┬                  ─ checked against `Path(A, y, z) -> -F Path(A, x, z)`; while checking the body of this function; binds q : Path(A, y, z)
+ 8 │   def uncertified(A : Type, x : A, y : A, z : A, p : Path(x, y), q : Path(y, z)) -> Path(x, z) {
+   │   │               ┬         ┬      ┬      ┬      ┬               ─ checked against `Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds q : Path[.A = A](y, z)
    │   │               │         │      │      │      │
-   │   │               │         │      │      │      checked against `Path(A, x, y) -> Path(A, y, z) -> -F Path(A, x, z)`; while checking the body of this function; binds p : Path(A, x, y)
-   │   │               │         │      │      checked against `(z : A) -> Path(A, x, y) -> Path(A, y, z) -> -F Path(A, x, z)`; while checking the body of this function; binds z : A
-   │   │               │         │      checked against `(y : A) -> (z : A) -> Path(A, x, y) -> Path(A, y, z) -> -F Path(A, x, z)`; while checking the body of this function; binds y : A
-   │   │               │         checked against `(x : A) -> (y : A) -> (z : A) -> Path(A, x, y) -> Path(A, y, z) -> -F Path(A, x, z)`; while checking the body of this function; binds x : A
-   │ ┌─┘               checked against `(A : Type) -> (x : A) -> (y : A) -> (z : A) -> Path(A, x, y) -> Path(A, y, z) -> -F Path(A, x, z)`; while checking the body of this function; binds A : Type
+   │   │               │         │      │      │      checked against `Path[.A = A](x, y) -> Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds p : Path[.A = A](x, y)
+   │   │               │         │      │      checked against `(a : A) -> Path[.A = A](x, y) -> Path[.A = A](y, a) -> -F Path[.A = A](x, a)`; while checking the body of this function; binds z : A
+   │   │               │         │      checked against `(a : A) -> (b : A) -> Path[.A = A](x, a) -> Path[.A = A](a, b) -> -F Path[.A = A](x, b)`; while checking the body of this function; binds y : A
+   │   │               │         checked against `(a : A) -> (b : A) -> (c : A) -> Path[.A = A](a, b) -> Path[.A = A](b, c) -> -F Path[.A = A](a, c)`; while checking the body of this function; binds x : A
+   │ ┌─┘               checked; while checking the body of this function; binds A : Type
    │ │
  9 │ │   compose[0, 5](chain(2), (p, q))
    │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a stratum the chains do not certify
 10 │ │ }
-   │ └─┘ checked against `(A : Type, x : A, y : A, z : A, Path(A, x, y), Path(A, y, z)) => Path(A, x, z)`; while checking the body of this thunk
+   │ └─┘ checked against `(a : Type, b : a, c : a, d : a, Path[.A = a](b, c), Path[.A = a](c, d)) => Path[.A = a](b, d)`; while checking the body of this thunk
    │
    ├ note: `uncertified` is refused with ComposeUncertified, as its expectation states
    ╰ note: tracked by #312 <https://github.com/gandr-lang/gandr/issues/312>

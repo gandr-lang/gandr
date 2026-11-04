@@ -537,6 +537,11 @@ fn lowered(
                 FormFault::SuppliedTwice => {
                     f.write_str("this implicit is supplied a second time")
                 },
+                FormFault::PositionalCarrier(head) => write!(
+                    f,
+                    "`{}` takes its carrier by name, and this {form} writes it first",
+                    head.as_ref()
+                ),
                 FormFault::MissingOpen(close) => {
                     write!(f, "this {form} is missing the `{}` its `{}` closes", match close {
                         ClosingClass::Paren => "(",

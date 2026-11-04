@@ -683,10 +683,10 @@ fn result_index(
 ///   result index per index, each scoped under the parameters and its fields.
 /// - ensures: the result binds fields in declaration order, each at its type
 ///   instantiated at the classifier's parameters alone, then the equation
-///   `Path(I, stated, s)` per index `I` in order, `s` the classifier's argument
-///   at that index and `I` instantiated at the classifier's parameters and its
-///   indices before it; and checks the motive at the corresponding constructor,
-///   not merely at the original scrutinee.
+///   `Path[.A = I](stated, s)` per index `I` in order, `s` the classifier's
+///   argument at that index and `I` instantiated at the classifier's parameters
+///   and its indices before it; and checks the motive at the corresponding
+///   constructor, not merely at the original scrutinee.
 /// - fails: field count exceeds the representable binder space, or a stated
 ///   index or classifier argument is missing.
 /// - panics: none.
@@ -1056,7 +1056,7 @@ quenchant_shape::reason_enum! {
 ///   where it is a path at a looped point; the motive has formed under one
 ///   binder of it.
 /// - ensures: `Present(motive[scrutinee])` exactly when the case has no branch,
-///   `datatype` is `Path(domain, left, right)` with `domain` — read as its
+///   `datatype` is `Path[.A = domain](left, right)` with `domain` — read as its
 ///   words where it is itself a path at a looped point — a data type, and
 ///   [`crate::presented::apart`] decides `left` and `right` apart;
 ///   [`absurd::Absent::Branched`] or [`absurd::Absent::NotAPath`] when the case
@@ -1071,9 +1071,9 @@ quenchant_shape::reason_enum! {
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a case of no branches over `Path(N, Succ(Zero), Zero)` at
-///   the naturals modulo two admits, and one over `Path(N, Succ(Succ(Zero)),
-///   Zero)`, whose normal forms agree, is refused by name.
+/// - hypothesis: L3 — a case of no branches over `Path[.A = N](Succ(Zero),
+///   Zero)` at the naturals modulo two admits, and one over `Path[.A =
+///   N](Succ(Succ(Zero)), Zero)`, whose normal forms agree, is refused by name.
 /// - witness: `tests::native_formers::an_absurd_case_rests_on_apart_endpoints`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::NotApart(_) | KernelError::NotADataType { .. } | KernelError::ArenaFault)))]
 pub(super) fn absurd(

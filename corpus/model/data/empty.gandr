@@ -57,18 +57,18 @@ def viaArgumentStated(v : Empty) -> Integer {
 }
 
 /// One is not zero: `S(Z)` and `Z` are normal forms with distinct heads.
-def not_zero(e : Path(Int, S(Z), Z)) -> Empty {
+def not_zero(e : Path(S(Z), Z)) -> Empty {
   match e {}
 }
 
 /// One is not two: the normal forms first differ below their shared
 /// successor.
-def one_not_two(e : Path(Int, S(Z), S(S(Z)))) -> Empty {
+def one_not_two(e : Path(S(Z), S(S(Z)))) -> Empty {
   match e {}
 }
 
 /// Minus one is not one, read through the rules: `P(S(P(Z)))` is `P(Z)`.
-def signs(e : Path(Int, P(S(P(Z))), S(Z))) -> Empty {
+def signs(e : Path(P(S(P(Z))), S(Z))) -> Empty {
   match e {}
 }
 
@@ -79,6 +79,6 @@ data Truth : Type where {
 }
 
 /// True is not false: distinct constructors of a free type are apart.
-def true_not_false(e : Path(Truth, True, False)) -> Empty {
+def true_not_false(e : Path(True, False)) -> Empty {
   match e {}
 }

@@ -311,7 +311,7 @@ fn written_map(
     arena.value_type_thunk(arrow)
 }
 
-/// The written round trip `+U ((x : El #domain) => -F Path(El #over,
+/// The written round trip `+U ((x : El #domain) => -F Path[.A = El #over](
 /// outer(inner(x)), x))`, each map the variable at its index under `x`.
 ///
 /// # Specification

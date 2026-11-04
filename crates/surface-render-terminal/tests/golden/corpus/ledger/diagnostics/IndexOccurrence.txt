@@ -3,7 +3,7 @@ error[IndexOccurrence]: the datatype occurs inside a term in its field 0 of cons
   │
 3 │ ┏ data Coded : Type where {
 4 │ ┃   | Base : Coded
-5 │ ┃   | Looped : (p : Path(Type, Coded, Coded)) --> Coded
+5 │ ┃   | Looped : (p : Path[.A = Type](Coded, Coded)) --> Coded
 6 │ ┃ }
   │ ┗━┛ the declared type inside an index
   │

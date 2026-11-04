@@ -30,4 +30,4 @@ def same(b : Unit + Unit) -> Unit + Unit {
 
 /// Negation twice is the identity: they agree at both booleans.
 @[ checks ]
-def involution : Path(Unit + Unit => Unit + Unit, not_not, same) = Path.funext(not_not, same) ;
+def involution : Path(not_not, same) = Path.funext(not_not, same) ;

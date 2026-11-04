@@ -25,13 +25,12 @@ def assoc_nat(
   y : A,
   z : A,
   w : A,
-  fm : Path(A, x, y),
-  fp : Path(A, x, y),
-  fa : Path(Path(A, x, y), fm, fp),
-  g : Path(A, y, z),
-  h : Path(A, z, w)
-) -> Path(
-  Path(Path(A, x, w), Path.step(Path.step(fm, g), h), Path.step(fp, Path.step(g, h))),
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](Path.step(Path.step(fm, g), h), Path.step(fp, Path.step(g, h)))](
   Path.step(assoc(A, x, y, z, w, fm, g, h), whiskerRight(A, x, y, w, fm, fp, fa, Path.step(g, h))),
   Path.step(whiskerRight(
     A,
@@ -45,27 +44,27 @@ def assoc_nat(
   ), assoc(A, x, y, z, w, fp, g, h))
 ) {
   Path.step(natural(
-    Path(A, x, y),
-    Path(A, x, w),
-    (fun (q : Path(A, x, y)) { Path.step(Path.step(q, g), h) } : Path(A, x, y) => Path(A, x, w)),
-    (fun (q : Path(A, x, y)) { Path.step(q, Path.step(g, h)) } : Path(A, x, y) => Path(A, x, w)),
-    (fun (q : Path(A, x, y)) { assoc(A, x, y, z, w, q, g, h) } : (q : Path(A, x, y)) => Path(Path(A, x, w), Path.step(Path.step(q, g), h), Path.step(q, Path.step(g, h)))),
+    type(Path[.A = A](x, y)),
+    type(Path[.A = A](x, w)),
+    (fun (q : Path[.A = A](x, y)) { Path.step(Path.step(q, g), h) } : Path[.A = A](x, y) => Path[.A = A](x, w)),
+    (fun (q : Path[.A = A](x, y)) { Path.step(q, Path.step(g, h)) } : Path[.A = A](x, y) => Path[.A = A](x, w)),
+    (fun (q : Path[.A = A](x, y)) { assoc(A, x, y, z, w, q, g, h) } : (q : Path[.A = A](x, y)) => Path[.A = Path[.A = A](x, w)](Path.step(Path.step(q, g), h), Path.step(q, Path.step(g, h)))),
     fm,
     fp,
     fa
   ), whiskerRight(
-    Path(A, x, w),
+    type(Path[.A = A](x, w)),
     Path.step(Path.step(fm, g), h),
     Path.step(Path.step(fp, g), h),
     Path.step(fp, Path.step(g, h)),
-    ap(Path(A, x, y), Path(A, x, w), (fun (q : Path(A, x, y)) { Path.step(Path.step(q, g), h) } : Path(A, x, y) => Path(A, x, w)), fm, fp, fa),
+    ap(type(Path[.A = A](x, y)), type(Path[.A = A](x, w)), (fun (q : Path[.A = A](x, y)) { Path.step(Path.step(q, g), h) } : Path[.A = A](x, y) => Path[.A = A](x, w)), fm, fp, fa),
     whiskerRight(A, x, z, w, Path.step(fm, g), Path.step(fp, g), whiskerRight(A, x, y, z, fm, fp, fa, g), h),
     apComp(
-      Path(A, x, y),
-      Path(A, x, z),
-      Path(A, x, w),
-      (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
-      (fun (r : Path(A, x, z)) { Path.step(r, h) } : Path(A, x, z) => Path(A, x, w)),
+      type(Path[.A = A](x, y)),
+      type(Path[.A = A](x, z)),
+      type(Path[.A = A](x, w)),
+      (fun (q : Path[.A = A](x, y)) { Path.step(q, g) } : Path[.A = A](x, y) => Path[.A = A](x, z)),
+      (fun (r : Path[.A = A](x, z)) { Path.step(r, h) } : Path[.A = A](x, z) => Path[.A = A](x, w)),
       fm,
       fp,
       fa
@@ -75,7 +74,7 @@ def assoc_nat(
 }
 
 /// The associator, curried over the 3-chain's cells: the generator `natassoc` fills.
-def assocGenerator(A : Type, x : A, y : A, z : A, w : A) -> (f : Path(A, x, y)) => (g : Path(A, y, z)) => (h : Path(A, z, w)) => Path(Path(A, x, w), Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
+def assocGenerator(A : Type, x : A, y : A, z : A, w : A) -> (f : Path[.A = A](x, y)) => (g : Path[.A = A](y, z)) => (h : Path[.A = A](z, w)) => Path[.A = Path[.A = A](x, w)](Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
   thunk { fun (f) { thunk { fun (g) { thunk { fun (h) { assoc(A, x, y, z, w, f, g, h) } } } } } }
 }
 
@@ -86,13 +85,12 @@ def natassoc(
   y : A,
   z : A,
   w : A,
-  fm : Path(A, x, y),
-  fp : Path(A, x, y),
-  fa : Path(Path(A, x, y), fm, fp),
-  g : Path(A, y, z),
-  h : Path(A, z, w)
-) -> Path(
-  Path(Path(A, x, w), Path.step(Path.step(fm, g), h), Path.step(fp, Path.step(g, h))),
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](Path.step(Path.step(fm, g), h), Path.step(fp, Path.step(g, h)))](
   Path.step(assoc(A, x, y, z, w, fm, g, h), whiskerRight(A, x, y, w, fm, fp, fa, Path.step(g, h))),
   Path.step(whiskerRight(A, x, z, w, Path.step(fm, g), Path.step(fp, g), whiskerRight(A, x, y, z, fm, fp, fa, g), h), assoc(A, x, y, z, w, fp, g, h))
 ) {
@@ -106,13 +104,12 @@ def natassocColumns(
   y : A,
   z : A,
   w : A,
-  fm : Path(A, x, y),
-  fp : Path(A, x, y),
-  fa : Path(Path(A, x, y), fm, fp),
-  g : Path(A, y, z),
-  h : Path(A, z, w)
-) -> Path(
-  Path(Path(A, x, w), Path.step(Path.step(fm, g), h), Path.step(fp, Path.step(g, h))),
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](Path.step(Path.step(fm, g), h), Path.step(fp, Path.step(g, h)))](
   Path.step(assoc(A, x, y, z, w, fm, g, h), whiskerRight(A, x, y, w, fm, fp, fa, Path.step(g, h))),
   Path.step(whiskerRight(A, x, z, w, Path.step(fm, g), Path.step(fp, g), whiskerRight(A, x, y, z, fm, fp, fa, g), h), assoc(A, x, y, z, w, fp, g, h))
 ) {
@@ -126,15 +123,13 @@ def natassocAtHere(
   y : A,
   z : A,
   w : A,
-  fm : Path(A, x, y),
-  g : Path(A, y, z),
-  h : Path(A, z, w)
-) -> Path(
-  Path(
-    Path(Path(A, x, w), Path.step(Path.step(fm, g), h), Path.step(fm, Path.step(g, h))),
+  fm : Path[.A = A](x, y),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = Path[.A = Path[.A = A](x, w)](Path.step(Path.step(fm, g), h), Path.step(fm, Path.step(g, h)))](
     Path.step(assoc(A, x, y, z, w, fm, g, h), whiskerRight(A, x, y, w, fm, fm, Path.here(fm), Path.step(g, h))),
     Path.step(whiskerRight(A, x, z, w, Path.step(fm, g), Path.step(fm, g), whiskerRight(A, x, y, z, fm, fm, Path.here(fm), g), h), assoc(A, x, y, z, w, fm, g, h))
-  ),
+  )](
   natassoc(A, x, y, z, w, fm, fm, Path.here(fm), g, h),
   assoc_nat(A, x, y, z, w, fm, fm, Path.here(fm), g, h)
 ) {
@@ -148,27 +143,23 @@ def natassocAgrees(
   y : A,
   z : A,
   w : A,
-  fm : Path(A, x, y),
-  fp : Path(A, x, y),
-  fa : Path(Path(A, x, y), fm, fp),
-  g : Path(A, y, z),
-  h : Path(A, z, w)
-) -> Path(
-  Path(
-    Path(Path(A, x, w), Path.step(Path.step(fm, g), h), Path.step(fp, Path.step(g, h))),
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = Path[.A = Path[.A = A](x, w)](Path.step(Path.step(fm, g), h), Path.step(fp, Path.step(g, h)))](
     Path.step(assoc(A, x, y, z, w, fm, g, h), whiskerRight(A, x, y, w, fm, fp, fa, Path.step(g, h))),
     Path.step(whiskerRight(A, x, z, w, Path.step(fm, g), Path.step(fp, g), whiskerRight(A, x, y, z, fm, fp, fa, g), h), assoc(A, x, y, z, w, fp, g, h))
-  ),
+  )](
   natassoc(A, x, y, z, w, fm, fp, fa, g, h),
   assoc_nat(A, x, y, z, w, fm, fp, fa, g, h)
 ) {
   Path.walk(
-    (v : Path(A, x, y), k : Path(Path(A, x, y), fm, v)) => Path(
-      Path(
-        Path(Path(A, x, w), Path.step(Path.step(fm, g), h), Path.step(v, Path.step(g, h))),
+    (v : Path[.A = A](x, y), k : Path[.A = Path[.A = A](x, y)](fm, v)) => Path[.A = Path[.A = Path[.A = Path[.A = A](x, w)](Path.step(Path.step(fm, g), h), Path.step(v, Path.step(g, h)))](
         Path.step(assoc(A, x, y, z, w, fm, g, h), whiskerRight(A, x, y, w, fm, v, k, Path.step(g, h))),
         Path.step(whiskerRight(A, x, z, w, Path.step(fm, g), Path.step(v, g), whiskerRight(A, x, y, z, fm, v, k, g), h), assoc(A, x, y, z, w, v, g, h))
-      ),
+      )](
       natassoc(A, x, y, z, w, fm, v, k, g, h),
       assoc_nat(A, x, y, z, w, fm, v, k, g, h)
     ),

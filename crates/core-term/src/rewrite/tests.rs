@@ -3625,7 +3625,7 @@ fn an_environment_substitution_reaches_into_types()
         (integer, constant, Some(1)),
         "a covered index is its entry and one past the environment is lowered"
     );
-    // `Π (_ : Integer). F Path(Integer, #0, #1)`: the codomain's own binder
+    // `Π (_ : Integer). F Path[.A = Integer](#0, #1)`: the codomain's own binder
     // stands, and the covered index under it is the entry.
     let under = arena.value_type_path(integer, zero, one);
     let returns = arena.comp_type_returner(under);
@@ -4339,7 +4339,7 @@ fn a_traced_type_instantiation_reports_each_rewritten_node()
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let argument = variable(&mut arena, DeBruijnIndex::from(3_u32));
-    // `(x : Integer) * Path(Integer, b, x)`, `b` the binder instantiated.
+    // `(x : Integer) * Path[.A = Integer](b, x)`, `b` the binder instantiated.
     let [own, binder] = [0_u32, 1].map(|index| variable(&mut arena, DeBruijnIndex::from(index)));
     let path = arena.value_type_path(integer, binder, own);
     let sigma = arena.value_type_sigma(integer, path);
@@ -4505,7 +4505,7 @@ pub fn formers() -> Vec<Witnessed>
         }])
         .expect("one operation")
     }
-    /// `Path(Unit, child, ())`: a type that reads `child` in no binder.
+    /// `Path[.A = Unit](child, ())`: a type that reads `child` in no binder.
     ///
     /// # Specification
     /// trivial.
@@ -5038,7 +5038,7 @@ fn an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it()
     let g = variable(&mut arena, DeBruijnIndex::from(2_u32));
     let call = arena.computation_application(forced, g);
     let argument = arena.value_nested(call);
-    // `Path(Unit, ⟨force(head) at⟩, at)`: a returned code as an endpoint.
+    // `Path[.A = Unit](⟨force(head) at⟩, at)`: a returned code as an endpoint.
     let endpoint = |arena: &mut CoreArena, head: u32, at: ValueId| {
         let head = variable(arena, DeBruijnIndex::from(head));
         let forced = arena.computation_force(head);

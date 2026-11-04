@@ -43,16 +43,16 @@ module Evolution where {
   };
   /// The old protocol flows to the one with the pause, by simulation.
   @[ checks ]
-  def sub : Flow(Type, SeatEnd, SeatEnd′) = Flow.sim(SeatEnd, SeatEnd′) ;
+  def sub : Flow[.A = Type](SeatEnd, SeatEnd′) = Flow.sim(SeatEnd, SeatEnd′) ;
   /// The protocol and its one-step unrolling are one type, by bisimulation.
   @[ checks ]
-  def eq : Path(Type, SeatEnd, SeatEnd2) = Path.bisim(SeatEnd, SeatEnd2) ;
+  def eq : Path[.A = Type](SeatEnd, SeatEnd2) = Path.bisim(SeatEnd, SeatEnd2) ;
   /// The stationary flow at the old protocol.
   @[ checks ]
-  def kept : Flow(Type, SeatEnd, SeatEnd) = Flow.stay(SeatEnd) ;
+  def kept : Flow[.A = Type](SeatEnd, SeatEnd) = Flow.stay(SeatEnd) ;
   /// The stationary flow, then the simulation.
   @[ checks ]
-  def widened() -> Flow(Type, SeatEnd, SeatEnd′) {
+  def widened() -> Flow[.A = Type](SeatEnd, SeatEnd′) {
     Flow.then(kept, sub)
   }
 }

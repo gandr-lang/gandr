@@ -299,7 +299,7 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// A path a law writes, `Path(C, l, r)`, as read: its carrier, its two
+/// A path a law writes, `Path[.A = C](l, r)`, as read: its carrier, its two
 /// sides, and where each is written.
 ///
 /// # Specification
@@ -2013,7 +2013,7 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// Read a law member, `law name : (binders) => Path(C, l, r)`: the
+    /// Read a law member, `law name : (binders) => Path[.A = C](l, r)`: the
     /// equation a model proves at the path type its statement writes, and
     /// where each of its parts is written.
     ///
@@ -2131,15 +2131,18 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// The path a law's type writes, `Path(C, l, r)`: its carrier and its two
-    /// sides, and where each is written; none for a type of another former.
+    /// The path a law's type writes, `Path[.A = C](l, r)`: its carrier and its
+    /// two sides, and where each is written; none for a type of another
+    /// former.
     ///
     /// # Specification
-    /// - ensures: for an application headed `Path` of three arguments, the
-    ///   first read as [`Self::sort_term`] reads a sort and the others as
-    ///   [`Self::law_side`] reads a side, with the bytes of the whole type;
-    ///   [`Maybe::Absent`] for any other type.
-    /// - fails: a malformed carrier or side as its reader refuses it.
+    /// - ensures: for a type headed `Path` that supplies its carrier by name,
+    ///   the carrier read as [`Self::sort_term`] reads a sort and the two
+    ///   endpoints as [`Self::law_side`] reads a side, with the bytes of the
+    ///   whole type; [`Maybe::Absent`] for any other type.
+    /// - fails: a path that leaves its carrier out or writes it first, as a law
+    ///   statement out of shape; a malformed carrier or side as its reader
+    ///   refuses it.
     /// - panics: none.
     /// - executable: none — the path read is source syntax.
     ///
@@ -2161,22 +2164,35 @@ impl Reader<'_, '_>
         }
         let mut run = Run::new(&pieces, at.span);
         let head = run.take()?;
-        if self.text(head).0 != "Path" || !run.eat(Spelling("(")).0 {
+        if self.text(head).0 != "Path" {
             return Ok(unpathed);
         }
-        let mut arguments = Vec::with_capacity(3);
-        while !run.eat(Spelling(")")).0 {
-            arguments.push(run.take()?);
-            if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
-                return Err(run.fault(DescriptionFault::Malformed));
-            }
-        }
-        run.end()?;
-        let [carrier, left, right] =
-            <[Placed; 3]>::try_from(arguments).map_err(|_count| DescriptionDiagnostic {
+        if !run.eat(Spelling("[")).0 {
+            return Err(DescriptionDiagnostic {
                 span: at.span,
                 fault: DescriptionFault::Signature(SignatureFault::LawStatement),
-            })?;
+            });
+        }
+        if !run.eat(Spelling(".")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        let named = run.take()?;
+        if self.text(named).0 != "A" || !run.eat(Spelling("=")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        let carrier = run.take()?;
+        if !(run.eat(Spelling("]")).0 && run.eat(Spelling("(")).0) {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        let left = run.take()?;
+        if !run.eat(Spelling(",")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        let right = run.take()?;
+        if !run.eat(Spelling(")")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        run.end()?;
         let (carrier, carried) = self.sort_term(carrier)?;
         let (left, from) = self.law_side(left)?;
         let (right, to) = self.law_side(right)?;

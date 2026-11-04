@@ -32,16 +32,16 @@ def index_of(p : #{n : Integer, w : Ix(n)}) -> Integer {
 def index() -> Integer { index_of(tagged) }
 
 /// A pair whose second component is a loop at its first.
-def ring : #{n : Integer, v : Path(Integer, n, n)} = (2, Path.here(2));
+def ring : #{n : Integer, v : Path[.A = Integer](n, n)} = (2, Path.here(2));
 
 /// The second projection's type reads the first.
-def lap(p : #{n : Integer, v : Path(Integer, n, n)}) -> Path(Integer, p.n, p.n) {
+def lap(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> Path(p.n, p.n) {
   p.v
 }
 
 /// A selection by position names the same entry: `.0` the first, `.1` the
 /// second.
-def lap_by_position(p : #{n : Integer, v : Path(Integer, n, n)}) -> Path(Integer, p.0, p.0) {
+def lap_by_position(p : #{n : Integer, v : Path[.A = Integer](n, n)}) -> Path(p.0, p.0) {
   p.1
 }
 
@@ -54,8 +54,8 @@ def third(p : Integer * String) -> -F String {
 /// A split's answer may name its scrutinee: each arm answers it at the pair.
 def rebuilt(p : #{
   n : Integer,
-  v : Path(Integer, n, n)
-}) -> Path(#{n : Integer, v : Path(Integer, n, n)}, p, p) {
+  v : Path[.A = Integer](n, n)
+}) -> Path(p, p) {
   match p {
     #{.n = m, .v = w} => Path.here((m, w))
   }
@@ -67,8 +67,8 @@ def rebuilt(p : #{
 /// at.
 def againAt(
   b : Type,
-  w : #{x : b, y : b, p : Path(b, x, y)}
-) -> Path(#{x : b, y : b, p : Path(b, x, y)}, w, w) {
+  w : #{x : b, y : b, p : Path[.A = b](x, y)}
+) -> Path[.A = #{x : b, y : b, p : Path[.A = b](x, y)}](w, w) {
   match w {
     #{.x = u, .y = v, .p = q} => Path.here((u, (v, q)))
   }
@@ -76,10 +76,10 @@ def againAt(
 
 /// A record of three over a type parameter is equivalent to itself; each
 /// entry reads the ones before it on both sides.
-def selfEquiv(b : Type) -> #{x : b, y : b, p : Path(b, x, y)} ≃ #{
+def selfEquiv(b : Type) -> #{x : b, y : b, p : Path[.A = b](x, y)} ≃ #{
   x : b,
   y : b,
-  p : Path(b, x, y)
+  p : Path[.A = b](x, y)
 } {
   (
     fun (w) { w },
@@ -92,7 +92,7 @@ def selfEquiv(b : Type) -> #{x : b, y : b, p : Path(b, x, y)} ≃ #{
 
 /// A record of three nests its links; a labelled pattern binds the entries it
 /// names, the later one's type reading the earlier.
-def middle(t : #{a : Integer, b : Integer, c : Path(Integer, a, a)}) -> Integer {
+def middle(t : #{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> Integer {
   match t {
     #{.a = x, .c = z} => x
   }
@@ -100,19 +100,22 @@ def middle(t : #{a : Integer, b : Integer, c : Path(Integer, a, a)}) -> Integer 
 
 /// A path between pairs is a path between the first components and, over
 /// it, a path between the second.
-def both : Path(#{n : Integer, v : Path(Integer, n, n)}, (2, Path.here(2)), (2, Path.here(2))) = (
+def both : Path[.A = #{n : Integer, v : Path[.A = Integer](n, n)}](
+  (2, Path.here(2)),
+  (2, Path.here(2))
+) = (
   Path.here(2),
   Path.here(Path.here(2))
 );
 
 /// A declared pair's path reads the pair it unfolds to.
-def ring_around : Path(#{n : Integer, v : Path(Integer, n, n)}, ring, ring) = (
+def ring_around : Path(ring, ring) = (
   Path.here(2),
   Path.here(Path.here(2))
 );
 
 /// The constant path at `tagged`, the second component's over the first's.
-def tagged_around : Path(#{n : Integer, w : Ix(n)}, tagged, tagged) = (
+def tagged_around : Path(tagged, tagged) = (
   Path.here(3),
   Path.here((MkIx : Ix(3)))
 );
@@ -121,11 +124,14 @@ def tagged_around : Path(#{n : Integer, w : Ix(n)}, tagged, tagged) = (
 def moved() -> Integer { Path.walk(fun (s) { Integer }, both, 5) }
 
 /// A later entry's type may apply the earlier one: the type printed for the
-/// pair, `Path(Integer, e.0(0), 0)` at its second entry, reads back to it
+/// pair, `Path[.A = Integer](e.0(0), 0)` at its second entry, reads back to it
 /// (#935).
 def calledFiber(e : #{
   cell : Integer => Integer,
-  fix : Path(Integer, cell(0), 0)
-}) -> Path(#{cell : Integer => Integer, fix : Path(Integer, cell(0), 0)}, (e.cell, e.fix), e) {
+  fix : Path[.A = Integer](cell(0), 0)
+}) -> Path[.A = #{cell : Integer => Integer, fix : Path[.A = Integer](cell(0), 0)}](
+  (e.cell, e.fix),
+  e
+) {
   Path.here(e)
 }

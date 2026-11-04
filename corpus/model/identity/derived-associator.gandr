@@ -67,10 +67,10 @@ module Signs : Model(Monoid) where {
   def mul(x : Sign, y : Sign) -> Sign { times(x, y) }
   /// The left unit law, by conversion.
   @[ checks ]
-  def unitL(x : Sign) -> Path(Sign, mul(e, x), x) { Path.here(x) }
+  def unitL(x : Sign) -> Path(mul(e, x), x) { Path.here(x) }
   /// The right unit law, case by case.
   @[ checks ]
-  def unitR(x : Sign) -> Path(Sign, mul(x, e), x) {
+  def unitR(x : Sign) -> Path(mul(x, e), x) {
     match x {
       Plus => Path.here(Plus),
       Minus => Path.here(Minus),
@@ -78,7 +78,7 @@ module Signs : Model(Monoid) where {
   }
   /// Binary associativity, case by case.
   @[ checks ]
-  def assoc(x : Sign, y : Sign, z : Sign) -> Path(Sign, mul(mul(x, y), z), mul(x, mul(y, z))) {
+  def assoc(x : Sign, y : Sign, z : Sign) -> Path(mul(mul(x, y), z), mul(x, mul(y, z))) {
     match x {
       Plus => Path.here(times(y, z)),
       Minus => match y {
@@ -97,7 +97,7 @@ def signs : Model(Monoid) = pack Signs at Model(Monoid);
 
 /// The derived associator read at the signs, at minus, minus, plus and minus.
 /// Both sides are minus.
-def assoc4Signs() -> Path(Sign, Minus, Minus) {
+def assoc4Signs() -> Path(Minus, Minus) {
   let law = Monoid.assoc4(signs);
   law(Minus, Minus, Plus, Minus)
 }

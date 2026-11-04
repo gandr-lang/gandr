@@ -60,11 +60,11 @@ pub def rec untag(l : Tagged) -> Ints {
 }
 
 /// Reading a tagged list back undoes laying it out, cell by cell.
-pub def rec untagged(l : Ints) -> Path(Ints, untag(tag(l)), l) {
+pub def rec untagged(l : Ints) -> Path(untag(tag(l)), l) {
   match l {
     Nil => Path.here(Nil),
     Cons(x, rest) => Path.walk(
-      fun (z) { Path(Ints, Cons(x, untag(tag(rest))), Cons(x, z)) },
+      fun (z) { type(Path[.A = Ints](Cons(x, untag(tag(rest))), Cons(x, z))) },
       untagged[<](rest),
       Path.here(Cons(x, untag(tag(rest))))
     )
@@ -72,11 +72,11 @@ pub def rec untagged(l : Ints) -> Path(Ints, untag(tag(l)), l) {
 }
 
 /// Laying a list out tagged undoes reading it back, cell by cell.
-pub def rec tagged(l : Tagged) -> Path(Tagged, tag(untag(l)), l) {
+pub def rec tagged(l : Tagged) -> Path(tag(untag(l)), l) {
   match l {
     TagNil => Path.here(TagNil),
     TagCons(x, rest) => Path.walk(
-      fun (z) { Path(Tagged, TagCons(x, tag(untag(rest))), TagCons(x, z)) },
+      fun (z) { type(Path[.A = Tagged](TagCons(x, tag(untag(rest))), TagCons(x, z))) },
       tagged[<](rest),
       Path.here(TagCons(x, tag(untag(rest))))
     )
@@ -102,12 +102,12 @@ pub def rec unpack(p : Packed) -> Ints {
 }
 
 /// Reading a packed list back undoes packing it, two elements at a time.
-pub def rec unpacked(l : Ints) -> Path(Ints, unpack(pack(l)), l) {
+pub def rec unpacked(l : Ints) -> Path(unpack(pack(l)), l) {
   match l {
     Nil => Path.here(Nil),
     Cons(x, Nil) => Path.here(Cons(x, Nil)),
     Cons(x, Cons(y, rest)) => Path.walk(
-      fun (z) { Path(Ints, Cons(x, Cons(y, unpack(pack(rest)))), Cons(x, Cons(y, z))) },
+      fun (z) { type(Path[.A = Ints](Cons(x, Cons(y, unpack(pack(rest)))), Cons(x, Cons(y, z)))) },
       unpacked[<](rest),
       Path.here(Cons(x, Cons(y, unpack(pack(rest)))))
     )
@@ -115,12 +115,12 @@ pub def rec unpacked(l : Ints) -> Path(Ints, unpack(pack(l)), l) {
 }
 
 /// Packing a list undoes reading it back, two elements at a time.
-pub def rec packed(p : Packed) -> Path(Packed, pack(unpack(p)), p) {
+pub def rec packed(p : Packed) -> Path(pack(unpack(p)), p) {
   match p {
     Empty => Path.here(Empty),
     One(x) => Path.here(One(x)),
     Many(x, y, rest) => Path.walk(
-      fun (z) { Path(Packed, Many(x, y, pack(unpack(rest))), Many(x, y, z)) },
+      fun (z) { type(Path[.A = Packed](Many(x, y, pack(unpack(rest))), Many(x, y, z))) },
       packed[<](rest),
       Path.here(Many(x, y, pack(unpack(rest))))
     )
@@ -134,13 +134,17 @@ pub def taggedLayout : Ints ≃ Tagged = (tag, ((untag, untagged), (untag, tagge
 pub def packedLayout : Ints ≃ Packed = (pack, ((unpack, unpacked), (unpack, packed)));
 
 /// The list is its tagged layout, as types.
-pub def taggedPath : Path(Type, Ints, Tagged) = ua(taggedLayout);
+pub def taggedPath : Path[.A = Type](Ints, Tagged) = ua(taggedLayout);
 
 /// The list is its packed layout, as types.
-pub def packedPath : Path(Type, Ints, Packed) = ua(packedLayout);
+pub def packedPath : Path[.A = Type](Ints, Packed) = ua(packedLayout);
 
 /// A tagged list moved to the packed layout along one admission's reverse and the other.
-pub def relayout(p : Path(Type, Ints, Tagged), q : Path(Type, Ints, Packed), l : Tagged) -> Packed {
+pub def relayout(
+  p : Path[.A = Type](Ints, Tagged),
+  q : Path[.A = Type](Ints, Packed),
+  l : Tagged
+) -> Packed {
   Path.walk(fun (X) { X }, Path.step(Path.back(p), q), l)
 }
 
@@ -152,7 +156,7 @@ pub def oneTwoThree : Tagged = TagCons(1i32, TagCons(2i32, TagCons(3i32, TagNil)
 def moved() -> Packed { relayout(taggedPath, packedPath, oneTwoThree) }
 
 /// The tagged layout is the packed one, as types, through the list.
-pub def taggedIsPacked : Path(Type, Tagged, Packed) = Path.step(Path.back(taggedPath), packedPath);
+pub def taggedIsPacked : Path[.A = Type](Tagged, Packed) = Path.step(Path.back(taggedPath), packedPath);
 
 /// One, two and three move along the named composite as along the two admissions.
 @[ runs("Many(1i32, 2i32, One(3i32))") ]

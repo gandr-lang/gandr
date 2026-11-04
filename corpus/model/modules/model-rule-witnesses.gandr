@@ -55,7 +55,7 @@ def rec joinRight(m : Ticks, n : Ticks) -> Ticks {
 }
 
 /// Joining no tick on the left leaves a count as it is, by induction on it.
-def rec noTickJoinsRight(n : Ticks) -> Path(Ticks, joinRight(NoTick, n), n) {
+def rec noTickJoinsRight(n : Ticks) -> Path(joinRight(NoTick, n), n) {
   match n {
     NoTick => Path.here(NoTick),
     Tick(k) => Path.ap(tick, noTickJoinsRight[<](k))
@@ -74,7 +74,7 @@ module ByLeft : Model(LeftUnit) where {
   def mul(x : Ticks, y : Ticks) -> Ticks { joinLeft(x, y) }
 
   /// `mul(e(), x)` computes to `x`, so `Path.here` witnesses the rule.
-  def unitL(x : Ticks) -> Path(Ticks, mul(e(), x), x) { Path.here(x) }
+  def unitL(x : Ticks) -> Path(mul(e(), x), x) { Path.here(x) }
 }
 
 /// Joining on the right as a model: its carrier leaves the rule's sides apart.
@@ -89,5 +89,5 @@ module ByRight : Model(LeftUnit) where {
   def mul(x : Ticks, y : Ticks) -> Ticks { joinRight(x, y) }
 
   /// `mul(e(), x)` waits on `x`, so the induction witnesses the rule.
-  def unitL(x : Ticks) -> Path(Ticks, mul(e(), x), x) { noTickJoinsRight(x) }
+  def unitL(x : Ticks) -> Path(mul(e(), x), x) { noTickJoinsRight(x) }
 }

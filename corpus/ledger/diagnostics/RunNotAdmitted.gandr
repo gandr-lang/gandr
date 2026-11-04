@@ -12,7 +12,7 @@ module Evolution where {
   };
   type Kept = ?String. mu turn. +{ report : !String. &{ next : turn }, handoff : !String. end };
   @[ checks ]
-  def keep : Flow(Type, SeatEnd, Kept) ;
+  def keep : Flow[.A = Type](SeatEnd, Kept) ;
   def keep = Flow.sim(SeatEnd, Kept) ;
 }
 

@@ -4,17 +4,17 @@
 // by an integer, the shape of a hom-set indexed by its objects.
 
 /// Reflexivity at a variable of a type parameter.
-def path_var(a : Type, x : a) -> Path(a, x, x) {
+def path_var(a : Type, x : a) -> Path(x, x) {
   Path.here(x)
 }
 
 /// Reflexivity at a function.
-def path_fun(f : Integer => Integer) -> Path(Integer => Integer, f, f) {
+def path_fun(f : Integer => Integer) -> Path(f, f) {
   Path.here(f)
 }
 
 /// Reflexivity at an application.
-def path_app(n : Integer) -> Path(Integer, n + 1, n + 1) {
+def path_app(n : Integer) -> Path(n + 1, n + 1) {
   Path.here(n + 1)
 }
 

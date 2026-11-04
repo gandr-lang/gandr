@@ -23,7 +23,7 @@ pub def rec plus(a : Int, b : Int) -> Int {
 /// induction on the right summand: the kernel reads the endpoint `S(plus(a,
 /// P(x)))` by `Int`'s rules down to `plus(a, x)`, and the `Path.ap(up, …)`
 /// and `Path.ap(down, …)` arms as transports along the recursive path.
-pub def rec plusS(a : Int, b : Int) -> Path(Int, plus(S(a), b), S(plus(a, b))) {
+pub def rec plusS(a : Int, b : Int) -> Path(plus(S(a), b), S(plus(a, b))) {
   match b {
     Z => Path.here(S(a)),
     S(x) => Path.ap(up, plusS[<](a, x)),
@@ -33,7 +33,7 @@ pub def rec plusS(a : Int, b : Int) -> Path(Int, plus(S(a), b), S(plus(a, b))) {
 
 /// A predecessor on the left of a sum comes out of it (cubical's `predℤ+`),
 /// as `plusS`.
-pub def rec plusP(a : Int, b : Int) -> Path(Int, plus(P(a), b), P(plus(a, b))) {
+pub def rec plusP(a : Int, b : Int) -> Path(plus(P(a), b), P(plus(a, b))) {
   match b {
     Z => Path.here(P(a)),
     S(x) => Path.ap(up, plusP[<](a, x)),
@@ -42,7 +42,7 @@ pub def rec plusP(a : Int, b : Int) -> Path(Int, plus(P(a), b), P(plus(a, b))) {
 }
 
 /// Zero is a left unit of the sum, by induction on the right summand.
-pub def rec plusZ(b : Int) -> Path(Int, plus(Z, b), b) {
+pub def rec plusZ(b : Int) -> Path(plus(Z, b), b) {
   match b {
     Z => Path.here(Z),
     S(x) => Path.ap(up, plusZ[<](x)),
@@ -55,7 +55,7 @@ pub def rec plusZ(b : Int) -> Path(Int, plus(Z, b), b) {
 /// summand brought out of the left. The arms compose to no conversion of the
 /// answer at `x`, yet `Int` is a set, so its rules are respected by their
 /// endpoints alone.
-pub def rec plusComm(a : Int, b : Int) -> Path(Int, plus(a, b), plus(b, a)) {
+pub def rec plusComm(a : Int, b : Int) -> Path(plus(a, b), plus(b, a)) {
   match b {
     Z => Path.back(plusZ(a)),
     S(x) => Path.step(Path.ap(up, plusComm[<](a, x)), Path.back(plusS(x, a))),

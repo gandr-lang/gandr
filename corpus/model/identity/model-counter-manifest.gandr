@@ -164,7 +164,7 @@ def stepZero(a : Model(Counter)) -> Integer {
 /// Counting up and counting down read alike through the operations each
 /// selects, along the path between the models: a selection is a function of
 /// the model, so `Path.ap` carries the path to the readings.
-def selectedAlike() -> Path(Integer, stepZero(upModel), stepZero(downModel)) {
+def selectedAlike() -> Path(stepZero(upModel), stepZero(downModel)) {
   Path.ap(stepZero, oneCounter)
 }
 

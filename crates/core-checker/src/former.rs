@@ -655,10 +655,10 @@ pub fn form_abstract(
 /// Check the interface `declared` states at the types its representation `R`
 /// and its kind's level `level` give: the relation at `U(R → R → F kind)`, its
 /// reflexivity at `U(Π (x : R). F El(⟨relation x x⟩))`, and the law, when
-/// stated, at `U(Π (a b : R). Π (r : El(⟨relation a b⟩)). F Path(Σ (y : R).
-/// El(⟨relation a y⟩), (b, r), (a, ⟨reflexivity a⟩)))`: every element of the
-/// singleton at `a` is its centre. These are the types the kernel checks the
-/// interface at when it admits the atom.
+/// stated, at `U(Π (a b : R). Π (r : El(⟨relation a b⟩)). F Path[.A = Σ (y :
+/// R). El(⟨relation a y⟩)]((b, r), (a, ⟨reflexivity a⟩)))`: every element of
+/// the singleton at `a` is its centre. These are the types the kernel checks
+/// the interface at when it admits the atom.
 ///
 /// # Specification
 /// - requires: `declared` formed by [`form_abstract`] at `level`.
@@ -752,8 +752,8 @@ pub fn related_by(
 }
 
 /// The type an atom's identity-system law checks at over its representation
-/// `R`: `U(Π (a b : R). Π (r : El(⟨relation a b⟩)). F Path(Σ (y : R).
-/// El(⟨relation a y⟩), (b, r), (a, ⟨reflexivity a⟩)))`.
+/// `R`: `U(Π (a b : R). Π (r : El(⟨relation a b⟩)). F Path[.A = Σ (y : R).
+/// El(⟨relation a y⟩)]((b, r), (a, ⟨reflexivity a⟩)))`.
 ///
 /// # Specification
 /// trivial.
@@ -1264,7 +1264,7 @@ pub fn type_read_fields(
 /// - requires: the datatype and motive have formed and `tag` belongs to it.
 /// - ensures: the result is a telescope over the constructor's fields, then one
 ///   equation per index of the family, ending in the motive applied to the
-///   corresponding constructor; the equation at index `j` is `Path(I_j,
+///   corresponding constructor; the equation at index `j` is `Path[.A = I_j](
 ///   stated_j, scrutinee_j)`, `I_j` the index's classifier at the scrutinee's
 ///   earlier indices; each binder's former is a Π when the telescope after it
 ///   names it and a plain arrow, the rest strengthened past the binder,
@@ -1279,8 +1279,8 @@ pub fn type_read_fields(
 /// - hypothesis: L3 — dependent results and unequal fields separate motive
 ///   substitution, binder shifting and field order; a result naming its field
 ///   and one naming none separate the Π from the plain arrow; `Cons` at `Vec(a,
-///   n)` owes `Path(Nat, S(m), n)` past its fields, and `Nil` `Path(Nat, Z,
-///   n)`.
+///   n)` owes `Path[.A = Nat](S(m), n)` past its fields, and `Nil` `Path[.A =
+///   Nat](Z, n)`.
 /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
 /// - witness: `former::tests::a_branch_binds_a_field_only_where_its_result_names_it`
 /// - witness: `former::tests::an_indexed_branch_binds_its_equations_after_its_fields`

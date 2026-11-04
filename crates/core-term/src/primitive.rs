@@ -286,12 +286,12 @@ enum Operation
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Law
 {
-    /// `(a) => Path(Bool, op(a, a), true)`.
+    /// `(a) => Path[.A = Bool](op(a, a), true)`.
     Reflexive,
-    /// `(a, b) => Path(Bool, op(a, b), op(b, a))`.
+    /// `(a, b) => Path[.A = Bool](op(a, b), op(b, a))`.
     Symmetric,
-    /// `(a, b, c, p : Path(Bool, op(a, b), true), q : Path(Bool, op(b, c),
-    /// true)) => Path(Bool, op(a, c), true)`.
+    /// `(a, b, c, p : Path[.A = Bool](op(a, b), true), q : Path[.A =
+    /// Bool](op(b, c), true)) => Path[.A = Bool](op(a, c), true)`.
     Transitive,
 }
 

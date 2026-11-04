@@ -21,7 +21,7 @@ def swapFirstTwo(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
 }
 
 /// The ids to themselves along the relabelling, its own inverse.
-def relabelling : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) = equiv(
+def relabelling : Path[.A = Type](Unit + (Unit + Unit), Unit + (Unit + Unit)) = equiv(
   swapFirstTwo,
   swapFirstTwo
 );
@@ -72,14 +72,12 @@ def builtBAC : #{ids : Type, start : ids, next : ids => ids, label : ids => Inte
 
 /// The links carried along the relabelling are the other order's links.
 def linksRelabelled : Path(
-  Unit + (Unit + Unit) => Unit + (Unit + Unit),
   Path.walk(fun (t) { t => t }, relabelling, nextABC),
   nextBAC
 ) = Path.funext(Path.walk(fun (t) { t => t }, relabelling, nextABC), nextBAC);
 
 /// The labels carried along the relabelling are the other order's labels.
 def labelsRelabelled : Path(
-  Unit + (Unit + Unit) => Integer,
   Path.walk(fun (t) { t => Integer }, relabelling, labelABC),
   labelBAC
 ) = Path.funext(Path.walk(fun (t) { t => Integer }, relabelling, labelABC), labelBAC);
@@ -88,7 +86,6 @@ def labelsRelabelled : Path(
 /// the start carried to `a`'s new id, and the links and labels carried to the
 /// other order's.
 def oneArena : Path(
-  #{ids : Type, start : ids, next : ids => ids, label : ids => Integer},
   builtABC,
   builtBAC
 ) = (relabelling, (Path.here(+{.1 = +{.0 = unit}}), (linksRelabelled, labelsRelabelled)));
@@ -113,14 +110,14 @@ def walkedBAC() -> Integer { walk(builtBAC) }
 
 /// The consumer reads both orders alike by construction, along the path
 /// between the arenas.
-def walkedAlike() -> Path(Integer, walk(builtABC), walk(builtBAC)) {
+def walkedAlike() -> Path(walk(builtABC), walk(builtBAC)) {
   Path.ap(walk, oneArena)
 }
 
 /// The labels left at their ids are not the other order's: an id names a
 /// node only within its arena.
 @[ refuses("PointwiseDistinct") ]
-def labelsUnrelabelled : Path(Unit + (Unit + Unit) => Integer, labelABC, labelBAC) = Path.funext(
+def labelsUnrelabelled : Path(labelABC, labelBAC) = Path.funext(
   labelABC,
   labelBAC
 );

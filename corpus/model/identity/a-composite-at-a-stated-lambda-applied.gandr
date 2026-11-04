@@ -16,7 +16,7 @@
 /// - see: #3920 — one stated lambda written twice
 
 /// The action of `F` on `p`.
-def along(A : Type, F : A => A, x : A, y : A, p : Path(A, x, y)) -> Path(A, F(x), F(y)) {
+def along(A : Type, F : A => A, x : A, y : A, p : Path(x, y)) -> Path[.A = A](F(x), F(y)) {
   Path.ap(F, p)
 }
 
@@ -26,9 +26,9 @@ def composeHere(
   x : A,
   y : A,
   z : A,
-  p : Path(A, x, y),
-  q : Path(A, y, z)
-) -> Path(Path(A, x, z), Path.step(p, q), Path.step(p, q)) {
+  p : Path[.A = A](x, y),
+  q : Path(y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step(p, q), Path.step(p, q)) {
   Path.here(Path.step(p, q))
 }
 
@@ -39,10 +39,9 @@ def composedAtLambda(
   x : A,
   y : A,
   z : A,
-  r : Path(A, x, y),
-  s : Path(A, F(y), z)
-) -> Path(
-  Path(A, F(x), z),
+  r : Path(x, y),
+  s : Path(F(y), z)
+) -> Path[.A = Path[.A = A](F(x), z)](
   Path.step(along(A, (fun (q : A) { F(q) } : A => A), x, y, r), s),
   Path.step(along(A, (fun (q : A) { F(q) } : A => A), x, y, r), s)
 ) {
@@ -56,10 +55,9 @@ def passedAtLambda(
   x : A,
   y : A,
   z : A,
-  r : Path(A, x, y),
-  s : Path(A, F(y), z)
-) -> Path(
-  Path(A, F(x), z),
+  r : Path(x, y),
+  s : Path(F(y), z)
+) -> Path[.A = Path[.A = A](F(x), z)](
   Path.step(along(A, (fun (q : A) { F(q) } : A => A), x, y, r), s),
   Path.step(along(A, (fun (q : A) { F(q) } : A => A), x, y, r), s)
 ) {
@@ -73,10 +71,9 @@ def passedRedex(
   x : A,
   y : A,
   z : A,
-  r : Path(A, x, y),
-  s : Path(A, F(y), z)
-) -> Path(
-  Path(A, F(x), z),
+  r : Path(x, y),
+  s : Path(F(y), z)
+) -> Path[.A = Path[.A = A](F(x), z)](
   Path.step(along(A, (fun (q : A) { F(q) } : A => A), x, y, r), s),
   Path.step(along(A, (fun (q : A) { F(q) } : A => A), x, y, r), s)
 ) {
@@ -91,8 +88,7 @@ def passedRedex(
 }
 
 /// The action of `F` on `p`, across two carriers.
-def acrossCarriers(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(A, x, y)) -> Path(
-  B,
+def acrossCarriers(A : Type, B : Type, F : A => B, x : A, y : A, p : Path(x, y)) -> Path[.A = B](
   F(x),
   F(y)
 ) {
@@ -105,35 +101,34 @@ def composedAcross(
   x : A,
   y : A,
   z : A,
-  fm : Path(A, x, y),
-  fp : Path(A, x, y),
-  fa : Path(Path(A, x, y), fm, fp),
-  g : Path(A, y, z),
-  k : Path(A, x, z),
-  s : Path(Path(A, x, z), Path.step(fp, g), k)
-) -> Path(
-  Path(Path(A, x, z), Path.step(fm, g), k),
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path(y, z),
+  k : Path(x, z),
+  s : Path[.A = Path[.A = A](x, z)](Path.step(fp, g), k)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), k)](
   Path.step(acrossCarriers(
-    Path(A, x, y),
-    Path(A, x, z),
-    (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
+    Path(x, y),
+    Path(x, z),
+    (fun (q : Path[.A = A](x, y)) { Path.step(q, g) } : Path(x, y) => Path(x, z)),
     fm,
     fp,
     fa
   ), s),
   Path.step(acrossCarriers(
-    Path(A, x, y),
-    Path(A, x, z),
-    (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
+    Path(x, y),
+    Path(x, z),
+    (fun (q : Path[.A = A](x, y)) { Path.step(q, g) } : Path(x, y) => Path(x, z)),
     fm,
     fp,
     fa
   ), s)
 ) {
   Path.here(Path.step(acrossCarriers(
-    Path(A, x, y),
-    Path(A, x, z),
-    (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
+    Path(x, y),
+    type(Path[.A = A](x, z)),
+    (fun (q : Path[.A = A](x, y)) { Path.step(q, g) } : Path(x, y) => Path(x, z)),
     fm,
     fp,
     fa
@@ -146,40 +141,39 @@ def passedComposite(
   x : A,
   y : A,
   z : A,
-  fm : Path(A, x, y),
-  fp : Path(A, x, y),
-  fa : Path(Path(A, x, y), fm, fp),
-  g : Path(A, y, z),
-  k : Path(A, x, z),
-  s : Path(Path(A, x, z), Path.step(fp, g), k)
-) -> Path(
-  Path(Path(A, x, z), Path.step(fm, g), k),
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path(y, z),
+  k : Path(x, z),
+  s : Path[.A = Path[.A = A](x, z)](Path.step(fp, g), k)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), k)](
   Path.step(acrossCarriers(
-    Path(A, x, y),
-    Path(A, x, z),
-    (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
+    Path(x, y),
+    Path(x, z),
+    (fun (q : Path[.A = A](x, y)) { Path.step(q, g) } : Path(x, y) => Path(x, z)),
     fm,
     fp,
     fa
   ), s),
   Path.step(acrossCarriers(
-    Path(A, x, y),
-    Path(A, x, z),
-    (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
+    Path(x, y),
+    Path(x, z),
+    (fun (q : Path[.A = A](x, y)) { Path.step(q, g) } : Path(x, y) => Path(x, z)),
     fm,
     fp,
     fa
   ), s)
 ) {
   composeHere(
-    Path(A, x, z),
+    type(Path[.A = A](x, z)),
     Path.step(fm, g),
     Path.step(fp, g),
     k,
     acrossCarriers(
-      Path(A, x, y),
-      Path(A, x, z),
-      (fun (q : Path(A, x, y)) { Path.step(q, g) } : Path(A, x, y) => Path(A, x, z)),
+      Path(x, y),
+      type(Path[.A = A](x, z)),
+      (fun (q : Path[.A = A](x, y)) { Path.step(q, g) } : Path(x, y) => Path(x, z)),
       fm,
       fp,
       fa

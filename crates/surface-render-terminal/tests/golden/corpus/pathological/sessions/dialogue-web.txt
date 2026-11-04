@@ -1,68 +1,68 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:24:65
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:24:41
    │
-24 │ def apart : Path(Dialogue(Seat.SeatEnd), retiring, handedOff) = Path.here(retiring);
-   │                                          ┬───────  ┬────────    ━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
-   │                                          │         │
-   │                                          │         an endpoint the point does not convert to
-   │                                          an endpoint the point does not convert to
+24 │ def apart : Path(retiring, handedOff) = Path.here(retiring);
+   │                  ┬───────  ┬────────    ━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
+   │                  │         │
+   │                  │         an endpoint the point does not convert to
+   │                  an endpoint the point does not convert to
    │
    ├ note: `apart` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:33:5
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:32:5
    │
-31 │   decompose(retiring),
+30 │   decompose(retiring),
    │   ─────────────────── an endpoint the point does not convert to
-32 │   decompose(handedOff)
+31 │   decompose(handedOff)
    │   ──────────────────── an endpoint the point does not convert to
-33 │ ) = Path.here(decompose(retiring));
+32 │ ) = Path.here(decompose(retiring));
    │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
    │
    ├ note: `apartWebs` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[DialogueUnmatched]: this dialogue's message is not received as it was sent
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:37:39
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:36:39
    │
-37 │   def misheard : Dialogue(Ask.Asking) = dialogue(
+36 │   def misheard : Dialogue(Ask.Asking) = dialogue(
    │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-38 │ ┃   left(sent("yes")),
-39 │ ┃   right(received("no")),
-40 │ ┃   left(closed),
-41 │ ┃   right(closed)
-42 │ ┃ );
+37 │ ┃   left(sent("yes")),
+38 │ ┃   right(received("no")),
+39 │ ┃   left(closed),
+40 │ ┃   right(closed)
+41 │ ┃ );
    │ ┗━┛ a move the other endpoint does not match
    │
    ├ note: `misheard` is refused with DialogueUnmatched, as its expectation states
    ╰ help: make each dialogue receipt match its sent value
 
 error[DialogueInverted]: this dialogue is logged out of its causal order
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:46:39
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:45:39
    │
-46 │   def foretold : Dialogue(Ask.Asking) = dialogue(
+45 │   def foretold : Dialogue(Ask.Asking) = dialogue(
    │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-47 │ ┃   right(received("yes")),
-48 │ ┃   left(sent("yes")),
-49 │ ┃   left(closed),
-50 │ ┃   right(closed)
-51 │ ┃ );
+46 │ ┃   right(received("yes")),
+47 │ ┃   left(sent("yes")),
+48 │ ┃   left(closed),
+49 │ ┃   right(closed)
+50 │ ┃ );
    │ ┗━┛ a move logged before the move it follows
    │
    ├ note: `foretold` is refused with DialogueInverted, as its expectation states
    ╰ help: log each send before its matching receipt
 
 error[RunNotAdmitted]: the protocol does not admit this run
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:55:39
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:54:39
    │
-55 │   def answered : Dialogue(Ask.Asking) = dialogue(
+54 │   def answered : Dialogue(Ask.Asking) = dialogue(
    │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-56 │ ┃   left(received("yes")),
-57 │ ┃   right(sent("yes")),
-58 │ ┃   left(closed),
-59 │ ┃   right(closed)
-60 │ ┃ );
+55 │ ┃   left(received("yes")),
+56 │ ┃   right(sent("yes")),
+57 │ ┃   left(closed),
+58 │ ┃   right(closed)
+59 │ ┃ );
    │ ┗━┛ a move in the other direction
    │
    ├ note: `answered` is refused with RunNotAdmitted, as its expectation states

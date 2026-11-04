@@ -1651,8 +1651,8 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
 
 /// The identity a session statement claims between two session codes.
 ///
-/// `bisim(a, b)` inhabits `Path(Type, a, b)` and `sim(a, b)` inhabits
-/// `Flow(Type, a, b)`. The checker decides the statement with the session
+/// `bisim(a, b)` inhabits `Path[.A = Type](a, b)` and `sim(a, b)` inhabits
+/// `Flow[.A = Type](a, b)`. The checker decides the statement with the session
 /// engine and the kernel replays it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SessionRelation

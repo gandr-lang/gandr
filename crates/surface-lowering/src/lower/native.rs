@@ -94,7 +94,7 @@
 //! so in turn: an arm variable at such a level, and the scrutinee's variable
 //! through its fields, read as the answer does. A parameterless family is
 //! refined so, and so are the words over a looped point: a case over
-//! `p : Path(Circle, Base, Base)` answers its motive at `Path.here(Base)`,
+//! `p : Path[.A = Circle](Base, Base)` answers its motive at `Path.here(Base)`,
 //! `loop ∷ q` and `back(loop) ∷ q`, each the words' own constructor, which
 //! both checkers read at the path type. A family with parameters and the
 //! presentation's own keep the answer as written under the fields, and an
@@ -1143,10 +1143,10 @@ pub(super) enum Over
     /// The written type itself.
     Written,
     /// The path over a loop of a case answering the written type `B`:
-    /// `Path(B, y, y)`, `y` the case's answer at the loop's point, which the
-    /// arm's frame `arm` binds innermost. Once the case is minted the lowering
-    /// substitutes for `y` the answer [`gandr_core_term::identity::answer_at`]
-    /// reads at the point.
+    /// `Path[.A = B](y, y)`, `y` the case's answer at the loop's point, which
+    /// the arm's frame `arm` binds innermost. Once the case is minted the
+    /// lowering substitutes for `y` the answer
+    /// [`gandr_core_term::identity::answer_at`] reads at the point.
     Loop
     {
         /// The arm's frame.
@@ -9226,8 +9226,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `words` is an entry of the collection's words list.
     /// - ensures: the family's type without arguments, and the point as
     ///   [`spelled_point`] mints it over that type.
-    /// - provides: the path type `Path(carrier, point, point)` a word at that
-    ///   point stands at, for the words' own binding and for a derived
+    /// - provides: the path type `Path[.A = carrier](point, point)` a word at
+    ///   that point stands at, for the words' own binding and for a derived
     ///   operation reading its path's type.
     /// - fails: the unminted absence for words over a family the collection
     ///   does not hold, or a point that spells nothing.

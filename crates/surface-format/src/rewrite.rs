@@ -81,14 +81,14 @@ pub enum RewriteName
     /// The default grade of a thunk type: `+U[ω] B` and `+U B`, both forms
     /// leaving it unwritten as the printer does.
     DefaultGrade,
-    /// The path composite: `Path.walk(fun (y) { Path(A, a, y) }, q, p)` and
-    /// `Path.step(p, q)`.
+    /// The path composite: `Path.walk(fun (y) { Path[.A = A](a, y) }, q, p)`
+    /// and `Path.step(p, q)`.
     PathComposite,
-    /// The path inverse: `Path.walk(fun (y) { Path(A, y, a) }, p,
+    /// The path inverse: `Path.walk(fun (y) { Path[.A = A](y, a) }, p,
     /// Path.here(a))` and `Path.back(p)`.
     PathInverse,
-    /// A map's action on a path: `Path.walk(fun (y) { Path(B, f(a), f(y)) }, p,
-    /// Path.here(f(a)))` and `Path.ap(f, p)`.
+    /// A map's action on a path: `Path.walk(fun (y) { Path[.A = B](f(a), f(y))
+    /// }, p, Path.here(f(a)))` and `Path.ap(f, p)`.
     PathAction,
     /// A tail's exit: `return v` where a path through a body ends, over a
     /// value, and `v`; only the sugared form moves it, leaving out the
@@ -307,7 +307,7 @@ pub const REWRITES: [Rewrite; 33] = [
         name: RewriteName::PathComposite,
         direction: Direction::Sugar,
         mold: MoldName("call_expression"),
-        from: Spelling("Path.walk(fun (y) { Path(A, a, y) }, q, p)"),
+        from: Spelling("Path.walk(fun (y) { type(Path[.A = A](a, y)) }, q, p)"),
         to: Spelling("Path.step(p, q)"),
         enabled: Enabled::On,
     },
@@ -316,14 +316,14 @@ pub const REWRITES: [Rewrite; 33] = [
         direction: Direction::Desugar,
         mold: MoldName("call_expression"),
         from: Spelling("Path.step(p, q)"),
-        to: Spelling("Path.walk(fun (y) { Path(A, a, y) }, q, p)"),
+        to: Spelling("Path.walk(fun (y) { type(Path[.A = A](a, y)) }, q, p)"),
         enabled: Enabled::On,
     },
     Rewrite {
         name: RewriteName::PathInverse,
         direction: Direction::Sugar,
         mold: MoldName("call_expression"),
-        from: Spelling("Path.walk(fun (y) { Path(A, y, a) }, p, Path.here(a))"),
+        from: Spelling("Path.walk(fun (y) { type(Path[.A = A](y, a)) }, p, Path.here(a))"),
         to: Spelling("Path.back(p)"),
         enabled: Enabled::On,
     },
@@ -332,14 +332,14 @@ pub const REWRITES: [Rewrite; 33] = [
         direction: Direction::Desugar,
         mold: MoldName("call_expression"),
         from: Spelling("Path.back(p)"),
-        to: Spelling("Path.walk(fun (y) { Path(A, y, a) }, p, Path.here(a))"),
+        to: Spelling("Path.walk(fun (y) { type(Path[.A = A](y, a)) }, p, Path.here(a))"),
         enabled: Enabled::On,
     },
     Rewrite {
         name: RewriteName::PathAction,
         direction: Direction::Sugar,
         mold: MoldName("call_expression"),
-        from: Spelling("Path.walk(fun (y) { Path(B, f(a), f(y)) }, p, Path.here(f(a)))"),
+        from: Spelling("Path.walk(fun (y) { type(Path[.A = B](f(a), f(y))) }, p, Path.here(f(a)))"),
         to: Spelling("Path.ap(f, p)"),
         enabled: Enabled::On,
     },
@@ -348,7 +348,7 @@ pub const REWRITES: [Rewrite; 33] = [
         direction: Direction::Desugar,
         mold: MoldName("call_expression"),
         from: Spelling("Path.ap(f, p)"),
-        to: Spelling("Path.walk(fun (y) { Path(B, f(a), f(y)) }, p, Path.here(f(a)))"),
+        to: Spelling("Path.walk(fun (y) { type(Path[.A = B](f(a), f(y))) }, p, Path.here(f(a)))"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -3104,13 +3104,13 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// The derived path operation the transport call whose parts are `parts`
-    /// spells, when its motive `fun (y) { Path(A, l, r) }`, its body quoted
-    /// or not, is one the lowering derives: `Path.step(p, q)` for
-    /// `Path.walk(fun (y) { Path(A, a, y) }, q, p)`, `Path.back(p)` for
-    /// `Path.walk(fun (y) { Path(A, y, a) }, p, Path.here(a))` and `Path.ap(f,
-    /// p)` for `Path.walk(fun (y) { Path(B, f(a), f(y)) }, p,
-    /// Path.here(f(a)))`, where neither the carrier, the fixed endpoint nor the
-    /// map names `y`.
+    /// spells, when its motive `fun (y) { Path[.A = A](l, r) }`, its body
+    /// quoted or not and its carrier supplied or left to the endpoints, is
+    /// one the lowering derives: `Path.step(p, q)` for `Path.walk(fun (y) {
+    /// Path[.A = A](a, y) }, q, p)`, `Path.back(p)` for `Path.walk(fun (y) {
+    /// Path[.A = A](y, a) }, p, Path.here(a))` and `Path.ap(f, p)` for
+    /// `Path.walk(fun (y) { Path[.A = B](f(a), f(y)) }, p, Path.here(f(a)))`,
+    /// where neither the carrier, the fixed endpoint nor the map names `y`.
     ///
     /// # Specification
     /// trivial.
@@ -3144,9 +3144,9 @@ impl<'source> Respelling<'_, 'source>
         else {
             return None;
         };
-        // The block molds `Path(A, l, r)` as a call of `Path`, and a quote
-        // `type(Path(A, l, r))`, which the printer writes over a carrier no
-        // expression reads, holds it as a path type.
+        // The block molds a bare `Path(l, r)` as a call of `Path`, and a quote
+        // `type(Path[.A = A](l, r))`, which the printer writes where a carrier
+        // is supplied, holds it as a path type.
         let body = if self.rule(body) == Some(MoldName("type_quote_expression")) {
             let (quote, _) = self.parts(body);
             let (_, quoted) = split(&quote);
@@ -3166,9 +3166,9 @@ impl<'source> Respelling<'_, 'source>
             return None;
         };
         let (typed, _) = self.parts(body);
-        // The endpoints by their tokens and the operands they hold, split at
-        // the type's own commas: a carrier the grammar keeps as its own tile,
-        // as `Type`, is one too.
+        // The head and the supply by their tokens, then the endpoints by their
+        // tokens and the operands they hold, split at the type's own commas.
+        let mut head: Vec<SourceFragment<'source>> = Vec::new();
         let mut endpoints: Vec<(Vec<SourceFragment<'source>>, Vec<Child<'source>>)> = Vec::new();
         let mut opened = false;
         for part in &typed {
@@ -3178,21 +3178,12 @@ impl<'source> Respelling<'_, 'source>
                         opened = true;
                         endpoints.push((Vec::new(), Vec::new()));
                     },
-                    "," => endpoints.push((Vec::new(), Vec::new())),
-                    ")" => {},
+                    "," if opened => endpoints.push((Vec::new(), Vec::new())),
+                    ")" if opened => {},
                     _ if opened => endpoints.last_mut()?.0.push(text),
-                    _ => {},
+                    _ => head.push(text),
                 },
-                Role::Operand(child) if !opened => {
-                    if self
-                        .tokens(child)
-                        .iter()
-                        .map(|&token| <&str>::from(token))
-                        .ne(["Path"])
-                    {
-                        return None;
-                    }
-                },
+                Role::Operand(child) if !opened => head.extend(self.tokens(child)),
                 Role::Operand(child) => {
                     let endpoint = endpoints.last_mut()?;
                     endpoint.0.extend(self.tokens(child));
@@ -3201,7 +3192,21 @@ impl<'source> Respelling<'_, 'source>
                 Role::Comment => return None,
             }
         }
-        let &[(ref carrier, _), (ref left, _), (ref right, ref holds)] = endpoints.as_slice()
+        // `Path`, or `Path[.A = C]`: the carrier is the tokens of `C`.
+        let carrier = match *head.as_slice() {
+            [path] if <&str>::from(path) == "Path" => &[][..],
+            [path, open, dot, _, equals, ref carrier @ .., close]
+                if <&str>::from(path) == "Path"
+                    && <&str>::from(open) == "["
+                    && <&str>::from(dot) == "."
+                    && <&str>::from(equals) == "="
+                    && <&str>::from(close) == "]" =>
+            {
+                carrier
+            },
+            _ => return None,
+        };
+        let &[(ref left, _), (ref right, ref holds)] = endpoints.as_slice()
         else {
             return None;
         };

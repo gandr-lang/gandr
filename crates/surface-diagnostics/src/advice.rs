@@ -512,6 +512,12 @@ fn malformed(
             String::from("supply the value by name, as `.n = …` with the implicit's name for `n`")
         },
         FormFault::SuppliedTwice => String::from("remove one of the two entries"),
+        FormFault::PositionalCarrier(head) => {
+            format!(
+                "supply the carrier by name, as `{}[.A = …](…, …)`, or leave it to the endpoints",
+                head.as_ref()
+            )
+        },
         FormFault::MissingOpen(close) => {
             format!(
                 "add the `{}` that this `{}` closes",

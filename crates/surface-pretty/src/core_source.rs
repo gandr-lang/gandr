@@ -1145,8 +1145,9 @@ impl<'arena> CoreSource<'arena>
 
     /// The carrier `carrier` as the source wrote it, or nothing where the
     /// source omitted it: the decoding of a hole a type nominated, as
-    /// `Flow(x, y)` lowers its carrier. A source cannot write a nominated
-    /// hole, so an omitted carrier reads back as nothing.
+    /// `Path(x, y)`, `Bridge(x, y)` and `Flow(x, y)` lower their carrier. A
+    /// source cannot write a nominated hole, so an omitted carrier reads back
+    /// as nothing.
     ///
     /// # Specification
     /// - ensures: nothing exactly for the decoding of a nominated hole, and the
@@ -1154,8 +1155,9 @@ impl<'arena> CoreSource<'arena>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a flow whose carrier the source omitted spells
-    ///   without it, and one whose carrier the source wrote spells with it.
+    /// - hypothesis: L3 — a path-shaped type whose carrier the source omitted
+    ///   spells without it, and one whose carrier the source wrote spells with
+    ///   it.
     /// - witness: `core_source::tests::an_omitted_flow_carrier_reads_as_nothing_4932`
     #[spec(ensures: |ret| ret.is_none_or(|node| node == CoreNode::ValueType(carrier)))]
     fn written_carrier(
@@ -1695,8 +1697,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&ValueType::Data { declaration, ref arguments }), Former::Data { name, arity }) =>
             usize::from(arity) == arguments.len() && self.name(declaration) == name,
         | (Some(&ValueType::Path { carrier, left, right }), Former::Path { carrier: actual_carrier, left: actual_left, right: actual_right })
-        | (Some(&ValueType::Bridge { carrier, left, right }), Former::Bridge { carrier: actual_carrier, left: actual_left, right: actual_right }) =>
-            actual_carrier == CoreNode::ValueType(carrier) && actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
+        | (Some(&ValueType::Bridge { carrier, left, right }), Former::Bridge { carrier: actual_carrier, left: actual_left, right: actual_right })
         | (Some(&ValueType::Flow { carrier, source: left, target: right }), Former::Flow { carrier: actual_carrier, left: actual_left, right: actual_right }) =>
             actual_carrier == self.written_carrier(carrier) && actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
         (Some(&ValueType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (Some(&ValueType::Lift { .. }), Former::Unreadable(Unreadable::Lift))
@@ -1773,7 +1774,7 @@ impl<'arena> CoreSource<'arena>
                 left,
                 right,
             } => Former::Path {
-                carrier: CoreNode::ValueType(carrier),
+                carrier: self.written_carrier(carrier),
                 left: CoreNode::Value(left),
                 right: CoreNode::Value(right),
             },
@@ -1782,7 +1783,7 @@ impl<'arena> CoreSource<'arena>
                 left,
                 right,
             } => Former::Bridge {
-                carrier: CoreNode::ValueType(carrier),
+                carrier: self.written_carrier(carrier),
                 left: CoreNode::Value(left),
                 right: CoreNode::Value(right),
             },

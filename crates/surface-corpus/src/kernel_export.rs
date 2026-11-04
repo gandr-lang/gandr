@@ -78,12 +78,12 @@
 //! `kernel_export::kernel_presented_readmission::a_section_at_a_variable_readmits_and_a_tampered_twin_is_refused_by_name`
 //! readmits the round trips at a variable at both strata:
 //! `corpus/model/identity/loop-space.gandr`'s `sectWords`, a fold into
-//! `Path(Words, spinWords(windWords(c)), c)`, and the identity base's `sect`,
-//! which `corpus/model/identity/circle.gandr` imports, a fold over the words
-//! into `Path(Path(Circle, Base, Base), spin(wind(p)), p)`, each with respect
-//! obligations that are cong chains the kernel reads as their paths, then the
-//! retraction and the equivalence that holds them (`retrWords` and
-//! `wordsWinding`; `retr` and `winding`). A twin whose section carries the
+//! `Path[.A = Words](spinWords(windWords(c)), c)`, and the identity base's
+//! `sect`, which `corpus/model/identity/circle.gandr` imports, a fold over the
+//! words into `Path[.A = Path[.A = Circle](Base, Base)](spin(wind(p)), p)`,
+//! each with respect obligations that are cong chains the kernel reads as their
+//! paths, then the retraction and the equivalence that holds them (`retrWords`
+//! and `wordsWinding`; `retr` and `winding`). A twin whose section carries the
 //! loop's path along the inverse is refused at the section, naming the
 //! computation type its loop arm does not answer.
 //!
@@ -2032,7 +2032,7 @@ mod kernel_presented_readmission
         let integers = position("Int");
         let not_zero = position("not_zero");
 
-        // The twin states `not_zero` at `Path(Int, S(P(Z)), Z)`: the same
+        // The twin states `not_zero` at `Path[.A = Int](S(P(Z)), Z)`: the same
         // case of no branch, its endpoints forged to agree.
         let marked = &declarations[not_zero];
         let DeclarationContent::Def { declared, body } = *marked.declaration().content()

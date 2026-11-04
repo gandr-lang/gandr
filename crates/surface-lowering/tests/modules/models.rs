@@ -41,12 +41,12 @@ const SIGN: &str = "theory CatShape where {\n  sort Ob : Type;\n  sort Hom(dom: 
 
 /// The category of discrete setoids: types and functions, composition by
 /// sequencing, each law holding by computation.
-const SETOIDS: &str = "type Ob = Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    let y = f(x);\n    become g(y)\n  }\n  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become ident(t) } }\n  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {\n    return thunk { become compose(t, u, v, f, g) }\n  }\n  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) { return Path.here(f) }\n  def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, q, q, f, id(q)), f) { return Path.here(f) }\n  def assoc(p : Type, q : Type, r : Type, s : Type, f : +U[ω] (p -> -F q), g : +U[ω] (q -> -F r), h : +U[ω] (r -> -F s)) -> -F Path((+U[ω] (p -> -F s)), comp(p, r, s, comp(p, q, r, f, g), h), comp(p, q, s, f, comp(q, r, s, g, h))) {\n    return Path.here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })\n  }\n";
+const SETOIDS: &str = "type Ob = Type;\n  type Hom(a : Ob, b : Ob) = +U[ω] (a -> -F b);\n  def ident(t : Type, x : t) -> -F t { return x }\n  def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {\n    let y = f(x);\n    become g(y)\n  }\n  def id(t : Type) -> -F (+U[ω] (t -> -F t)) { return thunk { become ident(t) } }\n  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {\n    return thunk { become compose(t, u, v, f, g) }\n  }\n  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path[.A = (+U[ω] (p -> -F q))](comp(p, p, q, id(p), f), f) { return Path.here(f) }\n  def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path[.A = (+U[ω] (p -> -F q))](comp(p, q, q, f, id(q)), f) { return Path.here(f) }\n  def assoc(p : Type, q : Type, r : Type, s : Type, f : +U[ω] (p -> -F q), g : +U[ω] (q -> -F r), h : +U[ω] (r -> -F s)) -> -F Path[.A = (+U[ω] (p -> -F s))](comp(p, r, s, comp(p, q, r, f, g), h), comp(p, q, s, f, comp(q, r, s, g, h))) {\n    return Path.here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })\n  }\n";
 
 /// The signature `Model(CatShape)` derives, written out by hand, its laws
 /// stated over the operations of the module `Derived` so the two signatures
 /// name the same constants.
-const WRITTEN: &str = "#{ type Ob : Type[+, 1], type Hom : (a : Ob, b : Ob) => Type, id : (a : Ob) => Hom(a, a), comp : (a : Ob, b : Ob, c : Ob, f : Hom(a, b), g : Hom(b, c)) => Hom(a, c), unitL : (a : Ob, b : Ob, f : Hom(a, b)) => Path(Hom(a, b), Derived.comp(a, a, b, Derived.id(a), f), f), unitR : (a : Ob, b : Ob, f : Hom(a, b)) => Path(Hom(a, b), Derived.comp(a, b, b, f, Derived.id(b)), f), assoc : (a : Ob, b : Ob, c : Ob, d : Ob, f : Hom(a, b), g : Hom(b, c), h : Hom(c, d)) => Path(Hom(a, d), Derived.comp(a, c, d, Derived.comp(a, b, c, f, g), h), Derived.comp(a, b, d, f, Derived.comp(b, c, d, g, h))) }";
+const WRITTEN: &str = "#{ type Ob : Type[+, 1], type Hom : (a : Ob, b : Ob) => Type, id : (a : Ob) => Hom(a, a), comp : (a : Ob, b : Ob, c : Ob, f : Hom(a, b), g : Hom(b, c)) => Hom(a, c), unitL : (a : Ob, b : Ob, f : Hom(a, b)) => Path[.A = Hom(a, b)](Derived.comp(a, a, b, Derived.id(a), f), f), unitR : (a : Ob, b : Ob, f : Hom(a, b)) => Path[.A = Hom(a, b)](Derived.comp(a, b, b, f, Derived.id(b)), f), assoc : (a : Ob, b : Ob, c : Ob, d : Ob, f : Hom(a, b), g : Hom(b, c), h : Hom(c, d)) => Path[.A = Hom(a, d)](Derived.comp(a, c, d, Derived.comp(a, b, c, f, g), h), Derived.comp(a, b, d, f, Derived.comp(b, c, d, g, h))) }";
 
 #[test]
 fn a_derived_signature_states_what_the_written_one_does()
@@ -475,9 +475,9 @@ fn a_model_binder_s_carrier_is_its_projected_sort_2131()
              Integer) => Integer ;\ndef open : (x : Type) => (a : Model(Counter) with sort C = \
              x) => (n : Integer) => (c : a.C) => x ;\ndef openWritten : (x : Type) => (a : \
              Model(Counter) with sort C = x) => (n : Integer) => (c : x) => x ;\ndef named : (x \
-             : Type) => (a : Model(Counter) with sort C = x) => (p : Path(Model(Counter) with \
-             sort C = x, a, a)) => (c : a.C) => x ;\ndef namedWritten : (x : Type) => (a : \
-             Model(Counter) with sort C = x) => (p : Path(Model(Counter) with sort C = x, a, \
+             : Type) => (a : Model(Counter) with sort C = x) => (p : Path[.A = Model(Counter) with \
+             sort C = x](a, a)) => (c : a.C) => x ;\ndef namedWritten : (x : Type) => (a : \
+             Model(Counter) with sort C = x) => (p : Path[.A = Model(Counter) with sort C = x](a, \
              a)) => (c : x) => x ;\n"
         ),
         &[
@@ -703,7 +703,7 @@ fn a_model_missing_an_operation_is_refused_naming_it()
 #[test]
 fn a_stated_law_is_a_component_a_model_proves_2356()
 {
-    let source = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Proved : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  def refl(a : One) -> Path(Bool, same(a, a), true) { Path.here(true) }\n  def trans(a : One, b : One, c : One, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) -> Path(Bool, same(a, c), true) { Path.here(true) }\n}\nmodule Admitted : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl = ~admitted;\n  law trans = ~admitted;\n}\nmodule Short : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  law refl = ~admitted;\n}\n";
+    let source = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), true);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path[.A = Bool](same(a, b), true), q : Path[.A = Bool](same(b, c), true)) => Path[.A = Bool](same(a, c), true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Proved : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  def refl(a : One) -> Path[.A = Bool](same(a, a), true) { Path.here(true) }\n  def trans(a : One, b : One, c : One, p : Path[.A = Bool](same(a, b), true), q : Path[.A = Bool](same(b, c), true)) -> Path[.A = Bool](same(a, c), true) { Path.here(true) }\n}\nmodule Admitted : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq(a, b) }\n  law refl = ~admitted;\n  law trans = ~admitted;\n}\nmodule Short : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n  law refl = ~admitted;\n}\n";
     let mut lowered = lower(source);
     let found = rows(&lowered);
     for (path, role, amounts) in [
@@ -745,7 +745,7 @@ fn a_stated_law_is_a_component_a_model_proves_2356()
 fn a_law_member_admits_only_by_the_splice_of_admitted()
 {
     let theory = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : \
-                  Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), \
+                  Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), \
                   true);\n}\n";
     for (member, out_of_place) in [
         ("law refl = Path.here(true);", "Path.here(true)"),
@@ -790,7 +790,7 @@ fn a_law_member_admits_only_by_the_splice_of_admitted()
 fn an_omitted_law_is_discharged_by_the_checker_4112()
 {
     let source = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : \
-                  Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), \
+                  Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), \
                   true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) \
                   with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true \
                   }\n}\nmodule Parts : Model(Same) with sort Carrier = One where {\n  def same(a : \
@@ -811,10 +811,10 @@ fn an_omitted_law_is_discharged_by_the_checker_4112()
 fn a_repaired_model_body_owes_no_law_beside_its_parse_error_5142()
 {
     let source = "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : \
-                  Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), \
-                  true);\n  law sym : (a : Carrier, b : Carrier) => Path(Bool, same(a, b), same(b, \
-                  a));\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Cut : Model(Same) \
-                  with sort Carrier = One where {\n  def same(a ";
+                  Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), \
+                  true);\n  law sym : (a : Carrier, b : Carrier) => Path[.A = Bool](same(a, b), \
+                  same(b, a));\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Cut : \
+                  Model(Same) with sort Carrier = One where {\n  def same(a ";
     let lowered = super::repaired(source);
     let refused: Vec<_> = rows(&lowered)
         .into_iter()
@@ -849,11 +849,11 @@ fn an_instance_with_a_wrong_law_endpoint_is_refused_naming_the_law()
             "{SIGN}module LeftZero : Model(CatShape) where {{\n  type Ob = Type;\n  type Hom(a : Ob, b \
              : Ob) = Integer;\n  def id(a : Type) -> -F Hom(a, a) {{ return 0 }}\n  def comp(a : \
              Type, b : Type, c : Type, f : Hom(a, b), g : Hom(b, c)) -> -F Hom(a, c) {{ return f \
-             }}\n  def unitL(a : Type, b : Type, f : Hom(a, b)) -> -F Path(Hom(a, b), \
+             }}\n  def unitL(a : Type, b : Type, f : Hom(a, b)) -> -F Path[.A = Hom(a, b)](\
              {statement}) {{ return Path.here(f) }}\n  def unitR(a : Type, b : Type, f : Hom(a, b)) -> \
-             -F Path(Hom(a, b), comp(a, b, b, f, id(b)), f) {{ return Path.here(f) }}\n  def assoc(a : \
+             -F Path[.A = Hom(a, b)](comp(a, b, b, f, id(b)), f) {{ return Path.here(f) }}\n  def assoc(a : \
              Type, b : Type, c : Type, d : Type, f : Hom(a, b), g : Hom(b, c), h : Hom(c, d)) -> \
-             -F Path(Hom(a, d), comp(a, c, d, comp(a, b, c, f, g), h), comp(a, b, d, f, comp(b, \
+             -F Path[.A = Hom(a, d)](comp(a, c, d, comp(a, b, c, f, g), h), comp(a, b, d, f, comp(b, \
              c, d, g, h))) {{ return Path.here(f) }}\n}}\n"
         )
     };
@@ -1266,7 +1266,7 @@ fn a_law_bearing_model_type_reads_its_operations()
     states_the_written_types(
         "theory Unital where {\n  sort M : Type;\n  oper e : M;\n  oper mul : (x : M, y : M) --> M;\n  \
          rule unitL : mul(e(), x) ==> x;\n}\ndef derived : Model(Unital) ;\ndef written : #{m : \
-         Type, e : m, mul : (x : m, y : m) => m, unitL : (x : m) => Path(m, mul(e, x), x)} ;\n",
+         Type, e : m, mul : (x : m, y : m) => m, unitL : (x : m) => Path[.A = m](mul(e, x), x)} ;\n",
         &[("derived", "written")],
     );
 }
@@ -2506,7 +2506,7 @@ fn the_terms_of_a_theory_outside_one_plain_sort_are_refused_4143()
         ),
         (
             "theory Idem where {\n  sort M : Type;\n  oper twice : (x : M) --> M;\n  law settles : (x : \
-             M) => Path(M, twice(twice(x)), twice(x));\n}\ndef doubled : Terms(Idem) = \
+             M) => Path[.A = M](twice(twice(x)), twice(x));\n}\ndef doubled : Terms(Idem) = \
              Idem.twice;\n",
             "doubled",
             "Terms(Idem)",

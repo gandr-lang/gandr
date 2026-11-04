@@ -355,8 +355,8 @@ pub fn respected(
 
 /// Whether a fold's two sides of a rule are paths in a set with the same
 /// endpoints: `arrow`'s codomain at each rule side, `amount` binders past the
-/// fold's type, is `F Path(C, a, b)` for one set `C`, and the two instances'
-/// endpoints convert.
+/// fold's type, is `F Path[.A = C](a, b)` for one set `C`, and the two
+/// instances' endpoints convert.
 ///
 /// A set has no cells: two parallel paths in one are one path, so a fold
 /// into its paths meets each rule however its arms compose them, a cong of
@@ -372,11 +372,12 @@ pub fn respected(
 /// - requires: `arrow` is the type of the fold whose two sides of a rule are
 ///   built over `left` and `right`, beneath `amount` binders.
 /// - ensures: [`Related::Related`] exactly when `arrow` is `A → F P` or `Π (y :
-///   A). F P`, `P` at `left` and at `right` is `Path(C, a, b)` and `Path(C',
-///   a', b')` with `C` equivalent to `C'`, `C` a set as [`sethood`] decides,
-///   and `a` converting with `a'` and `b` with `b'`, each a returned run read
-///   as that run, under [`crate::code::CodeDefinitions::convert_rigidly`];
-///   [`Related::Apart`] otherwise.
+///   A). F P`, `P` at `left` and at `right` is `Path[.A = C](a, b)` and
+///   `Path[.A = C']( a', b')` with `C` equivalent to `C'`, `C` a set as
+///   [`sethood`] decides, and `a` converting with `a'` and `b` with `b'`, each
+///   a returned run read as that run, under
+///   [`crate::code::CodeDefinitions::convert_rigidly`]; [`Related::Apart`]
+///   otherwise.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -602,11 +603,11 @@ fn pattern_binder(
 ///   `arrow`, built beneath `rule`'s pattern binders over a data application of
 ///   `signature`.
 /// - ensures: [`Related::Related`] exactly when `arrow` is `A → F C`, the law's
-///   declared type is `Path(C', a, b)` for a rule over no variable or `U (Π (x₁
-///   : A₁) … (xₙ : Aₙ). F Path(C', a, b))` with one parameter per variable,
-///   each `Aᵢ` equivalent to the classifier of the `i`th variable's reading,
-///   `C'` equivalent to `C`, and at the instance `a` converts with `F(l)` and
-///   `b` with `F(r)`, each endpoint read in place or sequenced;
+///   declared type is `Path[.A = C'](a, b)` for a rule over no variable or `U
+///   (Π (x₁ : A₁) … (xₙ : Aₙ). F Path[.A = C'](a, b))` with one parameter per
+///   variable, each `Aᵢ` equivalent to the classifier of the `i`th variable's
+///   reading, `C'` equivalent to `C`, and at the instance `a` converts with
+///   `F(l)` and `b` with `F(r)`, each endpoint read in place or sequenced;
 ///   [`Related::Apart`] otherwise, a conversion that faults included.
 /// - fails: [`CheckRefusal::MachineInvariant`] when the rule does not read
 ///   against the signature's constructor table.

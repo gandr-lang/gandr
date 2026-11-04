@@ -3149,11 +3149,11 @@ fn a_decoded_type_parameter_at_a_call_converts_with_the_type_written_with_it_393
 fn a_composite_started_at_a_call_argument_converts_with_the_type_written_with_it_4065()
 {
     // def ext : U (Integer -> F Integer) ;
-    // def loop : Path(Integer, ⟨ext(0)⟩, ⟨ext(0)⟩) ;
-    // def square : Path(Path(Integer, ⟨ext(0)⟩, ⟨ext(0)⟩),
+    // def loop : Path[.A = Integer](⟨ext(0)⟩, ⟨ext(0)⟩) ;
+    // def square : Path[.A = Path[.A = Integer](⟨ext(0)⟩, ⟨ext(0)⟩)](
     //   loop then loop, loop then loop) ;
-    // def use : U ((a : Integer) -> (p : Path(Integer, a, a))
-    //   -> Path(Path(Integer, a, a), p then p, p then p) -> F Unit) ;
+    // def use : U ((a : Integer) -> (p : Path[.A = Integer](a, a))
+    //   -> Path[.A = Path[.A = Integer](a, a)](p then p, p then p) -> F Unit) ;
     // use(ext(0), loop, square) : F Unit
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
@@ -3440,7 +3440,7 @@ fn reflexivity_checks_by_endpoint_conversion()
     let here_five = arena.value_here(five);
     let same = arena.value_type_path(integer_type, also_five, also_five);
     let apart = arena.value_type_path(integer_type, five, six);
-    // \y. return here(y), against (y : Integer) -> F Path(Integer, e, y).
+    // \y. return here(y), against (y : Integer) -> F Path[.A = Integer](e, y).
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let here_bound = arena.value_here(bound);
     let returns_here = arena.computation_return(here_bound);
@@ -3581,12 +3581,12 @@ fn tier_dialogues(
         let applied = arena.computation_application(forced, argument);
         arena.value_returned(applied)
     };
-    // here(5) against Path(Integer, 5, ⟨id 5⟩): no side mentions a variable.
+    // here(5) against Path[.A = Integer](5, ⟨id 5⟩): no side mentions a variable.
     let five = arena.value_literal(integer(Numeral::Five));
     let closed_endpoint = called(&mut arena, five);
     let closed = arena.value_here(five);
     let closed_path = arena.value_type_path(integer_type, five, closed_endpoint);
-    // \y. return here(y), against (y : Integer) -> F Path(Integer, y, ⟨id y⟩).
+    // \y. return here(y), against (y : Integer) -> F Path[.A = Integer](y, ⟨id y⟩).
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let open_endpoint = called(&mut arena, bound);
     let open = arena.value_here(bound);
@@ -3656,7 +3656,7 @@ fn a_closed_pair_the_tier_meets_is_admitted_under_the_policy_3558()
 }
 
 /// A point the normaliser cannot run meets its endpoints by syntax alone:
-/// `here(y + 0)` checks against `Path(Integer, y + 0, y + 0)` whether the
+/// `here(y + 0)` checks against `Path[.A = Integer](y + 0, y + 0)` whether the
 /// three sides are one node or three of the same syntax.
 #[test]
 fn reflexivity_at_a_stuck_native_point_meets_it_by_syntax()
@@ -3677,7 +3677,7 @@ fn reflexivity_at_a_stuck_native_point_meets_it_by_syntax()
         );
         arena.value_returned(redex)
     });
-    // \y. return here(y + 0), against (y : Integer) -> F Path(Integer, l, r).
+    // \y. return here(y + 0), against (y : Integer) -> F Path[.A = Integer](l, r).
     let [(shared, shared_type), (copied, copied_type)] =
         [(point, point), (left, right)].map(|(left, right)| {
             let here = arena.value_here(point);
@@ -3732,7 +3732,7 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
     let code = arena.value_constant(ConstantIndex::from(0_usize));
     let opaque = arena.value_type_element(code, Level::zero());
     let opaque_pi = arena.comp_type_pi(opaque, returns_integer);
-    // (a : U) -> (x : El a) -> F Path(El a, x, x): the carrier reads `a`.
+    // (a : U) -> (x : El a) -> F Path[.A = El a](x, x): the carrier reads `a`.
     let decoded = decode(&mut arena, 0_u32);
     let open = decode(&mut arena, 1_u32);
     let open_path = arena.value_type_path(open, point, point);
@@ -3747,8 +3747,8 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
     let under_code = arena.computation_lambda(transport_lambda);
     let integer_pi = arena.comp_type_pi(decoded, returns_integer);
     let code_pi = arena.comp_type_pi(small, integer_pi);
-    // (a : U) -> (x y : El a) -> Path(El a, x, y) -> F Path(El a, x, y),
-    // and the same returning Path(El a, y, x).
+    // (a : U) -> (x y : El a) -> Path[.A = El a](x, y) -> F Path[.A = El a](x, y),
+    // and the same returning Path[.A = El a](y, x).
     let echoed = |arena: &mut CoreArena, (left, right): (u32, u32)| {
         let carrier = decode(arena, 3_u32);
         let left = variable(arena, left);
@@ -3829,12 +3829,13 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
 }
 
 /// The constants a telescope transport test reads, admitted at positions
-/// `0..7`: `a b : Integer`, `p : Path(Integer, a, b)`, the start
-/// `z₀ : Path(Integer, a, a)`, the finish `z₁ : Path(Integer, a, b)`, the
-/// identity over the path `q : Path(Path(Integer, a, b), ⟨tr(y.
-/// Path(Integer, a, y), p, z₀)⟩, z₁)`, the operand `v :
-/// Path(Path(Integer, a, a), z₀, z₀)`; and the motive `Π (y : Integer).
-/// Π (z : Path(Integer, a, y)). F Path(Path(Integer, a, y), z, z)`.
+/// `0..7`: `a b : Integer`, `p : Path[.A = Integer](a, b)`, the start
+/// `z₀ : Path[.A = Integer](a, a)`, the finish `z₁ : Path[.A = Integer](a, b)`,
+/// the identity over the path `q : Path[.A = Path[.A = Integer](a, b)](⟨tr(y.
+/// Path[.A = Integer](a, y), p, z₀)⟩, z₁)`, the operand `v :
+/// Path[.A = Path[.A = Integer](a, a)](z₀, z₀)`; and the motive `Π (y :
+/// Integer). Π (z : Path[.A = Integer](a, y)). F Path[.A = Path[.A =
+/// Integer](a, y)](z, z)`.
 struct TelescopeScene
 {
     /// The constants `[a, b, p, z₀, z₁, q, v]`.
@@ -3996,16 +3997,16 @@ fn an_identity_not_over_the_path_is_refused()
 }
 
 /// The constants a dependent pair test reads, admitted at positions
-/// `0..6`: `a b : Integer`, `r : Path(Integer, a, a)`, `s : Σ (n :
-/// Integer). Path(Integer, n, n)`, `r₂ : Path(Integer, a, a)` and `q :
-/// Path(Σ…, #{a, r}, #{a, r})`; that Σ, and the pair `#{a, r}`.
+/// `0..6`: `a b : Integer`, `r : Path[.A = Integer](a, a)`, `s : Σ (n :
+/// Integer). Path[.A = Integer](n, n)`, `r₂ : Path[.A = Integer](a, a)` and `q
+/// : Path[.A = Σ…](#{a, r}, #{a, r})`; that Σ, and the pair `#{a, r}`.
 struct SigmaScene
 {
     /// The constants `[a, b, r, s, r₂, q]`.
     constants: [ValueId; 6],
     /// Their types, in order.
     types: [ValueTypeId; 6],
-    /// `Σ (n : Integer). Path(Integer, n, n)`.
+    /// `Σ (n : Integer). Path[.A = Integer](n, n)`.
     sigma: ValueTypeId,
     /// The pair `#{a, r}`.
     pair: ValueId,
@@ -4063,7 +4064,7 @@ fn a_pair_checks_against_a_dependent_pair_at_its_first_components_fibre()
     let checked = check_value(&mut context, scene.pair, sigma);
     assert!(
         checked.is_ok(),
-        "`r : Path(Integer, a, a)` lies in the fibre over `a`: {checked:?}"
+        "`r : Path[.A = Integer](a, a)` lies in the fibre over `a`: {checked:?}"
     );
     assert!(
         matches!(

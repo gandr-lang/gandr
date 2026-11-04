@@ -14,8 +14,8 @@
 //! endpoints, and then `a` and `b` are the terms the declaration writes
 //! ([`PortFace`]).
 //!
-//! Sorting a rewrite port by a model's path type `Path(Nat, x, x′)` instead
-//! would write the interpretation into the syntax and silently make a
+//! Sorting a rewrite port by a model's path type `Path[.A = Nat](x, x′)`
+//! instead would write the interpretation into the syntax and silently make a
 //! directed rewrite invertible. Sorting by the face keeps one spelling across
 //! the directed family.
 //!

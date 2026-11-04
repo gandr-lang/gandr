@@ -81,27 +81,25 @@ def negateCount(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
 }
 
 /// The counts to themselves by negation, its own inverse.
-pub def countsNegated : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) = equiv(
+pub def countsNegated : Path[.A = Type](Unit + (Unit + Unit), Unit + (Unit + Unit)) = equiv(
   negateCount,
   negateCount
 );
 
 /// Counting up carried along negation is counting down.
 def stepNegated : Path(
-  Unit + (Unit + Unit) => Unit + (Unit + Unit),
   Path.walk(fun (t) { t => t }, countsNegated, Up.incr),
   Down.incr
 ) = Path.funext(Path.walk(fun (t) { t => t }, countsNegated, Up.incr), Down.incr);
 
 /// The reading carried along negation reads negated.
 def readNegated : Path(
-  Unit + (Unit + Unit) => Integer,
   Path.walk(fun (t) { t => Integer }, countsNegated, Up.read),
   Down.read
 ) = Path.funext(Path.walk(fun (t) { t => Integer }, countsNegated, Up.read), Down.read);
 
 /// The two packed modules are one model along negation.
-pub def oneCounter : Path(Model(Counter), upModel, downModel) = (
+pub def oneCounter : Path(upModel, downModel) = (
   countsNegated,
   (Path.here(+{.0 = unit}), (stepNegated, readNegated))
 );
@@ -123,6 +121,6 @@ def observedDown() -> Integer { observe(downModel) }
 
 /// The consumer reads both alike by construction, along the path between the
 /// models.
-def observedAlike() -> Path(Integer, observe(upModel), observe(downModel)) {
+def observedAlike() -> Path(observe(upModel), observe(downModel)) {
   Path.ap(observe, oneCounter)
 }

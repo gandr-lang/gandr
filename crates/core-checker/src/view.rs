@@ -138,7 +138,7 @@ pub enum ValueTypeView<'arena>
     },
     /// A native universe-path classifier over two codes.
     PathUniverse(ValueId, ValueId),
-    /// Element identity `Path(A, a, b)`: the paths from `a` to `b` in `A`.
+    /// Element identity `Path[.A = A](a, b)`: the paths from `a` to `b` in `A`.
     Path
     {
         /// The carrier `A`.
@@ -148,8 +148,8 @@ pub enum ValueTypeView<'arena>
         /// The right endpoint.
         right: ValueId,
     },
-    /// Directed identity `Flow(A, a, b)`: the forward-only flows from `a` to
-    /// `b` in `A`.
+    /// Directed identity `Flow[.A = A](a, b)`: the forward-only flows from `a`
+    /// to `b` in `A`.
     Flow
     {
         /// The carrier `A`.
@@ -159,7 +159,7 @@ pub enum ValueTypeView<'arena>
         /// The target endpoint.
         target: ValueId,
     },
-    /// Bridge `Bridge(A, a, b)`: the bridges from `a` to `b` in `A`.
+    /// Bridge `Bridge[.A = A](a, b)`: the bridges from `a` to `b` in `A`.
     Bridge
     {
         /// The carrier `A`.

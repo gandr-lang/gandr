@@ -39,8 +39,8 @@
 //!
 //! # Apartness
 //!
-//! A case of no branches over a scrutinee of the path type `Path(A, a, b)`,
-//! `A` a data type, is admitted at any motive exactly when `a` and `b` are
+//! A case of no branches over a scrutinee of the path type `Path[.A = A](a,
+//! b)`, `A` a data type, is admitted at any motive exactly when `a` and `b` are
 //! apart ([`apart`]): the rules of `A` converge — every critical pair joins,
 //! so with the termination admission establishes each term has one normal
 //! form, and two terms are equal exactly when their normal forms are — and the
@@ -277,9 +277,9 @@ impl Presentations
         self.presented(words)?.sort_arities.as_deref()
     }
 
-    /// The type of words the path type `Path(domain, left, right)` reads as:
-    /// the one whose cells loop at a point both endpoints spell, over the
-    /// parameterless data type `domain` names.
+    /// The type of words the path type `Path[.A = domain](left, right)` reads
+    /// as: the one whose cells loop at a point both endpoints spell, over
+    /// the parameterless data type `domain` names.
     ///
     /// # Specification
     /// - requires: nothing — unreadable ids read as no words.
@@ -331,9 +331,9 @@ impl Presentations
     ///
     /// # Specification
     /// - requires: `ty` lives in `arena`.
-    /// - ensures: a fresh `Data(words, [])` exactly when `ty` is `Path(domain,
-    ///   left, right)` and [`Self::words`] reads its parts as `words`; `ty`
-    ///   itself otherwise.
+    /// - ensures: a fresh `Data(words, [])` exactly when `ty` is `Path[.A =
+    ///   domain]( left, right)` and [`Self::words`] reads its parts as `words`;
+    ///   `ty` itself otherwise.
     /// - provides: the checking machine's reading of a scrutinee's type and of
     ///   the identity a word checks at.
     /// - fails: never.
@@ -1237,9 +1237,9 @@ mod tests
         built
     }
 
-    /// Offer `here(loop(base))` at `Path(Circle, loop(unloop(loop(base))),
-    /// loop(base))`, then a constant naming it at `Path(Circle, loop(base),
-    /// loop(base))`.
+    /// Offer `here(loop(base))` at `Path[.A = Circle](loop(unloop(loop(base))),
+    /// loop(base))`, then a constant naming it at `Path[.A =
+    /// Circle](loop(base), loop(base))`.
     ///
     /// # Specification
     /// trivial.
@@ -1597,7 +1597,7 @@ mod tests
             Some(&gandr_kernel_term::ValueType::Data { declaration, .. }) if declaration == words_at
         ));
 
-        // `loop : Path(S, base, base)`, the word of one letter.
+        // `loop : Path[.A = S](base, base)`, the word of one letter.
         let path_at = |arena: &mut TermArena| {
             let carrier = arena.value_type_data(sort, Vec::new());
             let point = arena.value_constructor(carrier, Letter::Base.tag(), Vec::new());
@@ -1628,8 +1628,9 @@ mod tests
         );
 
         // `fix f. λp. case p { here ⇒ return here; g ∷ q ⇒ r ← f(q); return
-        // g ∷ r; … }` at `Path(S, base, base) → F Path(S, base, base)`: a case
-        // over a path splits its words, and each cancellation is respected.
+        // g ∷ r; … }` at `Path[.A = S](base, base) → F Path[.A = S](base, base)`: a
+        // case over a path splits its words, and each cancellation is
+        // respected.
         let mut staging = environment.stage();
         let arena = staging.arena();
         let path = path_at(arena);

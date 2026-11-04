@@ -1,5 +1,5 @@
 /// `ForwardUnsupported`: a `Flow.into` whose translator the rule cannot image.
 @[ refuses("ForwardUnsupported") ]
-def lift(t : Type, f : t => t) -> -F Flow(Type, t, t) {
+def lift(t : Type, f : t => t) -> -F Flow[.A = Type](t, t) {
   Flow.into(f)
 }

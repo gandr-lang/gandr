@@ -13,16 +13,16 @@ error[ComposeNotAShape]: `compose` needs a chain within the degree and the bound
 13 │ │   w : A,
    │ │   ─ checked; while checking the body of this function; binds w : A
 14 │ │   v : A,
-   │ │   ─ checked against `(v : A) -> Path(A, x, y) -> Path(A, y, z) -> Path(A, z, w) -> Path(A, w, v) -> -F Path(A, x, v)`; while checking the body of this function; binds v : A
-15 │ │   p : Path(A, x, y),
-   │ │   ─ checked against `Path(A, x, y) -> Path(A, y, z) -> Path(A, z, w) -> Path(A, w, v) -> -F Path(A, x, v)`; while checking the body of this function; binds p : Path(A, x, y)
-16 │ │   q : Path(A, y, z),
-   │ │   ─ checked against `Path(A, y, z) -> Path(A, z, w) -> Path(A, w, v) -> -F Path(A, x, v)`; while checking the body of this function; binds q : Path(A, y, z)
-17 │ │   r : Path(A, z, w),
-   │ │   ─ checked against `Path(A, z, w) -> Path(A, w, v) -> -F Path(A, x, v)`; while checking the body of this function; binds r : Path(A, z, w)
-18 │ │   s : Path(A, w, v)
-   │ │   ─ checked against `Path(A, w, v) -> -F Path(A, x, v)`; while checking the body of this function; binds s : Path(A, w, v)
-19 │ │ ) -> Path(A, x, v) {
+   │ │   ─ checked; while checking the body of this function; binds v : A
+15 │ │   p : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds p : Path[.A = A](x, y)
+16 │ │   q : Path(y, z),
+   │ │   ─ checked against `Path[.A = A](y, z) -> Path[.A = A](z, w) -> Path[.A = A](w, v) -> -F Path[.A = A](x, v)`; while checking the body of this function; binds q : Path[.A = A](y, z)
+17 │ │   r : Path(z, w),
+   │ │   ─ checked against `Path[.A = A](z, w) -> Path[.A = A](w, v) -> -F Path[.A = A](x, v)`; while checking the body of this function; binds r : Path[.A = A](z, w)
+18 │ │   s : Path(w, v)
+   │ │   ─ checked against `Path[.A = A](w, v) -> -F Path[.A = A](x, v)`; while checking the body of this function; binds s : Path[.A = A](w, v)
+19 │ │ ) -> Path(x, v) {
 20 │ │   compose[5, 7](chain(4), (p, q, r, s))
    │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a chain past its stratum
 21 │ │ }
@@ -34,12 +34,12 @@ error[ComposeNotAShape]: `compose` needs a chain within the degree and the bound
 error[ComposeNotAShape]: `compose` needs a level-two shape the wreath holds within the degree and the bound of its stratum
    ╭▸ corpus/ledger/diagnostics/ComposeNotAShape.gandr:30:3
    │
-29 │   def whiskerPastDegree(A : Type, x : A, y : A, z : A, fm : Path(A, x, y), fp : Path(A, x, y), fa : Path(Path(A, x, y), fm, fp), g : Pa…
-   │   │                     ┬         ┬      ┬      ┬      ┬─                  ┬─                  ┬─                                ─ checked against `(a : Path(A, y, z)) -> -F Path(Path(A, x, z), Path.step(fm, a), Path.step(fp, a))`; while checking the body of this function; binds g : Path(A, y, z)
-   │   │                     │         │      │      │      │                   │                   │
-   │   │                     │         │      │      │      │                   │                   checked; while checking the body of this function; binds fa : Path(Path(A, x, y), fm, fp)
-   │   │                     │         │      │      │      │                   checked; while checking the body of this function; binds fp : Path(A, x, y)
-   │   │                     │         │      │      │      checked; while checking the body of this function; binds fm : Path(A, x, y)
+29 │   def whiskerPastDegree(A : Type, x : A, y : A, z : A, fm : Path(x, y), fp : Path(x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Pa…
+   │   │                     ┬         ┬      ┬      ┬      ┬─               ┬─               ┬─                                          ─ checked against `(a : Path[.A = A](y, z)) -> -F Path[.A = Path[.A = A](x, z)](Path.step(fm, a), Path.step(fp, a))`; while checking the body of this function; binds g : Path[.A = A](y, z)
+   │   │                     │         │      │      │      │                │                │
+   │   │                     │         │      │      │      │                │                checked; while checking the body of this function; binds fa : Path[.A = Path[.A = A](x, y)](fm, fp)
+   │   │                     │         │      │      │      │                checked; while checking the body of this function; binds fp : Path[.A = A](x, y)
+   │   │                     │         │      │      │      checked; while checking the body of this function; binds fm : Path[.A = A](x, y)
    │   │                     │         │      │      checked; while checking the body of this function; binds z : A
    │   │                     │         │      checked; while checking the body of this function; binds y : A
    │   │                     │         checked; while checking the body of this function; binds x : A

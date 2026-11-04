@@ -1,6 +1,6 @@
 //! Bridge mode: the fibre an introduction checked at a bridge type reads.
 //!
-//! `Bridge(A, a, b)` relates `a` and `b` parametrically. It has no
+//! `Bridge[.A = A](a, b)` relates `a` and `b` parametrically. It has no
 //! reflexivity, transport or eliminator of its own: an introduction form
 //! checked there checks at the bridge's fibre, which [`fibre`] reads from the
 //! carrier and the endpoints as the kernel's bridge fold reads them, clause for
@@ -244,8 +244,8 @@ pub enum Fibre
     Written,
 }
 
-/// The fibre an introduction `at` checked at `Bridge(carrier, left, right)`
-/// checks at.
+/// The fibre an introduction `at` checked at `Bridge[.A = carrier](left,
+/// right)` checks at.
 ///
 /// # Specification
 /// - requires: the bridge is formed.

@@ -1171,7 +1171,7 @@ mod tests
     /// at the offsets the retired infix exemplar held it.
     const PATH_STEP: &str = "/// `Path.step` composes two paths: one path, then the next after that.\n\
                              @[ checks ]\ndata Circle : Type where {\n  | Base : Circle\n  \
-                             | loop : Base <-> Base\n}\n@[ checks ]\ndef twice : Path(Circle, Base, \
+                             | loop : Base <-> Base\n}\n@[ checks ]\ndef twice : Path[.A = Circle](Base, \
                              Base) ;\ndef twice = Path.step(loop, loop) ;\n";
 
     /// #2876: `rec` deleted from `def rec down` leaves a definition that

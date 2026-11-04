@@ -123,23 +123,19 @@ error[TelescopeCycle]: `a` and `b` mention each other in their types, so neither
    ╰ help: order parameters so each type names only earlier parameters
 
 error[ImplicitUnsolved]: the implicit `x` this call to `chosen` omits is determined by neither its arguments nor the type it is checked against
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:89:36
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:89:27
    │
-89 │ def unchosenSigned : Path(Integer, chosen(Integer), 0);
-   │                                    ━━━━━━━━━━━━━━━ an implicit left unsolved
+89 │ def unchosenSigned : Path(chosen(Integer), 0);
+   │                           ━━━━━━━━━━━━━━━ an implicit left unsolved
    │
    ├ note: `unchosenSigned` is refused with ImplicitUnsolved, as its expectation states
    ╰ help: supply the implicit `x` by name, as `chosen[.x = …](…)`
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:94:39
+   ╭▸ corpus/pathological/classifier/implicit-telescope.gandr:94:42
    │
-94 │ def disagreeingSigned : Path(Integer, same(unit), 3) = Path.here(3);
-   │                         ┬────┬────────┯━━━━━━━━━────
-   │                         │    │        │
-   │                         │    │        its type does not convert: expected `Integer`, found `Unit`
-   │                         │    the type it is checked against
-   │                         formed; while checking the remaining parts of this
+94 │ def disagreeingSigned : Path(same(unit), 3) = Path.here(3);
+   │                                          ━ its type does not convert: expected `Unit`, found `Integer`
    │
    ├ note: `disagreeingSigned` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

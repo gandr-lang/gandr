@@ -5,7 +5,7 @@
 //! keeps:
 //!
 //! ```text
-//! T.r : U(Π(m : Model(T)). F U(Π x₁ … xₙ. F Path(S, l, r)))
+//! T.r : U(Π(m : Model(T)). F U(Π x₁ … xₙ. F Path[.A = S](l, r)))
 //! T.r = thunk(λm. return thunk(λx₁ … λxₙ. return p))
 //! ```
 //!
@@ -577,11 +577,11 @@ impl<'source> Lowerer<'_, 'source>
 
     /// `path`, a step's path at its redex, carried up the step's context:
     /// `Path.ap(C, path)` from the whole term before the step, the context read
-    /// as the family `h. Path(S, C[a], C[h])` rather than as a function, so
-    /// no map stands to be synthesised.
+    /// as the family `h. Path[.A = S](C[a], C[h])` rather than as a function,
+    /// so no map stands to be synthesised.
     ///
     /// # Specification
-    /// - ensures: the transport `tr(h. Path(S↑, start↑, C[h]), path,
+    /// - ensures: the transport `tr(h. Path[.A = S↑](start↑, C[h]), path,
     ///   here(start))` returned, `S` the whole term's sort, `start` the whole
     ///   term before the step and `C[h]` the context read with its hole the
     ///   motive's binder.

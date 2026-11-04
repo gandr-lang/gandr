@@ -17,7 +17,7 @@ import std.math.category.Pasting;
 /// The interchange law: composing horizontally then vertically agrees with
 /// composing vertically then horizontally, over the one context of the four
 /// cells.
-def interchange[A : Type, x y z : A, f g h : Path(A, x, y), k l m : Path(A, y, z)](
+def interchange[A : Type, x y z : A, f g h : Path(x, y), k l m : Path(y, z)](
   α : f => g,
   α' : g => h,
   β : k => l,
@@ -27,10 +27,10 @@ def interchange[A : Type, x y z : A, f g h : Path(A, x, y), k l m : Path(A, y, z
 
 /// The associator's naturality in its first cell, stated by its cells alone:
 /// the canonical coherence over `fa`, `g` and `h`.
-def natassoc[A : Type, x y z w : A, fm fp : Path(A, x, y)](
+def natassoc[A : Type, x y z w : A, fm fp : Path(x, y)](
   fa : fm => fp,
-  g : Path(A, y, z),
-  h : Path(A, z, w)
+  g : Path(y, z),
+  h : Path(z, w)
 ) = #fill{ fa g h }
 
 /// Two 3-cylinders side by side compose to a 3-cylinder. The six cells name
@@ -38,10 +38,10 @@ def natassoc[A : Type, x y z w : A, fm fp : Path(A, x, y)](
 def cylinderFill3[
   A : Type,
   x y z : A,
-  fm fp pm pp : Path(A, x, y),
+  fm fp pm pp : Path(x, y),
   am : fm => pm,
   ap : fp => pp,
-  gm gp qm qp : Path(A, y, z),
+  gm gp qm qp : Path(y, z),
   km : gm => qm,
   kp : gp => qp
 ](

@@ -11,4 +11,7 @@ import "./run-transport.gandr";
 
 /// The two protocols are one type along the univalence, which pays
 /// the one pair of payloads that differ.
-def oneProtocol : Path(Type, Ask.Coded, Ask.Decoded) = Path.bisim(Ask.Coded, Ask.Decoded, codes);
+def oneProtocol : Path[.A = Type](
+  Ask.Coded,
+  Ask.Decoded
+) = Path.bisim(Ask.Coded, Ask.Decoded, codes);

@@ -4,17 +4,17 @@
 //!
 //! # The rule
 //!
-//! `funext(f, g)` synthesises `Path(U (A → F B), f, g)` when `f` synthesises
-//! the thunk type `U (A → F B)` of a pure non-dependent arrow, `g` checks
-//! against it, both functions are closed, and at every input the coverage of
-//! `A` reaches the two agree. The coverage is the kernel's: the unit value, a
-//! fresh variable at a base atom, each injection of a binary sum's coverages,
-//! each pairing of a binary product's, each constructor of a data type in tag
-//! order over its fields' coverages crossed as a product's, and at a function
-//! argument of type `T` two functions and their identity,
-//! `f₀ f₁ : T, p : Path(T, f₀, f₁)`, the left input reading `f₀` and the right
-//! `f₁` — in the kernel's order, each input standing under its own pattern
-//! binders.
+//! `funext(f, g)` synthesises `Path[.A = U (A → F B)](f, g)` when `f`
+//! synthesises the thunk type `U (A → F B)` of a pure non-dependent arrow, `g`
+//! checks against it, both functions are closed, and at every input the
+//! coverage of `A` reaches the two agree. The coverage is the kernel's: the
+//! unit value, a fresh variable at a base atom, each injection of a binary
+//! sum's coverages, each pairing of a binary product's, each constructor of a
+//! data type in tag order over its fields' coverages crossed as a product's,
+//! and at a function argument of type `T` two functions and their identity,
+//! `f₀ f₁ : T, p : Path[.A = T](f₀, f₁)`, the left input reading `f₀` and the
+//! right `f₁` — in the kernel's order, each input standing under its own
+//! pattern binders.
 //!
 //! At an input under `n` binders the normaliser reads `thunk (λⁿ. force f v₀)`
 //! and `thunk (λⁿ. force g v₁)` to their normal forms, every admitted
@@ -85,7 +85,7 @@
 //!   result needs the bridge to erase nested evidence for it.
 //! - **Synthesised from its first function.** `f` names the classifier, so a λ
 //!   written in its place does not synthesise and is refused as any such λ is.
-//!   Reversal: a checking rule against `Path(T, f, g)` reads `T` from the
+//!   Reversal: a checking rule against `Path[.A = T](f, g)` reads `T` from the
 //!   expected type instead.
 
 use alloc::collections::BTreeSet;

@@ -2338,7 +2338,7 @@ fn derived_equalities_are_admitted_readmitted_and_decide_2302()
 fn a_case_over_a_held_native_call_meets_the_derived_equality_binding_it_2378()
 {
     // `Point(Integer, Integer)`, its derived equality `E`, and `here(⟨force F
-    // ⟨int.eq(x1, x1)⟩⟩)` at `Path(Bool, ⟨force F ⟨int.eq(x1, x1)⟩⟩, ⟨force E
+    // ⟨int.eq(x1, x1)⟩⟩)` at `Path[.A = Bool](⟨force F ⟨int.eq(x1, x1)⟩⟩, ⟨force E
     // (Point x1 x2) (Point x1 x2)⟩)`, with `F` the case `λr. case r {
     // int.eq(x2, x2) ; return false }` written by hand. `E` at the two points
     // binds `int.eq(x1, x1)` and cases on it: the bind over the stuck call

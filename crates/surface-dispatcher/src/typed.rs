@@ -6439,12 +6439,12 @@ mod tests
             "the loop's target, the point it writes"
         );
         assert_eq!(
-            at("Circle, Base"),
+            at("Circle](Base"),
             named("Circle : Type", "Circle"),
             "a use of the family outside its declaration"
         );
         assert_eq!(
-            at("Base, Base)"),
+            at("Base, Base))"),
             named("Base : Circle", "Base"),
             "a use of the point outside its declaration"
         );
@@ -7714,16 +7714,16 @@ mod tests
     fn a_record_entry_naming_an_earlier_entry_reads_back_4950()
     {
         let source = SourceText::from(
-            "def calledFiber(e : #{\n  cell : Integer => Integer,\n  fix : Path(Integer, cell(0), 0)\n}) -> \
-             Path(#{cell : Integer => Integer, fix : Path(Integer, cell(0), 0)}, (e.cell, e.fix), e) {\n  \
-             Path.here(e)\n}\n",
+            "def calledFiber(e : #{\n  cell : Integer => Integer,\n  fix : Path[.A = Integer](cell(0), \
+             0)\n}) -> Path[.A = #{cell : Integer => Integer, fix : Path[.A = Integer](cell(0), 0)}]((e.cell, \
+             e.fix), e) {\n  Path.here(e)\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
 
         let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
         for spelled in [
-            "Path(Integer, e.cell(0), 0)",
-            "-F Path(Integer, e.cell(0), 0)",
+            "Path[.A = Integer](e.cell(0), 0)",
+            "-F Path[.A = Integer](e.cell(0), 0)",
         ] {
             let trips: Vec<&RoundTrip> = read
                 .iter()
@@ -7886,9 +7886,9 @@ mod tests
         let source = SourceText::from(
             "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\n\ndata Int : \
              Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> Int\n  rule : \
-             S(P(x)) <=> x;\n  rule : P(S(x)) <=> x;\n}\n\ndef tell(p : Path(Circle, Base, Base)) \
+             S(P(x)) <=> x;\n  rule : P(S(x)) <=> x;\n}\n\ndef tell(p : Path[.A = Circle](Base, Base)) \
              -> -F Integer {\n  match p {\n    here => return 0,\n    loop ∷ q => return 1,\n    \
-             back(loop) ∷ q => return 2\n  }\n}\n\ndef rec spin(n : Int) -> -F Path(Circle, \
+             back(loop) ∷ q => return 2\n  }\n}\n\ndef rec spin(n : Int) -> -F Path[.A = Circle](\
              Base, Base) {\n  match n {\n    Z => return Path.here(Base),\n    S(x) => { let c = \
              spin[<](x); return loop ∷ c },\n    P(x) => { let c = spin[<](x); return \
              back(loop) ∷ c }\n  }\n}\n\ndef flip(x : Circle) -> -F Circle {\n  match x {\n    \
@@ -7918,7 +7918,7 @@ mod tests
                 Maybe::Absent(reason) => panic!("`{needle}` answers nothing: {reason:?}"),
             }
         };
-        let path = "Path(Circle, Base, Base)";
+        let path = "Path[.A = Circle](Base, Base)";
         let pattern =
             |written: &str, ty: &str| (String::from(written), Subject::Binder, String::from(ty));
         assert_eq!(
@@ -8236,9 +8236,9 @@ mod tests
     {
         let source = SourceText::from(concat!(
             "def made(a : Type, b : Type, i : #{to : +U (a -> -F b), back : +U (b -> -F a), ",
-            "sect : (x : a) => Path(a, back(to(x)), x), retr : (y : b) => Path(b, to(back(y)), y)}) ",
-            "-> -F #{to : +U (a -> -F b), linv : #{g : +U (b -> -F a), sect : (x : a) => Path(a, g(to(x)), x)}, ",
-            "rinv : #{h : +U (b -> -F a), retr : (y : b) => Path(b, to(h(y)), y)}} {\n",
+            "sect : (x : a) => Path[.A = a](back(to(x)), x), retr : (y : b) => Path[.A = b](to(back(y)), y)}) ",
+            "-> -F #{to : +U (a -> -F b), linv : #{g : +U (b -> -F a), sect : (x : a) => Path[.A = a](g(to(x)), x)}, ",
+            "rinv : #{h : +U (b -> -F a), retr : (y : b) => Path[.A = b](to(h(y)), y)}} {\n",
             "  match i {\n    #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}}\n  }\n}\n",
         ));
         let table = table(source);
@@ -8258,9 +8258,9 @@ mod tests
     fn a_pattern_inside_a_dependent_pair_s_second_component_answers_558()
     {
         let source = SourceText::from(concat!(
-            "def nested(p : #{x : Integer, inner : #{y : Integer, q : Path(Integer, x, y)}}) ",
+            "def nested(p : #{x : Integer, inner : #{y : Integer, q : Path[.A = Integer](x, y)}}) ",
             "-> -F Integer {\n  match p {\n    #{x, #{y, q}} => y\n  }\n}\n",
-            "def flat(p : #{x : Integer, y : Integer, q : Path(Integer, x, y)}) ",
+            "def flat(p : #{x : Integer, y : Integer, q : Path[.A = Integer](x, y)}) ",
             "-> -F Integer {\n  match p {\n    #{x, y, q} => y\n  }\n}\n",
         ));
         let table = table(source);
@@ -8268,7 +8268,7 @@ mod tests
             answer(&table, source, SourceText::from("#{y, q}")),
             Maybe::Present(Answer {
                 subject: Subject::Binder,
-                ty: String::from("#{y : Integer, q : Path(Integer, x, y)}"),
+                ty: String::from("#{y : Integer, q : Path[.A = Integer](x, y)}"),
                 expected: Maybe::Absent(checked_against::Absent::Agreed),
             }),
             "the inner record answers at the pair's second component, under the `x` the \
@@ -8278,7 +8278,7 @@ mod tests
             answer(&table, source, SourceText::from("#{x, y, q}")),
             Maybe::Present(Answer {
                 subject: Subject::Binder,
-                ty: String::from("#{x : Integer, y : Integer, q : Path(Integer, x, y)}"),
+                ty: String::from("#{x : Integer, y : Integer, q : Path[.A = Integer](x, y)}"),
                 expected: Maybe::Absent(checked_against::Absent::Agreed),
             }),
             "a record of three answers as itself, its labels as written, not as the pair the \
@@ -8326,7 +8326,7 @@ mod tests
             "module Square(S : #{ type T, z : T }) :> #{ type U, w : U } where {\n",
             "  type U = S.T * S.T;\n  def w = (S.z, S.z);\n}\n",
             "module Squared = Square(Point) ;\n",
-            "module Pointed(R : #{ type V, y : V }) where {\n  type At = Path(R.V, R.y, R.y);\n}\n",
+            "module Pointed(R : #{ type V, y : V }) where {\n  type At = Path[.A = R.V](R.y, R.y);\n}\n",
         ));
         let table = table(source);
         for needle in ["T }) :>", "V }) where {"] {
@@ -8579,7 +8579,7 @@ mod tests
              ident(t) } }\n  def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : \
              +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {\n    return thunk { become \
              compose(t, u, v, f, g) }\n  }\n  def unitL(p : Type, q : Type, f : +U[ω] (p -> -F \
-             q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) {\n    return \
+             q)) -> -F Path[.A = (+U[ω] (p -> -F q))](comp(p, p, q, id(p), f), f) {\n    return \
              Path.here(f)\n  }\n}\n",
         );
         let table = table(source);
@@ -8955,7 +8955,7 @@ mod tests
         );
         assert!(
             spelled.iter().any(|entry| entry.ty().as_ref()
-                == "((c : a) => Path(a, k(t(c)), c)) * ((c : b) => Path(b, t(k(c)), c))"),
+                == "((c : a) => Path[.A = a](k(t(c)), c)) * ((c : b) => Path[.A = b](t(k(c)), c))"),
             "the remainder after `t` names it: {spelled:#?}"
         );
     }
@@ -8969,12 +8969,12 @@ mod tests
         for (pattern, remainder, reason) in [
             (
                 "#{.from = k} => k",
-                "((c : a) => Path(a, k(into(c)), c)) * ((c : b) => Path(b, into(k(c)), c))",
+                "((c : a) => Path[.A = a](k(into(c)), c)) * ((c : b) => Path[.A = b](into(k(c)), c))",
                 "the omitted forward map answers by its label",
             ),
             (
                 "#{.from = into} => into",
-                "((c : a) => Path(a, into(into′(c)), c)) * ((c : b) => Path(b, into′(into(c)), c))",
+                "((c : a) => Path[.A = a](into(into′(c)), c)) * ((c : b) => Path[.A = b](into′(into(c)), c))",
                 "the label primed apart from the written `into`",
             ),
         ] {
@@ -9003,9 +9003,9 @@ mod tests
     #[test]
     fn a_dependent_record_spells_its_variables_where_it_stands_1515()
     {
-        let record = "#{ x : b, y : b, p : Path(b, x, y) }";
+        let record = "#{ x : b, y : b, p : Path[.A = b](x, y) }";
         let source = format!(
-            "def againAt(b : Type, w : {record}) -> -F Path({record}, w, w) {{\n  match w {{\n    \
+            "def againAt(b : Type, w : {record}) -> -F Path[.A = {record}](w, w) {{\n  match w {{\n    \
              #{{.x = u, .y = v, .p = q}} => Path.here((u, (v, q)))\n  }}\n}}\n\ndef selfEquiv(b : \
              Type) -> -F ({record} ≃ {record}) {{\n  (\n    thunk {{ fun (w) {{ w }} }},\n    \
              ((thunk {{ fun (w) {{ w }} }}, thunk {{ fun (w) {{ Path.here(w) }} }}), (thunk {{ fun (w) \
@@ -9078,7 +9078,7 @@ mod tests
         assert!(
             trips
                 .iter()
-                .any(|&(ref spelled, _)| spelled == "(a : Type) -> -F Path(Type, a, a)"),
+                .any(|&(ref spelled, _)| spelled == "(a : Type) -> -F Path[.A = Type](a, a)"),
             "a law's map spells its call as what it returns: {trips:?}"
         );
         assert!(
@@ -9095,7 +9095,7 @@ mod tests
     {
         let source = SourceText::from(
             "def same(x : Type) -> -F Type {\n  return x\n}\n\ndef sameTwice(x : Type) -> -F \
-             Path(Type, same(same(x)), x) {\n  return Path.here(x)\n}\n\ndef typeSelf : Type ≃ Type \
+             Path[.A = Type](same(same(x)), x) {\n  return Path.here(x)\n}\n\ndef typeSelf : Type ≃ Type \
              ;\ndef typeSelf = #{same, #{#{same, sameTwice}, #{same, sameTwice}}} ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -9105,8 +9105,8 @@ mod tests
             .map(|back| (back.spelled, back.trip))
             .collect();
         for spelled in [
-            "(x : Type) -> -F Path(Type, same(same(x)), x)",
-            "#{a : Type => Type, b : (b : Type) => Path(Type, same(a(b)), b)}",
+            "(x : Type) -> -F Path[.A = Type](same(same(x)), x)",
+            "#{a : Type => Type, b : (b : Type) => Path[.A = Type](same(a(b)), b)}",
         ] {
             assert!(
                 trips.iter().any(|&(ref printed, _)| printed == spelled),
@@ -9187,10 +9187,10 @@ mod tests
     {
         let source = SourceText::from(
             "def first(b : Type, w : #{x : b, y : b}) -> b {\n  match w {\n    #{.x = u, .y = v} \
-             => u\n  }\n}\n\ndef pass(\n  b : Type,\n  s : #{x : b, y : b} => b,\n  e : Path(#{x \
-             : b, y : b} => b, s, s)\n) -> Path(#{x : b, y : b} => b, s, s) {\n  e\n}\n\ndef \
-             user(b : Type, e : Path(#{x : b, y : b} => b, thunk { fun (w) { first(b, w) } }, \
-             thunk { fun (w) { first(b, w) } })) -> Path(#{x : b, y : b} => b, thunk { fun (w) { \
+             => u\n  }\n}\n\ndef pass(\n  b : Type,\n  s : #{x : b, y : b} => b,\n  e : Path[.A = #{x \
+             : b, y : b} => b](s, s)\n) -> Path[.A = #{x : b, y : b} => b](s, s) {\n  e\n}\n\ndef \
+             user(b : Type, e : Path[.A = #{x : b, y : b} => b](thunk { fun (w) { first(b, w) } }, \
+             thunk { fun (w) { first(b, w) } })) -> Path[.A = #{x : b, y : b} => b](thunk { fun (w) { \
              first(b, w) } }, thunk { fun (w) { first(b, w) } }) {\n  pass(b, fun (w) { first(b, \
              w) }, e)\n}\n",
         );
@@ -9203,7 +9203,7 @@ mod tests
         assert!(
             trips
                 .iter()
-                .any(|&(ref spelled, ref trip)| spelled.starts_with("Path(")
+                .any(|&(ref spelled, ref trip)| spelled.starts_with("Path[")
                     && spelled.contains("fun (")
                     && *trip == RoundTrip::Equal),
             "the argument's path type prints its function bare and reads back: {trips:?}"
@@ -9224,8 +9224,8 @@ mod tests
     fn an_update_of_an_update_in_a_type_reads_back_2217()
     {
         let source = SourceText::from(
-            "def corner = #{ x = 1, y = 2 };\n\ndef commute : Path(\n  #{x : Integer, y : \
-             Integer},\n  #{ #{ corner | x = 9 } | y = 3 },\n  #{ #{ corner | y = 3 } | x = 9 \
+            "def corner = #{ x = 1, y = 2 };\n\ndef commute : Path[.A = \n  #{x : Integer, y : \
+             Integer}](\n  #{ #{ corner | x = 9 } | y = 3 },\n  #{ #{ corner | y = 3 } | x = 9 \
              }\n) ;\ndef commute = Path.here(#{ x = 9, y = 3 }) ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -9236,7 +9236,7 @@ mod tests
             .collect();
         assert!(
             trips.iter().any(|&(ref spelled, _)| spelled
-                == "Path(#{x : Integer, y : Integer}, #{.x = 9, .y = 3}, #{.x = 9, .y = 3})"),
+                == "Path[.A = #{x : Integer, y : Integer}](#{.x = 9, .y = 3}, #{.x = 9, .y = 3})"),
             "both orders print as the record they build: {trips:?}"
         );
         assert!(
@@ -9253,8 +9253,8 @@ mod tests
     fn a_record_parameter_reprints_with_its_labels_1655()
     {
         let source = SourceText::from(
-            "def againAt(\n  b : Type,\n  w : #{ x : b, y : b, p : Path(b, x, y) }\n) -> -F \
-             Path(#{ x : b, y : b, p : Path(b, x, y) }, w, w) {\n  Path.here(w)\n}\n",
+            "def againAt(\n  b : Type,\n  w : #{ x : b, y : b, p : Path[.A = b](x, y) }\n) -> -F \
+             Path[.A = #{ x : b, y : b, p : Path[.A = b](x, y) }](w, w) {\n  Path.here(w)\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<(String, Maybe<String, super::reprinted::Absent>)> = table(source)
@@ -9262,7 +9262,7 @@ mod tests
             .into_iter()
             .map(|back| (back.spelled, back.reprinted))
             .collect();
-        let record = "#{x : b, y : b, p : Path(b, x, y)}";
+        let record = "#{x : b, y : b, p : Path[.A = b](x, y)}";
         assert!(
             reads.iter().any(|&(ref spelled, _)| spelled == record),
             "the record prints with its labels: {reads:?}"
@@ -9288,14 +9288,14 @@ mod tests
     fn a_record_s_product_fields_print_with_their_labels_3934()
     {
         let source = SourceText::from(
-            "def held(\n  b : Type,\n  s : #{ x : b, y : b, z : b, f : Path(b, x, y), g : Path(b, \
+            "def held(\n  b : Type,\n  s : #{ x : b, y : b, z : b, f : Path[.A = b](x, y), g : Path[.A = b](\
              y, z) },\n  t : #{ n : Integer, a : Type, v : a }\n) -> -F Integer {\n  return 0\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<super::ReadBack> =
             table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
         for record in [
-            "#{x : b, y : b, z : b, f : Path(b, x, y), g : Path(b, y, z)}",
+            "#{x : b, y : b, z : b, f : Path[.A = b](x, y), g : Path[.A = b](y, z)}",
             "#{n : Integer, a : Type, v : a}",
         ] {
             let spelling: Vec<&super::ReadBack> = reads
@@ -9323,17 +9323,17 @@ mod tests
     fn a_selection_off_a_dependent_record_prints_its_label_3971()
     {
         let source = SourceText::from(
-            "def held(\n  A : Type,\n  h : (r : #{x : A, y : A, z : A, f : Path(A, x, y), g : \
-             Path(A, y, z)}) => Path(A, r.x, r.z),\n  k : (r : #{x : A, y : A, g : Path(A, x, \
-             y)}) => Path(Path(A, r.x, r.y), r.g, r.g)\n) -> -F Integer {\n  return 0\n}\n",
+            "def held(\n  A : Type,\n  h : (r : #{x : A, y : A, z : A, f : Path[.A = A](x, y), g : \
+             Path[.A = A](y, z)}) => Path[.A = A](r.x, r.z),\n  k : (r : #{x : A, y : A, g : Path[.A = A](x, \
+             y)}) => Path[.A = Path[.A = A](r.x, r.y)](r.g, r.g)\n) -> -F Integer {\n  return 0\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<super::ReadBack> =
             table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
         for selected in [
-            "(r : #{x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)}) => Path(A, r.x, \
+            "(r : #{x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z)}) => Path[.A = A](r.x, \
              r.z)",
-            "(r : #{x : A, y : A, g : Path(A, x, y)}) => Path(Path(A, r.x, r.y), r.g, r.g)",
+            "(r : #{x : A, y : A, g : Path[.A = A](x, y)}) => Path[.A = Path[.A = A](r.x, r.y)](r.g, r.g)",
         ] {
             let spelling: Vec<&super::ReadBack> = reads
                 .iter()
@@ -9360,9 +9360,9 @@ mod tests
     fn a_dependent_record_keeps_its_labels_at_a_later_parameter_s_site_4042()
     {
         let source = SourceText::from(
-            "def held(\n  A : Type,\n  h : (r : #{x : A, y : A, z : A, f : Path(A, x, y), g : \
-             Path(A, y, z)}) => Path(A, r.x, r.z),\n  k : (r : #{x : A, y : A, g : Path(A, x, \
-             y)}) => Path(Path(A, r.x, r.y), r.g, r.g)\n) -> -F Integer {\n  return 0\n}\n",
+            "def held(\n  A : Type,\n  h : (r : #{x : A, y : A, z : A, f : Path[.A = A](x, y), g : \
+             Path[.A = A](y, z)}) => Path[.A = A](r.x, r.z),\n  k : (r : #{x : A, y : A, g : Path[.A = A](x, \
+             y)}) => Path[.A = Path[.A = A](r.x, r.y)](r.g, r.g)\n) -> -F Integer {\n  return 0\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<super::ReadBack> =
@@ -9379,9 +9379,9 @@ mod tests
         for (parameter, record) in [
             (
                 "\n  h : ",
-                "#{x : A, y : A, z : A, f : Path(A, x, y), g : Path(A, y, z)}",
+                "#{x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z)}",
             ),
-            ("\n  k : ", "#{x : A, y : A, g : Path(A, x, y)}"),
+            ("\n  k : ", "#{x : A, y : A, g : Path[.A = A](x, y)}"),
         ] {
             let at = text
                 .find(parameter)
@@ -9415,9 +9415,9 @@ mod tests
     fn a_selection_off_a_context_binder_s_record_reads_back_4139()
     {
         let source = SourceText::from(
-            "def held(\n  A : Type,\n  h : (r : #{x : A, y : A, z : A, f : Path(A, x, y), g : \
-             Path(A, y, z)}) => Path(A, r.x, r.z),\n  k : (r : #{x : A, y : A, g : Path(A, x, \
-             y)}) => Path(Path(A, r.x, r.y), r.g, r.g)\n) -> -F Integer {\n  return 0\n}\n",
+            "def held(\n  A : Type,\n  h : (r : #{x : A, y : A, z : A, f : Path[.A = A](x, y), g : \
+             Path[.A = A](y, z)}) => Path[.A = A](r.x, r.z),\n  k : (r : #{x : A, y : A, g : Path[.A = A](x, \
+             y)}) => Path[.A = Path[.A = A](r.x, r.y)](r.g, r.g)\n) -> -F Integer {\n  return 0\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<super::ReadBack> =
@@ -9431,8 +9431,8 @@ mod tests
             "no site spells a selection by its position: {positional:?}"
         );
         for selected in [
-            "Path(A, r.x, r.y)",
-            "#{z : A, f : Path(A, r.x, r.y), g : Path(A, r.y, z)}",
+            "Path[.A = A](r.x, r.y)",
+            "#{z : A, f : Path[.A = A](r.x, r.y), g : Path[.A = A](r.y, z)}",
         ] {
             let spelling: Vec<&super::ReadBack> = reads
                 .iter()
@@ -9456,18 +9456,18 @@ mod tests
     fn a_composite_prints_as_it_is_written_3957()
     {
         let source = SourceText::from(
-            "def agrees(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  w : A,\n  p : Path(A, x, \
-             y),\n  q : Path(A, y, z),\n  r : Path(A, z, w)\n) -> Path(Path(A, x, w), compose[5, \
+            "def agrees(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  w : A,\n  p : Path[.A = A](x, \
+             y),\n  q : Path[.A = A](y, z),\n  r : Path[.A = A](z, w)\n) -> Path[.A = Path[.A = A](x, w)](compose[5, \
              7](chain(3), (p, q, r)), Path.step(Path.step(p, q), r)) {\n  Path.here(Path.step(Path.step(p, q), r))\n}\n\ndef \
-             alone(A : Type, x : A, y : A, p : Path(A, x, y)) -> Path(Path(A, x, y), compose[0, \
+             alone(A : Type, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = Path[.A = A](x, y)](compose[0, \
              0](chain(1), p), p) {\n  Path.here(p)\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<super::ReadBack> =
             table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
         for composite in [
-            "Path(Path(A, x, w), compose[5, 7](chain(3), (p, q, r)), Path.step(Path.step(p, q), r))",
-            "Path(Path(A, x, y), compose[0, 0](chain(1), p), p)",
+            "Path[.A = Path[.A = A](x, w)](compose[5, 7](chain(3), (p, q, r)), Path.step(Path.step(p, q), r))",
+            "Path[.A = Path[.A = A](x, y)](compose[0, 0](chain(1), p), p)",
         ] {
             let spelling: Vec<&super::ReadBack> = reads
                 .iter()
@@ -9492,11 +9492,11 @@ mod tests
     fn a_fill_prints_as_it_is_written_4075()
     {
         let source = SourceText::from(
-            "def selfLoop(A : Type, x : A, y : A) -> (f : Path(A, x, y)) => Path(Path(A, x, y), \
+            "def selfLoop(A : Type, x : A, y : A) -> (f : Path[.A = A](x, y)) => Path[.A = Path[.A = A](x, y)](\
              f, f) {\n  thunk { fun (f) { Path.here(f) } }\n}\n\ndef filled(\n  A : Type,\n  x : A,\n  y \
-             : A,\n  fm : Path(A, x, y),\n  fp : Path(A, x, y),\n  fa : Path(Path(A, x, y), fm, \
-             fp)\n) -> Path(Path(Path(Path(A, x, y), fm, fp), Path.step(Path.here(fm), fa), Path.step(fa, \
-             Path.here(fp))), fill[1, 3](chain(1), selfLoop(A, x, y), fa), fill[1, 3](chain(1), \
+             : A,\n  fm : Path[.A = A](x, y),\n  fp : Path[.A = A](x, y),\n  fa : Path[.A = Path[.A = A](x, y)](fm, \
+             fp)\n) -> Path[.A = Path[.A = Path[.A = Path[.A = A](x, y)](fm, fp)](Path.step(Path.here(fm), fa), Path.step(fa, \
+             Path.here(fp)))](fill[1, 3](chain(1), selfLoop(A, x, y), fa), fill[1, 3](chain(1), \
              selfLoop(A, x, y), fa)) {\n  Path.here(fill[1, 3](chain(1), selfLoop(A, x, y), fa))\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
@@ -9521,18 +9521,19 @@ mod tests
     }
 
     /// #3801: a `cong` over an annotated thunk prints a type whose lambda
-    /// states its parameter's written type, `fun (b : Path(A, x, y)) { … }`
-    /// (#3943). Read back under a parameter the type does not name, each
+    /// states its parameter's written type, `fun (b : Path[.A = A](x, y)) { …
+    /// }` (#3943). Read back under a parameter the type does not name, each
     /// `Path` in that binder and in the thunk's annotation reprinted one
-    /// binder off, `Path(?, A, x)` for `Path(A, x, y)`; it reprints as printed.
+    /// binder off, `Path[.A = ?](A, x)` for `Path[.A = A](x, y)`; it reprints
+    /// as printed.
     #[test]
     fn an_annotated_thunk_under_cong_reprints_its_path_types_3801()
     {
         let source = SourceText::from(
-            "def whiskerRight(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  f1 : Path(A, x, y),\n  \
-             f2 : Path(A, x, y),\n  a : Path(Path(A, x, y), f1, f2),\n  g : Path(A, y, z)\n) -> \
-             Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)) {\n  Path.ap((thunk { fun (q : Path(A, x, y)) \
-             { Path.step(q, g) } } : Path(A, x, y) => Path(A, x, z)), a)\n}\n",
+            "def whiskerRight(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  f1 : Path[.A = A](x, y),\n  \
+             f2 : Path[.A = A](x, y),\n  a : Path[.A = Path[.A = A](x, y)](f1, f2),\n  g : Path[.A = A](y, z)\n) -> \
+             Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {\n  Path.ap((thunk { fun (q : Path[.A = A](x, y)) \
+             { Path.step(q, g) } } : Path[.A = A](x, y) => Path[.A = A](x, z)), a)\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<(String, Maybe<String, super::reprinted::Absent>)> = table(source)
@@ -9541,9 +9542,9 @@ mod tests
             .map(|back| (back.spelled, back.reprinted))
             .collect();
         assert!(
-            reads
-                .iter()
-                .any(|&(ref spelled, _)| spelled.replace('\n', "").contains(" : Path(A, x, y)) {")),
+            reads.iter().any(|&(ref spelled, _)| spelled
+                .replace('\n', "")
+                .contains(" : Path[.A = A](x, y)) {")),
             "a printed type's lambda states its parameter's written type, wherever the page \
              breaks it: {reads:?}"
         );
@@ -9607,11 +9608,11 @@ mod tests
     fn a_typed_lambda_s_cong_image_in_a_type_reads_back_3942()
     {
         let source = SourceText::from(
-            "def whiskerStatedHere(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  f1 : Path(A, x, \
-             y),\n  f2 : Path(A, x, y),\n  a : Path(Path(A, x, y), f1, f2),\n  g : Path(A, y, z)\n) \
-             -> Path(\n  Path(Path(A, x, z), Path.step(f1, g), Path.step(f2, g)),\n  Path.ap(fun (q : Path(A, x, y)) \
-             { Path.step(q, g) }, a),\n  Path.ap(fun (q : Path(A, x, y)) { Path.step(q, g) }, a)\n) {\n  Path.here(Path.ap(fun \
-             (q : Path(A, x, y)) { Path.step(q, g) }, a))\n}\n",
+            "def whiskerStatedHere(\n  A : Type,\n  x : A,\n  y : A,\n  z : A,\n  f1 : Path[.A = A](x, \
+             y),\n  f2 : Path[.A = A](x, y),\n  a : Path[.A = Path[.A = A](x, y)](f1, f2),\n  g : Path[.A = A](y, z)\n) \
+             -> Path[.A = \n  Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g))](\n  Path.ap(fun (q : Path[.A = A](x, y)) \
+             { Path.step(q, g) }, a),\n  Path.ap(fun (q : Path[.A = A](x, y)) { Path.step(q, g) }, a)\n) {\n  Path.here(Path.ap(fun \
+             (q : Path[.A = A](x, y)) { Path.step(q, g) }, a))\n}\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<(String, super::RoundTrip)> = table(source)
@@ -9682,8 +9683,8 @@ mod tests
     {
         let source = SourceText::from(
             "def k(\n  a : Type,\n  b : Type,\n  t : a => b,\n  g : b => a,\n  s : (x : a) => \
-             Path(a, g(t(x)), x),\n  h : b => a,\n  r : (y : b) => Path(b, t(h(y)), y),\n  y : \
-             b\n) -> -F Path((y : b) => Path(b, t(h(y)), y), r, r) { return Path.here(r) }\n",
+             Path[.A = a](g(t(x)), x),\n  h : b => a,\n  r : (y : b) => Path[.A = b](t(h(y)), y),\n  y : \
+             b\n) -> -F Path[.A = (y : b) => Path[.A = b](t(h(y)), y)](r, r) { return Path.here(r) }\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads: Vec<(String, Maybe<String, super::reprinted::Absent>)> = table(source)
@@ -9691,7 +9692,7 @@ mod tests
             .into_iter()
             .map(|back| (back.spelled, back.reprinted))
             .collect();
-        let arrow = "(y : b) => Path(b, t(h(y)), y)";
+        let arrow = "(y : b) => Path[.A = b](t(h(y)), y)";
         assert!(
             reads.iter().any(|&(ref spelled, _)| spelled == arrow),
             "the arrow prints with its written binder: {reads:?}"
@@ -9910,8 +9911,8 @@ mod tests
     fn a_printed_wildcard_is_settled_before_its_read_back_2179()
     {
         let source = SourceText::from(
-            "def endSigned = (Path.here(3) : Path(Integer, 3, _)) ;\ndef endApart = (Path.here(3) : \
-             Path(Integer, 4, _)) ;\n",
+            "def endSigned = (Path.here(3) : Path[.A = Integer](3, _)) ;\ndef endApart = (Path.here(3) : \
+             Path[.A = Integer](4, _)) ;\n",
         );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads =
@@ -9923,13 +9924,16 @@ mod tests
         });
         assert!(
             !wild.is_empty()
-                && wild.iter().all(|back| back.spelled == "Path(Integer, 4, _)"
-                    && back.trip == super::RoundTrip::Wildcard),
+                && wild
+                    .iter()
+                    .all(|back| back.spelled == "Path[.A = Integer](4, _)"
+                        && back.trip == super::RoundTrip::Wildcard),
             "the refused declaration's type writes `_` and is a wildcard's: {wild:?}"
         );
         assert!(
-            tame.iter().any(|back| back.spelled == "Path(Integer, 3, 3)"
-                && back.trip == super::RoundTrip::Equal),
+            tame.iter()
+                .any(|back| back.spelled == "Path[.A = Integer](3, 3)"
+                    && back.trip == super::RoundTrip::Equal),
             "the solved one prints its solution: {tame:?}"
         );
         assert!(

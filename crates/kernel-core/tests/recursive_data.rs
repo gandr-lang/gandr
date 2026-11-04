@@ -92,15 +92,15 @@ enum Placement
     Parameter,
     /// `T A ⇒ 1`: the family in a static function's domain, a term position.
     StaticDomain,
-    /// `Path(T A, (), ())`: the family as a path type's carrier.
+    /// `Path[.A = T A]((), ())`: the family as a path type's carrier.
     PathCarrier,
-    /// `Path(U, ⌜T A⌝, ⌜1⌝)`: the family quoted at a path type's endpoint.
+    /// `Path[.A = U](⌜T A⌝, ⌜1⌝)`: the family quoted at a path type's endpoint.
     PathEndpoint,
     /// `⌜T A⌝ = ⌜1⌝`: the family quoted in a path universe.
     PathUniverse,
     /// `⌜T A⌝ ~> ⌜1⌝`: the family quoted in a flow universe.
     FlowUniverse,
-    /// `Path(U, h, ⌜1⌝)`: the family quoted inside the endpoint `h`.
+    /// `Path[.A = U](h, ⌜1⌝)`: the family quoted inside the endpoint `h`.
     Held(Holder),
 }
 
@@ -143,9 +143,9 @@ enum Holder
     Univalence,
     /// `here c`.
     Here,
-    /// `⌜Flow(1, c, c)⌝`.
+    /// `⌜Flow[.A = 1](c, c)⌝`.
     QuotedFlow,
-    /// `⌜Bridge(1, c, c)⌝`.
+    /// `⌜Bridge[.A = 1](c, c)⌝`.
     QuotedBridge,
     /// `⌜El c⌝`, a computation type.
     QuotedElement,

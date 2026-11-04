@@ -42,8 +42,8 @@
 //! [`Role::Words`], entered in no namespace, whose constructors are the empty
 //! word, then each loop's letter and its inverse consing onto a word, and
 //! whose rules are the two cancellations per loop. The checkers and the kernel
-//! read `Path(T, a, a)` at the point as those words; each loop is bound at it
-//! as the word of its one letter.
+//! read `Path[.A = T](a, a)` at the point as those words; each loop is bound at
+//! it as the word of its one letter.
 //!
 //! - **Refusals.** A directed cell, `-->` between terms, is
 //!   `LoweringRefusal::DirectedCell`; a cell between distinct terms is

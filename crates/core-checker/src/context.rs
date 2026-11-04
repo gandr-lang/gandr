@@ -4406,9 +4406,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         }
     }
 
-    /// The type of words the path type `Path(carrier, left, right)` reads as:
-    /// the declaration whose free cells loop at a point both endpoints spell,
-    /// over the parameterless data type `carrier` is.
+    /// The type of words the path type `Path[.A = carrier](left, right)` reads
+    /// as: the declaration whose free cells loop at a point both endpoints
+    /// spell, over the parameterless data type `carrier` is.
     ///
     /// # Specification
     /// - requires: `carrier` is formed.
@@ -4463,8 +4463,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Specification
     /// - requires: `value_type` is formed.
     /// - ensures: a fresh `Data(words, [])` exactly when the weak head is
-    ///   `Path(carrier, left, right)` and [`Self::words`] reads it as `words`;
-    ///   `value_type` itself otherwise.
+    ///   `Path[.A = carrier](left, right)` and [`Self::words`] reads it as
+    ///   `words`; `value_type` itself otherwise.
     /// - provides: the reading of a scrutinee's type and of a fold's domain.
     /// - fails: as [`Self::whnf_value_type`].
     /// - panics: none.
