@@ -300,6 +300,7 @@ fn render<'arena>(
     | (Some(&CommandNode::Cut { polarity, producer, consumer }), &[Piece::Text(Token("⟨")), Piece::Producer(p, pd), Piece::Text(Token(bar)), Piece::Consumer(c, cd), Piece::Text(Token("⟩"))]) =>
         producer == p && consumer == c && pd == depth && cd == depth
             && bar == match polarity { Polarity::Positive => " |+ ", Polarity::Negative => " |− " },
+    | (Some(&CommandNode::Deliver { ref producers, consumer }), pieces) => matches!(pieces.first(), Some(&Piece::Text(Token("⟨")))) && matches!(pieces.last(), Some(&Piece::Text(Token("⟩")))) && pieces.iter().filter_map(|piece| match *piece { Piece::Producer(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(producers.iter().copied()) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == consumer && under == depth)),
     | (None, &[Piece::Text(Token("<dangling>"))]) => true,
     | (Some(&CommandNode::Perform { payload, continuation, .. }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Producer(found, under) if found == payload && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | (Some(&CommandNode::Handle { subject, on_return, ref clauses, continuation, .. }), pieces) => pieces.iter().filter_map(|piece| match *piece { Piece::Command(id, _) => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq([subject, on_return].into_iter().chain(clauses.iter().map(|clause| clause.body))) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
@@ -336,6 +337,22 @@ fn command(
             Piece::Consumer(consumer, depth),
             text!("⟩"),
         ],
+        CommandNode::Deliver {
+            ref producers,
+            consumer,
+        } => {
+            let mut pieces =
+                Vec::with_capacity(producers.len().saturating_mul(2).saturating_add(3));
+            pieces.push(text!("⟨"));
+            for (position, &producer) in producers.iter().enumerate() {
+                if position > 0 {
+                    pieces.push(text!(", "));
+                }
+                pieces.push(Piece::Producer(producer, depth));
+            }
+            pieces.extend([text!(" | "), Piece::Consumer(consumer, depth), text!("⟩")]);
+            pieces
+        },
         CommandNode::Perform {
             ref signature,
             ref operation,
@@ -806,6 +823,7 @@ fn producer(
         | ConsumerNode::Top => matches!(ret.as_slice(), &[Piece::Text(Token("★"))]),
         | ConsumerNode::ListFold { on_nil, on_cons, continuation, .. } => ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq([on_nil, on_cons]) && ret.iter().any(|piece| matches!(*piece, Piece::Consumer(found, _) if found == continuation)),
         | ConsumerNode::MuTilde { body } => matches!(ret.as_slice(), &[Piece::Text(Token("μ̃x. ")), Piece::Command(found, _)] if body == found),
+        | ConsumerNode::MuTildeAll { arity, body } => matches!(ret.as_slice(), &[Piece::Owned(ref binder), Piece::Command(found, _)] if body == found && *binder == alloc::format!("μ̃({}). ", usize::from(arity))),
         | ConsumerNode::Destructor { tag, .. } => matches!(ret.first(), Some(&Piece::Text(Token(name)))
             if name == match tag { DestructorTag::Apply => "apply", DestructorTag::Force => "force", DestructorTag::Project(_) => "project" })
             && match tag {
@@ -840,6 +858,10 @@ fn consumer(
             alloc::vec![Piece::Owned(alloc::format!("α{}", u32::from(index)))]
         },
         ConsumerNode::MuTilde { body } => alloc::vec![text!("μ̃x. "), Piece::Command(body, depth)],
+        ConsumerNode::MuTildeAll { arity, body } => alloc::vec![
+            Piece::Owned(alloc::format!("μ̃({}). ", usize::from(arity))),
+            Piece::Command(body, depth)
+        ],
         ConsumerNode::ListFold {
             on_nil,
             on_cons,

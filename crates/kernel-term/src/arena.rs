@@ -1805,7 +1805,8 @@ impl TermArena
             Computation::PathTransport { motive, path, value } | Computation::Ride { motive, flow: path, value } => self.value_type(motive).is_some() && self.value(path).is_some() && self.value(value).is_some(),
             Computation::TelescopeTransport { motive, path, start, over, value } | Computation::TelescopeRide { motive, flow: path, start, over, value } => self.comp_type(motive).is_some() && self.value(path).is_some() && self.value(start).is_some() && self.value(over).is_some() && self.value(value).is_some(),
             Computation::RelatedApplication { path, left, right, evidence, body } => self.value(path).is_some() && self.value(left).is_some() && self.value(right).is_some() && self.value(evidence).is_some() && self.computation(body).is_some(),
-            Computation::Bind(bound, body) => self.computation(bound).is_some() && self.computation(body).is_some(),
+            Computation::Bind(bound, body) | Computation::BindAll { bound, body, .. } => self.computation(bound).is_some() && self.computation(body).is_some(),
+            Computation::ReturnAll(ref values) => values.iter().all(|value| self.value(*value).is_some()),
             Computation::With(ref components) => components.iter().all(|component| self.computation(*component).is_some()),
             Computation::Project(_, pair) => self.computation(pair).is_some(),
             Computation::Case { scrutinee, ref branches } => self.value(scrutinee).is_some() && branches.iter().all(|branch| self.computation(*branch).is_some()),
@@ -1907,7 +1908,7 @@ impl TermArena
     ///   hash-consing; the probes are not a typing or arena-provenance proof.
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
-        requires: match comp_type { CompType::Returner(result) => self.value_type(result).is_some(), CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => self.value_type(domain).is_some()
+        requires: match comp_type { CompType::Returner(result) => self.value_type(result).is_some(), CompType::Returns(ref results) => results.iter().all(|result| self.value_type(*result).is_some()), CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => self.value_type(domain).is_some()
                 && self.comp_type(codomain).is_some(), CompType::Element { code, .. } => self.value(code).is_some(), CompType::With(ref components) => components.iter().all(|component| self.comp_type(*component).is_some()), CompType::Codata { ref arguments, .. } => arguments.iter().all(|argument| self.value(*argument).is_some()) }, captures: entry = (self.watermark(), core::mem::discriminant(&comp_type)),
         ensures: |ret| self.values.len() == entry.0.values
                 && self.computations.len() == entry.0.computations
@@ -2568,6 +2569,86 @@ impl TermArena
     ) -> ComputationId
     {
         self.alloc_computation(Computation::Bind(bound, body))
+    }
+
+    /// Mint a return of the already-allocated values `values`: the return of
+    /// the one value when there is one, the return of several otherwise.
+    ///
+    /// # Specification
+    /// - requires: every value resolves in this arena's value family.
+    /// - ensures: appends [`Computation::Return`] of the value when `values`
+    ///   holds one and [`Computation::ReturnAll`] of `values` in order
+    ///   otherwise, and returns the computation family's length before the
+    ///   push, saturated at the `u32` ceiling.
+    /// - provides: the only way to mint a return of several values, which keeps
+    ///   one value's return in its one spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — no values, one and two mint the return of none, the
+    ///   return and the return of two in order.
+    /// - witness: `arena::tests::a_many_value_former_of_one_is_its_one_value_former`
+    #[spec(
+        requires: values.iter().all(|&value| self.value(value).is_some()), captures: before = self.watermark(),
+        ensures: |ret| self.computations.len() == before.computations.saturating_add(1)
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && match *values {
+                    | [value] => matches!(self.computations.last(), Some(&Computation::Return(actual)) if actual == value),
+                    | _ => matches!(self.computations.last(), Some(Computation::ReturnAll(actual)) if **actual == *values),
+                },
+    )]
+    #[inline]
+    pub fn computation_return_all(
+        &mut self,
+        values: &[ValueId],
+    ) -> ComputationId
+    {
+        match *values {
+            [value] => self.computation_return(value),
+            _ => self.alloc_computation(Computation::ReturnAll(values.into())),
+        }
+    }
+
+    /// Mint a bind of the `arity` values `bound` returns into `body`: the bind
+    /// of the one value when `arity` is one, the bind of several otherwise.
+    ///
+    /// # Specification
+    /// - requires: `bound` and `body` resolve in this arena.
+    /// - ensures: appends [`Computation::Bind`] when `arity` is one and
+    ///   [`Computation::BindAll`] otherwise, and returns the computation
+    ///   family's length before the push, saturated at the `u32` ceiling.
+    /// - provides: the only way to mint a bind of several values, which keeps
+    ///   one value's bind in its one spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::computation_return_all`].
+    /// - witness: `arena::tests::a_many_value_former_of_one_is_its_one_value_former`
+    #[spec(
+        requires: self.computation(bound).is_some()
+                && self.computation(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.computations.len() == before.computations.saturating_add(1)
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && if usize::from(arity) == 1 {
+                    matches!(self.computations.last(), Some(&Computation::Bind(left, right)) if left == bound && right == body)
+                } else {
+                    self.computations.last() == Some(&Computation::BindAll { bound, arity, body })
+                },
+    )]
+    #[inline]
+    pub fn computation_bind_all(
+        &mut self,
+        bound: ComputationId,
+        arity: crate::ResultCount,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        if usize::from(arity) == 1 {
+            self.computation_bind(bound, body)
+        }
+        else {
+            self.alloc_computation(Computation::BindAll { bound, arity, body })
+        }
     }
 
     /// Mint a force over an already-allocated value.
@@ -3251,6 +3332,45 @@ impl TermArena
     ) -> CompTypeId
     {
         self.alloc_comp_type(CompType::Returner(result))
+    }
+
+    /// Mint the returner of the already-allocated value types `results`: the
+    /// returner of the one result when there is one, the returner of several
+    /// otherwise.
+    ///
+    /// # Specification
+    /// - requires: every result resolves in this arena's value-type family,
+    ///   each under the binders of the results before it.
+    /// - ensures: appends [`CompType::Returner`] of the result when `results`
+    ///   holds one and [`CompType::Returns`] of `results` in order otherwise,
+    ///   and returns the computation-type family's length before the push,
+    ///   saturated at the `u32` ceiling.
+    /// - provides: the only way to mint a returner of several values, which
+    ///   keeps one result's returner in its one spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::computation_return_all`].
+    /// - witness: `arena::tests::a_many_value_former_of_one_is_its_one_value_former`
+    #[spec(
+        requires: results.iter().all(|&result| self.value_type(result).is_some()), captures: before = self.watermark(),
+        ensures: |ret| self.comp_types.len() == before.comp_types.saturating_add(1)
+                && ret.0 == u32::try_from(before.comp_types).unwrap_or(u32::MAX)
+                && match *results {
+                    | [result] => matches!(self.comp_types.last(), Some(&CompType::Returner(actual)) if actual == result),
+                    | _ => matches!(self.comp_types.last(), Some(CompType::Returns(actual)) if **actual == *results),
+                },
+    )]
+    #[inline]
+    pub fn comp_type_returns(
+        &mut self,
+        results: &[ValueTypeId],
+    ) -> CompTypeId
+    {
+        match *results {
+            [result] => self.comp_type_returner(result),
+            _ => self.alloc_comp_type(CompType::Returns(results.into())),
+        }
     }
 
     /// Mint an arrow type over an already-allocated domain and codomain.
@@ -3955,8 +4075,10 @@ Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)]
                 ret.as_slice() == [AnyNode::Computation(head), AnyNode::Value(argument)],
             Some(&Computation::Return(value) | &Computation::Force(value)) =>
                 ret.as_slice() == [AnyNode::Value(value)],
-            Some(&Computation::Bind(bound, body)) =>
+            Some(&(Computation::Bind(bound, body) | Computation::BindAll { bound, body, .. })) =>
                 ret.as_slice() == [AnyNode::Computation(bound), AnyNode::Computation(body)],
+            Some(&Computation::ReturnAll(ref values)) =>
+                ret.iter().copied().eq(values.iter().copied().map(AnyNode::Value)),
             Some(&Computation::With(ref components)) =>
                 ret.iter().copied().eq(components.iter().copied().map(AnyNode::Computation)),
             Some(&Computation::Project(_, pair)) => ret.as_slice() == [AnyNode::Computation(pair)],
@@ -3980,6 +4102,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
         AnyNode::CompType(id) => match self.comp_type(id) {
             None => ret.is_empty(),
             Some(&CompType::Returner(result)) => ret.as_slice() == [AnyNode::ValueType(result)],
+            Some(&CompType::Returns(ref results)) => ret.iter().copied().eq(results.iter().copied().map(AnyNode::ValueType)),
             Some(&CompType::Arrow { domain, codomain } | &CompType::Pi { domain, codomain }) =>
                 ret.as_slice() == [AnyNode::ValueType(domain), AnyNode::CompType(codomain)],
             Some(&CompType::Element { code, .. }) => ret.as_slice() == [AnyNode::Value(code)],
@@ -4239,9 +4362,14 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 Some(&Computation::Return(value) | &Computation::Force(value)) => {
                     children.push(AnyNode::Value(value));
                 },
-                Some(&Computation::Bind(bound, body)) => {
+                Some(
+                    &(Computation::Bind(bound, body) | Computation::BindAll { bound, body, .. }),
+                ) => {
                     children.push(AnyNode::Computation(bound));
                     children.push(AnyNode::Computation(body));
+                },
+                Some(&Computation::ReturnAll(ref values)) => {
+                    children.extend(values.iter().copied().map(AnyNode::Value));
                 },
                 Some(&Computation::With(ref components)) => {
                     children.extend(components.iter().copied().map(AnyNode::Computation));
@@ -4326,6 +4454,9 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
             AnyNode::CompType(id) => match self.comp_type(id) {
                 None => {},
                 Some(&CompType::Returner(result)) => children.push(AnyNode::ValueType(result)),
+                Some(&CompType::Returns(ref results)) => {
+                    children.extend(results.iter().copied().map(AnyNode::ValueType));
+                },
                 Some(
                     &CompType::Arrow { domain, codomain } | &CompType::Pi { domain, codomain },
                 ) => {
@@ -5165,6 +5296,78 @@ mod tests
         assert_eq!(
             arena.value_type(product).and_then(ValueType::summands),
             None
+        );
+    }
+
+    #[test]
+    fn a_many_value_former_of_one_is_its_one_value_former()
+    {
+        use super::CompType;
+        use super::Computation;
+        use crate::ResultCount;
+
+        let mut arena = TermArena::new();
+        let first = arena.value_unit();
+        let second = arena.value_variable(super::DeBruijnIndex::from(0_u32));
+        let none = arena.computation_return_all(&[]);
+        let one = arena.computation_return_all(&[first]);
+        let two = arena.computation_return_all(&[second, first]);
+        assert_eq!(
+            arena.computation(none),
+            Some(&Computation::ReturnAll([].into()))
+        );
+        assert_eq!(
+            arena.computation(one),
+            Some(&Computation::Return(first)),
+            "a return of one value is the return"
+        );
+        assert_eq!(
+            arena.computation(two),
+            Some(&Computation::ReturnAll([second, first].into())),
+            "a return of two keeps their order"
+        );
+        let bound_one = arena.computation_bind_all(two, ResultCount::from(1_usize), one);
+        let bound_two = arena.computation_bind_all(two, ResultCount::from(2_usize), one);
+        let bound_none = arena.computation_bind_all(none, ResultCount::from(0_usize), one);
+        assert_eq!(
+            arena.computation(bound_one),
+            Some(&Computation::Bind(two, one)),
+            "a bind of one value is the bind"
+        );
+        assert_eq!(
+            arena.computation(bound_two),
+            Some(&Computation::BindAll {
+                bound: two,
+                arity: ResultCount::from(2_usize),
+                body: one,
+            })
+        );
+        assert_eq!(
+            arena.computation(bound_none),
+            Some(&Computation::BindAll {
+                bound: none,
+                arity: ResultCount::from(0_usize),
+                body: one,
+            })
+        );
+        let unit = arena.value_type_unit();
+        let empty = arena.value_type_empty();
+        let no_results = arena.comp_type_returns(&[]);
+        let one_result = arena.comp_type_returns(&[unit]);
+        let two_results = arena.comp_type_returns(&[empty, unit]);
+        assert_eq!(
+            arena.comp_type(no_results),
+            Some(&CompType::Returns([].into()))
+        );
+        assert_eq!(
+            arena.comp_type(one_result),
+            Some(&CompType::Returner(unit)),
+            "a returner of one result is the returner"
+        );
+        assert_eq!(
+            arena.comp_type(two_results),
+            Some(&CompType::Returns([empty, unit].into())),
+            "a returner of two keeps their order"
         );
     }
 

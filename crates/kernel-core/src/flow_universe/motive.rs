@@ -208,6 +208,17 @@ fn walk(
             },
             Visit::Comp(id, sign, at) => match *arena.comp_type(id).ok_or(FlowError::Arena)? {
                 CompType::Returner(result) => pending.push(Visit::Type(result, sign, at)),
+                // Each result stands under the binders of the results before
+                // it, so the related binder reads that much further out.
+                CompType::Returns(ref results) => {
+                    for (before, &result) in results.iter().enumerate().rev() {
+                        let under = u32::try_from(before)
+                            .ok()
+                            .and_then(|before| u32::from(at).checked_add(before))
+                            .ok_or(FlowError::Budget)?;
+                        pending.push(Visit::Type(result, sign, DeBruijnIndex::from(under)));
+                    }
+                },
                 CompType::Arrow { domain, codomain } => {
                     pending.push(Visit::Comp(codomain, sign, at));
                     pending.push(Visit::Type(domain, sign.reverse(), at));

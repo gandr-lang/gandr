@@ -1095,6 +1095,7 @@ fn function_parts(
     match comp_type_view(context.arena(), codomain)? {
         CompTypeView::Returner { result, .. } => Ok(Maybe::Present((domain, result))),
         CompTypeView::With(..)
+        | CompTypeView::Returns { .. }
         | CompTypeView::Arrow { .. }
         | CompTypeView::Pi { .. }
         | CompTypeView::Element { .. }

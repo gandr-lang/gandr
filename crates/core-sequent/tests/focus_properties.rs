@@ -338,6 +338,15 @@ fn walked(
                     stack.push(Visit::Producer(producer, depth));
                     stack.push(Visit::Consumer(consumer, depth));
                 },
+                CommandNode::Deliver {
+                    ref producers,
+                    consumer,
+                } => {
+                    for &producer in producers {
+                        stack.push(Visit::Producer(producer, depth));
+                    }
+                    stack.push(Visit::Consumer(consumer, depth));
+                },
                 CommandNode::Perform {
                     ref signature,
                     route,
@@ -599,6 +608,12 @@ fn walked(
                         stack.push(Visit::Command(
                             body,
                             depth.under(ProducerArity::ONE, ConsumerArity::ZERO),
+                        ));
+                    },
+                    ConsumerNode::MuTildeAll { arity, body } => {
+                        stack.push(Visit::Command(
+                            body,
+                            depth.under(arity, ConsumerArity::ZERO),
                         ));
                     },
                     ConsumerNode::Destructor {

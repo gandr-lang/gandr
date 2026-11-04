@@ -143,8 +143,10 @@ impl Image
                 Computation::RecordProjection(ref mut record, _)
                 | Computation::TupleProjection(ref mut record, _),
             ) => [Some(V(record)), None, None, None, None],
-            Self::CompType(CompType::Codata { .. } | CompType::With(_))
-            | Self::Computation(Computation::With(_))
+            Self::CompType(
+                CompType::Codata { .. } | CompType::With(_) | CompType::Returns { .. },
+            )
+            | Self::Computation(Computation::With(_) | Computation::ReturnAll(_))
             | Self::Value(
                 Value::Record(_)
                 | Value::Row(_)
@@ -200,7 +202,12 @@ impl Image
                     on_return: ref mut second,
                     ..
                 }
-                | Computation::Bind(ref mut first, ref mut second),
+                | Computation::Bind(ref mut first, ref mut second)
+                | Computation::BindAll {
+                    bound: ref mut first,
+                    body: ref mut second,
+                    ..
+                },
             ) => [Some(C(first)), Some(C(second)), None, None, None],
             Self::Computation(Computation::Ascribe {
                 ref mut body,
@@ -689,7 +696,8 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                     self.pending.push(Task::Close(node, image));
                     if let Node::CompType(id) = node
                         && let Some(ty) = self.source.comp_type(id)
-                        && let CompType::Returner { ref effects, .. } = *ty
+                        && let CompType::Returner { ref effects, .. }
+                        | CompType::Returns { ref effects, .. } = *ty
                     {
                         self.pending.extend(
                             effects
@@ -813,6 +821,14 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                             .map(|&body| Task::Open(Node::Computation(body))),
                                     );
                                 },
+                                Computation::ReturnAll(ref values) => {
+                                    self.pending.extend(
+                                        values
+                                            .iter()
+                                            .rev()
+                                            .map(|&value| Task::Open(Node::Value(value))),
+                                    );
+                                },
                                 Computation::DataCase { ref branches, .. } => {
                                     self.pending.extend(
                                         branches
@@ -902,6 +918,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | Computation::Application(..)
                                 | Computation::Return(_)
                                 | Computation::Bind(..)
+                                | Computation::BindAll { .. }
                                 | Computation::Ascribe { .. }
                                 | Computation::Force(_)
                                 | Computation::Split { .. }
@@ -1001,6 +1018,14 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         .map(|&ty| Task::Open(Node::CompType(ty))),
                                 );
                             },
+                            Some(&CompType::Returns { ref results, .. }) => {
+                                self.pending.extend(
+                                    results
+                                        .iter()
+                                        .rev()
+                                        .map(|&ty| Task::Open(Node::ValueType(ty))),
+                                );
+                            },
                             Some(
                                 &(CompType::Returner { .. }
                                 | CompType::Arrow { .. }
@@ -1019,9 +1044,14 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                         let image = *self.images.get(&edge.node()).ok_or(ImportFault)?;
                         edge.replace(image)?;
                     }
-                    if let Image::CompType(CompType::Returner {
-                        ref mut effects, ..
-                    }) = image
+                    if let Image::CompType(
+                        CompType::Returner {
+                            ref mut effects, ..
+                        }
+                        | CompType::Returns {
+                            ref mut effects, ..
+                        },
+                    ) = image
                     {
                         *effects =
                             effects.try_map_types(crate::effect::TypeOrder::Forward, |ty| {
@@ -1105,6 +1135,18 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                         ) => {
                             for body in branches.iter_mut() {
                                 *body = map_computation(*body)?;
+                            }
+                        },
+                        Image::Computation(Computation::ReturnAll(ref mut values)) => {
+                            for value in values.iter_mut() {
+                                *value = map_value(*value)?;
+                            }
+                        },
+                        Image::CompType(CompType::Returns {
+                            ref mut results, ..
+                        }) => {
+                            for ty in results.iter_mut() {
+                                *ty = map_type(*ty)?;
                             }
                         },
                         Image::CompType(CompType::With(ref mut components)) => {

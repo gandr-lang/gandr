@@ -352,6 +352,7 @@ pub fn codes(
         },
         CompTypeView::With(..)
         | CompTypeView::Returner { .. }
+        | CompTypeView::Returns { .. }
         | CompTypeView::Arrow { .. }
         | CompTypeView::Pi { .. }
         | CompTypeView::Element { .. }

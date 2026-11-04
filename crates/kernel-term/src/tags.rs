@@ -231,6 +231,25 @@
 //! with a side byte on the projection, and refuses the artifact by its
 //! version before it meets them.
 //!
+//! # Several results
+//!
+//! A computation that returns several values persists as its own formers, so
+//! a returner of several results is never a returner of a tuple. The type is
+//! a telescope: each result is scoped under the binders of the results
+//! before it. The bind binds every value its bound computation returns, the
+//! first outermost.
+//!
+//! | byte | node | family | children, in order | inline payload |
+//! | ---- | ---- | ------ | ------------------ | -------------- |
+//! | `0x70` | [`NODE_CT_RETURNS`] | computation type | the result types, each under the binders of those before it | the result count |
+//! | `0x71` | [`NODE_C_RETURN_ALL`] | computation | the returned values | the value count |
+//! | `0x72` | [`NODE_C_BIND_ALL`] | computation | the bound computation; the body, under one value binder per value | the value count |
+//!
+//! None of the three holds one value: one value's return, bind and returner
+//! are [`NODE_C_RETURN`], [`NODE_C_BIND`] and [`NODE_CT_RETURNER`]. Version 8
+//! admits the three bytes. A reader at 7 refuses the artifact by its version
+//! before it meets them.
+//!
 //! # The dependent pair
 //!
 //! The dependent pair `Σ (x : A). B` persists as its own former beside the
@@ -403,7 +422,9 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// point and an endpoint differ. Version six admits [`NODE_V_UNIVALENCE`].
 /// Version seven makes the lazy product n-ary: [`NODE_CT_WITH`] and
 /// [`NODE_C_WITH`] carry an inline component count, and [`NODE_C_PROJECT`]
-/// an inline component position where it carried a side byte.
+/// an inline component position where it carried a side byte. Version eight
+/// admits the formers of several results: [`NODE_CT_RETURNS`],
+/// [`NODE_C_RETURN_ALL`] and [`NODE_C_BIND_ALL`].
 ///
 /// A refusal names the version it met rather than guessing at it, which is
 /// what makes an older reader meeting a newer artifact stop with an accurate
@@ -426,7 +447,7 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// - witness: `tests::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
 /// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
-pub const FORMAT_VERSION: FormatVersion = FormatVersion(7);
+pub const FORMAT_VERSION: FormatVersion = FormatVersion(8);
 
 /// Admission mark: admitted through the checked choke point.
 pub const ADMISSION_CHECKED: WireTag = WireTag(0);
@@ -956,6 +977,16 @@ pub const NODE_CT_CODATA: WireTag = WireTag(0x6E);
 /// the motive and the branches. A case binding no equation is
 /// [`NODE_C_DATA_CASE`].
 pub const NODE_C_INDEXED_DATA_CASE: WireTag = WireTag(0x6C);
+/// Node tag: the returner of several results, a telescope, with an inline
+/// result count, over its result types, each under the binders of the results
+/// before it.
+pub const NODE_CT_RETURNS: WireTag = WireTag(0x70);
+/// Node tag: a return of several values, with an inline value count, over its
+/// values.
+pub const NODE_C_RETURN_ALL: WireTag = WireTag(0x71);
+/// Node tag: a bind of several values, with an inline value count, over the
+/// bound computation and the body under one binder per value.
+pub const NODE_C_BIND_ALL: WireTag = WireTag(0x72);
 /// Composition seam: the first output feeds the second input.
 pub const SEAM_SEQUENCE: WireTag = WireTag(0);
 /// Composition seam: the second output also feeds back into the first input.
@@ -1142,7 +1173,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA | NODE_C_INDEXED_DATA_CASE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA | NODE_C_INDEXED_DATA_CASE | NODE_CT_RETURNS | NODE_C_RETURN_ALL | NODE_C_BIND_ALL) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1194,7 +1225,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA | NODE_C_INDEXED_DATA_CASE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA | NODE_C_INDEXED_DATA_CASE | NODE_CT_RETURNS | NODE_C_RETURN_ALL | NODE_C_BIND_ALL) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1294,7 +1325,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 78] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 81] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -1379,6 +1410,9 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 78] = [
     unbounded(NODE_CT_CODATA, ChildArity::Counted(0)),
     unbounded(NODE_C_LIST_CASE, ChildArity::Fixed(3)),
     unbounded(NODE_C_INDEXED_DATA_CASE, ChildArity::Counted(2)),
+    unbounded(NODE_CT_RETURNS, ChildArity::Counted(0)),
+    unbounded(NODE_C_RETURN_ALL, ChildArity::Counted(0)),
+    unbounded(NODE_C_BIND_ALL, ChildArity::Fixed(2)),
 ];
 
 #[cfg(test)]
@@ -1469,6 +1503,8 @@ mod tests
                         Some(&crate::Computation::Application(_, _)) => row.tag == super::NODE_C_APPLICATION,
                         Some(&crate::Computation::Return(_)) => row.tag == super::NODE_C_RETURN,
                         Some(&crate::Computation::Bind(_, _)) => row.tag == super::NODE_C_BIND,
+                        Some(&crate::Computation::ReturnAll(_)) => row.tag == super::NODE_C_RETURN_ALL,
+                        Some(&crate::Computation::BindAll { .. }) => row.tag == super::NODE_C_BIND_ALL,
                         Some(&crate::Computation::Force(_)) => row.tag == super::NODE_C_FORCE,
                         Some(&crate::Computation::Case { .. }) => row.tag == super::NODE_C_CASE,
                         Some(&crate::Computation::SigmaSplit { .. }) => row.tag == super::NODE_C_SIGMA_SPLIT,
@@ -1509,6 +1545,7 @@ mod tests
                     },
                     AnyNode::CompType(id) => match ret.0.comp_type(id) {
                         Some(&crate::CompType::Returner(_)) => row.tag == super::NODE_CT_RETURNER,
+                        Some(&crate::CompType::Returns(_)) => row.tag == super::NODE_CT_RETURNS,
                         Some(&crate::CompType::Arrow { .. }) => row.tag == super::NODE_CT_ARROW,
                         Some(&crate::CompType::Pi { .. }) => row.tag == super::NODE_CT_PI,
                         Some(&crate::CompType::Element { .. }) => row.tag == super::NODE_CT_ELEMENT,
@@ -1739,6 +1776,13 @@ mod tests
             AnyNode::CompType(codata),
             AnyNode::Computation(list_case),
             AnyNode::Computation(indexed_case),
+            AnyNode::CompType(arena.comp_type_returns(&[unit_type, base])),
+            AnyNode::Computation(arena.computation_return_all(&[unit, literal])),
+            AnyNode::Computation(arena.computation_bind_all(
+                ret,
+                crate::ResultCount::from(2_usize),
+                ret,
+            )),
         ];
         (arena, nodes)
     }
@@ -1825,11 +1869,13 @@ mod tests
                     Some(&crate::Computation::DataCase { ref branches, .. }) => branches.len(),
                     Some(&crate::Computation::Case { ref branches, .. }) => branches.len(),
                     Some(&crate::Computation::With(ref components)) => components.len(),
+                    Some(&crate::Computation::ReturnAll(ref values)) => values.len(),
                     _ => 0,
                 },
                 AnyNode::CompType(id) => match arena.comp_type(id) {
                     Some(&crate::CompType::Codata { ref arguments, .. }) => arguments.len(),
                     Some(&crate::CompType::With(ref components)) => components.len(),
+                    Some(&crate::CompType::Returns(ref results)) => results.len(),
                     _ => 0,
                 },
             };
@@ -1915,10 +1961,20 @@ mod tests
             assigned[usize::from(u8::from(super::NODE_C_INDEXED_DATA_CASE))],
             "the indexed case holds its byte"
         );
-        for unassigned in 0x70_u8 ..= u8::MAX {
+        for several in [
+            super::NODE_CT_RETURNS,
+            super::NODE_C_RETURN_ALL,
+            super::NODE_C_BIND_ALL,
+        ] {
+            assert!(
+                assigned[usize::from(u8::from(several))],
+                "the formers of several results hold their bytes: {several}"
+            );
+        }
+        for unassigned in 0x73_u8 ..= u8::MAX {
             assert!(
                 !assigned[usize::from(unassigned)],
-                "every byte above the list case is unassigned: {unassigned:#04x}"
+                "every byte above the bind of several values is unassigned: {unassigned:#04x}"
             );
         }
     }
@@ -1989,7 +2045,7 @@ mod tests
             .chain(0x48 ..= 0x4F)
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
             .chain(0x5d ..= 0x6b)
-            .chain([0x6D, 0x6E, 0x6F, 0x6C])
+            .chain([0x6D, 0x6E, 0x6F, 0x6C, 0x70, 0x71, 0x72])
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);

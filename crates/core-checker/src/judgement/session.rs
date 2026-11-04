@@ -874,6 +874,8 @@ impl Machine<'_, '_>
                     | Computation::Application(..)
                     | Computation::Return(_)
                     | Computation::Bind(..)
+                    | Computation::ReturnAll(_)
+                    | Computation::BindAll { .. }
                     | Computation::Ascribe { .. }
                     | Computation::Force(_)
                     | Computation::Decompose(_)
@@ -3502,7 +3504,8 @@ impl Machine<'_, '_>
             Direction::Check(expected) => {
                 let expected = self.context.whnf_comp_type(expected)?;
                 match comp_type_view(self.context.arena(), expected)? {
-                    CompTypeView::Returner { effects, .. } => effects.clone(),
+                    CompTypeView::Returner { effects, .. }
+                    | CompTypeView::Returns { effects, .. } => effects.clone(),
                     CompTypeView::Unknown
                     | CompTypeView::With(..)
                     | CompTypeView::Arrow { .. }

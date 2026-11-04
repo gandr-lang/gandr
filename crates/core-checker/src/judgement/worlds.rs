@@ -1388,6 +1388,8 @@ impl Machine<'_, '_>
             | Computation::Application(..)
             | Computation::Return(_)
             | Computation::Bind(..)
+            | Computation::ReturnAll(_)
+            | Computation::BindAll { .. }
             | Computation::Ascribe { .. }
             | Computation::Force(_)
             | Computation::Decompose(_)

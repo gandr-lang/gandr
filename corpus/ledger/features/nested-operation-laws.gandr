@@ -3,7 +3,7 @@
 /// Not implemented: a law instantiating a variable beside an indexed sort, a law whose carried indices apply an operation with indices of its own, and a law whose sides sort only modulo the block's rules, are refused `UndescribedMember.NestedOperation`.
 ///
 /// - owes: #4128
-/// - owes: #522
+/// - owes: #5017
 /// - see: #2792
 /// - see: #1510 — `TwoCells`
 // A choice that commits to its left branch once a cut stands there, over a

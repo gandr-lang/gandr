@@ -256,6 +256,9 @@ pub enum Form
     /// A node the lowering reaches that the ownership reading places nowhere,
     /// or that two parents drop differently.
     Unowned,
+    /// A delivery its consumer does not take: several values to `★` or to a
+    /// consumer that binds one, or as many as a binder of another number.
+    Delivery,
 }
 
 impl core::fmt::Display for Form
@@ -278,6 +281,7 @@ impl core::fmt::Display for Form
             Self::Dangling => "a node the arena does not hold",
             Self::Unbound => "a variable bound by nothing in the command",
             Self::Unowned => "a node the ownership reading does not place",
+            Self::Delivery => "a delivery of a number of values its consumer does not take",
         })
     }
 }
@@ -352,6 +356,34 @@ impl Slot
     {
         Operand::Immediate(Immediate::from(self.0))
     }
+}
+
+/// The place of a value among the values of one delivery. The first value is
+/// at zero.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Rank(usize);
+
+/// The slot `rank` past `first`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Form::Oversized`] past the slot space.
+fn offset(
+    first: Slot,
+    rank: Rank,
+) -> Result<Slot, Form>
+{
+    u32::try_from(rank.0)
+        .ok()
+        .and_then(|position| first.0.checked_add(position))
+        .map(Slot)
+        .ok_or(Form::Oversized)
 }
 
 /// One binder in scope.
@@ -790,6 +822,9 @@ enum Task
     Producer(ProducerId, Scope),
     /// Deliver the value register to a consumer.
     Deliver(ConsumerId, Scope),
+    /// Send the values a delivery bound to its consumer: the delivery, its
+    /// scope, and the scope holding the values' slots past it.
+    Send(CommandId, Scope, Scope),
     /// Load a consumer as an observation's continuation.
     Load(ConsumerId, Scope),
     /// Fold the native list in hand by a fold consumer whose continuation is
@@ -1225,7 +1260,9 @@ fn clause_path(
                     ConsumerNode::Destructor { .. } | ConsumerNode::ListFold { .. } => {
                         return Ok((Path::Capture, Vec::new()));
                     },
-                    ConsumerNode::MuTilde { .. } | ConsumerNode::Case { .. } => tail,
+                    ConsumerNode::MuTilde { .. }
+                    | ConsumerNode::MuTildeAll { .. }
+                    | ConsumerNode::Case { .. } => tail,
                     ConsumerNode::Covariable(_)
                     | ConsumerNode::DataCase { .. }
                     | ConsumerNode::Select { .. }
@@ -1244,6 +1281,15 @@ fn clause_path(
                         Opens::default(),
                         tail && value,
                     )?;
+                },
+                CommandNode::Deliver {
+                    ref producers,
+                    consumer,
+                } => {
+                    for &producer in producers {
+                        under(NodeAddress::Producer(producer), Opens::default(), false)?;
+                    }
+                    under(NodeAddress::Consumer(consumer), Opens::default(), tail)?;
                 },
                 ref resume @ CommandNode::Resume {
                     stack: resumed,
@@ -2662,7 +2708,7 @@ impl Lowering<'_>
         let arena = self.arena;
         self.enter(NodeAddress::Command(id), scope)?;
         match *arena.command(id).ok_or(Form::Dangling)? {
-            CommandNode::Cut { .. } => return Err(Form::Dangling),
+            CommandNode::Cut { .. } | CommandNode::Deliver { .. } => return Err(Form::Dangling),
             CommandNode::Perform {
                 ref signature,
                 ref operation,
@@ -3589,6 +3635,7 @@ impl Lowering<'_>
             Task::Command(id, scope) => self.command(id, scope),
             Task::Producer(id, scope) => self.producer(id, scope),
             Task::Deliver(id, scope) => self.deliver(id, scope),
+            Task::Send(id, outer, held) => self.send(id, outer, held),
             Task::Load(id, scope) => self.load(id, scope),
             Task::Fold(id, scope) => self.fold(id, scope),
             Task::Matched(id, position, scope) => self.matched(id, position, scope),
@@ -3809,6 +3856,7 @@ impl Lowering<'_>
                 producer,
                 consumer,
             } => (polarity, producer, consumer),
+            CommandNode::Deliver { .. } => return self.delivery(id, scope),
             CommandNode::Memory { .. }
             | CommandNode::World { .. }
             | CommandNode::Perform { .. }
@@ -3868,6 +3916,7 @@ impl Lowering<'_>
             },
             ConsumerNode::Top
             | ConsumerNode::MuTilde { .. }
+            | ConsumerNode::MuTildeAll { .. }
             | ConsumerNode::Case { .. }
             | ConsumerNode::DataCase { .. }
             | ConsumerNode::Destructor { .. }
@@ -3915,6 +3964,164 @@ impl Lowering<'_>
                     Operand::Unused,
                 ));
                 self.tasks.push(Task::Load(consumer, scope));
+            },
+            ConsumerNode::MuTildeAll { .. } => return Err(Form::Delivery),
+        }
+        Ok(())
+    }
+
+    /// Lower the delivery `id` in `scope`: each value evaluated in written
+    /// order and bound to its slot, past `scope`'s, then sent by
+    /// [`Self::send`]. A binder of as many values takes those slots as its
+    /// binders'.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Delivery`] for a consumer that is neither a binder of as many
+    /// values nor a covariable; as [`Self::step`] otherwise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs that return several values within
+    ///   a body, from a call and through a handled effect answer as they state
+    ///   on both tiers; a value bound to another's slot changes the answer.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    fn delivery(
+        &mut self,
+        id: CommandId,
+        scope: Scope,
+    ) -> Result<(), Form>
+    {
+        let arena = self.arena;
+        let CommandNode::Deliver {
+            ref producers,
+            consumer,
+        } = *arena.command(id).ok_or(Form::Dangling)?
+        else {
+            return Err(Form::Dangling);
+        };
+        self.enter(NodeAddress::Command(id), scope)?;
+        let binding = match *arena.consumer(consumer).ok_or(Form::Dangling)? {
+            ConsumerNode::MuTildeAll { arity, .. } if usize::from(arity) == producers.len() => {
+                Binding::Producer
+            },
+            ConsumerNode::Covariable(_) => Binding::Temporary,
+            ConsumerNode::MuTildeAll { .. }
+            | ConsumerNode::MuTilde { .. }
+            | ConsumerNode::Top
+            | ConsumerNode::Case { .. }
+            | ConsumerNode::DataCase { .. }
+            | ConsumerNode::Destructor { .. }
+            | ConsumerNode::Select { .. }
+            | ConsumerNode::ListFold { .. } => return Err(Form::Delivery),
+        };
+        // Each value is evaluated in a scope whose temporaries lie past the
+        // slots the values take, as a closure's environment's are.
+        let first = self.scopes.depth(scope);
+        let mut evaluated = scope;
+        let mut held = scope;
+        for _ in producers {
+            (evaluated, _) = self.bind(evaluated, Binding::Temporary);
+            (held, _) = self.bind(held, binding);
+        }
+        self.tasks.push(Task::Send(id, scope, held));
+        for (position, &value) in producers.iter().enumerate().rev() {
+            let slot = offset(first, Rank(position))?;
+            self.tasks
+                .push(Task::Emit(StencilId::Bind, slot.operand(), Operand::Unused));
+            self.tasks.push(Task::Producer(value, evaluated));
+        }
+        Ok(())
+    }
+
+    /// Send the values the delivery `id` bound in `held`, past `outer`'s
+    /// slots, to its consumer. A binder's body runs over them. A covariable
+    /// takes the first in hand and the others left above the mark of the
+    /// frame it resumes, second lowest, where that frame's
+    /// [`StencilId::Returned`] reads them: the frame region shrinks to the
+    /// mark, the others are pushed, and the frame is resumed as a delivery
+    /// of one value resumes it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::delivery`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`Self::delivery`]: a value left at another word
+    ///   than its receiver reads changes the answer.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    fn send(
+        &mut self,
+        id: CommandId,
+        outer: Scope,
+        held: Scope,
+    ) -> Result<(), Form>
+    {
+        let arena = self.arena;
+        let CommandNode::Deliver {
+            ref producers,
+            consumer,
+        } = *arena.command(id).ok_or(Form::Dangling)?
+        else {
+            return Err(Form::Dangling);
+        };
+        let first = self.scopes.depth(outer);
+        let index = match *arena.consumer(consumer).ok_or(Form::Dangling)? {
+            ConsumerNode::MuTildeAll { body, .. } => {
+                self.enter(NodeAddress::Consumer(consumer), outer)?;
+                self.tasks.push(Task::Command(body, held));
+                return Ok(());
+            },
+            ConsumerNode::Covariable(index) => index,
+            ConsumerNode::MuTilde { .. }
+            | ConsumerNode::Top
+            | ConsumerNode::Case { .. }
+            | ConsumerNode::DataCase { .. }
+            | ConsumerNode::Destructor { .. }
+            | ConsumerNode::Select { .. }
+            | ConsumerNode::ListFold { .. } => return Err(Form::Delivery),
+        };
+        self.enter(NodeAddress::Consumer(consumer), outer)?;
+        let delivery = self.scopes.delivery(outer, Index(u32::from(index)))?;
+        let (with_top, top) = self.bind(held, Binding::Temporary);
+        let (_, restored) = self.bind(with_top, Binding::Temporary);
+        match delivery {
+            Delivery::Return(mark) | Delivery::Mark(mark) => {
+                self.emit(StencilId::Alias, top.operand(), mark.operand());
+            },
+            Delivery::FallThrough | Delivery::Returning => {
+                self.emit(StencilId::Mark, top.operand(), Operand::Unused);
+            },
+        }
+        for position in 1 .. producers.len() {
+            self.emit(
+                StencilId::Var,
+                offset(first, Rank(position))?.operand(),
+                Operand::Unused,
+            );
+            self.emit(StencilId::Push, Operand::Unused, Operand::Unused);
+        }
+        if !producers.is_empty() {
+            self.emit(StencilId::Var, first.operand(), Operand::Unused);
+        }
+        match delivery {
+            Delivery::Return(mark) => {
+                self.emit(StencilId::Leave, mark.operand(), Operand::Unused);
+            },
+            Delivery::Mark(mark) => {
+                self.emit(StencilId::Ret, mark.operand(), Operand::Unused);
+            },
+            Delivery::FallThrough => {
+                self.emit(StencilId::Alias, restored.operand(), top.operand());
+                self.emit(StencilId::Pop, Operand::Unused, Operand::Unused);
+            },
+            Delivery::Returning => {
+                self.emit(StencilId::Alias, restored.operand(), top.operand());
+                self.emit(StencilId::Release, Operand::Unused, Operand::Unused);
+                self.emit(StencilId::Pop, Operand::Unused, Operand::Unused);
             },
         }
         Ok(())
@@ -4173,8 +4380,35 @@ impl Lowering<'_>
         scope: Scope,
     ) -> Result<(), Form>
     {
+        let node = self.arena.consumer(id).ok_or(Form::Dangling)?;
+        // reason: the values a many-value return left above the frame
+        // region's top are bound before the consumer is entered, whose drops
+        // may run the host.
+        if let ConsumerNode::MuTildeAll { arity, body } = *node {
+            let mut inner = scope;
+            for position in 0 .. usize::from(arity) {
+                let slot;
+                (inner, slot) = self.bind(inner, Binding::Producer);
+                match position.checked_sub(1) {
+                    None => {
+                        self.emit(StencilId::Bind, slot.operand(), Operand::Unused);
+                    },
+                    Some(left) => {
+                        self.emit(
+                            StencilId::Returned,
+                            slot.operand(),
+                            offset(Slot(0), Rank(left))?.operand(),
+                        );
+                    },
+                }
+            }
+            self.enter(NodeAddress::Consumer(id), scope)?;
+            self.tasks.push(Task::Command(body, inner));
+            return Ok(());
+        }
         self.enter(NodeAddress::Consumer(id), scope)?;
-        match *self.arena.consumer(id).ok_or(Form::Dangling)? {
+        match *node {
+            ConsumerNode::MuTildeAll { .. } => return Err(Form::Dangling),
             ConsumerNode::Top => {
                 self.emit(StencilId::Halt, Operand::Unused, Operand::Unused);
             },
@@ -4373,6 +4607,7 @@ impl Lowering<'_>
                 },
                 ConsumerNode::Top
                 | ConsumerNode::MuTilde { .. }
+                | ConsumerNode::MuTildeAll { .. }
                 | ConsumerNode::Case { .. }
                 | ConsumerNode::DataCase { .. }
                 | ConsumerNode::Select { .. }
@@ -4504,6 +4739,7 @@ impl Lowering<'_>
             },
             ConsumerNode::Covariable(_)
             | ConsumerNode::MuTilde { .. }
+            | ConsumerNode::MuTildeAll { .. }
             | ConsumerNode::Destructor { .. }
             | ConsumerNode::Select { .. }
             | ConsumerNode::ListFold { .. }
@@ -4660,6 +4896,7 @@ impl Lowering<'_>
         if !matches!(
             *node,
             ConsumerNode::MuTilde { .. }
+                | ConsumerNode::MuTildeAll { .. }
                 | ConsumerNode::Case { .. }
                 | ConsumerNode::DataCase { .. }
         ) {
@@ -4677,6 +4914,7 @@ impl Lowering<'_>
                 }
             },
             ConsumerNode::MuTilde { .. }
+            | ConsumerNode::MuTildeAll { .. }
             | ConsumerNode::Case { .. }
             | ConsumerNode::DataCase { .. } => {
                 let owners = self.owners(NodeAddress::Consumer(id), scope, Crossed::NONE)?;

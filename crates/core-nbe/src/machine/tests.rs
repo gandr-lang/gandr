@@ -840,7 +840,8 @@ enum Lifting
           Computation::Lambda(body) | Computation::Mark{body,..} | Computation::Ascribe { body, .. } | Computation::Fixpoint { body, .. } => ret.as_slice() == [CoreTerm::Computation(body)],
           Computation::Application(head,arg) => ret.as_slice() == [CoreTerm::Computation(head),CoreTerm::Value(arg)],
           Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [CoreTerm::Value(value)],
-          Computation::Bind(bound,body) => ret.as_slice() == [CoreTerm::Computation(bound),CoreTerm::Computation(body)],
+          Computation::Bind(bound,body) | Computation::BindAll { bound, body, .. } => ret.as_slice() == [CoreTerm::Computation(bound),CoreTerm::Computation(body)],
+          Computation::ReturnAll(ref values) => ret.iter().copied().eq(values.iter().copied().map(CoreTerm::Value)),
           Computation::Case{scrutinee,ref branches} => ret.iter().copied().eq(core::iter::once(CoreTerm::Value(scrutinee)).chain(branches.iter().copied().map(CoreTerm::Computation))),
           Computation::Hole(_) => ret.is_empty(),
          }),
@@ -975,8 +976,11 @@ fn core_children(
                 Computation::Return(value) | Computation::Force(value) => {
                     Vec::from([CoreTerm::Value(value)])
                 },
-                Computation::Bind(bound, body) => {
+                Computation::Bind(bound, body) | Computation::BindAll { bound, body, .. } => {
                     Vec::from([CoreTerm::Computation(bound), CoreTerm::Computation(body)])
+                },
+                Computation::ReturnAll(ref values) => {
+                    values.iter().copied().map(CoreTerm::Value).collect()
                 },
                 Computation::Case {
                     scrutinee,
@@ -1251,6 +1255,14 @@ fn canonical(
                             Computation::Bind(bound, body) => {
                                 Computation::Bind(computation(bound), computation(body))
                             },
+                            Computation::ReturnAll(ref values) => Computation::ReturnAll(
+                                values.iter().map(|returned| value(*returned)).collect(),
+                            ),
+                            Computation::BindAll { bound, arity, body } => Computation::BindAll {
+                                bound: computation(bound),
+                                arity,
+                                body: computation(body),
+                            },
                             Computation::Ascribe { body, ty } => Computation::Ascribe {
                                 body: computation(body),
                                 ty,
@@ -1323,7 +1335,8 @@ fn canonical(
           Computation::Lambda(body) | Computation::Mark{body,..} | Computation::Ascribe { body, .. } | Computation::Fixpoint { body, .. } => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
           Computation::Application(head,arg) => ret.as_slice() == [canon[&CoreTerm::Computation(head)],canon[&CoreTerm::Value(arg)]],
           Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [canon[&CoreTerm::Value(value)]],
-          Computation::Bind(bound,body) => ret.as_slice() == [canon[&CoreTerm::Computation(bound)],canon[&CoreTerm::Computation(body)]],
+          Computation::Bind(bound,body) | Computation::BindAll { bound, body, .. } => ret.as_slice() == [canon[&CoreTerm::Computation(bound)],canon[&CoreTerm::Computation(body)]],
+          Computation::ReturnAll(ref values) => ret.iter().copied().eq(values.iter().map(|returned| canon[&CoreTerm::Value(*returned)])),
           Computation::Case{scrutinee,ref branches} => ret.iter().copied().eq(core::iter::once(canon[&CoreTerm::Value(scrutinee)]).chain(branches.iter().map(|&branch| canon[&CoreTerm::Computation(branch)]))),
           Computation::Hole(_) => ret.is_empty(),
          }),
@@ -1659,6 +1672,9 @@ fn lifted_under(
                             | Computation::Ascribe { .. } => {
                                 panic!("the duplication fixtures carry no hole, mark or ascription")
                             },
+                            Computation::ReturnAll(_) | Computation::BindAll { .. } => {
+                                panic!("the duplication fixtures carry no many-value return")
+                            },
                             Computation::Lambda(_) => CompGraft::Lambda(computation(0)),
                             Computation::Application(..) => {
                                 CompGraft::Application(computation(0), value(1))
@@ -1957,7 +1973,8 @@ impl Kernel
               Computation::Ascribe { body, ty } => ret.as_slice() == [Node::Computation(body), Node::CompType(ty)],
               Computation::Application(head,arg) => ret.as_slice() == [Node::Computation(head),Node::Value(arg)],
               Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [Node::Value(value)],
-              Computation::Bind(bound,body) => ret.as_slice() == [Node::Computation(bound),Node::Computation(body)],
+              Computation::Bind(bound,body) | Computation::BindAll { bound, body, .. } => ret.as_slice() == [Node::Computation(bound),Node::Computation(body)],
+              Computation::ReturnAll(ref values) => ret.iter().copied().eq(values.iter().copied().map(Node::Value)),
               Computation::Case{scrutinee,ref branches} => ret.iter().copied().eq(core::iter::once(Node::Value(scrutinee)).chain(branches.iter().copied().map(Node::Computation))),
               Computation::Hole(_) => ret.is_empty(),
              }),
@@ -1978,6 +1995,7 @@ impl Kernel
              Node::CompType(id) => core.comp_type(id).is_some_and(|comp_type| match *comp_type {
               CompType::With(..) | CompType::Codata { .. } => false,
               CompType::Returner { result, ref effects } => effects.purity() == gandr_core_term::effect::Purity::Pure && ret.as_slice() == [Node::ValueType(result)],
+              CompType::Returns { ref results, ref effects } => effects.purity() == gandr_core_term::effect::Purity::Pure && ret.iter().copied().eq(results.iter().copied().map(Node::ValueType)),
               CompType::Arrow{domain,codomain} | CompType::Pi{domain,codomain} => ret.as_slice() == [Node::ValueType(domain),Node::CompType(codomain)],
               CompType::Element{code,..} => ret.as_slice() == [Node::Value(code)],
               CompType::Unknown => ret.is_empty(),
@@ -2147,8 +2165,11 @@ impl Kernel
                     Computation::Return(value) | Computation::Force(value) => {
                         Vec::from([Node::Value(value)])
                     },
-                    Computation::Bind(bound, body) => {
+                    Computation::Bind(bound, body) | Computation::BindAll { bound, body, .. } => {
                         Vec::from([Node::Computation(bound), Node::Computation(body)])
+                    },
+                    Computation::ReturnAll(ref values) => {
+                        values.iter().copied().map(Node::Value).collect()
                     },
                     Computation::Ascribe { body, ty } => {
                         Vec::from([Node::Computation(body), Node::CompType(ty)])
@@ -2243,6 +2264,17 @@ impl Kernel
                             "kernel replay fixtures are pure"
                         );
                         Vec::from([Node::ValueType(result)])
+                    },
+                    CompType::Returns {
+                        ref results,
+                        ref effects,
+                    } => {
+                        assert_eq!(
+                            effects.purity(),
+                            gandr_core_term::effect::Purity::Pure,
+                            "kernel replay fixtures are pure"
+                        );
+                        results.iter().copied().map(Node::ValueType).collect()
                     },
                     CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
                         Vec::from([Node::ValueType(domain), Node::CompType(codomain)])
@@ -2574,6 +2606,18 @@ impl Kernel
                     Computation::Decompose(_) => {
                         panic!("the kernel has no decomposition: a replay fixture has none")
                     },
+                    Computation::ReturnAll(ref values) => {
+                        let values: Vec<_> = values
+                            .iter()
+                            .map(|&returned| value(self, returned))
+                            .collect();
+                        self.arena.computation_return_all(&values)
+                    },
+                    Computation::BindAll { bound, arity, body } => {
+                        let (bound, body) = (computation(self, bound), computation(self, body));
+                        let arity = gandr_kernel_term::ResultCount::from(usize::from(arity));
+                        self.arena.computation_bind_all(bound, arity, body)
+                    },
                 };
                 self.computations.insert(id, copy);
             },
@@ -2708,6 +2752,21 @@ impl Kernel
                 let copy = match *core.comp_type(id).expect("a fixture type resolves") {
                     CompType::With(..) => panic!("the kernel has no lazy computation pair"),
                     CompType::Codata { .. } => panic!("kernel replay fixtures hold no codata"),
+                    CompType::Returns {
+                        ref results,
+                        ref effects,
+                    } => {
+                        assert_eq!(
+                            effects.purity(),
+                            gandr_core_term::effect::Purity::Pure,
+                            "kernel replay fixtures are pure"
+                        );
+                        let results: Vec<_> = results
+                            .iter()
+                            .map(|&result| value_type(self, result))
+                            .collect();
+                        self.arena.comp_type_returns(&results)
+                    },
                     CompType::Returner {
                         result,
                         ref effects,
@@ -2918,8 +2977,8 @@ fn innermost(core: &mut CoreArena) -> ValueId
         ensures: |ret| core.value(ret).is_some_and(|value| match *value {
          Value::Thunk(body) => core.computation(body).is_some_and(|comp| match *comp {
          Computation::Lambda(body) => core.computation(body).is_some_and(|comp| match *comp {
-         Computation::Return(value) => matches!(core.value(value), Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
-         }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
+         Computation::Return(value) => matches!(core.value(value), Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Bind(..) | Computation::ReturnAll(_) | Computation::BindAll { .. } | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
+         }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::ReturnAll(_) | Computation::BindAll { .. } | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
          }), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::Compose { .. } | Value::Fill { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Dialogue(_) | Value::Web(_) | Value::Row(_) => false,
         })
     )]
@@ -5623,8 +5682,8 @@ fn the_sink_off_run_keeps_no_derivation()
           && core.computation(body).is_some_and(|comp| match *comp {
            Computation::Return(value) => core.value(value).is_some_and(|value| match *value {
             Value::Tuple(ref components) => matches!(**components, [left, right] if left == right) && matches!(components.first().and_then(|&left| core.value(left)),Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::Compose { .. } | Value::Fill { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Dialogue(_) | Value::Web(_) | Value::Row(_) => false,
-           }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
-          }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
+           }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Bind(..) | Computation::ReturnAll(_) | Computation::BindAll { .. } | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
+          }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::ReturnAll(_) | Computation::BindAll { .. } | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
          }), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::Compose { .. } | Value::Fill { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Dialogue(_) | Value::Web(_) | Value::Row(_) => false,
         })
     )]

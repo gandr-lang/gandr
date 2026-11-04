@@ -202,6 +202,7 @@ use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::origin::Origin;
 use crate::resolve::Mentioned;
+use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::binder_site;
@@ -488,6 +489,15 @@ pub(super) struct Dependent(pub bool);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Planned(pub bool);
 
+/// Whether the entries of a parenthesised type are a group of outputs. One
+/// unlabelled entry is no group: it groups one type.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct Grouped(pub bool);
+
 /// The place of an entry among the entries a type states, counting from
 /// zero.
 ///
@@ -653,6 +663,24 @@ fn path(observed: Observed) -> Vec<Side>
     }
 
     sides
+}
+
+/// Whether the entries of a parenthesised type, as written, are a group of
+/// outputs rather than one type grouped: no entry, several, or one labelled.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: false exactly for one unlabelled entry.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::output_group`].
+/// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
+#[spec(ensures: |ret| ret.0 != matches!(*entries, [ref entry] if !matches!(entry.key, Key::Label(..))))]
+fn groups(entries: &[Entry<'_>]) -> Grouped
+{
+    Grouped(!matches!(*entries, [ref entry] if !matches!(entry.key, Key::Label(..))))
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -3624,6 +3652,672 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Planned(true))
     }
 
+    /// Whether `at` is written as a group of outputs, the operand of `-F (A,
+    /// B)`: a parenthesised type of no entry, several, or one labelled entry.
+    ///
+    /// # Specification
+    /// - requires: nothing beyond a well-formed tree.
+    /// - ensures: whether `at` is a parenthesised type whose entries, as
+    ///   [`Self::domain_entries`] reads them under `frame`, are a group as
+    ///   [`groups`] reads them.
+    /// - fails: the list's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::domain_entries`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::output_group`].
+    /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Grouped(true))) || matches!(self.form_at(at), Ok(Some((_, Former::ParenthesizedType)))))]
+    pub(super) fn written_group(
+        &mut self,
+        at: Placed,
+        frame: Frame,
+    ) -> Result<Grouped, LoweringRefusal<'source>>
+    {
+        if !matches!(self.form_at(at)?, Some((_, Former::ParenthesizedType))) {
+            return Ok(Grouped(false));
+        }
+        let entries = self.domain_entries(at, frame)?;
+
+        Ok(groups(&entries))
+    }
+
+    /// Classify a group written as a function's result: its outputs, `(q :
+    /// Nat, r : Nat)`, `(Nat, Nat)` or `()`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a parenthesised type read as a result under
+    ///   `frame`.
+    /// - ensures: planned when the group holds no entry, several, or one
+    ///   labelled entry: every entry binds a frame extending the one before it,
+    ///   an unnamed entry's under a name no source writes, and its type is read
+    ///   as a value type under the frames before it; nothing is planned for one
+    ///   unlabelled entry, which is grouping.
+    /// - fails: a duplicate definition for a name bound twice; the binder
+    ///   policy's refusal; a misplaced key; a hole's own fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The group's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two named outputs, two unnamed, none, and one named
+    ///   output whose type a later one names.
+    /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Returns(_))))]
+    pub(super) fn output_group(
+        &mut self,
+        site: Site,
+        frame: Frame,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let entries = self.domain_entries(site.at, frame)?;
+        if !groups(&entries).0 {
+            return Ok(Planned(false));
+        }
+        let _frame = self.require(site, Produced::CompType)?;
+        let mut seen: BTreeMap<SurfaceName<'source>, Placed> = BTreeMap::new();
+        let start = self.parameters.len();
+        let mut inner = frame;
+        for entry in &entries {
+            let declared = entry.held.at();
+            self.read(declared.node, Reading::ValueType(inner));
+            self.label_entry(entry, Reading::ValueType(inner));
+            let (binder, bound, written) = match entry.key {
+                Key::Label(bound, key) => {
+                    if let Some(&earlier) = seen.get(&bound) {
+                        return Err(LoweringRefusal::DuplicateDefinition {
+                            span: key.span,
+                            name: bound,
+                            first: earlier.span,
+                        });
+                    }
+                    let _first = seen.insert(bound, key);
+                    self.note_binder(key, bound)?;
+                    (key, bound, Maybe::Present(key.span))
+                },
+                Key::Positional | Key::Index(..) => (
+                    declared,
+                    SurfaceName::from(""),
+                    Maybe::Absent(binder_site::Absent::Unwritten),
+                ),
+            };
+            let extended = self
+                .scope
+                .extend_typed(inner, bound, declared.node, written);
+            self.parameters.push(Parameter {
+                binder: binder.node,
+                frame: extended,
+                declared: Maybe::Present(declared.node),
+                component: None,
+            });
+            inner = Frame::Inner(extended);
+        }
+        self.plan(
+            site,
+            Plan::Returns(Stretch {
+                start,
+                end: self.parameters.len(),
+            }),
+        );
+
+        Ok(Planned(true))
+    }
+
+    /// The outputs the call `bound` returns, as its callee writes them, read
+    /// under `frame` ahead of the walk from `anchor`: those of the earlier
+    /// declaration its head names, when that declaration's result is written
+    /// as a group.
+    ///
+    /// # Specification
+    /// - requires: `bound` is `anchor` or under it.
+    /// - ensures: the entries of the group the callee's result writes, in
+    ///   order, when `bound` is a call whose head is one name resolving to a
+    ///   declaration whose result is planned as a [`Plan::Returns`] or written
+    ///   as a group, as [`Self::written_group`] reads it; nothing for any other
+    ///   form, a head a binder answers, or a callee returning one value. The
+    ///   nodes under `bound` take `anchor`'s owner, as the walk would give
+    ///   them.
+    /// - fails: the name's resolution refusal; a foreign mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::resolve_name`], and [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of a function returning two outputs, and one
+    ///   returning a pair.
+    /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_a_call`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || matches!(self.form_at(bound), Ok(Some((_, Former::Call)))))]
+    pub(super) fn called_outputs(
+        &mut self,
+        frame: Frame,
+        bound: Placed,
+        anchor: NodeIndex,
+    ) -> Result<Option<Vec<Entry<'source>>>, LoweringRefusal<'source>>
+    {
+        let Some((name, Former::Call)) = self.form_at(bound)?
+        else {
+            return Ok(None);
+        };
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read =
+            read_pieces(self.pbg, self.tree, bound.node, &mut scratch).map(|()| match Cursor::new(
+                &scratch.pieces,
+                bound.span,
+            )
+            .operands()
+            {
+                Run::One(head) => Some(head),
+                Run::Empty(_) | Run::Several { .. } => None,
+            });
+        self.scratch = scratch;
+        let Some(head) = read?
+        else {
+            return Ok(None);
+        };
+        if !matches!(self.form_at(head)?, Some((written, _)) if written == FormName::IDENTIFIER) {
+            return Ok(None);
+        }
+        // The name is read before the walk reaches it, so it takes the
+        // statement's owner now, which its resolution reads.
+        self.own_written(bound.node, anchor);
+        let site = Site {
+            at: head,
+            name,
+            reading: Reading::Head(frame),
+        };
+        let Maybe::Present(Resolved::Declaration { constant, .. }) =
+            self.resolve_name(site, frame, self.name_at(head))?
+        else {
+            return Ok(None);
+        };
+        let Some(mut at) = self.callee_result(constant)
+        else {
+            return Ok(None);
+        };
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
+            at = inner;
+        }
+        // The group is read off its syntax, whether or not the walk has
+        // reached the callee yet, under any row its returner writes.
+        let Some(tree) = self.tree.node(at)
+        else {
+            return Ok(None);
+        };
+        let result = self.returned(Placed::of(at, tree))?;
+        if !matches!(self.plans.get(result.node), Some(&Plan::Returns(_)))
+            && !self.written_group(result, frame)?.0
+        {
+            return Ok(None);
+        }
+        Ok(Some(self.domain_entries(result, frame)?))
+    }
+
+    /// The outputs of the result the body `site` ends answers, when that
+    /// result is written as a group of outputs, as written.
+    ///
+    /// # Specification
+    /// - requires: nothing beyond a well-formed tree.
+    /// - ensures: the entries of the group the written answer of a computation
+    ///   at `site` writes, through any grouping and any row its returner
+    ///   writes, read off the syntax whether or not the walk has reached the
+    ///   answer; nothing for a value, a form that ends no body, or another
+    ///   answer.
+    /// - fails: a foreign mold; a misplaced key in the group.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`] and [`LoweringRefusal::MalformedForm`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::pair`].
+    /// - witness: `lower::arity::tests::a_tuple_ending_a_body_of_outputs_returns_each_member`
+    /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || (matches!(site.reading, Reading::Computation(_)) && self.exits.contains(&site.at.node)))]
+    pub(super) fn answered_outputs(
+        &mut self,
+        site: Site,
+    ) -> Result<Option<Vec<Entry<'source>>>, LoweringRefusal<'source>>
+    {
+        let Reading::Computation(frame) = site.reading
+        else {
+            return Ok(None);
+        };
+        let Some(&answer) = self
+            .answers
+            .get(&site.at.node)
+            .filter(|_| self.exits.contains(&site.at.node))
+        else {
+            return Ok(None);
+        };
+        if !matches!(answer.over, super::native::Over::Written) {
+            return Ok(None);
+        }
+        let mut at = answer.node;
+        while let Some(&Plan::Transparent(inner)) = self.plans.get(at) {
+            at = inner;
+        }
+        let Some(tree) = self.tree.node(at)
+        else {
+            return Ok(None);
+        };
+        let result = self.returned(Placed::of(at, tree))?;
+        if !matches!(self.plans.get(result.node), Some(&Plan::Returns(_)))
+            && !self.written_group(result, frame)?.0
+        {
+            return Ok(None);
+        }
+        Ok(Some(self.domain_entries(result, frame)?))
+    }
+
+    /// The type a returner written at `at` returns: `B` of `-F B`, of
+    /// `-F [E] B` and of a result's `[E] B`; `at` itself for any other type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the last operand of a returner type; `at` otherwise.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a group under a row is the callee's outputs.
+    /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|returned| returned.node == at.node || self.form_at(at).is_ok_and(|form| matches!(form, Some((_, Former::ReturnerType))))))]
+    fn returned(
+        &self,
+        at: Placed,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        if !matches!(self.form_at(at)?, Some((_, Former::ReturnerType))) {
+            return Ok(at);
+        }
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, at.node, &mut pieces)?;
+
+        Ok(match pieces.pieces.last() {
+            Some(&Piece::Operand(argument)) => argument,
+            _ => at,
+        })
+    }
+
+    /// Classify a labelled group, `(.r = e, .q = e)`, ending a body whose
+    /// result is a group of named outputs, as the return of each value at the
+    /// output its label names.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the group's `(`.
+    /// - ensures: each entry's value read as a value under the computation's
+    ///   frame and planned as a [`Plan::ReturnAll`] in the order the result
+    ///   writes its outputs, whatever order the group writes them in.
+    /// - fails: the wrong-sort refusal where no body of outputs ends, or where
+    ///   an output has no name; the arity refusal for a group of another size
+    ///   than the outputs; a misplaced tile at a label that names no output, at
+    ///   an indexed label, or at an entry out of shape; a duplicate definition
+    ///   for a label written twice.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The group's refusal.
+    ///
+    /// # Termination
+    /// Every round consumes at least one piece of the finite cursor or
+    /// refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a group written in the other order than its outputs
+    ///   returns each value at its own output, and a group standing as a value
+    ///   is refused.
+    /// - witness: `lower::arity::tests::a_labelled_group_returns_each_value_at_its_output`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::ReturnAll(_))))]
+    pub(super) fn labelled_outputs(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(outputs) = self.answered_outputs(site)?
+        else {
+            return Err(site.out(FragmentBoundary::WrongSort));
+        };
+        let frame = self.require(site, Produced::Computation)?;
+        closed(site, &mut cursor, TileName::PAREN_OPEN)?;
+        // Each label in written order, and each label's key and value.
+        let mut order: Vec<(SurfaceName<'source>, Placed)> = Vec::new();
+        let mut written: BTreeMap<SurfaceName<'source>, (Placed, Placed)> = BTreeMap::new();
+        while let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
+            let Key::Label(label, key) = self.dotted(site, &mut cursor)?
+            else {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            closed(site, &mut cursor, TileName::EQUALS)?;
+            let value = site.one(cursor.operands())?;
+            if let Some(&(earlier, _)) = written.get(&label) {
+                return Err(LoweringRefusal::DuplicateDefinition {
+                    span: key.span,
+                    name: label,
+                    first: earlier.span,
+                });
+            }
+            written.insert(label, (key, value));
+            order.push((label, key));
+            separated(site, &mut cursor, TileName::PAREN_CLOSE)?;
+        }
+        if written.len() != outputs.len() {
+            return Err(site.out(FragmentBoundary::Arity(OperandCount::from(written.len()))));
+        }
+        let mut names = Vec::with_capacity(written.len());
+        for output in &outputs {
+            let Key::Label(name, _) = output.key
+            else {
+                return Err(site.out(FragmentBoundary::WrongSort));
+            };
+            names.push(name);
+        }
+        let named: BTreeSet<SurfaceName<'source>> = names.iter().copied().collect();
+        if let Some(&(_, key)) = order.iter().find(|&&(label, _)| !named.contains(&label)) {
+            return Err(site.fault(key.span, FormFault::MisplacedTile));
+        }
+        // Each label names a distinct output and there are as many: every
+        // output has its value.
+        let start = self.operands.len();
+        for name in names {
+            if let Some(&(_, value)) = written.get(&name) {
+                self.operands.push(value.node);
+                self.read(value.node, Reading::Value(frame));
+            }
+        }
+        self.plan(
+            site,
+            Plan::ReturnAll(Stretch {
+                start,
+                end: self.operands.len(),
+            }),
+        );
+
+        Ok(())
+    }
+
+    /// Classify a selection `f(a, …).l` off a call whose result is a group of
+    /// outputs as the output `l` alone.
+    ///
+    /// # Specification
+    /// - requires: `site` is a projection; `pieces` is its reading.
+    /// - ensures: planned when the selection is one link off a call whose
+    ///   callee writes its result as a group, as [`Self::called_outputs`] reads
+    ///   it, one of whose outputs the link names: the call read as a
+    ///   computation, every output bound and the named one returned, with no
+    ///   product built. Nothing is planned for any other selection.
+    /// - fails: the wrong-sort refusal where no computation is read; as
+    ///   [`Self::called_outputs`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The selection's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each output of a two-output call, selected, returns
+    ///   its own binder.
+    /// - witness: `lower::arity::tests::a_selected_output_binds_every_output_and_returns_one`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::SelectedOutput { .. })))]
+    pub(super) fn selected_output(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let Ok((mut target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        else {
+            return Ok(Planned(false));
+        };
+        // `(f(a)).l` selects as `f(a).l` does.
+        while let Some((_, Former::Parenthesized)) = self.form_at(target)? {
+            let mut grouped = Pieces::new();
+            read_pieces(self.pbg, self.tree, target.node, &mut grouped)?;
+            let mut cursor = Cursor::new(&grouped.pieces, target.span);
+            let _open = cursor.tile(TileName::PAREN_OPEN);
+            let Run::One(inner) = cursor.operands()
+            else {
+                return Ok(Planned(false));
+            };
+            target = inner;
+        }
+        let frame = site.reading.frame();
+        let Some(outputs) = self.called_outputs(frame, target, site.at.node)?
+        else {
+            return Ok(Planned(false));
+        };
+        let label = self.name_at(selected);
+        let Some(index) = outputs
+            .iter()
+            .position(|output| matches!(output.key, Key::Label(name, _) if name == label))
+        else {
+            return Ok(Planned(false));
+        };
+        let frame = self.require(site, Produced::Computation)?;
+        self.read(target.node, Reading::Computation(frame));
+        self.plan(site, Plan::SelectedOutput {
+            call: target.node,
+            arity: gandr_core_term::ComponentCount::from(outputs.len()),
+            index,
+        });
+
+        Ok(Planned(true))
+    }
+
+    /// Classify a plugging `left |> right`: every output of `left` into the
+    /// inputs of `right`, in order.
+    ///
+    /// # Specification
+    /// - requires: `site` is the plugging; `left` and `right` its operands.
+    /// - ensures: `left` read as a computation and `right` as a head under one
+    ///   binder per output `left` returns, the outputs of a call whose callee
+    ///   writes a group, as [`Self::called_outputs`] reads it, and one
+    ///   otherwise; planned as their [`Plan::Plugged`], with no product built.
+    /// - fails: the wrong-sort refusal where no computation is read; as
+    ///   [`Self::called_outputs`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The plugging's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of two outputs plugs both into a function of
+    ///   two inputs in order, and a call of one value plugs it into a function
+    ///   of one.
+    /// - witness: `lower::arity::tests::a_plugging_passes_every_output_in_order`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Plugged { .. })))]
+    pub(super) fn plug(
+        &mut self,
+        site: Site,
+        left: Placed,
+        right: Placed,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::Computation)?;
+        let arity = self
+            .called_outputs(frame, left, site.at.node)?
+            .map_or(1_usize, |outputs| outputs.len());
+        self.read(left.node, Reading::Computation(frame));
+        // The outputs bind no name the source writes.
+        let mut inner = frame;
+        for _ in 0 .. arity {
+            inner = Frame::Inner(self.scope.extend(
+                inner,
+                SurfaceName::from(""),
+                Maybe::Absent(binder_site::Absent::Unwritten),
+            ));
+        }
+        self.read(right.node, Reading::Head(inner));
+        self.plan(site, Plan::Plugged {
+            left: left.node,
+            right: right.node,
+            arity: gandr_core_term::ComponentCount::from(arity),
+        });
+
+        Ok(())
+    }
+
+    /// Mint a plugging: every output of the left bound, and the right applied
+    /// to them in order.
+    ///
+    /// # Specification
+    /// - requires: both sides are already minted or absent; the right was read
+    ///   under one binder per output.
+    /// - ensures: the bind of the left's `arity` outputs into the right applied
+    ///   to each, the first output first, every node with the written origin;
+    ///   nothing when a side did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::plug`].
+    /// - witness: `lower::arity::tests::a_plugging_passes_every_output_in_order`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
+    pub(super) fn mint_plugged(
+        &self,
+        (left, right, arity): (NodeIndex, NodeIndex, gandr_core_term::ComponentCount),
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let bound = match self.computation_at(left) {
+            Maybe::Present(bound) => bound,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let mut applied = match self.computation_at(right) {
+            Maybe::Present(applied) => applied,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        // The first output is the outermost binder.
+        for depth in (0 .. usize::from(arity)).rev() {
+            let Ok(depth) = u32::try_from(depth)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let output = sink
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(depth));
+            sink.origins.record_value(output, origin);
+            applied = sink.arena.computation_application(applied, output);
+            sink.origins.record_computation(applied, origin);
+        }
+        let id = sink.arena.computation_bind_all(bound, arity, applied);
+
+        Maybe::Present(sink.computation(id, origin))
+    }
+
+    /// Mint the selection of one output of a call: every output bound, the
+    /// selected one returned.
+    ///
+    /// # Specification
+    /// - requires: the call is already minted or absent.
+    /// - ensures: the many-value bind of the call's `arity` outputs into the
+    ///   return of the binder at `index`, the first output outermost, with the
+    ///   written origin; nothing when the call did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::selected_output`].
+    /// - witness: `lower::arity::tests::a_selected_output_binds_every_output_and_returns_one`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
+    pub(super) fn mint_selected_output(
+        &self,
+        (call, arity, index): (NodeIndex, gandr_core_term::ComponentCount, Place),
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let bound = match self.computation_at(call) {
+            Maybe::Present(bound) => bound,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let Some(depth) = usize::from(arity)
+            .checked_sub(index.0)
+            .and_then(|after| after.checked_sub(1_usize))
+            .and_then(|depth| u32::try_from(depth).ok())
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let selected = sink
+            .arena
+            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(depth));
+        sink.origins.record_value(selected, origin);
+        let returned = sink.arena.computation_return(selected);
+        sink.origins.record_computation(returned, origin);
+        let id = sink.arena.computation_bind_all(bound, arity, returned);
+
+        Maybe::Present(sink.computation(id, origin))
+    }
+
+    /// Mint a call of a function returning a group of outputs as the record
+    /// of its outputs: every output bound, and the record of them returned.
+    ///
+    /// # Specification
+    /// - requires: `call` is the minted call; `labels` holds one entry per
+    ///   output, in order.
+    /// - ensures: the many-value bind of the call's outputs into the return of
+    ///   the record labelling each by its name, when every output is named, and
+    ///   of the tuple of them otherwise, the first output outermost; every node
+    ///   with the written origin.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a let of a two-output call binds the record of its
+    ///   named outputs, and of unnamed ones the tuple.
+    /// - witness: `lower::arity::tests::a_call_of_outputs_standing_as_one_value_is_their_record`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
+    pub(super) fn mint_record_of_outputs(
+        call: ComputationId,
+        labels: &[Option<FieldLabel>],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let count = labels.len();
+        let mut values = Vec::with_capacity(count);
+        for index in 0 .. count {
+            let Some(depth) = count
+                .checked_sub(index)
+                .and_then(|after| after.checked_sub(1_usize))
+                .and_then(|depth| u32::try_from(depth).ok())
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let value = sink
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(depth));
+            sink.origins.record_value(value, origin);
+            values.push(value);
+        }
+        let named: Option<BTreeMap<FieldLabel, ValueId>> = labels
+            .iter()
+            .zip(&values)
+            .map(|(label, &value)| label.clone().map(|label| (label, value)))
+            .collect();
+        let packed = match named {
+            Some(fields) => sink.arena.value_record(fields),
+            None => sink.arena.value_tuple(&values),
+        };
+        sink.origins.record_value(packed, origin);
+        let returned = sink.arena.computation_return(packed);
+        sink.origins.record_computation(returned, origin);
+        let id = sink.arena.computation_bind_all(
+            call,
+            gandr_core_term::ComponentCount::from(count),
+            returned,
+        );
+
+        Maybe::Present(sink.computation(id, origin))
+    }
+
     /// The entries of the parenthesised domain list `domain` of a value
     /// function space under `frame`, as written.
     ///
@@ -4629,6 +5323,49 @@ impl<'source> Lowerer<'_, 'source>
         else {
             sink.arena.comp_type_arrow(domain, body)
         };
+        sink.origins.record_comp_type(id, origin);
+
+        Maybe::Present(Lowered::CompType(id))
+    }
+
+    /// Mint a function's group of outputs: the many-value returner of its
+    /// entries' types, each under the entries before it, at the row
+    /// `effects`.
+    ///
+    /// # Specification
+    /// - requires: every entry's type is already minted or absent.
+    /// - ensures: the returner of the entries' types in order at `effects`, the
+    ///   one result's returner for a group of one, with the written origin;
+    ///   nothing when a type did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::output_group`].
+    /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
+    /// - witness: `lower::arity::tests::a_row_returns_a_group_of_outputs`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
+    pub(super) fn mint_returns(
+        &self,
+        entries: Stretch,
+        effects: gandr_core_term::effect::EffectRow,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let written = stretch(&self.parameters, entries);
+        let mut results: Vec<ValueTypeId> = Vec::with_capacity(written.len());
+        for parameter in written {
+            let Maybe::Present(declared) = parameter.declared
+            else {
+                return Maybe::Absent(lowered::Absent::Unstated);
+            };
+            match self.value_type_at(declared) {
+                Maybe::Present(result) => results.push(result),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink.arena.comp_type_returns_with_effects(&results, effects);
         sink.origins.record_comp_type(id, origin);
 
         Maybe::Present(Lowered::CompType(id))

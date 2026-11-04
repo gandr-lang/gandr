@@ -498,7 +498,7 @@ fn step(
         Computation::Session(ref action) if moving(action, &pass.ends) == Acting::Moves => {
             return Ok(Some(Acting::Moves));
         },
-        Computation::Bind(..) => Join::Any,
+        Computation::Bind(..) | Computation::BindAll { .. } => Join::Any,
         Computation::Ascribe { .. }
         | Computation::Case { .. }
         | Computation::Split { .. }
@@ -516,6 +516,7 @@ fn step(
         | Computation::Fixpoint { .. }
         | Computation::Application(..)
         | Computation::Return(_)
+        | Computation::ReturnAll(_)
         | Computation::Force(_)
         | Computation::RecordProjection(..)
         | Computation::TupleProjection(..)
@@ -663,13 +664,18 @@ pub fn stated(
                     found: TypeNode::Computation(shape),
                 });
             },
-            CompTypeView::Returner { .. } | CompTypeView::Unknown | CompTypeView::Codata { .. } => {
-            },
+            CompTypeView::Returner { .. }
+            | CompTypeView::Returns { .. }
+            | CompTypeView::Unknown
+            | CompTypeView::Codata { .. } => {},
         }
     }
     let entry = EffectRow::singleton(partiality());
     let name = gandr_core_term::effect::EffectLabel::Interface(Label::from(PARTIAL));
     let mut rebuilt: BTreeMap<CompTypeId, CompTypeId> = BTreeMap::new();
+    // The results of a returner of several values, copied out of the arena
+    // before the arena mints the rebuilt returner.
+    let mut held: Vec<ValueTypeId> = Vec::new();
     for &(shape, head) in order.iter().rev() {
         let arena = context.arena();
         let replaced = match comp_type_view(arena, head)? {
@@ -687,6 +693,25 @@ pub fn stated(
                         context
                             .arena_mut()
                             .comp_type_returner_with_effects(result, row),
+                    )
+                },
+            },
+            CompTypeView::Returns { results, effects } => match effects.contains(&name) {
+                EffectPresence::Present => None,
+                EffectPresence::Absent => {
+                    let row = effects.union(&entry, arena).map_err(|_conflict| {
+                        CheckRefusal::EffectSignatureConflict {
+                            at,
+                            first: head,
+                            second: expected,
+                        }
+                    })?;
+                    held.clear();
+                    held.extend_from_slice(results);
+                    Some(
+                        context
+                            .arena_mut()
+                            .comp_type_returns_with_effects(&held, row),
                     )
                 },
             },
@@ -767,7 +792,7 @@ pub fn calls(
                 pending.push(codomain);
             },
             CompTypeView::With(components) => pending.extend(components.iter().copied()),
-            CompTypeView::Returner { effects, .. } => {
+            CompTypeView::Returner { effects, .. } | CompTypeView::Returns { effects, .. } => {
                 if effects.purity() != Purity::Pure {
                     return Ok(Calls::Unknown);
                 }

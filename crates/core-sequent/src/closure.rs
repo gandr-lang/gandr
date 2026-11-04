@@ -1137,6 +1137,10 @@ where
         ConsumerNode::MuTilde { .. } => ConsumerNode::MuTilde {
             body: fresh.command()?,
         },
+        ConsumerNode::MuTildeAll { arity, .. } => ConsumerNode::MuTildeAll {
+            arity,
+            body: fresh.command()?,
+        },
         ConsumerNode::Destructor {
             tag,
             ref producers,
@@ -1260,6 +1264,10 @@ fn rebuild_command(
         CommandNode::Cut { polarity, .. } => CommandNode::Cut {
             polarity,
             producer: fresh.producer()?,
+            consumer: fresh.consumer()?,
+        },
+        CommandNode::Deliver { ref producers, .. } => CommandNode::Deliver {
+            producers: fresh.producers(producers)?,
             consumer: fresh.consumer()?,
         },
         CommandNode::Memory { ref form, .. } => {
@@ -1714,6 +1722,7 @@ fn distant_context(
                     at = continuation;
                 },
                 ConsumerNode::Covariable(_)
+                | ConsumerNode::MuTildeAll { .. }
                 | ConsumerNode::Case { .. }
                 | ConsumerNode::DataCase { .. }
                 | ConsumerNode::Select { .. }

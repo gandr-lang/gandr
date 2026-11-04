@@ -253,6 +253,7 @@ const PREC_GROUPS: &[(&str, Assoc)] = &[
     ("expression.cons", Assoc::Right),
     ("pattern.cons", Assoc::Right),
     ("type.equivalence", Assoc::Right),
+    ("expression.pipe", Assoc::Left),
 ];
 
 /// The tighter-than edges between named groups, in the order the DAG lists
@@ -263,7 +264,9 @@ const PREC_GROUPS: &[(&str, Assoc)] = &[
 /// right-associative in both, so `g ∷ h ∷ p` is `g ∷ (h ∷ p)`. The relations
 /// between two types, `≃`, `≅` and `⇝`, sit below the union and lazy-product
 /// bands and above the arrows: `A * B ≃ C` relates the product,
-/// and `A ≃ B -> C` is an arrow out of the relation. Each group
+/// and `A ≃ B -> C` is an arrow out of the relation. The plugging `|>`
+/// sits between logical or and the exits, left-associative, so
+/// `a |> f |> g` plugs `a` into `f` and that into `g`. Each group
 /// added after the first chains comes last in [`PREC_GROUPS`], so every
 /// earlier group keeps its id.
 const PREC_EDGES: &[(&str, &str)] = &[
@@ -274,7 +277,7 @@ const PREC_EDGES: &[(&str, &str)] = &[
     ("expression.add", "expression.cons"),
     ("expression.cmp", "expression.and"),
     ("expression.and", "expression.or"),
-    ("expression.or", "expression.pure"),
+    ("expression.or", "expression.pipe"),
     ("pattern.atom", "pattern.cons"),
     ("pattern.as", "pattern.or"),
     ("type.atom", "type.path"),
@@ -288,6 +291,7 @@ const PREC_EDGES: &[(&str, &str)] = &[
     ("expression.cons", "expression.cmp"),
     ("pattern.cons", "pattern.as"),
     ("type.equivalence", "type.arrow"),
+    ("expression.pipe", "expression.pure"),
 ];
 
 /// The named node kinds of the surface's tree-sitter grammar, ascending.

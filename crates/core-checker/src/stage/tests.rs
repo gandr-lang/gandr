@@ -144,6 +144,8 @@ fn admitted_result(
             | Computation::TelescopeRide { .. }
             | Computation::RelatedApplication { .. }
             | Computation::With(..)
+            | Computation::ReturnAll(_)
+            | Computation::BindAll { .. }
             | Computation::Project(..)
             | Computation::Fixpoint { .. }) => panic!("non-first-order computation: {other:?}"),
         }

@@ -613,6 +613,7 @@ fn past(
             (payload, routed, continuation)
         },
         CommandNode::Handle { .. }
+        | CommandNode::Deliver { .. }
         | CommandNode::Resume { .. }
         | CommandNode::Abandon { .. }
         | CommandNode::Reset { .. }
@@ -681,6 +682,7 @@ fn rebound(
             continuation: binder,
         },
         CommandNode::Handle { .. }
+        | CommandNode::Deliver { .. }
         | CommandNode::Resume { .. }
         | CommandNode::Abandon { .. }
         | CommandNode::Reset { .. }

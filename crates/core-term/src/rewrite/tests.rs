@@ -606,7 +606,7 @@ fn value_spelling(
             | Some(&CompType::Arrow { .. }) => Token::Arrow,
             | Some(&CompType::Pi { .. }) => Token::Pi,
             | Some(&CompType::Element { .. }) => Token::CompElement,
-            | Some(&CompType::Unknown | &CompType::With(..) | &CompType::Codata { .. }) | None => Token::Other,
+            | Some(&CompType::Unknown | &CompType::With(..) | &CompType::Codata { .. } | &CompType::Returns { .. }) | None => Token::Other,
         },
         | Visit::ValueType(id) => match arena.value_type(id) {
             | Some(&ValueType::Base(base)) => Token::Base(base),
@@ -661,7 +661,12 @@ fn spelling_of(
                     tokens.push(Token::CompElement);
                     pending.push(Visit::Value(code));
                 },
-                Some(&CompType::Unknown | &CompType::With(..) | &CompType::Codata { .. })
+                Some(
+                    &CompType::Unknown
+                    | &CompType::With(..)
+                    | &CompType::Codata { .. }
+                    | &CompType::Returns { .. },
+                )
                 | None => {
                     tokens.push(Token::Other);
                 },
@@ -2528,7 +2533,9 @@ fn binding_sites_distinguish_free_bound_and_linear_indices()
                         | crate::Computation::Project(..)
                         | crate::Computation::Session(_)
                         | crate::Computation::Memory(_)
-                        | crate::Computation::World(_) => {
+                        | crate::Computation::World(_)
+                        | crate::Computation::ReturnAll(_)
+                        | crate::Computation::BindAll { .. } => {
                             panic!("the golden uses binding computations and return")
                         },
                     }

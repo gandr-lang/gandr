@@ -96,6 +96,7 @@ pub fn here(
                 break result;
             },
             CompTypeView::Returner { .. }
+            | CompTypeView::Returns { .. }
             | CompTypeView::With(..)
             | CompTypeView::Element { .. }
             | CompTypeView::Codata { .. }

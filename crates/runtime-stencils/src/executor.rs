@@ -120,6 +120,8 @@ stencils! {
     Leave => stencil_leave,
     /// `stencil_release`: a tail call's window given back before the call.
     Release => stencil_release,
+    /// `stencil_returned`: a later value of a many-value return, bound.
+    Returned => stencil_returned,
     /// `stencil_closure`.
     Closure => stencil_closure,
     /// `stencil_enter_apply`.

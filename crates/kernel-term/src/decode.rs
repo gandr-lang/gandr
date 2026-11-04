@@ -3344,6 +3344,15 @@ fn decode_entry(
             let id = table.arena.comp_type_returner(result);
             (DecodedNode::CompType(id), Family::CompType)
         },
+        tags::NODE_CT_RETURNS => {
+            let count = usize::from(reader.read_usize()?);
+            let mut results = Vec::new();
+            for _ in 0 .. count {
+                results.push(read_value_type(reader, table, this, &mut children)?);
+            }
+            let id = table.arena.comp_type_returns(&results);
+            (DecodedNode::CompType(id), Family::CompType)
+        },
         tags::NODE_CT_ARROW => {
             let domain = read_value_type(reader, table, this, &mut children)?;
             let codomain = read_comp_type(reader, table, this, &mut children)?;
@@ -3468,6 +3477,22 @@ fn decode_entry(
             let bound = read_computation(reader, table, this, &mut children)?;
             let body = read_computation(reader, table, this, &mut children)?;
             let id = table.arena.computation_bind(bound, body);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
+        tags::NODE_C_RETURN_ALL => {
+            let count = usize::from(reader.read_usize()?);
+            let mut values = Vec::new();
+            for _ in 0 .. count {
+                values.push(read_value(reader, table, this, &mut children)?);
+            }
+            let id = table.arena.computation_return_all(&values);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
+        tags::NODE_C_BIND_ALL => {
+            let arity = crate::ResultCount::from(usize::from(reader.read_usize()?));
+            let bound = read_computation(reader, table, this, &mut children)?;
+            let body = read_computation(reader, table, this, &mut children)?;
+            let id = table.arena.computation_bind_all(bound, arity, body);
             (DecodedNode::Computation(id), Family::Computation)
         },
         tags::NODE_C_FORCE => {
@@ -5017,12 +5042,12 @@ mod tests
             })
         );
         assert_eq!(foreign.position.0, 4);
-        for version in [0_u16, 1, 2, 3, 4, 5, 6, 7, 0x0700, u16::MAX] {
+        for version in [0_u16, 1, 2, 3, 4, 5, 6, 7, 8, 0x0800, u16::MAX] {
             let mut image = magic.to_vec();
             image.extend_from_slice(&version.to_le_bytes());
             let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
             reader.expect_magic().expect("valid header");
-            let expected = if version == 7 {
+            let expected = if version == 8 {
                 Ok(())
             }
             else {
@@ -5771,7 +5796,7 @@ mod tests
     {
         let literal_artifact = |base: u8, literal: &[u8]| {
             let mut bytes = vec![
-                b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
+                b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
             ];
             bytes.extend_from_slice(literal);
             bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
@@ -5966,7 +5991,7 @@ mod tests
             })
         );
         let level_artifact = |level: &[u8]| {
-            let mut bytes = vec![b'G', b'K', b'X', b'1', 7, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
+            let mut bytes = vec![b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
             bytes.extend_from_slice(level);
             bytes.push(0);
             bytes

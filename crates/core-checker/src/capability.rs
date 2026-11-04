@@ -749,6 +749,13 @@ fn successors(
                 pending.push(TypeNode::Value(result));
                 pending.extend(effects.types().map(TypeNode::Value));
             },
+            CompType::Returns {
+                ref results,
+                ref effects,
+            } => {
+                pending.extend(results.iter().copied().map(TypeNode::Value));
+                pending.extend(effects.types().map(TypeNode::Value));
+            },
             CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
                 pending.extend([TypeNode::Value(domain), TypeNode::Computation(codomain)]);
             },

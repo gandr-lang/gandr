@@ -1062,6 +1062,13 @@ fn formers(
                     worklist.push(Node::Computation(first));
                     worklist.push(Node::Computation(then));
                 },
+                Some(&Computation::BindAll { bound, body, .. }) => {
+                    worklist.push(Node::Computation(bound));
+                    worklist.push(Node::Computation(body));
+                },
+                Some(&Computation::ReturnAll(ref values)) => {
+                    worklist.extend(values.iter().map(|&value| Node::Value(value)));
+                },
                 Some(&Computation::Case {
                     scrutinee,
                     ref branches,

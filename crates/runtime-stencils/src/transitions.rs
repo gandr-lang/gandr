@@ -708,6 +708,45 @@ pub extern "rust-preserve-none" fn stencil_leave(
     resume!(code, runtime, heap, frame, resumed, value)
 }
 
+/// Bind a later value of a many-value return to slot A: the value the sender
+/// left `B` words above the two of the frame it resumed, which is the frame
+/// region's top. The first value arrives in hand; a delivery of `n` values
+/// leaves the other `n - 1` there, second value lowest.
+///
+/// # Specification
+/// - requires: slot A lies inside the window; the frame just resumed was
+///   delivered at least `B + 2` values, and nothing has written above the frame
+///   region's top since.
+/// - ensures: slot A holds the value the delivery left `B + 2` words above the
+///   frame region's top; the value register is unchanged.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the agreement differential over programs binding the
+///   values a call returns; a value read from the wrong word changes the
+///   answer.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_returned(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let left = frames.wrapping_add(operand!(runtime, B)).wrapping_add(2);
+    // SAFETY: the delivery wrote this word before resuming the frame.
+    let returned = unsafe { *left };
+    let slot = environment.wrapping_add(operand!(runtime, A));
+    // SAFETY: the lowering assigned slot A inside the window.
+    unsafe {
+        *slot = returned;
+    }
+    become hole_next(runtime, heap, frames, environment, value)
+}
+
 /// Give the window in reach back to the window region before a tail call:
 /// the call that follows is the body's last act and reads its operands from
 /// the window before the callee's entry takes the region's top, which may be

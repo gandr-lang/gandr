@@ -899,7 +899,9 @@ pub(super) fn case(
             | &Computation::Lambda(_)
             | &Computation::Application(..)
             | &Computation::Return(_)
+            | &Computation::ReturnAll(_)
             | &Computation::Bind(..)
+            | &Computation::BindAll { .. }
             | &Computation::Force(_)
             | &Computation::Case { .. }
             | &Computation::SigmaSplit { .. }
@@ -1099,7 +1101,9 @@ pub(super) fn absurd(
         | &Computation::Lambda(_)
         | &Computation::Application(..)
         | &Computation::Return(_)
+        | &Computation::ReturnAll(_)
         | &Computation::Bind(..)
+        | &Computation::BindAll { .. }
         | &Computation::Force(_)
         | &Computation::Case { .. }
         | &Computation::SigmaSplit { .. }

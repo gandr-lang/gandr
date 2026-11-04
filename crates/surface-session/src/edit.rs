@@ -2634,7 +2634,8 @@ enum Agreement
                 ContentNode::Project(left, _) => matches!(*new, ContentNode::Project(right, _) if left == right),
                 ContentNode::Perform { signature: ref left, operation: ref first, .. } => matches!(*new, ContentNode::Perform { signature: ref right, operation: ref second, .. } if first == second && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
                 ContentNode::Handle { signature: ref left, clauses: ref first, .. } => matches!(*new, ContentNode::Handle { signature: ref right, clauses: ref second, .. } if first.iter().map(|clause| &clause.operation).eq(second.iter().map(|clause| &clause.operation)) && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
-                ContentNode::Returner { effects: ref left, .. } | ContentNode::RowValue(ref left) => matches!(*new, ContentNode::Returner { effects: ref right, .. } | ContentNode::RowValue(ref right) if left.tail().is_some() == right.tail().is_some() && left.signatures().len() == right.signatures().len() && left.signatures().zip(right.signatures()).all(|(left, right)| left.name() == right.name() && left.operations().len() == right.operations().len() && left.operations().zip(right.operations()).all(|(left, right)| left.name == right.name))),
+                ContentNode::Returner { effects: ref left, .. } | ContentNode::Returns { effects: ref left, .. } | ContentNode::RowValue(ref left) => matches!(*new, ContentNode::Returner { effects: ref right, .. } | ContentNode::Returns { effects: ref right, .. } | ContentNode::RowValue(ref right) if left.tail().is_some() == right.tail().is_some() && left.signatures().len() == right.signatures().len() && left.signatures().zip(right.signatures()).all(|(left, right)| left.name() == right.name() && left.operations().len() == right.operations().len() && left.operations().zip(right.operations()).all(|(left, right)| left.name == right.name))),
+                ContentNode::BindAll(_, left, _) => matches!(*new, ContentNode::BindAll(_, right, _) if left == right),
                 ContentNode::Exercise { signature: ref left, operation: ref first, .. } => matches!(*new, ContentNode::Exercise { signature: ref right, operation: ref second, .. } if first == second && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
                 ContentNode::Scope { signature: ref left, clauses: ref first, .. } => matches!(*new, ContentNode::Scope { signature: ref right, clauses: ref second, .. } if first.iter().map(|clause| &clause.operation).eq(second.iter().map(|clause| &clause.operation)) && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
                 ContentNode::Capability { authority: ref left, grade, region } => matches!(*new, ContentNode::Capability { authority: ref right, grade: other_grade, region: other_region } if grade == other_grade && region == other_region && left.signatures().len() == right.signatures().len() && left.signatures().zip(right.signatures()).all(|(left, right)| left.name() == right.name() && left.operations().len() == right.operations().len() && left.operations().zip(right.operations()).all(|(left, right)| left.name == right.name))),
@@ -2679,6 +2680,7 @@ enum Agreement
                 ContentNode::Dialogue(ref left) => matches!(*new, ContentNode::Dialogue(ref right) if left.len() == right.len() && left.iter().zip(right.iter()).all(|(left, right)| left.endpoint == right.endpoint && left.movement.carrying(()) == right.movement.carrying(()))),
                 ContentNode::Recorded(ref left) => matches!(*new, ContentNode::Recorded(ref right) if left.len() == right.len() && left.iter().zip(right.iter()).all(|(left, right)| left.carrying(()) == right.carrying(()))),
                 ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
+                ContentNode::ReturnAll(_) |
                 ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::UnknownComputationType | ContentNode::Unresolved(_) => true,
             })
 },
@@ -2762,6 +2764,14 @@ fn agreement(
                 effects: ref right, ..
             },
         )
+        | (
+            &ContentNode::Returns {
+                effects: ref left, ..
+            },
+            &ContentNode::Returns {
+                effects: ref right, ..
+            },
+        )
         | (&ContentNode::RowValue(ref left), &ContentNode::RowValue(ref right)) => {
             left.tail().is_some() == right.tail().is_some()
                 && left.signatures().len() == right.signatures().len()
@@ -2777,6 +2787,7 @@ fn agreement(
                                 .all(|(left, right)| left.name == right.name)
                     })
         },
+        (&ContentNode::BindAll(_, left, _), &ContentNode::BindAll(_, right, _)) => left == right,
         (
             &ContentNode::Exercise {
                 signature: ref left,
@@ -3537,6 +3548,8 @@ where
                 }
                 Computation::Return(..) => matches!(ret, ContentNode::Return(..)),
                 Computation::Bind(..) => matches!(ret, ContentNode::Bind(..)),
+                Computation::ReturnAll(ref values) => matches!(ret, ContentNode::ReturnAll(ref read) if read.len() == values.len()),
+                Computation::BindAll { arity, .. } => matches!(ret, ContentNode::BindAll(_, actual, _) if actual == arity),
                 Computation::Force(..) => matches!(ret, ContentNode::Force(..)),
                 Computation::Decompose(..) => matches!(ret, ContentNode::Decompose(..)),
                 Computation::Case { .. } => matches!(ret, ContentNode::Case { .. }),
@@ -3803,6 +3816,16 @@ where
         Some(&Computation::Bind(bound, rest)) => {
             let bound = child(Root::Computation(bound));
             ContentNode::Bind(bound, child(Root::Computation(rest)))
+        },
+        Some(&Computation::ReturnAll(ref values)) => ContentNode::ReturnAll(
+            values
+                .iter()
+                .map(|&value| child(Root::Value(value)))
+                .collect(),
+        ),
+        Some(&Computation::BindAll { bound, arity, body }) => {
+            let bound = child(Root::Computation(bound));
+            ContentNode::BindAll(bound, arity, child(Root::Computation(body)))
         },
         Some(&Computation::Force(value)) => ContentNode::Force(child(Root::Value(value))),
         Some(&Computation::Decompose(value)) => ContentNode::Decompose(child(Root::Value(value))),
@@ -4126,6 +4149,7 @@ where
             |node| match *node {
                 CompType::With(..) => matches!(ret, ContentNode::WithType(..)),
                 CompType::Returner { .. } => matches!(ret, ContentNode::Returner { .. }),
+                CompType::Returns { ref results, .. } => matches!(ret, ContentNode::Returns { results: ref read, .. } if read.len() == results.len()),
                 CompType::Arrow { .. } => matches!(ret, ContentNode::Arrow { .. }),
                 CompType::Pi { .. } => matches!(ret, ContentNode::Pi { .. }),
                 CompType::Element { ref target, .. } => {
@@ -4164,6 +4188,19 @@ where
                 .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
                 .unwrap_or_else(|never| match never {});
             ContentNode::Returner { result, effects }
+        },
+        Some(&CompType::Returns {
+            ref results,
+            ref effects,
+        }) => {
+            let results = results
+                .iter()
+                .map(|&result| child(Root::ValueType(result)))
+                .collect();
+            let effects = effects
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Returns { results, effects }
         },
         Some(&CompType::Arrow { domain, codomain }) => {
             let domain = child(Root::ValueType(domain));

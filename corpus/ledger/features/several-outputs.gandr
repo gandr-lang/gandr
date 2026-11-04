@@ -1,0 +1,49 @@
+/// `several-outputs`: a function returns several values at its outputs. A caller binds, selects or plugs them, and the program builds no product.
+@[ checks ]
+def sumDiff(m : Integer, n : Integer) -> (s : Integer, d : Integer) {
+  (m + n, m - n)
+}
+
+/// A labelled tail returns each value at the output its label names.
+@[ checks ]
+def diffSum(m : Integer, n : Integer) -> (s : Integer, d : Integer) {
+  (.d = m - n, .s = m + n)
+}
+
+/// A caller binds each output to its own name.
+@[ runs("14") ]
+def bound() -> -F Integer {
+  let (s, d) = sumDiff(7, 2);
+  return s + d
+}
+
+/// A caller binds the outputs by label.
+@[ checks ]
+def labelled() -> -F Integer {
+  let (.s, .d) = diffSum(7, 2);
+  return s - d
+}
+
+/// A caller selects one output.
+@[ checks ]
+def total(m : Integer) -> Integer {
+  sumDiff(m, 2).s
+}
+
+/// A function of two inputs.
+@[ checks ]
+def recombine(s : Integer, d : Integer) -> Integer {
+  s + d
+}
+
+/// A caller plugs every output into the inputs of the next function, in order.
+@[ checks ]
+def roundTrip(n : Integer) -> Integer {
+  sumDiff(n, 2) |> recombine
+}
+
+/// A function returns a group of outputs under a row.
+@[ checks ]
+def guarded(m : Integer, n : Integer) -> -F [Partial] (s : Integer, d : Integer) {
+  (m + n, m - n)
+}

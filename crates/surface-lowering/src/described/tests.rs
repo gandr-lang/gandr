@@ -129,6 +129,7 @@ fn returned(
             gandr_core_term::CompType::Element { .. }
             | gandr_core_term::CompType::Unknown
             | gandr_core_term::CompType::With(..)
+            | gandr_core_term::CompType::Returns { .. }
             | gandr_core_term::CompType::Codata { .. } => return None,
         }
     }

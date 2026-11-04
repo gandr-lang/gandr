@@ -159,6 +159,14 @@ impl Erasure<'_, '_>
                     Computation::With(ref components) => self
                         .frames
                         .extend(components.iter().rev().copied().map(computation)),
+                    Computation::ReturnAll(ref values) => {
+                        self.frames.extend(values.iter().rev().copied().map(value));
+                    },
+                    // The bound computation crosses first, then the body.
+                    Computation::BindAll { bound, body, .. } => {
+                        self.frames.push(computation(body));
+                        self.frames.push(computation(bound));
+                    },
                     // The body crosses first, then the type it is ascribed.
                     Computation::Ascribe { body, ty } => {
                         self.frames
@@ -248,6 +256,9 @@ impl Erasure<'_, '_>
                             Frame::NativeNext(CoreNode::Type(TypeNode::Computation(at)))
                         }));
                     },
+                    gandr_core_term::CompType::Returns { ref results, .. } => self
+                        .frames
+                        .extend(results.iter().rev().copied().map(value_type)),
                     gandr_core_term::CompType::Returner { .. }
                     | gandr_core_term::CompType::Arrow { .. }
                     | gandr_core_term::CompType::Pi { .. }
@@ -439,6 +450,19 @@ impl Erasure<'_, '_>
                             .collect::<Result<alloc::vec::Vec<_>, _>>()?;
                         target.computation_with(&components)
                     },
+                    Computation::ReturnAll(ref values) => {
+                        let values = values.iter().copied().map(value).collect::<Result<
+                            alloc::vec::Vec<_>,
+                            _,
+                        >>(
+                        )?;
+                        target.computation_return_all(&values)
+                    },
+                    Computation::BindAll { bound, arity, body } => target.computation_bind_all(
+                        computation(bound)?,
+                        gandr_kernel_term::ResultCount::from(usize::from(arity)),
+                        computation(body)?,
+                    ),
                     Computation::Ascribe { body, ty } => {
                         ascription(target, computation(body)?, comp_type(ty)?)
                     },
@@ -598,6 +622,14 @@ impl Erasure<'_, '_>
                             .map(comp_type)
                             .collect::<Result<alloc::vec::Vec<_>, _>>()?;
                         target.comp_type_with(&components)
+                    },
+                    gandr_core_term::CompType::Returns { ref results, .. } => {
+                        let results = results.iter().copied().map(value_type).collect::<Result<
+                            alloc::vec::Vec<_>,
+                            _,
+                        >>(
+                        )?;
+                        target.comp_type_returns(&results)
                     },
                     gandr_core_term::CompType::Returner { .. }
                     | gandr_core_term::CompType::Arrow { .. }

@@ -32,6 +32,7 @@ use crate::control::StackFrame;
 use crate::rewrite::Binders;
 use crate::support::Crossing;
 use crate::syntax::CompType;
+use crate::syntax::ComponentCount;
 use crate::syntax::Computation;
 use crate::syntax::SplitMotive;
 use crate::syntax::Value;
@@ -280,10 +281,11 @@ pub fn of_value<Walk>(
 ///   continuation, a case's branches, a data case's motive, a transport's or a
 ///   ride's motive, a return clause and a scoped subject; two for a fold's cell
 ///   branch and an operation clause; one per component for a split's body and
-///   one for its motive; a world form's scoped binders; one linear for each
-///   half of a fork, for a receive's body, and a memory form's scoped binders.
-///   A hole holds no child; a session action's endpoint and a memory form's
-///   resident are names, not children.
+///   one per value for a many-value bind's body, and one for a split's motive;
+///   a world form's scoped binders; one linear for each half of a fork, for a
+///   receive's body, and a memory form's scoped binders. A hole holds no child;
+///   a session action's endpoint and a memory form's resident are names, not
+///   children.
 /// - panics: none.
 /// - executable: none — the clause is the former's scoping, which the body
 ///   states once; a predicate would restate it beside it.
@@ -354,6 +356,15 @@ pub fn of_computation<Walk>(
         Computation::Bind(bound, body) => {
             visit.computation(bound, at);
             visit.computation(body, under(Binders::ONE));
+        },
+        Computation::ReturnAll(ref values) => {
+            for &value in values {
+                visit.value(value, at);
+            }
+        },
+        Computation::BindAll { bound, arity, body } => {
+            visit.computation(bound, at);
+            visit.computation(body, under(Binders::NONE.deeper_by(arity)));
         },
         Computation::Ascribe { body, ty } => {
             visit.computation(body, at);
@@ -629,8 +640,9 @@ pub fn of_value_type<Walk>(
 ///
 /// # Specification
 /// - ensures: every child the former holds, once each and in the order the
-///   former lists it: a Π's codomain past one binder and every other child in
-///   place. The unknown computation type holds no child.
+///   former lists it: a Π's codomain past one binder, each result of a
+///   many-value returner past one binder per result before it, and every other
+///   child in place. The unknown computation type holds no child.
 /// - panics: none.
 /// - executable: none — the clause is the former's scoping, which the body
 ///   states once; a predicate would restate it beside it.
@@ -654,6 +666,20 @@ pub fn of_comp_type<Walk>(
             ref effects,
         } => {
             visit.value_type(result, at);
+            for ty in effects.types() {
+                visit.value_type(ty, at);
+            }
+        },
+        CompType::Returns {
+            ref results,
+            ref effects,
+        } => {
+            for (before, &result) in results.iter().enumerate() {
+                visit.value_type(
+                    result,
+                    under(Binders::NONE.deeper_by(ComponentCount::from(before))),
+                );
+            }
             for ty in effects.types() {
                 visit.value_type(ty, at);
             }

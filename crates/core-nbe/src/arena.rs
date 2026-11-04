@@ -782,7 +782,7 @@ impl DomainArena
         (!matches!(unfolding, Unfolding::Rigid) || matches!(head, NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_)) || spine.iter().any(|elimination| match *elimination {
             Elimination::Apply(argument) | Elimination::StaticApply(argument) =>
                 !matches!(self.value_guard(argument), Ok(Guard::Rigid(_))),
-            Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::OperandRide { .. } | Elimination::TelescopeTransport { .. } | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Fixpoint{ .. } => true,
+            Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::OperandRide { .. } | Elimination::TelescopeTransport { .. } | Elimination::Bind(_) | Elimination::BindAll(..) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Fixpoint{ .. } => true,
             Elimination::Force => false,
         })))]
     fn neutral_word(
@@ -837,6 +837,7 @@ impl DomainArena
                 | Elimination::OperandRide { .. }
                 | Elimination::TelescopeTransport { .. }
                 | Elimination::Bind(_)
+                | Elimination::BindAll(..)
                 | Elimination::ListFold { .. }
                 | Elimination::ListCase { .. }
                 | Elimination::Case { .. }
@@ -2114,6 +2115,37 @@ impl DomainArena
     {
         let guard = Guard::compose(GuardTag::Return, &(), &[self.folded_value_guard(value)]);
         self.alloc_computation(DomainComp::Return { value, face }, guard)
+    }
+
+    /// Mint a returner of several already-allocated values, held in order.
+    ///
+    /// # Specification
+    /// - requires: each value names a live value node of this arena.
+    /// - ensures: a fresh computation node carrying the values' span, first to
+    ///   last, and `face`.
+    /// - provides: the weak-head form a return of several values evaluates to.
+    /// - fails: never — a value that dangles surfaces at readback, not here.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — a return of two values reads back as the same two
+    ///   values in order; a swapped or dropped value changes the observed term.
+    /// - witness: `readback::tests::a_return_of_several_values_reads_back_in_order`
+    #[spec(ensures: |ret| matches!(self.computation(ret), Some(&DomainComp::ReturnAll { face: minted, .. }) if minted == face))]
+    #[inline]
+    pub fn comp_return_all(
+        &mut self,
+        values: &[DomainValueId],
+        face: CompTermFace,
+    ) -> DomainCompId
+    {
+        let guard = Guard::compose(
+            GuardTag::ReturnAll,
+            &values.len(),
+            values.iter().map(|&id| self.folded_value_guard(id)),
+        );
+        let values = self.hold_fields(values.iter().copied());
+        self.alloc_computation(DomainComp::ReturnAll { values, face }, guard)
     }
 
     /// Mint a stuck computation over an already-allocated neutral.

@@ -265,6 +265,7 @@ fn shape(
         },
         Some(
             &(CompType::Returner { .. }
+            | CompType::Returns { .. }
             | CompType::With(..)
             | CompType::Arrow { .. }
             | CompType::Pi { .. }
@@ -323,6 +324,7 @@ fn function_hypothesis(
             Some(&CompType::Returner { .. }) => break,
             Some(
                 &(CompType::With(..)
+                | CompType::Returns { .. }
                 | CompType::Element { .. }
                 | CompType::Codata { .. }
                 | CompType::Unknown),

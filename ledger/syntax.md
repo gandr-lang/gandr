@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x6f328e17dae9cec9`
-- Rules: 172 — 171 committed, 1 internal
-- Molds: 2964
+- Grammar fingerprint: `0x9a4ae66738552c7d`
+- Rules: 173 — 172 committed, 1 internal
+- Molds: 2989
 - Attributes: 17
 
 ## Reading a form
@@ -52,7 +52,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | ---- | ---- | ----- | ---- | --------- | ----- |
 | [`wildcard`](../corpus/ledger/syntax/wildcard.gandr) | `_` | `pattern.atom` | `wildcard` | admitted | Variable |
 | [`constructor_pattern`](../corpus/ledger/syntax/constructor-pattern.gandr) | `‹constructor› ⦅ . ⦅ ‹constructor› ‖ ‹identifier› ⦆ ⦆? ⦅ ( PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? ) ⦆?` | `pattern.atom` | `constructor_pattern` | admitted | Constructor, Other, Member |
-| [`tuple_pattern`](../corpus/ledger/syntax/tuple-pattern.gandr) | `( PATTERN , PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? )` | `pattern.atom` | `tuple_pattern` | admitted | Other |
+| [`tuple_pattern`](../corpus/ledger/syntax/tuple-pattern.gandr) | `( . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ⦆* ⦅ , ⦆? ) ‖ ( PATTERN , PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? )` | `pattern.atom` | `tuple_pattern` | admitted | Other, Member, Number |
 | [`telescope_pattern`](../corpus/ledger/syntax/telescope-pattern.gandr) | `#{ ⦅ ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦅ , ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦆* ⦅ , ⦆? ⦆? }` | `pattern.atom` | `telescope_pattern` * | admitted | Other, Member, Number |
 | [`labelled_sum_pattern`](../corpus/ledger/syntax/labelled-sum-pattern.gandr) | `+ { . ⦅ ‹identifier› ‖ ‹number› ⦆ = PATTERN }` | `pattern.atom` | `labelled_sum_pattern` * | admitted | Operator, Other, Member, Number |
 | [`list_pattern`](../corpus/ledger/syntax/list-pattern.gandr) | `#[ ⦅ PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦅ ⟨rest_pattern⟩ ⦆? ⦆? ‖ ⟨rest_pattern⟩ ⦆? ]` | `pattern.atom` | `list_pattern` | admitted | Other, Operator |
@@ -65,7 +65,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`identifier.pattern`](../corpus/ledger/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | admitted | Variable |
 | [`unit.pattern`](../corpus/ledger/syntax/unit.pattern.gandr) | `unit` | `pattern.atom` | `unit` | admitted | Keyword |
 
-## `expression` — 88 rules
+## `expression` — 89 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -73,6 +73,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`return_expression`](../corpus/ledger/syntax/return-expression.gandr) | `return EXPRESSION` | `expression.pure` | `return_expression` * | admitted | Keyword |
 | [`become_expression`](../corpus/ledger/syntax/become-expression.gandr) | `become EXPRESSION` | `expression.pure` | `become_expression` * | admitted | Keyword |
 | [`bind_expression`](../corpus/ledger/syntax/bind-expression.gandr) | `bind ‹identifier› . EXPRESSION` | `expression.pure` | `bind_expression` * | admitted | Keyword, Variable, Other |
+| [`binary_expression.pipe`](../corpus/ledger/syntax/binary-expression.pipe.gandr) | `EXPRESSION \|> EXPRESSION` | `expression.pipe` | `binary_expression` | admitted | Operator |
 | [`binary_expression.or`](../corpus/ledger/syntax/binary-expression.or.gandr) | `EXPRESSION \|\| EXPRESSION` | `expression.or` | `binary_expression` | admitted | Operator |
 | [`binary_expression.and`](../corpus/ledger/syntax/binary-expression.and.gandr) | `EXPRESSION && EXPRESSION` | `expression.and` | `binary_expression` | admitted | Operator |
 | [`binary_expression.cmp.eq`](../corpus/ledger/syntax/binary-expression.cmp.eq.gandr) | `EXPRESSION == EXPRESSION` | `expression.cmp` | `binary_expression` | admitted | Operator |
@@ -100,7 +101,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`index_expression`](../corpus/ledger/syntax/index-expression.gandr) | `EXPRESSION .#[ EXPRESSION ]` | `expression.postfix` | `index_expression` * | admitted | Other |
 | [`hole`](../corpus/ledger/syntax/hole.gandr) | `? ⦅ ‹hole_name› ⦆?` | `expression.atom` | `hole` | admitted | Hole, Label |
 | [`wildcard.expression`](../corpus/ledger/syntax/wildcard.expression.gandr) | `_` | `expression.atom` | `wildcard` | admitted | Variable |
-| [`parenthesized_expression`](../corpus/ledger/syntax/parenthesized-expression.gandr) | `( ⦅ ) ‖ EXPRESSION ⦅ ) ‖ , ⦅ EXPRESSION ⦅ , EXPRESSION ⦅ , EXPRESSION ⦆* ⦆? ⦅ , ⦆? ⦆? ) ‖ : TYPE ) ⦆ ⦆` | `expression.atom` | `parenthesized_expression` | admitted | Other |
+| [`parenthesized_expression`](../corpus/ledger/syntax/parenthesized-expression.gandr) | `( ⦅ ) ‖ EXPRESSION ⦅ ) ‖ , ⦅ EXPRESSION ⦅ , EXPRESSION ⦅ , EXPRESSION ⦆* ⦆? ⦅ , ⦆? ⦆? ) ‖ : TYPE ) ⦆ ⦆ ‖ ( . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION ⦆* ⦅ , ⦆? )` | `expression.atom` | `parenthesized_expression` | admitted | Other, Member, Number |
 | [`type_quote_expression`](../corpus/ledger/syntax/type-quote-expression.gandr) | `type( TYPE )` | `expression.atom` | `type_quote_expression` * | admitted | Keyword, Other |
 | [`list_expression`](../corpus/ledger/syntax/list-expression.gandr) | `#[ ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? ]` | `expression.atom` | `list_expression` | admitted | Other |
 | [`block`](../corpus/ledger/syntax/block.gandr) | `{ ⦅ let PATTERN ⦅ : TYPE ⦆? = EXPRESSION ; ‖ module ‹identifier› = EXPRESSION ; ‖ var ⦅ [ ‹number› ] ⦆? ‹identifier› ⦅ : TYPE ⦆? = EXPRESSION ; ‖ EXPRESSION ; ‖ EXPRESSION ⦅ = ‖ += ‖ -= ‖ *= ⦆ EXPRESSION ; ‖ import ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ; ⦆* ⦅ EXPRESSION ⦆? }` | `expression.atom` | `block` | admitted | Other, Keyword, VariableDef, Number, Type, Member |
@@ -263,7 +264,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
 
-## Decisions — 108 of 172 rules decided at every token
+## Decisions — 109 of 173 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -291,7 +292,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `inner_attribute_member` | module_member | 12 | `@![` | — | 4 |
 | `wildcard` | pattern | 1 | `_` | — | 0 |
 | `constructor_pattern` | pattern | 8 | `constructor` | — | 2 |
-| `tuple_pattern` | pattern | 5 | `(` | — | 2 |
+| `tuple_pattern` | pattern | 17 | `(` | — | 8 |
 | `telescope_pattern` | pattern | 14 | `#{` | — | 10 |
 | `labelled_sum_pattern` | pattern | 7 | `+` | — | 0 |
 | `list_pattern` | pattern | 6 | `#[` | — | 2 |
@@ -310,6 +311,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `return_expression` | expression | 1 | `return` | — | 0 |
 | `become_expression` | expression | 1 | `become` | — | 0 |
 | `bind_expression` | expression | 3 | `bind` | — | 0 |
+| `binary_expression.pipe` | expression | 1 | `\|>` | — | 0 |
 | `binary_expression.or` | expression | 1 | `\|\|` | — | 0 |
 | `binary_expression.and` | expression | 1 | `&&` | — | 0 |
 | `binary_expression.cmp.eq` | expression | 1 | `==` | — | 0 |
@@ -337,7 +339,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `index_expression` | expression | 2 | `.#[` | — | 0 |
 | `hole` | expression | 2 | `?` | — | 0 |
 | `wildcard.expression` | expression | 1 | `_` | — | 0 |
-| `parenthesized_expression` | expression | 10 | `(` | — | 4 |
+| `parenthesized_expression` | expression | 22 | `(` | — | 6 |
 | `type_quote_expression` | expression | 2 | `type(` | — | 0 |
 | `list_expression` | expression | 4 | `#[` | — | 2 |
 | `block` | expression | 31 | `{` | — | 0 |
@@ -442,27 +444,27 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `f_type.row.labelled` | type | 24 | `-F` | `f_type`, `f_type.row` | 12 |
 | `f_type.result.labelled` | type | 23 | `[` | `f_type.result` | 12 |
 
-## Menus — 198 labels
+## Menus — 199 labels
 
 Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.
 
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
-| `identifier` | 379 | 58 | 3 |
-| `,` | 283 | 52 | 0 |
+| `identifier` | 383 | 60 | 3 |
+| `,` | 287 | 52 | 0 |
 | `:` | 248 | 32 | 0 |
 | `type_identifier` | 181 | 33 | 2 |
-| `)` | 137 | 45 | 0 |
-| `=` | 135 | 34 | 0 |
-| `(` | 133 | 44 | 4 |
+| `)` | 139 | 45 | 0 |
+| `=` | 139 | 36 | 0 |
+| `(` | 135 | 44 | 6 |
 | `;` | 124 | 26 | 1 |
-| `.` | 86 | 42 | 3 |
+| `.` | 90 | 44 | 3 |
 | `}` | 78 | 40 | 0 |
 | `]` | 77 | 40 | 0 |
 | `type_variable` | 70 | 15 | 3 |
 | `[` | 61 | 33 | 4 |
 | `{` | 61 | 31 | 2 |
-| `number` | 55 | 31 | 3 |
+| `number` | 59 | 33 | 3 |
 | `_` | 48 | 7 | 2 |
 | `=>` | 45 | 10 | 1 |
 | `-->` | 31 | 5 | 0 |
@@ -642,6 +644,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `while` | 1 | 1 | 1 |
 | `world` | 1 | 1 | 1 |
 | `\|&` | 1 | 1 | 1 |
+| `\|>` | 1 | 1 | 1 |
 | `\|\|` | 1 | 1 | 1 |
 | `~` | 1 | 1 | 1 |
 | `≃` | 1 | 1 | 1 |

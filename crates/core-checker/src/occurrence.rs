@@ -1165,6 +1165,22 @@ where
                             .map(|operation| (AnyNode::ValueType(operation), reach.nest())),
                     );
                 },
+                Some(&CompType::Returns {
+                    ref results,
+                    ref effects,
+                }) => {
+                    // Each result stands under the binders of the results before it.
+                    let mut at = reach;
+                    for &result in results {
+                        pending.push((AnyNode::ValueType(result), at));
+                        at = at.under();
+                    }
+                    pending.extend(
+                        effects
+                            .types()
+                            .map(|operation| (AnyNode::ValueType(operation), reach.nest())),
+                    );
+                },
                 Some(&CompType::With(ref components)) => {
                     pending.extend(
                         components
@@ -1402,6 +1418,9 @@ where
                             .map(|&argument| (AnyNode::Value(argument), reach)),
                     );
                 },
+                Some(&Computation::ReturnAll(ref values)) => {
+                    pending.extend(values.iter().map(|&value| (AnyNode::Value(value), reach)));
+                },
                 Some(
                     &(Computation::RecordProjection(value, _)
                     | Computation::TupleProjection(value, _)
@@ -1523,7 +1542,9 @@ where
                     pending.push((AnyNode::Computation(head), reach));
                     pending.push((AnyNode::Value(argument), reach));
                 },
-                Some(&Computation::Bind(bound, body)) => {
+                Some(
+                    &(Computation::Bind(bound, body) | Computation::BindAll { bound, body, .. }),
+                ) => {
                     pending.push((AnyNode::Computation(bound), reach));
                     pending.push((AnyNode::Computation(body), reach));
                 },

@@ -359,6 +359,20 @@ pub struct Manifest<'text, Node>
     pub sorts: alloc::vec::Vec<(Name<'text>, Node)>,
 }
 
+/// What a returner returns: one value type, or a group of outputs, each the
+/// source's component at its place.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Returned<Node>
+{
+    /// One value type, `-F [E] A`.
+    One(Node),
+    /// A group of as many value types, `-F [E] (A, B)`.
+    Group(Arity),
+}
+
 /// How many components a product, a sum, a tuple or a record has.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -546,14 +560,18 @@ pub enum Former<'source, Node>
     },
     /// The returner `-F A` of a value type.
     Returner(Node),
-    /// The returner `-F [I, …] A` of a value type whose computation may
-    /// request the interfaces of its row, `-F [I, … | t] A` when the row is
-    /// open through the row `t`; an entry over a theory writes the sorts it
-    /// fixes, `-F [T with sort C = A …] B`.
+    /// The returner `-F (A, B)` of several value types, none of which reads
+    /// the results before it: a function's group of outputs.
+    Returns(Arity),
+    /// The returner `-F [I, …] A` of a value type, or `-F [I, …] (A, B)` of
+    /// a group of them none of which reads the results before it, whose
+    /// computation may request the interfaces of its row, `-F [I, … | t] A`
+    /// when the row is open through the row `t`; an entry over a theory
+    /// writes the sorts it fixes, `-F [T with sort C = A …] B`.
     EffectfulReturner
     {
-        /// The value returned.
-        result: Node,
+        /// What it returns.
+        result: Returned<Node>,
         /// The row of interfaces.
         effects: &'source dyn Authority,
         /// The row it is open through: a value type that reads as its row.
@@ -1258,6 +1276,11 @@ pub enum Unreadable
     /// A world's capability: the linear resource a migration spends, which
     /// the checker opens where a run enters and the surface never writes.
     WorldCapability,
+    /// A return or a bind of several values, or a returner of several results
+    /// one of which reads a result before it or whose computation requests an
+    /// interface: the core's many-value formers the surface does not yet
+    /// write.
+    SeveralResults,
 }
 
 /// A former the printer writes in a notation of its own, which does not read
@@ -1430,13 +1453,15 @@ pub trait Source
     ///   [`Former::RecordUpdate`], a [`Former::RecordType`], a
     ///   [`Former::Session`], a [`Former::Data`], a [`Former::Codata`], a
     ///   [`Former::Constructor`], a [`Former::Primitive`], a [`Former::Case`],
-    ///   a [`Former::DataCase`], a [`Former::Handle`], a [`Former::Scope`] or a
-    ///   [`Former::Offer`] for `node` and `index` is below its arity: a
-    ///   record's fields and the fields an update writes in label order, a
-    ///   session type's payloads in slot order, a family's arguments and a
-    ///   constructor's fields in telescope order, a primitive's arguments, a
-    ///   case's branches, a handler's operation clauses and an offer's arms in
-    ///   order; none otherwise.
+    ///   a [`Former::DataCase`], a [`Former::Handle`], a [`Former::Scope`], a
+    ///   [`Former::Offer`], a [`Former::Returns`] or a
+    ///   [`Former::EffectfulReturner`] that returns a group for `node` and
+    ///   `index` is below its arity: a record's fields and the fields an update
+    ///   writes in label order, a session type's payloads in slot order, a
+    ///   family's arguments and a constructor's fields in telescope order, a
+    ///   primitive's arguments, a case's branches, a handler's operation
+    ///   clauses, an offer's arms and a returner's results in order; none
+    ///   otherwise.
     /// - provides: the children of an n-ary former, which a [`Former`] counts
     ///   but does not hold.
     /// - fails: never; a missing component is an absence, which the printer

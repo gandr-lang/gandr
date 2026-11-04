@@ -721,6 +721,9 @@ impl TileName
     pub const REVERSIBLE: Self = Self("<=>");
     /// The cons `g ∷ p` of a word and of a word's pattern.
     pub const CONS: Self = Self("∷");
+    /// The plugging `left |> right`: every output of `left` into the inputs
+    /// of `right`, in order.
+    pub const PLUG: Self = Self("|>");
     /// The equivalence `A ≃ B` between two types, the tile its ASCII
     /// spelling `<~>` molds too.
     pub const EQUIVALENCE: Self = Self("≃");

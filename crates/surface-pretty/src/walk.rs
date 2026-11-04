@@ -241,6 +241,7 @@ use crate::former::Notation;
 use crate::former::Placement;
 use crate::former::Recursion;
 use crate::former::Recursive;
+use crate::former::Returned;
 use crate::former::Source;
 use crate::former::Unreadable;
 use crate::former::Unspelled;
@@ -433,7 +434,7 @@ enum Kind
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
         | Former::Path { .. } | Former::Bridge { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Model { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::DialogueType(_) | Former::Located { .. } | Former::Kept { .. }),
-    | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
+    | Kind::CompType => matches!(*former, Former::Returner(_) | Former::Returns(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
         | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::RecordUpdate(..) | Former::Injection(..) | Former::Thunk(_)
@@ -486,6 +487,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Located { .. }
         | Former::Kept { .. } => Kind::ValueType,
         Former::Returner(_)
+        | Former::Returns(_)
         | Former::With(..)
         | Former::EffectfulReturner { .. }
         | Former::Arrow { .. }
@@ -1097,6 +1099,8 @@ where
         && ret.iter().all(|slot| slot.admits == Admits::Stated && slot.binds == Binds::NONE),
     | Former::With(arity) => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::CompType && slot.binds == Binds::NONE),
+    | Former::Returns(arity) => ret.len() == usize::from(arity)
+        && ret.iter().enumerate().all(|(index, slot)| slot.admits == Admits::ValueType && slot.binds == Binds::intuitionistic(OpenBinders(index))),
     | Former::Lazy(arity) => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::Computation(Tail::Continues) && slot.binds == Binds::NONE),
     | Former::Constructor { arity, classifier, .. } => {
@@ -1133,8 +1137,8 @@ where
     },
     | Former::Model { sorts, .. } => ret.len() == sorts.len()
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
-    | Former::EffectfulReturner { tail, manifests, .. } => ret.len() == manifests.iter().map(|manifest| manifest.sorts.len()).sum::<usize>().saturating_add(usize::from(tail.is_some())).saturating_add(1_usize)
-        && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
+    | Former::EffectfulReturner { tail, manifests, result, .. } => ret.len() == manifests.iter().map(|manifest| manifest.sorts.len()).sum::<usize>().saturating_add(usize::from(tail.is_some())).saturating_add(match result { Returned::One(_) => 1_usize, Returned::Group(arity) => usize::from(arity) })
+        && ret.iter().all(|slot| slot.admits == Admits::ValueType),
     | Former::Row { tail, .. } => ret.len() == usize::from(tail.is_some())
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
     | Former::Annotated { value, ty } => ret.len() == match (truth(source, value, ty), natural(source, value, ty)) {
@@ -1216,6 +1220,16 @@ where
             Binds::NONE,
             entry_labels(source, node),
         ),
+        // Each result stands under the binders of the results before it, which
+        // it does not read where the former is written.
+        Former::Returns(arity) => (0_usize .. usize::from(arity))
+            .map(|index| Slot {
+                node: source.component(node, Component::from(index)),
+                admits: Admits::ValueType,
+                binds: Binds::intuitionistic(OpenBinders(index)),
+                label: None,
+            })
+            .collect(),
         Former::Sum(arity) => components(
             arity,
             Admits::ValueType,
@@ -1355,20 +1369,32 @@ where
         Former::ThunkType(child) | Former::QuoteComputation(child) => Vec::from([comp_type(child)]),
         // An open row's tail is visited before what follows it: `-F [I | t] A`;
         // each type a theory's entry fixes a sort to is visited before both,
-        // in row order, `-F [T with sort C = A | t] B`.
+        // in row order, `-F [T with sort C = A | t] B`. A group's results
+        // come last, each under the binders of the results before it.
         Former::EffectfulReturner {
             result,
             tail,
             effects,
             manifests,
-        } => manifested(effects, manifests)
-            .into_iter()
-            .flatten()
-            .flat_map(|manifest| manifest.sorts.iter().map(|&(_, carrier)| carrier))
-            .chain(tail)
-            .chain([result])
-            .map(value_type)
-            .collect(),
+        } => {
+            let row = manifested(effects, manifests)
+                .into_iter()
+                .flatten()
+                .flat_map(|manifest| manifest.sorts.iter().map(|&(_, carrier)| carrier))
+                .chain(tail)
+                .map(value_type);
+            match result {
+                Returned::One(result) => row.chain([value_type(result)]).collect(),
+                Returned::Group(arity) => row
+                    .chain((0_usize .. usize::from(arity)).map(|index| Slot {
+                        node: source.component(node, Component::from(index)),
+                        admits: Admits::ValueType,
+                        binds: Binds::intuitionistic(OpenBinders(index)),
+                        label: None,
+                    }))
+                    .collect(),
+            }
+        },
         Former::Row { tail, .. } => tail.into_iter().map(value_type).collect(),
         Former::List(child)
         | Former::Returner(child)
@@ -2771,6 +2797,9 @@ enum Join
         head: Doc,
         /// What follows an open row's tail; none for a closed row.
         close: Option<Doc>,
+        /// How many results a group returns, listed `(A, B)`; none for one
+        /// result.
+        group: Option<Arity>,
     },
     /// A row as a term open through its tail, `[I, … | `, the tail finished
     /// just below, then the close `]`.
@@ -2805,6 +2834,8 @@ enum Join
     },
     /// A tuple of this many components, two or more, `(a, b)`.
     Tuple(Arity),
+    /// The returner of a group of this many results, `-F (A, B)`, `-F ()`.
+    Returns(Arity),
     /// The value-function alias over this many domains and then its
     /// codomain: `() => C`, `A => C`, `(A, B) => C`; where an occurrence named
     /// a dependent arrow's binder, the thunk over the arrows it stands for.
@@ -3179,6 +3210,46 @@ enum Reading
     Reads,
     /// It reads none.
     Unread,
+}
+
+/// Whether some result of a group reads a result before it. The returner
+/// `-F (A, B)` cannot write such a group, since its results name no binder.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReadsEarlier(pub bool);
+
+/// Whether some result of a group, `results` in order and each read as the
+/// node `node` gives it, reads a result before it.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: whether the result at some position `i` reads one of the `i`
+///   binders the results before it open, as [`reads_binders`] reads it. A group
+///   of fewer than two results reads nothing earlier.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a group of two closed results and one whose second result
+///   reads the first.
+/// - witness: `core_source::tests::a_group_of_outputs_reads_as_its_returner_unless_one_reads_another`
+#[spec(ensures: |ret| !ret.0 || results.len() > 1_usize)]
+pub fn reads_earlier<S, T, F>(
+    source: &S,
+    results: &[T],
+    node: F,
+) -> ReadsEarlier
+where
+    S: Source + ?Sized,
+    T: Copy,
+    F: Fn(T) -> S::Node,
+{
+    ReadsEarlier(results.iter().enumerate().any(|(index, &result)| {
+        reads_binders(source, node(result), Admits::ValueType, Arity(index)) == Reading::Reads
+    }))
 }
 
 /// Whether `root`, in a position admitting `admits`, reads one of the
@@ -7188,6 +7259,7 @@ impl Walk<'_, '_>
                 Former::Reify
                 | Former::Stack(..)
                 | Former::With(..)
+                | Former::Returns(_)
                 | Former::ListNil
                 | Former::ListCons(..)
                 | Former::PathUniverse(..)
@@ -8992,6 +9064,15 @@ impl Walk<'_, '_>
             Former::Returner(_) => {
                 Some(writes(Production("f_type"), Join::Prefix(Prefix::Returner)))
             },
+            // A group of outputs is written after the returner it is,
+            // `-F (A, B)`.
+            Former::Returns(arity) => Some(writes(
+                Production("f_type"),
+                writes(
+                    Production("parenthesized_type"),
+                    Join::Returns(Arity(usize::from(arity))),
+                ),
+            )),
             // An open row sets its tail apart from the interfaces it writes,
             // `-F [I | t] A`, and one writing none is its tail alone,
             // `-F [t] A`; a row naming an instance by its label is the
@@ -9003,7 +9084,12 @@ impl Walk<'_, '_>
             {
                 Some(self.form(source, node, &former, admits))
             },
-            Former::EffectfulReturner { effects, tail, .. } => {
+            Former::EffectfulReturner {
+                effects,
+                tail,
+                result,
+                ..
+            } => {
                 let mut annotation = String::from("-F [");
                 let listed = self.list_interfaces(source, effects, &mut annotation);
                 match (tail, listed) {
@@ -9015,7 +9101,18 @@ impl Walk<'_, '_>
                 }
                 let head = self.leaf(Glyphs(&annotation))?;
                 let close = tail.map(|_| self.leaf(Glyphs("] "))).transpose()?;
-                let join = Join::EffectReturner { head, close };
+                // A group of outputs is written after the row, `-F [E] (A, B)`.
+                let group = match result {
+                    Returned::One(_) => None,
+                    Returned::Group(arity) => Some(Arity(usize::from(arity))),
+                };
+                let join = Join::EffectReturner { head, close, group };
+                let join = if group.is_some() {
+                    writes(Production("parenthesized_type"), join)
+                }
+                else {
+                    join
+                };
                 Some(match listed {
                     Listed::Labelled => writes(Production("f_type.row.labelled"), join),
                     Listed::None | Listed::Some => writes(Production("f_type.row"), join),
@@ -11482,7 +11579,7 @@ impl Walk<'_, '_>
                 effects,
                 tail,
                 manifests,
-                ..
+                result,
             } => {
                 let _ = parts.text("-F [");
                 let mut labelled = false;
@@ -11511,7 +11608,11 @@ impl Walk<'_, '_>
                 if tail.is_some() {
                     let _ = parts.text(" | ").piece(Binding::Atom);
                 }
-                let _ = parts.text("] ").piece(Binding::Atom);
+                let _ = parts.text("] ");
+                let _ = match result {
+                    Returned::One(_) => parts.piece(Binding::Atom),
+                    Returned::Group(arity) => parts.arguments(Arity(usize::from(arity))),
+                };
                 if labelled {
                     writes(Production("f_type.row.labelled"), Binding::Prefix)
                 }
@@ -11827,6 +11928,7 @@ impl Walk<'_, '_>
             Former::Reify
             | Former::Stack(..)
             | Former::With(..)
+            | Former::Returns(_)
             | Former::Place { .. }
             | Former::ListNil
             | Former::ListCons(..)
@@ -12052,10 +12154,10 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_dependent_pair_ignoring_its_binder_spells_as_the_product_771`
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
-            Join::Prefix(_) | Join::EffectReturner { close: None, .. } | Join::OpenRow { .. } | Join::StaticLambda { .. } | Join::Lambda | Join::Thunk
+            Join::Prefix(_) | Join::OpenRow { .. } | Join::StaticLambda { .. } | Join::Lambda | Join::Thunk
                 | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::Prefix | Bracket::Dialogue | Bracket::Decompose | Bracket::TypeQuote | Bracket::Break) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
-                | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) | Join::Compose(_, Arity(count)) => Some(count),
+                | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) | Join::Returns(Arity(count)) | Join::Compose(_, Arity(count)) => Some(count),
             Join::Fill(_, Arity(cells)) => cells.checked_add(1_usize),
             Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
@@ -12063,14 +12165,15 @@ impl Walk<'_, '_>
                 let taken = count.checked_mul(2_usize)?;
                 taken.checked_add(1_usize)
             },
-            Join::Arrow | Join::Pi | Join::Sigma | Join::RecordProduct | Join::Sequence | Join::DiscardedSequence | Join::TypedLambda | Join::Ua(_) | Join::EffectReturner { close: Some(_), .. } | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sigma | Join::RecordProduct | Join::Sequence | Join::DiscardedSequence | Join::TypedLambda | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
+            Join::EffectReturner { ref close, group, .. } => group.map_or(1_usize, |Arity(results)| results).checked_add(usize::from(close.is_some())),
             Join::TypedSequence | Join::Bracket(Bracket::BisimPaid) => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
-                    Join::Prefix(_) | Join::EffectReturner { .. } | Join::Lambda | Join::TypedLambda | Join::StaticLambda { .. } | Join::Thunk => Binding::Prefix,
+                    Join::Prefix(_) | Join::EffectReturner { .. } | Join::Returns(_) | Join::Lambda | Join::TypedLambda | Join::StaticLambda { .. } | Join::Thunk => Binding::Prefix,
                     Join::Arrow | Join::Pi | Join::ValueFunction(..) => Binding::Arrow,
                     // A dependent pair naming no binder is the product it
                     // reads as.
@@ -12094,9 +12197,17 @@ impl Walk<'_, '_>
     ) -> Result<(), PresentationError>
     {
         let (doc, binding) = match join {
-            Join::EffectReturner { head, close } => {
-                let operand = self.pop()?;
-                let operand = self.bare_up_to(operand, Binding::Atom)?;
+            Join::EffectReturner { head, close, group } => {
+                let operand = match group {
+                    None => {
+                        let operand = self.pop()?;
+                        self.bare_up_to(operand, Binding::Atom)?
+                    },
+                    Some(arity) => {
+                        let results = self.take(arity)?;
+                        self.listed(&results)?
+                    },
+                };
                 let doc = match close {
                     None => self.builder.concat(head, operand)?,
                     Some(close) => {
@@ -12238,6 +12349,12 @@ impl Walk<'_, '_>
             Join::Tuple(arity) => {
                 let components = self.take(arity)?;
                 (self.listed(&components)?, Binding::Atom)
+            },
+            Join::Returns(arity) => {
+                let results = self.take(arity)?;
+                let group = self.listed(&results)?;
+                let head = self.leaf(Glyphs("-F "))?;
+                (self.builder.concat(head, group)?, Binding::Prefix)
             },
             Join::ValueFunction(arity, dependent) => {
                 let codomain = self.pop()?;

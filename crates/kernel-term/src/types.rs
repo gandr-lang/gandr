@@ -615,6 +615,10 @@ pub enum CompType
     /// The returner `F A` of a value type `A`: the type of a computation
     /// returning a value of type `A`. It is pure — there is no effect row.
     Returner(ValueTypeId),
+    /// The returner `F (x₀ : A₀, …)` of several values, a telescope: each
+    /// result stands in the ambient context extended by the results before
+    /// it. It is pure, and never holds one result: that is [`Self::Returner`].
+    Returns(alloc::boxed::Box<[ValueTypeId]>),
     /// The function type `A → C` from a value type to a computation type.
     ///
     /// Non-dependent: the codomain stands in the ambient context and binds

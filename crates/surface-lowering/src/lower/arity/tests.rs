@@ -130,6 +130,22 @@ fn shown(
                 Some(&CompType::Returner { result, .. }) => {
                     (String::from("F"), vec![Root::ValueType(result)])
                 },
+                Some(&CompType::Returns {
+                    ref results,
+                    ref effects,
+                }) => (
+                    // A group under a row is marked by the row's presence.
+                    if *effects == gandr_core_term::effect::EffectRow::EMPTY {
+                        format!("F{}", results.len())
+                    }
+                    else {
+                        format!("F{}[row]", results.len())
+                    },
+                    results
+                        .iter()
+                        .map(|&result| Root::ValueType(result))
+                        .collect(),
+                ),
                 Some(&CompType::Arrow { domain, codomain }) => (String::from("->"), vec![
                     Root::ValueType(domain),
                     Root::CompType(codomain),
@@ -192,16 +208,30 @@ fn shown(
                 Some(&Computation::Return(value)) => {
                     (String::from("return"), vec![Root::Value(value)])
                 },
+                Some(&Computation::ReturnAll(ref values)) => (
+                    format!("return{}", values.len()),
+                    values.iter().map(|&value| Root::Value(value)).collect(),
+                ),
                 Some(&Computation::Force(value)) => {
                     (String::from("force"), vec![Root::Value(value)])
                 },
                 Some(&Computation::Lambda(body)) => {
                     (String::from("lambda"), vec![Root::Computation(body)])
                 },
+                Some(&Computation::Application(function, argument)) => (String::from("app"), vec![
+                    Root::Computation(function),
+                    Root::Value(argument),
+                ]),
                 Some(&Computation::Bind(bound, body)) => (String::from("bind"), vec![
                     Root::Computation(bound),
                     Root::Computation(body),
                 ]),
+                Some(&Computation::BindAll { bound, arity, body }) => {
+                    (format!("bindall{}", usize::from(arity)), vec![
+                        Root::Computation(bound),
+                        Root::Computation(body),
+                    ])
+                },
                 Some(&Computation::With(ref components)) => (
                     format!("with{}", components.len()),
                     components
@@ -1597,25 +1627,19 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
         &mut arena,
     );
     // The projections, forces and applications of a body, in its walk's
-    // order, an application named without its ids.
+    // order.
     let observed = |name: &str| -> Vec<String> {
         body(&arena, &module, name)
             .into_iter()
-            .filter_map(|token| {
-                if token.starts_with("Some(Application(") {
-                    Some(String::from("application"))
-                }
-                else {
-                    (token.starts_with("project") || token == "force").then_some(token)
-                }
-            })
+            .filter(|token| token.starts_with("project") || token == "force" || token == "app")
             .collect()
     };
 
     assert_eq!(
         observed("named"),
-        ["project1", "application"],
-        "the call runs to the codata value, projected at the label's place unforced"
+        ["project1", "app", "force"],
+        "the call runs to the codata value, projected at the label's place unforced; the force \
+         is the call's head"
     );
     assert_eq!(
         observed("counted"),
@@ -1624,7 +1648,7 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
     );
     assert_eq!(
         observed("recorded"),
-        ["project1", "application"],
+        ["project1", "app", "force"],
         "a lazy record a call returns is projected at its label's entry"
     );
     assert!(
@@ -1662,18 +1686,11 @@ fn a_chain_of_observations_projects_each_link_1106()
         &mut arena,
     );
     // The projections, forces and applications of a body, in its walk's
-    // order, an application named without its ids.
+    // order.
     let observed = |name: &str| -> Vec<String> {
         body(&arena, &module, name)
             .into_iter()
-            .filter_map(|token| {
-                if token.starts_with("Some(Application(") {
-                    Some(String::from("application"))
-                }
-                else {
-                    (token.starts_with("project") || token == "force").then_some(token)
-                }
-            })
+            .filter(|token| token.starts_with("project") || token == "force" || token == "app")
             .collect()
     };
 
@@ -1684,7 +1701,7 @@ fn a_chain_of_observations_projects_each_link_1106()
     );
     assert_eq!(
         observed("third"),
-        ["project0", "project1", "project1", "application"],
+        ["project0", "project1", "project1", "app", "force"],
         "the call runs once and each link projects what the one before it returns"
     );
     assert_eq!(
@@ -1784,6 +1801,394 @@ fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
         declared(&arena, &module, "ignored"),
         declared(&arena, &module, "tail"),
         "the type the function tail writing the same signature declares"
+    );
+}
+
+#[test]
+fn a_group_of_outputs_is_the_many_value_returner()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def named(m : Integer) -> (q : Integer, r : String) { return m }\ndef unnamed(m : \
+         Integer) -> (Integer, String) { return m }\ndef none(m : Integer) -> () { return m \
+         }\ndef one(m : Integer) -> (q : Integer) { return m }\ndef bare(m : Integer) -> Integer { \
+         return m }\ndef grouped(m : Integer) -> (Integer) { return m }\ndef dependent(m : \
+         Integer) -> (a : Type, x : a) { return m }\ndef explicit(m : Integer) -> -F (Integer, \
+         String) { return m }\ndef signed : +U (Integer -> -F (Integer, String)) ;",
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "named"),
+        ["U", "->", "Integer", "F2", "Integer", "String"],
+        "two named outputs are the returner of both, in written order"
+    );
+    assert_eq!(
+        declared(&arena, &module, "unnamed"),
+        declared(&arena, &module, "named"),
+        "a name on an output changes nothing its type says"
+    );
+    assert_eq!(
+        declared(&arena, &module, "explicit"),
+        declared(&arena, &module, "unnamed"),
+        "the returner of a group is the group a result writes"
+    );
+    assert_eq!(
+        declared(&arena, &module, "signed"),
+        declared(&arena, &module, "unnamed"),
+        "the group a printer writes after an arrow reads back"
+    );
+    assert_eq!(
+        declared(&arena, &module, "none"),
+        ["U", "->", "Integer", "F0"],
+        "an empty group returns nothing, which is no unit"
+    );
+    assert_eq!(
+        declared(&arena, &module, "one"),
+        declared(&arena, &module, "bare"),
+        "one named output is the returner of its one type"
+    );
+    assert_eq!(
+        declared(&arena, &module, "grouped"),
+        declared(&arena, &module, "bare"),
+        "one unnamed entry is grouping, not a group of outputs"
+    );
+    let dependent = declared(&arena, &module, "dependent");
+    assert_eq!(
+        dependent.get(.. 4_usize),
+        Some(
+            &[
+                String::from("U"),
+                String::from("->"),
+                String::from("Integer"),
+                String::from("F2")
+            ][..]
+        ),
+        "a later output may name an earlier one, {dependent:?}"
+    );
+    let source = "def twice(m : Integer) -> (x : Integer, x : String) { return m }";
+    assert!(
+        matches!(refused(source), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("x")),
+        "an output is named once"
+    );
+}
+
+#[test]
+fn a_tuple_ending_a_body_of_outputs_returns_each_member()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def swap(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (n, m) }\ndef \
+         paired(m : Integer, n : Integer) -> Integer * Integer { (n, m) }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "swap"),
+        ["thunk", "lambda", "lambda", "return2", "#0", "#1"],
+        "a tuple ending a body of two outputs returns each member as one"
+    );
+    assert_eq!(
+        body(&arena, &module, "paired"),
+        ["thunk", "lambda", "lambda", "return", "tuple2", "#0", "#1"],
+        "a tuple ending a body of one product returns the one tuple"
+    );
+}
+
+#[test]
+fn a_tuple_pattern_binds_each_output_of_a_call()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
+         second(a : Integer, b : Integer) -> Integer { let (q, r) = divmod(a, b); r }\ndef \
+         first(a : Integer, b : Integer) -> Integer { let (q, r) = divmod(a, b); q }\ndef \
+         pair(a : Integer) -> Integer * Integer { (a, a) }\ndef split(a : Integer) -> Integer { \
+         let (x, y) = pair(a); y }",
+        &mut arena,
+    );
+
+    let second = body(&arena, &module, "second");
+    assert_eq!(
+        second.get(.. 4_usize),
+        Some(
+            &[
+                String::from("thunk"),
+                String::from("lambda"),
+                String::from("lambda"),
+                String::from("bindall2")
+            ][..]
+        ),
+        "each output of the call is bound by one bind, {second:?}"
+    );
+    assert_eq!(
+        second.last().map(String::as_str),
+        Some("#0"),
+        "the last output is the innermost binder"
+    );
+    assert_eq!(
+        body(&arena, &module, "first").last().map(String::as_str),
+        Some("#1"),
+        "the first output is the outermost binder"
+    );
+    assert!(
+        !body(&arena, &module, "split")
+            .iter()
+            .any(|token| token.starts_with("bindall")),
+        "a call returning a pair is split, not bound output by output"
+    );
+    let source = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
+                  three(a : Integer) -> Integer { let (q, r, s) = divmod(a, a); q }";
+    assert!(
+        matches!(
+            refused(source),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(operands),
+                ..
+            } if usize::from(operands) == 3
+        ),
+        "a pattern binds every output of the call, no more"
+    );
+}
+
+#[test]
+fn a_selected_output_binds_every_output_and_returns_one()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
+         half(n : Integer) -> Integer { divmod(n, n).q }\ndef rest(n : Integer) -> Integer { \
+         (divmod(n, n)).r }",
+        &mut arena,
+    );
+
+    let half = body(&arena, &module, "half");
+    assert_eq!(
+        half.get(.. 3_usize),
+        Some(
+            &[
+                String::from("thunk"),
+                String::from("lambda"),
+                String::from("bindall2")
+            ][..]
+        ),
+        "a selection binds every output of the call, {half:?}"
+    );
+    assert_eq!(
+        half.get(half.len().saturating_sub(2_usize) ..),
+        Some(&[String::from("return"), String::from("#1")][..]),
+        "the first output is the outermost binder"
+    );
+    let rest = body(&arena, &module, "rest");
+    assert_eq!(
+        rest.get(rest.len().saturating_sub(2_usize) ..),
+        Some(&[String::from("return"), String::from("#0")][..]),
+        "a selection through parentheses returns its output, {rest:?}"
+    );
+}
+
+#[test]
+fn a_plugging_passes_every_output_in_order()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
+         recombine(q : Integer, r : Integer) -> Integer { q }\ndef round(n : Integer) -> Integer \
+         { divmod(n, n) |> recombine }\ndef double(n : Integer) -> Integer { n }\ndef single(n : \
+         Integer) -> Integer { double(n) |> double }",
+        &mut arena,
+    );
+
+    let round = body(&arena, &module, "round");
+    assert_eq!(
+        round.get(.. 3_usize),
+        Some(
+            &[
+                String::from("thunk"),
+                String::from("lambda"),
+                String::from("bindall2")
+            ][..]
+        ),
+        "a plugging binds every output of the call, {round:?}"
+    );
+    assert_eq!(
+        round.get(round.len().saturating_sub(2_usize) ..),
+        Some(&[String::from("#1"), String::from("#0")][..]),
+        "the first output is the first input, {round:?}"
+    );
+    let single = body(&arena, &module, "single");
+    assert!(
+        single.iter().all(|token| !token.starts_with("bindall")),
+        "a call of one value binds it alone, {single:?}"
+    );
+    assert_eq!(
+        single.last().map(String::as_str),
+        Some("#0"),
+        "the one value is the one input, {single:?}"
+    );
+}
+
+#[test]
+fn a_call_of_outputs_standing_as_one_value_is_their_record()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
+         pair(m : Integer, n : Integer) -> (Integer, Integer) { (m, n) }\ndef named(a : Integer) \
+         -> Integer { let r = divmod(a, a); r.q }\ndef whole(a : Integer) -> Integer { let t = \
+         pair(a, a); 0 }",
+        &mut arena,
+    );
+
+    let named = body(&arena, &module, "named");
+    assert!(
+        named.iter().any(|token| token == "bindall2")
+            && named.iter().any(|token| token == "record{q,r}"),
+        "a call of named outputs bound to one name binds the record of them, {named:?}"
+    );
+    let whole = body(&arena, &module, "whole");
+    assert!(
+        whole.iter().any(|token| token == "bindall2")
+            && whole.iter().any(|token| token == "tuple2"),
+        "a call of unnamed outputs bound to one name binds the tuple of them, {whole:?}"
+    );
+}
+
+#[test]
+fn a_row_returns_a_group_of_outputs()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def spin(n : Integer) -> [Partial] (q : Integer, r : Integer) { (n, n) }\ndef \
+         explicit(n : Integer) -> -F [Partial] (Integer, Integer) { (n, n) }\ndef caller(n : \
+         Integer) -> [Partial] Integer { let (q, r) = spin(n); q }\ndef none(n : Integer) -> \
+         [Partial] () { () }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "spin"),
+        ["U", "->", "Integer", "F2[row]", "Integer", "Integer"],
+        "a row before a group is the row of the group's returner"
+    );
+    assert_eq!(
+        declared(&arena, &module, "explicit"),
+        declared(&arena, &module, "spin"),
+        "the explicit returner over a row writes the same group"
+    );
+    assert_eq!(
+        body(&arena, &module, "spin"),
+        ["thunk", "lambda", "return2", "#0", "#0"],
+        "a tuple ending a body under a row returns each member"
+    );
+    assert!(
+        body(&arena, &module, "caller")
+            .iter()
+            .any(|token| token == "bindall2"),
+        "a caller binds each output of a group under a row"
+    );
+    assert_eq!(
+        body(&arena, &module, "none"),
+        ["thunk", "lambda", "return0"],
+        "`()` ends a body of no outputs under a row"
+    );
+}
+
+#[test]
+fn a_labelled_group_returns_each_value_at_its_output()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (.r = m, .q = n) \
+         }\ndef nothing(a : Integer) -> () { () }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "divmod"),
+        ["thunk", "lambda", "lambda", "return2", "#0", "#1"],
+        "each value returns at the output its label names, whatever order the group writes"
+    );
+    assert_eq!(
+        body(&arena, &module, "nothing"),
+        ["thunk", "lambda", "return0"],
+        "`()` ending a body of no outputs returns none"
+    );
+    let loose = "def loose(a : Integer) -> Integer { (.q = a, .r = a) }";
+    assert!(
+        matches!(refused(loose), LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::WrongSort,
+            ..
+        }),
+        "a labelled group is no value"
+    );
+    let stray = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (.q = n, .x = \
+                 m) }";
+    assert!(
+        matches!(refused(stray), LoweringRefusal::MalformedForm {
+            fault: FormFault::MisplacedTile,
+            ..
+        }),
+        "a group's labels are its outputs' names"
+    );
+}
+
+#[test]
+fn a_labelled_pattern_binds_each_output_by_its_label()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
+         punned(a : Integer, b : Integer) -> Integer { let (.r, .q) = divmod(a, b); r }\ndef \
+         renamed(a : Integer, b : Integer) -> Integer { let (.r = rem, .q = quo) = divmod(a, b); \
+         quo }",
+        &mut arena,
+    );
+
+    let punned = body(&arena, &module, "punned");
+    assert!(
+        punned.iter().any(|token| token == "bindall2"),
+        "a labelled pattern binds every output of the call, {punned:?}"
+    );
+    assert_eq!(
+        punned.last().map(String::as_str),
+        Some("#0"),
+        "`.r` binds the last output, written first"
+    );
+    assert_eq!(
+        body(&arena, &module, "renamed").last().map(String::as_str),
+        Some("#1"),
+        "`.q = quo` binds the first output to `quo`, written last"
+    );
+    let divmod = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\n";
+    let stray =
+        format!("{divmod}def stray(a : Integer) -> Integer {{ let (.x, .q) = divmod(a, a); q }}");
+    assert!(
+        matches!(refused(stray.as_str()), LoweringRefusal::MalformedForm {
+            fault: FormFault::MisplacedTile,
+            ..
+        }),
+        "a label names an output of the call"
+    );
+    let mixed =
+        format!("{divmod}def mixed(a : Integer) -> Integer {{ let (.q, r) = divmod(a, a); r }}");
+    let mixed = refused(mixed.as_str());
+    assert!(
+        matches!(mixed, LoweringRefusal::OutOfFragment {
+            sort: FragmentSort::Pattern,
+            ..
+        }),
+        "a group is all positional or all labelled: a dotted entry among positional ones is no \
+         pattern, {mixed:?}"
+    );
+    let record = "def pair(a : Integer) -> Integer * Integer { (a, a) }\ndef split(a : Integer) -> \
+                  Integer { let (.x, .y) = pair(a); x }";
+    assert!(
+        matches!(refused(record), LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::WrongSort,
+            ..
+        }),
+        "labels name a call's outputs, never a product's components"
     );
 }
 

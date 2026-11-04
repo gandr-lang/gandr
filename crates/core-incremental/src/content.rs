@@ -824,6 +824,11 @@ pub enum ContentNode
     Return(NodeIndex),
     /// A bind of a computation into a continuation.
     Bind(NodeIndex, NodeIndex),
+    /// A return of several values, in order.
+    ReturnAll(Vec<NodeIndex>),
+    /// A bind of every value a computation returns into a continuation, one
+    /// binder per value, the first outermost.
+    BindAll(NodeIndex, gandr_core_term::ComponentCount, NodeIndex),
     /// A force of a value.
     Force(NodeIndex),
     /// A sum elimination.
@@ -962,6 +967,15 @@ pub enum ContentNode
         /// Interfaces whose type edges use this content table's indices.
         effects: gandr_core_term::effect::EffectRow<NodeIndex>,
     },
+    /// A returner of several results, each under the binders of the results
+    /// before it.
+    Returns
+    {
+        /// The result types, in order.
+        results: Vec<NodeIndex>,
+        /// Interfaces whose type edges use this content table's indices.
+        effects: gandr_core_term::effect::EffectRow<NodeIndex>,
+    },
     /// A non-dependent arrow.
     Arrow
     {
@@ -1030,6 +1044,10 @@ pub struct Children<'node>
     tail_sort: Sort,
     /// The binders every suffix child or field stands under.
     tail_crossing: Crossing,
+    /// Whether the suffix is a telescope: each suffix child stands under one
+    /// intuitionistic binder per suffix child before it, in place of the tail
+    /// crossing.
+    telescope: bool,
     /// Additional operation-type edges borrowed from a returner's row.
     effects: Option<&'node gandr_core_term::effect::EffectRow<NodeIndex>>,
     /// Inline operation types, after fixed children.
@@ -1121,8 +1139,9 @@ impl<'node> Children<'node>
     /// - requires: nothing.
     /// - ensures: the children of [`Children::iter`], in its order; a fixed
     ///   slot carries the crossing its former set, a suffix child or field the
-    ///   tail crossing, a clause body two intuitionistic binders, a bind
-    ///   frame's body one, every other child none.
+    ///   tail crossing, a telescope's suffix child one binder per child before
+    ///   it, a clause body two intuitionistic binders, a bind frame's body one,
+    ///   every other child none.
     /// - executable: none — anodized 0.7 emits an invalid closure return type
     ///   for this opaque iterator, including for preconditions alone.
     ///
@@ -1159,11 +1178,21 @@ impl<'node> Children<'node>
             || !self.frames.is_empty()
             || !self.moves.is_empty()
             || !self.turns.is_empty();
+        let telescope = self.telescope;
         let rest =
             variadic.then(move || {
                 self.suffix
                     .iter()
-                    .map(move |&child| (child, sort, tail))
+                    .enumerate()
+                    .map(move |(before, &child)| {
+                        let crossing = if telescope {
+                            Crossing::of(Zone::Intuitionistic, BinderDepth::from(before))
+                        }
+                        else {
+                            tail
+                        };
+                        (child, sort, crossing)
+                    })
                     .chain(
                         self.fields
                             .into_iter()
@@ -1366,6 +1395,8 @@ impl ContentNode
         | Self::Application(..)
         | Self::Return(_)
         | Self::Bind(..)
+        | Self::ReturnAll(_)
+        | Self::BindAll(..)
         | Self::Force(_)
         | Self::Decompose(_)
         | Self::ListFold { .. }
@@ -1407,6 +1438,7 @@ impl ContentNode
         | Self::RowTail(_) => matches!(ret, Sort::ValueType),
         | Self::WithType(..)
         | Self::Returner { .. }
+        | Self::Returns { .. }
         | Self::Arrow { .. }
         | Self::Pi { .. }
         | Self::ComputationElement { .. }
@@ -1491,6 +1523,8 @@ impl ContentNode
             | Self::Application(..)
             | Self::Return(_)
             | Self::Bind(..)
+            | Self::ReturnAll(_)
+            | Self::BindAll(..)
             | Self::Force(_)
             | Self::Decompose(_)
             | Self::ListFold { .. }
@@ -1532,6 +1566,7 @@ impl ContentNode
             | Self::RowTail(_) => Sort::ValueType,
             Self::WithType(..)
             | Self::Returner { .. }
+            | Self::Returns { .. }
             | Self::Arrow { .. }
             | Self::Pi { .. }
             | Self::ComputationElement { .. }
@@ -1561,7 +1596,7 @@ impl ContentNode
         use Sort::Value as V;
         use Sort::ValueType as A;
         let actual = ret.slots.get(.. ret.count);
-        (matches!(*self, Self::Returner { .. } | Self::Capability { .. } | Self::RowValue(_)) || ret.effects.is_none()) && match *self {
+        (matches!(*self, Self::Returner { .. } | Self::Returns { .. } | Self::Capability { .. } | Self::RowValue(_)) || ret.effects.is_none()) && match *self {
             Self::Data { ref arguments,.. } => ret.iter().eq(arguments.iter().map(|&argument| (argument,V))),
             Self::RecordType(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,A))),
             Self::Constructor { datatype,ref fields,.. } => ret.iter().eq(core::iter::once((datatype,A)).chain(fields.iter().map(|&field| (field,V)))),
@@ -1645,7 +1680,8 @@ impl ContentNode
                 actual == Some(&[(a, M)][..])
             },
             | Self::Application(a, b) => actual == Some(&[(a, M), (b, V)][..]),
-            | Self::Bind(a, b) => actual == Some(&[(a, M), (b, M)][..]),
+            | Self::Bind(a, b) | Self::BindAll(a, _, b) => actual == Some(&[(a, M), (b, M)][..]),
+            | Self::ReturnAll(ref values) => ret.iter().eq(values.iter().map(|&value| (value, V))),
             | Self::Case {
                 scrutinee: a,
                 ref branches,
@@ -1661,6 +1697,7 @@ impl ContentNode
             } => actual == Some(&[(a, A), (b, A)][..]),
             | Self::ThunkType(a) | Self::QuoteComputation(a) => actual == Some(&[(a, C)][..]),
             | Self::Returner { result, ref effects } => ret.iter().eq(core::iter::once((result, A)).chain(effects.types().map(|ty| (ty, A)))),
+            | Self::Returns { ref results, ref effects } => ret.iter().eq(results.iter().map(|&result| (result, A)).chain(effects.types().map(|ty| (ty, A)))),
             | Self::RowValue(ref row) => ret.iter().eq(row.types().map(|ty| (ty, A))),
             | Self::List(a)
             | Self::KeptType { value: a, .. }
@@ -1962,6 +1999,10 @@ impl ContentNode
             Self::Bind(bound, rest) => {
                 Children::of(&[(bound, M), (rest, M)]).binding(ChildSlot(1), one)
             },
+            Self::BindAll(bound, arity, rest) => {
+                Children::of(&[(bound, M), (rest, M)]).binding(ChildSlot(1), split(arity))
+            },
+            Self::ReturnAll(ref values) => Children::default().followed_by(values, V),
             Self::ListFold {
                 element,
                 result,
@@ -2009,6 +2050,14 @@ impl ContentNode
                 children.effects = Some(effects);
                 children
             },
+            Self::Returns {
+                ref results,
+                ref effects,
+            } => Children {
+                telescope: true,
+                effects: Some(effects),
+                ..Children::default().followed_by(results, A)
+            },
             Self::TypeLift { inner, .. } => Children::of(&[(inner, A)]),
             Self::Element { code, .. }
             | Self::ComputationElement { code, .. }
@@ -2043,6 +2092,7 @@ impl ContentNode
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
         Self::Compose { .. } | Self::Fill { .. } | Self::Univalence(..) | Self::Abandon(_) | Self::RecordUpdate(..) | Self::RowValue(_) | Self::RowKind | Self::RowTail(_) | Self::BridgeType { .. } |
+        Self::ReturnAll(_) | Self::BindAll(..) | Self::Returns { .. } |
         Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::ValueAscribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Decompose(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::PrefixType(_) | Self::DialogueType(_) | Self::WebType | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
@@ -2133,6 +2183,9 @@ impl ContentNode
             | Self::Application(..)
             | Self::Return(_)
             | Self::Bind(..)
+            | Self::ReturnAll(_)
+            | Self::BindAll(..)
+            | Self::Returns { .. }
             | Self::Force(_)
             | Self::Case { .. }
             | Self::Base(_)
@@ -4973,6 +5026,12 @@ fn computation_content(
             over: found.value()?,
             value: found.value()?,
         },
+        Computation::ReturnAll(ref values) => {
+            ContentNode::ReturnAll(found.take(Sort::Value, values)?)
+        },
+        Computation::BindAll { arity, .. } => {
+            ContentNode::BindAll(found.computation()?, arity, found.computation()?)
+        },
         Computation::Lambda(_) => ContentNode::Lambda(found.computation()?),
         Computation::Application(..) => {
             ContentNode::Application(found.computation()?, found.value()?)
@@ -5153,6 +5212,13 @@ fn comp_type_content(
         },
         CompType::Returner { ref effects, .. } => ContentNode::Returner {
             result: found.value_type()?,
+            effects: effects.try_relocate(|_| found.value_type())?,
+        },
+        CompType::Returns {
+            ref results,
+            ref effects,
+        } => ContentNode::Returns {
+            results: found.take(Sort::ValueType, results)?,
             effects: effects.try_relocate(|_| found.value_type())?,
         },
         CompType::Arrow { .. } => ContentNode::Arrow {
@@ -5684,6 +5750,13 @@ where
             let bound = image(bound);
             ContentNode::Bind(bound, image(rest))
         },
+        ContentNode::BindAll(bound, arity, rest) => {
+            let bound = image(bound);
+            ContentNode::BindAll(bound, arity, image(rest))
+        },
+        ContentNode::ReturnAll(ref values) => {
+            ContentNode::ReturnAll(values.iter().map(|&value| image(value)).collect())
+        },
         ContentNode::Force(value) => ContentNode::Force(image(value)),
         ContentNode::Case {
             scrutinee,
@@ -5734,6 +5807,18 @@ where
                 })
                 .unwrap_or_else(|never| match never {});
             ContentNode::Returner { result, effects }
+        },
+        ContentNode::Returns {
+            ref results,
+            ref effects,
+        } => {
+            let results = results.iter().map(|&result| image(result)).collect();
+            let effects = effects
+                .try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                    Ok::<_, core::convert::Infallible>(image(ty))
+                })
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Returns { results, effects }
         },
         ContentNode::Capability {
             ref authority,
@@ -6222,6 +6307,29 @@ fn mint_node(
                 Err(reason) => Maybe::Absent(reason),
             }
         },
+        ContentNode::Returns {
+            ref results,
+            ref effects,
+        } => {
+            let mut minted = Vec::with_capacity(results.len());
+            for &result in results {
+                let Maybe::Present(result) = minted_value_type(states, result)
+                else {
+                    return ill_sorted;
+                };
+                minted.push(result);
+            }
+            let effects = effects.try_relocate(|ty| match minted_value_type(states, ty) {
+                Maybe::Present(ty) => Ok(ty),
+                Maybe::Absent(reason) => Err(reason),
+            });
+            match effects {
+                Ok(effects) => Maybe::Present(Minted::CompType(
+                    arena.comp_type_returns_with_effects(&minted, effects),
+                )),
+                Err(reason) => Maybe::Absent(reason),
+            }
+        },
         ContentNode::SessionType(ref session) => {
             match session.try_relocate(|ty| match minted_value_type(states, ty) {
                 Maybe::Present(ty) => Ok(ty),
@@ -6359,6 +6467,8 @@ fn mint_node(
         | ContentNode::Application(..)
         | ContentNode::Return(_)
         | ContentNode::Bind(..)
+        | ContentNode::ReturnAll(_)
+        | ContentNode::BindAll(..)
         | ContentNode::Force(_)
         | ContentNode::Case { .. }
         | ContentNode::Hole(_)

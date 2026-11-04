@@ -479,6 +479,7 @@ impl Ownership
                 ConsumerNode::ListFold { .. } => mark(1, 2, Share::Kept),
                 ConsumerNode::Covariable(_)
                 | ConsumerNode::MuTilde { .. }
+                | ConsumerNode::MuTildeAll { .. }
                 | ConsumerNode::Destructor { .. }
                 | ConsumerNode::Select { .. }
                 | ConsumerNode::Top => {},
@@ -501,6 +502,7 @@ impl Ownership
                 | CommandNode::Reset { .. }
                 | CommandNode::Shift { .. }
                 | CommandNode::Cut { .. }
+                | CommandNode::Deliver { .. }
                 | CommandNode::Memory { .. }
                 | CommandNode::World { .. }
                 | CommandNode::Session { .. } => {},
@@ -757,6 +759,7 @@ impl Ownership
             },
             ConsumerNode::Covariable(_)
             | ConsumerNode::MuTilde { .. }
+            | ConsumerNode::MuTildeAll { .. }
             | ConsumerNode::Destructor { .. }
             | ConsumerNode::Select { .. }
             | ConsumerNode::ListFold { .. }
@@ -985,6 +988,7 @@ fn once(
                 } if producer == child => Runs::Once,
                 ConsumerNode::Covariable(_)
                 | ConsumerNode::MuTilde { .. }
+                | ConsumerNode::MuTildeAll { .. }
                 | ConsumerNode::Destructor { .. }
                 | ConsumerNode::Case { .. }
                 | ConsumerNode::DataCase { .. }
@@ -1134,6 +1138,7 @@ fn extent(
         Some(
             &(ConsumerNode::Covariable(_)
             | ConsumerNode::MuTilde { .. }
+            | ConsumerNode::MuTildeAll { .. }
             | ConsumerNode::Case { .. }
             | ConsumerNode::Top),
         ) => Extent::Window,

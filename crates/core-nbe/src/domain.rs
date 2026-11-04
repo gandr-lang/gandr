@@ -391,6 +391,9 @@ pub enum Elimination
     Force,
     /// `x ← M; N`: sequenced into a body that could not run.
     Bind(CompClosureId),
+    /// `(x₁ … xₙ) ← M; N`: sequenced into a body binding this many values
+    /// that could not run.
+    BindAll(CompClosureId, gandr_core_term::ComponentCount),
     /// A sum elimination whose scrutinee was stuck, its branches closed over
     /// their environment in summand order.
     Case(crate::arena::BranchSpan),
@@ -979,6 +982,14 @@ pub enum DomainComp
         /// The term face.
         face: CompTermFace,
     },
+    /// A returner of several values, carrying them first to last.
+    ReturnAll
+    {
+        /// The produced values.
+        values: crate::arena::FieldSpan,
+        /// The term face.
+        face: CompTermFace,
+    },
     /// A stuck computation: a neutral head with the eliminations that could not
     /// fire stacked on it.
     Neutral
@@ -1029,6 +1040,7 @@ impl DomainComp
     #[spec(ensures: |ret| match *self {
         | Self::Lambda { face, .. }
         | Self::Return { face, .. }
+        | Self::ReturnAll { face, .. }
         | Self::Neutral { face, .. }
         | Self::Fixpoint { face, .. } => ret == face,
     })]
@@ -1037,6 +1049,7 @@ impl DomainComp
         match *self {
             Self::Lambda { face, .. }
             | Self::Return { face, .. }
+            | Self::ReturnAll { face, .. }
             | Self::Neutral { face, .. }
             | Self::Fixpoint { face, .. } => face,
         }

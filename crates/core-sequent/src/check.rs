@@ -141,6 +141,10 @@ pub enum CheckRefusal
     /// A closure whose code is no closure former: neither a thunk, a
     /// recursive thunk nor a copattern object.
     ClosureCode(ProducerId),
+    /// A delivery whose consumer is a binder of another number of values or
+    /// no binder of several, or a cut sending one value to a binder of
+    /// several.
+    Delivery(CommandId),
 }
 
 impl fmt::Display for CheckRefusal
@@ -199,6 +203,12 @@ impl fmt::Display for CheckRefusal
                 write!(
                     f,
                     "producer {id} is a closure whose code is no closure former"
+                )
+            },
+            Self::Delivery(id) => {
+                write!(
+                    f,
+                    "command {id} sends a number of values its consumer does not bind"
                 )
             },
         }
@@ -366,11 +376,14 @@ impl Walk<'_>
     /// - requires: nothing.
     /// - ensures: on success the command's children are scheduled in edge
     ///   order, the first on top.
-    /// - provides: the polarity rule, and the second-class rule for a capture a
-    ///   negative cut hands its binder by name.
+    /// - provides: the polarity rule, the delivery rule, and the second-class
+    ///   rule for a capture a negative cut hands its binder by name.
     /// - fails: a dangling command, side or child; a cut side observing the
-    ///   other polarity; a capture handed by name that names a covariable
-    ///   outside its own binder; an annotation the arena does not hold.
+    ///   other polarity; a cut to a binder of several values; a delivery of a
+    ///   capture, or to a consumer that is neither a covariable, `★` nor a
+    ///   binder of as many values; a capture handed by name that names a
+    ///   covariable outside its own binder; an annotation the arena does not
+    ///   hold.
     /// - panics: none.
     ///
     /// # Errors
@@ -447,6 +460,38 @@ impl Walk<'_>
             {
                 let closure = NodeAddress::Producer(producer);
                 self.second_class(closure, closure, ConsumerArity::ZERO)?;
+            }
+            if let ConsumerNode::MuTildeAll { .. } = *received {
+                return Err(CheckRefusal::Delivery(id));
+            }
+        }
+        if let CommandNode::Deliver {
+            ref producers,
+            consumer,
+        } = *node
+        {
+            for &producer in producers {
+                let sent = arena
+                    .producer(producer)
+                    .ok_or_else(|| dangling(NodeAddress::Producer(producer)))?;
+                if let ProducerNode::Mu { .. } = *sent {
+                    return Err(CheckRefusal::NonValueArgument(producer));
+                }
+            }
+            match *arena
+                .consumer(consumer)
+                .ok_or_else(|| dangling(NodeAddress::Consumer(consumer)))?
+            {
+                ConsumerNode::MuTildeAll { arity, .. } if usize::from(arity) == producers.len() => {
+                },
+                ConsumerNode::Covariable(_) | ConsumerNode::Top => {},
+                ConsumerNode::MuTildeAll { .. }
+                | ConsumerNode::MuTilde { .. }
+                | ConsumerNode::Destructor { .. }
+                | ConsumerNode::Case { .. }
+                | ConsumerNode::DataCase { .. }
+                | ConsumerNode::Select { .. }
+                | ConsumerNode::ListFold { .. } => return Err(CheckRefusal::Delivery(id)),
             }
         }
         self.annotated(NodeAddress::Command(id), command_annotations(node))?;
@@ -683,6 +728,7 @@ impl Walk<'_>
             ConsumerNode::Covariable(_)
             | ConsumerNode::Top
             | ConsumerNode::MuTilde { .. }
+            | ConsumerNode::MuTildeAll { .. }
             | ConsumerNode::Select { .. } => {},
         }
         self.annotated(NodeAddress::Consumer(id), consumer_annotations(node))?;
@@ -952,7 +998,7 @@ pub fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
 #[spec(ensures: |ret| ret == match *node {
     | ConsumerNode::ListFold { .. } | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } | ConsumerNode::Select { .. } | ConsumerNode::Destructor { tag: DestructorTag::Force, .. } => Some(Polarity::Positive),
     | ConsumerNode::Destructor { tag: DestructorTag::Apply | DestructorTag::Project(_), .. } => Some(Polarity::Negative),
-    | ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::Top => None,
+    | ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::MuTildeAll { .. } | ConsumerNode::Top => None,
 })]
 pub fn consumer_polarity(node: &ConsumerNode) -> Option<Polarity>
 {
@@ -962,7 +1008,10 @@ pub fn consumer_polarity(node: &ConsumerNode) -> Option<Polarity>
         | ConsumerNode::DataCase { .. }
         | ConsumerNode::Select { .. } => Some(Polarity::Positive),
         ConsumerNode::Destructor { tag, .. } => Some(tag.polarity()),
-        ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::Top => None,
+        ConsumerNode::Covariable(_)
+        | ConsumerNode::MuTilde { .. }
+        | ConsumerNode::MuTildeAll { .. }
+        | ConsumerNode::Top => None,
     }
 }
 

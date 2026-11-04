@@ -1337,6 +1337,23 @@ fn covers_preserve_every_binding_former()
             both,
         ),
         (
+            "bind of several values",
+            ContentNode::BindAll(
+                index(1_usize),
+                ComponentCount::from(3_usize),
+                index(2_usize),
+            ),
+            both,
+        ),
+        (
+            "returner of several results",
+            ContentNode::Returns {
+                results: vec![index(1_usize), index(2_usize), index(3_usize)],
+                effects: gandr_core_term::effect::EffectRow::EMPTY,
+            },
+            both,
+        ),
+        (
             "dependent split",
             ContentNode::DependentSplit {
                 scrutinee: index(1_usize),

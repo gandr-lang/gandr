@@ -788,6 +788,7 @@ INSERT INTO purpose VALUES('core-term','hole::matched_function','function','Matc
 INSERT INTO purpose VALUES('core-term','hole::matched_list','function','Matches a list type against its former, minting the unknown where the type is unknown and a named absence where it is another former.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::matched_product','function','Matches a product type against its former, minting the unknown where the type is unknown and a named absence where it is another former.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::matched_returner','function','Matches a returner type against its former, minting the unknown where the type is unknown and a named absence where it is another former.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','hole::matched_returns','function','Matches a returner of several values against its former at one arity, minting unknown results where the type is unknown and a named absence where it is another former or arity.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::matched_stack','function','Matches a stack type against its former, minting the unknown where the type is unknown and a named absence where it is another former.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::matched_static_pi','function','Matches a static Pi type against its former, minting the unknown where the type is unknown and a named absence where it is another former.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::matched_sum','function','Matches a sum type against its former, minting the unknown where the type is unknown and a named absence where it is another former.',NULL,'fits','sound',NULL);
@@ -1459,9 +1460,11 @@ INSERT INTO purpose VALUES('kernel-term','tags::NODE_CT_CODATA','constant','Node
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_CT_ELEMENT','constant','Node tag: the computation-decoding former, with an inline level and one value child: the code the computation type is read off.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_CT_PI','constant','Node tag: the dependent arrow, over a value-type domain and a computation-type codomain scoped under one value binder.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_CT_RETURNER','constant','Node tag: the returner former, over one value type.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::NODE_CT_RETURNS','constant','Node tag: the returner of several values, with an inline result count, over its value types in order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_CT_WITH','constant','Node tag: the lazy product `C₀ & … & Cₙ₋₁`, with an inline component count, over its component computation types; the terminal computation type is the lazy product of none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_APPLICATION','constant','Node tag: an application, over a computation head and a value argument.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_BIND','constant','Node tag: a bind computation, over two computations.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_BIND_ALL','constant','Node tag: a bind of several values, with an inline arity, over the bound computation and its body.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_CASE','constant','Node tag: a case computation, with an inline branch count, over a value scrutinee and its computation branches in summand order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_DATA_CASE','constant','Node tag: motive-bearing nominal elimination with counted branches.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_FIXPOINT','constant','Node tag: a guarded fixpoint, over one computation under its self binder.',NULL,'fits','sound',NULL);
@@ -1475,6 +1478,7 @@ INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_PROJECT','constant','Node
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_RECORD_PROJECTION','constant','Node tag: named record projection.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_RELATED_APPLICATION','constant','Node tag: application at related inputs, the related-inputs product''s elimination, over the function path, both arguments, their evidence and a body under three binders.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_RETURN','constant','Node tag: a returner computation, over one value.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_RETURN_ALL','constant','Node tag: a return of several values, with an inline count, over its values in order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_RIDE','constant','Node tag: directed transport `ride`, over a motive under one value binder, a flow and the input value.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_SIGMA_SPLIT','constant','Node tag: the dependent pair''s eliminator, over its scrutinee, its motive under the scrutinee binder and its body under the two components.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_C_TELESCOPE_RIDE','constant','Node tag: directed transport over a two-entry telescope, over its motive, flow, start point, flow over it and input value.',NULL,'fits','sound',NULL);
@@ -1562,6 +1566,7 @@ INSERT INTO purpose VALUES('kernel-term','term::FixpointEvidence','enum','What a
 INSERT INTO purpose VALUES('kernel-term','term::OccurrenceSite','enum','Where a data declaration''s occurrence walk found a refused self occurrence or a reference outside its block.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::ParameterPosition','struct','Position of a classifier within one declaration''s parameter telescope.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::PathEvidence','struct','Portable round-trip dialogues for closed universe-path translators.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','term::ResultCount','struct','How many values a returner of several values returns, and how many binders its bind opens.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::Seam','enum','The wiring a composition requests between its two flows.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::Side','enum','One side of a binary former: a summand of `A + B`, such as a boolean''s, or an endpoint of a path.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::Stage','enum','The stage a value type is refined at: a stage of a structural fixpoint''s typing, unrelated to the meta and object levels of stage::Stage(crate::stage::Stage).',NULL,'fits','sound',NULL);
@@ -3143,6 +3148,7 @@ INSERT INTO purpose VALUES('surface-pretty','former::Notation','enum','Names a f
 INSERT INTO purpose VALUES('surface-pretty','former::Placement','enum','Names a former''s placement, so the placement''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Recursion','enum','Names a former''s recursion, so the recursion''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Recursive','struct','Holds a recursive former, so the former''s recursion is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-pretty','former::Returned','enum','Names what an effectful returner returns, one value or a group of outputs, so its spelling after the row is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Source','trait','Names the source the printer asks its input, so the former at a node is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Unreadable','enum','Names a former''s unreadability, so the unreadability''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Unspelled','enum','Names a former''s unspelling, so the unspelling''s kind is read.',NULL,'fits','sound',NULL);

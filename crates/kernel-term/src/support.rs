@@ -667,6 +667,15 @@ impl TermArena
                 .computation_support(bound)
                 .clone()
                 .join(&body(continued, Binders::ONE)),
+            Computation::ReturnAll(ref returned) => values(returned),
+            Computation::BindAll {
+                bound,
+                arity,
+                body: continued,
+            } => self.computation_support(bound).clone().join(&body(
+                continued,
+                Binders::from(u32::try_from(usize::from(arity)).unwrap_or(u32::MAX)),
+            )),
             Computation::With(ref components) => joined(
                 Reads::closed(),
                 components.iter().map(|&id| self.computation_support(id)),
@@ -809,6 +818,19 @@ impl TermArena
     {
         match *comp_type {
             CompType::Returner(result) => self.value_type_support(result).clone(),
+            // Each result stands under the binders of the results before it.
+            CompType::Returns(ref results) => {
+                results
+                    .iter()
+                    .enumerate()
+                    .fold(Reads::closed(), |reads, (before, &result)| {
+                        reads.join(
+                            &self
+                                .value_type_support(result)
+                                .under(Binders::from(u32::try_from(before).unwrap_or(u32::MAX))),
+                        )
+                    })
+            },
             CompType::Arrow { domain, codomain } => self
                 .value_type_support(domain)
                 .clone()

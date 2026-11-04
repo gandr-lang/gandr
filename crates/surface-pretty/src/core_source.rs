@@ -42,6 +42,7 @@ use crate::former::ModelSlot;
 use crate::former::Name;
 use crate::former::Recursion;
 use crate::former::Recursive;
+use crate::former::Returned;
 use crate::former::Source;
 use crate::former::Unreadable;
 
@@ -1929,11 +1930,17 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     #[spec(ensures: |ret| match (self.arena.comp_type(id), ret) {
         | (Some(&CompType::With(ref components)), Former::With(arity)) => usize::from(arity) == components.len(),
+        | (Some(&CompType::Returns { ref results, ref effects }), Former::Returns(arity)) => usize::from(arity) == results.len()
+            && effects.purity() == gandr_core_term::effect::Purity::Pure,
+        | (Some(&CompType::Returns { ref results, ref effects }), Former::EffectfulReturner { result: Returned::Group(arity), tail, .. }) => usize::from(arity) == results.len()
+            && effects.purity() == gandr_core_term::effect::Purity::Effectful
+            && tail == effects.tail().map(CoreNode::ValueType),
+        | (Some(&CompType::Returns { .. }), Former::Unreadable(Unreadable::SeveralResults))
         | (Some(&CompType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (None, Former::Unreadable(Unreadable::Dangling)) => true,
         | (Some(&CompType::Codata { declaration, ref arguments }), Former::Codata { name, arity }) =>
             usize::from(arity) == arguments.len() && self.name(declaration) == name,
         | (Some(&CompType::Returner { result, ref effects }), Former::Returner(actual)) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Pure,
-        | (Some(&CompType::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, tail, .. }) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Effectful && tail == effects.tail().map(CoreNode::ValueType),
+        | (Some(&CompType::Returner { result, ref effects }), Former::EffectfulReturner { result: Returned::One(actual), tail, .. }) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Effectful && tail == effects.tail().map(CoreNode::ValueType),
         | (Some(&CompType::Arrow { domain, codomain }), Former::Arrow { domain: actual_domain, codomain: actual_codomain })
         | (Some(&CompType::Pi { domain, codomain }), Former::Pi { domain: actual_domain, codomain: actual_codomain }) =>
             actual_domain == CoreNode::ValueType(domain) && actual_codomain == CoreNode::CompType(codomain),
@@ -1957,6 +1964,14 @@ impl<'arena> CoreSource<'arena>
             )]
             return Former::Unreadable(Unreadable::Dangling);
         };
+        // Each entry over a theory as the row writes it, where one is kept.
+        let manifests = || {
+            self.rows
+                .binary_search_by_key(&id, |&(held, _)| held)
+                .ok()
+                .and_then(|at| self.rows.get(at))
+                .map_or(&[][..], |&(_, ref manifests)| manifests.as_slice())
+        };
         match *comp_type {
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
@@ -1968,6 +1983,34 @@ impl<'arena> CoreSource<'arena>
             )]
             CompType::Unknown => Former::Unreadable(Unreadable::UnknownType),
             CompType::With(ref components) => Former::With(Arity::from(components.len())),
+            CompType::Returns {
+                ref results,
+                ref effects,
+            } if effects.purity() == gandr_core_term::effect::Purity::Pure
+                && !crate::walk::reads_earlier(self, results, CoreNode::ValueType).0 =>
+            {
+                Former::Returns(Arity::from(results.len()))
+            },
+            CompType::Returns {
+                ref results,
+                ref effects,
+            } if !crate::walk::reads_earlier(self, results, CoreNode::ValueType).0 => {
+                Former::EffectfulReturner {
+                    result: Returned::Group(Arity::from(results.len())),
+                    effects,
+                    tail: effects.tail().map(CoreNode::ValueType),
+                    manifests: manifests(),
+                }
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a returner of several results one of which reads another, which the \
+                              surface grammar does not yet write"
+                )
+            )]
+            CompType::Returns { .. } => Former::Unreadable(Unreadable::SeveralResults),
             CompType::Returner {
                 result,
                 ref effects,
@@ -1977,15 +2020,10 @@ impl<'arena> CoreSource<'arena>
                 }
                 else {
                     Former::EffectfulReturner {
-                        result: CoreNode::ValueType(result),
+                        result: Returned::One(CoreNode::ValueType(result)),
                         effects,
                         tail: effects.tail().map(CoreNode::ValueType),
-                        manifests: self
-                            .rows
-                            .binary_search_by_key(&id, |&(held, _)| held)
-                            .ok()
-                            .and_then(|at| self.rows.get(at))
-                            .map_or(&[], |&(_, ref manifests)| manifests.as_slice()),
+                        manifests: manifests(),
                     }
                 }
             },
@@ -2124,6 +2162,17 @@ impl<'arena> CoreSource<'arena>
             Computation::Return(returned) => Former::Return(value(returned)),
             Computation::Abandon(stack) => Former::Abandon(value(stack)),
             Computation::Bind(bound, rest) => Former::Bind(computation(bound), computation(rest)),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a return or a bind of several values, which the surface grammar has \
+                              no syntax for"
+                )
+            )]
+            Computation::ReturnAll(_) | Computation::BindAll { .. } => {
+                Former::Unreadable(Unreadable::SeveralResults)
+            },
             Computation::Ascribe { body, ty } => Former::Ascription {
                 body: computation(body),
                 ty: CoreNode::CompType(ty),
@@ -2510,16 +2559,16 @@ impl Source for CoreSource<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: of the node `node` restores to, the value type at `index`
-    ///   among a held product's, sum's or record type's components and a
-    ///   session type's payloads; the value at `index` among a held tuple's,
-    ///   record's or constructor's fields, the fields a record update writes
-    ///   and a family's arguments, a codata family's included; a fill's
-    ///   generator at 0 and its cells after it; the value at `index` among a
-    ///   primitive's arguments and the computation among a case's or a data
-    ///   case's branches, a handler's operation clauses and an offer's arms; a
-    ///   record's fields, an update's and an offer's arms in label order; none
-    ///   for an index past them, another former, another family or a missing
-    ///   handle.
+    ///   among a held product's, sum's or record type's components, a session
+    ///   type's payloads and a group of outputs' results; the value at `index`
+    ///   among a held tuple's, record's or constructor's fields, the fields a
+    ///   record update writes and a family's arguments, a codata family's
+    ///   included; a fill's generator at 0 and its cells after it; the value at
+    ///   `index` among a primitive's arguments and the computation among a
+    ///   case's or a data case's branches, a handler's operation clauses and an
+    ///   offer's arms; a record's fields, an update's and an offer's arms in
+    ///   label order; none for an index past them, another former, another
+    ///   family or a missing handle.
     /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
@@ -2567,6 +2616,7 @@ impl Source for CoreSource<'_>
         | CoreNode::CompType(id) => ret == match self.arena.comp_type(id) {
             | Some(&CompType::Codata { ref arguments, .. }) => arguments.get(usize::from(index)).map(|&argument| CoreNode::Value(argument)),
             | Some(&CompType::With(ref components)) => components.get(usize::from(index)).map(|&component| CoreNode::CompType(component)),
+            | Some(&CompType::Returns { ref results, .. }) => results.get(usize::from(index)).map(|&result| CoreNode::ValueType(result)),
             | Some(_) | None => None,
         },
     })]
@@ -2758,7 +2808,9 @@ impl Source for CoreSource<'_>
                 | Computation::Abandon(_)
                 | Computation::Reset(_)
                 | Computation::Shift(_)
-                | Computation::Project(..) => None,
+                | Computation::Project(..)
+                | Computation::ReturnAll(_)
+                | Computation::BindAll { .. } => None,
             },
             CoreNode::CompType(id) => match *self.arena.comp_type(id)? {
                 CompType::Codata { ref arguments, .. } => {
@@ -2767,6 +2819,9 @@ impl Source for CoreSource<'_>
                 CompType::With(ref components) => components
                     .get(at)
                     .map(|&component| CoreNode::CompType(component)),
+                CompType::Returns { ref results, .. } => {
+                    results.get(at).map(|&result| CoreNode::ValueType(result))
+                },
                 CompType::Unknown
                 | CompType::Returner { .. }
                 | CompType::Arrow { .. }
@@ -2952,6 +3007,8 @@ impl Source for CoreSource<'_>
                 | Computation::Application(..)
                 | Computation::Return(_)
                 | Computation::Bind(..)
+                | Computation::ReturnAll(_)
+                | Computation::BindAll { .. }
                 | Computation::Force(_)
                 | Computation::Decompose(_)
                 | Computation::Case { .. }
@@ -2981,6 +3038,7 @@ impl Source for CoreSource<'_>
                 CompType::Unknown
                 | CompType::Codata { .. }
                 | CompType::Returner { .. }
+                | CompType::Returns { .. }
                 | CompType::Arrow { .. }
                 | CompType::Pi { .. }
                 | CompType::Element { .. } => None,
@@ -3695,6 +3753,49 @@ mod tests
             source.read(CoreNode::Computation(returned)),
             Former::Return(value) if value == CoreNode::Value(unit)
         ));
+    }
+
+    /// A group of outputs whose results read no result before them reads as
+    /// its returner, each result a component; one whose second result reads
+    /// the first is a many-value former the surface does not yet write.
+    #[test]
+    fn a_group_of_outputs_reads_as_its_returner_unless_one_reads_another()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let closed = arena.comp_type_returns_with_effects(
+            &[integer, string],
+            gandr_core_term::effect::EffectRow::EMPTY,
+        );
+        let first = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let reading = arena.value_type_path(integer, first, first);
+        let dependent = arena.comp_type_returns_with_effects(
+            &[integer, reading],
+            gandr_core_term::effect::EffectRow::EMPTY,
+        );
+        let source = CoreSource::new(&arena, &[]);
+        assert!(
+            matches!(source.read(CoreNode::CompType(closed)), Former::Returns(arity) if usize::from(arity) == 2),
+            "two closed results read as their returner"
+        );
+        assert_eq!(
+            [0_usize, 1, 2]
+                .map(|index| source.component(CoreNode::CompType(closed), Component::from(index))),
+            [
+                Some(CoreNode::ValueType(integer)),
+                Some(CoreNode::ValueType(string)),
+                None
+            ],
+            "each result is a component, in order"
+        );
+        assert!(
+            matches!(
+                source.read(CoreNode::CompType(dependent)),
+                Former::Unreadable(Unreadable::SeveralResults)
+            ),
+            "a result reading the one before it names a binder no group writes"
+        );
     }
 
     /// A flow whose carrier decodes a nominated hole reads with no carrier,

@@ -132,7 +132,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 113 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=12 => Sort::Item, 13..=19 => Sort::ModuleMember, 20..=31 | 102..=103 => Sort::Pattern, 32..=36 => Sort::Instantiation, 112 => Sort::Block, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "statement_block")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.pipe", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 114 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=12 => Sort::Item, 13..=19 => Sort::ModuleMember, 20..=31 | 103..=104 => Sort::Pattern, 32..=36 => Sort::Instantiation, 113 => Sort::Block, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "statement_block")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -141,6 +141,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
     let pat_cons = precs.prec(PrecName("pattern.cons"))?;
     let pat_atom = precs.prec(PrecName("pattern.atom"))?;
     let pure = precs.prec(PrecName("expression.pure"))?;
+    let pipe = precs.prec(PrecName("expression.pipe"))?;
     let or = precs.prec(PrecName("expression.or"))?;
     let and = precs.prec(PrecName("expression.and"))?;
     let cmp = precs.prec(PrecName("expression.cmp"))?;
@@ -165,6 +166,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
     instantiations(&mut out, atom, pure);
     expressions(&mut out, ExprPrecs {
         pure,
+        pipe,
         or,
         and,
         cmp,
@@ -1687,17 +1689,28 @@ fn patterns(
             opt(seq([t(TileLabel("(")), comma1(h(s)), t(TileLabel(")"))])),
         ]),
     ));
+    // A group of patterns receiving a call's outputs, positional `(q, r)` or
+    // labelled `(.q, .r)`, `(.r = rem, .q = quo)`. The labelled group takes a
+    // `(` of its own, decided by the very next tile, as the labelled telescope
+    // does, so a dot after an operand is never a label's.
     out.push(r(
         RuleName("tuple_pattern"),
         Provenance("tuple_pattern"),
         s,
         atom,
-        seq([
-            t(TileLabel("(")),
-            h(s),
-            repeat1(seq([t(TileLabel(",")), h(s)])),
-            opt(t(TileLabel(","))),
-            t(TileLabel(")")),
+        alt([
+            seq([
+                t(TileLabel("(")),
+                comma1(seq([dotted_label(), opt(seq([t(TileLabel("=")), h(s)]))])),
+                t(TileLabel(")")),
+            ]),
+            seq([
+                t(TileLabel("(")),
+                h(s),
+                repeat1(seq([t(TileLabel(",")), h(s)])),
+                opt(t(TileLabel(","))),
+                t(TileLabel(")")),
+            ]),
         ]),
     ));
     // The telescope pattern `#{ x, y }`, `#{ .n, .v }` punning its labels and
@@ -1940,7 +1953,7 @@ fn instantiations(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 65 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "bind_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.cons", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "run_expression", "hold_expression", "splice_expression", "pack_model_expression", "call_expression", "instantiation_expression", "projection_expression", "record_selection_expression", "view_expression", "index_expression", "hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "recv_expression", "acquire_expression", "release_expression", "fork_expression", "access_expression", "resume_expression", "abort_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "bind_expression" | "pack_model_expression" => p.pure, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.cons" => p.cons, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" | "splice_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" | "record_selection_expression" | "view_expression" | "index_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 66 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "bind_expression", "binary_expression.pipe", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.cons", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "run_expression", "hold_expression", "splice_expression", "pack_model_expression", "call_expression", "instantiation_expression", "projection_expression", "record_selection_expression", "view_expression", "index_expression", "hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "recv_expression", "acquire_expression", "release_expression", "fork_expression", "access_expression", "resume_expression", "abort_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "bind_expression" | "pack_model_expression" => p.pure, "binary_expression.pipe" => p.pipe, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.cons" => p.cons, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" | "splice_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" | "record_selection_expression" | "view_expression" | "index_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
 fn expressions(
     out: &mut Vec<Rule>,
     p: ExprPrecs,
@@ -1987,6 +2000,16 @@ fn expressions(
             h(s),
         ]),
     ));
+    // `left |> right` plugs every output of `left` into the inputs of
+    // `right`, in order: looser than every operator but the exits, so each
+    // side is a whole expression.
+    binary(
+        out,
+        RuleName("binary_expression.pipe"),
+        TileLabel("|>"),
+        s,
+        p.pipe,
+    );
     binary(
         out,
         RuleName("binary_expression.or"),
@@ -2366,6 +2389,8 @@ struct ExprPrecs
 {
     /// The precedence of `pure` and of the exits `return` and `become`.
     pure: Prec,
+    /// The plugging `left |> right`, between the exits and logical or.
+    pipe: Prec,
     /// Logical-or precedence.
     or: Prec,
     /// Logical-and precedence.
@@ -4265,35 +4290,49 @@ fn primary_expressions(
     // the choice is locally decidable — the discriminator `≐`-continues exactly
     // one tail. The concrete language is unchanged; the folded kinds are
     // recorded as adaptations for the parity inventory.
+    //
+    // A labelled group of outputs, `( .l = E, … )`, has its own `(`. The next
+    // tile selects it, as the next tile selects the labelled telescope
+    // `#{ .l = E }`. A `(` that takes a hole and a `.` after it reads the
+    // projection dot in `(p.x, p.y)` as a label. This alternative is last.
+    // Thus a `(` with no next tile closes as the unit `( )`.
     let mut paren = r(
         RuleName("parenthesized_expression"),
         Provenance("parenthesized_expression"),
         s,
         p,
-        seq([
-            t(TileLabel("(")),
-            alt([
-                // unit: `( )`
-                t(TileLabel(")")),
-                seq([
-                    h(s),
-                    alt([
-                        // parenthesized: `( E )`
-                        t(TileLabel(")")),
-                        // tuple: `( E , )` or `( E , E (, E)* ,? )`
-                        seq([
-                            t(TileLabel(",")),
-                            opt(seq([
-                                h(s),
-                                opt(repeat1(seq([t(TileLabel(",")), h(s)]))),
-                                opt(t(TileLabel(","))),
-                            ])),
+        alt([
+            seq([
+                t(TileLabel("(")),
+                alt([
+                    // unit: `( )`
+                    t(TileLabel(")")),
+                    seq([
+                        h(s),
+                        alt([
+                            // parenthesized: `( E )`
                             t(TileLabel(")")),
+                            // tuple: `( E , )` or `( E , E (, E)* ,? )`
+                            seq([
+                                t(TileLabel(",")),
+                                opt(seq([
+                                    h(s),
+                                    opt(repeat1(seq([t(TileLabel(",")), h(s)]))),
+                                    opt(t(TileLabel(","))),
+                                ])),
+                                t(TileLabel(")")),
+                            ]),
+                            // annotation: `( E : T )`
+                            seq([t(TileLabel(":")), h(Sort::Type), t(TileLabel(")"))]),
                         ]),
-                        // annotation: `( E : T )`
-                        seq([t(TileLabel(":")), h(Sort::Type), t(TileLabel(")"))]),
                     ]),
                 ]),
+            ]),
+            // a labelled group of outputs: `( .l = E , … )`
+            seq([
+                t(TileLabel("(")),
+                comma1(seq([dotted_label(), t(TileLabel("=")), h(s)])),
+                t(TileLabel(")")),
             ]),
         ]),
     );

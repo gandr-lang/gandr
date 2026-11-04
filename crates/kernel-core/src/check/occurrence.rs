@@ -1206,6 +1206,15 @@ where
                 Some(&CompType::Returner(result)) => {
                     pending.push((AnyNode::ValueType(result), reach));
                 },
+                // Each result stands under the binders of the results before
+                // it, as a dependent arrow's codomain stands under its domain.
+                Some(&CompType::Returns(ref results)) => {
+                    let mut under = reach;
+                    for &result in results {
+                        pending.push((AnyNode::ValueType(result), under));
+                        under = under.under();
+                    }
+                },
                 Some(&CompType::Element { code, .. }) => {
                     pending.push((AnyNode::Value(code), reach.term()));
                 },
@@ -1415,9 +1424,14 @@ where
                     pending.push((AnyNode::Computation(head), reach));
                     pending.push((AnyNode::Value(argument), reach));
                 },
-                Some(&Computation::Bind(bound, body)) => {
+                Some(
+                    &(Computation::Bind(bound, body) | Computation::BindAll { bound, body, .. }),
+                ) => {
                     pending.push((AnyNode::Computation(bound), reach));
                     pending.push((AnyNode::Computation(body), reach));
+                },
+                Some(&Computation::ReturnAll(ref values)) => {
+                    pending.extend(values.iter().map(|&value| (AnyNode::Value(value), reach)));
                 },
                 Some(&Computation::With(ref components)) => {
                     pending.extend(

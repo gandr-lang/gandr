@@ -309,6 +309,8 @@ fn every_node_former_round_trips_under_its_own_frame()
         ContentNode::Application(a, b),
         ContentNode::Return(a),
         ContentNode::Bind(a, b),
+        ContentNode::ReturnAll(vec![a, b]),
+        ContentNode::BindAll(a, gandr_core_term::ComponentCount::from(2_usize), b),
         ContentNode::Force(a),
         ContentNode::Case {
             scrutinee: a,
@@ -355,6 +357,10 @@ fn every_node_former_round_trips_under_its_own_frame()
         ContentNode::Pi {
             domain: a,
             codomain: b,
+        },
+        ContentNode::Returns {
+            results: vec![a, b],
+            effects: gandr_core_term::effect::EffectRow::EMPTY,
         },
         ContentNode::ComputationElement {
             code: a,

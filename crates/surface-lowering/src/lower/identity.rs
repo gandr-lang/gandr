@@ -4192,6 +4192,28 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
+    /// The node a call of the declaration at `constant` reads its result off,
+    /// as [`Self::callee_of`] finds it.
+    ///
+    /// # Specification
+    /// - requires: the ascending sweep has classified the declaration.
+    /// - ensures: the callee's result node; none where [`Self::callee_of`]
+    ///   finds no callee.
+    /// - fails: none otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::callee_of`].
+    /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_a_call`
+    #[spec(ensures: |ret| ret == self.callee_of(constant).map(|callee| callee.result))]
+    pub(super) fn callee_result(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<NodeIndex>
+    {
+        self.callee_of(constant).map(|callee| callee.result)
+    }
+
     /// What a bare name of the declaration at `constant` reads its type off:
     /// the path type its signature states, as a call of no arguments.
     ///

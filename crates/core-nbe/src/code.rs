@@ -1166,6 +1166,33 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                     self.bound.insert(binder, Node::Code(value, place));
                     read = Atom::Called(rest, inside);
                 },
+                Computation::BindAll {
+                    bound: ran,
+                    arity,
+                    body: rest,
+                } if entered => {
+                    let core = self.core;
+                    let mut ran = ran;
+                    while let Some(&Computation::Ascribe { body, .. }) = core.computation(ran) {
+                        ran = body;
+                    }
+                    let Some(&Computation::ReturnAll(ref values)) = core.computation(ran)
+                    else {
+                        break;
+                    };
+                    if values.len() != usize::from(arity) {
+                        break;
+                    }
+                    // The first value is bound outermost, each read where the
+                    // bind stands.
+                    let mut inside = place;
+                    for &value in values {
+                        let binder = self.next;
+                        inside = self.crossed_alone(inside);
+                        self.bound.insert(binder, Node::Code(value, place));
+                    }
+                    read = Atom::Called(rest, inside);
+                },
                 Computation::Primitive { .. }
                 | Computation::Transport(..)
                 | Computation::PathTransport { .. }
@@ -1174,7 +1201,9 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                 | Computation::Lambda(_)
                 | Computation::Fixpoint { .. }
                 | Computation::Return(_)
+                | Computation::ReturnAll(_)
                 | Computation::Bind(..)
+                | Computation::BindAll { .. }
                 | Computation::Ascribe { .. }
                 | Computation::Force(_)
                 | Computation::Case { .. }
@@ -1295,6 +1324,7 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                 | Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)
+                | Elimination::BindAll(..)
                 | Elimination::ListFold { .. }
                 | Elimination::ListCase { .. }
                 | Elimination::Case { .. }
@@ -1532,6 +1562,7 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                 {
                     CompType::Element { code, .. } => (code, place),
                     CompType::Returner { .. }
+                    | CompType::Returns { .. }
                     | CompType::With(..)
                     | CompType::Arrow { .. }
                     | CompType::Pi { .. }
@@ -1676,15 +1707,19 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     (Some(left), Some(right)) => match *left {
                         CompType::Returner { effects: ref first, .. } => match *right {
                             CompType::Returner { effects: ref second, .. } if matching_effect_shapes(first, second) == Alike::Same => Ok((Alike::Same, 1_usize.saturating_add(first.types().count()), 0)),
-                            CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
+                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
+                        },
+                        CompType::Returns { results: ref left_results, effects: ref first } => match *right {
+                            CompType::Returns { results: ref right_results, effects: ref second } if left_results.len() == right_results.len() && matching_effect_shapes(first, second) == Alike::Same => Ok((Alike::Same, left_results.len().saturating_add(first.types().count()), 0)),
+                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
                         },
                         CompType::Codata { declaration: ref a, arguments: ref left } => match *right {
                             CompType::Codata { declaration: ref b, arguments: ref right } if a == b && left.len() == right.len() => { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(left.iter().zip(right).map(|(a,b)| (Node::Code(*a,here),Node::Code(*b,there))))); Ok((Alike::Same,left.len(),0)) },
-                            CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
+                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
                         },
                         CompType::With(ref a) => match *right {
                             CompType::With(ref b) if a.len() == b.len() => { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(a.iter().zip(b.iter()).rev().map(|(a, b)| (Node::CompType(*a, here), Node::CompType(*b, there))))); Ok((Alike::Same, a.len(), 0)) },
-                            CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
+                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
                         },
                         CompType::Arrow { .. } | CompType::Pi { .. } => if core::mem::discriminant(left) == core::mem::discriminant(right) || matches!((left, right), (&CompType::Pi { .. }, &CompType::Arrow { .. }) | (&CompType::Arrow { .. }, &CompType::Pi { .. })) { Ok((Alike::Same, 2, 0)) } else { Ok((Alike::Different, 0, 0)) },
                         CompType::Element { code, ref target } => match *right {
@@ -1693,7 +1728,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                     self.atom(Node::Code(code, here)).and_then(|_| self.atom(Node::Code(other_code, there))).map(|_| (Alike::Same, 0, 1))
                                 } else { Err(ConversionFault::MachineInvariant) }
                             },
-                            CompType::Returner { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
+                            CompType::Returner { .. } | CompType::Returns { .. } | CompType::Arrow { .. } | CompType::Pi { .. } | CompType::Element { .. } | CompType::Unknown | CompType::With(..) | CompType::Codata { .. } => Ok((Alike::Different, 0, 0)),
                         },
                         CompType::Unknown => Ok((Alike::Different, 0, 0)),
                     },
@@ -2186,6 +2221,29 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         Ok(Alike::Same)
                     },
                     (
+                        &CompType::Returns {
+                            results: ref a,
+                            effects: ref first,
+                        },
+                        &CompType::Returns {
+                            results: ref b,
+                            effects: ref second,
+                        },
+                    ) => {
+                        if a.len() != b.len()
+                            || matching_effect_shapes(first, second) == Alike::Different
+                        {
+                            return Ok(Alike::Different);
+                        }
+                        pending.extend(a.iter().zip(b.iter()).map(|(left, right)| {
+                            (Node::ValueType(*left, here), Node::ValueType(*right, there))
+                        }));
+                        pending.extend(first.types().zip(second.types()).map(|(left, right)| {
+                            (Node::ValueType(left, here), Node::ValueType(right, there))
+                        }));
+                        Ok(Alike::Same)
+                    },
+                    (
                         &CompType::Arrow { domain, codomain },
                         &CompType::Arrow {
                             domain: other_domain,
@@ -2278,6 +2336,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     },
                     (
                         &(CompType::Returner { .. }
+                        | CompType::Returns { .. }
                         | CompType::With(..)
                         | CompType::Arrow { .. }
                         | CompType::Pi { .. }
@@ -3298,6 +3357,13 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             ref effects,
                         } => {
                             types.push(Node::ValueType(result, place));
+                            types.extend(effects.types().map(|ty| Node::ValueType(ty, place)));
+                        },
+                        CompType::Returns {
+                            ref results,
+                            ref effects,
+                        } => {
+                            types.extend(results.iter().map(|&ty| Node::ValueType(ty, place)));
                             types.extend(effects.types().map(|ty| Node::ValueType(ty, place)));
                         },
                         CompType::Arrow { domain, codomain } => {

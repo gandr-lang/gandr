@@ -558,6 +558,21 @@ pub enum Computation
     Return(ValueId),
     /// A sequencing bind `x ← M; N`, binding the value `M` returns into `N`.
     Bind(ComputationId, ComputationId),
+    /// A return of several values `return (v₀, …)`, introducing the returner
+    /// of their telescope. It never holds one value: that is [`Self::Return`].
+    ReturnAll(alloc::boxed::Box<[ValueId]>),
+    /// A bind of several values `(x₀, …) ← M; N`, binding the values `M`
+    /// returns into `N`, the first outermost. It never binds one value: that
+    /// is [`Self::Bind`].
+    BindAll
+    {
+        /// The computation whose values are bound.
+        bound: ComputationId,
+        /// How many values it binds.
+        arity: ResultCount,
+        /// The body, under one binder per value.
+        body: ComputationId,
+    },
     /// A force `force v` of a thunk value `v : U C`, running it as `C`.
     Force(ValueId),
     /// A sum elimination, binding the injected value into the branch of its
@@ -1340,6 +1355,37 @@ impl From<EquationCount> for usize
     /// trivial.
     #[inline]
     fn from(count: EquationCount) -> Self
+    {
+        count.0
+    }
+}
+
+/// How many values a bind of several values binds, one binder each.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ResultCount(usize);
+
+impl From<usize> for ResultCount
+{
+    /// Preserve the result count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<ResultCount> for usize
+{
+    /// Read the result count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: ResultCount) -> Self
     {
         count.0
     }

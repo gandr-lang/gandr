@@ -3210,9 +3210,14 @@ fn reach(
                 Some(&Computation::Return(value) | &Computation::Force(value)) => {
                     pending.push(AnyNode::Value(value));
                 },
-                Some(&Computation::Bind(bound, body)) => {
+                Some(
+                    &(Computation::Bind(bound, body) | Computation::BindAll { bound, body, .. }),
+                ) => {
                     pending.push(AnyNode::Computation(bound));
                     pending.push(AnyNode::Computation(body));
+                },
+                Some(&Computation::ReturnAll(ref values)) => {
+                    pending.extend(values.iter().copied().map(AnyNode::Value));
                 },
                 Some(&Computation::With(ref components)) => {
                     pending.extend(components.iter().copied().map(AnyNode::Computation));
@@ -3314,6 +3319,9 @@ fn reach(
             },
             AnyNode::CompType(id) => match arena.comp_type(id) {
                 Some(&CompType::Returner(result)) => pending.push(AnyNode::ValueType(result)),
+                Some(&CompType::Returns(ref results)) => {
+                    pending.extend(results.iter().copied().map(AnyNode::ValueType));
+                },
                 Some(
                     &CompType::Arrow { domain, codomain } | &CompType::Pi { domain, codomain },
                 ) => {

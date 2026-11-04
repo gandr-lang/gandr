@@ -2159,10 +2159,16 @@ impl<'arena> Engine<'arena>
     #[spec(
         captures: [pending = self.tasks.len(), ready = self.results.len(), split = match node {
             | Node::Computation(id) => match self.arena.computation(id) {
-                | Some(&Computation::Split { arity, .. }) => Some(depth.deeper_by(arity)),
+                | Some(&(Computation::Split { arity, .. } | Computation::BindAll { arity, .. })) => Some(depth.deeper_by(arity)),
                 | _ => None,
             },
             | Node::Value(_) | Node::ValueType(_) | Node::CompType(_) => None,
+        }, returns = match node {
+            | Node::CompType(id) => match self.arena.comp_type(id) {
+                | Some(&CompType::Returns { ref results, .. }) => results.len(),
+                | _ => 0_usize,
+            },
+            | Node::Value(_) | Node::ValueType(_) | Node::Computation(_) => 0_usize,
         }, children = match node {
         | Node::Value(id) => self.arena.value(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Value::Reify(ref frames) => frames.iter().filter(|frame| !matches!(frame, crate::control::StackFrame::Project(_))).count(),
@@ -2187,7 +2193,8 @@ Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Abandon(_) | Computation::Force(_) | Computation::Mark { .. } | Computation::Decompose(_) => 1,
-Computation::Resume(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
+Computation::Resume(..) | Computation::Application(..) | Computation::Bind(..) | Computation::BindAll { .. } | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
+Computation::ReturnAll(ref values) => values.len(),
 Computation::With(ref components) => components.len(),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
@@ -2210,6 +2217,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
         | Node::CompType(id) => match self.arena.comp_type(id) {
             | None | Some(&CompType::Unknown) => 0_usize,
             | Some(&CompType::Returner { ref effects, .. }) => 1_usize.saturating_add(effects.types().count()),
+            | Some(&CompType::Returns { ref results, ref effects }) => results.len().saturating_add(effects.types().count()),
             | Some(&CompType::Element { .. }) => 1,
             Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
             Some(&CompType::With(ref components)) => components.len(),
@@ -2218,7 +2226,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
     }],
         ensures: self.results.len() == ready && pending.checked_add(children) == Some(self.tasks.len())
             && self.tasks.get(pending..).is_some_and(|tasks| tasks.iter().all(|task|
-                matches!(task, Task::Open(_, at, step) if (*step == rewrite || *step == rewrite.past_linear(Binders::ONE)) && (*at == depth || *at == depth.deeper() || *at == depth.deeper().deeper() || Some(*at) == split)))),
+                matches!(task, Task::Open(_, at, step) if (*step == rewrite || *step == rewrite.past_linear(Binders::ONE)) && (*at == depth || *at == depth.deeper() || *at == depth.deeper().deeper() || Some(*at) == split || (0 .. returns).any(|before| *at == depth.deeper_by(ComponentCount::from(before))))))),
     )]
     fn push_children(
         &mut self,
@@ -2626,6 +2634,19 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                         .push(open(Node::Computation(body), depth.deeper()));
                     self.tasks.push(open(Node::Computation(bound), depth));
                 },
+                Some(&Computation::ReturnAll(ref values)) => {
+                    self.tasks.extend(
+                        values
+                            .iter()
+                            .rev()
+                            .map(|&value| open(Node::Value(value), depth)),
+                    );
+                },
+                Some(&Computation::BindAll { bound, arity, body }) => {
+                    self.tasks
+                        .push(open(Node::Computation(body), depth.deeper_by(arity)));
+                    self.tasks.push(open(Node::Computation(bound), depth));
+                },
                 Some(&Computation::Case {
                     scrutinee,
                     ref branches,
@@ -2827,6 +2848,24 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                             .map(|ty| open(Node::ValueType(ty), depth)),
                     );
                     self.tasks.push(open(Node::ValueType(result), depth));
+                },
+                Some(&CompType::Returns {
+                    ref results,
+                    ref effects,
+                }) => {
+                    self.tasks.extend(
+                        effects
+                            .types()
+                            .rev()
+                            .map(|ty| open(Node::ValueType(ty), depth)),
+                    );
+                    self.tasks
+                        .extend(results.iter().enumerate().rev().map(|(before, &result)| {
+                            open(
+                                Node::ValueType(result),
+                                depth.deeper_by(ComponentCount::from(before)),
+                            )
+                        }));
                 },
                 Some(&CompType::Arrow { domain, codomain }) => {
                     self.tasks.push(open(Node::CompType(codomain), depth));
@@ -3657,7 +3696,8 @@ Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Abandon(_) | Computation::Force(_) | Computation::Mark { .. } | Computation::Decompose(_) => 1,
-Computation::Resume(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
+Computation::Resume(..) | Computation::Application(..) | Computation::Bind(..) | Computation::BindAll { .. } | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
+Computation::ReturnAll(ref values) => values.len(),
 Computation::With(ref components) => components.len(),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
@@ -4146,6 +4186,33 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
                     self.arena.computation_bind(rewritten_bound, rewritten_body)
                 }
             },
+            Computation::ReturnAll(ref values) => {
+                let mut changed: Option<Vec<ValueId>> = None;
+                for (index, original) in values.iter().enumerate().rev() {
+                    let rewritten = Self::value(&mut self.results, *original);
+                    if rewritten != *original {
+                        let changed = changed.get_or_insert_with(|| values.to_vec());
+                        if let Some(slot) = changed.get_mut(index) {
+                            *slot = rewritten;
+                        }
+                    }
+                }
+                match changed {
+                    Some(values) => self.arena.computation_return_all(&values),
+                    None => id,
+                }
+            },
+            Computation::BindAll { bound, arity, body } => {
+                let rewritten_body = Self::computation(&mut self.results, body);
+                let rewritten_bound = Self::computation(&mut self.results, bound);
+                if (rewritten_bound, rewritten_body) == (bound, body) {
+                    id
+                }
+                else {
+                    self.arena
+                        .computation_bind_all(rewritten_bound, arity, rewritten_body)
+                }
+            },
             Computation::Case {
                 scrutinee,
                 ref branches,
@@ -4609,6 +4676,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
         captures: [ready = self.results.len(), children = match self.arena.comp_type(id) {
             | None | Some(&CompType::Unknown) => 0_usize,
             | Some(&CompType::Returner { ref effects, .. }) => 1_usize.saturating_add(effects.types().count()),
+            | Some(&CompType::Returns { ref results, ref effects }) => results.len().saturating_add(effects.types().count()),
             | Some(&CompType::Element { .. }) => 1,
             Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
             Some(&CompType::With(ref components)) => components.len(),
@@ -4662,6 +4730,36 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 else {
                     self.arena
                         .comp_type_returner_with_effects(rewritten, rewritten_effects)
+                }
+            },
+            CompType::Returns {
+                ref results,
+                ref effects,
+            } => {
+                let rewritten_effects =
+                    match effects.try_map_types(crate::effect::TypeOrder::Reverse, |ty| {
+                        Ok::<_, core::convert::Infallible>(Self::value_type(&mut self.results, ty))
+                    }) {
+                        Ok(row) => self.place_instances(row),
+                        Err(never) => match never {},
+                    };
+                let mut changed: Option<Vec<ValueTypeId>> = None;
+                for (index, original) in results.iter().enumerate().rev() {
+                    let rewritten = Self::value_type(&mut self.results, *original);
+                    if rewritten != *original {
+                        let changed = changed.get_or_insert_with(|| results.to_vec());
+                        if let Some(slot) = changed.get_mut(index) {
+                            *slot = rewritten;
+                        }
+                    }
+                }
+                if changed.is_none() && rewritten_effects == *effects {
+                    id
+                }
+                else {
+                    let results = changed.unwrap_or_else(|| results.to_vec());
+                    self.arena
+                        .comp_type_returns_with_effects(&results, rewritten_effects)
                 }
             },
             CompType::Arrow { domain, codomain } => {
@@ -6780,11 +6878,19 @@ fn survey_computation(
         | Computation::Project(_, body)
         | Computation::Mark { body, .. }
         | Computation::Ascribe { body, .. } => next.push(Position::Computation(body, own)),
-        Computation::Bind(first, second) => {
+        Computation::Bind(first, second)
+        | Computation::BindAll {
+            bound: first,
+            body: second,
+            ..
+        } => {
             next.extend([
                 Position::Computation(first, own),
                 Position::Computation(second, own),
             ]);
+        },
+        Computation::ReturnAll(ref values) => {
+            next.extend(values.iter().map(|&value| Position::Value(value, region)));
         },
         Computation::With(ref components) => next.extend(
             components

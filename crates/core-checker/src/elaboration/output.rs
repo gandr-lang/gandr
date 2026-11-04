@@ -315,9 +315,14 @@ fn children(
             Computation::Return(body) | Computation::Force(body) | Computation::Decompose(body) => {
                 push(TermNode::Value(body));
             },
-            Computation::Bind(bound, body) => {
+            Computation::Bind(bound, body) | Computation::BindAll { bound, body, .. } => {
                 push(TermNode::Computation(body));
                 push(TermNode::Computation(bound));
+            },
+            Computation::ReturnAll(ref values) => {
+                for &value in values.iter().rev() {
+                    push(TermNode::Value(value));
+                }
             },
             Computation::Case {
                 scrutinee,
@@ -629,6 +634,17 @@ fn rebuild(
                     let new_bound = computation(emitted)?;
                     (new_bound != bound || new_body != body)
                         .then(|| arena.computation_bind(new_bound, new_body))
+                },
+                Computation::BindAll { bound, arity, body } => {
+                    let new_body = computation(emitted)?;
+                    let new_bound = computation(emitted)?;
+                    (new_bound != bound || new_body != body)
+                        .then(|| arena.computation_bind_all(new_bound, arity, new_body))
+                },
+                Computation::ReturnAll(ref returned) => {
+                    let original = returned.to_vec();
+                    let rebuilt = values(emitted, &original)?;
+                    (rebuilt != original).then(|| arena.computation_return_all(&rebuilt))
                 },
                 Computation::Case {
                     scrutinee,

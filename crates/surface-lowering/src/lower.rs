@@ -1844,6 +1844,16 @@ enum StatementBinding
         /// The tuple pattern's own node.
         pattern: NodeIndex,
     },
+    /// `let (q, r, …) = f(a) ;` binds each output of a call whose result is a
+    /// group, one named binder per output, the first outermost, with no
+    /// product built.
+    Outputs
+    {
+        /// How many outputs the call returns.
+        arity: gandr_core_term::ComponentCount,
+        /// The pattern's own node.
+        pattern: NodeIndex,
+    },
     /// `let x : A = c ;` ascribes `c` the returner `-F A`, pure as the
     /// annotation writes no row, and names the value it returns for the rest
     /// of the block, so a computation that returns no `A` refuses.
@@ -2282,6 +2292,10 @@ quenchant_shape::reason_enum! {
     }
 }
 
+/// The components of a tuple pattern, in written order: each its label when
+/// written `.l` or `.l = p`, and its pattern, the label itself for `.l`.
+type TupleComponents = Vec<(Option<Placed>, Placed)>;
+
 quenchant_shape::reason_enum! {
     /// Why a `let` statement's at pattern opens no handle.
     pub mod unopened {
@@ -2702,6 +2716,35 @@ enum Plan
     /// A dependent arrow `(x : A) -> C`: its one binder, in the parameter
     /// store, and its codomain.
     DependentArrow(Stretch, NodeIndex),
+    /// A function's group of outputs read as its result, `(q : A, r : B)`:
+    /// the returner of the entries in the lowerer's parameter store, each
+    /// standing under the ones before it.
+    Returns(Stretch),
+    /// A tuple ending a body whose result is a group of outputs: the return
+    /// of the members in the lowerer's operand store, one per output.
+    ReturnAll(Stretch),
+    /// One output of a call whose result is a group, `f(a).l`: the call,
+    /// every output bound, and the one at `index` returned.
+    SelectedOutput
+    {
+        /// The call.
+        call: NodeIndex,
+        /// How many outputs the call returns.
+        arity: gandr_core_term::ComponentCount,
+        /// The selected output's place among them.
+        index: usize,
+    },
+    /// A plugging `left |> right`: every output of `left` bound, and `right`
+    /// applied to them in order.
+    Plugged
+    {
+        /// The plugged computation.
+        left: NodeIndex,
+        /// The function its outputs are plugged into.
+        right: NodeIndex,
+        /// How many outputs `left` returns.
+        arity: gandr_core_term::ComponentCount,
+    },
     /// Adopt the child's lowered node unchanged.
     Transparent(NodeIndex),
     /// The value at the first node, ascribed the value type at the second:
@@ -3400,6 +3443,10 @@ struct Lowerer<'run, 'source>
     /// annotated constructor or injection is not among them: `T` is already
     /// its classifier.
     ascribed: BTreeMap<NodeIndex, NodeIndex>,
+    /// Each call standing as one value whose callee returns a group of
+    /// outputs, with its outputs' labels in order, none for an unnamed one:
+    /// the call stands as the record of its outputs.
+    packed: BTreeMap<NodeIndex, Vec<Option<FieldLabel>>>,
     /// Each lambda's binder written with a type, `x` in `fun (x : A) { … }`,
     /// with `A`, the frame it was read under, which the lambda stands in, and
     /// the lambda's own frame, which binds `x`.
@@ -5498,6 +5545,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             classifiers: BTreeMap::new(),
             annotated_definitions: BTreeMap::new(),
             ascribed: BTreeMap::new(),
+            packed: BTreeMap::new(),
             typed_parameters: BTreeMap::new(),
             argued: BTreeMap::new(),
             parameter_typed: BTreeMap::new(),
@@ -6875,7 +6923,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |_| usize::from(self.collected.owner.count()) == before.0
             && self.collected.owner_of(anchor) == before.1,
     )]
-    fn own_written(
+    pub(super) fn own_written(
         &mut self,
         written: NodeIndex,
         anchor: NodeIndex,
@@ -9490,11 +9538,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `site` is a parenthesised expression in term position.
     /// - ensures: `(e)` reads its operand at its own reading and adopts it, the
     ///   answer its position states passed on; a comma list is read as a pair;
-    ///   `(e : T)` is read as [`Self::annotated`] reads it, adopting a
-    ///   constructor that takes `T` as its classifier, or the value an
-    ///   ascription its position makes carries, and otherwise planned as a
-    ///   value ascription, an injection among them, its label read in the sum
-    ///   `T` states.
+    ///   a labelled group as [`Self::labelled_outputs`] reads it; `()` ending a
+    ///   body of no outputs returns none; `(e : T)` is read as
+    ///   [`Self::annotated`] reads it, adopting a constructor that takes `T` as
+    ///   its classifier, or the value an ascription its position makes carries,
+    ///   and otherwise planned as a value ascription, an injection among them,
+    ///   its label read in the sum `T` states.
     /// - provides: the reading of every form the grammar folds into
     ///   parentheses.
     /// - fails: yields the pair's own refusal, the annotation's refusal as
@@ -9519,7 +9568,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Transparent(_) | Plan::Tuple(_) | Plan::Ascribed(..)))
+                    Some(&(Plan::Transparent(_) | Plan::Tuple(_) | Plan::ReturnAll(_) | Plan::Ascribed(..)))
                 )
         },
     )]
@@ -9531,6 +9580,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let list = cursor.clone();
         let _open = cursor.tile(TileName::PAREN_OPEN);
+        if let Maybe::Present(_) = cursor.at(TileName::DOT) {
+            return self.labelled_outputs(site, list);
+        }
         let run = cursor.operands();
         if let Maybe::Present(_) = cursor.at(TileName::COMMA) {
             return self.pair(site, list);
@@ -9540,6 +9592,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         if let Run::Empty(_) = run {
+            // `()` ending a body of no outputs returns none.
+            if self
+                .answered_outputs(site)?
+                .is_some_and(|outputs| outputs.is_empty())
+            {
+                let _frame = self.require(site, Produced::Computation)?;
+                let none = self.operands.len();
+                self.plan(
+                    site,
+                    Plan::ReturnAll(Stretch {
+                        start: none,
+                        end: none,
+                    }),
+                );
+                return Ok(());
+            }
             let unit = Site {
                 name: FormName::UNIT,
                 ..site
@@ -9688,19 +9756,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a tuple, `(v1, …, vn)`, the one-element `(v,)` included.
+    /// Classify a tuple, `(v1, …, vn)`, the one-element `(v,)` included, or,
+    /// ending a body whose result is a group of outputs, the return of one
+    /// value per output.
     ///
     /// # Specification
     /// - requires: `cursor` stands at the `(` of a parenthesised expression
     ///   whose first member a comma follows.
-    /// - ensures: the tuple stands as a value, reads every member as a value
-    ///   under its own frame, and is planned over them as one tuple, as one `*`
-    ///   chain is one product. At a product it is written or answered at, as
+    /// - ensures: ending a body whose written result is a group of outputs, as
+    ///   [`Self::answered_outputs`] reads it, the tuple stands as a computation
+    ///   and is planned as the return of its members; otherwise it stands as a
+    ///   value and is planned over them as one tuple, as one `*` chain is one
+    ///   product. Either way every member is read as a value under its own
+    ///   frame. At a product it is written or answered at, as
     ///   [`Self::stated_value`] reads it, of as many positional components as
     ///   it has members, each member written as a constructor, a call, a list
     ///   or a parenthesised form takes the component at its place, as
     ///   [`Self::classify_member`] gives it.
-    /// - provides: the introduction of the eager product.
+    /// - provides: the introduction of the eager product, and the return of
+    ///   several values.
     /// - fails: yields the wrong-sort refusal where no value is read, and the
     ///   list's refusal for a member out of shape, both naming the tuple; the
     ///   walk's refusal reading the product.
@@ -9715,17 +9789,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a tuple of one, of two and of three, and a tuple
     ///   where a computation is read, each asserted as the exact core node read
-    ///   back out of the arena or the exact refusal; and tuples of a
-    ///   parameterised family's constructors under an annotation, at a body's
-    ///   tail and inside a list, each classified by its component.
+    ///   back out of the arena or the exact refusal; tuples of a parameterised
+    ///   family's constructors under an annotation, at a body's tail and inside
+    ///   a list, each classified by its component; and a tuple ending a body
+    ///   that returns two outputs.
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `lower::native::tests::a_tuple_gives_its_members_the_product_s_components_1877`
+    /// - witness: `lower::arity::tests::a_tuple_ending_a_body_of_outputs_returns_each_member`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&Plan::Tuple(members)) if members.end.saturating_sub(members.start) >= 1_usize
+                    Some(&(Plan::Tuple(members) | Plan::ReturnAll(members))) if members.end.saturating_sub(members.start) >= 1_usize
                 )
         },
     )]
@@ -9739,7 +9815,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             name: FormName::TUPLE,
             ..site
         };
-        let frame = self.require(tuple, Produced::Value)?;
+        let outputs = self.answered_outputs(site)?;
+        let produced = match outputs {
+            Some(_) => Produced::Computation,
+            None => Produced::Value,
+        };
+        let frame = self.require(tuple, produced)?;
         let start = self.operands.len();
         if let Err(refusal) = arguments(tuple, &mut cursor, &mut self.operands) {
             self.operands.truncate(start);
@@ -9749,7 +9830,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             start,
             end: self.operands.len(),
         };
-        let (stated, answered) = self.stated_value(tuple)?;
+        let (stated, answered) = match outputs {
+            Some(_) => (None, None),
+            None => self.stated_value(tuple)?,
+        };
         if let Some(stated) = stated
             && let Maybe::Present(components) =
                 self.stated_entries(tuple, stated, Former::TelescopeType, arity::Thunked(false))?
@@ -9770,7 +9854,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
 
-        self.plan(site, Plan::Tuple(members));
+        self.plan(site, match outputs {
+            Some(_) => Plan::ReturnAll(members),
+            None => Plan::Tuple(members),
+        });
 
         Ok(())
     }
@@ -11212,11 +11299,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: the statement's computation is read under `frame` and the
     ///   statement recorded with the tile at `statement`; the frame binding the
     ///   statement's names over `frame`, which the rest of the block reads
-    ///   under, is returned. A tuple pattern `(x, y, …)` binds the returned
-    ///   tuple under a nameless binder and each component's name over it, in
-    ///   order, and the statement is recorded as that split. A name or a tuple
-    ///   pattern annotated `: A` reads `A` in `frame` and binds over it, and
-    ///   the statement is recorded as the bind of `c` ascribed `-F A`. A name
+    ///   under, is returned. A tuple pattern `(x, y, …)` of a call whose result
+    ///   is a group of as many outputs, as [`Self::called_outputs`] reads it,
+    ///   binds each output to its component's name, in order, and the statement
+    ///   is recorded as that bind of outputs; any other tuple pattern binds the
+    ///   returned tuple under a nameless binder and each component's name over
+    ///   it, in order, and the statement is recorded as that split. pattern
+    ///   annotated `: A` reads `A` in `frame` and binds over it, and the
+    ///   statement is recorded as the bind of `c` ascribed `-F A`. A name
     ///   written with no type is recorded with `frame` and `c`, which
     ///   [`Self::ran_type`] reads its type off.
     /// - fails: yields the unadmitted refusal for a binder pattern other than a
@@ -11244,7 +11334,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.statements.len() == before.saturating_add(1_usize)
                     && self.statements.last().is_some_and(|last| {
                         last.origin == statement.at.node
-                            && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Placed(_) | StatementBinding::Split { .. } | StatementBinding::Typed { .. } | StatementBinding::TypedSplit { .. })
+                            && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Placed(_) | StatementBinding::Split { .. } | StatementBinding::Outputs { .. } | StatementBinding::Typed { .. } | StatementBinding::TypedSplit { .. })
                             && self.reading(last.bound) == Reading::Computation(frame)
                     })
             },
@@ -11262,13 +11352,114 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let run = statement.at;
         if let Maybe::Present(components) = self.tuple_binders(statement, binder)? {
             let mut names = Vec::with_capacity(components.len());
-            for &component in &components {
-                let name = self.binder_name(statement, component)?;
+            for &(label, component) in &components {
+                // A punned `.l` binds its own label.
+                let name = if label == Some(component) {
+                    self.name_at(component)
+                }
+                else {
+                    self.binder_name(statement, component)?
+                };
                 self.note_binder(component, name)?;
-                names.push((name, component.span));
+                names.push((
+                    label.map(|label| (self.name_at(label), label)),
+                    name,
+                    component.span,
+                ));
             }
+            let pattern = Site {
+                at: binder,
+                name: FormName::TUPLE_PATTERN,
+                reading: Reading::Computation(frame),
+            };
+            // The grammar holds a group all positional or all labelled.
+            let labelled = names.iter().filter(|&&(label, ..)| label.is_some()).count();
             self.read(bound.node, Reading::Computation(frame));
             let arity = gandr_core_term::ComponentCount::from(names.len());
+            let outputs = match annotation {
+                None => self.called_outputs(frame, bound, run.node)?,
+                Some(_) => None,
+            };
+            // A pattern of a call returning outputs binds every one of them.
+            if outputs
+                .as_ref()
+                .is_some_and(|outputs| outputs.len() != names.len())
+            {
+                return Err(pattern.out(FragmentBoundary::Arity(OperandCount::from(names.len()))));
+            }
+            if let Some(outputs) = outputs {
+                // A labelled pattern binds each output by its label, in the
+                // order the callee writes them.
+                let ordered: Vec<(SurfaceName<'source>, ByteSpan)> = if labelled == 0 {
+                    names.iter().map(|&(_, name, span)| (name, span)).collect()
+                }
+                else {
+                    let called: Vec<SurfaceName<'source>> = outputs
+                        .iter()
+                        .filter_map(|output| match output.key {
+                            arity::Key::Label(written, _) => Some(written),
+                            arity::Key::Positional | arity::Key::Index(..) => None,
+                        })
+                        .collect();
+                    // Labels name the outputs of a callee that names each.
+                    if called.len() != outputs.len() {
+                        return Err(pattern.out(FragmentBoundary::WrongSort));
+                    }
+                    let callable: BTreeSet<SurfaceName<'source>> = called.iter().copied().collect();
+                    let mut ordered = Vec::with_capacity(names.len());
+                    // Each label's key, and the name and span it binds.
+                    let mut seen: BTreeMap<
+                        SurfaceName<'source>,
+                        (Placed, SurfaceName<'source>, ByteSpan),
+                    > = BTreeMap::new();
+                    for &(label, name, span) in &names {
+                        let Some((written, key)) = label
+                        else {
+                            continue;
+                        };
+                        if !callable.contains(&written) {
+                            return Err(statement.fault(key.span, FormFault::MisplacedTile));
+                        }
+                        if let Some(&(first, ..)) = seen.get(&written) {
+                            return Err(LoweringRefusal::DuplicateDefinition {
+                                span: key.span,
+                                name: written,
+                                first: first.span,
+                            });
+                        }
+                        seen.insert(written, (key, name, span));
+                    }
+                    for written in called {
+                        if let Some(&(_, name, span)) = seen.get(&written) {
+                            ordered.push((name, span));
+                        }
+                    }
+                    ordered
+                };
+                self.statements.push(Statement {
+                    origin: run.node,
+                    bound: bound.node,
+                    binding: StatementBinding::Outputs {
+                        arity,
+                        pattern: binder.node,
+                    },
+                    rest: exits::Rest::Bound,
+                });
+                let mut inner = frame;
+                for (name, written) in ordered {
+                    inner = Frame::Inner(self.scope.extend(inner, name, Maybe::Present(written)));
+                }
+                return Ok(inner);
+            }
+            // Labels name the outputs of a call. A `#{ … }` pattern matches a
+            // record value.
+            if labelled != 0 {
+                return Err(pattern.out(FragmentBoundary::WrongSort));
+            }
+            let names: Vec<_> = names
+                .into_iter()
+                .map(|(_label, name, written)| (name, written))
+                .collect();
             let binding = annotation.map_or_else(
                 || StatementBinding::Split {
                     arity,
@@ -11523,8 +11714,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `binder` is the pattern operand of the statement at
     ///   `statement`.
-    /// - ensures: each component operand of a tuple pattern, in order; absent
-    ///   for any other pattern.
+    /// - ensures: each component of a tuple pattern, in order, with its label
+    ///   when it is written `.l` or `.l = p`: the label tile itself is the
+    ///   component of a punned `.l`; absent for any other pattern.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold, and a
     ///   fault naming the `let` statement for a repaired pattern or a tile out
     ///   of place among the components.
@@ -11535,16 +11727,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a two-component tuple binds both names in order, and
-    ///   three components bind all three, and a name pattern reads as no tuple.
+    ///   three components bind all three, and a name pattern reads as no tuple;
+    ///   a labelled group binds each output by its label.
     /// - witness: `lower::tests::a_tuple_binder_splits_the_returned_tuple_in_order`
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     /// - witness: `lower::tests::a_split_of_three_components_lowers`
+    /// - witness: `lower::arity::tests::a_labelled_pattern_binds_each_output_by_its_label`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |components| match *components { Maybe::Present(ref parts) => parts.len() >= 2, Maybe::Absent(_) => true }))]
     fn tuple_binders(
         &self,
         statement: Site,
         binder: Placed,
-    ) -> Result<Maybe<Vec<Placed>, untupled::Absent>, LoweringRefusal<'source>>
+    ) -> Result<Maybe<TupleComponents, untupled::Absent>, LoweringRefusal<'source>>
     {
         let Some(node) = self.tree.node(binder.node)
         else {
@@ -11566,7 +11760,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
         closed(statement, &mut cursor, TileName::PAREN_OPEN)?;
         let mut components = Vec::new();
         loop {
-            components.push(statement.one(cursor.operands())?);
+            let component = if let Maybe::Present(_dot) = cursor.tile(TileName::DOT) {
+                let Maybe::Present(label) = cursor.tile(TileName::IDENTIFIER)
+                else {
+                    return Err(statement.fault(cursor.here(), FormFault::MisplacedTile));
+                };
+                match cursor.tile(TileName::EQUALS) {
+                    Maybe::Present(_) => (Some(label), statement.one(cursor.operands())?),
+                    Maybe::Absent(_) => (Some(label), label),
+                }
+            }
+            else {
+                (None, statement.one(cursor.operands())?)
+            };
+            components.push(component);
             if let Maybe::Present(_) = cursor.tile(TileName::COMMA)
                 && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
             {
@@ -12024,6 +12231,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 end: self.operands.len(),
             };
             return self.ports(site, ported, fields);
+        }
+        // A call of a function returning a group of outputs, standing as one
+        // value, is the record of its outputs.
+        if let Reading::Value(frame) = site.reading
+            && let Some(outputs) = self.called_outputs(frame, site.at, site.at.node)?
+        {
+            let labels = outputs
+                .iter()
+                .map(|output| match output.key {
+                    arity::Key::Label(name, _) => {
+                        Some(FieldLabel::from(String::from(name.as_ref())))
+                    },
+                    arity::Key::Positional | arity::Key::Index(..) => None,
+                })
+                .collect();
+            let _first = self.packed.insert(site.at.node, labels);
         }
         if let Run::One(head) = cursor.clone().operands()
             && let Maybe::Present(operation) = self.identity_head(site, head)?
@@ -12491,7 +12714,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   float, `-0.5f64`, lowers back to that float; the infix `then` is the
     ///   composite of two paths, or of two flows where a flow is answered, as
     ///   [`Self::derive`] plans it; the cons `g ∷ p` is a word, as
-    ///   [`Self::cons`] plans it.
+    ///   [`Self::cons`] plans it; `left |> right` plugs every output of `left`
+    ///   into `right`, as [`Self::plug`] plans it.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
     ///   are refused; `then` refuses as [`Self::derive`] does, and the cons as
     ///   [`Self::cons`] does.
@@ -12509,12 +12733,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
     /// - witness: `lower::tests::a_prefix_operator_takes_its_one_operand`
+    /// - witness: `lower::arity::tests::a_plugging_passes_every_output_in_order`
     /// - witness: `lower::tests::a_negated_float_literal_is_float64_negation_1830`
     /// - witness: `lower::tests::a_negated_natural_literal_is_one_negative_literal_4732`
     /// - witness: `lower::tests::a_decimal_reads_as_its_exact_value_4807`
     /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
     /// - witness: `lower::implicit::tests::an_order_calls_the_prelude_s_order_2333`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Application(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_) | Plan::Literal(Literal::Integer(_) | Literal::Numeric(_)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Application(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_) | Plan::Plugged { .. } | Plan::Literal(Literal::Integer(_) | Literal::Numeric(_)))))]
     fn operator(
         &mut self,
         site: Site,
@@ -12532,6 +12757,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && label == TileName::CONS
         {
             return self.cons(site, letter, rest);
+        }
+        if let &[
+            Piece::Operand(left),
+            Piece::Tile { label, .. },
+            Piece::Operand(right),
+        ] = pieces.pieces.as_slice()
+            && label == TileName::PLUG
+        {
+            return self.plug(site, left, right);
         }
         // `-n` written on a natural literal is one negative literal: a value,
         // primitive at `Integer` and read through `FromNeg` at another type.
@@ -12711,7 +12945,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::SelectedOutput { .. } | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
                 )
         },
     )]
@@ -12738,6 +12972,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         // `C(a, …).l` names the port `l` of the multi-output constructor `C`.
         if self.port(site, pieces)? == arity::Planned(true) {
+            return Ok(());
+        }
+        // `f(a, …).l` selects the output `l` of a call returning a group.
+        if self.selected_output(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
         // An observation by position of a thunked lazy product or codata
@@ -15505,7 +15743,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   its effect row, a row before a result's type reads as the inserted
     ///   returner's, `-F [E] A`, the form stands at the sort its former
     ///   produces, reads its one operand at the sort the former takes, and is
-    ///   planned over it.
+    ///   planned over it. A returner of a group of outputs, `-F (A, B)`, stands
+    ///   as the group.
     /// - provides: the keyword spelling of the two type formers.
     /// - fails: yields the unresolved-head refusal for a keyword no former
     ///   answers, [`LoweringRefusal::GradedBridge`] for a thunk type graded
@@ -15531,7 +15770,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Former(_, _) | Plan::Effectful(..)))
+                    Some(&(Plan::Former(_, _) | Plan::Effectful(..) | Plan::Transparent(_)))
                 )
         },
     )]
@@ -15556,7 +15795,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let row = self.returner_row(site, &mut cursor)?;
             let argument = site.one(cursor.operands())?;
             exhausted(site, &cursor)?;
-            return self.effectful(site, row, argument.node);
+            return self.effectful(site, row, argument);
         }
         let _keyword = cursor.tile(label);
         let name = self.name_at(at);
@@ -15575,7 +15814,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     let row = self.returner_row(site, &mut cursor)?;
                     let argument = site.one(cursor.operands())?;
                     exhausted(site, &cursor)?;
-                    return self.effectful(site, row, argument.node);
+                    return self.effectful(site, row, argument);
                 },
                 TypeFormer::List | TypeFormer::Run | TypeFormer::Prefix | TypeFormer::Dialogue => {
                     return Err(site.folded(
@@ -15661,11 +15900,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `argument` is the one operand the former was written with.
     /// - ensures: the thunk former stands at value-type sort with its argument
     ///   read at computation-type sort, the returner former stands at
-    ///   computation-type sort with its argument read at value-type sort, the
-    ///   list former stands at value-type sort with its element type read at
-    ///   value-type sort, and the run former stands at value-type sort with its
-    ///   session code read as a value; the former decides both, so nothing is
-    ///   pushed down that has to be re-derived.
+    ///   computation-type sort with its argument read at value-type sort, or,
+    ///   for a group of outputs `-F (A, B)`, adopts the group read as a result,
+    ///   the list former stands at value-type sort with its element type read
+    ///   at value-type sort, and the run former stands at value-type sort with
+    ///   its session code read as a value; the former decides both, so nothing
+    ///   is pushed down that has to be re-derived.
     /// - provides: the one place a type former's sorts are decided.
     /// - fails: yields the wrong-sort refusal for a former whose produced sort
     ///   does not suit the position.
@@ -15677,10 +15917,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — thunk and returner read the argument in opposite
     ///   sorts; each then lowers to its own core bridge former, not the other
-    ///   one; a list reads its element type as a value type.
+    ///   one; a list reads its element type as a value type; the returner of a
+    ///   group is the group a result writes.
     /// - witness: `lower::tests::the_thunk_and_returner_heads_lower_to_their_formers`
     /// - witness: `lower::tests::the_bridge_tokens_are_compound_and_sum_is_unaffected`
     /// - witness: `lower::identity::tests::a_list_moves_along_a_universe_equivalence`
+    /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -15691,6 +15933,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             | TypeFormer::Returner | TypeFormer::List => Reading::ValueType(site.reading.frame()),
                             | TypeFormer::Run | TypeFormer::Prefix | TypeFormer::Dialogue => Reading::Value(site.reading.frame()),
                         })
+                || (former == TypeFormer::Returner
+                    && matches!(self.plans.get(site.at.node), Some(&Plan::Transparent(child)) if child == argument)
+                    && self.reading(argument) == Reading::Result(site.reading.frame()))
         },
     )]
     fn apply_former(
@@ -15709,6 +15954,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
             TypeFormer::Returner => Produced::CompType,
         };
         let frame = self.require(site, produced)?;
+        // The returner of a group of outputs is the group a result writes,
+        // `-F (A, B)` as `-> (A, B)`.
+        if former == TypeFormer::Returner
+            && let Some(tree) = self.tree.node(argument)
+            && self.written_group(Placed::of(argument, tree), frame)?.0
+        {
+            self.read(argument, Reading::Result(frame));
+            self.plan(site, Plan::Transparent(argument));
+            return Ok(());
+        }
         let inner = match former {
             TypeFormer::Thunk => Reading::CompType(frame),
             TypeFormer::Returner | TypeFormer::List => Reading::ValueType(frame),
@@ -16349,22 +16604,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a parenthesised type, `(T)`, or, where a value is read, the
-    /// annotation `(v : T)` the type grammar molds as one.
+    /// Classify a parenthesised type, `(T)`, a function's group of outputs
+    /// where a result is read, or, where a value is read, the annotation `(v :
+    /// T)` the type grammar molds as one.
     ///
     /// # Specification
     /// - requires: `site` is a parenthesised type.
-    /// - ensures: the one operand is read at the form's own reading and
+    /// - ensures: where a result is read, a group of no entry, of several, or
+    ///   of one labelled entry is the outputs, as [`Self::output_group`] reads
+    ///   them; otherwise the one operand is read at the form's own reading and
     ///   adopted; where a value is read, a `:` after the operand makes the form
     ///   the annotation of that operand, read as [`Self::annotated`] reads the
     ///   expression grammar's, so a type-valued call's argument takes the
     ///   spelling a path's endpoint takes.
-    /// - provides: grouping in type position, and the annotated argument of a
-    ///   type-valued call.
-    /// - fails: yields the empty-list refusal for `()`, which is never the unit
-    ///   type, the hole's own refusal, a misplaced-tile fault at the first
-    ///   comma of a list, which only a value function space's domain reads, and
-    ///   at a `:` where no value is read, and the annotation's own refusals.
+    /// - provides: grouping in type position, a function's outputs, and the
+    ///   annotated argument of a type-valued call.
+    /// - fails: yields the empty-list refusal for `()` where no result is read,
+    ///   which is never the unit type, the hole's own refusal, a misplaced-tile
+    ///   fault at the first comma of a list, which only a value function
+    ///   space's domain and a result read, and at a `:` where no value is read,
+    ///   and the annotation's own refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -16373,17 +16632,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — parenthesized type operands keep the surrounding
     ///   reading and lower to the wrapped type rather than introducing a core
-    ///   constructor; empty parentheses are refused by name.
+    ///   constructor; empty parentheses are refused by name; a result's group
+    ///   of outputs lowers to the many-value returner.
     /// - witness: `lower::tests::an_arrow_lowers_under_a_thunk_type`
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
     /// - witness: `lower::tests::the_empty_parentheses_are_never_the_unit`
     /// - witness: `lower::native::tests::a_type_valued_calls_argument_takes_an_annotation_3633`
+    /// - witness: `lower::arity::tests::a_group_of_outputs_is_the_many_value_returner`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(self.plans.get(site.at.node), Some(&Plan::Transparent(child)) if self.reading(child) == site.reading)
                 || (matches!(site.reading, Reading::Value(_))
                     && matches!(self.plans.get(site.at.node), Some(&(Plan::Transparent(_) | Plan::Ascribed(..)))))
+                || (matches!(site.reading, Reading::Result(_))
+                    && matches!(self.plans.get(site.at.node), Some(&Plan::Returns(_))))
         },
     )]
     fn parenthesized_type(
@@ -16393,6 +16656,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let _open = cursor.tile(TileName::PAREN_OPEN);
+        // A group written as a function's result is its outputs, as the group
+        // before an arrow is its inputs: `-> (q : Nat, r : Nat)`, `-> ()`.
+        if let Reading::Result(frame) = site.reading
+            && self.output_group(site, frame)? == arity::Planned(true)
+        {
+            return Ok(());
+        }
         let run = cursor.operands();
         if let Run::Empty(_) = run {
             let unit = Site {
@@ -17402,6 +17672,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             (_, minted) => minted,
         };
+        // A call standing as the record of its outputs binds each and returns
+        // the record, labelled when every output is named.
+        let minted = match (bridge, minted, self.packed.get(&position)) {
+            (
+                Bridge::Inserted(Insertion::Nested | Insertion::Bound | Insertion::Endpoint),
+                Maybe::Present(Lowered::Computation(call)),
+                Some(labels),
+            ) => Self::mint_record_of_outputs(call, labels, sink, origin),
+            (_, minted, _) => minted,
+        };
         // A call of no arguments is its head's force, so that force is the
         // call the source wrote: it answers at the call, not at the head.
         let called = self
@@ -17586,7 +17866,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Ports(..)
                 | Plan::Ascribed(..)
                 | Plan::Packed(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::Plugged { .. }
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::ReturnAll(_) | Plan::SelectedOutput { .. } | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -17621,7 +17902,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Kept(..)
                 | Plan::Carrier(..)
                 | Plan::FixedCarrier(..) => Some(Produced::ValueType),
-                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(..) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
+                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::Returns(_) | Plan::With(..) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
                     Some(Produced::CompType)
                 },
                 | Plan::Decode(_, _, universe) | Plan::Unquote(_, _, universe) => Some(match universe.sort {
@@ -17825,6 +18106,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .mint_code(code, arguments, sink, origin)
                 .map(Lowered::Value),
             Plan::Tuple(members) => self.mint_tuple(members, sink, origin),
+            Plan::ReturnAll(members) => self.mint_return_all(members, sink, origin),
+            Plan::SelectedOutput { call, arity, index } => {
+                self.mint_selected_output((call, arity, arity::Place(index)), sink, origin)
+            },
+            Plan::Plugged { left, right, arity } => {
+                self.mint_plugged((left, right, arity), sink, origin)
+            },
             Plan::List(elements) => self.mint_list(elements, sink, origin),
             Plan::Record(ref fields) => self.mint_record(fields, sink, origin),
             Plan::RecordUpdate(base, ref fields) => {
@@ -17840,6 +18128,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::DependentArrow(entries, codomain) => {
                 self.mint_dependent_arrow(entries, codomain, sink, origin)
             },
+            Plan::Returns(entries) => self.mint_returns(
+                entries,
+                gandr_core_term::effect::EffectRow::EMPTY,
+                sink,
+                origin,
+            ),
             Plan::Transparent(child) => self.lowered_at(child),
             Plan::Former(former, argument) => self.mint_former(former, argument, sink, origin),
             Plan::Application(head, arguments) => {
@@ -18449,6 +18743,44 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Maybe::Present(sink.value(id, origin))
     }
 
+    /// Carry out a many-value return's plan: the return of its members, one
+    /// value per output.
+    ///
+    /// # Specification
+    /// - requires: every member is already minted or absent.
+    /// - ensures: the many-value return of the members in written order, with
+    ///   the written origin; nothing is minted when a member did not lower.
+    /// - provides: the return of several values.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// The loop runs once per entry of the finite stretch `members`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::pair`].
+    /// - witness: `lower::arity::tests::a_tuple_ending_a_body_of_outputs_returns_each_member`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
+    fn mint_return_all(
+        &self,
+        members: Stretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let written = stretch(&self.operands, members);
+        let mut values = Vec::with_capacity(written.len());
+        for &member in written {
+            match self.value_at(member) {
+                Maybe::Present(value) => values.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink.arena.computation_return_all(&values);
+
+        Maybe::Present(sink.computation(id, origin))
+    }
+
     /// Carry out a list literal's plan: its elements, as cons cells ending in
     /// the empty list.
     ///
@@ -19017,6 +19349,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Called(..)
             | Plan::StaticApplication(..)
             | Plan::Tuple(_)
+            | Plan::ReturnAll(_)
+            | Plan::SelectedOutput { .. }
+            | Plan::Plugged { .. }
             | Plan::List(_)
             | Plan::Record(_)
             | Plan::RecordUpdate(..)
@@ -19024,6 +19359,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::ValueFunction(..)
             | Plan::Telescope(..)
             | Plan::DependentArrow(..)
+            | Plan::Returns(_)
             | Plan::Former(..)
             | Plan::Transparent(_)
             | Plan::Application(..)
@@ -19548,7 +19884,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | StatementBinding::Received { .. }
                 | StatementBinding::Held { .. }
                 | StatementBinding::Located { .. }
-                | StatementBinding::Opened { .. } => None,
+                | StatementBinding::Opened { .. }
+                | StatementBinding::Outputs { .. } => None,
                 StatementBinding::Discarded => Some(gandr_core_term::ComponentCount::default()),
                 StatementBinding::Split { arity, .. }
                 | StatementBinding::TypedSplit { arity, .. } => Some(arity),
@@ -19656,13 +19993,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | StatementBinding::TypedLet { .. }
                 | StatementBinding::Discarded
                 | StatementBinding::Split { .. }
+                | StatementBinding::Outputs { .. }
                 | StatementBinding::Forked { .. }
                 | StatementBinding::Received { .. }
                 | StatementBinding::Held { .. }
                 | StatementBinding::Located { .. }
                 | StatementBinding::Opened { .. } => bound,
             };
-            let id = sink.arena.computation_bind(bound, chain);
+            // A call's outputs bind one binder each, the first outermost.
+            let id = if let StatementBinding::Outputs { arity, .. } = statement.binding {
+                sink.arena.computation_bind_all(bound, arity, chain)
+            }
+            else {
+                sink.arena.computation_bind(bound, chain)
+            };
             sink.origins.record_computation(id, origin);
             if let StatementBinding::Named(name)
             | StatementBinding::Placed(name)
@@ -19782,7 +20126,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             StatementBinding::Named(_)
             | StatementBinding::Placed(_)
             | StatementBinding::Discarded
-            | StatementBinding::Split { .. } => {
+            | StatementBinding::Split { .. }
+            | StatementBinding::Outputs { .. } => {
                 self.computation_at(statement.bound).map(|_bound| ())
             },
         }

@@ -2177,13 +2177,13 @@ fn the_empty_sequence_encodes_to_a_bare_header()
 {
     let arena = TermArena::new();
     let bytes = encode(&arena, &[]);
-    // Hand check of the version field: the version is 7, which as a
-    // little-endian sixteen-bit field is the low byte 0x07 first and the
+    // Hand check of the version field: the version is 8, which as a
+    // little-endian sixteen-bit field is the low byte 0x08 first and the
     // high byte 0x00 after. The header is the four-byte magic, that
     // two-byte field, the empty atom table as one varint zero and the
     // declaration count as one varint zero.
     assert_eq!(
-        vec![b'G', b'K', b'X', b'1', 0x07, 0x00, 0x00, 0x00],
+        vec![b'G', b'K', b'X', b'1', 0x08, 0x00, 0x00, 0x00],
         Vec::from(bytes.clone()),
         "the empty artifact is the magic, the version, an empty atom table and a zero count"
     );
@@ -2702,10 +2702,19 @@ fn a_predecessor_version_is_refused_by_name()
         "the version whose lazy product was binary is refused rather than misread"
     );
 
-    let future = raw_artifact(Version(8), &[], &[]);
+    let without_several_results = raw_artifact(Version(7), &[], &[]);
     assert_eq!(
         Err(DecodeError::UnsupportedVersion {
-            found: FormatVersion::from(8),
+            found: FormatVersion::from(7),
+        }),
+        decode(ArtifactImage::from(without_several_results.as_ref())),
+        "the version that predates the formers of several results is refused rather than misread"
+    );
+
+    let future = raw_artifact(Version(9), &[], &[]);
+    assert_eq!(
+        Err(DecodeError::UnsupportedVersion {
+            found: FormatVersion::from(9),
         }),
         decode(ArtifactImage::from(future.as_ref())),
         "a later version is refused with the version it declared"
@@ -3150,7 +3159,7 @@ fn a_child_of_the_wrong_polarity_is_refused()
 ///   surrounding record.
 /// - witness: `tests::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
 #[spec(
-        ensures: |ret| ret.as_image().as_ref() == [b'G', b'K', b'X', b'1', 7, 0, 1, 0, 2, 0, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 2, 3, 0, 0, 0, 0].as_slice(),
+        ensures: |ret| ret.as_image().as_ref() == [b'G', b'K', b'X', b'1', 8, 0, 1, 0, 2, 0, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 2, 3, 0, 0, 0, 0].as_slice(),
     )]
 fn sealed_artifact() -> EncodedArtifact
 {
@@ -3204,7 +3213,7 @@ fn sealed_artifact() -> EncodedArtifact
 /// - witness: `tests::sharing_format::a_minted_atom_table_naming_a_definition_is_refused`
 #[spec(
         ensures: |ret| ret.0.starts_with(b"GKX1")
-                && ret.0.get(4 .. 6) == Some([7_u8, 0].as_slice())
+                && ret.0.get(4 .. 6) == Some([8_u8, 0].as_slice())
                 && { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
             let valid_count = { let scalar = count;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
