@@ -602,7 +602,7 @@ fn add_type_rules(
         ty,
         type_atom,
         Regex::seq([
-            tile(TileLabel("#{")),
+            tile(TileLabel("*{")),
             Regex::optional(comma1(entry_shape(ty))),
             tile(TileLabel("}")),
         ]),
@@ -663,8 +663,7 @@ fn add_type_rules(
         ty,
         type_atom,
         Regex::seq([
-            tile(TileLabel("+")),
-            tile(TileLabel("{")),
+            tile(TileLabel("+{")),
             Regex::optional(comma1(entry_shape(ty))),
             tile(TileLabel("}")),
         ]),
@@ -685,8 +684,7 @@ fn add_type_rules(
         ty,
         type_atom,
         Regex::seq([
-            tile(TileLabel("&")),
-            tile(TileLabel("{")),
+            tile(TileLabel("&{")),
             Regex::optional(comma1(entry_shape(ty))),
             tile(TileLabel("}")),
         ]),

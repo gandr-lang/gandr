@@ -51,16 +51,6 @@ const BINDINGS: [&str; 5] = [
     "receive_session_type",
 ];
 
-/// The rules whose `{` lists labelled entries hugged by their braces, written
-/// against the `+` or `&` before it: a sum and a lazy record.
-const TELESCOPES: [&str; 5] = [
-    "labelled_sum_type",
-    "labelled_sum_expression",
-    "labelled_sum_pattern",
-    "lazy_record_type",
-    "lazy_record_expression",
-];
-
 /// What a face's `{` follows in a theory: its `=`, the one `{` of the rule
 /// written there. The face lists the names it holds, hugged by its braces:
 /// `face left = {tl, bl}`.
@@ -68,8 +58,9 @@ const FACE: &[RCtxStep] = &[RCtxStep {
     crossed: StepSym::Tile("="),
 }];
 
-/// The rules whose `#{` opens a module signature, padded by its braces; any
-/// other `#{` opens a record, hugged by them.
+/// The rules whose `*{` opens a module signature, padded by its braces; any
+/// other `*{` opens a record, hugged by them. The retired `#{` reads the
+/// same.
 const SIGNATURES: [&str; 2] = ["module_declaration", "nested_module_member"];
 
 /// The rules a `<` or `>` marks the bound or direction it touches in.
@@ -95,14 +86,13 @@ pub enum Context
     Operand,
     /// An operator touching what follows it: a negation, a session's `!` or
     /// `?`, a universe's `+` or `-`, a staged bound's `<` or `>`, a lambda's
-    /// `\`, a rest pattern's `..`, a splice's `~`, and the `+` or `&` of a sum
-    /// or lazy record.
+    /// `\`, a rest pattern's `..` and a splice's `~`.
     Prefix,
     /// A `.` ending a binder or a session's message.
     Binding,
-    /// The `{` of a sum, a lazy record or a shape's face.
+    /// The `{` of a shape's face.
     Telescope,
-    /// The `#{` of a module signature.
+    /// The `*{` of a module signature.
     Signature,
     /// Any other token.
     Plain,
@@ -149,10 +139,8 @@ impl Context
             {
                 Self::Operand
             },
-            "{" if TELESCOPES.contains(&rule) => Self::Telescope,
             "{" if rule == "theory_declaration" && before == FACE => Self::Telescope,
-            "#{" if SIGNATURES.contains(&rule) => Self::Signature,
-            "+" | "&" if TELESCOPES.contains(&rule) => Self::Prefix,
+            "*{" | "#{" if SIGNATURES.contains(&rule) => Self::Signature,
             "-" if rule == "unary_expression" || rule == "universe_type" => Self::Prefix,
             "+" if rule == "universe_type" => Self::Prefix,
             "?" if rule == "receive_session_type" => Self::Prefix,
@@ -214,7 +202,7 @@ pub fn padding(open: Token<'_>) -> Padding
             | Context::Signature
             | Context::Plain => Padding::Pad,
         },
-        "#{" => match open.context {
+        "*{" | "#{" => match open.context {
             Context::Signature => Padding::Pad,
             Context::Operand
             | Context::Prefix
@@ -344,7 +332,7 @@ pub fn join(
         return Join::Space;
     }
     if (right.kind == Kind::Token && right_text == "."
-        || right.kind == Kind::Open && matches!(right_text, ".#[" | ".#{"))
+        || right.kind == Kind::Open && matches!(right_text, ".#[" | ".*{" | ".#{"))
         && applied(left) == Wordlike::Yes
     {
         return Join::Touch;

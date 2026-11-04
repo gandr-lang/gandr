@@ -2200,7 +2200,7 @@ impl<'source> Respelling<'_, 'source>
         let direction = self.chosen.direction;
         let band = match (name, direction) {
             (RewriteName::Product, Direction::Sugar) => {
-                let listed = listed(parts, &[OPEN_TELESCOPE], CLOSE_BRACE)?;
+                let listed = product(parts)?;
                 self.infix(&mut out, &listed, parts, Spelling(" * "), [
                     Band::Bridge,
                     Band::Bridge,
@@ -2208,7 +2208,7 @@ impl<'source> Respelling<'_, 'source>
                 Band::Product
             },
             (RewriteName::Sum, Direction::Sugar) => {
-                let listed = listed(parts, &[PLUS, OPEN_BRACE], CLOSE_BRACE)?;
+                let listed = listed(parts, &[OPEN_SUM], CLOSE_BRACE)?;
                 self.infix(&mut out, &listed, parts, Spelling(" + "), [
                     Band::Product,
                     Band::Product,
@@ -2216,7 +2216,7 @@ impl<'source> Respelling<'_, 'source>
                 Band::Sum
             },
             (RewriteName::LazyProduct, Direction::Sugar) => {
-                let listed = listed(parts, &[AMPERSAND, OPEN_BRACE], CLOSE_BRACE)?;
+                let listed = listed(parts, &[OPEN_LAZY], CLOSE_BRACE)?;
                 self.infix(&mut out, &listed, parts, Spelling(" & "), [
                     Band::Sum,
                     Band::Sum,
@@ -2224,7 +2224,7 @@ impl<'source> Respelling<'_, 'source>
                 Band::Lazy
             },
             (RewriteName::Tuple, Direction::Sugar) => {
-                let listed = listed(parts, &[OPEN_TELESCOPE], CLOSE_BRACE)?;
+                let listed = product(parts)?;
                 if listed.len() < 2 {
                     return None;
                 }
@@ -2248,7 +2248,7 @@ impl<'source> Respelling<'_, 'source>
                     &mut out,
                     &chain.operands,
                     &chain.parts,
-                    &[PLUS, OPEN_BRACE],
+                    &[OPEN_SUM],
                     CLOSE_BRACE,
                 )?;
                 Band::Atom
@@ -2259,7 +2259,7 @@ impl<'source> Respelling<'_, 'source>
                     &mut out,
                     &chain.operands,
                     &chain.parts,
-                    &[AMPERSAND, OPEN_BRACE],
+                    &[OPEN_LAZY],
                     CLOSE_BRACE,
                 )?;
                 Band::Atom
@@ -3459,8 +3459,17 @@ const RULES: [MoldName; 35] = [
 /// host's parts.
 const STATEMENT_BLOCK: MoldName = MoldName("statement_block");
 
-/// `#{`.
+/// `#{`, the product's retired opener, which a rewrite still writes.
 const OPEN_TELESCOPE: Spelling = Spelling("#{");
+
+/// `*{`, the product's opener.
+const OPEN_PRODUCT: Spelling = Spelling("*{");
+
+/// `+{`, the sum's opener.
+const OPEN_SUM: Spelling = Spelling("+{");
+
+/// `&{`, the lazy record's opener.
+const OPEN_LAZY: Spelling = Spelling("&{");
 
 /// `{`.
 const OPEN_BRACE: Spelling = Spelling("{");
@@ -3661,6 +3670,16 @@ fn default_grade(owns: &[SourceFragment<'_>]) -> Option<Grade>
         },
         _ => None,
     }
+}
+
+/// The entries of a product written `*{ … }`, or `#{ … }` as it was spelled.
+///
+/// # Specification
+/// trivial.
+fn product<'source>(parts: &[Part<'source>]) -> Option<Vec<Child<'source>>>
+{
+    listed(parts, &[OPEN_PRODUCT], CLOSE_BRACE)
+        .or_else(|| listed(parts, &[OPEN_TELESCOPE], CLOSE_BRACE))
 }
 
 /// The entries of a list written `open … close`, separated by commas, a comma

@@ -484,9 +484,11 @@ impl TileName
     pub const ACCESS: Self = Self("access");
     /// The alias keyword `as` of an import.
     pub const AS: Self = Self("as");
-    /// The lazy product's `&`, and the opener of the lazy record over labels
-    /// and of the copattern block, `&{`.
+    /// The lazy product's `&`.
     pub const AMPERSAND: Self = Self("&");
+    /// The opener `&{` of the lazy record over labels and of the copattern
+    /// block.
+    pub const LAZY_OPEN: Self = Self("&{");
     /// The attribute-block opener `@[`.
     pub const ATTRIBUTES: Self = Self("@[");
     /// The inner attribute-block opener `@![`, decorating the item it stands
@@ -512,8 +514,8 @@ impl TileName
     pub const SEQUENCE_OPEN: Self = Self("#[");
     /// The index selector's opener `.#[`, closed by `]`.
     pub const SELECT_OPEN: Self = Self(".#[");
-    /// The sub-record selector's opener `.#{`, closed by `}`.
-    pub const SUB_RECORD_OPEN: Self = Self(".#{");
+    /// The sub-record selector's opener `.*{`, closed by `}`.
+    pub const SUB_RECORD_OPEN: Self = Self(".*{");
     /// A brace closer `}`.
     pub const BRACE_CLOSE: Self = Self("}");
     /// A brace opener `{`.
@@ -627,13 +629,15 @@ impl TileName
     pub const OFFERS: Self = Self("offers");
     /// The sort literal `+` of a universe: the value types.
     pub const PLUS: Self = Self("+");
+    /// The opener `+{` of the sum over labels and of an injection into it.
+    pub const SUM_OPEN: Self = Self("+{");
     /// A double quote opening or closing a string written among a form's own
     /// tiles.
     pub const QUOTE: Self = Self("\"");
     /// The recursion keyword `rec`.
     pub const REC: Self = Self("rec");
-    /// The record and signature opener `#{`.
-    pub const RECORD: Self = Self("#{");
+    /// The product's opener `*{`: a record, a telescope and a signature.
+    pub const RECORD: Self = Self("*{");
     /// The receive keyword `recv`, opening a statement.
     pub const RECV: Self = Self("recv");
     /// The release keyword `release`, opening a statement.

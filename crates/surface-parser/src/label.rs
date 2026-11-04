@@ -1337,12 +1337,14 @@ impl LabelMode
             && let Some(depth) = self.interp_stack.last_mut()
         {
             // Inside an interpolation's host-expression interior (shell mode
-            // owns its own brace accounting, so it is excluded). A `{`- or
-            // `#{`-opened form deepens this frame; a `}` that empties it
-            // closes the interpolation and resumes the containing string.
-            if bool::from(text.equals(BytePattern(b"{")))
-                || bool::from(text.equals(BytePattern(b"#{")))
-            {
+            // owns its own brace accounting, so it is excluded). A form opened
+            // by a brace or a connective's opener deepens this frame; a `}`
+            // that empties it closes the interpolation and resumes the
+            // containing string.
+            if matches!(
+                text.0,
+                b"{" | b"*{" | b"+{" | b"&{" | b"#{" | b".*{" | b".#{"
+            ) {
                 *depth = depth.saturating_add(1);
             }
             else if bool::from(text.equals(BytePattern(b"}"))) {
@@ -2748,7 +2750,7 @@ fn suffix_len(
 }
 
 /// Scan a lexeme led by `.`: the `..` rest token, the `.@` as-pattern alias,
-/// the selectors `.#[` and `.#{`, or a bare `.`.
+/// the selectors `.#[`, `.#{` and `.*{`, or a bare `.`.
 ///
 /// A dot before a digit stands alone too, so `.1` is the leading-dot label
 /// of a positional entry, `+{ .1 = b }`, rather than a number with no whole
@@ -2758,7 +2760,7 @@ fn suffix_len(
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
 /// - ensures: scanning advances; a pair `..` or `.@` is one punctuation, so is
-///   a selector `.#[` or `.#{`, and every other dot, one before a digit
+///   a selector `.#[`, `.#{` or `.*{`, and every other dot, one before a digit
 ///   included, stands alone.
 /// - panics: none.
 ///
@@ -2777,8 +2779,9 @@ fn scan_dot(
 {
     let second = bytes.byte(pos.advance(ByteWidth::ONE));
     let third = bytes.byte(pos.advance(ByteWidth::TWO));
-    if second == Some(SourceByte::from(b'#'))
-        && (third == Some(SourceByte::from(b'[')) || third == Some(SourceByte::from(b'{')))
+    let brace = third == Some(SourceByte::from(b'{'));
+    if (second == Some(SourceByte::from(b'#')) && (third == Some(SourceByte::from(b'[')) || brace))
+        || (second == Some(SourceByte::from(b'*')) && brace)
     {
         ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::THREE))
     }
@@ -2897,27 +2900,31 @@ fn run_end(
 
 /// Scan a run: the bytes from `pos` to the next whitespace or delimiter.
 ///
-/// A run the operator table holds whole is that operator's tile. Any other run
-/// that starts with `!`, `?` or `~` gives that sigil a tile of its own, and
-/// the rest is read as the next run. `type` with a `(` written straight after
-/// it is one tile with the parenthesis, a type quoted where an expression
-/// stands. Every other run is one word: an uppercase lead makes an upper
-/// word, and any other printable lead a lower word, `-x` and `\T` included. A
-/// run led by a control character or a prime names no tile.
+/// A connective's sign, `*`, `+` or `&`, written straight before `{` is one
+/// opener tile with the brace. A run the operator table holds whole is that
+/// operator's tile. Any other run that starts with `!`, `?` or `~` gives that
+/// sigil a tile of its own, and the rest is read as the next run. `type` with
+/// a `(` written straight after it is one tile with the parenthesis, a type
+/// quoted where an expression stands. Every other run is one word: an
+/// uppercase lead makes an upper word, and any other printable lead a lower
+/// word, `-x` and `\T` included. A run led by a control character or a prime
+/// names no tile.
 ///
 /// # Specification
 /// - requires: `pos` starts a run.
-/// - ensures: scanning advances; an operator run is punctuation to its end; a
-///   sigil run is punctuation for its sigil alone; `type(` is punctuation
-///   through the parenthesis; a word ends where the run does.
+/// - ensures: scanning advances; a connective's opener is punctuation through
+///   the brace; an operator run is punctuation to its end; a sigil run is
+///   punctuation for its sigil alone; `type(` is punctuation through the
+///   parenthesis; a word ends where the run does.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — operators, an operator written against a name, an
-///   operator-led run the table lacks, sigils, a sigil before an operator,
-///   words of either case, a `_`-led word, the lone wildcard, a primed word, a
-///   lone prime, a non-ASCII word, `type(` against `type (`, and a run before
-///   each delimiter and a comment separate the decisions.
+/// - hypothesis: L3 — the connectives' openers against a spaced or a glued
+///   sign, operators, an operator written against a name, an operator-led run
+///   the table lacks, sigils, a sigil before an operator, words of either case,
+///   a `_`-led word, the lone wildcard, a primed word, a lone prime, a
+///   non-ASCII word, `type(` against `type (`, and a run before each delimiter
+///   and a comment separate the decisions.
 /// - witness: `label::tests::a_run_is_one_token_cut_only_at_whitespace_and_delimiters`
 #[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && ret.next <= bytes.len() && matches!(ret.lexeme, Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Punct | Lexeme::Unknown))]
 fn scan_run(
@@ -2931,6 +2938,11 @@ fn scan_run(
     else {
         return ScanResult::new(Lexeme::Unknown, end);
     };
+    // A connective's sign written straight before `{` opens it: `*{`, `+{`
+    // and `&{` are one tile each.
+    if matches!(text.0, b"*" | b"+" | b"&") && bytes.byte(end) == Some(SourceByte::from(b'{')) {
+        return ScanResult::new(Lexeme::Punct, end.advance(ByteWidth::ONE));
+    }
     // A word's lead is a letter, so only a run led otherwise, or one ending in
     // a marked word's `+`, is read against the operator table.
     if (!lead.is_ascii_alphanumeric() || text.0.ends_with(b"+"))
@@ -3438,6 +3450,8 @@ mod tests
                 (".#[i]", Lexeme::Punct, 3),
                 (".#{.a}", Lexeme::Punct, 3),
                 (".# q", Lexeme::Punct, 1),
+                (".*{x", Lexeme::Punct, 3),
+                (".* {", Lexeme::Punct, 1),
                 (".", Lexeme::Punct, 1),
             ]),
             (super::scan_run, &[
@@ -3471,6 +3485,11 @@ mod tests
                 ("a//c", Lexeme::LowerWord, 1),
                 ("type(x", Lexeme::Punct, 5),
                 ("type (", Lexeme::LowerWord, 4),
+                ("*{x}", Lexeme::Punct, 2),
+                ("+{ .l", Lexeme::Punct, 2),
+                ("&{}", Lexeme::Punct, 2),
+                ("* {", Lexeme::Punct, 1),
+                ("x*{", Lexeme::LowerWord, 2),
             ]),
             (super::scan_numeral, &[
                 ("1;", Lexeme::Number, 1),
@@ -4044,6 +4063,22 @@ mod tests
             punct(")"),
             punct("Type+"),
             punct(";"),
+        ]);
+        // A connective's sign opens it only written straight before the
+        // brace, and a glued sign ends the name before it.
+        assert_eq!(lexed("*{a} + { x*{ r.*{ .a }"), vec![
+            punct("*{"),
+            lower("a"),
+            punct("}"),
+            punct("+"),
+            punct("{"),
+            lower("x*"),
+            punct("{"),
+            lower("r"),
+            punct(".*{"),
+            punct("."),
+            lower("a"),
+            punct("}"),
         ]);
         assert_eq!(lexed("type(Unit) type (x) types(x)"), vec![
             punct("type("),

@@ -35,8 +35,8 @@ use crate::leaf::Material;
 use crate::space::Context;
 
 /// The tokens that open a bracketed group.
-const OPENERS: [&str; 11] = [
-    "(", "[", "#[", ".#[", "{", "#{", ".#{", "&{", "+{", "@[", "@![",
+const OPENERS: [&str; 13] = [
+    "(", "[", "#[", ".#[", "{", "*{", ".*{", "#{", ".#{", "&{", "+{", "@[", "@![",
 ];
 
 /// The tokens that close one.

@@ -29,7 +29,7 @@ use crate::space::Kind as Neighbour;
 use crate::space::Padding;
 
 /// The brackets that open a group, each beside the closer that ends it.
-pub const BRACKETS: [(&str, &str); 10] = [
+pub const BRACKETS: [(&str, &str); 14] = [
     ("(", ")"),
     ("type(", ")"),
     ("[", "]"),
@@ -38,6 +38,10 @@ pub const BRACKETS: [(&str, &str); 10] = [
     ("{", "}"),
     ("@[", "]"),
     ("@![", "]"),
+    ("*{", "}"),
+    (".*{", "}"),
+    ("+{", "}"),
+    ("&{", "}"),
     ("#{", "}"),
     (".#{", "}"),
 ];

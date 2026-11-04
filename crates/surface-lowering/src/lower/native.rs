@@ -6817,8 +6817,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         if name == FormName::LABELLED_SUM_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
-            closed(here, &mut cursor, TileName::PLUS)?;
-            closed(here, &mut cursor, TileName::BRACE_OPEN)?;
+            closed(here, &mut cursor, TileName::SUM_OPEN)?;
             let key = self.dotted(here, &mut cursor)?;
             closed(here, &mut cursor, TileName::EQUALS)?;
             let payload = here.one(cursor.operands())?;

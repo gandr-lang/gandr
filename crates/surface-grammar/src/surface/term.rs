@@ -878,11 +878,11 @@ fn signature_former() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "#{")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "*{")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
 fn module_signature() -> Regex
 {
     seq([
-        t(TileLabel("#{")),
+        t(TileLabel("*{")),
         opt(comma1(module_signature_field())),
         t(TileLabel("}")),
     ])
@@ -1727,7 +1727,7 @@ fn patterns(
         s,
         atom,
         seq([
-            t(TileLabel("#{")),
+            t(TileLabel("*{")),
             opt(comma1(telescope_pattern_entry())),
             t(TileLabel("}")),
         ]),
@@ -1750,8 +1750,7 @@ fn patterns(
         s,
         atom,
         seq([
-            t(TileLabel("+")),
-            t(TileLabel("{")),
+            t(TileLabel("+{")),
             dotted_label(),
             t(TileLabel("=")),
             h(s),
@@ -2217,7 +2216,7 @@ fn expressions(
         p.postfix,
         seq([
             h(s),
-            t(TileLabel(".#{")),
+            t(TileLabel(".*{")),
             comma1(dotted_label()),
             t(TileLabel("}")),
         ]),
@@ -4671,12 +4670,12 @@ fn primary_expressions(
         alt([
             // labelled: `#{ .l = E, … }`, and `.l` alone for `.l = l`
             seq([
-                t(TileLabel("#{")),
+                t(TileLabel("*{")),
                 comma1(seq([dotted_label(), opt(seq([t(TileLabel("=")), h(s)]))])),
                 t(TileLabel("}")),
             ]),
             seq([
-                t(TileLabel("#{")),
+                t(TileLabel("*{")),
                 alt([
                     // the unit: `#{ }`
                     t(TileLabel("}")),
@@ -4717,16 +4716,15 @@ fn primary_expressions(
     ));
     out.push(telescope);
     // The injection `+{ .ok = E }` into a sum over labels, positional as
-    // `+{ .1 = E }`. Its `+` molds where an operand starts, so it never
-    // competes with the infix `+`, which follows one.
+    // `+{ .1 = E }`. Its opener `+{` is one tile, so it never competes with
+    // the infix `+`.
     out.push(r(
         RuleName("labelled_sum_expression"),
         Provenance("labelled_sum_expression"),
         s,
         p,
         seq([
-            t(TileLabel("+")),
-            t(TileLabel("{")),
+            t(TileLabel("+{")),
             dotted_label(),
             t(TileLabel("=")),
             h(s),
@@ -4742,8 +4740,7 @@ fn primary_expressions(
         s,
         p,
         seq([
-            t(TileLabel("&")),
-            t(TileLabel("{")),
+            t(TileLabel("&{")),
             opt(comma1(seq([dotted_label(), t(TileLabel("=>")), h(s)]))),
             t(TileLabel("}")),
         ]),

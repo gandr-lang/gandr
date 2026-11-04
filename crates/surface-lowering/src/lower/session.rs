@@ -907,13 +907,12 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<ProtocolSyntax, LoweringRefusal<'source>>
     {
         let opener = if former == Former::LabelledSumType {
-            TileName::PLUS
+            TileName::SUM_OPEN
         }
         else {
-            TileName::AMPERSAND
+            TileName::LAZY_OPEN
         };
         closed(here, &mut cursor, opener)?;
-        closed(here, &mut cursor, TileName::BRACE_OPEN)?;
         let entries = self.type_entries(here, &mut cursor, TileName::BRACE_CLOSE)?;
         let entries = match arrange(here, entries)? {
             Arranged::Labelled(entries) => entries,

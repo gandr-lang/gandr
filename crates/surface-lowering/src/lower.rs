@@ -29662,12 +29662,12 @@ def ended() -> -F [Partial] Unit {
                  one",
             ),
             (
-                "def either : Integer + String ;\ndef either = +.0 = 1} ;\n",
-                46_usize,
+                "def either : Integer + String ;\ndef either = +{0 = 1} ;\n",
+                47_usize,
                 "labelled_sum_expression",
-                crate::form::Ending::Tile(crate::form::TileName::BRACE_OPEN),
-                "a labelled sum missing its `{` is marked at the brace's gap, where an operand \
-                 follows a tile no hole follows, and names the brace",
+                crate::form::Ending::Tile(crate::form::TileName::DOT),
+                "an injection missing its label's `.` is marked at the dot's gap, where an \
+                 operand follows a tile no hole follows, and names the dot",
             ),
         ] {
             let tree = repaired(&pbg, SourceText::from(source));

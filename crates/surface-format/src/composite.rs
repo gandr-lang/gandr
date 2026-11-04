@@ -451,7 +451,8 @@ fn arguments(spelled: SourceFragment<'_>) -> Option<(Vec<Token>, Vec<Token>)>
                 continue;
             },
             ")" | "]" | "}" if depth == 0 => break,
-            "(" | "type(" | "[" | "#[" | ".#[" | "{" | "#{" | ".#{" | "+{" | "&{" => {
+            "(" | "type(" | "[" | "#[" | ".#[" | "{" | "*{" | ".*{" | "#{" | ".#{" | "+{"
+            | "&{" => {
                 depth = depth.saturating_add(1);
             },
             ")" | "]" | "}" => depth = depth.checked_sub(1)?,

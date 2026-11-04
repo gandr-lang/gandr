@@ -1024,6 +1024,12 @@ const STATEMENT_LEADS: &[&str] = &[
     "let", "run", "unpack", "hold", "var", "recv", "acquire", "release", "fork",
 ];
 
+/// The spellings a respelling retires, each with the tile it is read as: the
+/// product and the sub-record selection open with the connective's own sign,
+/// `*{` and `.*{`, and the `#` spelling molds that tile until no source
+/// writes it.
+const RETIRED: &[(&str, &str)] = &[("#{", "*{"), (".#{", ".*{")];
+
 /// Return the grammar tile labels to enumerate for a labeled token.
 ///
 /// The returned slice is in a fixed order; the molder unions the `candidates`
@@ -1044,10 +1050,10 @@ const STATEMENT_LEADS: &[&str] = &[
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every lexeme menu, reserved and ordinary words, canonical
-///   versus dialect shell openers and each ASCII token of the spelling table
-///   (`<~>`, `~~>`, `::`, `inf`) expose exact label sequences. Dropping a
-///   generic alternative, widening a keyword or losing the source spelling
-///   changes the menu.
+///   versus dialect shell openers, each ASCII token of the spelling table
+///   (`<~>`, `~~>`, `::`, `inf`) and each retired spelling (`#{`, `.#{`) expose
+///   exact label sequences. Dropping a generic alternative, widening a keyword
+///   or losing the source spelling changes the menu.
 /// - witness: `mold::tests::keyword_and_identifier_share_a_word_menu`
 /// - witness: `mold::tests::literal_and_shell_menus_are_exact`
 #[inline]
@@ -1136,6 +1142,10 @@ pub fn candidate_labels<'text>(
             // the glyph's tile, so the alias molds the glyph's one form.
             else if let Some(tile) = aliased(LabelText(text)) {
                 labels.push(CandidateLabel::from(tile.0));
+            }
+            // A retired spelling offers its successor's tile.
+            else if let Some(&(_, tile)) = RETIRED.iter().find(|&&(retired, _)| retired == text) {
+                labels.push(CandidateLabel::from(tile));
             }
         },
         Lexeme::Space | Lexeme::Unknown => {},
@@ -4657,6 +4667,9 @@ mod tests
             (Lexeme::Punct, "~~>", &["~~>", "⇝"]),
             (Lexeme::Punct, "::", &["::", "∷"]),
             (Lexeme::Punct, "≃", &["≃"]),
+            (Lexeme::Punct, "#{", &["#{", "*{"]),
+            (Lexeme::Punct, ".#{", &[".#{", ".*{"]),
+            (Lexeme::Punct, "*{", &["*{"]),
             (Lexeme::LowerWord, "inf", &["inf", "ω"]),
             (Lexeme::Space, " ", &[]),
             (Lexeme::Unknown, "^", &[]),
@@ -5710,7 +5723,7 @@ mod tests
     #[test]
     fn brackets_are_classified_by_lexeme_and_text()
     {
-        let source = SourceFragment::from("@[ f([x], #{ y }) ] ( \"]\" z");
+        let source = SourceFragment::from("@[ f([x], #{ y }) ] ( \"]\" z *{}");
         let classes: Vec<(String, super::Bracket)> = label(source)
             .into_iter()
             .filter(|token| token.lexeme != Lexeme::Space)
@@ -5744,6 +5757,8 @@ mod tests
             ("]", neither),
             ("\"", neither),
             ("z", neither),
+            ("*{", open),
+            ("}", close),
         ];
         assert_eq!(
             classes,

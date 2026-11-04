@@ -1838,6 +1838,52 @@ fn minimization_prefers_clean_readings() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
+/// A product opens with its own sign, `*{`, and its retired spelling `#{`
+/// reads as the same tree: a record, a record type, a module signature, a
+/// pattern and a sub-record selection alike. The sum and the lazy record open
+/// with `+{` and `&{`, one tile each (#4853).
+#[test]
+fn a_product_opens_with_its_own_sign() -> Result<(), Box<dyn Error>>
+{
+    let pbg = built();
+    let labels = |source: &str| -> Result<Vec<String>, Box<dyn Error>> {
+        let parsed = parse(pbg, SourceText::from(source))?;
+        assert!(
+            bool::from(parsed.is_clean()),
+            "{source:?} molds clean: {:?}",
+            parsed.obligations()
+        );
+        let tree = parsed.tree();
+        Ok(tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .map(|node| format!("{:?}", node.label()))
+            .collect())
+    };
+    for source in [
+        "def point = *{.x = 1, .y = 2};",
+        "def pair : *{Integer, Integer};",
+        "module M : *{ x : Integer } where { def x = 1; }",
+        "def first(p : *{Integer, Integer}) -> -F Integer { match p { *{a, b} => return a } }",
+        "def picked = r.*{ .a };",
+    ] {
+        let retired = source.replace("*{", "#{");
+        assert_eq!(
+            labels(source)?,
+            labels(&retired)?,
+            "{source:?} reads as {retired:?}"
+        );
+    }
+    for source in [
+        "def ok = +{.ok = 1};",
+        "def sum : +{ok : Integer, err : String};",
+        "def lazy = &{.get => pure 1};",
+    ] {
+        labels(source)?;
+    }
+    Ok(())
+}
+
 #[test]
 fn remolding_makes_dash_prefix_or_infix_by_context() -> Result<(), Box<dyn Error>>
 {

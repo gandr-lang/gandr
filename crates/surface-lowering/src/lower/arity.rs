@@ -1377,8 +1377,8 @@ impl<'source> Lowerer<'_, 'source>
             let opener = match former {
                 Former::SessionType => continue,
                 Former::ParenthesizedType => TileName::PAREN_OPEN,
-                Former::LabelledSumType => TileName::PLUS,
-                Former::LazyRecordType => TileName::AMPERSAND,
+                Former::LabelledSumType => TileName::SUM_OPEN,
+                Former::LazyRecordType => TileName::LAZY_OPEN,
                 Former::Name
                 | Former::Constructor
                 | Former::Hole
@@ -1472,7 +1472,6 @@ impl<'source> Lowerer<'_, 'source>
                 pending.push(inner);
                 continue;
             }
-            closed(nested, &mut cursor, TileName::BRACE_OPEN)?;
             let entries = self.type_entries(nested, &mut cursor, TileName::BRACE_CLOSE)?;
             if entries.is_empty() {
                 return Ok(TypeZone::Ordinary);
@@ -1750,8 +1749,7 @@ impl<'source> Lowerer<'_, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        closed(site, &mut cursor, TileName::PLUS)?;
-        closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+        closed(site, &mut cursor, TileName::SUM_OPEN)?;
         let entries = self.type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
         if self.zoned(site, &entries)? == TypeZone::Session {
             return self.session_type(Site {
@@ -1799,8 +1797,7 @@ impl<'source> Lowerer<'_, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        closed(site, &mut cursor, TileName::AMPERSAND)?;
-        closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+        closed(site, &mut cursor, TileName::LAZY_OPEN)?;
         let entries = self.type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
         if self.zoned(site, &entries)? == TypeZone::Session {
             return self.session_type(Site {
@@ -2009,19 +2006,16 @@ impl<'source> Lowerer<'_, 'source>
             };
             let mut cursor = Cursor::new(&scratch.pieces, placed.span);
             if held == former {
-                let opened = if former == Former::TelescopeType {
-                    closed(stated, &mut cursor, TileName::RECORD)
+                let opener = if former == Former::TelescopeType {
+                    TileName::RECORD
+                }
+                else if former == Former::LabelledSumType {
+                    TileName::SUM_OPEN
                 }
                 else {
-                    let opener = if former == Former::LabelledSumType {
-                        TileName::PLUS
-                    }
-                    else {
-                        TileName::AMPERSAND
-                    };
-                    closed(stated, &mut cursor, opener)
-                        .and_then(|()| closed(stated, &mut cursor, TileName::BRACE_OPEN))
+                    TileName::LAZY_OPEN
                 };
+                let opened = closed(stated, &mut cursor, opener);
                 break opened
                     .and_then(|()| self.type_entries(stated, &mut cursor, TileName::BRACE_CLOSE))
                     .map(|entries| Maybe::Present((at, entries)));
@@ -2393,8 +2387,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Value)?;
-        closed(site, &mut cursor, TileName::PLUS)?;
-        closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+        closed(site, &mut cursor, TileName::SUM_OPEN)?;
         let key = self.dotted(site, &mut cursor)?;
         closed(site, &mut cursor, TileName::EQUALS)?;
         let body = site.one(cursor.operands())?;
@@ -2457,8 +2450,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Computation)?;
-        closed(site, &mut cursor, TileName::AMPERSAND)?;
-        closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+        closed(site, &mut cursor, TileName::LAZY_OPEN)?;
         let entries = self.dotted_entries(site, &mut cursor, TileName::FAT_ARROW)?;
         let answer = self
             .answers
