@@ -3918,5 +3918,55 @@
       "trunk": "main"
     },
     "output": "[11,12]"
+  },
+  {
+    "name": "#5171: a head the CI depth gate stopped waits while its CI run stays cancelled, though the title check of another workflow passed",
+    "program": "unstarted.jq",
+    "args": {
+      "required": ["lint the pull request title", "test the workspace (linux)"],
+      "workflow": "CI"
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "checkSuite": { "workflowRun": { "workflow": { "name": "CI" } } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "checkSuite": { "workflowRun": { "workflow": { "name": "PR title" } } }
+      }
+    ],
+    "output": "true"
+  },
+  {
+    "name": "#5171: a head whose CI run runs again no longer waits for its promotion",
+    "program": "unstarted.jq",
+    "args": {
+      "required": ["lint the pull request title", "test the workspace (linux)"],
+      "workflow": "CI"
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "IN_PROGRESS",
+        "conclusion": null,
+        "checkSuite": { "workflowRun": { "workflow": { "name": "CI" } } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "checkSuite": { "workflowRun": { "workflow": { "name": "PR title" } } }
+      }
+    ],
+    "output": "false"
   }
 ]

@@ -22,6 +22,9 @@ trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 token=${LANDING_TOKEN_HELD:-false}
 required=$(required_contexts)
+# The CI workflow, which `landing.yml` runs on and the depth gate cancels:
+# the `name` of `.github/workflows/ci.yml`.
+ci_workflow=CI
 
 # The open pull requests, held ones left out (a draft, or the owner's
 # `hold:owner`, #3253), as `landing.jq` reads them.
@@ -40,7 +43,7 @@ read_prs() {
             author { __typename }
             commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
               __typename
-              ... on CheckRun { name status conclusion startedAt }
+              ... on CheckRun { name status conclusion startedAt checkSuite { workflowRun { workflow { name } } } }
               ... on StatusContext { context state startedAt: createdAt } } } } } } }
             timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, PULL_REQUEST_COMMIT]) { nodes { __typename ... on RemovedFromMergeQueueEvent { reason } } }
             comments(last: 100) { nodes { body } }
@@ -65,11 +68,11 @@ read_prs() {
         rollup=$(jq '.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // []' <<< "$pr")
         # A pull request the depth gate stopped (#5074) carries its mark for
         # this head. Its cancelled checks wait for its promotion, so they read
-        # as pending, never red; it waits while none of them has started again.
+        # as pending, never red. It waits while its CI run has not started
+        # again (`unstarted.jq`, #5171).
         gated=$(jq '.headRefOid as $head | any(.comments.nodes[].body; contains("<!-- landing:pr-depth:\($head) -->"))' <<< "$pr")
         jq -c --argjson reading "$(jq -c --argjson required "$required" --argjson gated "$gated" -f "$pr_stack_dir/required.jq" <<< "$rollup")" \
-          --argjson unstarted "$(jq -c --argjson required "$required" \
-            '[.[] | select((.name // .context) as $n | $required | index($n)) | select(.conclusion != "CANCELLED")] == []' <<< "$rollup")" \
+          --argjson unstarted "$(jq -c --argjson required "$required" --arg workflow "$ci_workflow" -f "$pr_stack_dir/unstarted.jq" <<< "$rollup")" \
           --argjson upstream "$upstream" \
           '{number, oid: .headRefOid, head: .headRefName, base: .baseRefName,
             queued: (.isInMergeQueue or .autoMergeRequest != null),
