@@ -24,6 +24,8 @@
 #   ceilings  the ceilings the change adds (`ceilings.bash`, #5039), each
 #             with the cited issues still open:
 #             [{path, line, kind, text, cites: [n], open: [n]}]
+#   budget    the `gh` call sites the change alters (`.config/gh/changed.bash`,
+#             #5061): [{file, scope, api}]
 #
 # A merge takes the claim off what the body works (`decide.jq`), so the body
 # must name it (#2462): a branch that carries an issue number needs
@@ -438,4 +440,23 @@ def ceilings:
     else empty
     end;
 
-claim, sources, citations, readings, concerns, defects, surface, keywords, refactorings, collectors, engineering_answers, ceilings
+# The refusals of a change that alters a `gh` call site and does not price
+# it under `## API budget` (#5061). A line of the section prices a site when
+# it names the site in backquotes, by its scope or, for a call at a file's
+# top level, by its file, and names the measure: `rateLimit` for a GraphQL
+# cost, `call log` for the router's log, `REST` for one request a call, or
+# `rate_limit` for the free gauge.
+def api_budget:
+  (.budget // []) as $altered
+  | select($altered | length > 0)
+  | (.body | section("API budget")) as $section
+  | "a line that names it in backquotes and its measure: `rateLimit`, `call log`, `REST` or `rate_limit`" as $form
+  | if $section == null then
+      "the body lacks `## API budget`, and the change alters \($altered | length) `gh` call site\(if ($altered | length) == 1 then "" else "s" end): price each with \($form), then run `pr:open` again:\n\($altered | map("  - `\(if .scope == "-" then .file else .scope end)` (\(.file), \(.api))") | join("\n"))"
+    else $altered[]
+    | (if .scope == "-" then .file else .scope end) as $name
+    | select(any($section[]; index("`\($name)`") != null and test("rateLimit|call log|\\bREST\\b|rate_limit")) | not)
+    | "the body's `## API budget` does not price `\($name)` (\(.file), \(.api)): add \($form), then run `pr:open` again"
+    end;
+
+claim, sources, citations, readings, concerns, defects, surface, keywords, refactorings, collectors, engineering_answers, ceilings, api_budget

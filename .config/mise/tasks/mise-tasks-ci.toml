@@ -1488,8 +1488,16 @@ tree() {
       | jq -R . | jq -sc --slurpfile main "$subjects" 'map({subject: ., on_main: ($main[0][.] // false)})')
     if jq -e 'any(.[]; .on_main | not)' <<< "$commits" > /dev/null \
       && $remote_read && [[ -z ${on_remote[$branch]:-} ]] && git config --get "branch.$branch.remote" > /dev/null; then
-      pulls=$(gh pr list --state merged --head "$branch" --json number,commits \
-        --jq 'map({number, subjects: [.commits[].messageHeadline]})' 2> /dev/null) || pulls=null
+      # The headlines alone, 1 GraphQL point: `gh pr list --json commits`
+      # asks for each commit's authors too, 29 points a call (#5061).
+      pulls=$(gh api graphql -F owner='{owner}' -F name='{repo}' -F head="$branch" -f query='
+        query($owner: String!, $name: String!, $head: String!) {
+          repository(owner: $owner, name: $name) {
+            pullRequests(headRefName: $head, states: MERGED, first: 10) {
+              nodes { number commits(first: 100) { nodes { commit { messageHeadline } } } }
+            }
+          }
+        }' --jq '.data.repository.pullRequests.nodes | map({number, subjects: [.commits.nodes[].commit.messageHeadline]})' 2> /dev/null) || pulls=null
     fi
   fi
   gitdir=$(sed -n 's/^gitdir: //p' "$path/.git" 2> /dev/null) || gitdir=
@@ -3334,6 +3342,7 @@ flag "--hold <reason>" help="the owner holds it: open it as a draft labelled `ho
 '''
 # `findings.jq` stops jq 1.8.2 at an assertion; the claim tasks pin 1.8.1.
 tools.jq = "1.8.1"
+tools.yq = "4.54.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
@@ -3378,6 +3387,9 @@ open=$(jq -r '[.[].cites[]] | unique[]' <<< "$ceilings" \
   | while IFS= read -r n; do gh api "repos/$repo/issues/$n" --jq 'select(.state == "open" and .pull_request == null) | .number' 2> /dev/null || :; done \
   | jq -s -c .)
 ceilings=$(jq -c --argjson open "$open" 'map(. + {open: [.cites[] | select(IN($open[]))]})' <<< "$ceilings")
+# The `gh` call sites the change alters (#5061, `.config/gh/changed.bash`),
+# each of which the body prices under `## API budget`.
+budget=$("$claims/../gh/changed.bash" "$from")
 # The paths the change touches in the parser, its grammar and its syntax tree
 # (#2527); `opening.jq` sets aside the goldens among them (#2756).
 surface=$(git diff --no-renames --name-only "$from" HEAD -- crates/surface-parser crates/surface-grammar crates/surface-syntax | jq -R . | jq -s .)
@@ -3417,8 +3429,8 @@ else
 fi
 findings=$(jq -n --arg branch "$own" --rawfile body "$body" --argjson issues "$issues" --argjson mentions "$mentions" \
   --argjson concerns "$concerns" --argjson added "$added" --argjson regressions "$regressions" --argjson surface "$surface" \
-  --argjson ceilings "$ceilings" --slurpfile vault "$vaultdir/vault.json" \
-  '{branch: $branch, body: $body, issues: $issues, mentions: $mentions, concerns: $concerns, added: $added, regressions: $regressions, surface: $surface, ceilings: $ceilings, vault: $vault[0]}' \
+  --argjson ceilings "$ceilings" --argjson budget "$budget" --slurpfile vault "$vaultdir/vault.json" \
+  '{branch: $branch, body: $body, issues: $issues, mentions: $mentions, concerns: $concerns, added: $added, regressions: $regressions, surface: $surface, ceilings: $ceilings, budget: $budget, vault: $vault[0]}' \
   | jq -r -L "$claims" -f "$claims/opening.jq")
 # Each issue the body works is sectioned and signed (#3134, `signed.jq`).
 signed=$(jq -n --argjson issues "$issues" '{issues: $issues}' \
@@ -3654,19 +3666,15 @@ previous=
 # pull request still reads OPEN: the poll waits for MERGED until then.
 merging_until=
 
+# One poll's reading of the pull request and its queue entry, from
+# `pr_reading`: while it is open, the host's one shared reading of the open
+# pull requests, so the 30 s polls of every landing on the host cost one
+# query between them (#5061).
 pr_state() {
-  gh pr view "$number" -R "$repo" --json state,mergeable,mergeStateStatus,autoMergeRequest,mergeCommit,baseRefName,statusCheckRollup --jq '[.state, .mergeable, .mergeStateStatus, (.autoMergeRequest != null), (.mergeCommit.oid // "-"), .baseRefName, (.statusCheckRollup | length)] | @tsv'
-}
-queue_state() {
-  gh api graphql -f owner="$owner" -f name="$name" -F number="$number" -f query="
-    query(\$owner: String!, \$name: String!, \$number: Int!) {
-      repository(owner: \$owner, name: \$name) {
-        pullRequest(number: \$number) {
-          isInMergeQueue
-          mergeQueueEntry { state position }
-        }
-      }
-    }" --jq '.data.repository.pullRequest | [.isInMergeQueue, (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.position // 0)] | @tsv'
+  pr_reading "$number" \
+    | jq -r '[.state, .mergeable, .mergeStateStatus, (.autoMergeRequest != null), (.mergeCommit.oid // "-"), .baseRefName,
+        (.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // [] | length),
+        .isInMergeQueue, (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.position // 0)] | @tsv'
 }
 # Every workflow's run for the pull request's newest queue entry, one per line.
 group_runs() {
@@ -3855,11 +3863,8 @@ if [[ $(in_queue "$number") != true ]]; then
 fi
 queued=true
 while (( SECONDS < deadline )); do
-  snapshot=$(pr_state)
-  IFS=$'\t' read -r state mergeable merge_status auto commit base check_count <<< "$snapshot"
-  entry=$(queue_state)
-  IFS=$'\t' read -r in_queue queue_status position <<< "$entry"
-  current="$snapshot $entry"
+  current=$(pr_state)
+  IFS=$'\t' read -r state mergeable merge_status auto commit base check_count in_queue queue_status position <<< "$current"
   if [[ "$current" != "$previous" ]]; then
     printf 'PR #%s: %s; %s; %s; auto-merge=%s; queued=%s; entry=%s; position=%s; checks=%s\n' "$number" "$state" "$mergeable" "$merge_status" "$auto" "$in_queue" "$queue_status" "$position" "$check_count"
     previous=$current
@@ -4053,22 +4058,27 @@ echo $$ > "$await_lock"
 trap 'rm -f "$await_lock"' EXIT
 # One poll's reading, as `awaited` reads it: an issue's state and labels, or
 # a pull request's state, merge state, the age of its head commit and
-# whether it still lacks a trunk change the branch builds on. The poll calls
-# it as a condition, where `set -e` does not hold, so each step that can fail
-# fails the reading itself (#4803).
+# whether it still lacks a trunk change the branch builds on. An open pull
+# request is read from the host's one shared reading of the open pull
+# requests (`pulls_reading`), so the 30 s polls of every wait on the host
+# cost one query between them (#5061). Only an issue, or a pull request no
+# longer open, is read alone. The poll calls it as a condition, where
+# `set -e` does not hold, so each step that can fail fails the reading
+# itself (#4803).
 reading() {
-  local issue pull age head lacked lacks=false
-  issue=$(gh api "repos/$repo/issues/$number") || return 1
-  if [[ $(jq -r 'has("pull_request")' <<< "$issue") == false ]]; then
-    jq -c '{kind: "issue", state: (.state | ascii_upcase), labels: [.labels[].name]}' <<< "$issue"
-    return
+  local all issue pull head lacked lacks=false
+  all=$(pulls_reading) || return 1
+  pull=$(jq -c --argjson n "$number" '.[] | select(.number == $n)' <<< "$all") || return 1
+  if [[ -z $pull ]]; then
+    issue=$(gh api "repos/$repo/issues/$number") || return 1
+    if [[ $(jq -r 'has("pull_request")' <<< "$issue") == false ]]; then
+      jq -c '{kind: "issue", state: (.state | ascii_upcase), labels: [.labels[].name]}' <<< "$issue"
+      return
+    fi
+    pull=$(pr_reading "$number") || return 1
   fi
-  # REST, not GraphQL: the poll runs for every armed wait, and the GraphQL
-  # budget is the one the seats' gates and watches share (#4268).
-  pull=$(gh api "repos/$repo/pulls/$number" \
-    --jq '{kind: "pull", state: (if .merged then "MERGED" else (.state | ascii_upcase) end), merge: (.mergeable_state | ascii_upcase), head: .head.ref, sha: .head.sha}') || return 1
-  age=$(gh api "repos/$repo/commits/$(jq -r .sha <<< "$pull")" --jq '(now - (.commit.committer.date | fromdateiso8601) | floor)') || return 1
-  pull=$(jq -c --argjson age "$age" '. + {age: $age} | del(.sha)' <<< "$pull") || return 1
+  pull=$(jq -c '{kind: "pull", state, merge: .mergeStateStatus, head: .headRefName,
+    age: (now - (.commits.nodes[0].commit.committedDate | fromdateiso8601) | floor)}' <<< "$pull") || return 1
   if [[ $(jq -r .state <<< "$pull") == OPEN ]]; then
     head=$(jq -r .head <<< "$pull")
     git fetch --quiet origin "$head" "$trunk" || return 1

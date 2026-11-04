@@ -1765,5 +1765,42 @@
       ]
     },
     "output": "`crates/surface-parser/src/label.rs:1518` adds a `spec_clause_traversal` waiver that cites #4800, #4801, and none is open: cite the open issue that removes the ceiling in its `reason`, then run `pr:open` again"
+  },
+  {
+    "name": "#5061: a change that alters a gh call site with no `## API budget` is refused, each site listed",
+    "input": {
+      "branch": "workflow-5061-budget",
+      "body": "Closes #5061\n\n## Refactoring\n\nno\n",
+      "budget": [
+        { "file": ".config/pr-stack/stack.bash", "scope": "pulls_reading", "api": "graphql" },
+        { "file": ".config/issues/unsectioned.sh", "scope": "-", "api": "rest" }
+      ]
+    },
+    "output": "the body lacks `## API budget`, and the change alters 2 `gh` call sites: price each with a line that names it in backquotes and its measure: `rateLimit`, `call log`, `REST` or `rate_limit`, then run `pr:open` again:\n  - `pulls_reading` (.config/pr-stack/stack.bash, graphql)\n  - `.config/issues/unsectioned.sh` (.config/issues/unsectioned.sh, rest)"
+  },
+  {
+    "name": "#5061: an `## API budget` that names a site with no measure, or leaves one out, is refused for that site",
+    "input": {
+      "branch": "workflow-5061-budget",
+      "body": "Closes #5061\n\n## API budget\n\n- `pulls_reading` costs less now.\n- `deps_focus`: 2 requests a walk, from the call log.\n\n## Refactoring\n\nno\n",
+      "budget": [
+        { "file": ".config/pr-stack/stack.bash", "scope": "pulls_reading", "api": "graphql" },
+        { "file": ".config/claims/deps.bash", "scope": "deps_focus", "api": "rest" },
+        { "file": ".config/claims/deps.bash", "scope": "deps_sub_issues_kept", "api": "rest" }
+      ]
+    },
+    "output": "the body's `## API budget` does not price `pulls_reading` (.config/pr-stack/stack.bash, graphql): add a line that names it in backquotes and its measure: `rateLimit`, `call log`, `REST` or `rate_limit`, then run `pr:open` again\nthe body's `## API budget` does not price `deps_sub_issues_kept` (.config/claims/deps.bash, rest): add a line that names it in backquotes and its measure: `rateLimit`, `call log`, `REST` or `rate_limit`, then run `pr:open` again"
+  },
+  {
+    "name": "#5061: an `## API budget` that prices every altered site opens, a top-level call named by its file",
+    "input": {
+      "branch": "workflow-5061-budget",
+      "body": "Closes #5061\n\n## API budget\n\n- `pulls_reading`: 1 point a page of 25, the `rateLimit` cost of one call.\n- `.config/issues/unsectioned.sh`: one REST request an issue.\n\n## Refactoring\n\nno\n",
+      "budget": [
+        { "file": ".config/pr-stack/stack.bash", "scope": "pulls_reading", "api": "graphql" },
+        { "file": ".config/issues/unsectioned.sh", "scope": "-", "api": "rest" }
+      ]
+    },
+    "output": ""
   }
 ]
