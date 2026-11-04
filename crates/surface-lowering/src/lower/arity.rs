@@ -499,6 +499,15 @@ pub(super) struct Planned(pub bool);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Grouped(pub bool);
 
+/// Whether a written type classifies codes: a universe, the row kind, or an
+/// arrow between such types.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct Kinded(pub bool);
+
 /// The place of an entry among the entries a type states, counting from
 /// zero.
 ///
@@ -3961,6 +3970,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a call of a box signature and of a parameter at a box
     ///   each bind every output.
     /// - witness: `lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |output| output.is_none_or(|node| self.tree.node(node).is_some())))]
     fn written_output(
         &self,
         written: NodeIndex,

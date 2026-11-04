@@ -2842,12 +2842,14 @@ fn ends_run(
 ///   own tile only with a space each side; a closer needs neither.
 /// - witness: `parse::place::tests::a_tile_left_out_is_minted_where_the_rest_parses_2259`
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+#[spec(ensures: |ret| ret.trim_matches(' ') == <&str>::from(tile) && ret.len() <= <&str>::from(tile).len().saturating_add(2))]
 pub fn cut_in(
-    text: &str,
-    at: usize,
-    tile: &str,
+    text: gandr_surface_syntax::SourceText<'_>,
+    at: gandr_surface_syntax::ByteOffset,
+    tile: gandr_surface_syntax::SourceText<'_>,
 ) -> String
 {
+    let (text, at, tile) = (<&str>::from(text), usize::from(at), <&str>::from(tile));
     let (bytes, spelled) = (SourceBytes::from(text.as_bytes()), tile.as_bytes());
     let opens = spelled
         .first()
@@ -3977,9 +3979,14 @@ mod tests
         let unknown = |text: &str| (Lexeme::Unknown, text.to_owned());
         // Every operator the table holds is one tile where it stands whole, so
         // a longer one never loses its first bytes to a shorter one.
+        let mut written = alloc::string::String::new();
         for operator in super::OPERATORS {
+            written.clear();
+            written.push_str("a ");
+            written.push_str(operator);
+            written.push_str(" b");
             assert_eq!(
-                lexed(&alloc::format!("a {operator} b")),
+                lexed(&written),
                 vec![lower("a"), punct(operator), lower("b")],
                 "{operator:?}"
             );

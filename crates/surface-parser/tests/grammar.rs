@@ -202,6 +202,49 @@ fn a_group_before_the_value_function_arrow_molds_as_its_domains_2255() -> Result
     Ok(())
 }
 
+/// #4853: an expression operand right after an expression operand applies
+/// it, `f x`, through one zero-width tile per argument. A call `f(x)` stays
+/// a call, a shell block's words stay flat, and a block-like statement ends
+/// at its brace.
+#[test]
+fn juxtaposition_applies_outside_a_shell_form_4853() -> Result<(), Box<dyn Error>>
+{
+    let cases = [
+        ("def f = g x y;", 2_usize),
+        ("def f = g(x) y;", 1),
+        ("def f = g(x);", 0),
+        ("def f = g x.y;", 1),
+        ("def f = - g x;", 1),
+        ("def f = g x + h y;", 2),
+        ("def f = #!{ echo a b };", 0),
+        ("def f() -> Integer { if c { a } else { b } x }", 0),
+    ];
+    let grammar = built();
+    for (source, expected) in cases {
+        let tree = parse(grammar, SourceText::from(source))?.into_tree();
+        let applied = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter(|node| match node.label() {
+                gandr_surface_syntax::NodeLabel::Tile(mold) => grammar
+                    .rule_of(mold)
+                    .is_ok_and(|rule| rule.name().0 == "application_expression"),
+                gandr_surface_syntax::NodeLabel::Wald
+                | gandr_surface_syntax::NodeLabel::Meld(_)
+                | gandr_surface_syntax::NodeLabel::Grout { .. }
+                | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::Space
+                | gandr_surface_syntax::NodeLabel::Doc => false,
+            })
+            .count();
+        assert_eq!(applied, expected, "`{source}`: the applications it reads");
+        if expected > 0 {
+            assert_parses_clean(CaseName(source), SourceText::from(source))?;
+        }
+    }
+    Ok(())
+}
+
 /// Each ASCII token of the spelling table molds as its glyph's tile: a source
 /// written with it is the tree the glyph's source is, mold for mold (#782).
 #[test]

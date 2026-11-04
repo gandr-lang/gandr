@@ -1008,7 +1008,9 @@ fn a_telescope_value_lowers_by_its_arity()
         body(&arena, &module, "dotted"),
         "and the shorthand `l = e` is the same record, in either order"
     );
-    let source = "def bad = #{1 2} ;";
+    // Two entries side by side are one entry, an application. So the case
+    // writes a tile that neither separates nor closes the entry before it.
+    let source = "def bad = #{1 = 2} ;";
     assert!(
         matches!(
             refused(source),

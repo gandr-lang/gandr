@@ -2184,7 +2184,8 @@ pub fn written_children<'tree>(
 ///   form's own or the inner one reported, gives way to the point where its
 ///   form first leaves its rule's shape when that point comes before it
 ///   ([`earliest`]). Reading layout, documentation or a repair node itself
-///   leaves both fields empty.
+///   leaves both fields empty. An application spine `f x y` reads as the pieces
+///   of the call `f(x, y)` it spells, as [`application_spine`] reads it.
 /// - provides: the one reading of a form's children every reader takes, so the
 ///   own-tile test is decided in one place, over one buffer reused from form to
 ///   form.
@@ -2240,6 +2241,13 @@ pub fn written_children<'tree>(
                 | NodeLabel::Doc => {
                     read.pieces.is_empty()
                         && read.repair == Maybe::Absent(repair::Absent::Unrepaired)
+                },
+                | NodeLabel::Meld(mold)
+                    if Some(mold) == pbg.application()
+                        && matches!(read.pieces.first(), Some(Piece::Operand(_)))
+                        && matches!(read.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE) =>
+                {
+                    read.repair == Maybe::Absent(repair::Absent::Unrepaired)
                 },
                 | NodeLabel::Wald | NodeLabel::Meld(_) => {
                     let written = own_children(pbg, tree, position).filter_map(|(child, _)| {
@@ -2321,6 +2329,9 @@ pub fn read_pieces<'source>(
     else {
         return Ok(());
     };
+    if application_spine(pbg, tree, position, read).is_some() {
+        return Ok(());
+    }
     let own = match node.label() {
         NodeLabel::Tile(mold) => {
             let label = tile_name(pbg, node, mold)?;
@@ -2387,6 +2398,116 @@ pub fn read_pieces<'source>(
         };
     }
     Ok(())
+}
+
+/// The pieces of the call that the application spine at `position` spells:
+/// `f x y` reads as `f(x, y)`. Each application tile stands for the `(` or
+/// the `,` before its argument, and the outermost tile also stands for the
+/// `)`. An argument `()` is no argument, so `f ()` is the call `f()`.
+/// Parentheses around one argument only group it, so `f (g x)` reads as
+/// `f(g x)`. Every call reader thus reads a juxtaposed call as the call it
+/// spells.
+///
+/// # Specification
+/// - requires: `read` holds no pieces.
+/// - ensures: when `position` is an application whose left operands down to its
+///   head are applications and whose every part is written, `read` holds the
+///   head, `(`, the arguments separated by `,`, and `)`, and the head is
+///   answered. `None` otherwise, with `read` empty.
+/// - panics: none.
+/// - economy: one walk down the spine, written into `read`'s buffer, with no
+///   allocation beyond the buffer's growth.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `f x y` lowers as `f(x, y)`, and a call inside an
+///   argument as its own call. While the call form stands, a `(` after an
+///   operand molds as a call, so `f ()` and a grouped argument reach the spine
+///   only after the call form leaves the grammar.
+/// - witness: `lower::tests::a_juxtaposed_call_is_the_call_it_spells_4853`
+#[spec(ensures: |ret| match ret {
+    Some(head) => read.pieces.first() == Some(&Piece::Operand(head)) && matches!(read.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE),
+    None => read.pieces.is_empty(),
+})]
+fn application_spine(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    position: NodeIndex,
+    read: &mut Pieces,
+) -> Option<Placed>
+{
+    let application = pbg.application()?;
+    let applied = |at: NodeIndex| {
+        tree.node(at)
+            .is_some_and(|node| node.label() == NodeLabel::Meld(application))
+    };
+    if !applied(position) {
+        return None;
+    }
+    let written = |at: NodeIndex| {
+        tree.children(at)
+            .filter_map(|child| tree.node(child).map(|node| (child, node)))
+            .filter(|&(_, node)| !matches!(node.label(), NodeLabel::Space | NodeLabel::Doc))
+    };
+    // The pieces are written last to first, then reversed.
+    let mut at = position;
+    let head = loop {
+        let mut parts = written(at);
+        let (Some((left, left_node)), Some((tile, tile_node)), Some((right, right_node)), None) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
+            read.pieces.clear();
+            return None;
+        };
+        if !matches!(tile_node.label(), NodeLabel::Tile(_))
+            || !matches!(right_node.label(), NodeLabel::Tile(_) | NodeLabel::Meld(_))
+            || !matches!(left_node.label(), NodeLabel::Tile(_) | NodeLabel::Meld(_))
+        {
+            read.pieces.clear();
+            return None;
+        }
+        let tile = Placed::of(tile, tile_node);
+        if read.pieces.is_empty() {
+            read.pieces.push(Piece::Tile {
+                label: TileName::PAREN_CLOSE,
+                at: tile,
+            });
+        }
+        let opens = |node: &Node| matches!(node.label(), NodeLabel::Tile(mold) if tile_name(pbg, node, mold) == Ok(TileName::PAREN_OPEN));
+        let closes = |node: &Node| matches!(node.label(), NodeLabel::Tile(_));
+        let mut inner = written(right);
+        let argument = match (inner.next(), inner.next(), inner.next(), inner.next()) {
+            (Some((_, open)), Some((_, close)), None, None) if opens(open) && closes(close) => None,
+            (Some((_, open)), Some((only, held)), Some((_, close)), None)
+                if opens(open)
+                    && closes(close)
+                    && matches!(held.label(), NodeLabel::Tile(_) | NodeLabel::Meld(_)) =>
+            {
+                Some(Placed::of(only, held))
+            },
+            _ => Some(Placed::of(right, right_node)),
+        };
+        if let Some(argument) = argument {
+            read.pieces.push(Piece::Operand(argument));
+        }
+        read.pieces.push(Piece::Tile {
+            label: TileName::COMMA,
+            at: tile,
+        });
+        if applied(left) {
+            at = left;
+        }
+        else {
+            break Placed::of(left, left_node);
+        }
+    };
+    read.pieces.push(Piece::Operand(head));
+    read.pieces.reverse();
+    // The separator nearest the head opens the list.
+    if let Some(&mut Piece::Tile { ref mut label, .. }) = read.pieces.get_mut(1) {
+        *label = TileName::PAREN_OPEN;
+    }
+
+    Some(head)
 }
 
 /// Where the form at `position` itself stopped, when the parser closed it,
@@ -3102,6 +3223,40 @@ fn holes(regex: RegexView<'_>) -> Holes
         read.push(holes);
     }
     read.pop().unwrap_or(Holes::NOTHING)
+}
+
+/// The application that the word at `head` heads, `retur x`, when one does.
+///
+/// # Specification
+/// - requires: `head` is a span of `tree`.
+/// - ensures: an application node of `tree` whose first written child spans
+///   exactly `head`. `None` when no application starts with that word.
+/// - fails: never.
+/// - panics: none.
+/// - economy: one walk over the tree's positions, taken only for a refused
+///   name.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `retur x` heads an application and is refused as `return`
+///   misspelt, and a name used alone heads none.
+/// - witness: `lower::tests::a_keyword_misspelt_is_refused_at_the_word_2259`
+#[spec(ensures: |ret| ret.is_none_or(|at| tree.node(at).is_some_and(|node| Some(node.label()) == pbg.application().map(NodeLabel::Meld))))]
+pub fn applied_word(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    head: ByteSpan,
+) -> Option<NodeIndex>
+{
+    let application = NodeLabel::Meld(pbg.application()?);
+    tree.positions().find(|&position| {
+        tree.node(position)
+            .is_some_and(|node| node.label() == application)
+            && tree
+                .children(position)
+                .filter_map(|child| tree.node(child))
+                .find(|node| !matches!(node.label(), NodeLabel::Space | NodeLabel::Doc))
+                .is_some_and(|first| first.span() == head)
+    })
 }
 
 /// The keyword the word right before `extra` nearly spells, with the word's

@@ -759,7 +759,7 @@ fn settled<'source>(
         )
         .take(target.class.map_or(COPIES, |_| PLACES.saturating_add(1)))
         .find(|&(place, closer)| {
-            let spelled = cut_in(text, usize::from(place), <&str>::from(closer));
+            let spelled = cut_in(source, place, closer);
             let pad = spelled.find(<&str>::from(closer)).unwrap_or(0_usize);
             let tile = shifted(place).and_then(|at| {
                 let at = usize::from(at).checked_add(pad)?;
@@ -783,7 +783,7 @@ fn settled<'source>(
             })
         })?;
     let place = past(source, place, closer);
-    let spelled = cut_in(text, usize::from(place), <&str>::from(closer));
+    let spelled = cut_in(source, place, closer);
     let spelled = SourceText::from(spelled.as_str());
     let whole = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(text.len())).ok()?;
     let copy = written(source, whole, place, spelled)?;

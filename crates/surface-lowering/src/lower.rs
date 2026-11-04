@@ -617,6 +617,7 @@ use crate::form::Placed;
 use crate::form::Run;
 use crate::form::Shape;
 use crate::form::TileName;
+use crate::form::applied_word;
 use crate::form::bare_bracket;
 use crate::form::declined_feature;
 use crate::form::misspelt_keyword;
@@ -7634,19 +7635,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// Move each extra-operand refusal of a declaration of the current source
-    /// onto the word before the extra operand, when that word misspells a
-    /// keyword ([`misspelt_keyword`]): the operand is extra because the
-    /// keyword read as a name.
+    /// Move a refusal of a declaration of the current source onto a word that
+    /// misspells a keyword ([`misspelt_keyword`]). The refusal is either an
+    /// extra operand after the word, or the word itself as an unknown name
+    /// that heads an application ([`applied_word`]). Either way the keyword
+    /// read as a name: `retur x`.
     ///
     /// # Specification
     /// - requires: every pass that refuses a declaration of the current source
     ///   has run.
-    /// - ensures: each slot of the current source refused as a form holding an
-    ///   operand it does not take, whose half holding the refusal holds a word
-    ///   before that operand that [`misspelt_keyword`] reads, is refused at the
-    ///   word instead, at the same node and naming the same form, with the
-    ///   keyword the word misspells; every other refusal is unchanged.
+    /// - ensures: each slot of the current source whose refusal is one of the
+    ///   two above, inside a half of the slot, is refused at the word instead
+    ///   when [`misspelt_keyword`] reads the word. The refusal keeps its node,
+    ///   names the extra operand's form or the declaration's form, and names
+    ///   the keyword the word misspells. Every other refusal is unchanged.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause restates the walk over the slots.
@@ -7659,32 +7661,89 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let pbg = self.pbg;
         let tree = self.tree;
         for slot in self.collected.slots.iter_mut().skip(self.current.slots) {
-            let Maybe::Present((
-                position,
+            let Maybe::Present((position, ref refusal)) = slot.refusal
+            else {
+                continue;
+            };
+            // An extra operand after a word, or a word that heads an
+            // application and names nothing: `retur x` either way.
+            let (span, form) = match *refusal {
                 LoweringRefusal::MalformedForm {
                     span,
                     form,
                     fault: FormFault::ExtraOperand,
+                } => (span, Some(form)),
+                LoweringRefusal::UnresolvedName { span, .. }
+                    if applied_word(pbg, tree, span).is_some() =>
+                {
+                    (span, None)
                 },
-            )) = slot.refusal
-            else {
-                continue;
+                _ => continue,
             };
-            let Some(within) = [slot.signature, slot.definition]
+            let Some(half) = [slot.signature, slot.definition]
                 .into_iter()
                 .find_map(|half| match half {
                     Maybe::Present(half)
                         if half.declaration.span.start() <= span.start()
                             && span.end() <= half.declaration.span.end() =>
                     {
-                        Some(half.declaration.span)
+                        Some(half)
                     },
                     Maybe::Present(_) | Maybe::Absent(_) => None,
                 })
             else {
                 continue;
             };
-            if let Some((word, keyword)) = misspelt_keyword(pbg, tree, within, span) {
+            let within = half.declaration.span;
+            // The word's own end, so the search reads the word itself.
+            let extra = match form {
+                Some(_) => span,
+                None => match ByteSpan::new(span.end(), span.end()) {
+                    Ok(end) => end,
+                    Err(_) => continue,
+                },
+            };
+            // The form the word stands in: the nearest form holding the
+            // application, past a block or a statement, which read in their
+            // form's place. A function tail is lowered at its declaration, so
+            // the declaration of a function names the function's form.
+            let holder = |inner: NodeIndex| {
+                tree.positions()
+                    .find(|&outer| tree.children(outer).any(|child| child == inner))
+            };
+            let form = match form {
+                Some(form) => form,
+                None => {
+                    let mut at = applied_word(pbg, tree, span);
+                    let mut named = None;
+                    while let Some(outer) = at.and_then(holder) {
+                        match tree.node(outer).map(|node| shape_of(pbg, node)) {
+                            Some(Ok(Shape::Form { name, .. }))
+                                if name != FormName::BLOCK
+                                    && name != FormName::EXPRESSION_STATEMENT =>
+                            {
+                                named = Some(
+                                    if outer == half.declaration.node
+                                        && half.operand == Operand::Function
+                                    {
+                                        FormName::FUNCTION
+                                    }
+                                    else {
+                                        name
+                                    },
+                                );
+                                break;
+                            },
+                            _ => at = Some(outer),
+                        }
+                    }
+                    match named {
+                        Some(name) => name,
+                        None => continue,
+                    }
+                },
+            };
+            if let Some((word, keyword)) = misspelt_keyword(pbg, tree, within, extra) {
                 slot.refusal = Maybe::Present((position, LoweringRefusal::MalformedForm {
                     span: word,
                     form,
@@ -16211,7 +16270,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let codomain = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
         let kind = self.kinds.contains(&site.at.node);
-        if value_typed && !kind && !self.ranges_over_codes(domain)? {
+        if value_typed && !kind && !self.ranges_over_codes(domain)?.0 {
             // A box whose output is a box writes the output in parentheses,
             // `A -> (B -> C)`; a flat box writes its inputs as one group,
             // `(A, B) -> C`.
@@ -16247,11 +16306,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: true for `Type`, `Type[-]`, `Row`, `Type -> Type` and `(Type
-    ///   -> Type)`; false for any other type, a name an alias gives a kind
-    ///   included.
+    /// - ensures: kinded for `Type`, `Type[-]`, `Row`, `Type -> Type` and
+    ///   `(Type -> Type)`. Not kinded for any other type, a name an alias gives
+    ///   a kind included.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
     /// - panics: none.
+    /// - executable: none — the answer is read off the syntax tree, which a
+    ///   predicate could check only by repeating the walk.
     ///
     /// # Errors
     /// [`LoweringRefusal::UnknownMold`].
@@ -16267,13 +16328,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn ranges_over_codes(
         &mut self,
         domain: Placed,
-    ) -> Result<bool, LoweringRefusal<'source>>
+    ) -> Result<arity::Kinded, LoweringRefusal<'source>>
     {
         let mut at = domain;
         loop {
             match self.form_at(at)? {
-                Some((_, Former::Universe)) => return Ok(true),
-                Some((_, Former::TypeHead)) => return Ok(self.name_at(at).as_ref() == "Row"),
+                Some((_, Former::Universe)) => return Ok(arity::Kinded(true)),
+                Some((_, Former::TypeHead)) => {
+                    return Ok(arity::Kinded(self.name_at(at).as_ref() == "Row"));
+                },
                 Some((_, Former::ParenthesizedType | Former::ArrowType)) => {
                     let mut scratch = core::mem::take(&mut self.scratch);
                     let read = read_pieces(self.pbg, self.tree, at.node, &mut scratch).map(|()| {
@@ -16285,11 +16348,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     self.scratch = scratch;
                     let Some(first) = read?
                     else {
-                        return Ok(false);
+                        return Ok(arity::Kinded(false));
                     };
                     at = first;
                 },
-                _ => return Ok(false),
+                _ => return Ok(arity::Kinded(false)),
             }
         }
     }
@@ -28126,6 +28189,42 @@ def ended() -> -F [Partial] Unit {
     }
 
     #[test]
+    fn a_juxtaposed_call_is_the_call_it_spells_4853()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def g = thunk { fun (x) { fun (y) { return x } } } ; def h = thunk { become g(1, \
+                 2) } ; def j = thunk { become g 1 2 } ; def spelled = thunk { become g(g(1, 2), \
+                 3) } ; def nested = thunk { become g g(1, 2) 3 } ;",
+            ),
+            &mut arena,
+        );
+        let body = |wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            body_of(declaration.outcome())
+        };
+        for (juxtaposed, called, reason) in [
+            ("j", "h", "`g 1 2` is the call `g(1, 2)`"),
+            (
+                "nested",
+                "spelled",
+                "a call inside an argument is its own call",
+            ),
+        ] {
+            assert_eq!(
+                gandr_core_term::equal_certificate_syntax(&arena, body(juxtaposed), body(called)),
+                gandr_core_term::CertificateEquality::Equal,
+                "{reason}"
+            );
+        }
+    }
+
+    #[test]
     fn a_call_of_no_arguments_is_the_call_the_source_wrote_364()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -30163,15 +30262,14 @@ def ended() -> -F [Partial] Unit {
             );
         }
         let source = "def f(x : Integer) -> -F Integer {\n  zebra x\n}\n";
-        let start = source.find("x\n").unwrap_or_default();
+        let start = source.find("zebra").unwrap_or_default();
         assert_eq!(
             refusal(SourceText::from(source)),
-            LoweringRefusal::MalformedForm {
-                span: at(start, start.saturating_add(1)),
-                form: FormName::FUNCTION,
-                fault: FormFault::ExtraOperand,
+            LoweringRefusal::UnresolvedName {
+                span: at(start, start.saturating_add(5)),
+                name: SurfaceName::from("zebra"),
             },
-            "a word that misspells no keyword keeps the refusal at the extra operand"
+            "a word that misspells no keyword is the call of a name nothing defines"
         );
     }
 

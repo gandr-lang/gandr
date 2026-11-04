@@ -150,6 +150,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
     let mul = precs.prec(PrecName("expression.mul"))?;
     let unary = precs.prec(PrecName("expression.unary"))?;
     let postfix = precs.prec(PrecName("expression.postfix"))?;
+    let application = precs.prec(PrecName("expression.application"))?;
     let atom = precs.prec(PrecName("expression.atom"))?;
 
     let mut out = Vec::new();
@@ -175,6 +176,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
         mul,
         unary,
         postfix,
+        application,
         atom,
     });
     lexical(&mut out, pat_atom, atom);
@@ -2100,6 +2102,17 @@ fn expressions(
         s,
         p.mul,
     );
+    // Juxtaposition, `f x`: a call written with no parentheses. Its tile is
+    // zero bytes wide and no lexeme spells it. The melder pushes the tile
+    // between two expression operands. The rule is a call by provenance, so
+    // the lowering reads `f x y` as the call `f(x, y)`.
+    out.push(r(
+        RuleName("application_expression"),
+        Provenance("call_expression"),
+        s,
+        p.application,
+        seq([h(s), t(TileLabel(super::APPLICATION)), h(s)]),
+    ));
     out.push(r(
         RuleName("unary_expression"),
         Provenance("unary_expression"),
@@ -2406,6 +2419,8 @@ struct ExprPrecs
     unary: Prec,
     /// Postfix precedence.
     postfix: Prec,
+    /// Juxtaposition's precedence, between postfix and unary.
+    application: Prec,
     /// Atomic-expression precedence.
     atom: Prec,
 }

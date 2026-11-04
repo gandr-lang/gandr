@@ -254,6 +254,7 @@ const PREC_GROUPS: &[(&str, Assoc)] = &[
     ("pattern.cons", Assoc::Right),
     ("type.equivalence", Assoc::Right),
     ("expression.pipe", Assoc::Left),
+    ("expression.application", Assoc::Left),
 ];
 
 /// The tighter-than edges between named groups, in the order the DAG lists
@@ -266,12 +267,14 @@ const PREC_GROUPS: &[(&str, Assoc)] = &[
 /// bands and above the arrows: `A * B ≃ C` relates the product,
 /// and `A ≃ B -> C` is an arrow out of the relation. The plugging `|>`
 /// sits between logical or and the exits, left-associative, so
-/// `a |> f |> g` plugs `a` into `f` and that into `g`. Each group
-/// added after the first chains comes last in [`PREC_GROUPS`], so every
-/// earlier group keeps its id.
+/// `a |> f |> g` plugs `a` into `f` and that into `g`. Juxtaposition sits
+/// between the postfix and unary bands, left-associative. Thus `f x y` is
+/// `(f x) y`, `f x.y` applies `f` to `x.y`, and `-f x` negates `f x`. Each
+/// group added after the first chains comes last in [`PREC_GROUPS`], so
+/// every earlier group keeps its id.
 const PREC_EDGES: &[(&str, &str)] = &[
     ("expression.atom", "expression.postfix"),
-    ("expression.postfix", "expression.unary"),
+    ("expression.postfix", "expression.application"),
     ("expression.unary", "expression.mul"),
     ("expression.mul", "expression.add"),
     ("expression.add", "expression.cons"),
@@ -292,7 +295,19 @@ const PREC_EDGES: &[(&str, &str)] = &[
     ("pattern.cons", "pattern.as"),
     ("type.equivalence", "type.arrow"),
     ("expression.pipe", "expression.pure"),
+    ("expression.application", "expression.unary"),
 ];
+
+/// The label of juxtaposition's tile, `f x`: one space, the gap that writes
+/// an application. The tile is zero bytes wide. No lexeme holds whitespace,
+/// so no lexeme spells the tile, and the melder pushes it between two
+/// expression operands.
+pub const APPLICATION: &str = " ";
+
+/// The tiles that open a shell form: a shell block, a subshell and a command
+/// substitution. A shell form's words stay flat side by side, so the melder
+/// pushes no juxtaposition tile inside one.
+pub(crate) const FLAT_OPENERS: &[&str] = &["#!{", "subshell_open", "command_substitution_start"];
 
 /// The named node kinds of the surface's tree-sitter grammar, ascending.
 pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[

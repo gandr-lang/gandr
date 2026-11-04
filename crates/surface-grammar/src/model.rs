@@ -1496,6 +1496,11 @@ pub struct Pbg
     molds: MoldTable,
     /// The tile automaton's tables, derived from the mold table.
     automaton: TileAutomaton,
+    /// The mold of juxtaposition's tile, `f x`, when the grammar has one.
+    application: Option<MoldId>,
+    /// The molds that open a form whose operands stay flat side by side, a
+    /// shell block's words. Ascending.
+    flat: Vec<MoldId>,
 }
 
 impl Pbg
@@ -1657,6 +1662,15 @@ impl Pbg
             .flat_map(|rule| rule.adaptations.iter().copied())
             .collect();
         let automaton = TileAutomaton::derive(&molds);
+        let application = molds
+            .candidates(TileLabel(crate::surface::APPLICATION))
+            .first()
+            .copied();
+        let mut flat: Vec<MoldId> = crate::surface::FLAT_OPENERS
+            .iter()
+            .flat_map(|&label| molds.candidates(TileLabel(label)).iter().copied())
+            .collect();
+        flat.sort_unstable();
         Self {
             dag,
             forms,
@@ -1665,6 +1679,8 @@ impl Pbg
             adaptations,
             molds,
             automaton,
+            application,
+            flat,
         }
     }
 
@@ -1991,6 +2007,49 @@ impl Pbg
     ) -> &[MoldId]
     {
         self.molds.candidates(label)
+    }
+
+    /// The mold of juxtaposition's tile, `f x`, when the grammar has one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first mold the label [`crate::APPLICATION`] takes, and
+    ///   `None` when the grammar declares no such tile.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the built-in inventory holds one mold for the
+    ///   application label, so a lost or doubled tile shows. The parser's suite
+    ///   witnesses where the melder pushes it.
+    /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
+    #[spec(ensures: |ret| ret.is_none_or(|mold| self.molds.mold(mold).is_ok_and(|def| def.label == crate::APPLICATION)))]
+    #[inline]
+    #[must_use]
+    pub fn application(&self) -> Option<MoldId>
+    {
+        self.application
+    }
+
+    /// The molds that open a shell form, whose words stay flat side by side,
+    /// ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every mold of a tile in [`crate::surface::FLAT_OPENERS`],
+    ///   ascending, so a caller finds a mold by binary search.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the built-in inventory holds the molds of each shell
+    ///   opener, so a lost opener shows. The parser's suite witnesses that a
+    ///   shell block's words stay flat.
+    /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
+    #[spec(ensures: |ret| ret.is_sorted() && ret.iter().all(|&mold| self.molds.mold(mold).is_ok_and(|def| crate::surface::FLAT_OPENERS.contains(&def.label))))]
+    #[inline]
+    #[must_use]
+    pub fn flat_openers(&self) -> &[MoldId]
+    {
+        &self.flat
     }
 
     /// The molds `label` can take where no form is open: those without a

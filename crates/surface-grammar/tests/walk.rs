@@ -75,13 +75,14 @@ const BUILT_IN_FINGERPRINT: u64 = 0x8102_ae27_52ba_20ae;
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2920);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2921);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
+    (" ", 1),
     ("!", 2),
     ("!=", 1),
     ("\"", 12),

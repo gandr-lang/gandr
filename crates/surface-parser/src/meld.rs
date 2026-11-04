@@ -1850,12 +1850,14 @@ impl<'pbg> MeldState<'pbg>
     }
 
     /// [`push`](Self::push) a tile of `mold` over `text`, borrowing the text:
-    /// the molder's dry-runs push without owning a [`MoldedTile`].
+    /// the molder's dry-runs push without owning a [`MoldedTile`]. An
+    /// expression operand right after an expression operand is applied to it,
+    /// `f x`: the application tile no lexeme spells is pushed first.
     ///
     /// # Specification
     /// - requires: none; `mold` may be arbitrary.
     /// - ensures: the state [`push`](Self::push) of a tile of `mold` and `text`
-    ///   reaches.
+    ///   reaches, after the application tile [`Self::juxtaposed`] names.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1864,8 +1866,38 @@ impl<'pbg> MeldState<'pbg>
     ///   drift between the two changes the corpus trees.
     /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
     #[spec(captures: before = self.source.len(), ensures: |_| self.source.get(before ..) == Some(<&str>::from(text)) && (self.pbg.mold(mold).is_ok() || self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::UnmoldedTok)))]
     pub(crate) fn push_text(
+        &mut self,
+        mold: MoldId,
+        text: TileText<'_>,
+    )
+    {
+        if let Ok(def) = self.pbg.mold(mold)
+            && let Some(application) = self.juxtaposed(mold, def.sort)
+        {
+            self.push_molded(application, TileText::from(""));
+        }
+        self.push_molded(mold, text);
+    }
+
+    /// Push one tile of `mold` over `text` through the machine: Shift,
+    /// Reduce or Degrout.
+    ///
+    /// # Specification
+    /// - requires: none; `mold` may be arbitrary.
+    /// - ensures: `text` is appended to the source; a mold `pbg` holds is
+    ///   pushed as its kind decides, and any other is buffered as
+    ///   [`Oblig::UnmoldedTok`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::push_text`], which pushes every tile here.
+    /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.get(before ..) == Some(<&str>::from(text)) && (self.pbg.mold(mold).is_ok() || self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::UnmoldedTok)))]
+    fn push_molded(
         &mut self,
         mold: MoldId,
         text: TileText<'_>,
@@ -1924,6 +1956,65 @@ impl<'pbg> MeldState<'pbg>
                 });
             },
         }
+    }
+
+    /// The application tile to push before a tile of `mold` and `sort`, when
+    /// the tile opens an expression operand right after one: `f x`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the grammar's application mold exactly when `mold` is no
+    ///   application, `sort` is the expression sort, `mold` starts an operand
+    ///   by itself, the slope's top is a complete expression operand whose
+    ///   source does not end in `}`, a form is open, and the open form is no
+    ///   shell form. `None` otherwise.
+    /// - panics: none.
+    /// - economy: a few comparisons and one binary search of the shell openers.
+    ///   No string is compared.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `f x y` applies twice, a shell block's words stay
+    ///   flat, `if c { a } else { b } x` stays two statements, a call `f(x)`
+    ///   stays a call, and two stray words at the root stay strays.
+    /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
+    #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application() && application != mold && sort == Sort::Expression))]
+    fn juxtaposed(
+        &self,
+        mold: MoldId,
+        sort: Sort,
+    ) -> Option<MoldId>
+    {
+        let application = self.pbg.application()?;
+        if mold == application || sort != Sort::Expression {
+            return None;
+        }
+        if !matches!(
+            self.classify(mold),
+            Kind::Operand
+                | Kind::FormStart { absorb_left: false }
+                | Kind::Operator(OpShape::Prefix)
+        ) {
+            return None;
+        }
+        let top = self.stack.last()?;
+        if top.role != Role::Operand || top.sort != Sort::Expression {
+            return None;
+        }
+        // A block-like statement ends at its brace, as Rust's does: `if c { a }
+        // else { b } x` is two statements.
+        let last = usize::try_from(top.end).ok()?.checked_sub(1)?;
+        if self.source.as_bytes().get(last) == Some(&b'}') {
+            return None;
+        }
+        // The root holds declarations alone, so two words side by side there
+        // are strays, never an application. A shell form's words stay flat
+        // side by side.
+        let open = self.open_form_mold()?;
+        if self.pbg.flat_openers().binary_search(&open).is_ok() {
+            return None;
+        }
+
+        Some(application)
     }
 
     /// Push a tile of `mold` over no text, owed as a missing tile at the
