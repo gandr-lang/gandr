@@ -16,5 +16,19 @@
     "red": "middle",
     "upper": "builds",
     "output": "refused: conflicts (r.txt); gh: ; link: "
+  },
+  {
+    "name": "#5071: a server that keeps the red member stacked after the unstack gets no push, and nothing moves",
+    "red": "middle",
+    "upper": "apart",
+    "server": "keeps",
+    "output": "refused: the server still holds #2 in stack 9 after the unstack; nothing is pushed; gh: stack unstack 9 | pr edit 3 -R case/case --base lower; link: "
+  },
+  {
+    "name": "#5071: a member whose tip the member above it does not contain is refused before the replay, both named, and nothing moves",
+    "red": "middle",
+    "upper": "apart",
+    "top": "behind",
+    "output": "refused: top does not contain upper, the member below it; rebase it onto upper first; gh: ; link: "
   }
 ]

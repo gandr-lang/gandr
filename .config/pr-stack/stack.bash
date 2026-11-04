@@ -519,14 +519,19 @@ restack() {
 # the member below it, or onto `origin/$trunk` when it is the bottom, and the
 # red member's commits are left out. The replay runs in a scratch worktree
 # and signs every commit it writes (`--gpg-sign`, #3745), so a conflict stops
-# the cut with nothing moved. The server refuses a base edit on a stacked pull
-# request, so the stack is unstacked first, the member above the red one
-# retargeted onto the red one's base, every moved branch pushed in one atomic
-# push leased on each remote tip, and the chain without the red member linked
-# again (`stack_link`). The red member stays open on its base for its seat.
-# Prints one line per branch that moved.
+# the cut with nothing moved. Each member's remote tip from the red one up
+# must be an ancestor of the member above it, or the replay leaves a member
+# its old commits (#5071): such a stack is refused, both members named. The
+# server refuses a base edit on a stacked pull request, so the stack is
+# unstacked first and the member above the red one retargeted onto the red
+# one's base. The server is then read again, and only a reading with the red
+# member in no stack and the member above it on that base lets the push run
+# (#5071): every moved branch in one atomic push leased on each remote tip.
+# The chain without the red member is then linked again (`stack_link`). The
+# red member stays open on its base for its seat. Prints one line per branch
+# that moved.
 restack_past() {
-  local stack=$1 red=$2 at heads above head onto base scratch server status=0 pushes=() leases=() moved=() old new number
+  local stack=$1 red=$2 at heads above head onto base scratch server held status=0 pushes=() leases=() moved=() old new number i
   at=$(jq --argjson red "$red" 'map(.number) | index($red)' <<< "$stack")
   mapfile -t heads < <(jq -r '.[].head' <<< "$stack")
   above=("${heads[@]:at+1}")
@@ -540,10 +545,14 @@ restack_past() {
   for head in "${above[@]::${#above[@]}-1}"; do
     git -C "$scratch" branch --quiet --force "pr-stack/$head" "origin/$head"
   done
-  if ! git merge-base --is-ancestor "origin/${heads[at]}" "origin/${above[0]}"; then
-    echo "${above[0]} does not contain ${heads[at]}, the red branch below it; rebase it onto ${heads[at]} first" >&2
-    status=1
-  elif ! git -C "$scratch" rebase --quiet --gpg-sign --update-refs --onto "$onto" "origin/${heads[at]}" > /dev/null; then
+  for (( i = at; i + 1 < ${#heads[@]}; i++ )); do
+    if ! git merge-base --is-ancestor "origin/${heads[i]}" "origin/${heads[i+1]}"; then
+      echo "${heads[i+1]} does not contain ${heads[i]}, the member below it; rebase it onto ${heads[i]} first" >&2
+      status=1
+      break
+    fi
+  done
+  if (( status == 0 )) && ! git -C "$scratch" rebase --quiet --gpg-sign --update-refs --onto "$onto" "origin/${heads[at]}" > /dev/null; then
     echo "the restack of ${above[*]} past #$red onto $onto conflicts ($(git -C "$scratch" diff --name-only --diff-filter=U | paste -sd ' ' -)); land again once #$red is fixed" >&2
     git -C "$scratch" rebase --abort || true
     status=1
@@ -558,9 +567,21 @@ restack_past() {
     done
     number=$(jq -r ".[$at + 1].number" <<< "$stack")
     server=$(stack_of "$red")
-    # It exits nonzero (5) whenever it leaves a queued member stacked.
+    # It exits nonzero (5) whenever it leaves a queued member stacked, so
+    # the server's reading below decides, never its exit.
     [[ $server == null ]] || gh stack unstack "$server" < /dev/null > /dev/null 2>&1 || :
     gh pr edit "$number" -R "$repo" --base "$base" > /dev/null || status=$?
+  fi
+  if (( status == 0 )); then
+    server=$(stack_of "$red") || status=$?
+    held=$(pr_reading "$number" | jq -r '.baseRefName') || status=$?
+    if (( status == 0 )) && [[ $server != null ]]; then
+      echo "the server still holds #$red in stack $server after the unstack; nothing is pushed" >&2
+      status=1
+    elif (( status == 0 )) && [[ $held != "$base" ]]; then
+      echo "the server holds #$number on $held, not $base, after the base edit; nothing is pushed" >&2
+      status=1
+    fi
   fi
   if (( status == 0 )); then
     git -C "$scratch" push --quiet --atomic "${leases[@]}" origin "${pushes[@]}" || status=$?
