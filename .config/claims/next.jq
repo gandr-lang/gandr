@@ -94,10 +94,11 @@
 # longest `lanes` key the branch opens with, the newest head first when two
 # lanes' branches work it. With neither, the claim names no lane (#4504): no
 # lane holds it, and each lane over one of its areas prints one
-# `unattributed: #n <title>` line for it before its answer. A lane holding a
-# claimed issue that no open pull request names (`names`, as the lifecycle
-# reads it) claims nothing: the answer is one `held: #n <title>` line per
-# such issue and no pick, and `claim:release` is the way out. An issue a lane
+# `unattributed: #n <title>` line for it before its answer. A claimed issue a
+# lane holds that no open pull request names (`names`, as the lifecycle reads
+# it) prints one `held: #n <title>` line, and the lane claims its next unit
+# all the same: a lane never waits on its own unopened work, and the claim
+# window releases a claim nobody works (`claim:release`). An issue a lane
 # released, or a merge on its branch advanced, in the last 2 hours comes
 # first for that lane, ahead of every bucket, the latest release first, and
 # no other lane claims it in those 2 hours: the continuation stays with the
@@ -225,7 +226,7 @@ def observation($refusals):
    else [.issues[] | select(has("status:claimed") and placed($branches; $lanes) == $lane)
      | . as $issue | select([$prs[] | names($issue.number)] | any | not)]
    end) as $held
-| if ($held | length) > 0 then $held[] | "held: #\(.number) \(.title)" else
+| ($held[] | "held: #\(.number) \(.title)"), (
   [.issues[] | select(candidate and unclaimed($lane)) | . as $issue | select([$prs[] | names($issue.number)] | any | not)
     | select($lane == null or ([kept($now) | .lane != $lane] | any | not))] as $open
 | if $focus != null then [
@@ -263,5 +264,5 @@ def observation($refusals):
       (select(.[1] != "collector") | .[0] | .number as $n | .labels as $labels | .body // "" | findings($labels) | "sections due: #\($n) — \(.)"),
       (select(.[1] != "collector") | .[0] | quoted(unstated_axes)[] | "restate: \(.)"),
       "\(.[0].number)\t\(.[1])\t\(.[0].title)")
-  end
+  )
   )
