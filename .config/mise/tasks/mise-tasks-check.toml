@@ -599,7 +599,8 @@ if [[ -n $text ]]; then
 fi
 if [[ -n ${usage_pr:-} ]]; then
   mkdir -p target/evidence
-  head=$(gh api "repos/{owner}/{repo}/pulls/$usage_pr" --jq .head.sha)
+  # A CI run names the head it checks (#5078); a seat's run reads it.
+  head=${CI_PR_HEAD:-$(gh api "repos/{owner}/{repo}/pulls/$usage_pr" --jq .head.sha)}
   gh api --paginate "repos/{owner}/{repo}/commits/$head/check-runs?per_page=100" \
     --jq '.check_runs[] | select((.name | startswith("hotpath / ")) and .status == "completed" and (.conclusion == "failure" or .conclusion == "success")) | {name, conclusion, summary: (.output.summary // "")}' \
     | jq -s -f .config/hotpath/report.jq > target/evidence/hotpath.json

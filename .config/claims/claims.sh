@@ -5,10 +5,10 @@
 #   claims.sh sweep [--dry-run]    the scheduled sweep
 #
 # It reads the claimed issues, open and closed (a `Closes #n` merge closes the
-# issue before this runs, and GitHub keeps its labels), when each one's label
-# was last added (one events read per claimed issue: a claim ages by its
-# label, never by the issue's last update, #3915), and the open pull requests
-# through the API, lets `decide.jq` pick the claims that come off, removes the
+# issue before this runs, and GitHub keeps its labels), the open pull
+# requests, and when each claim's label was last added, through the API: a
+# claim ages by its label, never by the issue's last update (#3915). It
+# lets `decide.jq` pick the claims that come off, removes the
 # label from each and prints one line per removal; nothing is posted for a
 # removal. A merge then writes a release marker on each open issue it
 # advanced, naming the lane its branch opens with (`markers.jq`), so that lane
@@ -30,17 +30,37 @@ case "$mode" in
 esac
 
 listed=$(gh api --paginate "repos/$repo/issues?state=all&labels=$label&per_page=100" \
-  --jq '[.[] | select(.pull_request == null) | {number, state, labels: [.labels[].name], created_at}]' | jq -s 'add // []')
+  --jq '[.[] | select(.pull_request == null) | {number, state, labels: [.labels[].name], created_at, updated_at}]' | jq -s 'add // []')
+open_prs=$(gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \
+  --jq '[.[] | {number, body: (.body // ""), head: .head.ref}]' | jq -s 'add // []')
+# The claims whose label's age the sweep reads from their events (#5078):
+# open, no epic, named by no open pull request, and on an issue that changed
+# in the last 4 hours. Any other claim's age decides nothing, or its issue's
+# last update, which a label's addition sets, already shows the label is 4
+# hours old. A merge's run reads no events: it finds a claim silent by that
+# last update alone, and the sweep, every two hours, reads the busy ones.
+declare -A aged=()
+if [[ $mode == sweep ]]; then
+  while IFS= read -r number; do
+    [[ -n $number ]] && aged[$number]=1
+  done < <(jq -r -L "$here" --argjson now "$(date +%s)" --argjson prs "$open_prs" 'include "targets";
+    .[] | . as $issue
+    | select(.state == "open" and (.labels | index("kind:epic") | not)
+        and ([$prs[] | names($issue.number)] | any | not) and ($now - (.updated_at | fromdateiso8601)) < 14400)
+    | .number' <<< "$listed")
+fi
 # A label no `labeled` event shows (a transferred issue) ages from the issue's
 # creation.
 claimed=$(jq -c '.[]' <<< "$listed" | while IFS= read -r issue; do
   number=$(jq -r .number <<< "$issue")
-  at=$(gh api --paginate "repos/$repo/issues/$number/events?per_page=100" \
-    --jq "[.[] | select(.event == \"labeled\" and .label.name == \"$label\") | .created_at] | last // empty" | awk 'NF { at = $0 } END { print at }')
-  jq -c --arg at "$at" '{number, state, labels, claimed_at: (if $at == "" then .created_at else $at end)}' <<< "$issue"
+  if [[ -n ${aged[$number]:-} ]]; then
+    at=$(gh api --paginate "repos/$repo/issues/$number/events?per_page=100" \
+      --jq "[.[] | select(.event == \"labeled\" and .label.name == \"$label\") | .created_at] | last // empty" | awk 'NF { at = $0 } END { print at }')
+    jq -c --arg at "$at" '{number, state, labels, claimed_at: (if $at == "" then .created_at else $at end)}' <<< "$issue"
+  else
+    jq -c '{number, state, labels, claimed_at: .updated_at}' <<< "$issue"
+  fi
 done | jq -s .)
-open_prs=$(gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \
-  --jq '[.[] | {number, body: (.body // ""), head: .head.ref}]' | jq -s 'add // []')
 
 removals=$(jq -rn --argjson now "$(date +%s)" --argjson claimed "$claimed" --argjson open_prs "$open_prs" --argjson merged "$merged" \
   '{now: $now, claimed: $claimed, open_prs: $open_prs, merged_body: $merged}' | jq -r -L "$here" -f "$here/decide.jq")

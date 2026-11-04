@@ -40,8 +40,16 @@ findings=$(jq -r '.body // ""' <<< "$issued" \
     --argjson cutoff "$(jq -R -s -f "$root/.config/claims/cutoff.jq" "$root/.config/references/window.toml")" \
     -f "$root/.config/claims/unit.jq" \
   | jq -R -s -c 'split("\n") | map(select(length > 0))')
-comments=$(gh api --paginate "repos/$repo/issues/$issue/comments" \
-  --jq '.[] | select(.body | startswith("<!-- unit:check -->")) | {id, body}' | jq -s -c .)
+# A body that passes, on an open issue no flag or exemption marks, has no
+# comment to write: a pass that took the flag off rewrote the comment then.
+# So its comments are not read (#5078).
+if [[ $(jq --argjson findings "$findings" '.state == "open" and ($findings | length) == 0
+    and ([.labels[].name] | any(IN("status:unsectioned", "kind:epic", "collector")) | not)' <<< "$issued") == true ]]; then
+  comments='[]'
+else
+  comments=$(gh api --paginate "repos/$repo/issues/$issue/comments" \
+    --jq '.[] | select(.body | startswith("<!-- unit:check -->")) | {id, body}' | jq -s -c .)
+fi
 decision=$(jq -c --argjson findings "$findings" --argjson comments "$comments" \
   '{state, labels: [.labels[].name], findings: $findings, comments: $comments}' <<< "$issued" \
   | jq -c -f "$here/unsectioned.jq")

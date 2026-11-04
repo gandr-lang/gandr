@@ -32,6 +32,13 @@ concurrency:
 jobs:
   unsectioned:
     name: flag an issue missing a unit's sections
+    # A label the reading does not read starts no run (#5078): `unit.jq`
+    # reads `kind:`, `area:`, `shape:signed` and `collector`, and the run
+    # sets `status:unsectioned`. A claim's or a priority's label is not read.
+    if: >-
+      ${{ !contains(fromJSON('["labeled", "unlabeled"]'), github.event.action)
+      || startsWith(github.event.label.name, 'kind:') || startsWith(github.event.label.name, 'area:')
+      || contains(fromJSON('["shape:signed", "status:unsectioned", "collector"]'), github.event.label.name) }}
     # ci.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 5
