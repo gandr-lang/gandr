@@ -3700,7 +3700,16 @@ impl<'source> Lowerer<'_, 'source>
         let mut inner = frame;
         for entry in &entries {
             let declared = entry.held.at();
-            self.read(declared.node, Reading::ValueType(inner));
+            // Names that share a type, `x y : a`, read it once, under the
+            // first name's frame; the mint lifts it past the names between.
+            let shared = self.parameters.len() > start
+                && self
+                    .parameters
+                    .last()
+                    .is_some_and(|last| last.declared == Maybe::Present(declared.node));
+            if !shared {
+                self.read(declared.node, Reading::ValueType(inner));
+            }
             self.label_entry(entry, Reading::ValueType(inner));
             let (binder, bound, written) = match entry.key {
                 Key::Label(bound, key) => {
@@ -5474,13 +5483,20 @@ impl<'source> Lowerer<'_, 'source>
     {
         let written = stretch(&self.parameters, entries);
         let mut domains: Vec<ValueTypeId> = Vec::with_capacity(written.len());
-        for parameter in written {
+        for (index, parameter) in written.iter().enumerate() {
             let Maybe::Present(declared) = parameter.declared
             else {
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
             match self.value_type_at(declared) {
-                Maybe::Present(domain) => domains.push(domain),
+                Maybe::Present(domain) => domains.push(self.shared_domain(
+                    written.get(.. index).unwrap_or_default(),
+                    parameter,
+                    |named| bool::from(self.names_own_binder(codomain, named.frame)),
+                    domain,
+                    sink,
+                    origin,
+                )),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }

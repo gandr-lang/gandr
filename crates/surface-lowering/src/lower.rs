@@ -10746,6 +10746,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 // name when it writes none: the first tile there is `:`.
                 let mut first = !listed;
                 let mut clausal = false;
+                // Where the parameter being read starts: names that share a
+                // type, `m n : T`, each take it.
+                let mut group = 0_usize;
                 while let Maybe::Present(piece) = ahead.read() {
                     match piece {
                         Piece::Tile { label, .. } if first => {
@@ -10762,9 +10765,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             listed = false;
                             first = true;
                         },
+                        Piece::Tile { label, .. } if label == TileName::COMMA && listed => {
+                            group = types.len();
+                        },
                         Piece::Operand(operand) if listed => {
-                            if let Some(last) = types.last_mut() {
-                                *last = Some(operand.node);
+                            for typed in types.iter_mut().skip(group) {
+                                *typed = Some(operand.node);
                             }
                         },
                         Piece::Operand(operand) => roots.push(operand.node),
@@ -10811,7 +10817,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // The written parameters at a session type.
         let mut endpoints = Vec::new();
         loop {
-            let binder = match cursor.peek() {
+            let first = match cursor.peek() {
                 _ if matches!(listing, Maybe::Absent(_)) => break,
                 Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => {
                     let _close = cursor.tile(TileName::PAREN_CLOSE);
@@ -10825,6 +10831,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
                 },
             };
+            // Names that share a type, `m n : T`, each bind it in turn.
+            let shared = cursor.shared(&TileName::BINDERS);
             let mut endpoint = session::Stands::Other;
             let declared = match cursor.tile(TileName::COLON) {
                 Maybe::Present(_) => {
@@ -10847,25 +10855,35 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 },
                 Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
             };
-            let name = self.name_at(binder);
-            self.note_binder(binder, name)?;
-            frame = self.bind_kept(site, &mut own, frame);
-            let written = Maybe::Present(binder.span);
-            let bound = match declared {
-                Maybe::Present(declared) => self.scope.extend_typed(frame, name, declared, written),
-                Maybe::Absent(_) => self.scope.extend(frame, name, written),
-            };
-            let parameter = Parameter {
-                binder: binder.node,
-                frame: bound,
-                declared,
-                component: None,
-            };
-            if endpoint == session::Stands::Session {
-                endpoints.push(parameter);
+            // Only a stated type is shared: `(m n)` states none.
+            if let Some(second) = shared.clone().next()
+                && let Maybe::Absent(_) = declared
+            {
+                return Err(function.fault(second.span, FormFault::MisplacedTile));
             }
-            self.parameters.push(parameter);
-            frame = Frame::Inner(bound);
+            for binder in core::iter::once(first).chain(shared) {
+                let name = self.name_at(binder);
+                self.note_binder(binder, name)?;
+                frame = self.bind_kept(site, &mut own, frame);
+                let written = Maybe::Present(binder.span);
+                let bound = match declared {
+                    Maybe::Present(declared) => {
+                        self.scope.extend_typed(frame, name, declared, written)
+                    },
+                    Maybe::Absent(_) => self.scope.extend(frame, name, written),
+                };
+                let parameter = Parameter {
+                    binder: binder.node,
+                    frame: bound,
+                    declared,
+                    component: None,
+                };
+                if endpoint == session::Stands::Session {
+                    endpoints.push(parameter);
+                }
+                self.parameters.push(parameter);
+                frame = Frame::Inner(bound);
+            }
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA)
                 && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
             {
@@ -21106,7 +21124,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // A flattened model implicit's parameters take their types from the
         // model type they share, minted once for the group.
         let mut flattened: BTreeMap<NodeIndex, Vec<ValueTypeId>> = BTreeMap::new();
-        for parameter in parameters.iter().rev() {
+        for (index, parameter) in parameters.iter().enumerate().rev() {
             let Maybe::Present(binder) = self.origin_at(parameter.binder)
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
@@ -21129,7 +21147,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     domains.get(usize::from(place)).copied()
                 },
                 (Maybe::Present(written), None) => match self.value_type_at(written) {
-                    Maybe::Present(domain) => Some(domain),
+                    Maybe::Present(domain) => Some(self.shared_domain(
+                        parameters.get(.. index).unwrap_or_default(),
+                        parameter,
+                        |named| bool::from(self.scope.mentioned(named.frame)),
+                        domain,
+                        sink,
+                        origin,
+                    )),
                     Maybe::Absent(_) => None,
                 },
             };
@@ -28224,6 +28249,74 @@ def ended() -> -F [Partial] Unit {
                 gandr_core_term::equal_certificate_syntax(&arena, body(juxtaposed), body(called)),
                 gandr_core_term::CertificateEquality::Equal,
                 "{reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_def_head_s_shared_names_are_its_parameters_written_apart_4853()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def shared(m n : Integer) -> -F Integer { return m }\ndef apart(m : Integer, n : \
+                 Integer) -> -F Integer { return m }\ndef bound(a : Type, x y : a) -> -F a { \
+                 return y }\ndef bound_apart(a : Type, x : a, y : a) -> -F a { return y }\ndef \
+                 three(b : Bool, k m n : Integer) -> -F Integer { return k }\ndef three_apart(b : \
+                 Bool, k : Integer, m : Integer, n : Integer) -> -F Integer { return k }\ndef \
+                 linked(a : Type, x y : a, p : Path(a, x, y)) -> -F a { return y }\ndef \
+                 linked_apart(a : Type, x : a, y : a, p : Path(a, x, y)) -> -F a { return y }\n",
+            ),
+            &mut arena,
+        );
+        let completed = |wanted: &str| {
+            let declaration = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == wanted)
+                .unwrap_or_else(|| panic!("`{wanted}` is declared"));
+            match declaration.outcome() {
+                DeclarationOutcome::Completed {
+                    declared_type,
+                    body,
+                } => (declared_type, body),
+                other => panic!("`{wanted}` completes, not {other:?}"),
+            }
+        };
+        for (shared, apart, reason) in [
+            ("shared", "apart", "two names that share a type"),
+            (
+                "bound",
+                "bound_apart",
+                "two names that share a type the head binds",
+            ),
+            (
+                "three",
+                "three_apart",
+                "three names that share a type after one of their own",
+            ),
+            (
+                "linked",
+                "linked_apart",
+                "two names that share a type a later type names",
+            ),
+        ] {
+            let ((shared_type, shared_body), (apart_type, apart_body)) =
+                (completed(shared), completed(apart));
+            let (shared_type, apart_type) = (
+                arena.value_quote(shared_type),
+                arena.value_quote(apart_type),
+            );
+            assert_eq!(
+                (
+                    gandr_core_term::equal_certificate_syntax(&arena, shared_type, apart_type),
+                    gandr_core_term::equal_certificate_syntax(&arena, shared_body, apart_body),
+                ),
+                (
+                    gandr_core_term::CertificateEquality::Equal,
+                    gandr_core_term::CertificateEquality::Equal
+                ),
+                "{reason} declare and define what the parameters written apart do"
             );
         }
     }

@@ -1811,7 +1811,9 @@ fn names_that_share_a_type_are_their_entries_written_apart_4853()
          Integer ; def bound : (a : Type, x y : a) -> a ; def bound_apart : (a : Type, x : a, y : \
          a) -> a ; def three : (k m n : Integer) -> Integer ; def three_apart : (k : Integer, m : \
          Integer, n : Integer) -> Integer ; def outputs : (m : Integer) -> (q r : Integer) ; def \
-         outputs_apart : (m : Integer) -> (q : Integer, r : Integer) ;",
+         outputs_apart : (m : Integer) -> (q : Integer, r : Integer) ; def linked : (a : Type, x \
+         y : a, p : Path(a, x, y)) -> a ; def linked_apart : (a : Type, x : a, y : a, p : Path(a, \
+         x, y)) -> a ;",
         &mut arena,
     );
     let signature = |name: &str| match outcome(&module, name) {
@@ -1833,6 +1835,11 @@ fn names_that_share_a_type_are_their_entries_written_apart_4853()
         ),
         ("three", "three_apart", "three inputs that share a type"),
         ("outputs", "outputs_apart", "two outputs that share a type"),
+        (
+            "linked",
+            "linked_apart",
+            "two inputs that share a type a later type names",
+        ),
     ] {
         let (shared, apart) = (signature(shared), signature(apart));
         let (shared, apart) = (arena.value_quote(shared), arena.value_quote(apart));

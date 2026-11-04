@@ -3858,6 +3858,30 @@ pub struct Cursor<'pieces>
     edge: ByteSpan,
 }
 
+/// The names after a parameter's first that share its type, `n` in `m n :
+/// T`, as [`Cursor::shared`] reads them.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: each name's tile, in written order.
+/// - executable: none — an iterator over tiles the cursor read.
+#[derive(Clone, Debug)]
+pub struct Shared<'pieces>(core::slice::Iter<'pieces, Piece>);
+
+impl Iterator for Shared<'_>
+{
+    type Item = Placed;
+
+    /// The next shared name's tile.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next(&mut self) -> Option<Placed>
+    {
+        self.0.next().map(|piece| piece.placed())
+    }
+}
+
 /// A dotted path as a form writes it, `State` or `std.io.Console.Eff`: the
 /// segments before its last name, and the last, which names what the path
 /// reaches in the module the segments name.
@@ -4639,6 +4663,43 @@ impl<'pieces> Cursor<'pieces>
         }
 
         Maybe::Present(WrittenPath { prefix, last })
+    }
+
+    /// Read the names after a parameter's first that share its type: `n` in
+    /// `m n : T`.
+    ///
+    /// # Specification
+    /// - requires: the cursor stands just past a parameter's first name.
+    /// - ensures: every tile at the cursor whose label `labels` holds, up to
+    ///   the first other piece, read and answered in written order; none, with
+    ///   the cursor unmoved, when the next piece is no such tile.
+    /// - provides: the one reading of a parameter's shared names, for the
+    ///   lowering and for the telescope readers.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is the prefix of pieces the cursor
+    ///   walks, which restating reads again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two and three names that share a type, after a
+    ///   parameter of its own and after a type the head binds, each lower to
+    ///   the parameters written apart.
+    /// - witness: `lower::tests::a_def_head_s_shared_names_are_its_parameters_written_apart_4853`
+    pub(crate) fn shared(
+        &mut self,
+        labels: &[TileName],
+    ) -> Shared<'pieces>
+    {
+        let start = self.rest;
+        let mut count = 0_usize;
+        while let Maybe::Present(Piece::Tile { label, at }) = self.peek()
+            && labels.contains(&label)
+        {
+            self.advance(at);
+            count = count.saturating_add(1_usize);
+        }
+
+        Shared(start.get(.. count).unwrap_or_default().iter())
     }
 
     /// The zero-width span at the end of the last piece read.

@@ -408,6 +408,7 @@ use super::LabelRead;
 use super::LabelSite;
 use super::Lowered;
 use super::Lowerer;
+use super::Parameter;
 use super::Plan;
 use super::Produced;
 use super::Reading;
@@ -10885,6 +10886,64 @@ impl<'source> Lowerer<'_, 'source>
         let mark = sink.arena.watermark();
         let mut copies = Vec::new();
         let lifted = gandr_core_term::shift_value_type(sink.arena, ty, lift)
+            .settle_traced(sink.arena, &mut copies);
+        record_copied_since(
+            sink,
+            mark,
+            origin,
+            Maybe::Absent(rooted::Absent::Classifier),
+            &copies,
+        );
+
+        lifted
+    }
+
+    /// `domain`, the type `parameter` states, read past the binders of the
+    /// names before it that share its written type: `y` in `x y : a` reads `a`
+    /// past `x` when a later type names `x`.
+    ///
+    /// # Specification
+    /// - requires: `domain` is minted from `parameter`'s written type, under
+    ///   the frame of the first name that shares it; `earlier` holds the
+    ///   parameters before `parameter`, in written order; `binds` answers
+    ///   whether a parameter's arrow is a Π, as the caller mints it.
+    /// - ensures: `domain` itself when no name just before `parameter` that
+    ///   shares its written type binds; otherwise `domain` with every free
+    ///   index raised by the names that bind, each copy recorded as
+    ///   [`Self::lift_value_type`] records its own.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two names that share a type a later type names
+    ///   declare what the names written apart declare, in a def head and in a
+    ///   box's group.
+    /// - witness: `lower::tests::a_def_head_s_shared_names_are_its_parameters_written_apart_4853`
+    /// - witness: `lower::arity::tests::names_that_share_a_type_are_their_entries_written_apart_4853`
+    #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == domain)]
+    pub(super) fn shared_domain(
+        &self,
+        earlier: &[Parameter],
+        parameter: &Parameter,
+        binds: impl Fn(&Parameter) -> bool,
+        domain: ValueTypeId,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ValueTypeId
+    {
+        let binding = earlier
+            .iter()
+            .rev()
+            .take_while(|named| named.declared == parameter.declared)
+            .filter(|&named| binds(named))
+            .count();
+        let lift = Binders::from(u32::try_from(binding).unwrap_or(u32::MAX));
+        if lift == Binders::NONE {
+            return domain;
+        }
+        let mark = sink.arena.watermark();
+        let mut copies = Vec::new();
+        let lifted = gandr_core_term::shift_value_type(sink.arena, domain, lift)
             .settle_traced(sink.arena, &mut copies);
         record_copied_since(
             sink,

@@ -11047,11 +11047,11 @@ fn read_tail<'source>(
 /// # Specification
 /// - requires: `header` stands at the tail's `(`.
 /// - ensures: signed exactly when every binder tile before the parameter list's
-///   own `)` is followed by `:`, and the `)` by `->` or by the `:` stating a
-///   clause tail's type; unsigned otherwise, a list with no `)` included. Only
-///   the tiles are read: whether each type and the result hold exactly one form
-///   is the function's own reading, decided where the classification reads the
-///   declaration.
+///   own `)`, with the names after it that share its type, is followed by `:`,
+///   and the `)` by `->` or by the `:` stating a clause tail's type; unsigned
+///   otherwise, a list with no `)` included. Only the tiles are read: whether
+///   each type and the result hold exactly one form is the function's own
+///   reading, decided where the classification reads the declaration.
 /// - provides: which halves a function tail writes.
 /// - fails: never.
 /// - panics: none.
@@ -11076,6 +11076,8 @@ fn signing(mut header: Cursor<'_>) -> Signing
         match header.read() {
             Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => break,
             Maybe::Present(Piece::Tile { label, .. }) if TileName::BINDERS.contains(&label) => {
+                // Names that share a type, `m n : T`, are typed by its `:`.
+                let _shared = header.shared(&TileName::BINDERS);
                 if let Maybe::Absent(_) = header.at(TileName::COLON) {
                     return Signing::Unsigned;
                 }

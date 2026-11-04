@@ -2555,6 +2555,8 @@ fn attr_inline() -> Regex
 
 /// Build an inline parameter, including uppercase type-variable binders.
 ///
+/// Several names before one annotation share its type, `(m n : Integer)`.
+///
 /// The annotation may open on a receiver's mode, `self : shared Str` or `self :
 /// consumed Str`: the words of the access form's mode, the written-through
 /// mode unwritten as there. The lowering reads the word on a method's `self`
@@ -2562,8 +2564,8 @@ fn attr_inline() -> Regex
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a binder-name menu followed by an optional type annotation,
-///   itself opening on an optional `shared` or `consumed`.
+/// - ensures: a binder-name menu, any further binder names, and an optional
+///   type annotation, itself opening on an optional `shared` or `consumed`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2573,15 +2575,19 @@ fn attr_inline() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))]
 fn param() -> Regex
 {
-    seq([
+    let name = || {
         alt([
             t(TileLabel("identifier")),
             t(TileLabel("type_variable")),
             t(TileLabel("type_identifier")),
-        ]),
+        ])
+    };
+    seq([
+        name(),
+        repeat(name()),
         opt(seq([
             t(TileLabel(":")),
             opt(alt([t(TileLabel("shared")), t(TileLabel("consumed"))])),

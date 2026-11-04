@@ -462,7 +462,9 @@ impl<'source> Collector<'_, 'source>
         if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
             return Ok(none);
         }
-        while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
+        while let Maybe::Present(first) = cursor.tile(TileName::IDENTIFIER) {
+            // Names that share a type, `m n : T`, each take it.
+            let shared = cursor.shared(&[TileName::IDENTIFIER]);
             let declared = match cursor.tile(TileName::COLON) {
                 Maybe::Present(_) => {
                     // A receiver's mode word or mode variable: the receivers
@@ -480,13 +482,15 @@ impl<'source> Collector<'_, 'source>
                 },
                 Maybe::Absent(_) => Maybe::Absent(unstated::Absent::Unwritten),
             };
-            entries.push(TelescopeEntry {
-                name: self.name_of(written),
-                binder: written,
-                declared,
-                interface: Maybe::Absent(uninterfaced::Absent::Parameter),
-                plicity: Plicity::Explicit,
-            });
+            for written in core::iter::once(first).chain(shared) {
+                entries.push(TelescopeEntry {
+                    name: self.name_of(written),
+                    binder: written,
+                    declared,
+                    interface: Maybe::Absent(uninterfaced::Absent::Parameter),
+                    plicity: Plicity::Explicit,
+                });
+            }
             let _comma = cursor.tile(TileName::COMMA);
         }
         if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
@@ -977,10 +981,13 @@ impl<'source> Collector<'_, 'source>
         }
         // A binder is written lowercase, `x`, a type variable, or capitalised,
         // `A : Type`, as a type's name is (#3921).
-        while let Maybe::Present(Piece::Tile { label, at: written }) = cursor.peek()
+        while let Maybe::Present(Piece::Tile { label, at: first }) = cursor.peek()
             && BINDER_TILES.contains(&label)
         {
             let _binder = cursor.read();
+            // Names that share a type, `m n : T`, each take it; the type reads
+            // only the names before them.
+            let shared = cursor.shared(&BINDER_TILES);
             let (declared, dependent) = match cursor.tile(TileName::COLON) {
                 Maybe::Present(_) => {
                     if let Maybe::Absent(_) = cursor.tile(TileName::SHARED)
@@ -998,12 +1005,14 @@ impl<'source> Collector<'_, 'source>
                 },
                 Maybe::Absent(_) => (Maybe::Absent(unclosed::Absent::Unwritten), false),
             };
-            let _fresh = earlier.insert(self.name_of(written));
-            parameters.push(ExplicitParameter {
-                binder: written,
-                declared,
-                dependent,
-            });
+            for written in core::iter::once(first).chain(shared) {
+                let _fresh = earlier.insert(self.name_of(written));
+                parameters.push(ExplicitParameter {
+                    binder: written,
+                    declared,
+                    dependent,
+                });
+            }
             let _comma = cursor.tile(TileName::COMMA);
         }
         if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
