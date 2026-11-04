@@ -7707,6 +7707,36 @@ mod tests
         );
     }
 
+    /// A later entry's type that applies an earlier entry of the bound record
+    /// reads back to the certificate. The printer spells that application as
+    /// `e.cell(0)`.
+    #[test]
+    fn a_record_entry_naming_an_earlier_entry_reads_back_4950()
+    {
+        let source = SourceText::from(
+            "def calledFiber(e : #{\n  cell : Integer => Integer,\n  fix : Path(Integer, cell(0), 0)\n}) -> \
+             Path(#{cell : Integer => Integer, fix : Path(Integer, cell(0), 0)}, (e.cell, e.fix), e) {\n  \
+             Path.here(e)\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+
+        let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
+        for spelled in [
+            "Path(Integer, e.cell(0), 0)",
+            "-F Path(Integer, e.cell(0), 0)",
+        ] {
+            let trips: Vec<&RoundTrip> = read
+                .iter()
+                .filter(|read| read.spelled == spelled)
+                .map(|read| &read.trip)
+                .collect();
+            assert!(
+                !trips.is_empty() && trips.iter().all(|trip| **trip == RoundTrip::Equal),
+                "`{spelled}` reads back to its certificate: {trips:?}"
+            );
+        }
+    }
+
     /// A type naming a model implicit's components spells them by their
     /// paths and reads back under the implicit declared whole, `[s :
     /// Model(Counter)]`, where every component's binder is written at the
