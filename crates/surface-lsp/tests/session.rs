@@ -1089,6 +1089,51 @@ fn an_edit_to_a_large_document_rechecks_its_forms()
     );
 }
 
+#[test]
+fn a_notification_of_many_changes_is_judged_once_at_its_last_5059()
+{
+    // The hotpath series sends its burst this way, so its recheck count is
+    // the same on every run.
+    let uri = "file:///tmp/burst.gandr".to_owned();
+    let text = |value: &str| format!("def a : Integer ;\ndef a = {value} ;\n");
+    let mut messages = opening();
+    if let Some(params) = messages
+        .first_mut()
+        .and_then(|initialize| initialize.get_mut("params"))
+    {
+        params["initializationOptions"] = json!({"diagnostics": {"quiet": 0_i32}});
+    }
+    messages.push(open(&Source {
+        uri: uri.clone(),
+        text: text("0"),
+    }));
+    let mut changes: Vec<Value> = (1_i32 ..= 7_i32)
+        .map(|value| json!({"text": text(&value.to_string())}))
+        .collect();
+    changes.push(json!({"text": text("\"text\"")}));
+    messages.push(
+        json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+            "textDocument": {"uri": uri, "version": 2_i32},
+            "contentChanges": changes,
+        }}),
+    );
+    messages.extend(closing());
+    let (served, written, log) = logged(&messages);
+    assert_eq!(served, Served::Clean);
+    let [_, ref changed] = *log.as_slice()
+    else {
+        panic!("one timing line for the open and one for the notification: {log:?}");
+    };
+    assert_eq!(census(Line(changed)).version, 2_i32, "{changed}");
+    assert_eq!(
+        written
+            .get(2)
+            .and_then(|message| message.pointer("/params/diagnostics/0/code")),
+        Some(&json!("TypeMismatch")),
+        "the last change is the document: {written:?}"
+    );
+}
+
 /// How many items a timing line counts as judged.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

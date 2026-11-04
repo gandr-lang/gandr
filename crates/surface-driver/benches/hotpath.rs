@@ -12,7 +12,7 @@
 //! | `many candidates` | `gandr check` of one body calling a function sixteen times, each call leaving out a model implicit sixteen modules in scope answer | each candidate's trial against the one solver store all sixteen slots share (`tried`), and the slots' resolution (`Deferrals::resolve`) |
 //! | `lsp first keystroke` | a language-server session that opens the same source, waits for the open's judgement, then erases one line; only the change is timed | the server's first recheck, which also builds the closure's lowering and judgement once |
 //! | `lsp keystroke` | the same session after its first keystroke, erasing the next line; only this change is timed | the server's recheck with the closure warm, the cost each later keystroke pays |
-//! | `lsp burst` | a session that opens the same source, waits for the open's judgement, then erases the end of its middle line one character per change, every change sent in one write; only the burst is timed | the server's recheck, once per burst |
+//! | `lsp burst` | a session that opens the same source, waits for the open's judgement, then erases the end of its middle line one character per content change, every change carried by one notification; only the burst is timed | the server's recheck, once per burst |
 //! | `lsp comment edit` | a session that opens the group laws, waits for the open's judgement, then adds a comment line before their first, outside the rule block; only the change is timed | the server's recheck and each rule block's decision, which no change of the block's own text asks for |
 //!
 //! Each language-server workload serves its session on the bench's thread,
@@ -83,8 +83,10 @@ const COMPLETION: [&str; 3] = [
     "../../corpus/pathological/desc/rules-never-complete.gandr",
 ];
 
-/// The directory the component walk checks: twenty sources, three of which
-/// import siblings, in sixteen components, each laid after the prelude.
+/// The directory the component walk checks: twenty-one sources in seventeen
+/// components, each laid after the prelude. A component whose first source is
+/// a `std` module settles under the strict root and the rest under the fixture
+/// root, so the walk judges the prelude once under each.
 const COMPONENTS: &str = "../../corpus/model/control";
 
 /// The component the prelude resolve checks: `==` and `<` at the integers and
@@ -234,7 +236,8 @@ fn lsp_keystrokes()
 
 /// Open [`SOURCE`] in a language-server session and wait for the open's
 /// judgement. Erase the last [`BURST`] characters of its middle line one
-/// keystroke at a time, every change sent in one write, timed as one burst.
+/// keystroke at a time, every keystroke a content change of one notification,
+/// timed as one burst.
 ///
 /// # Specification
 /// trivial.

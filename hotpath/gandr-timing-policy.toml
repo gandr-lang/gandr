@@ -26,34 +26,42 @@ metrics = ["avg"]
 min_calls = 20
 
 # The prelude's instance machinery (#2395), checked on every report without a
-# baseline. A closure is lowered and judged once per walk or session: eight in
-# the series, one for each workload that checks or opens a source, so a pass
-# over the prelude in every component shows as many calls as components. Each
-# function the `prelude resolve` workload measures must run, so a renamed
-# function or a lost attribute breaks its budget rather than passing silently.
+# baseline. A closure is lowered once per walk or session, and judged once
+# under each root its components settle under: a walk whose components start
+# with a `std` module settles those under the strict root, and the rest under
+# the fixture root. The series lowers 8 closures and judges 9, since the
+# component walk judges under both roots (#4790). A pass over the prelude in
+# every component makes as many calls as components, 64 in the component floor
+# alone, so the ceiling sits between the two: a new workload or root stays
+# under it, and a per-component pass breaks it. Each function the
+# `prelude resolve` workload measures must run, so a renamed function or a
+# lost attribute breaks its budget rather than passing silently.
 [[functions.budgets]]
 match = "gandr_surface_dispatcher::compose::lower_closure"
-calls = { min = 1, max = 8 }
+calls = { min = 1, max = 16 }
 message = "the prelude is lowered once per walk, never per component (#2331)"
 
 [[functions.budgets]]
 match = "gandr_surface_dispatcher::compose::judge_closure"
-calls = { min = 1, max = 8 }
-message = "the prelude is judged once per walk, never per component (#2331)"
+calls = { min = 1, max = 16 }
+message = "the prelude is judged once per walk and root, never per component (#2331)"
 
 # A readmission resumes the prelude's crossing from the record of the walk's
-# or session's first one, whatever native operations a component reads, so
-# each declaration crosses into the kernel once per readmission that cannot
-# resume it: 878 in the series, and a component that crossed the prelude again
-# would add a crossing per prelude declaration.
+# or session's first one under its root, so each declaration crosses into the
+# kernel once per readmission that cannot resume it: 981 in the series. The
+# prelude is 50 declarations, so the component floor crosses 114 (the prelude
+# once and 64 one-definition components) and the component walk 233 (the
+# prelude once per root and its components' own). A component that crossed the
+# prelude again adds 50 for each, over 3000 in the component floor alone, so
+# the ceiling leaves the corpus room to grow and still breaks at that.
 [[functions.budgets]]
 match = "gandr_core_checker::bridge::cross"
-calls = { min = 1, max = 900 }
+calls = { min = 1, max = 2000 }
 message = "a component resumes the prelude's crossing, never crosses it again (#2395)"
 
-# Each component after a walk's first resumes the prelude's record: 63 in the
-# `component floor` workload, 84 in the series. What a resume costs, in
-# allocation, is pinned in hotpath/gandr-policy.toml.
+# Each component after its root's first in a walk resumes the prelude's
+# record: 63 in the `component floor` workload, 85 in the series. What a resume
+# costs, in allocation, is pinned in hotpath/gandr-policy.toml.
 [[functions.budgets]]
 match = "gandr_core_checker::bridge::resume"
 calls = { min = 63 }

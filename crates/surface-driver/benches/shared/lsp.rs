@@ -47,9 +47,12 @@ impl Document
             .map(drop)
     }
 
-    /// Change the document to each of `edits` in order, each a whole text at
-    /// the next version, sent in one write, and wait until the last change's
-    /// judgement settles.
+    /// Change the document to each of `edits` in order, each a whole text, as
+    /// the content changes of one notification at the next version, and wait
+    /// until its judgement settles. One notification is one frame, so the
+    /// server judges the burst once on every run: changes sent as frames of
+    /// their own coalesce only when the server's reader has queued them all
+    /// before its loop takes the first, which the scheduler decides.
     ///
     /// # Specification
     /// trivial.
@@ -58,17 +61,13 @@ impl Document
         edits: &[String],
     ) -> Result<(), Fault>
     {
-        let changes: Vec<Value> = edits
-            .iter()
-            .map(|edit| {
-                self.version = self.version.saturating_add(1);
-                json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
-                    "textDocument": {"uri": self.uri, "version": self.version},
-                    "contentChanges": [{"text": edit}],
-                }})
-            })
-            .collect();
-        self.client.send(&changes)?;
+        self.version = self.version.saturating_add(1);
+        let changes: Vec<Value> = edits.iter().map(|edit| json!({"text": edit})).collect();
+        let notification = json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+            "textDocument": {"uri": self.uri, "version": self.version},
+            "contentChanges": changes,
+        }});
+        self.client.send(&[notification])?;
         self.settle()
     }
 }
