@@ -17,4 +17,5 @@ error[BufferRead]: a buffer can be used only by the `send`, the operation or the
 21 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `readWhileHeld` is refused with BufferRead, as its expectation states
+   ├ note: `readWhileHeld` is refused with BufferRead, as its expectation states
+   ╰ help: return the buffer with `send`, the operation or `resume`

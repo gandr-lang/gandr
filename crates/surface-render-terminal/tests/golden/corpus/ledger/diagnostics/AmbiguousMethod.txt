@@ -4,4 +4,5 @@ error[AmbiguousMethod]: `width` is a method of both `Wide` and `Narrow`; a call 
 17 │   n.width()
    │     ━━━━━ a method of several modules
    │
-   ╰ note: `measured` is refused with AmbiguousMethod, as its expectation states
+   ├ note: `measured` is refused with AmbiguousMethod, as its expectation states
+   ╰ help: call the intended method through its module

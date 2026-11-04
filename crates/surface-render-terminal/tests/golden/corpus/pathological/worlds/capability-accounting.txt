@@ -37,4 +37,5 @@ error[CapabilityCaptured]: this `migrate` stands inside a thunk, which may spend
 32 │ │ }
    │ └─┘ checked against `() => () => Seat.Report`; while checking the body of this thunk
    │
-   ╰ note: `suspended` is refused with CapabilityCaptured, as its expectation states
+   ├ note: `suspended` is refused with CapabilityCaptured, as its expectation states
+   ╰ help: move the `migrate` outside the thunk that captures its capability

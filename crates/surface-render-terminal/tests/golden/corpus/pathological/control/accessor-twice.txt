@@ -27,4 +27,5 @@ error[ViewUnended]: the body of this `access` must end its view with `resume` or
 15 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `unended` is refused with ViewUnended, as its expectation states
+   ├ note: `unended` is refused with ViewUnended, as its expectation states
+   ╰ help: end the access body with `resume` or `abort`

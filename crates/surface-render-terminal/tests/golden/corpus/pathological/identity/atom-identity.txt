@@ -4,7 +4,8 @@ error[AtomTransport]: this abstract type's identity attribute names no transport
 29 │ def lawlessOriginOther : Path(Lawless.T, Lawless.origin, Lawless.other) = unit;
    │                                                                           ━━━━ an identity of an atom stating no transport law
    │
-   ╰ note: `lawlessOriginOther` is refused with AtomTransport, as its expectation states
+   ├ note: `lawlessOriginOther` is refused with AtomTransport, as its expectation states
+   ╰ help: add a transport law to the abstract type's identity attribute
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/identity/atom-identity.gandr:39:5

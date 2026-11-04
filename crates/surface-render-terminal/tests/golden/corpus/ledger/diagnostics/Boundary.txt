@@ -7,4 +7,5 @@ error[Boundary]: this boundary flow runs against the variance of its position
    │                │          a boundary flow running against its variance
    │                checked against `Flow(Type, String * Integer => Integer, Integer * String => Integer)`; while checking this arrow's boundaries against the function codes it relates
    │
-   ╰ note: `reader` is refused with Boundary, as its expectation states
+   ├ note: `reader` is refused with Boundary, as its expectation states
+   ╰ help: write the boundary flow in the direction its position's variance permits

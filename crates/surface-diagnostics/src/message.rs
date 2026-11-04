@@ -1641,6 +1641,7 @@ pub mod tests
     use gandr_kernel_term::Stage;
     use gandr_kernel_term::StageId;
     use gandr_kernel_term::Standing;
+    use gandr_surface_corpus::BoundaryClause;
     use gandr_surface_corpus::CorpusRefusal;
     use gandr_surface_corpus::ExpectationSchema;
     use gandr_surface_corpus::Refusal;
@@ -2740,15 +2741,18 @@ pub mod tests
             },
         ]
         .map(Refusal::Checking);
-        let corpus = Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot {
-            span,
-            schema: ExpectationSchema::Owes,
-        });
-        let refusals: Vec<Refusal<'_>> = lowering
-            .into_iter()
-            .chain(checking)
-            .chain([corpus])
-            .collect();
+        let corpus = [
+            Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot {
+                span,
+                schema: ExpectationSchema::Owes,
+            }),
+            Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+                clause: BoundaryClause::Size,
+                span,
+            }),
+        ];
+        let refusals: Vec<Refusal<'_>> =
+            lowering.into_iter().chain(checking).chain(corpus).collect();
         let named: Vec<RefusalName> = refusals.iter().map(Refusal::name).collect();
         let missing: Vec<RefusalName> = RefusalName::VOCABULARY
             .into_iter()
