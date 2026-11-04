@@ -4,4 +4,5 @@ error[UnknownAttribute]: there is no attribute `dco`; did you mean `doc`?
 2 │ @[ dco("oops") ]
   │    ━━━━━━━━━━━ unknown attribute
   │
-  ╰ note: `f` is refused with UnknownAttribute, as its expectation states
+  ├ note: `f` is refused with UnknownAttribute, as its expectation states
+  ╰ help: replace the attribute with a registered attribute

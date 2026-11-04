@@ -4,4 +4,5 @@ error[UnrestrictedEndpoint]: a declaration cannot have a session type; an endpoi
 3 │ def session_receive : ?Integer. end;
   │                       ━━━━━━━━━━━━━ an endpoint outside a fork or a receive
   │
-  ╰ note: `session_receive` is refused with UnrestrictedEndpoint, as its expectation states
+  ├ note: `session_receive` is refused with UnrestrictedEndpoint, as its expectation states
+  ╰ help: open the endpoint with `fork` or `recv`

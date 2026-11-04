@@ -7,4 +7,5 @@ error[Unlocated]: this stands at the host's own world, where no handle is made o
 37 │ │ }
    │ └─┘ checked against `() => Seat.Report at seat`; while checking the body of this thunk
    │
-   ╰ note: `unplaced` is refused with Unlocated, as its expectation states
+   ├ note: `unplaced` is refused with Unlocated, as its expectation states
+   ╰ help: give the declaration a world with `@[ entry(w) ]`

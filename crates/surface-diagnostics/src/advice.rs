@@ -64,6 +64,7 @@ use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::WfKind;
 use gandr_surface_lowering::description::MemberFault;
 use gandr_surface_lowering::head_home;
+use gandr_surface_lowering::model::ModelFault;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GroutShape;
 use quenchant_shape::shape::Maybe;
@@ -356,6 +357,19 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::RegionAsValue { .. } => {
             String::from("name the region only in a type such as `A at r`")
         },
+        LoweringRefusal::UnknownAttribute { .. } => {
+            String::from("replace the attribute with a registered attribute")
+        },
+        LoweringRefusal::UnstatedComponent {
+            fault: ModelFault::Unbound,
+            ..
+        } => String::from("remove the component the model signature cannot state"),
+        LoweringRefusal::UnderivedRule { .. } => {
+            String::from("write a rule the theory's completed rules derive")
+        },
+        LoweringRefusal::UnknownTactic { .. } => {
+            String::from("replace the tactic with a supported tactic")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::DuplicateSignature { .. }
@@ -366,7 +380,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::GradedBridge { .. }
         | LoweringRefusal::MalformedLiteral { .. }
         | LoweringRefusal::NoUniverseAbove { .. }
-        | LoweringRefusal::UnknownAttribute { .. }
         | LoweringRefusal::DuplicateAttribute { .. }
         | LoweringRefusal::PartialField { .. }
         | LoweringRefusal::NotAFunctor { .. }
@@ -383,8 +396,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::OutsideLoop { .. }
         | LoweringRefusal::WithoutK { .. }
         | LoweringRefusal::RulesUndecided { .. }
-        | LoweringRefusal::UnderivedRule { .. }
-        | LoweringRefusal::UnknownTactic { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
         | LoweringRefusal::UnknownMold { .. }
@@ -964,6 +975,29 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             defect: LocatedDefect::MarkUnfounded { .. },
             ..
         } => String::from("remove `mobile` or use a representation that crosses"),
+        CheckRefusal::Undecided { .. } => {
+            String::from("write code whose unfolding the checker can decide")
+        },
+        CheckRefusal::Located {
+            defect: LocatedDefect::UndeclaredWorld { .. },
+            ..
+        } => String::from("declare the named world with `world w ;`"),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::Unrestricted,
+            ..
+        } => String::from("open the endpoint with `fork` or `recv`"),
+        CheckRefusal::SessionMismatch {
+            defect: ProtocolDefect::Label,
+            ..
+        } => String::from("select a label the endpoint's protocol offers"),
+        CheckRefusal::Located {
+            defect: LocatedDefect::Unlocated,
+            ..
+        } => String::from("give the declaration a world with `@[ entry(w) ]`"),
+        CheckRefusal::Access {
+            defect: AccessDefect::Moved,
+            ..
+        } => String::from("end the view with `resume` after reading its value"),
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::Access { .. }
         | CheckRefusal::NotADataType(_)
@@ -1001,7 +1035,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::AdmissionOrder { .. }
         | CheckRefusal::MachineInvariant
         | CheckRefusal::SortMismatch { .. }
-        | CheckRefusal::Undecided { .. }
         | CheckRefusal::FamilyArity { .. }
         | CheckRefusal::FamilyArgumentClassifier { .. }
         | CheckRefusal::StaticLambdaArgument { .. }
@@ -1009,7 +1042,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::NonUniformOccurrence(_)
         | CheckRefusal::CrossBlockReference { .. }
         | CheckRefusal::StageNotCarried { .. }
-        | CheckRefusal::SessionMismatch { .. }
         | CheckRefusal::Linearity { .. }
         | CheckRefusal::Codata { .. }
         | CheckRefusal::Located { .. }
@@ -1035,7 +1067,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 156] = [
+    const WORDED: [&str; 166] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1193,6 +1225,16 @@ mod tests
         "SessionNotSubtype",
         "ShadowedBuiltin",
         "TelescopeCycle",
+        "Undecided",
+        "UndeclaredWorld",
+        "UnderivedRule",
+        "UnknownAttribute",
+        "UnknownTactic",
+        "Unlocated",
+        "UnofferedLabel",
+        "UnrestrictedEndpoint",
+        "UnstatedComponent.Unbound",
+        "ViewMoved",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

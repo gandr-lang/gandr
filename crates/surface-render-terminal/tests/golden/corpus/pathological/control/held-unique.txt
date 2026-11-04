@@ -83,4 +83,5 @@ error[ViewMoved]: the view's value was read out, so the view ends with `resume`,
 41 │ │ }
    │ └─┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `moved_then_aborted` is refused with ViewMoved, as its expectation states
+   ├ note: `moved_then_aborted` is refused with ViewMoved, as its expectation states
+   ╰ help: end the view with `resume` after reading its value

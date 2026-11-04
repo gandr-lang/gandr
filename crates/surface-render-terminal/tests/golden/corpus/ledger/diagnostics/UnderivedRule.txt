@@ -4,4 +4,5 @@ error[UnderivedRule]: the theory `Involution` does not derive `fixed`: its rules
 10 │ rule Involution.fixed : inv(x) <=> x;
    │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a rule its theory does not derive
    │
-   ╰ note: `fixed` is refused with UnderivedRule, as its expectation states
+   ├ note: `fixed` is refused with UnderivedRule, as its expectation states
+   ╰ help: write a rule the theory's completed rules derive

@@ -1925,7 +1925,7 @@ pub mod tests
             LoweringRefusal::UnstatedComponent {
                 span,
                 name,
-                fault: ModelFault::Inherited,
+                fault: ModelFault::Unbound,
             },
             LoweringRefusal::FamilyTelescope {
                 span,

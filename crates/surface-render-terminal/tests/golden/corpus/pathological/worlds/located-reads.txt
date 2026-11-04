@@ -55,7 +55,8 @@ error[Unlocated]: this stands at the host's own world, where no handle is made o
 40 │ │ }
    │ └─┘ checked against `() => Seat.Report at seat`; while checking the body of this thunk
    │
-   ╰ note: `unplaced` is refused with Unlocated, as its expectation states
+   ├ note: `unplaced` is refused with Unlocated, as its expectation states
+   ╰ help: give the declaration a world with `@[ entry(w) ]`
 
 error[UndeclaredWorld]: this names no world; declare one with `world w ;`
    ╭▸ corpus/pathological/worlds/located-reads.gandr:47:3
@@ -66,7 +67,8 @@ error[UndeclaredWorld]: this names no world; declare one with `world w ;`
 48 │ │ }
    │ └─┘ checked against `() => Seat.Report`; while checking the body of this thunk
    │
-   ╰ note: `toAValue` is refused with UndeclaredWorld, as its expectation states
+   ├ note: `toAValue` is refused with UndeclaredWorld, as its expectation states
+   ╰ help: declare the named world with `world w ;`
 
 error[NotAHandle]: `let x at w` opens a handle at a world, and this value is none
    ╭▸ corpus/pathological/worlds/located-reads.gandr:54:3

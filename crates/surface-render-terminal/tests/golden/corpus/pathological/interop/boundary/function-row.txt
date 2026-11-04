@@ -10,4 +10,5 @@ error[Undecided]: the checker could not decide what this code unfolds to
    │ │                 checked against `(x : Nat) -> (h : Heap) -> realiser(optRef, x, h) -> -F vOpt(vInt, x, h)`; while checking the body of this function; binds x : Nat
    │ checked against `(x : Nat, h : Heap, realiser(optRef, x, h)) => vOpt(vInt, x, h)`; while checking the body of this thunk
    │
-   ╰ note: `throughLayout` is refused with Undecided, as its expectation states
+   ├ note: `throughLayout` is refused with Undecided, as its expectation states
+   ╰ help: write code whose unfolding the checker can decide
