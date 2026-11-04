@@ -21,6 +21,9 @@
 #             `pages` and `tree` as `vault.jq` reads them, `touched` the
 #             crates whose sources the change touches, `cited` each such
 #             crate's `# References` keys at the head
+#   ceilings  the ceilings the change adds (`ceilings.bash`, #5039), each
+#             with the cited issues still open:
+#             [{path, line, kind, text, cites: [n], open: [n]}]
 #
 # A merge takes the claim off what the body works (`decide.jq`), so the body
 # must name it (#2462): a branch that carries an issue number needs
@@ -104,6 +107,18 @@
 # item `` - `<row>` `` per row, keyed as the collector keys it
 # (`collector_rows`). An empty or missing `## Rows`, or an item naming no
 # open row of the collector, is refused.
+#
+# A body answers its issues' `## Engineering` with measured numbers (#5039,
+# `units.md` § units-pr): when an issue it works has the section, the body has
+# one, and each row the issue states with a bound has its answer there. The
+# answer is neither empty nor `n/a`. Each row but `failure` carries a number,
+# the measurement, or the issue naming the serial step. A row the issue marks
+# `n/a — <reason>` may answer `n/a`, or stay out.
+#
+# A ceiling the change adds cites the open issue that removes it (#5039): a
+# `spec_clause_traversal` waiver or an `economy:` comment carries `#<n>` in
+# its extent, and one such issue is open. A reason string alone is refused
+# with its file and line.
 
 include "targets";
 include "sections";
@@ -384,4 +399,43 @@ def refactorings:
           | "the `## Refactoring` row `\(.line)` gives no observation: say what this change found there, then run `pr:open` again")
     end;
 
-claim, sources, citations, readings, concerns, defects, surface, keywords, refactorings, collectors
+# The refusals of the body's `## Engineering` against the sections of the
+# issues it works (#5039): the section missing, or a row an issue states with
+# a bound left out, empty, `n/a`, or with no number where one is measured.
+def engineering_answers:
+  def na: test("^n/?a\\b"; "i");
+  [(.issues // [])[] | .number as $n | (.body // "" | section("Engineering")) as $lines
+    | select($lines != null) | $lines | engineering | {n: $n, row, bound: (.answer | na | not)}] as $asked
+  | select($asked | length > 0)
+  | (.body | section("Engineering")) as $section
+  | "with its measured number (`units.md` § units-pr)" as $form
+  | if $section == null then
+      "the body lacks `## Engineering`, which \([$asked[].n] | unique | map("#\(.)") | join(", ")) states: answer each row the issue states with a bound \($form), then run `pr:open` again"
+    else [$section | engineering] as $rows
+    | $asked
+    | map(select(.bound))
+    | unique_by(.row)[]
+    | . as $ask
+    | [$rows[] | select(.row == $ask.row) | .answer] as $answers
+    | if ($answers | length) == 0 then "the body's `## Engineering` has no row `\($ask.row)`, which #\($ask.n) states with a bound: answer it \($form), then run `pr:open` again"
+      elif all($answers[]; . == "") then "the body's `## Engineering` leaves `\($ask.row)` empty, which #\($ask.n) states with a bound: answer it \($form), then run `pr:open` again"
+      elif all($answers[]; na) then "the body's `## Engineering` answers `\($ask.row)` with `n/a`, and #\($ask.n) states it with a bound: answer it \($form), then run `pr:open` again"
+      elif $ask.row != "failure" and all($answers[]; test("[0-9]") | not) then "the body's `## Engineering` answers `\($ask.row)` with no number: report the measurement, or the issue that names the serial step (`units.md` § units-engineering), then run `pr:open` again"
+      else empty
+      end
+    end;
+
+# The refusals of a ceiling the change adds without an open issue that
+# removes it (#5039), each with its file and line.
+def ceilings:
+  (.ceilings // [])[]
+  | (if .kind == "waiver" then "a `spec_clause_traversal` waiver" else "an `economy:` ceiling" end) as $what
+  | (if .kind == "waiver" then "its `reason`" else "its comment" end) as $where
+  | if (.cites | length) == 0 then
+      "`\(.path):\(.line)` adds \($what) that cites no issue (`\(.text)`): a ceiling cites the open issue that removes it, so write `#<n>` in \($where) (`units.md` § units-engineering), then run `pr:open` again"
+    elif (.open | length) == 0 then
+      "`\(.path):\(.line)` adds \($what) that cites \(.cites | map("#\(.)") | join(", ")), and none is open: cite the open issue that removes the ceiling in \($where), then run `pr:open` again"
+    else empty
+    end;
+
+claim, sources, citations, readings, concerns, defects, surface, keywords, refactorings, collectors, engineering_answers, ceilings

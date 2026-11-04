@@ -1974,6 +1974,28 @@ while IFS= read -r case; do
     failed=1
   fi
 done < <(jq -c '.[]' .config/claims/case-files.json)
+# The ceilings a change adds (#5039): for each case in
+# `.config/claims/ceilings.json` a scratch repository commits the case's
+# `base` text, then its `head` text, at its `file`, and `ceilings.bash` lists
+# the case's `output`.
+index=0
+while IFS= read -r case; do
+  index=$(( index + 1 ))
+  repo="$scratch/ceilings-$index"
+  file=$(jq -r .file <<< "$case")
+  git init --quiet --initial-branch=main "$repo"
+  git -C "$repo" config commit.gpgsign false
+  mkdir -p "$repo/$(dirname "$file")"
+  jq -j .base <<< "$case" > "$repo/$file"
+  git -C "$repo" add -A && git -C "$repo" commit --quiet --no-verify -m base
+  jq -j .head <<< "$case" > "$repo/$file"
+  git -C "$repo" add -A && git -C "$repo" commit --quiet --no-verify -m head
+  got=$(cd "$repo" && "$root/.config/claims/ceilings.bash" HEAD~1 2> "$scratch/err" | jq -c .) || true
+  if [[ $got != "$(jq -c .output <<< "$case")" ]]; then
+    printf 'ceilings case FAILED: %s\n  got: %s\n  wanted: %s\n%s\n' "$(jq -r .name <<< "$case")" "$got" "$(jq -c .output <<< "$case")" "$(cat "$scratch/err")" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/claims/ceilings.json)
 # `epic:deps` over a stubbed `gh` (#4903): a dependency GitHub refuses is
 # named and the run goes on.
 .config/claims/epic-deps.bash || failed=1

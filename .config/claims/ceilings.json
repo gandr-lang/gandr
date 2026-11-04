@@ -1,0 +1,76 @@
+[
+  {
+    "name": "#5039: a waiver whose reason cites its issue on the line below the lint's name is cited",
+    "file": "crates/p/src/lib.rs",
+    "base": "",
+    "head": "pub struct S;\nimpl S {\n    #[cfg_attr(\n        dylint_lib = \"quenchant_dylints\",\n        expect(\n            spec_clause_traversal,\n            reason = \"bounded: whole stream; #4853 lays out the edited declaration\"\n        )\n    )]\n    pub fn relabel() {}\n}\n",
+    "output": [
+      {
+        "path": "crates/p/src/lib.rs",
+        "line": 6,
+        "kind": "waiver",
+        "text": "spec_clause_traversal,",
+        "cites": [4853]
+      }
+    ]
+  },
+  {
+    "name": "#5039: a waiver whose reason cites no issue is listed with no citation",
+    "file": "crates/p/src/lib.rs",
+    "base": "",
+    "head": "    #[cfg_attr(\n        dylint_lib = \"quenchant_dylints\",\n        expect(\n            spec_clause_traversal,\n            reason = \"bounded: labels `before` and `after` whole\"\n        )\n    )]\n    pub fn relabel() {}\n",
+    "output": [
+      {
+        "path": "crates/p/src/lib.rs",
+        "line": 4,
+        "kind": "waiver",
+        "text": "spec_clause_traversal,",
+        "cites": []
+      }
+    ]
+  },
+  {
+    "name": "#5039: a waiver on one line carries its citation on that line",
+    "file": "crates/p/src/lib.rs",
+    "base": "",
+    "head": "#[expect(spec_clause_traversal, reason = \"whole table, #12\")]\nfn f() {}\n",
+    "output": [
+      {
+        "path": "crates/p/src/lib.rs",
+        "line": 1,
+        "kind": "waiver",
+        "text": "#[expect(spec_clause_traversal, reason = \"whole table, #12\")]",
+        "cites": [12]
+      }
+    ]
+  },
+  {
+    "name": "#5039: an `economy:` comment cites its issue on a continuation line, and its extent ends at the next item's head",
+    "file": "crates/p/src/lib.rs",
+    "base": "",
+    "head": "/// - economy: scans the whole stream on each edit;\n///   the edited declaration alone is #77.\n/// - witness: `tests::t` (#99)\nfn f() {}\n",
+    "output": [
+      {
+        "path": "crates/p/src/lib.rs",
+        "line": 1,
+        "kind": "economy",
+        "text": "/// - economy: scans the whole stream on each edit;",
+        "cites": [77]
+      }
+    ]
+  },
+  {
+    "name": "#5039: the lint's name outside an `expect(` or `allow(` is no waiver",
+    "file": "crates/p/src/lib.rs",
+    "base": "",
+    "head": "// The spec_clause_traversal lint reads this body.\nfn f() {}\n",
+    "output": []
+  },
+  {
+    "name": "#5039: a waiver the change leaves as it stands is not the change's ceiling",
+    "file": "crates/p/src/lib.rs",
+    "base": "    #[cfg_attr(\n        dylint_lib = \"quenchant_dylints\",\n        expect(\n            spec_clause_traversal,\n            reason = \"bounded: whole\"\n        )\n    )]\n    pub fn relabel() {}\n",
+    "head": "    #[cfg_attr(\n        dylint_lib = \"quenchant_dylints\",\n        expect(\n            spec_clause_traversal,\n            reason = \"bounded: whole\"\n        )\n    )]\n    pub fn relabel() {}\npub fn g() {}\n",
+    "output": []
+  }
+]

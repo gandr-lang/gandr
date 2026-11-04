@@ -3280,7 +3280,10 @@ fi
 # `## Refactoring` (#2884): `yes`, `maybe` or `no`, and for the first two a
 # table `| Kind | Where | Observation |`, each `Where` resolved by
 # `check:refactoring` against the rustdoc JSON once `evidence:obligations`
-# has built it. The rule is
+# has built it. A body answers its issues' `## Engineering` with measured
+# numbers, and a `spec_clause_traversal` waiver or an `economy:` ceiling the
+# change adds cites the open issue that removes it (#5039,
+# `.config/claims/ceilings.bash`). The rule is
 # `.config/claims/opening.jq`, reading the sections through `sections.jq`, its
 # cases held by `check:claims`; a `note:` line it prints does not refuse.
 # Each issue the body works, an epic or a `collector` aside, passes
@@ -3349,6 +3352,13 @@ added=$(git diff --no-renames --name-only --diff-filter=A "$from" HEAD -- ':(glo
 # The lines the change adds where a defect's regression is named (#2524,
 # #3538), every file kind `opening.jq`'s `regression` reads (#4863).
 regressions=$("$claims/regressions.bash" "$from")
+# The ceilings the change adds (#5039, `ceilings.bash`), each with the issues
+# it cites that stand open: one read per issue cited.
+ceilings=$("$claims/ceilings.bash" "$from")
+open=$(jq -r '[.[].cites[]] | unique[]' <<< "$ceilings" \
+  | while IFS= read -r n; do gh api "repos/$repo/issues/$n" --jq 'select(.state == "open" and .pull_request == null) | .number' 2> /dev/null || :; done \
+  | jq -s -c .)
+ceilings=$(jq -c --argjson open "$open" 'map(. + {open: [.cites[] | select(IN($open[]))]})' <<< "$ceilings")
 # The paths the change touches in the parser, its grammar and its syntax tree
 # (#2527); `opening.jq` sets aside the goldens among them (#2756).
 surface=$(git diff --no-renames --name-only "$from" HEAD -- crates/surface-parser crates/surface-grammar crates/surface-syntax | jq -R . | jq -s .)
@@ -3388,8 +3398,8 @@ else
 fi
 findings=$(jq -n --arg branch "$own" --rawfile body "$body" --argjson issues "$issues" --argjson mentions "$mentions" \
   --argjson concerns "$concerns" --argjson added "$added" --argjson regressions "$regressions" --argjson surface "$surface" \
-  --slurpfile vault "$vaultdir/vault.json" \
-  '{branch: $branch, body: $body, issues: $issues, mentions: $mentions, concerns: $concerns, added: $added, regressions: $regressions, surface: $surface, vault: $vault[0]}' \
+  --argjson ceilings "$ceilings" --slurpfile vault "$vaultdir/vault.json" \
+  '{branch: $branch, body: $body, issues: $issues, mentions: $mentions, concerns: $concerns, added: $added, regressions: $regressions, surface: $surface, ceilings: $ceilings, vault: $vault[0]}' \
   | jq -r -L "$claims" -f "$claims/opening.jq")
 # Each issue the body works is sectioned and signed (#3134, `signed.jq`).
 signed=$(jq -n --argjson issues "$issues" '{issues: $issues}' \
