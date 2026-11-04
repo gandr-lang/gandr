@@ -6,4 +6,5 @@ error[NonUniformOccurrence]: the datatype is applied to other arguments than its
 5 │ ┃ }
   │ ┗━┛ the declared type at other arguments
   │
-  ╰ note: `Cell` is refused with NonUniformOccurrence, as its expectation states
+  ├ note: `Cell` is refused with NonUniformOccurrence, as its expectation states
+  ╰ help: apply the datatype only to its own parameters

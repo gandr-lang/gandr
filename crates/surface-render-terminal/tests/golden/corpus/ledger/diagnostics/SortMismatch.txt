@@ -7,4 +7,5 @@ error[SortMismatch]: a value type's code and a computation type's code are confu
 5 │ def wrong_sort = Integer ;
   │                  ━━━━━━━ a universe of the other sort: expected `Type[-]`, found `Type`
   │
-  ╰ note: `wrong_sort` is refused with SortMismatch, as its expectation states
+  ├ note: `wrong_sort` is refused with SortMismatch, as its expectation states
+  ╰ help: use a code of the expected sort

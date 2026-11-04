@@ -406,17 +406,54 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::DuplicateImportAlias { .. } => String::from("rename one import alias"),
         LoweringRefusal::DuplicateAttribute { .. } => String::from("write the attribute only once"),
         LoweringRefusal::EntryType { .. } => String::from("give `main` an allowed entry signature"),
+        LoweringRefusal::MalformedLiteral { form, .. } => {
+            format!("write a well-formed {}", Spoken(form))
+        },
+        LoweringRefusal::NoUniverseAbove { .. } => String::from("use a smaller universe level"),
+        LoweringRefusal::NotAFunctor { name, .. } => {
+            format!("declare `{name}` as a functor before this binding")
+        },
+        LoweringRefusal::NotAModel { name, .. } => {
+            format!("declare `{name}` as a model before opening it")
+        },
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::EmptyList,
+            ..
+        } => String::from("write `unit` for the unit value"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::JoinsBlock,
+            ..
+        } => String::from("remove the match result annotation"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::NonUniform,
+            ..
+        } => String::from("pass the recursive call's parameters unchanged"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::NotAtResult,
+            ..
+        } => String::from("write the row only before a definition's result type"),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::NotInTail,
+            ..
+        } => String::from(
+            "write the return expression in a function, lambda, thunk or copattern clause",
+        ),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::View,
+            ..
+        } => String::from("open a view with `access` before resuming or aborting it"),
+        LoweringRefusal::OutsideLoop { .. } => {
+            String::from("write `break` or `continue` in its loop body")
+        },
+        LoweringRefusal::PartialField { .. } => {
+            String::from("select a field each constructor declares")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::UnlockedDependency { .. }
         | LoweringRefusal::UnexportedName { .. }
         | LoweringRefusal::OutOfFragment { .. }
         | LoweringRefusal::GradedBridge { .. }
-        | LoweringRefusal::MalformedLiteral { .. }
-        | LoweringRefusal::NoUniverseAbove { .. }
-        | LoweringRefusal::PartialField { .. }
-        | LoweringRefusal::NotAFunctor { .. }
-        | LoweringRefusal::NotAModel { .. }
         | LoweringRefusal::UnreadAscription { .. }
         | LoweringRefusal::UnreadCells { .. }
         | LoweringRefusal::UnstatedComponent { .. }
@@ -424,7 +461,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::ImplicitTelescope { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
         | LoweringRefusal::Unreachable { .. }
-        | LoweringRefusal::OutsideLoop { .. }
         | LoweringRefusal::RulesUndecided { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
@@ -1069,27 +1105,73 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             fault: CodataFault::WithoutObservations,
             ..
         } => String::from("declare at least one codata observation"),
+        CheckRefusal::FamilyArity { .. } => {
+            String::from("give the type operator its declared number of arguments")
+        },
+        CheckRefusal::FootprintsOverlap { .. } => {
+            String::from("give each fork half separate authority")
+        },
+        CheckRefusal::HandlerCoverage { .. } => {
+            String::from("handle each interface operation exactly once")
+        },
+        CheckRefusal::LiteralAmbiguous { .. } => {
+            String::from("apply the intended literal model reader by name")
+        },
+        CheckRefusal::LoopUndecided { .. } => {
+            String::from("simplify the loop obligation until the checker decides it")
+        },
+        CheckRefusal::NonUniformOccurrence(_) => {
+            String::from("apply the datatype only to its own parameters")
+        },
+        CheckRefusal::NotADataType(_) => String::from("use a declared datatype"),
+        CheckRefusal::NotAnAbstractType(_) => {
+            String::from("admit the abstract type before using it")
+        },
+        CheckRefusal::NotOver { .. } => {
+            String::from("start `Path.walk` with an identity over the path")
+        },
+        CheckRefusal::Access {
+            defect: AccessDefect::NotAView,
+            ..
+        } => String::from("open the value with `access` before resuming it"),
+        CheckRefusal::Access {
+            defect: AccessDefect::NotHeld,
+            ..
+        } => String::from("open a value with `var` before accessing it"),
+        CheckRefusal::UaInequivalent {
+            defect: UaDefect::NotInverse { .. },
+            ..
+        } => String::from("make the `ua` translators inverse"),
+        CheckRefusal::RepresentationAboveKind { .. } => {
+            String::from("seal a representation within its abstract type's universe")
+        },
+        CheckRefusal::PathCode(_) => {
+            String::from("use a quoted closed first-order code at each end")
+        },
+        CheckRefusal::SessionCodeExpected { .. } => {
+            String::from("give the session identity two session types")
+        },
+        CheckRefusal::SortMismatch { .. } => String::from("use a code of the expected sort"),
+        CheckRefusal::StageNotCarried { .. } => {
+            String::from("transport the recursive value only along a set")
+        },
+        CheckRefusal::UaInequivalent {
+            defect: UaDefect::PastTheBound { .. },
+            ..
+        } => String::from("use a corolla within the `ua` catalogue bound"),
         // Unworded: a later slice words each, most-seen first.
-        CheckRefusal::Access { .. }
-        | CheckRefusal::NotADataType(_)
-        | CheckRefusal::LoopUndecided { .. }
-        | CheckRefusal::RepresentationAboveKind { .. }
-        | CheckRefusal::NotAnAbstractType(_)
-        | CheckRefusal::SealSiteRepeated(_)
+        CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::DataArgumentArity(_)
         | CheckRefusal::UnknownConstructor { .. }
         | CheckRefusal::ConstructorArity(_)
         | CheckRefusal::NonExhaustiveDataCase(_)
         | CheckRefusal::UnknownOperation { .. }
-        | CheckRefusal::HandlerCoverage { .. }
         | CheckRefusal::ShiftWithoutReset { .. }
         | CheckRefusal::DependentStack { .. }
-        | CheckRefusal::PathCode(_)
         | CheckRefusal::FunextUnsupported { .. }
         | CheckRefusal::EquivUnsupported { .. }
         | CheckRefusal::UncertifiedStratum { .. }
         | CheckRefusal::OutsideFold { .. }
-        | CheckRefusal::NotOver { .. }
         | CheckRefusal::UaUncertified { .. }
         | CheckRefusal::UaInequivalent { .. }
         | CheckRefusal::ComposeUncertified { .. }
@@ -1103,19 +1185,12 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::DanglingNode { .. }
         | CheckRefusal::AdmissionOrder { .. }
         | CheckRefusal::MachineInvariant
-        | CheckRefusal::SortMismatch { .. }
-        | CheckRefusal::FamilyArity { .. }
         | CheckRefusal::StaticLambdaArgument { .. }
         | CheckRefusal::StaticClassifierExpected { .. }
-        | CheckRefusal::NonUniformOccurrence(_)
-        | CheckRefusal::StageNotCarried { .. }
         | CheckRefusal::Linearity { .. }
         | CheckRefusal::Codata { .. }
         | CheckRefusal::Located { .. }
-        | CheckRefusal::LiteralAmbiguous { .. }
         | CheckRefusal::CapabilityUngranted { .. }
-        | CheckRefusal::FootprintsOverlap { .. }
-        | CheckRefusal::SessionCodeExpected { .. }
         | CheckRefusal::RideUnsupported { .. }
         | CheckRefusal::ForwardUnsupported { .. } => return Maybe::Absent(help::Absent::Unworded),
     })
@@ -1133,7 +1208,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 186] = [
+    const WORDED: [&str; 216] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1321,6 +1396,36 @@ mod tests
         "DuplicateSignature",
         "EntryType",
         "FamilyArgumentClassifier",
+        "FamilyArity",
+        "FootprintsOverlap",
+        "HandlerCoverage",
+        "LiteralAmbiguous",
+        "LoopUndecided",
+        "MalformedLiteral",
+        "NoUniverseAbove",
+        "NonUniformOccurrence",
+        "NotADataType",
+        "NotAFunctor",
+        "NotAModel",
+        "NotAView",
+        "NotAnAbstractType",
+        "NotHeld",
+        "NotInverse",
+        "NotOver",
+        "OutOfFragment.EmptyList",
+        "OutOfFragment.JoinsBlock",
+        "OutOfFragment.NonUniform",
+        "OutOfFragment.NotAtResult",
+        "OutOfFragment.NotInTail",
+        "OutOfFragment.View",
+        "OutsideLoop",
+        "PartialField",
+        "PastTheBound",
+        "PathCode",
+        "RepresentationAboveKind",
+        "SessionCodeExpected",
+        "SortMismatch",
+        "StageNotCarried",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

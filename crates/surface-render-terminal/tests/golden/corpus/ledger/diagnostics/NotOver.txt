@@ -16,4 +16,5 @@ error[NotOver]: `Path.walk` needs its identity over the path to start from the s
 26 │ │ }
    │ └─┘ checked against `(a : Nat, b : Nat, Path[.A = Nat](a, b), Nat) => Nat`; while checking the body of this thunk
    │
-   ╰ note: `astray` is refused with NotOver, as its expectation states
+   ├ note: `astray` is refused with NotOver, as its expectation states
+   ╰ help: start `Path.walk` with an identity over the path

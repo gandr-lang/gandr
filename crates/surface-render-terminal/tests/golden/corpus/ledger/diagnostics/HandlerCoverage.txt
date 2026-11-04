@@ -11,4 +11,5 @@ error[HandlerCoverage]: the handler must handle every operation of its interface
 14 │ │  }
    │ └──┘ checked against `() => Integer`; while checking the body of this thunk
    │
-   ╰ note: `asked` is refused with HandlerCoverage, as its expectation states
+   ├ note: `asked` is refused with HandlerCoverage, as its expectation states
+   ╰ help: handle each interface operation exactly once

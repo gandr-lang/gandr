@@ -18,4 +18,5 @@ error[NotADataType]: this is not a datatype
 10 │ ┃ }
    │ ┗━┛ not an admitted datatype
    │
-   ╰ note: `held` is refused with NotADataType, as its expectation states
+   ├ note: `held` is refused with NotADataType, as its expectation states
+   ╰ help: use a declared datatype

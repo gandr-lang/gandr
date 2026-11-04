@@ -4,4 +4,5 @@ error[MalformedLiteral]: this is not a well-formed typed number
 21 │ def wider = 4294967296u32;
    │             ━━━━━━━━━━━━━ not this literal's lexeme
    │
-   ╰ note: `wider` is refused with MalformedLiteral, as its expectation states
+   ├ note: `wider` is refused with MalformedLiteral, as its expectation states
+   ╰ help: write a well-formed typed number

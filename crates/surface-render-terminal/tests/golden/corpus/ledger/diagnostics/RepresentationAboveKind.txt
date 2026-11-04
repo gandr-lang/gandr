@@ -7,4 +7,5 @@ error[RepresentationAboveKind]: the type sealed here lives in a larger universe 
 4 │   type T = Type;
   │            ━━━━ above the abstract type's universe
   │
-  ╰ note: `T` is refused with RepresentationAboveKind, as its expectation states
+  ├ note: `T` is refused with RepresentationAboveKind, as its expectation states
+  ╰ help: seal a representation within its abstract type's universe

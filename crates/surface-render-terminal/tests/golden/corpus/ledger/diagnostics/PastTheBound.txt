@@ -8,4 +8,5 @@ error[PastTheBound]: a generator stands at a corolla past the `ua` catalogue bou
 31 │ ┃ ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a generator past the catalogue's bound
    │
-   ╰ note: `short` is refused with PastTheBound, as its expectation states
+   ├ note: `short` is refused with PastTheBound, as its expectation states
+   ╰ help: use a corolla within the `ua` catalogue bound

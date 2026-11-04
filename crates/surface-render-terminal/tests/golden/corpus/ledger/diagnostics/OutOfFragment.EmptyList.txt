@@ -4,4 +4,5 @@ error[OutOfFragment.EmptyList]: `()` is an empty list, never the unit; write the
 3 │ def nothing = () ;
   │               ━━ an empty list, not the unit
   │
-  ╰ note: `nothing` is refused with OutOfFragment.EmptyList, as its expectation states
+  ├ note: `nothing` is refused with OutOfFragment.EmptyList, as its expectation states
+  ╰ help: write `unit` for the unit value

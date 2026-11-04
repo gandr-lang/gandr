@@ -9,4 +9,5 @@ error[NotAView]: `resume` and `abort` need the view an `access` opened
 6 │ │ }
   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
   │
-  ╰ note: `resumed` is refused with NotAView, as its expectation states
+  ├ note: `resumed` is refused with NotAView, as its expectation states
+  ╰ help: open the value with `access` before resuming it

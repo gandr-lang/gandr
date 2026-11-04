@@ -4,4 +4,5 @@ error[OutOfFragment.View]: `resume` and `abort` end a view: the name an `access`
 4 │   abort(n)
   │         ━ not a view an access binds
   │
-  ╰ note: `aborted` is refused with OutOfFragment.View, as its expectation states
+  ├ note: `aborted` is refused with OutOfFragment.View, as its expectation states
+  ╰ help: open a view with `access` before resuming or aborting it
