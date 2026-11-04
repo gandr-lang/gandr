@@ -24,7 +24,10 @@
 #   checks    each check run and status on its head: `{name, verdict,
 #             conclusion, started, completed}`, the verdict `pass`, `fail` or
 #             `pending` read as `.config/pr-stack/required.jq` reads one, the
-#             conclusion GitHub's (a status's state);
+#             conclusion GitHub's (a status's state). On a head the CI depth
+#             gate stopped, which a comment marks `landing:pr-depth:<head>` as
+#             `landing.bash` reads it, a cancelled check is pending, not
+#             failed: it waits for the head's promotion (#5074);
 # `merged` one entry per merged pull request read, `{number, head, merged,
 # verdict, rows}`: when it merged, in epoch seconds, its `## Refactoring`
 # verdict (`yes`, `maybe`, `no` or null) and how many rows its table names;
@@ -38,15 +41,20 @@ include "markers";
 
 def epoch: if . == null then null else fromdateiso8601 end;
 
-def verdict:
+def verdict($gated):
   if .__typename == "StatusContext" then
     if .state == "SUCCESS" then "pass" elif IN(.state; "PENDING", "EXPECTED") then "pending" else "fail" end
   elif .status != "COMPLETED" and (.conclusion // "") == "" then "pending"
+  elif .conclusion == "CANCELLED" and $gated then "pending"
   elif IN(.conclusion; "SUCCESS", "SKIPPED", "NEUTRAL") then "pass"
   else "fail"
   end;
 
-{prs: [.pullRequests.nodes[] | {
+# Whether a comment marks the head `$head` as one the CI depth gate stopped.
+def gated($head):
+  any((.comments.nodes // [])[]; (.body // "") | contains("<!-- landing:pr-depth:\($head) -->"));
+
+{prs: [.pullRequests.nodes[] | gated(.headRefOid) as $gated | {
   number,
   draft: .isDraft,
   bot: (.author.__typename == "Bot"),
@@ -61,7 +69,7 @@ def verdict:
   claims: [(.closingIssuesReferences.nodes // [])[] | .body | claim_lane | select(. != null)],
   checks: [(.commits.nodes[0].commit.statusCheckRollup.contexts.nodes // [])[] | {
     name: (.name // .context),
-    verdict: verdict,
+    verdict: verdict($gated),
     conclusion: (.conclusion // .state),
     started: ((.startedAt // .createdAt) | epoch),
     completed: ((.completedAt // (if .__typename == "StatusContext" then .createdAt else null end)) | epoch)
