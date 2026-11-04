@@ -16,4 +16,5 @@ error[CapabilityEscaped]: a capability its scope introduced would outlive the sc
 15 │ │  }
    │ └──┘ checked against `() => Cap {exit}`; while checking the body of this reset
    │
-   ╰ note: `leak` is refused with CapabilityEscaped, as its expectation states
+   ├ note: `leak` is refused with CapabilityEscaped, as its expectation states
+   ╰ help: keep the capability inside its scope

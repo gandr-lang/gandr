@@ -40,6 +40,7 @@ use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::RunSource;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::access::AccessDefect;
+use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::session::ForkSide;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::worlds::Crossed;
@@ -57,6 +58,7 @@ use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::Offer;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::WfKind;
+use gandr_surface_lowering::description::MemberFault;
 use gandr_surface_lowering::head_home;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GroutShape;
@@ -226,6 +228,13 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::RulesOverlapSecondOrder { .. } => {
             String::from("add a rule for the second-order overlap")
         },
+        LoweringRefusal::UndescribedMember {
+            fault: MemberFault::LhsNotOperation,
+            ..
+        } => String::from("write an operation application on the rule's left side"),
+        LoweringRefusal::UnguardedCorecursion { .. } => {
+            String::from("write the productive self-call as a copattern arm's whole body")
+        },
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::DuplicateSignature { .. }
@@ -269,7 +278,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::ViewOfNoPlace { .. }
         | LoweringRefusal::MismatchedPattern { .. }
         | LoweringRefusal::UnmarkedSelfReference { .. }
-        | LoweringRefusal::UnguardedCorecursion { .. }
         | LoweringRefusal::DescentOnSeveralParameters { .. }
         | LoweringRefusal::Unreachable { .. }
         | LoweringRefusal::OutsideLoop { .. }
@@ -610,6 +618,7 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::UndischargedLaw { .. } => String::from(
             "prove the law by a definition at its type, or admit it where the host asserts it",
         ),
+        CheckRefusal::UnassertedLaw { .. } => String::from("prove the law"),
         // A crossing's call carries a written value, a literal read by its
         // reader or a model by its reduct, to its type: only a body runs it
         // (#4806). A written run's remedy depends on where it stands, which
@@ -643,6 +652,14 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         } => String::from(
             "hand the buffer back with a `send`, an operation or a resumption before the body ends",
         ),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::Captured { by, .. },
+            ..
+        } => format!("use the endpoint outside {}", Captor(by)),
+        CheckRefusal::Linearity {
+            defect: LinearityDefect::BufferReturnedTwice { .. },
+            ..
+        } => String::from("return the buffer only once"),
         CheckRefusal::Access {
             defect: AccessDefect::HeldCaptured { by },
             ..
@@ -672,6 +689,24 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         },
         CheckRefusal::NonCovariantMotive { .. } => {
             String::from("use the moving endpoint only where a run of it is produced")
+        },
+        CheckRefusal::Codata {
+            fault: CodataFault::KindNotUniverse,
+            ..
+        } => String::from("give the codata declaration a computation universe as its kind"),
+        CheckRefusal::Codata {
+            fault: CodataFault::Occurrence,
+            ..
+        } => String::from(
+            "write the codata type only as an observation's result, with its parameters in order",
+        ),
+        CheckRefusal::Located {
+            defect: LocatedDefect::CapabilityMissing { .. },
+            ..
+        } => String::from("migrate with the target world's capability"),
+        CheckRefusal::TacticRefused { .. } => String::from("replace the tactic with a proof term"),
+        CheckRefusal::CapabilityEscaped { .. } => {
+            String::from("keep the capability inside its scope")
         },
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::UnenclosedRun {
@@ -739,11 +774,9 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::Access { .. }
         | CheckRefusal::Codata { .. }
         | CheckRefusal::Located { .. }
-        | CheckRefusal::TacticRefused { .. }
         | CheckRefusal::CapabilityForged { .. }
         | CheckRefusal::LiteralAmbiguous { .. }
         | CheckRefusal::CapabilityOutsideAuthority { .. }
-        | CheckRefusal::CapabilityEscaped { .. }
         | CheckRefusal::CapabilityConsumable(_)
         | CheckRefusal::CapabilityUngranted { .. }
         | CheckRefusal::FootprintsOverlap { .. }
@@ -751,7 +784,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         | CheckRefusal::SessionNotSubtype { .. }
         | CheckRefusal::SessionCodeExpected { .. }
         | CheckRefusal::OpenSessionPayload { .. }
-        | CheckRefusal::UnassertedLaw { .. }
         | CheckRefusal::RideUnsupported { .. }
         | CheckRefusal::DialogueUnmatched { .. }
         | CheckRefusal::DialogueInverted { .. }
@@ -772,7 +804,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 66] = [
+    const WORDED: [&str; 76] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -840,6 +872,16 @@ mod tests
         "OutOfFragment.Stage",
         "PhaseDependence",
         "RulesOverlapSecondOrder",
+        "TacticRefused",
+        "UndescribedMember.LhsNotOperation",
+        "UnguardedCorecursion",
+        "UnprovenLaw.Admitted",
+        "BufferReturnedTwice",
+        "CapabilityEscaped",
+        "CapabilityMissing",
+        "CapturedEndpoint",
+        "CodataKindNotUniverse",
+        "CodataOccurrence",
     ];
 
     /// Every worded name's refusal has a one-line help that opens with a

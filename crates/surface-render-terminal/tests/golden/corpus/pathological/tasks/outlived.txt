@@ -14,4 +14,5 @@ error[CapabilityEscaped]: a capability its scope introduced would outlive the sc
 25 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `outlived` is refused with CapabilityEscaped, as its expectation states
+   ├ note: `outlived` is refused with CapabilityEscaped, as its expectation states
+   ╰ help: keep the capability inside its scope

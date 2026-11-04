@@ -18,4 +18,5 @@ error[CapturedEndpoint]: the endpoint is used inside a continuation a handler or
 23 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `closedInScope` is refused with CapturedEndpoint, as its expectation states
+   ├ note: `closedInScope` is refused with CapturedEndpoint, as its expectation states
+   ╰ help: use the endpoint outside a continuation a handler or a shift may resume

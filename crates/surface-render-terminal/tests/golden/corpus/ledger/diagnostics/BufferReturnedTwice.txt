@@ -19,4 +19,5 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
 18 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `freedTwice` is refused with BufferReturnedTwice, as its expectation states
+   ├ note: `freedTwice` is refused with BufferReturnedTwice, as its expectation states
+   ╰ help: return the buffer only once

@@ -14,7 +14,8 @@ error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law 
 32 │ ┃   law one = ~admitted;
    │ ┗━━━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Integer, b : Integer) => Path(Integer, a, b)`
    │
-   ╰ note: `one` is refused with UnprovenLaw.Admitted, as its expectation states
+   ├ note: `one` is refused with UnprovenLaw.Admitted, as its expectation states
+   ╰ help: prove the law
 
 error[UndescribedMember.LhsNotOperation]: this member rewrites from something other than an operation application
    ╭▸ corpus/pathological/modules/law-collapsed.gandr:43:3
@@ -22,4 +23,5 @@ error[UndescribedMember.LhsNotOperation]: this member rewrites from something ot
 43 │   rule k : p ==> loop(p);
    │   ━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
    │
-   ╰ note: `RuledK` is refused with UndescribedMember.LhsNotOperation, as its expectation states
+   ├ note: `RuledK` is refused with UndescribedMember.LhsNotOperation, as its expectation states
+   ╰ help: write an operation application on the rule's left side

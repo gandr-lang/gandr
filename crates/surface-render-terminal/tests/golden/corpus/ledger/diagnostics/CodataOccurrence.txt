@@ -4,4 +4,5 @@ error[CodataOccurrence]: a codata type may name itself only as an observation's 
 7 │   tail : Swap(b, a);
   │          ━━━━━━━━━━ the codata type named off an observation's result
   │
-  ╰ note: `Swap` is refused with CodataOccurrence, as its expectation states
+  ├ note: `Swap` is refused with CodataOccurrence, as its expectation states
+  ╰ help: write the codata type only as an observation's result, with its parameters in order

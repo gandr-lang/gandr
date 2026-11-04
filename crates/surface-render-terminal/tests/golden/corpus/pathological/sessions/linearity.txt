@@ -64,7 +64,8 @@ error[CapturedEndpoint]: the endpoint is used inside a thunk, which may run it o
 24 │ │ }
    │ └─┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `seat_closed_in_a_thunk` is refused with CapturedEndpoint, as its expectation states
+   ├ note: `seat_closed_in_a_thunk` is refused with CapturedEndpoint, as its expectation states
+   ╰ help: use the endpoint outside a thunk
 
 error[UsedAfterClose]: the endpoint is used after `close`
    ╭▸ corpus/pathological/sessions/linearity.gandr:33:5

@@ -9,7 +9,8 @@ error[CapabilityMissing]: this `migrate` has no capability left for its world: a
 16 │ │ }
    │ └─┘ checked against `() => Seat.Report`; while checking the body of this thunk
    │
-   ╰ note: `twice` is refused with CapabilityMissing, as its expectation states
+   ├ note: `twice` is refused with CapabilityMissing, as its expectation states
+   ╰ help: migrate with the target world's capability
 
 error[CapabilityMissing]: this `migrate` has no capability left for its world: an entry is granted one, and a migration spends it
    ╭▸ corpus/pathological/worlds/capability-accounting.gandr:23:3
@@ -20,7 +21,8 @@ error[CapabilityMissing]: this `migrate` has no capability left for its world: a
 24 │ │ }
    │ └─┘ checked against `() => Seat.Report`; while checking the body of this thunk
    │
-   ╰ note: `unheld` is refused with CapabilityMissing, as its expectation states
+   ├ note: `unheld` is refused with CapabilityMissing, as its expectation states
+   ╰ help: migrate with the target world's capability
 
 error[CapabilityCaptured]: this `migrate` stands inside a thunk, which may spend its capability other than once
    ╭▸ corpus/pathological/worlds/capability-accounting.gandr:31:16

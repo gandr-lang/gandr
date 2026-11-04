@@ -4,4 +4,5 @@ error[UnguardedCorecursion]: `ahead[>](…)` must be the whole arm of a copatter
 12 │     Succ(p) => ahead[>](p)
    │                ━━━━━━━━ not the whole arm of a copattern
    │
-   ╰ note: `ahead` is refused with UnguardedCorecursion, as its expectation states
+   ├ note: `ahead` is refused with UnguardedCorecursion, as its expectation states
+   ╰ help: write the productive self-call as a copattern arm's whole body

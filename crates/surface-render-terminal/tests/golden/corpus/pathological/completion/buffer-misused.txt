@@ -38,7 +38,8 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
 41 │ │  }
    │ └──┘ checked against `() => Unit`; while checking the body of this thunk
    │
-   ╰ note: `freedTwice` is refused with BufferReturnedTwice, as its expectation states
+   ├ note: `freedTwice` is refused with BufferReturnedTwice, as its expectation states
+   ╰ help: return the buffer only once
 
 error[BufferRead]: a buffer can be used only by the `send`, the operation or the resumption that hands it back
    ╭▸ corpus/pathological/completion/buffer-misused.gandr:48:24
@@ -129,7 +130,8 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
 115 │ │  }
     │ └──┘ checked against `() => Unit`; while checking the body of this thunk
     │
-    ╰ note: `receivedReturnedTwice` is refused with BufferReturnedTwice, as its expectation states
+    ├ note: `receivedReturnedTwice` is refused with BufferReturnedTwice, as its expectation states
+    ╰ help: return the buffer only once
 
 error[BufferUnreturned]: the buffer placed live here is not handed back before its body ends
     ╭▸ corpus/pathological/completion/buffer-misused.gandr:125:16

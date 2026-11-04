@@ -5,7 +5,8 @@ error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law 
 28 │ ┃   law refl = ~admitted;
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : Lone) => Path(Bool, Overadmitted.alike(a, a), true)`
    │
-   ╰ note: `refl` is refused with UnprovenLaw.Admitted, as its expectation states
+   ├ note: `refl` is refused with UnprovenLaw.Admitted, as its expectation states
+   ╰ help: prove the law
 
 error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law is admitted only as one the host asserts of its primitive, and any other is proved
    ╭▸ corpus/pathological/modules/model-laws.gandr:36:3
@@ -14,7 +15,8 @@ error[UnprovenLaw.Admitted]: the host asserts no law with this statement: a law 
 37 │ ┃   law refl = ~admitted;
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━┛ a law the host does not assert: found `(a : f64) => Path(Bool, FloatEqAdmitted.eq(a, a), true)`
    │
-   ╰ note: `refl` is refused with UnprovenLaw.Admitted, as its expectation states
+   ├ note: `refl` is refused with UnprovenLaw.Admitted, as its expectation states
+   ╰ help: prove the law
 
 error[NoFiller.Omitted]: the module omits this law, and its sides do not convert, so nothing discharges it
    ╭▸ corpus/pathological/modules/model-laws.gandr:43:1
