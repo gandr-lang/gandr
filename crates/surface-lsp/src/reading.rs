@@ -396,7 +396,10 @@ impl Reading
                         head: head(tree, &index, at, &symbol),
                         members: match symbol.kind {
                             SymbolKind::INTERFACE | SymbolKind::ENUM | SymbolKind::STRUCT => {
-                                runs(tree, at).into_iter().map(|run| run.span).collect()
+                                runs(grammar, tree, at)
+                                    .into_iter()
+                                    .map(|run| run.span)
+                                    .collect()
                             },
                             _ => Vec::new(),
                         },

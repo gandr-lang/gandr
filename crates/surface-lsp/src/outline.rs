@@ -64,6 +64,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_surface_grammar::LabelId;
+use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::Sort;
@@ -74,6 +76,7 @@ use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_syntax::ByteOffset as SyntaxOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::MoldId;
 use gandr_surface_syntax::Node;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
@@ -205,7 +208,7 @@ pub fn declarations(
             }));
             let held = found.len().saturating_sub(1);
             if container {
-                members(roles, tree, index, at, &mut found);
+                members(grammar, roles, tree, index, at, &mut found);
             }
             Some(held)
         }
@@ -848,17 +851,20 @@ pub struct Run
 
 /// The runs of the form at `at`: its own children between the first `{`
 /// among its own tiles and the `}` closing it, cut at each `;` the braces hold
-/// directly and before each arm bar they hold directly.
+/// directly and before each arm bar they hold directly. A layout block's
+/// opener, separator and closer count as the `{`, `;` and `}` they stand for.
 ///
 /// # Specification
-/// - requires: nothing; a form with no braces has no runs.
+/// - requires: `tree` is a parse under `grammar`; a form with no braces has no
+///   runs.
 /// - ensures: one run per stretch of the form's own children, layout and
 ///   documentation aside, ended by a `;` at the braces' depth — which it
 ///   includes — or by the closing `}`, in source order; a `|` at the braces'
 ///   depth ends the run before it and opens the next, which leaves the bar out,
 ///   and that run ends before the next `oper`, `op` or `rule`, which writes no
-///   bar; a brace a run writes nests, so a `shape`'s faces stay in its run. An
-///   empty stretch is no run.
+///   bar; a brace a run writes nests, so a `shape`'s faces stay in its run. A
+///   tile reads as [`spelled`] gives it, so a zero-width `{`, `;` or `}` the
+///   layout pass writes cuts as a written one does. An empty stretch is no run.
 /// - provides: the members a theory, a family or a codata declaration writes,
 ///   for its symbols and its hover.
 /// - fails: never.
@@ -866,16 +872,20 @@ pub struct Run
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`declarations`], and a theory's hover lists its
-///   members, an `include` among them.
+///   members, an `include` among them; a family and a theory written as layout
+///   blocks hold their members as their braced spellings do.
 /// - witness: `outline::tests::a_theory_holds_its_members`
+/// - witness: `outline::tests::a_layout_block_holds_its_members_4853`
 /// - witness: `hover::tests::a_theory_and_a_module_hover_as_written_1122_1124`
 #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(pair, [first, second] if first.span.end() <= second.span.start())))]
 #[must_use]
 pub fn runs(
+    grammar: &Pbg,
     tree: &SyntaxTree<'_>,
     at: NodeIndex,
 ) -> Vec<Run>
 {
+    let braces = Braces::of(grammar);
     let mut runs = Vec::new();
     let mut depth = 0_usize;
     let mut written: Option<ByteSpan> = None;
@@ -886,15 +896,15 @@ pub fn runs(
         else {
             continue;
         };
-        let tile = match node.label() {
+        let text = match node.label() {
             NodeLabel::Space | NodeLabel::Doc => continue,
-            NodeLabel::Tile(_) => true,
+            NodeLabel::Tile(mold) => braces.spelled(grammar, tree, child, mold),
             NodeLabel::Meld(_)
             | NodeLabel::Wald
             | NodeLabel::Grout { .. }
-            | NodeLabel::GhostClose { .. } => false,
+            | NodeLabel::GhostClose { .. } => None,
         };
-        let text = tree.fragment(child).filter(|_| tile).map(<&str>::from);
+        let tile = matches!(node.label(), NodeLabel::Tile(_));
         let written_at = depth;
         let ends_barred = barred && matches!(text, Some("oper" | "op" | "rule"));
         if depth == 1 && (text == Some("|") || ends_barred) {
@@ -946,6 +956,56 @@ pub fn runs(
     runs
 }
 
+/// The label numbers of `{`, `;` and `}`, which a layout block's zero-width
+/// opener, separator and closer carry as a written brace and `;` do.
+struct Braces([Option<LabelId>; 3]);
+
+impl Braces
+{
+    /// The three label numbers under `grammar`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(grammar: &Pbg) -> Self
+    {
+        Self(BRACES.map(|brace| grammar.label_id(LabelText(brace))))
+    }
+
+    /// What the tile at `at`, of mold `mold`, reads as: `{`, `;` or `}` when
+    /// its mold carries that label, whatever it spells, else its text.
+    ///
+    /// # Specification
+    /// - requires: `mold` is the tile's mold under `grammar`.
+    /// - ensures: the brace or `;` the mold's label names, so a layout block's
+    ///   zero-width tokens and a body's relabeled `=` read as the braces they
+    ///   stand for; otherwise the tile's own text.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`runs`].
+    /// - witness: `outline::tests::a_layout_block_holds_its_members_4853`
+    fn spelled<'tree>(
+        &self,
+        grammar: &Pbg,
+        tree: &SyntaxTree<'tree>,
+        at: NodeIndex,
+        mold: MoldId,
+    ) -> Option<&'tree str>
+    {
+        let label = grammar.mold_label(mold);
+        BRACES
+            .iter()
+            .zip(&self.0)
+            .find(|&(_, &brace)| brace.is_some() && brace == label)
+            .map(|(&brace, _)| brace)
+            .or_else(|| tree.fragment(at).map(<&str>::from))
+    }
+}
+
+/// The labels a member block opens, separates and closes with.
+const BRACES: [&str; 3] = ["{", ";", "}"];
+
 /// Push onto `found` a symbol for each member the form at `at` writes among
 /// its own tiles, held by the symbol last in `found`, the form's own.
 ///
@@ -978,6 +1038,7 @@ pub fn runs(
         pushed.1.holder == before.checked_sub(1) && matches!(pushed.0, Declarer::Member(form, _) if form == at)),
 )]
 fn members(
+    grammar: &Pbg,
     roles: &RoleTable,
     tree: &SyntaxTree<'_>,
     index: &LineIndex<'_>,
@@ -989,7 +1050,7 @@ fn members(
     else {
         return;
     };
-    for run in runs(tree, at) {
+    for run in runs(grammar, tree, at) {
         let mut keyword: Option<SourceFragment<'_>> = None;
         let mut name: Option<(NodeIndex, HlRole)> = None;
         for &child in &run.tiles {
@@ -1455,21 +1516,64 @@ mod tests
         ]);
     }
 
+    /// A family and a theory written as layout blocks hold their members as
+    /// their braced spellings do, and a word at column zero after the block
+    /// is no member of it.
+    #[test]
+    fn a_layout_block_holds_its_members_4853()
+    {
+        // Each symbol's nesting, name and kind, its ranges left out: the two
+        // spellings place them at different bytes.
+        let held = |source: &str| -> Vec<String> {
+            outline(&Reading::of(SourceText::from(source)).symbols())
+                .iter()
+                .map(|line| {
+                    let indent = line.len() - line.trim_start().len();
+                    let mut words = line.split_whitespace();
+                    let name = words.next().unwrap_or_default();
+                    let kind = words.next().unwrap_or_default();
+                    format!("{}{name} {kind}", " ".repeat(indent))
+                })
+                .collect()
+        };
+        for (layout, braced) in [
+            (
+                "pub data Nat : Type where\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\nmodule Plain \
+                 where\n  def one = 1 ;\n",
+                "pub data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\nmodule \
+                 Plain where {\n  def one = 1 ;\n}\n",
+            ),
+            (
+                "theory Shapes where\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\nmodule \
+                 Plain where\n  def one = 1 ;\n",
+                "theory Shapes where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\nmodule \
+                 Plain where {\n  def one = 1 ;\n}\n",
+            ),
+        ] {
+            let braced_symbols = held(braced);
+            assert!(
+                braced_symbols.len() > 3,
+                "the braced spelling holds its members: {braced_symbols:?}"
+            );
+            assert_eq!(held(layout), braced_symbols, "{layout}");
+        }
+    }
+
     #[test]
     fn declarations_nest_as_symbols()
     {
         let source = include_str!("outline/fixtures/nested.gandr");
         let answered = Reading::of(SourceText::from(source)).symbols();
         assert_eq!(outline(&answered), [
-            "twice 12 1:0-4:1 at 2:4-2:9",
-            "answer 12 5:0-5:17 at 5:4-5:10",
-            "Color 10 6:0-7:41 at 7:5-7:10",
-            "  Red 9 7:28-7:39 at 7:28-7:31",
-            "Outer 2 8:0-13:1 at 8:7-8:12",
-            "  inner 12 9:2-9:17 at 9:6-9:11",
-            "  Nested 2 10:2-12:3 at 10:9-10:15",
-            "    deep 12 11:4-11:18 at 11:8-11:12",
-            "seat 14 14:0-14:12 at 14:6-14:10",
+            "twice 12 1:0-3:10 at 2:4-2:9",
+            "answer 12 4:0-4:17 at 4:4-4:10",
+            "Color 10 5:0-6:41 at 6:5-6:10",
+            "  Red 9 6:28-6:39 at 6:28-6:31",
+            "Outer 2 7:0-10:18 at 7:7-7:12",
+            "  inner 12 8:2-8:17 at 8:6-8:11",
+            "  Nested 2 9:2-10:18 at 9:9-9:15",
+            "    deep 12 10:4-10:18 at 10:8-10:12",
+            "seat 14 11:0-11:12 at 11:6-11:10",
         ]);
         // The wire tree: each held symbol under its holder's `children`.
         let wire = serde_json::to_value(&answered).expect("the symbols encode");
@@ -1577,7 +1681,7 @@ mod tests
             row("Plain", None),
             row("one", None),
             row("seat", None),
-            row("Kit.Tools", Some("#{two : Integer}")),
+            row("Kit.Tools", Some("*{two : Integer}")),
             row("two", None),
         ]);
     }
@@ -1602,7 +1706,7 @@ mod tests
             "  Unit 9 2:2-2:16 at 2:7-2:11",
             "  mul 6 3:2-3:34 at 3:7-3:10",
             "  size 8 4:2-4:27 at 4:6-4:10",
-            "  assoc 7 5:2-5:55 at 5:7-5:12",
+            "  assoc 7 5:2-5:51 at 5:7-5:12",
             "  Square 26 6:2-6:37 at 6:11-6:17",
             "  left 8 7:2-7:25 at 7:7-7:11",
             "  Cell 26 8:2-8:31 at 8:6-8:10",
@@ -1620,7 +1724,7 @@ mod tests
         let source = "/// One.\n/// Two.\ndef f(x : Integer) -> -F Integer {\n  return x\n}\n\
                       def g = 1 ;\n/* a\n   block */\ndef h = 2 ;\n\
                       theory T where {\n  sort M : Type;\n  boundary Square {\n    tl, tr, bl, br\n  \
-                      };\n  oper mul :\n    (M, M) => M;\n}\ndef k =\n  1 ;\n";
+                      };\n  oper mul :\n    (M, M) --> M;\n}\ndef k =\n  1 ;\n";
         let answered: Vec<(u64, u64, Option<&str>, Option<String>)> =
             Reading::of(SourceText::from(source))
                 .folds()
@@ -1644,7 +1748,7 @@ mod tests
                 (6, 7, Some("comment"), None),
                 (9, 16, None, shown("theory T where { … }")),
                 (11, 13, None, shown("  boundary Square { … }")),
-                (14, 15, None, shown("  oper mul : (M, M) => M;")),
+                (14, 15, None, shown("  oper mul : (M, M) --> M;")),
                 (17, 18, None, shown("def k = …;")),
             ],
             "documentation, the function, the block comment, the theory, its multi-line \
@@ -1685,15 +1789,15 @@ mod tests
     #[test]
     fn a_selection_grows_from_the_innermost_form()
     {
-        let source = SourceText::from("def f = g 10 ;\n");
+        let source = SourceText::from("def f = g (10) ;\n");
         let answered = Reading::of(source).selections(&LineIndex::new(source.as_ref().into()), &[
-            at(Line::from(0), Character::from(11)),
+            at(Line::from(0), Character::from(12)),
             at(Line::from(0), Character::from(5)),
         ]);
         let chains: Vec<Vec<String>> = answered.iter().map(chain).collect();
         assert_eq!(
             chains.first().map(|first| first.first().cloned()),
-            Some(Some("0:10-0:12".to_owned())),
+            Some(Some("0:11-0:13".to_owned())),
             "inside the argument, the number is selected first: {chains:?}"
         );
         assert_eq!(
@@ -1715,7 +1819,7 @@ mod tests
         let between =
             Reading::of(source).selections(&LineIndex::new(source.as_ref().into()), &[at(
                 Line::from(0),
-                Character::from(9),
+                Character::from(13),
             )]);
         assert_eq!(
             between
@@ -1723,7 +1827,7 @@ mod tests
                 .map(chain)
                 .next()
                 .and_then(|chain| chain.first().cloned()),
-            Some("0:9-0:10".to_owned()),
+            Some("0:13-0:14".to_owned()),
             "where one token ends and the next starts, the one starting is selected"
         );
         let theory = SourceText::from(
