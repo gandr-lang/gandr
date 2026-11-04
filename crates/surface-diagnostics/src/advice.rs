@@ -468,6 +468,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::Unreachable { .. } => {
             String::from("remove code after every path leaves the body")
         },
+        LoweringRefusal::NonUniformResult { .. } => String::from(
+            "declare each parameter a generator instantiates as an index, as in `data Fixed : (a : Type, n : Nat) --> Type[+, 1]`",
+        ),
         // Unworded: a later slice words each, most-seen first.
         LoweringRefusal::UnresolvedDocLink { .. }
         | LoweringRefusal::OutOfFragment { .. }
@@ -1245,7 +1248,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 230] = [
+    const WORDED: [&str; 231] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1477,6 +1480,7 @@ mod tests
         "BuiltinRepeated",
         "BuiltinMisplaced",
         "BuiltinNotCanonical",
+        "NonUniformResult",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

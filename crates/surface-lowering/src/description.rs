@@ -441,7 +441,8 @@ impl DescriptionDiagnostic
     ///   head and one it names twice a duplicate definition, a point a
     ///   `boundary` lists twice a duplicate definition, each named as `written`
     ///   spells it, a `shape` member a malformed form naming `boundary` as the
-    ///   keyword it retires to, and every other fault a malformed form.
+    ///   keyword it retires to, a generator's non-uniform result its own
+    ///   refusal, and every other fault a malformed form.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -536,9 +537,11 @@ impl DescriptionDiagnostic
                 },
                 Maybe::Absent(_) => malformed(),
             },
+            DescriptionFault::NonUniformResult => {
+                LoweringRefusal::NonUniformResult { span: self.span }
+            },
             DescriptionFault::Malformed
             | DescriptionFault::FamilyHead
-            | DescriptionFault::NonUniformResult
             | DescriptionFault::MemberPolarity
             | DescriptionFault::RetiredRuleArrow
             | DescriptionFault::RetiredOperation

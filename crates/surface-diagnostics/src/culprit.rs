@@ -276,6 +276,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             ..
         } => "types its sort does not land in",
         LoweringRefusal::FamilyTelescope { .. } => "parameters its kind does not state",
+        LoweringRefusal::NonUniformResult { .. } => "a result off the family's parameters",
         LoweringRefusal::UninterfacedMember { .. } => {
             "a member the handler cannot read as an operation"
         },
@@ -815,6 +816,7 @@ mod tests
                 ..
             } => "types its sort does not land in",
             LoweringRefusal::FamilyTelescope { .. } => "parameters its kind does not state",
+            LoweringRefusal::NonUniformResult { .. } => "a result off the family's parameters",
             LoweringRefusal::UninterfacedMember { .. } => {
                 "a member the handler cannot read as an operation"
             },

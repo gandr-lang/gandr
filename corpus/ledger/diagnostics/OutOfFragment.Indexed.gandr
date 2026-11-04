@@ -1,4 +1,11 @@
-/// `OutOfFragment.Indexed`: a generator whose result reads its family at an index its header declares as a parameter.
+/// `OutOfFragment.Indexed`: an indexed family writes a rule over its generators.
+data N : Type where {
+  | Z : N
+}
+
 @[ refuses("OutOfFragment.Indexed") ]
-data Bad(a : Type) : Type where
-  | Mk : Bad(Integer)
+data Prog : N -> Type where {
+  | Stop : Prog(Z)
+  | Tell : (s : Integer, k : Prog(Z)) --> Prog(Z)
+  rule : Tell s (Tell u k) <=> Tell u k;
+}

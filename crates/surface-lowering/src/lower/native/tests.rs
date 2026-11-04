@@ -1844,27 +1844,30 @@ fn a_data_family_applied_where_a_value_is_read_is_quoted_2512()
     assert_accepted(&judged(&module, &mut arena));
 }
 
-/// Each family applied to an index is declined, and keeps its own form's key,
-/// the form that carries its refusal (#1204).
+/// A generator whose result is not the family over its parameters, then one
+/// term per index, is refused `NonUniformResult` at that result by head
+/// uniformity (#3404). The family keeps its form's key (#1204).
 #[test]
-fn an_indexed_generator_is_declined()
+fn a_non_uniform_generator_is_refused()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(
-            "data Vec(n : Integer) : Type where { | Nil : Vec(0) }\ndata Bad(a : Type) : Type where { | Mk : Bad(Integer) }\ndata Two(a : Type, b : Type) : Type where { | Mk2 : Two(b, a) }\ndata Ext(a : Type) : Type where { | Mk3 : Ext(a, a) }\n",
-        ),
-        &mut arena,
-    );
-    for name in ["Vec", "Bad", "Two", "Ext"].map(SurfaceName::from) {
-        assert!(
-            matches!(refusal_of(&module, name), LoweringRefusal::OutOfFragment {
-                form: FormName::DATA_GENERATOR,
-                sort: FragmentSort::Declaration,
-                boundary: FragmentBoundary::Indexed,
-                ..
-            }),
-            "`{name}` is declined as indexed"
+    let source = "data Vec(n : Integer) : Type where { | Nil : Vec(0) }\ndata Bad(a : Type) : Type where { | Mk : Bad(Integer) }\ndata Two(a : Type, b : Type) : Type where { | Mk2 : Two(b, a) }\ndata Ext(a : Type) : Type where { | Mk3 : Ext(a, a) }\n";
+    let module = lowered(SourceText::from(source), &mut arena);
+    for (name, result) in [
+        ("Vec", "Vec(0)"),
+        ("Bad", "Bad(Integer)"),
+        ("Two", "Two(b, a)"),
+        ("Ext", "Ext(a, a)"),
+    ] {
+        let name = SurfaceName::from(name);
+        let LoweringRefusal::NonUniformResult { span } = refusal_of(&module, name)
+        else {
+            panic!("`{name}` is refused by head uniformity");
+        };
+        assert_eq!(
+            source.get(usize::from(span.start()) .. usize::from(span.end())),
+            Some(result),
+            "`{name}` is refused at its generator's result"
         );
         assert!(
             module

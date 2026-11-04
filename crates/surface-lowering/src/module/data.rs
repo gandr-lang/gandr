@@ -4,12 +4,13 @@
 //! a [`DataForm`]: the parameter telescope, the universe and each generator's
 //! fields, every type kept as the syntax node the lowering reads later. A
 //! generator's result is checked here and dropped: the family applied to its
-//! own parameters, in order, is the only result a nominal family without
-//! indices has, so a result that applies it to anything else is an indexed
-//! family and is declined by name. The operation and rule members a data block
-//! parses — `oper`, `rule` and the retired `op` — are passed over: the
-//! description route reads them into cells and holds each member's refusal at
-//! its own span, so the family's generators stay native. An `oper` member's
+//! own parameters, in order, then to one term per index, is the only result
+//! head uniformity admits. Any other result is refused `NonUniformResult`,
+//! because a parameter that varies by generator is an index. The operation
+//! and rule members a data block parses — `oper`, `rule` and the retired `op`
+//! — are passed over: the description route reads them into cells and holds
+//! each member's refusal at its own span, so the family's generators stay
+//! native. An `oper` member's
 //! name is kept, and once the family is read each operation whose rules
 //! compile is admitted as a declaration of its own (`crate::operation`).
 //!
@@ -288,11 +289,11 @@ pub struct GeneratorForm
 /// - executable: none — the coordinates hold no tree to check them against.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — parameterless and parameterized families, and an indexed
-///   generator declined, separate the read form from the refusal; a vector's
-///   kind reads one index before its universe.
+/// - hypothesis: L3 — parameterless and parameterized families, and a
+///   non-uniform generator refused, separate the read form from the refusal; a
+///   vector's kind reads one index before its universe.
 /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-/// - witness: `lower::native::tests::an_indexed_generator_is_declined`
+/// - witness: `lower::native::tests::a_non_uniform_generator_is_refused`
 /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DataForm
@@ -1038,10 +1039,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the witnesses below read each member shape the
     ///   pending corpus writes, pass over the description route's members,
-    ///   decline a generator off its family's parameters, read a vector's
-    ///   length index and keep a cell's fault beside the form.
+    ///   refuse a generator off its family's parameters, read a vector's length
+    ///   index and keep a cell's fault beside the form.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-    /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
+    /// - witness: `lower::native::tests::a_non_uniform_generator_is_refused`
     /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
     /// - witness: `lower::native::tests::operation_and_rule_members_are_left_to_the_description_route`
     /// - witness: `lower::native::tests::a_cell_between_terms_is_a_loop_or_refused_by_name`
@@ -1381,7 +1382,7 @@ impl<'source> Collector<'_, 'source>
     ///   refuse; a vector's constructors state their lengths; a two-output
     ///   constructor is two ports, and a linear one is refused by name.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
-    /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
+    /// - witness: `lower::native::tests::a_non_uniform_generator_is_refused`
     /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
     /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |generators| !generators.is_empty() && generators.iter().all(|generator| generator.named == named && generator.indices.len() == kinds.len())))]
@@ -1688,39 +1689,30 @@ impl<'source> Collector<'_, 'source>
     ///   the declaration whose generator this is, with the index terms in
     ///   order; the head's name is not compared, a foreign head failing later
     ///   as the type it names.
-    /// - fails: any other result as an indexed family, declined at the result;
-    ///   [`LoweringRefusal::UnknownMold`].
+    /// - fails: any other result as [`LoweringRefusal::NonUniformResult`] at
+    ///   the result, by head uniformity; [`LoweringRefusal::UnknownMold`].
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::OutOfFragment`] with the indexed boundary, and
+    /// [`LoweringRefusal::NonUniformResult`] and
     /// [`LoweringRefusal::UnknownMold`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the family over its parameters, over a literal type
-    ///   and over its parameters reordered separate uniform from indexed; a
+    ///   and over its parameters reordered separate uniform from non-uniform; a
     ///   vector's `Cons` states one index past its parameter.
-    /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
+    /// - witness: `lower::native::tests::a_non_uniform_generator_is_refused`
     /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|indices| indices.len() == kinds.len())
         || matches!(ret, Err(LoweringRefusal::UnknownMold { .. }))
-        || matches!(ret, Err(LoweringRefusal::OutOfFragment {
-            form: FormName::DATA_GENERATOR,
-            boundary: FragmentBoundary::Indexed,
-            ..
-        })))]
+        || matches!(ret, Err(LoweringRefusal::NonUniformResult { span }) if span == result.span))]
     fn uniform(
         &self,
         result: Placed,
         (parameters, kinds): (&[DataParameter], &[FieldForm]),
     ) -> Result<Vec<Placed>, LoweringRefusal<'source>>
     {
-        let refused = LoweringRefusal::OutOfFragment {
-            span: result.span,
-            form: FormName::DATA_GENERATOR,
-            sort: FragmentSort::Declaration,
-            boundary: FragmentBoundary::Indexed,
-        };
+        let refused = LoweringRefusal::NonUniformResult { span: result.span };
         let mut pieces = Pieces::new();
         read_pieces(self.pbg, self.tree, result.node, &mut pieces)?;
         let mut arguments = pieces.pieces.iter().filter_map(|piece| match *piece {

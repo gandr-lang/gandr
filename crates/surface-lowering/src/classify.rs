@@ -261,6 +261,7 @@ impl LoweringRefusal<'_>
             | Self::NotATranslation { .. }
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
+            | Self::NonUniformResult { .. }
             | Self::UnlabelledRequirement { .. }
             | Self::UnfixedParameter { .. }
             | Self::TelescopeCycle { .. }
@@ -337,6 +338,7 @@ impl LoweringRefusal<'_>
             | Self::NotATranslation { .. }
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
+            | Self::NonUniformResult { .. }
             | Self::UninterfacedMember { .. }
             | Self::UnlabelledRequirement { .. }
             | Self::UnfixedParameter { .. }
@@ -806,7 +808,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 80_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 81_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1137,6 +1139,7 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("count"),
             },
+            LoweringRefusal::NonUniformResult { span: empty },
         ]
     }
 
@@ -1223,6 +1226,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::PASTING_READING),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
         ];
 
