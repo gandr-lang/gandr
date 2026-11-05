@@ -515,7 +515,7 @@ pub fn completions(
     );
     // A name the text already calls keeps its call; rust-analyzer's
     // `has_call_parens` reads the same.
-    let calls = snippets.0 && !writes_argument(after);
+    let calls = snippets.0 && writes_argument(after) == Following::Nothing;
     for &(ref name, kind, ref referent) in hovering.names().starting(SourceText::from(prefix)) {
         if let Some(as_kind) = offered_as(category, kind)
             && seen.insert(name.as_str())
@@ -613,28 +613,47 @@ pub fn completions(
     }
 }
 
+/// What the text after a completed name writes first.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Following
+{
+    /// An argument of the name's call: a word, a number, a `(`, a string or a
+    /// character.
+    Argument,
+    /// Nothing an argument starts with.
+    Nothing,
+}
+
 /// Whether `after`, the text after a completed name, writes an argument of
 /// the name's call already: on the same line, past spaces and tabs, an
 /// operand starts — a word, a number, a `(`, a string or a character.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: true exactly when the first character of `after` that is no space
-///   or tab is a letter, a digit, `_`, `(`, `"` or `'`.
+/// - ensures: [`Following::Argument`] exactly when the first character of
+///   `after` that is no space or tab is a letter, a digit, `_`, `(`, `"` or
+///   `'`.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — a clause would restate the character test.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a name followed by its written argument inserts itself,
 ///   and a name the text follows with nothing inserts its call.
 /// - witness: `complete::tests::a_call_fills_its_parameters_as_tab_stops`
-fn writes_argument(after: SourceText<'_>) -> bool
+fn writes_argument(after: SourceText<'_>) -> Following
 {
-    <&str>::from(after)
+    let argument = <&str>::from(after)
         .trim_start_matches([' ', '\t'])
         .starts_with(|first: char| {
             first.is_alphanumeric() || matches!(first, '_' | '(' | '"' | '\'')
-        })
+        });
+    if argument {
+        Following::Argument
+    }
+    else {
+        Following::Nothing
+    }
 }
 
 /// What a client shows beside the label `name` of an item whose detail is

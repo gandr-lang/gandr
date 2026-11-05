@@ -1837,7 +1837,7 @@ enum Elaboration
 /// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
 /// - witness: `tests::goldens::a_returned_typed_bind_in_an_argument_is_a_block_3942`
 #[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_) | Former::StaticLambda(_) | Former::PathTransport { .. } | Former::Ride { .. }) || braced(source, former).is_some()
-    || (endpoints_read_as_expressions(source, former) && !matches!(admits, Admits::ValueType)) {
+    || (endpoints_read_as_expressions(source, former) == Endpoints::Expressions && !matches!(admits, Admits::ValueType)) {
     Surface::Expression
 } else if !matches!(*former,
     Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. } | Former::Place { .. })
@@ -1873,7 +1873,9 @@ where
     // A path type's endpoints are expressions wherever the type stands, but
     // over a universe: the grammar reads `Path(A, x, y)`'s endpoints so, its
     // carrier a type, and `Path(Type, A, B)`'s as types.
-    if endpoints_read_as_expressions(source, former) && !matches!(admits, Admits::ValueType) {
+    if endpoints_read_as_expressions(source, former) == Endpoints::Expressions
+        && !matches!(admits, Admits::ValueType)
+    {
         return Surface::Expression;
     }
     let writes_nothing = matches!(
@@ -1896,6 +1898,16 @@ where
     }
 }
 
+/// How the grammar reads a path's or a bridge's endpoints.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Endpoints
+{
+    /// As expressions: a carrier other than a universe, or none written.
+    Expressions,
+    /// As types, or the former is no path and no bridge.
+    Types,
+}
+
 /// Whether `former` is a path or a bridge type whose endpoints the grammar
 /// reads as expressions: one over a carrier other than a universe, or one
 /// whose carrier is left to its endpoints.
@@ -1905,15 +1917,32 @@ where
 fn endpoints_read_as_expressions<S>(
     source: &S,
     former: &Former<'_, S::Node>,
-) -> bool
+) -> Endpoints
 where
     S: Source + ?Sized,
 {
-    matches!(
+    let expressions = matches!(
         *former,
         Former::Path { carrier, .. } | Former::Bridge { carrier, .. }
             if carrier.is_none_or(|carrier| !matches!(source.read(carrier), Former::Universe { .. }))
-    )
+    );
+    if expressions {
+        Endpoints::Expressions
+    }
+    else {
+        Endpoints::Types
+    }
+}
+
+/// Whether a type classifies codes as the lowering reads it off its spelling.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Classifies
+{
+    /// It classifies codes: a universe, the row kind, or a static arrow whose
+    /// domain does.
+    Codes,
+    /// It classifies values.
+    Values,
 }
 
 /// Whether the type at `node` classifies codes as the lowering reads it off
@@ -1923,11 +1952,12 @@ where
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
-/// - ensures: true for a universe, the row kind and a static Pi whose domain
-///   classifies codes, read down at most [`DEPTH_LIMIT`] domains; false for any
-///   other node.
+/// - ensures: [`Classifies::Codes`] for a universe, the row kind and a static
+///   Pi whose domain classifies codes, read down at most [`DEPTH_LIMIT`]
+///   domains; [`Classifies::Values`] for any other node.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — a clause would restate the walk down the domains.
 ///
 /// # Termination
 /// Each round descends to a domain, and the loop stops at [`DEPTH_LIMIT`]
@@ -1940,7 +1970,7 @@ where
 fn classifies_codes<S>(
     source: &S,
     node: S::Node,
-) -> bool
+) -> Classifies
 where
     S: Source + ?Sized,
 {
@@ -1948,15 +1978,15 @@ where
     for _ in 0_u32 .. DEPTH_LIMIT.0 {
         let read = source.read(at);
         if matches!(read, Former::Universe { .. } | Former::RowType) {
-            return true;
+            return Classifies::Codes;
         }
         let Former::StaticPi { domain, .. } = read
         else {
-            return false;
+            return Classifies::Values;
         };
         at = domain;
     }
-    false
+    Classifies::Values
 }
 
 /// `written`, a constructor's name, juxtaposed where an expression reads it,
@@ -1997,6 +2027,16 @@ fn juxtaposed_name(
     }
 }
 
+/// Whether a child piece stands inside a quote the type grammar reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Quoted
+{
+    /// It stands right after the text `type(`.
+    Inside,
+    /// It stands anywhere else.
+    Outside,
+}
+
 /// Whether the child piece at `index` of `parts` stands right after the text
 /// `type(`, inside a quote the type grammar reads. The pieces count in
 /// writing order, the last child's piece apart, since it takes the last slot
@@ -2006,15 +2046,21 @@ fn juxtaposed_name(
 /// trivial.
 fn quoted_piece(
     parts: &[Part],
-    index: usize,
-) -> bool
+    index: Component,
+) -> Quoted
 {
-    core::iter::once(None)
+    let inside = core::iter::once(None)
         .chain(parts.iter().map(Some))
         .zip(parts.iter())
         .filter(|&(_, part)| matches!(*part, Part::Piece(_) | Part::Spliced(_)))
-        .nth(index)
-        .is_some_and(|(before, _)| matches!(before, Some(Part::Text(text)) if text == "type("))
+        .nth(usize::from(index))
+        .is_some_and(|(before, _)| matches!(before, Some(Part::Text(text)) if text == "type("));
+    if inside {
+        Quoted::Inside
+    }
+    else {
+        Quoted::Outside
+    }
 }
 
 /// How loosely a spelled piece binds, tightest first.
@@ -2851,13 +2897,13 @@ impl Opener
     /// trivial.
     const fn applied(
         surface: Surface,
-        head: &'static str,
-        opened: &'static str,
+        head: Glyphs<'static>,
+        opened: Glyphs<'static>,
     ) -> Self
     {
         match surface {
-            Surface::Expression => Self::Juxtaposed(Glyphs(head)),
-            Surface::Type | Surface::Enclosed => Self::Parenthesized(Glyphs(opened)),
+            Surface::Expression => Self::Juxtaposed(head),
+            Surface::Type | Surface::Enclosed => Self::Parenthesized(opened),
         }
     }
 }
@@ -2890,12 +2936,12 @@ impl Bracket
     ) -> Opener
     {
         match self {
-            Self::Stack => Opener::applied(surface, "Stack", "Stack("),
-            Self::List => Opener::applied(surface, "List", "List("),
-            Self::PathUniverse => Opener::applied(surface, "Path_U", "Path_U("),
-            Self::Run => Opener::applied(surface, "Run", "Run("),
-            Self::Prefix => Opener::applied(surface, "Prefix", "Prefix("),
-            Self::Dialogue => Opener::applied(surface, "Dialogue", "Dialogue("),
+            Self::Stack => Opener::applied(surface, Glyphs("Stack"), Glyphs("Stack(")),
+            Self::List => Opener::applied(surface, Glyphs("List"), Glyphs("List(")),
+            Self::PathUniverse => Opener::applied(surface, Glyphs("Path_U"), Glyphs("Path_U(")),
+            Self::Run => Opener::applied(surface, Glyphs("Run"), Glyphs("Run(")),
+            Self::Prefix => Opener::applied(surface, Glyphs("Prefix"), Glyphs("Prefix(")),
+            Self::Dialogue => Opener::applied(surface, Glyphs("Dialogue"), Glyphs("Dialogue(")),
             Self::TypeQuote => Opener::Parenthesized(Glyphs("type(")),
             Self::Break => Opener::Parenthesized(Glyphs("break(")),
             Self::Here => Opener::Juxtaposed(Glyphs("Path.here")),
@@ -3231,12 +3277,12 @@ const fn writes<T>(
 #[inline]
 const fn type_applied(
     surface: Surface,
-    rule: &'static str,
+    rule: Production,
 ) -> Binding
 {
     match surface {
         Surface::Expression => writes(Production("application_expression"), Binding::Application),
-        Surface::Type | Surface::Enclosed => writes(Production(rule), Binding::Atom),
+        Surface::Type | Surface::Enclosed => writes(rule, Binding::Atom),
     }
 }
 
@@ -6367,9 +6413,23 @@ impl Walk<'_, '_>
     /// - panics: none.
     /// - executable: none — the binding is `type_applied`'s, and the note is
     ///   one call.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `endForced`'s ascription to `Path(3, _)` inside an
+    ///   expression is held by the body parity sweep, and `pure (Vec MkIx)`
+    ///   stays faithful.
+    /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a juxtaposed type application has no type syntax until #5200: written \
+                      in the printer's notation"
+        )
+    )]
     fn applied_type(
         &mut self,
-        rule: &'static str,
+        rule: Production,
         admits: Admits,
     ) -> Binding
     {
@@ -7573,7 +7633,8 @@ impl Walk<'_, '_>
                 },
                 Former::Returner(result) => {
                     let kinded = links.first().is_some_and(|first| {
-                        first.opener.is_none() && classifies_codes(source, first.domain)
+                        first.opener.is_none()
+                            && classifies_codes(source, first.domain) == Classifies::Codes
                     });
                     if kinded {
                         return None;
@@ -7750,7 +7811,7 @@ impl Walk<'_, '_>
     )
     {
         tasks.push(Task::Join(writes(
-            Production("value_function_type"),
+            Production("function_type"),
             writes(
                 Production("parenthesized_type"),
                 Join::ValueFunction(Arity(links.len()), dependent),
@@ -9465,6 +9526,14 @@ impl Walk<'_, '_>
                 }
                 Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
             },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a family applied under a returner inside an expression has no type \
+                              syntax until #5200: written in the printer's notation"
+                )
+            )]
             Former::Returner(result) => {
                 // Inside an expression the type grammar reads a returner's
                 // result, and a family applied there is juxtaposed,
@@ -10015,10 +10084,9 @@ impl Walk<'_, '_>
                 join,
                 Some(Join::Bracket(Bracket::TypeQuote) | Join::StaticLambda { quoted: true })
             ) || (matches!(join, Some(Join::Form { .. }))
-                && self
-                    .forms
-                    .last()
-                    .is_some_and(|parts| quoted_piece(parts, index)));
+                && self.forms.last().is_some_and(|parts| {
+                    quoted_piece(parts, Component::from(index)) == Quoted::Inside
+                }));
             let surface = if quoted {
                 Surface::Type
             }
@@ -11544,15 +11612,15 @@ impl Walk<'_, '_>
             // type application.
             Former::Path { carrier: None, .. } => {
                 let _ = parts.text("Path").applied(Arity(2_usize), self.surface);
-                self.applied_type("path_type", admits)
+                self.applied_type(Production("path_type"), admits)
             },
             Former::Bridge { carrier: None, .. } => {
                 let _ = parts.text("Bridge").applied(Arity(2_usize), self.surface);
-                self.applied_type("bridge_type", admits)
+                self.applied_type(Production("bridge_type"), admits)
             },
             Former::Flow { carrier: None, .. } => {
                 let _ = parts.text("Flow").applied(Arity(2_usize), self.surface);
-                self.applied_type("type_application", admits)
+                self.applied_type(Production("type_application"), admits)
             },
             Former::Path {
                 carrier: Some(_), ..
@@ -11577,7 +11645,7 @@ impl Walk<'_, '_>
                 match (self.spelling, spelled.ascii) {
                     (grammar::Spelling::Ascii, grammar::Ascii::Head(head)) => {
                         let _ = parts.text(head.0).applied(Arity(2_usize), self.surface);
-                        self.applied_type("type_application", admits)
+                        self.applied_type(Production("type_application"), admits)
                     },
                     (grammar::Spelling::Unicode, _)
                     | (grammar::Spelling::Ascii, grammar::Ascii::Token(_)) => {
@@ -11678,7 +11746,7 @@ impl Walk<'_, '_>
                 };
                 if usize::from(arity) > 0_usize {
                     let _ = parts.applied(Arity(usize::from(arity)), self.surface);
-                    type_applied(self.surface, "type_application")
+                    type_applied(self.surface, Production("type_application"))
                 }
                 else {
                     writes(Production("type_identifier"), Binding::Atom)
@@ -11715,7 +11783,7 @@ impl Walk<'_, '_>
                 }
                 let applied = match (calls, annotated) {
                     (true, true) => writes(Production("application_expression"), Binding::Atom),
-                    (true, false) => type_applied(self.surface, "type_application"),
+                    (true, false) => type_applied(self.surface, Production("type_application")),
                     (false, _) => writes(Production("constructor.expression"), Binding::Atom),
                 };
                 if annotated {
@@ -12398,7 +12466,7 @@ impl Walk<'_, '_>
                 let _ = parts
                     .text(String::from(head.as_ref()))
                     .applied(Arity(1_usize), self.surface);
-                self.applied_type("type_path", admits)
+                self.applied_type(Production("type_path"), admits)
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",

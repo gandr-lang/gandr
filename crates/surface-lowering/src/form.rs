@@ -3501,17 +3501,29 @@ pub fn misspelt_keyword(
     })
 }
 
+/// Whether a keyword opens a form where an expression stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeywordOpening
+{
+    /// It opens one, as `return` does.
+    Expression,
+    /// It opens none, as `where` does.
+    Elsewhere,
+}
+
 /// Whether the keyword `keyword` opens a form where an expression stands, as
 /// `return` does and `where` does not.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: true exactly when `pbg` spells `keyword` as a tile one of whose
-///   molds opens a form of the expression sort.
+/// - ensures: [`KeywordOpening::Expression`] exactly when `pbg` spells
+///   `keyword` as a tile one of whose molds opens a form of the expression
+///   sort.
 /// - fails: never.
 /// - panics: none.
 /// - economy: one look-up of the label and a scan of its few molds, taken only
 ///   for a refused name.
+/// - executable: none — a clause would restate the scan of the label's molds.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `retur x` is `return` misspelt, and `here x`, one edit
@@ -3521,15 +3533,21 @@ pub fn misspelt_keyword(
 pub fn opens_expression(
     pbg: &Pbg,
     keyword: TileName,
-) -> bool
+) -> KeywordOpening
 {
-    pbg.tile_label(LabelText(keyword.0)).is_some_and(|label| {
+    let opens = pbg.tile_label(LabelText(keyword.0)).is_some_and(|label| {
         pbg.candidates(label).iter().any(|&mold| {
             pbg.mold(mold)
                 .is_ok_and(|def| def.sort == gandr_surface_grammar::Sort::Expression)
                 && bool::from(pbg.mold_is_form_first(mold))
         })
-    })
+    });
+    if opens {
+        KeywordOpening::Expression
+    }
+    else {
+        KeywordOpening::Elsewhere
+    }
 }
 
 /// The bare bracket that is open at the refusal `at` inside `within`. This is
@@ -4034,6 +4052,7 @@ pub struct Cursor<'pieces>
 /// - ensures: each name's tile, in written order.
 /// - executable: none — an iterator over tiles the cursor read.
 #[derive(Clone, Debug)]
+#[repr(transparent)]
 pub struct Shared<'pieces>(core::slice::Iter<'pieces, Piece>);
 
 impl Iterator for Shared<'_>
@@ -4853,6 +4872,13 @@ impl<'pieces> Cursor<'pieces>
     ///   parameter of its own and after a type the head binds, each lower to
     ///   the parameters written apart.
     /// - witness: `lower::tests::a_def_head_s_shared_names_are_its_parameters_written_apart_4853`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `labels` holds the one or two tiles a parameter's shared names spell"
+        )
+    )]
     pub(crate) fn shared(
         &mut self,
         labels: &[TileName],

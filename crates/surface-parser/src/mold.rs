@@ -1321,14 +1321,24 @@ fn next_significant(
     None
 }
 
+/// Whether a same-form successor stands right after its mold.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Adjacency
+{
+    /// No hole stands between them.
+    Direct,
+    /// A hole stands between them.
+    Apart,
+}
+
 /// Whether the same-form successor `right` of `mold` stands right after it,
 /// with no hole between: every successor of a mold no hole follows, and of
 /// one a hole follows, a successor whose tile faces it on the right.
 ///
 /// # Specification
 /// - requires: `right` is one of `mold`'s same-form successors.
-/// - ensures: true exactly when `mold`'s right bound is the root, or `right`'s
-///   label is a tile step on `mold`'s right.
+/// - ensures: [`Adjacency::Direct`] exactly when `mold`'s right bound is the
+///   root, or `right`'s label is a tile step on `mold`'s right.
 /// - panics: none.
 /// - economy: one bounds read and, past a root bound, a walk of the few steps
 ///   on `mold`'s right. Nothing is allocated.
@@ -1337,25 +1347,31 @@ fn next_significant(
 /// - hypothesis: L3 — as [`Molder::follow`]: the unit `*{` before its `}` and
 ///   the argument comma before a closer tell the two branches apart.
 /// - witness: `mold::tests::a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it`
-#[spec(ensures: |ret| ret == (matches!(pbg.bounds(mold), Ok((_, Bound::Root))) || pbg.mold(mold).is_ok_and(|own| pbg.mold(right).is_ok_and(|next| pbg.step(own.rctx, Dir::Right).is_ok_and(|steps| steps.iter().any(|step| step.crossed == StepSym::Tile(next.label)))))))]
+#[spec(ensures: |ret| (ret == Adjacency::Direct) == (matches!(pbg.bounds(mold), Ok((_, Bound::Root))) || pbg.mold(mold).is_ok_and(|own| pbg.mold(right).is_ok_and(|next| pbg.step(own.rctx, Dir::Right).is_ok_and(|steps| steps.iter().any(|step| step.crossed == StepSym::Tile(next.label)))))))]
 fn direct_successor(
     pbg: &Pbg,
     mold: MoldId,
     right: MoldId,
-) -> bool
+) -> Adjacency
 {
     if matches!(pbg.bounds(mold), Ok((_, Bound::Root))) {
-        return true;
+        return Adjacency::Direct;
     }
     let (Ok(own), Ok(next)) = (pbg.mold(mold), pbg.mold(right))
     else {
-        return false;
+        return Adjacency::Apart;
     };
-    pbg.step(own.rctx, Dir::Right).is_ok_and(|steps| {
+    let faces = pbg.step(own.rctx, Dir::Right).is_ok_and(|steps| {
         steps
             .iter()
             .any(|step| step.crossed == StepSym::Tile(next.label))
-    })
+    });
+    if faces {
+        Adjacency::Direct
+    }
+    else {
+        Adjacency::Apart
+    }
 }
 
 /// The whole candidate menu of the next significant token after `index`: its
@@ -4246,7 +4262,7 @@ impl<'pbg> Molder<'pbg>
         )
     )]
     #[spec(ensures: |ret| (ret == Follow::Refuted) == (
-        !self.pbg.mold_successors(mold).iter().any(|&(_, right)| direct_successor(self.pbg, mold, right) && self.pbg.mold_label(right).is_some_and(|label| labels.as_slice().contains(&label)))
+        !self.pbg.mold_successors(mold).iter().any(|&(_, right)| direct_successor(self.pbg, mold, right) == Adjacency::Direct && self.pbg.mold_label(right).is_some_and(|label| labels.as_slice().contains(&label)))
             && if matches!(self.pbg.bounds(mold), Ok((_, Bound::Root))) {
                 !bool::from(self.pbg.mold_is_form_last(mold)) || self.after_form(mold, labels) == Follow::Refuted
             } else {
@@ -4262,7 +4278,7 @@ impl<'pbg> Molder<'pbg>
         let pbg = self.pbg;
         let ids = labels.as_slice();
         let succeeded = pbg.mold_successors(mold).iter().any(|&(_, right)| {
-            direct_successor(pbg, mold, right)
+            direct_successor(pbg, mold, right) == Adjacency::Direct
                 && pbg
                     .mold_label(right)
                     .is_some_and(|label| ids.contains(&label))

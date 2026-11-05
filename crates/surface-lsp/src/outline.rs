@@ -898,7 +898,7 @@ pub fn runs(
         };
         let text = match node.label() {
             NodeLabel::Space | NodeLabel::Doc => continue,
-            NodeLabel::Tile(mold) => braces.spelled(grammar, tree, child, mold),
+            NodeLabel::Tile(mold) => braces.spelled(grammar, tree, child, mold).map(<&str>::from),
             NodeLabel::Meld(_)
             | NodeLabel::Wald
             | NodeLabel::Grout { .. }
@@ -958,6 +958,7 @@ pub fn runs(
 
 /// The label numbers of `{`, `;` and `}`, which a layout block's zero-width
 /// opener, separator and closer carry as a written brace and `;` do.
+#[repr(transparent)]
 struct Braces([Option<LabelId>; 3]);
 
 impl Braces
@@ -981,6 +982,7 @@ impl Braces
     ///   stand for; otherwise the tile's own text.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — a clause would restate the look-up of the label.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`runs`].
@@ -991,15 +993,15 @@ impl Braces
         tree: &SyntaxTree<'tree>,
         at: NodeIndex,
         mold: MoldId,
-    ) -> Option<&'tree str>
+    ) -> Option<SourceFragment<'tree>>
     {
         let label = grammar.mold_label(mold);
         BRACES
             .iter()
             .zip(&self.0)
             .find(|&(_, &brace)| brace.is_some() && brace == label)
-            .map(|(&brace, _)| brace)
-            .or_else(|| tree.fragment(at).map(<&str>::from))
+            .map(|(&brace, _)| SourceFragment::from(brace))
+            .or_else(|| tree.fragment(at))
     }
 }
 

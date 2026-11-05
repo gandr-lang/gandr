@@ -5,6 +5,7 @@
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_parser::ObligationInstance;
 use gandr_surface_syntax::ByteSpan;
@@ -234,11 +235,11 @@ pub fn flatten<'source>(
                         &mut pending,
                         tree.children(at).map(|child| {
                             let here = match (inside, tile_label(grammar, tree, child)) {
-                                (Inside::No, Some("{")) => {
+                                (Inside::No, Some(LabelText("{"))) => {
                                     inside = Inside::Yes;
                                     branch
                                 },
-                                (Inside::Yes, Some("}")) => {
+                                (Inside::Yes, Some(LabelText("}"))) => {
                                     inside = Inside::No;
                                     branch
                                 },
@@ -381,10 +382,10 @@ fn tile_label(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
     at: NodeIndex,
-) -> Option<&'static str>
+) -> Option<LabelText<'static>>
 {
     match tree.node(at)?.label() {
-        NodeLabel::Tile(mold) => grammar.mold(mold).ok().map(|def| def.label),
+        NodeLabel::Tile(mold) => grammar.mold(mold).ok().map(|def| LabelText(def.label)),
         NodeLabel::Wald
         | NodeLabel::Meld(_)
         | NodeLabel::Grout { .. }

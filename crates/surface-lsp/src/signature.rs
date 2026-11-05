@@ -327,6 +327,7 @@ fn call(
 ///   of `at` as its close; none otherwise.
 /// - panics: none.
 /// - economy: one walk down the spine's left edge.
+/// - executable: none — a clause would walk the spine again.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Calls::of`].

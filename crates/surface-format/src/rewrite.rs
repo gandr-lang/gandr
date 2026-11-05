@@ -1343,7 +1343,7 @@ impl<'source> Respelling<'_, 'source>
         else {
             return;
         };
-        if !self.spelled_as(callee, WALK) || arguments.len() != 3 {
+        if self.spelled_as(callee, WALK) == Spelt::Otherwise || arguments.len() != 3 {
             return;
         }
         // The partial applications of the spine, `Path.walk m q` under
@@ -1358,8 +1358,9 @@ impl<'source> Respelling<'_, 'source>
             head = head_and_argument(&self.parts(at).0).map(|(head, _)| head);
         }
         let base = stack.len();
+        let mut wrappers: Vec<NodeIndex> = Vec::new();
         for &argument in arguments {
-            let mut wrappers: Vec<NodeIndex> = Vec::new();
+            wrappers.clear();
             let mut inner = argument;
             while let Some(unwrapped) = self.unwrapped(inner) {
                 if let Child::Node(wrapper) = inner {
@@ -1935,7 +1936,11 @@ impl<'source> Respelling<'_, 'source>
                 break;
             };
             let called_leaves = leaves.get(call .. call_end).unwrap_or_default();
-            let grouped = juxtaposed(called_leaves) && operand_at(leaves, read);
+            let grouped = juxtaposed(called_leaves) == Juxtaposition::Applied
+                && operand_at(
+                    leaves.get(.. read).unwrap_or_default(),
+                    leaves.get(read.saturating_add(1) ..).unwrap_or_default(),
+                ) == Juxtaposition::Applied;
             let written: Vec<Leaf<'source>> = grouped
                 .then_some(open)
                 .into_iter()
@@ -2121,7 +2126,7 @@ impl<'source> Respelling<'_, 'source>
     fn valued(
         &self,
         codomain: Child<'source>,
-    ) -> bool
+    ) -> Valued
     {
         let codomain = self.stripped(codomain);
         let computed = matches!(
@@ -2135,7 +2140,12 @@ impl<'source> Respelling<'_, 'source>
             ),
             Child::Leaf(_) => false,
         };
-        !computed && !lazy
+        if computed || lazy {
+            Valued::Computation
+        }
+        else {
+            Valued::Value
+        }
     }
 
     /// The form at `at`, whose parts are `parts`, respelled by the rewrite
@@ -2676,7 +2686,7 @@ impl<'source> Respelling<'_, 'source>
         else {
             return None;
         };
-        if <&str>::from(arrow) != "->" || !self.valued(result) {
+        if <&str>::from(arrow) != "->" || self.valued(result) == Valued::Computation {
             return None;
         }
         let domains: Vec<Domain<'source>> = match self.shape_of(domain) {
@@ -2992,7 +3002,7 @@ impl<'source> Respelling<'_, 'source>
         else {
             return None;
         };
-        if <&str>::from(arrow) != "->" || !self.valued(codomain) {
+        if <&str>::from(arrow) != "->" || self.valued(codomain) == Valued::Computation {
             return None;
         }
         let domains = match self.shape_of(domain) {
@@ -3099,12 +3109,14 @@ impl<'source> Respelling<'_, 'source>
         &self,
         child: Child<'source>,
         spellings: &[Spelling],
-    ) -> bool
+    ) -> Spelt
     {
-        self.tokens(child)
+        let same = self
+            .tokens(child)
             .iter()
             .map(|&token| <&str>::from(token))
-            .eq(spellings.iter().map(|spelling| spelling.0))
+            .eq(spellings.iter().map(|spelling| spelling.0));
+        if same { Spelt::As } else { Spelt::Otherwise }
     }
 
     /// The carrier and the two endpoints of the path type at `quoted`,
@@ -3186,7 +3198,7 @@ impl<'source> Respelling<'_, 'source>
         else {
             return None;
         };
-        if !self.spelled_as(callee, WALK) {
+        if self.spelled_as(callee, WALK) == Spelt::Otherwise {
             return None;
         }
         let Child::Node(motive) = self.stripped(motive)
@@ -3222,7 +3234,7 @@ impl<'source> Respelling<'_, 'source>
                 let (typed, _) = self.parts(body);
                 let typed = self.spine(&typed)?;
                 let (&head, endpoints) = typed.split_first()?;
-                if !self.spelled_as(head, &[Spelling("Path")]) {
+                if self.spelled_as(head, &[Spelling("Path")]) == Spelt::Otherwise {
                     return None;
                 }
                 let endpoints = endpoints
@@ -3313,7 +3325,7 @@ impl<'source> Respelling<'_, 'source>
     {
         let spine = self.spine(parts)?;
         let (&callee, arguments) = spine.split_first()?;
-        self.spelled_as(callee, head).then(|| arguments.to_vec())
+        (self.spelled_as(callee, head) == Spelt::As).then(|| arguments.to_vec())
     }
 
     /// Write the transport the derived path operation at `extent` stands
@@ -3664,16 +3676,53 @@ fn domains<'source>(parts: &[Part<'source>]) -> Option<Vec<Domain<'source>>>
     Some(domains)
 }
 
+/// Whether an arrow's codomain is written as a value type or a computation
+/// type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Valued
+{
+    /// A value type: the arrow is a box.
+    Value,
+    /// An arrow, a pure returner or a lazy product.
+    Computation,
+}
+
+/// Whether a child is written as given spellings, token by token.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Spelt
+{
+    /// It is.
+    As,
+    /// It is written otherwise.
+    Otherwise,
+}
+
+/// Whether a form writes an application by juxtaposition where it is read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Juxtaposition
+{
+    /// It does: `f x`.
+    Applied,
+    /// It does not.
+    Apart,
+}
+
 /// Whether `leaf` is the empty tile an application writes between its head
 /// and its operand, `f x`: an empty token no layout block reads.
 ///
 /// # Specification
 /// trivial.
-fn juxtaposes(leaf: &Leaf<'_>) -> bool
+fn juxtaposes(leaf: &Leaf<'_>) -> Juxtaposition
 {
-    leaf.material == Material::Token
+    if leaf.material == Material::Token
         && <&str>::from(leaf.text).is_empty()
         && leaf.offside == Offside::Written
+    {
+        Juxtaposition::Applied
+    }
+    else {
+        Juxtaposition::Apart
+    }
 }
 
 /// Whether `leaves` write an application outside each bracket they open, so
@@ -3682,13 +3731,20 @@ fn juxtaposes(leaf: &Leaf<'_>) -> bool
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: true exactly when a juxtaposing tile stands where every opened
-///   bracket among `leaves` is closed.
+/// - ensures: [`Juxtaposition::Applied`] exactly when a juxtaposing tile stands
+///   where every opened bracket among `leaves` is closed.
 /// - panics: none.
-fn juxtaposed(leaves: &[Leaf<'_>]) -> bool
+/// - executable: none — a clause would restate the walk over the brackets.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sweep formats every corpus source and reads its
+///   meaning back, so a call laid in as an operand without its parentheses
+///   would read as other operands.
+/// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
+fn juxtaposed(leaves: &[Leaf<'_>]) -> Juxtaposition
 {
     let mut depth = 0_usize;
-    leaves.iter().any(|leaf| {
+    let applied = leaves.iter().any(|leaf| {
         let text = <&str>::from(leaf.text);
         if leaf.material != Material::Token {
             return false;
@@ -3699,29 +3755,37 @@ fn juxtaposed(leaves: &[Leaf<'_>]) -> bool
         else if matches!(text, ")" | "]" | "}") {
             depth = depth.saturating_sub(1);
         }
-        depth == 0 && juxtaposes(leaf)
-    })
+        depth == 0 && juxtaposes(leaf) == Juxtaposition::Applied
+    });
+    if applied {
+        Juxtaposition::Applied
+    }
+    else {
+        Juxtaposition::Apart
+    }
 }
 
-/// Whether the leaf at `read` in `leaves` is an operand of an application:
-/// the nearest leaf before it or after it that is no whitespace is a
-/// juxtaposing tile.
+/// Whether a leaf between `before` and `after` is an operand of an
+/// application: the nearest leaf before it or after it that is no
+/// whitespace is a juxtaposing tile.
 ///
 /// # Specification
 /// trivial.
 fn operand_at(
-    leaves: &[Leaf<'_>],
-    read: usize,
-) -> bool
+    before: &[Leaf<'_>],
+    after: &[Leaf<'_>],
+) -> Juxtaposition
 {
     let material = |leaf: &&Leaf<'_>| leaf.material != Material::Whitespace;
-    let before = leaves
-        .get(.. read)
-        .and_then(|before| before.iter().rev().find(material));
-    let after = leaves
-        .get(read.saturating_add(1) ..)
-        .and_then(|after| after.iter().find(material));
-    before.is_some_and(juxtaposes) || after.is_some_and(juxtaposes)
+    let juxtaposing = |leaf: &Leaf<'_>| juxtaposes(leaf) == Juxtaposition::Applied;
+    if before.iter().rev().find(material).is_some_and(juxtaposing)
+        || after.iter().find(material).is_some_and(juxtaposing)
+    {
+        Juxtaposition::Applied
+    }
+    else {
+        Juxtaposition::Apart
+    }
 }
 
 /// The own tiles and the operands of `parts`, in order.

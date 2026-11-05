@@ -611,6 +611,7 @@ use crate::error::Unexported;
 use crate::form::Cursor;
 use crate::form::FormName;
 use crate::form::Former;
+use crate::form::KeywordOpening;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
@@ -7796,7 +7797,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             // `here x` is no `where`.
             let applied = matches!(refusal, LoweringRefusal::UnresolvedName { .. });
             if let Some((word, keyword)) = misspelt_keyword(pbg, tree, within, extra)
-                && (!applied || opens_expression(pbg, keyword))
+                && (!applied || opens_expression(pbg, keyword) == KeywordOpening::Expression)
             {
                 slot.refusal = Maybe::Present((position, LoweringRefusal::MalformedForm {
                     span: word,

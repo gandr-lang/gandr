@@ -1327,9 +1327,21 @@ fn channel_stated(spelled: &RunSpelling) -> Maybe<Channel, channel_stated::Absen
                 .chars()
                 .all(|glyph| glyph.is_alphanumeric() || glyph == '_' || glyph == '\'')
     };
+    // One pair of parentheses encloses the web whole: `(a (b))` holds
+    // `a (b)`, and `(a) (b)` encloses nothing.
+    let balanced = |inner: &str| {
+        inner.bytes().try_fold(0_usize, |depth, byte| match byte {
+            b'(' => Some(depth.saturating_add(1)),
+            b')' => depth.checked_sub(1),
+            _ => Some(depth),
+        }) == Some(0)
+    };
     if let Some((name, grouped)) = read("decomposes ")
         && named(name)
-        && let Some(web) = enclosed(grouped)
+        && let Some(web) = grouped
+            .strip_prefix('(')
+            .and_then(|rest| rest.strip_suffix(')'))
+            .filter(|&inner| balanced(inner))
         && WEB_NODES.iter().any(|node| web.starts_with(node))
     {
         return Maybe::Present(Channel {
@@ -1348,25 +1360,6 @@ fn channel_stated(spelled: &RunSpelling) -> Maybe<Channel, channel_stated::Absen
         });
     }
     unwritten
-}
-
-/// The text inside `grouped` when one pair of parentheses encloses it whole:
-/// `(a (b))` is `a (b)`, and `(a) (b)` encloses nothing.
-///
-/// # Specification
-/// trivial.
-fn enclosed(grouped: &str) -> Option<&str>
-{
-    let inner = grouped.strip_prefix('(')?.strip_suffix(')')?;
-    let mut depth = 0_usize;
-    for byte in inner.bytes() {
-        match byte {
-            b'(' => depth = depth.saturating_add(1),
-            b')' => depth = depth.checked_sub(1)?,
-            _ => {},
-        }
-    }
-    (depth == 0).then_some(inner)
 }
 
 /// `web` as the `decomposes` payload `stated` reads it: the count of its

@@ -1990,6 +1990,7 @@ impl Labeled<'_>
 /// - panics: none.
 /// - economy: one copy of the tokens and one rescan from the cut's line
 ///   ([`Labeling::relabel`]).
+/// - executable: none — a clause would relabel the text again.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Labeled::slot`]: a layout body after `return` and
