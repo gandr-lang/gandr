@@ -1605,12 +1605,12 @@ mod tests
         );
     }
 
-    /// A declaration whose keyword is misspelt is read as an identifier at the
-    /// top level, a function type where a declaration stands and a block; the
-    /// declaration admitted before it, calling the name the misspelling took
-    /// out of scope, is refused because of it. Under `check` the refusals of
-    /// form print first, so the first error is the misspelt keyword, and the
-    /// call resting on them follows (#2875).
+    /// A declaration whose keyword is misspelt reads as a stray word and a
+    /// declaration that owes its keyword at its name (#5199). The declaration
+    /// admitted before it, calling the name the misspelling took out of scope,
+    /// is refused because of it. Under `check` the refusals of form print
+    /// first, so the first error is the misspelt keyword, and the call resting
+    /// on them follows (#2875).
     #[test]
     fn a_refusal_of_form_prints_before_one_resting_on_it_2875()
     {
@@ -1633,13 +1633,7 @@ mod tests
                     Maybe::Absent(_) => usize::MAX,
                 })
                 .collect::<Vec<_>>(),
-            [
-                at("de g"),
-                at("g() ->"),
-                at("() -> Integer {\n  return 1"),
-                at("{\n  return 1"),
-                at("g ()")
-            ],
+            [at("de g"), at("g() ->"), at("g ()")],
             "the refusals of form print first in admission order, then the unresolved call \
              admitted before them"
         );

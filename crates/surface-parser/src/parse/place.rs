@@ -24,29 +24,36 @@
 //! written tile on where it closes that form — every bracket of its family
 //! opened since closed, save a doubled opener's second, and none between a name
 //! and the bracket that opens its arguments; where two places parse, as
-//! `f(x, y + 1` closed after `y` or after `1`, the nearer is taken. Any other
-//! tile the form may take — a member's `;`, an arm's `=>`, a binder's `:`, an
-//! `else` — is tried directly after the form's last written tile when no hole
-//! comes between them and that tile opens no bracket, else at each later tile
-//! end outside the brackets opened since and never inside a word, and its copy
-//! must read the tiles before it as the source does, keep every top-level form
-//! a declaration and nest the form no deeper. A `}` left out is not read here:
-//! a block's closer is placed by the layout, which the lowering reads.
+//! `f(x, y + 1` closed after `y` or after `1`, the nearer is taken. A place
+//! that parts an operand from the argument the melder applies it to is tried
+//! after the next place, so the `)` of `S (P x <=> x;` comes after `P x`. The
+//! melder can close the form at the end of its last written tile, before an
+//! operand that follows the tile. A closer there expels that operand, so that
+//! place is not tried. Any other tile the form may take — a member's `;`, an
+//! arm's `=>`, a binder's `:`, an `else` — is tried directly after the form's
+//! last written tile when no hole comes between them and that tile opens no
+//! bracket, else at each later tile end outside the brackets opened since and
+//! never inside a word, and its copy must read the tiles before it as the
+//! source does, keep every top-level form a declaration and nest the form no
+//! deeper. A `}` left out is not read here: a block's closer is placed by the
+//! layout, which the lowering reads.
 //!
 //! A top-level form whose declaration keyword is left out or misspelled,
-//! `def1 f(x : T) -> …`, reads its head as an expression: the name is an
-//! admissible operand and the bracket after it a call's, so the first token
-//! that shows the declaration, the parameter's `:`, is a fault no reading of
-//! it recovers. Such a form is read first with each keyword its first tile can
-//! follow written before it, and the first that makes it a declaration with no
-//! repair is the parse, the keyword minted at its head as an empty prefix
-//! grout and owed alone; the search above then runs over that parse.
+//! `def1 f(x : T) -> …`, reads as an expression. The root holds declarations
+//! alone, so the melder reads its words as strays and its brackets as
+//! expressions of their own, with no repair. Each run of top-level forms that
+//! read as no declaration is read again with a keyword written before a form
+//! of the run, each keyword that form's first tile can follow. The first copy
+//! that makes the rest of the run declarations with no repair is the parse.
+//! The keyword is minted at the head of that form as an empty prefix grout and
+//! owed alone. The search above then runs over that parse.
 
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::StepSym;
 use gandr_surface_grammar::TileLabel;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -62,6 +69,7 @@ use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use gandr_theory_graphs::Bound;
+use gandr_theory_graphs::Dir;
 
 use super::ParseResult;
 use super::molded;
@@ -240,23 +248,26 @@ impl Target
 ///   one of its places — the first [`PLACES`] and the melder's close for a `)`
 ///   or a `]`, the first [`COPIES`] copies for another tile — leaves its
 ///   top-level form with no repair. A `)` or a `]` is written where the melder
-///   closed the form, or else at the end of the form's last written tile or of
-///   a later tile of its top-level form — every bracket of the closer's family
-///   opened since closed, or the tile the second of two such openers, no closer
-///   of that family before it closing a bracket opened earlier, and no `(` or
-///   `[` next. Any other tile no hole faces on the left is written at the end
-///   of the form's last written tile, with no word character next and unless
-///   that tile opens a bracket; then one a hole faces on the left at the end of
-///   a later tile outside every bracket opened since, with no word character,
-///   `(` or `[` next; either copy reads the tiles before it with the source's
-///   molds, each of its top-level forms a declaration, the repair's form under
-///   no more forms than in the source. The tree is the source's with the tile
-///   minted, empty, at the first such place in that order — past a run of the
-///   same tile written there — a minted close for a bracket and an empty
-///   postfix grout otherwise, and the obligations are that repair and the
-///   copy's others, shifted back over the tile; otherwise `parsed`. A
-///   declaration's keyword left out at the head of a top-level form is placed
-///   first ([`headed`]), and the search above runs over that parse.
+///   closed the form, unless that is the end of the form's last written tile
+///   and the tile after it closes no bracket and opens no declaration. Else it
+///   is written at the end of the form's last written tile or of a later tile
+///   of its top-level form — every bracket of the closer's family opened since
+///   closed, or the tile the second of two such openers, no closer of that
+///   family before it closing a bracket opened earlier, and no `(` or `[` next.
+///   A place with an application tile next is tried after the next place. Any
+///   other tile no hole faces on the left is written at the end of the form's
+///   last written tile, with no word character next and unless that tile opens
+///   a bracket; then one a hole faces on the left at the end of a later tile
+///   outside every bracket opened since, with no word character, `(` or `[`
+///   next; either copy reads the tiles before it with the source's molds, each
+///   of its top-level forms a declaration, the repair's form under no more
+///   forms than in the source. The tree is the source's with the tile minted,
+///   empty, at the first such place in that order — past a run of the same tile
+///   written there — a minted close for a bracket and an empty postfix grout
+///   otherwise, and the obligations are that repair and the copy's others,
+///   shifted back over the tile; otherwise `parsed`. A declaration's keyword
+///   left out at the head of a top-level form is placed first ([`headed`]), and
+///   the search above runs over that parse.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -332,23 +343,23 @@ fn earlier<'source>(
         .find_map(|target| settled(pbg, tree, target))
 }
 
-/// `parsed` with a declaration's keyword minted at the head of a top-level form
-/// that reads as no declaration, when written there it parses.
+/// `parsed` with a declaration's keyword minted at the head of a run of
+/// top-level forms that read as no declaration, when written there it parses.
 ///
 /// A form whose keyword is left out or misspelled, as `def1 f(x : T) -> …`,
-/// reads its head as an expression: the name a declaration takes after its
-/// keyword is an admissible operand, and the bracket after it a call's, so
-/// the misreading is committed before any token shows the declaration, and
-/// the first token that does — a parameter's `:` — is a fault no reading of it
-/// recovers. Of the top-level forms that hold a repair and read as no
-/// declaration, the first whose first tile a declaration keyword takes next is
-/// tried with each such keyword written before that tile, a space after it,
-/// in mold order, the first [`COPIES`] of them.
+/// reads as an expression. The root holds declarations alone, so the melder
+/// reads its words as strays side by side and its brackets as expressions of
+/// their own, with no repair. Of the runs of top-level forms that read as no
+/// declaration, each form whose first tile a declaration keyword takes next is
+/// tried run by run in source order, and within a run from its last form back,
+/// with each such keyword written before that tile, a space after it, in mold
+/// order, the first [`COPIES`] copies in all. Each copy spans the form and the
+/// rest of its run. A run that holds no repair takes `def` alone.
 ///
 /// # Specification
 /// - requires: `parsed` is a parse under `pbg`.
-/// - ensures: the first such copy whose form molds as a declaration with no
-///   repair is the parse: the source's tree read from the whole copy, the
+/// - ensures: the first such copy that molds with no repair as declarations
+///   alone is the parse: the source's tree read from the whole copy, the
 ///   keyword an empty prefix grout at its first tile and its space empty there,
 ///   with one [`Oblig::MissingTile`] over that tile beside the copy's other
 ///   obligations, shifted back over the keyword; `None` where no copy tried
@@ -359,9 +370,10 @@ fn earlier<'source>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a definition whose `def` is misspelled, or left out at
-///   the start of the source, reads as one declaration owing its keyword alone;
-///   a call at the top level with a repair of its own that no keyword makes a
-///   declaration keeps its reading.
+///   the start of the source, reads as one declaration owing its keyword alone,
+///   minted at its name and never at the misspelled word; a call at the top
+///   level with a repair of its own that no keyword makes a declaration keeps
+///   its reading.
 /// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
 fn headed<'source>(
     pbg: &Pbg,
@@ -375,52 +387,102 @@ fn headed<'source>(
         ByteOffset::from(<&str>::from(source).len()),
     )
     .ok()?;
-    let (form, lead, keywords) = tree.children(tree.root()).find_map(|position| {
+    // A top-level form, with whether it reads as a declaration. A grout or a
+    // minted close there ends a run as a declaration does.
+    let read = |position: NodeIndex| {
         let node = tree.node(position)?;
-        let (NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) = node.label()
-        else {
-            return None;
+        let declaration = match node.label() {
+            NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
+                bool::from(declaration_head(pbg, mold))
+            },
+            NodeLabel::Space | NodeLabel::Doc => return None,
+            NodeLabel::Wald | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => true,
         };
-        let span = node.span();
-        let repaired = parsed.obligations.iter().any(|obligation| {
-            span.start() <= obligation.span.start() && obligation.span.end() <= span.end()
-        });
-        if bool::from(declaration_head(pbg, mold)) || !repaired {
-            return None;
+        Some((position, node.span(), declaration))
+    };
+    // A source of declarations alone, as every clean one is, allocates
+    // nothing here.
+    if tree
+        .children(tree.root())
+        .filter_map(read)
+        .all(|(_, _, declaration)| declaration)
+    {
+        return None;
+    }
+    let forms: Vec<(NodeIndex, ByteSpan, bool)> =
+        tree.children(tree.root()).filter_map(read).collect();
+    // Each form that reads as no declaration, beside the first form of its
+    // run: the runs in source order and, within a run, its last form first,
+    // so the keyword stands at the name a misspelled keyword stands before.
+    let mut starts: Vec<(usize, usize)> = Vec::new();
+    let mut head = 0_usize;
+    for (at, &(_, _, declaration)) in forms.iter().enumerate() {
+        if declaration {
+            head = at.saturating_add(1);
         }
-        let (lead, lead_span) = first_tile(tree, position)?;
-        let keywords = heads(pbg, lead);
-        (!keywords.is_empty()).then_some((span, lead_span, keywords))
-    })?;
-    let place = lead.start();
+        else {
+            starts.push((head, at));
+        }
+    }
+    starts.sort_unstable_by_key(|&(head, at)| (head, core::cmp::Reverse(at)));
     let mut written_keyword = String::new();
-    keywords.iter().take(COPIES).find_map(|&keyword| {
-        written_keyword.clear();
-        written_keyword.push_str(<&str>::from(keyword));
-        written_keyword.push(' ');
-        let tile = SourceText::from(written_keyword.as_str());
-        let copied = written(source, form, place, tile)?;
-        let copied = SourceText::from(copied.as_str());
-        let declaration = unrepaired(pbg, copied)?;
-        if !bool::from(declared(pbg, &declaration)) {
-            return None;
-        }
-        let copy = written(source, whole, place, tile)?;
-        let splice = Splice::new(place, tile, NodeLabel::Grout {
-            sort: BOUNDARY_SORT.grout_sort(),
-            shape: GroutShape::Prefix,
-        })?;
-        let (tree, copied) = molded(pbg, SourceText::from(copy.as_str()))
-            .commit_spliced(source, splice)
-            .ok()?;
-        let mut obligations: Vec<ObligationInstance> = copied
-            .into_iter()
-            .map(|obligation| splice.obligation(obligation))
-            .collect();
-        obligations.push(ObligationInstance::new(Oblig::MissingTile, lead));
-        ordered(&mut obligations);
-        Some(ParseResult { tree, obligations })
-    })
+    starts
+        .iter()
+        .filter_map(|&(_, at)| {
+            let &(position, span, _) = forms.get(at)?;
+            let end = forms
+                .get(at ..)
+                .unwrap_or_default()
+                .iter()
+                .take_while(|&&(_, _, declaration)| !declaration)
+                .last()
+                .map_or_else(|| span.end(), |&(_, last, _)| last.end());
+            let run = ByteSpan::new(span.start(), end).ok()?;
+            // A run with no repair reads as expressions the lowering refuses.
+            // It owes `def` alone, where a definition's shape follows its
+            // first word: another keyword reads `same Integer answer ;` as
+            // its own declaration, though the run is an expression.
+            let repaired = parsed.obligations.iter().any(|obligation| {
+                run.start() <= obligation.span.start() && obligation.span.end() <= run.end()
+            });
+            let (lead, lead_span) = first_tile(tree, position)?;
+            Some(
+                heads(pbg, lead)
+                    .into_iter()
+                    .filter(move |&keyword| repaired || <&str>::from(keyword) == "def")
+                    .map(move |keyword| (run, lead_span, keyword)),
+            )
+        })
+        .flatten()
+        .take(COPIES)
+        .find_map(|(run, lead, keyword)| {
+            let place = lead.start();
+            written_keyword.clear();
+            written_keyword.push_str(<&str>::from(keyword));
+            written_keyword.push(' ');
+            let tile = SourceText::from(written_keyword.as_str());
+            let copied = written(source, run, place, tile)?;
+            let copied = SourceText::from(copied.as_str());
+            let declaration = unrepaired(pbg, copied)?;
+            if !bool::from(declared(pbg, &declaration)) {
+                return None;
+            }
+            let copy = written(source, whole, place, tile)?;
+            let splice = Splice::new(place, tile, NodeLabel::Grout {
+                sort: BOUNDARY_SORT.grout_sort(),
+                shape: GroutShape::Prefix,
+            })?;
+            let (tree, copied) = molded(pbg, SourceText::from(copy.as_str()))
+                .commit_spliced(source, splice)
+                .ok()?;
+            let mut obligations: Vec<ObligationInstance> = copied
+                .into_iter()
+                .map(|obligation| splice.obligation(obligation))
+                .collect();
+            obligations.push(ObligationInstance::new(Oblig::MissingTile, lead));
+            ordered(&mut obligations);
+            Some(ParseResult { tree, obligations })
+        })
 }
 
 /// The first tile of the form at `position`, read down its first children.
@@ -686,26 +748,59 @@ fn settled<'source>(
     );
     let source = tree.source();
     let text = <&str>::from(source);
-    let mut tiles: Vec<ByteSpan> = tree
+    // Each tile with its mold. The empty application tile the melder pushes
+    // between an operand and its juxtaposed argument is one of them.
+    let application = pbg.application();
+    let mut tiles: Vec<(ByteSpan, MoldId)> = tree
         .positions()
         .filter_map(|position| tree.node(position))
-        .filter(|node| matches!(node.label(), NodeLabel::Tile(_)))
-        .map(Node::span)
-        .filter(|span| target.end < span.end() && span.end() <= top.end())
+        .filter_map(|node| match node.label() {
+            NodeLabel::Tile(mold) => Some((node.span(), mold)),
+            NodeLabel::Wald
+            | NodeLabel::Meld(_)
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::Space
+            | NodeLabel::Doc => None,
+        })
+        .filter(|&(span, _)| target.end < span.end() && span.end() <= top.end())
         .collect();
-    tiles.sort_unstable_by_key(|span| (span.start(), span.end()));
+    tiles.sort_unstable_by_key(|&(span, _)| (span.start(), span.end()));
+    // Whether an operand follows the form's last written tile: the first tile
+    // after it, past an application tile, faces no hole on its left and opens
+    // no declaration, as `Integer` in `def once(n : Integer -> …` does.
+    let operand_follows = tiles
+        .iter()
+        .find(|&&(_, mold)| Some(mold) != application)
+        .is_some_and(|&(_, mold)| {
+            let faces_hole = pbg.mold(mold).is_ok_and(|def| {
+                pbg.step(def.rctx, Dir::Left).is_ok_and(|steps| {
+                    steps
+                        .iter()
+                        .any(|step| matches!(step.crossed, StepSym::Sort(_)))
+                })
+            });
+            !faces_hole && !bool::from(declaration_head(pbg, mold))
+        });
     let word_next = |offset: ByteOffset| {
         text.as_bytes()
             .get(usize::from(offset))
             .is_some_and(|&next| next.is_ascii_alphanumeric() || next == b'_')
     };
     let mut places = Vec::new();
+    // Where the places that part an operand from its argument start: the next
+    // other place is tried before them.
+    let mut parting: Option<usize> = None;
     if target.leading == LeadingSlot::Empty && target.class.is_some() {
         places.push(target.end);
     }
     let (mut depth, mut doubled) = (0_usize, false);
     let mut previous: Option<ClosingClass> = None;
-    for span in tiles {
+    let mut tiles = tiles.into_iter().peekable();
+    while let Some((span, mold)) = tiles.next() {
+        if Some(mold) == application {
+            continue;
+        }
         let spelling =
             DelimSpelling::from(text.get(usize::from(span.start()) .. usize::from(span.end()))?);
         let opening = ClosingClass::opening(spelling);
@@ -728,15 +823,35 @@ fn settled<'source>(
             text.as_bytes().get(usize::from(span.end())).copied(),
             Some(b'(' | b'[')
         );
+        // A place that parts an operand from the argument the melder applies
+        // it to is tried after the next place: `S (P x <=> x;` takes its `)`
+        // after `P x`, and `f(e, x { … }` still takes its `)` after `x`.
+        let juxtaposed = tiles
+            .peek()
+            .is_some_and(|&(_, next)| Some(next) == application);
         let at_doubled = doubled && opening == target.class;
         let split = target.class.is_none() && word_next(span.end());
         if !glued && !split && (depth == 0 || at_doubled) {
-            places.push(span.end());
+            if juxtaposed {
+                let _first = parting.get_or_insert(places.len());
+                places.push(span.end());
+            }
+            else if let Some(first) = parting.take() {
+                places.insert(first, span.end());
+            }
+            else {
+                places.push(span.end());
+            }
         }
         previous = opening;
     }
     places.truncate(PLACES);
-    if target.class.is_some() {
+    // The melder's close goes first, unless it stands at the end of the form's
+    // last written tile and a written operand follows, which a closer there
+    // expels.
+    if target.class.is_some()
+        && (target.leading == LeadingSlot::Empty || target.end < target.close || !operand_follows)
+    {
         places.insert(0, target.close);
     }
     let adjacent = if word_next(target.end) {
@@ -1137,10 +1252,8 @@ mod tests
     use crate::parse;
     use crate::testing::reconstruct;
 
-    /// #2242: a closer the source left out is minted where the rest of its
-    /// form parses, not after everything the form could still take. A
-    /// parameter list's `)` and a juxtaposed rule side's `)` are minted too
-    /// early on the floor, and come back with #5199.
+    /// #2242, #5199: a closer the source left out is minted where the rest of
+    /// its form parses, not after everything the form could still take.
     #[test]
     fn a_closer_left_out_is_minted_where_the_rest_parses_2242()
     {
@@ -1150,43 +1263,75 @@ mod tests
                 .find(written)
                 .map_or(0_usize, |start| start.saturating_add(written.len()))
         };
-        let source = "def once(n : Integer) -> -F Integer {\n  return n\n";
-        let at = after(source, "return n");
-        let class = ClosingClass::Brace;
-        let why = "a block's `}` left out at the end, which the layout places, stays where the \
-                   melder minted it";
-        let parsed = parse(&pbg, SourceText::from(source)).unwrap();
-        let tree = parsed.tree();
-        let minted: Vec<_> = tree
-            .positions()
-            .filter_map(|position| tree.node(position))
-            .filter_map(|node| match node.label() {
-                NodeLabel::GhostClose { class, .. } => Some((class, node.span())),
-                NodeLabel::Wald
-                | NodeLabel::Meld(_)
-                | NodeLabel::Tile(_)
-                | NodeLabel::Grout { .. }
-                | NodeLabel::Space
-                | NodeLabel::Doc => None,
-            })
-            .collect();
-        assert_eq!(minted.len(), 1, "{why}: {minted:?}");
-        let (minted_class, span) = minted.first().copied().unwrap();
-        assert_eq!(
-            (minted_class, span.start(), span.end()),
-            (class, ByteOffset::from(at), ByteOffset::from(at)),
-            "{why}"
-        );
-        assert_eq!(
-            reconstruct(tree),
-            source,
-            "{why}: the tree reconstructs the source"
-        );
-        assert!(
-            matches!(parsed.obligations(), [repair] if repair.class == Oblig::MissingTile),
-            "{why}: one repair stands: {:?}",
-            parsed.obligations()
-        );
+        let once = "def once(n : Integer -> -F Integer {\n  return n\n}\n";
+        let glued = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> \
+                     Int\n  rule : S (P x <=> x;\n}\n";
+        let head = "def head(xs : List(Integer) -> -F Integer {\n  return 0\n}\n";
+        let open = "def once(n : Integer) -> -F Integer {\n  return n\n";
+        for (source, at, class, why) in [
+            (
+                once,
+                after(once, "n : Integer"),
+                ClosingClass::Paren,
+                "the parameter list's `)` is minted after the parameter's type, where the \
+                 definition's return type and block then parse",
+            ),
+            (
+                glued,
+                after(glued, "S (P x"),
+                ClosingClass::Paren,
+                "a rule's `)` left out is minted after its juxtaposed application, not between \
+                 the nested operation's name and its argument, and its misreading's other \
+                 repairs are gone",
+            ),
+            (
+                head,
+                after(head, "List(Integer)"),
+                ClosingClass::Paren,
+                "a `)` left out after a nested `)` is minted after the written one: the copy \
+                 is the same text either way",
+            ),
+            (
+                open,
+                after(open, "return n"),
+                ClosingClass::Brace,
+                "a block's `}` left out at the end, which the layout places, stays where the \
+                 melder minted it",
+            ),
+        ] {
+            let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+            let tree = parsed.tree();
+            let minted: Vec<_> = tree
+                .positions()
+                .filter_map(|position| tree.node(position))
+                .filter_map(|node| match node.label() {
+                    NodeLabel::GhostClose { class, .. } => Some((class, node.span())),
+                    NodeLabel::Wald
+                    | NodeLabel::Meld(_)
+                    | NodeLabel::Tile(_)
+                    | NodeLabel::Grout { .. }
+                    | NodeLabel::Space
+                    | NodeLabel::Doc => None,
+                })
+                .collect();
+            assert_eq!(minted.len(), 1, "{why}: {minted:?}");
+            let (minted_class, span) = minted.first().copied().unwrap();
+            assert_eq!(
+                (minted_class, span.start(), span.end()),
+                (class, ByteOffset::from(at), ByteOffset::from(at)),
+                "{why}"
+            );
+            assert_eq!(
+                reconstruct(tree),
+                source,
+                "{why}: the tree reconstructs the source"
+            );
+            assert!(
+                matches!(parsed.obligations(), [repair] if repair.class == Oblig::MissingTile),
+                "{why}: one repair stands: {:?}",
+                parsed.obligations()
+            );
+        }
     }
 
     /// #2259: a tile other than a bracket the source left out is minted where
@@ -1264,15 +1409,62 @@ mod tests
         );
     }
 
-    /// #2440: a call at the top level with a repair of its own, which no
-    /// keyword makes a declaration, keeps its reading. A definition whose
-    /// `def` is misspelled or left out reads on the floor as a juxtaposed
-    /// expression, which the lowering refuses at the top level; its keyword is
-    /// minted at its head again with #5199.
+    /// #2440, #5199: a definition whose `def` is misspelled, or left out at
+    /// the start of the source, reads as one declaration owing its keyword
+    /// alone, the keyword minted at its head; a call at the top level with a
+    /// repair of its own that no keyword makes a declaration keeps its reading.
     #[test]
     fn a_declaration_keyword_left_out_is_minted_at_its_head_2440()
     {
         let pbg = built_in().unwrap();
+        let body = "f(x : Integer) -> -F Integer {\n  return x\n}\n";
+        let misspelled = "def1 f(x : Integer) -> -F Integer {\n  return x\n}\n";
+        for (source, why) in [
+            (
+                misspelled,
+                "a misspelled `def` is a word of its own, and the definition after it owes \
+                 its keyword",
+            ),
+            (
+                body,
+                "a definition with its `def` left out owes its keyword",
+            ),
+        ] {
+            let head = source.find("f(").unwrap();
+            let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+            let tree = parsed.tree();
+            assert_eq!(
+                reconstruct(tree),
+                source,
+                "{why}: the tree reconstructs the source"
+            );
+            assert!(
+                matches!(
+                    parsed.obligations(),
+                    [repair] if repair.class == Oblig::MissingTile
+                        && usize::from(repair.span.start()) == head
+                        && usize::from(repair.span.end()) == head.saturating_add(1)
+                ),
+                "{why}: one repair stands, over the name: {:?}",
+                parsed.obligations()
+            );
+            let ghosts: Vec<ByteOffset> = tree
+                .positions()
+                .filter_map(|position| tree.node(position))
+                .filter(|node| {
+                    matches!(node.label(), NodeLabel::Grout {
+                        shape: GroutShape::Prefix,
+                        ..
+                    }) && node.span().start() == node.span().end()
+                })
+                .map(|node| node.span().start())
+                .collect();
+            assert_eq!(
+                ghosts,
+                [ByteOffset::from(head)],
+                "{why}: the keyword is minted, empty, at the name"
+            );
+        }
         let call = "f(x\n";
         let parsed = parse(&pbg, SourceText::from(call)).unwrap();
         assert!(
@@ -1291,6 +1483,50 @@ mod tests
             "a call left open at the top level, which no keyword makes a declaration, keeps its \
              reading: {:?}",
             parsed.obligations()
+        );
+    }
+
+    /// #5199: a misspelled keyword before a definition is a stray word, and
+    /// the definition after it owes its `def` at its name. The keyword search
+    /// tries the later form first, so the keyword is never minted at the
+    /// misspelled word.
+    #[test]
+    fn a_misspelled_keyword_owes_its_def_at_the_name_after_it_5199()
+    {
+        let pbg = built_in().unwrap();
+        let source = "de pair = 1 ;\n";
+        let head = source.find("pair").unwrap();
+        let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+        let tree = parsed.tree();
+        assert_eq!(
+            reconstruct(tree),
+            source,
+            "the tree reconstructs the source"
+        );
+        assert!(
+            matches!(
+                parsed.obligations(),
+                [repair] if repair.class == Oblig::MissingTile
+                    && usize::from(repair.span.start()) == head
+            ),
+            "one repair stands, at the name: {:?}",
+            parsed.obligations()
+        );
+        let ghosts: Vec<ByteOffset> = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter(|node| {
+                matches!(node.label(), NodeLabel::Grout {
+                    shape: GroutShape::Prefix,
+                    ..
+                }) && node.span().start() == node.span().end()
+            })
+            .map(|node| node.span().start())
+            .collect();
+        assert_eq!(
+            ghosts,
+            [ByteOffset::from(head)],
+            "the keyword is minted, empty, at the name, never at the misspelled word"
         );
     }
 
