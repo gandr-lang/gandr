@@ -3884,8 +3884,8 @@ impl<'source> Lowerer<'_, 'source>
     /// under `frame` ahead of the walk from `anchor`: those of the earlier
     /// declaration or the parameter its head names, when the result the
     /// callee writes is a group. An operation of several outputs writes its
-    /// outputs as ports, and its call returns one positional entry for each
-    /// output.
+    /// outputs as ports, and its call returns one entry for each output, keyed
+    /// by the port's label when the source names every port.
     ///
     /// # Specification
     /// - requires: `bound` is `anchor` or under it.
@@ -3894,10 +3894,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   declaration whose result is planned as a [`Plan::Returns`] or written
     ///   as a group, as [`Self::written_group`] reads it, or to a declaration
     ///   or a binder whose written type is a box returning such a group. One
-    ///   positional entry for each output when the name resolves to an
-    ///   operation of several outputs. Nothing for any other form or a callee
-    ///   returning one value. The nodes under `bound` take `anchor`'s owner, as
-    ///   the walk would give them.
+    ///   entry for each output when the name resolves to an operation of
+    ///   several outputs: each keyed by its port's label when every port is
+    ///   named, and each positional otherwise. Nothing for any other form or a
+    ///   callee returning one value. The nodes under `bound` take `anchor`'s
+    ///   owner, as the walk would give them.
     /// - fails: the name's resolution refusal; a foreign mold.
     /// - panics: none.
     ///
@@ -3906,11 +3907,12 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a call of a function returning two outputs, one
-    ///   returning a pair, one of a box signature and one of a parameter at a
-    ///   box.
+    ///   returning a pair, one of a box signature, one of a parameter at a box,
+    ///   and an operation of two outputs with named ports.
     /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_a_call`
     /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_an_operation_4855`
     /// - witness: `lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
+    /// - witness: `lower::arity::tests::an_operation_s_outputs_are_selected_and_bound_by_label_5147`
     #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || matches!(self.form_at(bound), Ok(Some((_, Former::Call)))))]
     pub(super) fn called_outputs(
         &mut self,
@@ -3962,11 +3964,42 @@ impl<'source> Lowerer<'_, 'source>
                     .get(&crate::module::SlotIndex::from(usize::from(constant)))
                 {
                     let count = usize::from(plan.output_count());
-                    let positional = Entry {
-                        key: Key::Positional,
-                        held: Held::Operand(bound),
-                    };
-                    return Ok((count > 1).then(|| alloc::vec![positional; count]));
+                    // The outputs are keyed by their ports' labels when the
+                    // source names every port, as a function's written group
+                    // is, and stay positional otherwise: a form holds one
+                    // kind of key throughout.
+                    let labelled: Option<Vec<Entry<'source>>> = (plan.output_labels().len()
+                        == count)
+                        .then(|| {
+                            plan.output_labels()
+                                .iter()
+                                .map(|label| {
+                                    let Maybe::Present(span) = *label
+                                    else {
+                                        return None;
+                                    };
+                                    let text = self.tree.spanned(span)?;
+                                    Some(Entry {
+                                        key: Key::Label(SurfaceName::from(text), Placed {
+                                            node: bound.node,
+                                            span,
+                                        }),
+                                        held: Held::Operand(bound),
+                                    })
+                                })
+                                .collect()
+                        })
+                        .flatten();
+                    let entries = labelled.unwrap_or_else(|| {
+                        alloc::vec![
+                            Entry {
+                                key: Key::Positional,
+                                held: Held::Operand(bound),
+                            };
+                            count
+                        ]
+                    });
+                    return Ok((count > 1).then_some(entries));
                 }
                 match (self.callee_result(constant), declared) {
                     (Some(at), _) => Some(at),

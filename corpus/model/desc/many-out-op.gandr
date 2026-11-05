@@ -1,7 +1,9 @@
 //! An operation with two outputs, division with remainder on the naturals,
 //! defined by rules over a helper that walks the dividend
 //! [Baader-1998-term_rewriting_and_all_that], § 4.1: a closed division
-//! normalizes to its quotient and remainder, and a run binds both.
+//! normalizes to its quotient and remainder, and a run binds both. A call
+//! names each output by its port's label, as a function's call does. One run
+//! selects an output, and one pattern binds both in another order.
 //!
 //! - cites: [Baader-1998-term_rewriting_and_all_that]
 //!
@@ -29,3 +31,14 @@ data NatDiv : Type where {
 def five_by_two() -> NatDiv * NatDiv =
   let *{quot, rem} = divmod (Succ (Succ (Succ (Succ (Succ Zero))))) (Succ (Succ Zero))
   *{quot, rem}
+
+/// Five by two's remainder, the output its label selects.
+@[ runs("Succ Zero") ]
+def five_by_two_rem() -> NatDiv =
+  (divmod (Succ (Succ (Succ (Succ (Succ Zero))))) (Succ (Succ Zero))).rem
+
+/// Five by two's quotient, both outputs bound by their labels in another order.
+@[ runs("Succ (Succ Zero)") ]
+def five_by_two_quot() -> NatDiv =
+  let *{.rem = r, .quot = q} = divmod (Succ (Succ (Succ (Succ (Succ Zero))))) (Succ (Succ Zero))
+  q

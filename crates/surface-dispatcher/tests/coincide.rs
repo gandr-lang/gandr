@@ -171,24 +171,27 @@ fn thunk_body(
     None
 }
 
-/// The call a thunk's body is, when the body is one call delivered
-/// unchanged: `become f a`, `f a`, or `let p = f a` then `p`, the tail
-/// written `p` alone as the sugared form writes it (#1327), either after a
-/// `;` or on the next line. The call is written in the inspection notation a
-/// `normalizes` row reads, `f(a)`.
+/// The call a thunk's body is, when the body delivers one call unchanged or
+/// one output of it: `become f a`, `f a`, or `let p = f a` then `p`, the
+/// tail written `p` alone as the sugared form writes it (#1327), either after
+/// a `;` or on the next line. A call of several outputs also delivers one
+/// output, by the selection `(f a).q` or by the labelled pattern
+/// `let *{.q = x, .r} = f a` then `x` (#5147). The call is written in the
+/// inspection notation a `normalizes` row reads, `f(a)`. The label is the
+/// output the run delivers, absent when the run delivers the call whole.
 ///
 /// # Specification
-/// - ensures: present only for a body of one of the three shapes, the call an
+/// - ensures: present only for a body of one of the five shapes, the call an
 ///   identifier applied to at least one operand, in the inspection notation.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the corpus's direct calls read, every shape among them; a
-///   body that does more than deliver its call reads none and fails the
-///   differential by name.
+///   body that does more than deliver its call or one output reads none and
+///   fails the differential by name.
 /// - witness: `tests::coincide::every_run_through_a_described_operation_is_its_calls_normal_form`
-#[spec(ensures: |ret| ret.as_deref().is_none_or(|call| call.ends_with(')')))]
-fn direct_call(body: SourceFragment<'_>) -> Option<String>
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|&(ref call, _)| call.ends_with(')')))]
+fn direct_call(body: SourceFragment<'_>) -> Option<(String, Option<String>)>
 {
     let statements: Vec<String> = body
         .as_ref()
@@ -206,20 +209,62 @@ fn direct_call(body: SourceFragment<'_>) -> Option<String>
         })
         .filter(|statement| !statement.is_empty())
         .collect();
-    let call = match *statements.as_slice() {
-        [ref only] => only.strip_prefix("become ").unwrap_or(only),
-        [ref bound, ref tail] => {
-            let (pattern, call) = bound.strip_prefix("let ")?.split_once(" = ")?;
-            let returned = tail.strip_prefix("return ").unwrap_or(tail);
-            if returned != pattern {
-                return None;
+    // One identifier: letters, digits and `_`, at least one.
+    let identifier = |text: &str| {
+        !text.is_empty()
+            && text
+                .chars()
+                .all(|character| character.is_alphanumeric() || character == '_')
+    };
+    let (call, output) = match *statements.as_slice() {
+        [ref only] => {
+            let only = only.strip_prefix("become ").unwrap_or(only);
+            // A selection `(f a).q` delivers the output its label names.
+            match only
+                .strip_prefix('(')
+                .and_then(|inner| inner.rsplit_once(")."))
+            {
+                Some((call, label)) if identifier(label) => (call, Some(String::from(label))),
+                _ => (only, None),
             }
-            call
+        },
+        [ref bound, ref tail] => {
+            let bound = bound.strip_prefix("let ")?;
+            // A pair pattern holds ` = ` inside its braces, so its end is
+            // its `}`.
+            let (pattern, call) = if bound.starts_with("*{") {
+                let close = bound.find('}')?;
+                (
+                    bound.get(..= close)?,
+                    bound.get(close.saturating_add(1) ..)?.strip_prefix(" = ")?,
+                )
+            }
+            else {
+                bound.split_once(" = ")?
+            };
+            let returned = tail.strip_prefix("return ").unwrap_or(tail);
+            if returned == pattern {
+                (call, None)
+            }
+            else {
+                // The label of the entry that binds `returned`: `q` for `x`
+                // in `*{.q = x, .r}`, and `r` for `r`.
+                let label = pattern
+                    .strip_prefix("*{")?
+                    .strip_suffix('}')?
+                    .split(", ")
+                    .find_map(|entry| {
+                        let entry = entry.strip_prefix('.')?;
+                        let (label, binder) = entry.split_once(" = ").unwrap_or((entry, entry));
+                        (binder == returned).then(|| String::from(label))
+                    })?;
+                (call, Some(label))
+            }
         },
         _ => return None,
     };
     let written = inspected(SourceFragment::from(call))?;
-    written.ends_with(')').then_some(written)
+    written.ends_with(')').then_some((written, output))
 }
 
 /// What opened a frame of the spine [`inspected`] reads.
@@ -348,8 +393,29 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
     let grammar = built_in().expect("the built-in grammar builds");
     let mut lowerings = LoweringCount::default();
     let mut compared = 0_usize;
-    let mut operations: Vec<String> = Vec::new();
+    let mut operations: Vec<(String, Vec<String>)> = Vec::new();
     let mut needle = String::new();
+    // The output at `index` of a normal form spelled as the group of its
+    // outputs, `(Succ(Zero), Zero)`.
+    let component = |spelling: &str, index: usize| -> Option<String> {
+        let inner = spelling.strip_prefix('(')?.strip_suffix(')')?;
+        let mut depth = 0_usize;
+        let mut start = 0_usize;
+        let mut outputs = Vec::new();
+        for (offset, character) in inner.char_indices() {
+            match character {
+                '(' => depth = depth.saturating_add(1),
+                ')' => depth = depth.saturating_sub(1),
+                ',' if depth == 0 => {
+                    outputs.push(inner.get(start .. offset)?.trim());
+                    start = offset.saturating_add(1);
+                },
+                _ => {},
+            }
+        }
+        outputs.push(inner.get(start ..)?.trim());
+        outputs.get(index).map(|output| String::from(*output))
+    };
     for path in sources() {
         let text = std::fs::read_to_string(&path).expect("the source reads");
         let shown = path.display();
@@ -368,7 +434,17 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
                 .described()
                 .filter(|described| matches!(described.presentation, Maybe::Absent(_)))
                 .flat_map(|described| described.description.opers.iter())
-                .map(|operation| String::from(operation.name.as_ref())),
+                .map(|operation| {
+                    (
+                        String::from(operation.name.as_ref()),
+                        operation
+                            .arity
+                            .outputs
+                            .iter()
+                            .map(|port| String::from(port.name.as_ref()))
+                            .collect(),
+                    )
+                }),
         );
         if operations.is_empty() {
             continue;
@@ -383,22 +459,24 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
             else {
                 continue;
             };
-            let named = operations.iter().find(|operation| {
+            let named = operations.iter().find(|&&(ref operation, _)| {
                 needle.clear();
                 needle.push_str(operation.as_str());
                 body.split(|character: char| !character.is_alphanumeric() && character != '_')
                     .any(|word| word == needle.as_str())
             });
-            let Some(operation) = named
+            let Some(&(ref operation, ref outputs)) = named
             else {
                 continue;
             };
-            let call = direct_call(SourceFragment::from(body.as_str())).unwrap_or_else(|| {
-                panic!(
-                    "{shown}: `{name}` runs through `{operation}` but is no direct call; the \
-                         differential reads a run whose body is the call it delivers"
-                )
-            });
+            let (call, output) =
+                direct_call(SourceFragment::from(body.as_str())).unwrap_or_else(|| {
+                    panic!(
+                        "{shown}: `{name}` runs through `{operation}` but is no direct call; the \
+                         differential reads a run whose body is the call it delivers, or one \
+                         output of it"
+                    )
+                });
             let member = module
                 .declarations()
                 .iter()
@@ -410,13 +488,23 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
                 .unwrap_or_else(|| panic!("{shown}: `{call}` names no declaration"));
             let normal = module
                 .normal_form(member, CallText::from(call.as_str()))
-                .unwrap_or_else(|fault| panic!("{shown}: `{call}`: {fault}"));
-            calls.push((
-                declaration.constant(),
-                name.to_string(),
-                call,
-                normal.spelling(),
-            ));
+                .unwrap_or_else(|fault| panic!("{shown}: `{call}`: {fault}"))
+                .spelling();
+            let engine = match output {
+                None => normal,
+                Some(label) => {
+                    let index = outputs
+                        .iter()
+                        .position(|port| *port == label)
+                        .unwrap_or_else(|| {
+                            panic!("{shown}: `{name}` delivers `.{label}`, which `{operation}` does not name")
+                        });
+                    component(&normal, index).unwrap_or_else(|| {
+                        panic!("{shown}: `{call}` normalises to {normal}, which holds no output {index}")
+                    })
+                },
+            };
+            calls.push((declaration.constant(), name.to_string(), call, engine));
         }
         let Composed::Settled {
             report,

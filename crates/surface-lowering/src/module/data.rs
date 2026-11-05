@@ -1925,7 +1925,17 @@ impl<'source> Collector<'_, 'source>
                     .get(position)
                     .copied()
                     .unwrap_or(named.span);
-                routed.push((name, named, span, plan));
+                // Each output port's name tile, from the written operation
+                // its own name tile finds, so a call keys its outputs by them.
+                let labels = described
+                    .written
+                    .operations
+                    .iter()
+                    .find(|written| written.named == Maybe::Present(named.span))
+                    .map_or_else(Vec::new, |written| {
+                        written.outputs.iter().map(|port| port.named).collect()
+                    });
+                routed.push((name, named, span, plan.with_output_labels(labels)));
             }
         }
         let container = match self.collected.owner_of(declaration.node) {

@@ -29,6 +29,15 @@
 //! aggregation*, JPAA 229, 2025). Reversal: none planned. A type that states a
 //! product still builds one.
 //!
+//! **A many-out operation's outputs carry their port labels.** The plan keeps
+//! the name tile of each output port, as the source writes it. So a caller
+//! selects an output by its label, `divmod(m, n).q`, and binds the outputs by
+//! their labels, `let (.r, .q) = divmod(m, n);`, as it does a function's. A
+//! port no source names, one an `ext` member generates, has no label, and then
+//! every output stays positional. The alternative was to read the labels again
+//! from the operation's signature at each call; the plan already holds what
+//! each call reads of its operation.
+//!
 //! **An operation runs only when every rule is admissible as code.** A route is
 //! planned when the family is an unparameterised `data` family, every port is
 //! sorted by such a family, the cell gate admitted the operation and declined
@@ -78,6 +87,7 @@ use gandr_core_term::Zone;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
+use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::OperDesc;
@@ -85,7 +95,9 @@ use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::SortRef;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
+use quenchant_shape::shape::Maybe;
 
+use crate::description::written::port_name;
 use crate::origin::Origin;
 use crate::origin::OriginTable;
 
@@ -270,6 +282,10 @@ pub struct OperationPlan
     /// The rules the tree decides, over module positions, for the kernel to
     /// decide they converge.
     rules: gandr_kernel_term::OperationRules,
+    /// The name tile of each output port, in port order, where the source
+    /// writes the port's name; empty until [`Self::with_output_labels`] sets
+    /// it.
+    labels: Vec<Maybe<ByteSpan, port_name::Absent>>,
 }
 
 impl OperationPlan
@@ -295,6 +311,32 @@ impl OperationPlan
     pub fn output_count(&self) -> gandr_core_term::ComponentCount
     {
         gandr_core_term::ComponentCount::from(self.outputs.len())
+    }
+
+    /// This plan with the name tile of each output port, in port order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn with_output_labels(
+        mut self,
+        labels: Vec<Maybe<ByteSpan, port_name::Absent>>,
+    ) -> Self
+    {
+        self.labels = labels;
+        self
+    }
+
+    /// The name tile of each output port, in port order; empty until the
+    /// collection gives the plan its ports.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn output_labels(&self) -> &[Maybe<ByteSpan, port_name::Absent>]
+    {
+        &self.labels
     }
 }
 
@@ -441,6 +483,7 @@ pub fn plan_operation(
         outputs,
         nodes,
         rules,
+        labels: Vec::new(),
     })
 }
 
