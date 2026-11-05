@@ -23,15 +23,16 @@
 #   which reads its whole stack bottom up, so one member asks for the stack,
 #   and only for a stack with no dequeued member: `land_prefix` reads a
 #   dequeued head as green and would queue it again unchanged. A dequeued
-#   pull request is rebased onto its base by GitHub (`update-branch`), as
-#   `pr:watch` heals a stack (#1264), when no member of its stack is red or
-#   queued (a push never moves a queued branch or one below it, #2531) and
-#   fewer than three restacks of it are marked. The trunk's rules require
-#   signed commits, which a rebase in the runner could not make; the App's
-#   rebased commits came out unsigned (#3355). A member above another
-#   is rebased the same way once its base moved;
-#   one the API refuses is told instead, once per head (`told` carries
-#   whether it was), and one past the cap is told.
+#   pull request is restacked onto its base, as `pr:watch` heals a stack
+#   (#1264), when no member of its stack is red or queued (a push never
+#   moves a queued branch or one below it, #2531) and fewer than three
+#   restacks of it are marked. The runner rebases it and replays the result
+#   through `createCommitOnBranch` (`signed_restack`, #5214), so GitHub signs
+#   each commit the trunk's rules require signed; `update-branch`'s rebased
+#   commits came out unsigned (#3355). A member above another is restacked
+#   the same way once its base moved; one whose restack fails is told
+#   instead, once per head (`told` carries whether it was), and one past the
+#   cap is told.
 #   Without the token, a green stack's lowest green member is told
 #   `pr-green`, its seat to land it, and a dequeued pull request is told
 #   `pr-dequeued`.
@@ -55,10 +56,8 @@
 #
 #   `upstream` lists, for a dequeued pull request, the commits of its head
 #   whose change its base already carries (`upstream_replays`, #4463).
-#   GitHub's rebase replays each as an empty commit with none of the
-#   trailers the push rule requires, and every branch stacked above inherits
-#   it. Such a pull request is never restacked; its seat is told
-#   `pr-dequeued`, naming them, and `pr:land`'s signed restack drops them.
+#   The runner's rebase drops each, so they hold no restack back. A seat told
+#   `pr-dequeued` without the token, or past the cap, has them named.
 #
 # Output: the actions, by pull request number, each `{number, act}` with `act`
 # one of `land`, `restack` (with `told`), `green`, `dirty`, `red` (with
@@ -84,12 +83,11 @@ def restacks: [(.marks // [])[] | select(startswith("pr-restacked:"))] | length;
     | if .state == "dirty" then (if marked("pr-dirty") then empty else {number, act: "dirty"} end)
       elif .state == "red" then (if marked("pr-red") then empty else {number, act: "red", failed: .reading.failed} end)
       elif .state == "dequeued" then
-        if (.upstream // []) != [] then
-          (if marked("pr-dequeued") then empty else {number, act: "dequeued", upstream} end)
-        elif $token and restacks < 3 and .removal != "failed_checks"
+        if $token and restacks < 3 and .removal != "failed_checks"
           and all($members[]; ((.reading.failed // []) == []) and (.queued | not))
         then {number, act: "restack", told: marked("pr-dequeued")}
         elif marked("pr-dequeued") then empty
+        elif (.upstream // []) != [] then {number, act: "dequeued", upstream}
         else {number, act: "dequeued"}
         end
       elif .state == "green" and all($members[]; .state != "dequeued") then
