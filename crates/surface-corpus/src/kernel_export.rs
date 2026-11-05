@@ -2453,6 +2453,40 @@ mod kernel_presented_readmission
             );
         }
     }
+
+    /// #5359: a walk along the path a field holds, its type the decode of
+    /// the family's answer, checks in the checker, and the kernel readmits it
+    /// at the path type the family returns.
+    #[test]
+    fn a_walk_along_a_path_a_field_holds_readmits_5359()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/walk-field.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the walks lower");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        for name in ["walkSecond", "walkWritten"] {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(vec![segment]);
+            let marked = declarations
+                .iter()
+                .find(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"));
+            assert_eq!(
+                marked.mark(),
+                gandr_kernel_term::AdmissionMark::Checked,
+                "the checker checks `{name}`"
+            );
+        }
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("the kernel readmits the walk along the field's path");
+    }
 }
 
 /// A step case at a variable readmits by the kernel's own reading of the bind

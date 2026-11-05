@@ -1,0 +1,37 @@
+//! A walk along a path that a data field holds. The family of the data type
+//! computes the field's type.
+//!
+//! A family can return a path type as a code. A field at that family holds a
+//! path. The type of the path is the decode of the family's answer. A walk
+//! along such a path reads the path's endpoints off its type. So the type must
+//! read as the path type it decodes to.
+//!
+//! Both checkers read the field's type at the type its family returns. The
+//! walk then transports along the path, as a walk along a path at its written
+//! type does.
+//!
+//! - see: #5359
+//! - see: `model/identity/transport-list.gandr` — a walk along a path at its
+//!   written type
+
+/// A value of the first type with a value of the type it picks.
+data Picked(a : Type, b : a -> Type) : Type where
+  /// The two values.
+  | MkPicked : (x : a, y : b(x)) --> Picked(a, b)
+
+/// A walk along the path that a pair's second field holds, its type computed
+/// by the family the pair's type names.
+def walkSecond(
+  i : Type,
+  o : i -> Type,
+  j : i,
+  k : i,
+  m : Picked(Unit, fun (u) { return (type(Path[.A = i](j, k))) }),
+  v : o(j)
+) -> o(k) =
+  match m
+    | MkPicked(u, q) => Path.walk (fun (n) { o n }) q v
+
+/// The same walk along a path a binder holds at its written type.
+def walkWritten(i : Type, o : i -> Type, j : i, k : i, q : Path[.A = i](j, k), v : o(j)) -> o(k) =
+  Path.walk (fun (n) { o n }) q v
