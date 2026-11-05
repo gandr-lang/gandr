@@ -13,12 +13,12 @@
 //! | the line | it stays in the block when | the block's column |
 //! | --- | --- | --- |
 //! | a dent | the next line stands at the block's column again | stays |
-//! | the block's second item, the first too far right | the block holds one item, and the next line stands at this line's column or left of it, or no line follows | moves to this line's column |
+//! | the block's second item, the first too far right | the block holds one item and stands right of this line by less than this line stands right of the enclosing block, and the next line stands at this line's column or left of it, or no line follows | moves to this line's column |
 //!
-//! A line that the next line continues never stays, nor a line that closes a
-//! bracket an earlier line opened, nor a line at column zero. A `)` with no
-//! open bracket to close leaves every block open, so the melder marks it
-//! where it stands.
+//! A line that the next line continues never stays, nor a line that leaves
+//! open a bracket it opens, nor a line that closes a bracket an earlier line
+//! opened, nor a line at column zero. A `)` with no open bracket to close
+//! leaves every block open, so the melder marks it where it stands.
 //!
 //! | opener | block | separator |
 //! | --- | --- | --- |
@@ -768,10 +768,13 @@ struct LineStart<'tokens>
 /// | reading | the next line | the block | the block's column |
 /// | --- | --- | --- | --- |
 /// | a dent: one line left of its block | at the block's column | any | stays |
-/// | the block's first line stood too far right | at this line's column or left of it, or none | holds one item, and this line stands right of the enclosing block's column | moves to this line's column |
+/// | the block's first line stood too far right | at this line's column or left of it, or none | holds one item, and stands right of this line by less than this line stands right of the enclosing block | moves to this line's column |
 ///
 /// A line at column zero aligns with the source's own block, so it never
-/// stays. A dent there cannot tell which nested block it leaves.
+/// stays. A dent there cannot tell which nested block it leaves. A line one
+/// column right of the enclosing block, after a block one column right of the
+/// line, closes the block. A deleted keyword leaves an item of the enclosing
+/// block there more often than a block's first line.
 ///
 /// # Specification
 /// - requires: `line` begins at the first token of its line, and `frames` are
@@ -825,7 +828,11 @@ fn dented(
     if next == Some(block) {
         return Stays(true);
     }
-    if top.items == 1 && column > landing && next.is_none_or(|next| next <= column) {
+    if top.items == 1
+        && column > landing
+        && block.saturating_sub(column) < column.saturating_sub(landing)
+        && next.is_none_or(|next| next <= column)
+    {
         top.kind = Kind::Layout { column };
         return Stays(true);
     }
@@ -839,9 +846,10 @@ struct NextLine
     /// The column of the next line's first significant token, none when no
     /// line follows.
     column: Option<u32>,
-    /// The line belongs to an item before it: it ends with a token the next
-    /// line continues (an opener, an open bracket, a separator inside one, an
-    /// arrow or a `:`), or it closes a bracket an earlier line opened.
+    /// The line belongs to an item before it or after it: it leaves open a
+    /// bracket it opens, it ends with a token the next line continues (an
+    /// opener, a separator, an arrow or a `:`), or it closes a bracket an
+    /// earlier line opened.
     continued: bool,
 }
 
@@ -868,10 +876,7 @@ fn next_line(
         matches!(
             (token.lexeme, spelled(token)),
             (Lexeme::LowerWord, b"where" | b"match")
-                | (
-                    Lexeme::Punct,
-                    b"=" | b"{" | b"(" | b"[" | b"," | b"->" | b"=>" | b":"
-                )
+                | (Lexeme::Punct, b"=" | b"," | b"->" | b"=>" | b":")
         )
     };
     let Some((&first, after)) = rest.split_first()
@@ -916,7 +921,7 @@ fn next_line(
                 .unwrap_or(u32::MAX);
             return NextLine {
                 column: Some(token.start.saturating_sub(begin)),
-                continued: closes_earlier || continues(&last),
+                continued: closes_earlier || depth > 0 || continues(&last),
             };
         }
         nest(&token, &mut depth, &mut closes_earlier);
@@ -924,7 +929,7 @@ fn next_line(
     }
     NextLine {
         column: None,
-        continued: closes_earlier || continues(&last),
+        continued: closes_earlier || depth > 0 || continues(&last),
     }
 }
 
@@ -1148,6 +1153,13 @@ mod tests
         assert_eq!(
             marked("def f(x : A) -> A =\n   y = x\n  y\n"),
             "def f(x : A) -> A ⟪=→{⟫\n   y = x⟪;⟫\n  y⟪}⟫\n"
+        );
+        // A line one column right of the enclosing block, after a block one
+        // column right of the line, is an item whose keyword is gone. The
+        // block closes before it.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n  x\n g(x : A) -> A = x;\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n  x⟪}⟫\n g(x : A) -> A = x;\n"
         );
     }
 
