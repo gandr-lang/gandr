@@ -7,7 +7,7 @@ error[MalformedForm]: a keyword or symbol of this def value is out of place
    ├ note: `Orphan` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the def value
 
-error[RulesUncompleted]: this rule and an earlier one rewrite one term to two normal forms, and no rule the order can orient joins them, so the block's rules are refused
+error[RulesUncompleted]: this rule and an earlier one rewrite `pick(one, y')` to two normal forms, `plus(one, y')` and `plus(y', one)`, and no rule the order can orient joins them, so the block's rules are refused
    ╭▸ corpus/pathological/include/rules-join.gandr:23:3
    │
 21 │   include Choice;

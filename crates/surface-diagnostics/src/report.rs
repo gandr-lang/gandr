@@ -159,6 +159,8 @@ use crate::model::Severity;
 use crate::model::expression;
 use crate::model::fix;
 use crate::model::producer;
+use crate::obstruction::PartingPair;
+use crate::obstruction::obstructed;
 use crate::spelled::Spellings;
 use crate::spelled::kept;
 
@@ -415,6 +417,9 @@ pub enum Subject<'step>
         /// refusal follows from that declaration's and is a note, not an
         /// error of its own.
         upstream: Maybe<&'step DeclarationReport<'step>, upstream::Absent>,
+        /// What obstructs the property the refusal refuses, when the refusal
+        /// holds it: the parting pair of a block's rules.
+        obstruction: Maybe<PartingPair<'step>, obstructed::Absent>,
     },
     /// A declaration unsettled with no refusal produced.
     Unsettled
@@ -1223,9 +1228,10 @@ impl fmt::Display for MessageText<'_>
     ///   that answers it; a capability scope's model left to the models in
     ///   scope names the theory instead, and `with M`, its spelling naming one;
     ///   a scope not shown to satisfy a law names the law, where the origins
-    ///   record it; a source refused as a whole says so, then the plain
-    ///   message; every other report writes its title, which is already the
-    ///   user's.
+    ///   record it; a block's rules refused for a critical pair whose sides
+    ///   part name its peak and both normal forms, where the refusal holds the
+    ///   pair; a source refused as a whole says so, then the plain message;
+    ///   every other report writes its title, which is already the user's.
     /// - provides: the first line of a diagnostic.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
@@ -1234,9 +1240,11 @@ impl fmt::Display for MessageText<'_>
     /// # Adequacy
     /// - hypothesis: L3 — one refusal of every vocabulary name writes a
     ///   single-line message naming no grammar sort; a type mismatch's message
-    ///   differs from its producer's title.
+    ///   differs from its producer's title; a parting pair's message names its
+    ///   peak and its two normal forms in order.
     /// - witness: `message::tests::every_refusal_name_has_a_plain_message`
     /// - witness: `tests::diagnostics::a_mismatch_label_spells_both_types`
+    /// - witness: `tests::diagnostics::a_parting_pair_names_its_peak_and_both_normal_forms`
     #[inline]
     fn fmt(
         &self,
@@ -1431,6 +1439,26 @@ impl fmt::Display for MessageText<'_>
                 ),
                 Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },
+            Subject::Refused {
+                refusal: Refusal::Lowering(LoweringRefusal::RulesDiverge { .. }),
+                obstruction: Maybe::Present(pair),
+                ..
+            } => write!(
+                f,
+                "this rule and an earlier one rewrite `{}` to two different constructor terms, \
+                 `{}` and `{}`, so the block's rules are refused",
+                pair.cells.peak, pair.witness.earlier, pair.witness.later
+            ),
+            Subject::Refused {
+                refusal: Refusal::Lowering(LoweringRefusal::RulesUncompleted { .. }),
+                obstruction: Maybe::Present(pair),
+                ..
+            } => write!(
+                f,
+                "this rule and an earlier one rewrite `{}` to two normal forms, `{}` and `{}`, \
+                 and no rule the order can orient joins them, so the block's rules are refused",
+                pair.cells.peak, pair.witness.earlier, pair.witness.later
+            ),
             Subject::Refused { refusal, .. } => fmt::Display::fmt(&Plain(refusal), f),
             Subject::Source(refusal) => write!(
                 f,

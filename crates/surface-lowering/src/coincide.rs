@@ -687,9 +687,7 @@ impl fmt::Display for CoherenceFault
             } => write!(
                 f,
                 "both rules rewrite `{}`, one to `{}` and the other to `{}`",
-                Spelled(peak),
-                Spelled(left),
-                Spelled(right)
+                peak, left, right
             ),
             Self::Uncompleted {
                 ref peak,
@@ -700,21 +698,19 @@ impl fmt::Display for CoherenceFault
                 f,
                 "both rules rewrite `{}`, one to `{}` and the other to `{}`, and the path order \
                  orients no rule from an operation call between the two",
-                Spelled(peak),
-                Spelled(left),
-                Spelled(right)
+                peak, left, right
             ),
             Self::Undecided { ref peak, .. } => write!(
                 f,
                 "both rules rewrite `{}`, and its rewrites reach no normal form within \
                  {JOIN_STEPS} steps",
-                Spelled(peak)
+                peak
             ),
             Self::Unfinished { ref peak, .. } => write!(
                 f,
                 "both rules rewrite `{}` to two normal forms still once completion has derived \
                  {DERIVED_RULES} rules",
-                Spelled(peak)
+                peak
             ),
             Self::NeverCompletes {
                 ref earlier,
@@ -733,11 +729,7 @@ impl fmt::Display for CoherenceFault
     }
 }
 
-/// A pair's term spelled as the term it denotes.
-#[repr(transparent)]
-struct Spelled<'term>(&'term PairTerm);
-
-impl fmt::Display for Spelled<'_>
+impl fmt::Display for PairTerm
 {
     /// Writes the term a command or a term reads as, or the reason it reads as
     /// none: a terminal as `★`, split results as `…`, and a replay's constant,
@@ -751,13 +743,13 @@ impl fmt::Display for Spelled<'_>
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        let read = match *self.0 {
-            PairTerm::Command(ref command) => match read_command(command) {
+        let read = match *self {
+            Self::Command(ref command) => match read_command(command) {
                 Maybe::Present(written) => Ok(written),
                 Maybe::Absent(command_reading::Absent::Terminal) => Err("★"),
                 Maybe::Absent(command_reading::Absent::SplitResults) => Err("…"),
             },
-            PairTerm::Term(ref term) => match term.read() {
+            Self::Term(ref term) => match term.read() {
                 Maybe::Present(written) => Ok(written),
                 Maybe::Absent(term_reading::Absent::Skolem) => Err("★"),
             },

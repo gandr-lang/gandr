@@ -340,6 +340,7 @@ fn unlocated_rules() -> Diagnostic
         spellings: spellings.spelled(gandr_surface_grammar::Spelling::Unicode),
         failure: failures.get(declaration.constant()),
         upstream: Maybe::Absent(gandr_surface_diagnostics::upstream::Absent::Own),
+        obstruction: Maybe::Absent(gandr_surface_diagnostics::obstructed::Absent::Unparted),
     })
 }
 

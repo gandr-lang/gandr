@@ -31,12 +31,15 @@ use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::produced_refusal;
 use gandr_surface_diagnostics::Diagnostic;
 use gandr_surface_diagnostics::Failures;
+use gandr_surface_diagnostics::PartingPair;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::SourceStart;
 use gandr_surface_diagnostics::Subject;
 use gandr_surface_diagnostics::TypeSpellings;
 use gandr_surface_diagnostics::Unsettlement;
 use gandr_surface_diagnostics::diagnose;
+use gandr_surface_diagnostics::obstructed;
+use gandr_surface_diagnostics::parting;
 use gandr_surface_diagnostics::report_span;
 use gandr_surface_diagnostics::upstream;
 use gandr_surface_lowering::AskedRuns;
@@ -47,6 +50,7 @@ use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::InferredRun;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::desc_cells::CellDiagnostic;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_syntax::ByteOffset;
@@ -228,6 +232,9 @@ struct Remaining<'step>
     spellings: &'step TypeSpellings,
     /// The failures the checking machine kept, by admission position.
     failures: &'step Failures,
+    /// The cell diagnostics that hold a parting pair, in source order: what a
+    /// refusal of a block's rules reads its obstruction from.
+    parted: &'step [CellDiagnostic],
 }
 
 /// The diagnostics of one step, in the order its verb prints them.
@@ -424,6 +431,7 @@ fn cursor<'step>(
                 ref inferred,
                 ref runs,
                 ref deprecated,
+                ref parted,
                 ..
             },
         ) => {
@@ -443,6 +451,7 @@ fn cursor<'step>(
                 origins,
                 spellings,
                 failures,
+                parted,
             };
             if standing == Standing::Lowered {
                 Cursor::Lowered(held)
@@ -572,6 +581,53 @@ fn upstream<'step>(
             declaration.constant() == constant && declaration.settlement() == Settlement::Unsettled
         })
         .map_or(Maybe::Absent(upstream::Absent::Own), Maybe::Present)
+}
+
+/// The parting pair that a refusal of a block's rules for a critical pair
+/// whose sides part names, read from the cell diagnostic `parted` holds at
+/// the refusal's span.
+///
+/// # Specification
+/// - requires: `parted` is the source's cell diagnostics that hold a parting
+///   pair.
+/// - ensures: present exactly for a `RulesDiverge` or `RulesUncompleted`
+///   refusal whose span and earlier rule a diagnostic of `parted` holds; its
+///   cells and witness are that diagnostic's, by reference.
+/// - provides: the obstruction the refused declaration's message names.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a block whose unit laws part reads its pair with the peak
+///   and the normal forms in order; a refusal of another kind, and a divergent
+///   refusal whose pair the composition does not hold, read none.
+/// - witness: `entry::tests::a_rules_refusal_reads_its_parting_pair_and_no_other_refusal_does`
+#[spec(ensures: |ret| match (refusal, ret) {
+    (Refusal::Lowering(LoweringRefusal::RulesDiverge { span, first } | LoweringRefusal::RulesUncompleted { span, first }), Maybe::Present(pair)) =>
+        pair.cells.later == span && pair.cells.earlier == first,
+    (_, Maybe::Present(_)) => false,
+    (_, Maybe::Absent(_)) => true,
+})]
+fn obstruction<'step>(
+    refusal: Refusal<'step>,
+    parted: &'step [CellDiagnostic],
+) -> Maybe<PartingPair<'step>, obstructed::Absent>
+{
+    let Refusal::Lowering(
+        LoweringRefusal::RulesDiverge { span, first }
+        | LoweringRefusal::RulesUncompleted { span, first },
+    ) = refusal
+    else {
+        return Maybe::Absent(obstructed::Absent::Unparted);
+    };
+    parted
+        .iter()
+        .filter(|diagnostic| diagnostic.span == span)
+        .find_map(|diagnostic| match parting(diagnostic) {
+            Maybe::Present(pair) if pair.cells.earlier == first => Some(pair),
+            Maybe::Present(_) | Maybe::Absent(_) => None,
+        })
+        .map_or(Maybe::Absent(obstructed::Absent::Unparted), Maybe::Present)
 }
 
 /// The refused declaration of `declaration`'s name, among `admitted`, when
@@ -943,6 +999,7 @@ impl<'step> Entries<'step>
             spellings: held.spellings.spelled(self.spelling),
             failure: held.failures.get(declaration.constant()),
             upstream: upstream(refusal, held.admitted),
+            obstruction: obstruction(refusal, held.parted),
         }
     }
 
@@ -1615,6 +1672,80 @@ mod tests
         assert!(
             matches!(notes.as_slice(), [note] if note.contains("`x`") && !note.contains("`a`")),
             "one note, naming `x`, the declaration `b` calls: {notes:?}"
+        );
+    }
+
+    #[test]
+    fn a_rules_refusal_reads_its_parting_pair_and_no_other_refusal_does()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let text = SourceText::from(
+            "data NatApart : Type where {\n  | Zero : NatApart\n  | Succ : (n : NatApart) --> \
+             NatApart\n  oper add : (m : NatApart, n : NatApart) --> NatApart;\n  rule : add Zero \
+             n ==> n;\n  rule : add m Zero ==> Succ m;\n  rule : add (Succ m) n ==> Succ (add m \
+             n);\n}\ndef broken = missing ;\n",
+        );
+        let Ok(crate::Composed::Settled {
+            ref report,
+            ref parted,
+            ..
+        }) = compose(
+            &grammar,
+            SourceRoot::Strict.corpus_root(),
+            text,
+            &mut LoweringCount::default(),
+        )
+        else {
+            panic!("the source settles");
+        };
+        let refusals: Vec<gandr_surface_corpus::Refusal<'_>> = report
+            .declarations()
+            .iter()
+            .filter_map(|declaration| match declaration.produced().refusal() {
+                Maybe::Present(refusal) => Some(refusal),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        let [
+            diverging @ gandr_surface_corpus::Refusal::Lowering(
+                gandr_surface_lowering::LoweringRefusal::RulesDiverge { span, first },
+            ),
+            unresolved,
+        ] = *refusals.as_slice()
+        else {
+            panic!("the block diverges and the name is unresolved: {refusals:?}");
+        };
+        let Maybe::Present(pair) = super::obstruction(diverging, parted)
+        else {
+            panic!("the divergent block reads its pair");
+        };
+        assert_eq!(
+            (pair.cells.later, pair.cells.earlier),
+            (span, first),
+            "the later rule, then the earlier one"
+        );
+        assert_eq!(
+            [
+                pair.cells.peak.to_string(),
+                pair.witness.earlier.to_string(),
+                pair.witness.later.to_string(),
+            ],
+            ["add(Zero, Zero)", "Zero", "Succ(Zero)"],
+            "the peak, then the earlier rule's normal form, then the later one's"
+        );
+        assert!(
+            matches!(
+                super::obstruction(unresolved, parted),
+                Maybe::Absent(gandr_surface_diagnostics::obstructed::Absent::Unparted)
+            ),
+            "an unresolved name holds no parting pair"
+        );
+        assert!(
+            matches!(
+                super::obstruction(diverging, &[]),
+                Maybe::Absent(gandr_surface_diagnostics::obstructed::Absent::Unparted)
+            ),
+            "a divergent refusal reads no pair the composition does not hold"
         );
     }
 

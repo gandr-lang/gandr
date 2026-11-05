@@ -1,4 +1,4 @@
-error[RulesDiverge]: this rule and an earlier one rewrite one term to two different constructor terms, so the block's rules are refused
+error[RulesDiverge]: this rule and an earlier one rewrite `Loop(Loop(Unloop(x')))` to two different constructor terms, `Loop(x')` and `Unloop(x')`, so the block's rules are refused
   ╭▸ corpus/ledger/diagnostics/RulesDiverge.gandr:9:3
   │
 7 │   rule : Loop (Unloop x) ==> x;

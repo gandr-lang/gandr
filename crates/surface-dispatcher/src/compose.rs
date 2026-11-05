@@ -222,6 +222,7 @@ use gandr_surface_corpus::settle;
 use gandr_surface_corpus::settle_after;
 use gandr_surface_diagnostics::Failures;
 use gandr_surface_diagnostics::TypeSpellings;
+use gandr_surface_diagnostics::parting;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::CarriedOrigins;
 use gandr_surface_lowering::ClosureLowering;
@@ -244,6 +245,7 @@ use gandr_surface_lowering::Role;
 use gandr_surface_lowering::Sealing;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::coincide::Decisions;
+use gandr_surface_lowering::desc_cells::CellDiagnostic;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::ObligationInstance;
@@ -437,6 +439,10 @@ pub enum Composed<'source>
         /// attribute marks, in source order: each a finding of the
         /// `deprecated` lint.
         deprecated: Vec<DeprecatedUse<'source>>,
+        /// Every refusal of a block's rules for a critical pair whose sides
+        /// part, in source order: the cell diagnostic that holds the pair,
+        /// which a refused declaration's obstruction borrows.
+        parted: Vec<CellDiagnostic>,
         /// Every binder a lambda or a bind opens, written in a declaration
         /// the checker accepted, that no variable reads, ascending: each a
         /// hint the editor fades. An unused consumable capability is the
@@ -559,6 +565,7 @@ impl Composed<'_>
                 inferred,
                 runs,
                 deprecated,
+                parted,
                 unused,
                 unreached,
                 program,
@@ -574,6 +581,7 @@ impl Composed<'_>
                 inferred,
                 runs,
                 deprecated,
+                parted,
                 unused,
                 unreached,
                 kernel: Maybe::Present(kernel),
@@ -2836,6 +2844,8 @@ struct Share<'source>
     runs: Vec<InferredRun>,
     /// The uses of deprecated declarations written in it.
     deprecated: Vec<DeprecatedUse<'source>>,
+    /// Its refusals of a block's rules for a critical pair whose sides part.
+    parted: Vec<CellDiagnostic>,
     /// The binders its accepted declarations write and never read.
     unused: Vec<ByteSpan>,
     /// The path imports it writes that no use of its own reaches.
@@ -3345,6 +3355,17 @@ fn share<'source>(
         .collect();
     let unused = unused_binders(arena, module, &report, own);
     let unreached = unreached_imports(module, member);
+    // A refused block holds its parting pair once. The share copies the pair
+    // out of the module, which the composition does not keep.
+    let parted = module
+        .cells()
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            own(diagnostic.span) && matches!(parting(diagnostic), Maybe::Present(_))
+        })
+        .cloned()
+        .collect();
     Share {
         report,
         exercised,
@@ -3354,6 +3375,7 @@ fn share<'source>(
         inferred,
         runs,
         deprecated,
+        parted,
         unused,
         unreached,
     }
@@ -3561,6 +3583,7 @@ fn settled<'source>(
         unreached: share.unreached,
         runs: share.runs,
         deprecated: share.deprecated,
+        parted: share.parted,
         kernel: Maybe::Absent(admitted::Absent::Pending),
         positions: Maybe::Absent(positioned::Absent::Pending),
         program,
@@ -6327,6 +6350,7 @@ def delivered() -> -F Unit {
                 inferred,
                 runs,
                 deprecated,
+                parted: Vec::new(),
                 unused,
                 unreached: Vec::new(),
                 kernel: Maybe::Present(kernel),
