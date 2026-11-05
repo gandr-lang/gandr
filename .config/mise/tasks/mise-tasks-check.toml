@@ -1788,6 +1788,9 @@ run = ".config/mise/host-lock-cases.bash"
 # restack onto a top that touches other files carries the gate to the new
 # tree, a restack that changes the branch's patch carries none, and a head on
 # the gated tree keeps its own record.
+# `.config/gate-scope/select-cases.bash` builds scratch repositories (#5220):
+# a working change and a commit of 4000 paths, a list longer than one
+# argument holds, each select every check.
 # Then `unmapped.jq` reads the live tasks: a check that builds or runs the
 # toolchain outside every group of the table, or a group naming no check,
 # fails it. So does a check that builds `GATE_SCOPE` under
@@ -1800,6 +1803,7 @@ run = '''
 set -euo pipefail
 .config/cases/run.bash gate-scope .config/gate-scope/cases.json --programs .config/gate-scope --mode c --raw unmapped.jq
 .config/gate-scope/carry-cases.bash
+.config/gate-scope/select-cases.bash
 findings=$(mise tasks ls --json \
   | jq '{tasks: [.[] | select(.name | startswith("check:")) | {name, run, depends, env}]}' \
   | jq -r -L .config/gate-scope -f .config/gate-scope/unmapped.jq)
