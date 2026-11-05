@@ -958,6 +958,19 @@ fn checked(
         CheckRefusal::SealSiteRepeated(_) => {
             f.write_str("internal error: one abstract component was sealed twice")
         },
+        CheckRefusal::BuiltinRepeated { role, .. } => {
+            write!(f, "an earlier declaration holds the built-in role `{}`", role.word())
+        },
+        CheckRefusal::BuiltinMisplaced(role) if role.holder() == gandr_kernel_term::Holder::Data => write!(
+            f,
+            "the built-in role `{}` marks a datatype, and this declaration is no datatype",
+            role.word()
+        ),
+        CheckRefusal::BuiltinMisplaced(role) => write!(
+            f,
+            "the built-in role `{}` marks a definition, and this declaration is no definition",
+            role.word()
+        ),
         CheckRefusal::DataArgumentArity(_) => {
             f.write_str("the datatype is given the wrong number of arguments")
         },
@@ -2165,6 +2178,12 @@ pub mod tests
                 SealingSite::from(0_usize),
                 ComponentOrdinal::from(0_usize),
             )),
+            CheckRefusal::BuiltinRepeated {
+                role: gandr_kernel_term::Builtin::IrArgs,
+                holder: ConstantIndex::from(0_usize),
+            },
+            CheckRefusal::BuiltinMisplaced(gandr_kernel_term::Builtin::IrSignature),
+            CheckRefusal::BuiltinMisplaced(gandr_kernel_term::Builtin::IrDecode),
             CheckRefusal::DataArgumentArity(value_type),
             CheckRefusal::UnknownConstructor {
                 at: value,

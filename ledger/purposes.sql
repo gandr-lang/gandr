@@ -1302,6 +1302,9 @@ INSERT INTO purpose VALUES('kernel-term','budget::MAX_DECODED_LEVEL_OFFSET','con
 INSERT INTO purpose VALUES('kernel-term','budget::MAX_EXPANDED_TERM_WORK','constant','The cap on the expanded tree size of one declaration root.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','budget::MAX_TABLE_ENTRIES','constant','The cap on the number of subterm-table entries in an artifact, enforced as entries accrue so that a rejection truncates early.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','budget::TableEntryCount','struct','The number of entries in a decoded subterm table.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','builtin::Builtin','enum','A built-in role a declaration takes by its `builtin` mark: the inductive-recursive signature type, the fields a signature asks for, or their decode.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','builtin::Holder','enum','The judgement of the declaration that holds a built-in role: a data declaration or a value declaration.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','builtin::RoleWord','struct','The word an attribute names a built-in role by, as the source spells it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::AdmissionMark','enum','The producer’s claimed admission mode, not evidence of successful checking.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::AtomInterface','struct','A sealed atom''s element interface: the relation two of its elements bear, that relation''s reflexivity and, optionally, the law that makes the pair an identity system.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::Declaration','struct','A declaration: a level interface, its content roots, its sealing provenance, and its structured name.',NULL,'fits','sound',NULL);

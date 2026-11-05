@@ -1,0 +1,5 @@
+/// `builtin`: its word names the role that the core formers read from the declaration.
+@[ builtin(irSignature) ]
+@[ checks ]
+data Codes : Type where
+  | Stop : Codes

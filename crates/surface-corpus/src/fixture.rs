@@ -242,6 +242,12 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
         .declarations()
         .iter()
         .filter_map(|lowered| {
+            // The role a `builtin` mark gives the declaration, of any
+            // judgement. The checker refuses a role on the wrong judgement.
+            let marked = |declaration: Declaration| match module.builtin(lowered) {
+                Maybe::Present(role) => declaration.built_in(role),
+                Maybe::Absent(_) => declaration,
+            };
             let (declared, defined) = match lowered.outcome() {
                 DeclarationOutcome::Completed {
                     declared_type,
@@ -265,47 +271,52 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
                 ),
                 DeclarationOutcome::Data(index) => {
                     return match module.data(index) {
-                        Maybe::Present(signature) => Some(Declaration::data(
+                        Maybe::Present(signature) => Some(marked(Declaration::data(
                             lowered.constant(),
                             Arc::clone(signature),
                             OriginToken::from(usize::from(lowered.origin())),
-                        )),
+                        ))),
                         Maybe::Absent(_) => None,
                     };
                 },
                 DeclarationOutcome::Codata(index) => {
                     return match module.codata(index) {
-                        Maybe::Present(signature) => Some(Declaration::codata(
+                        Maybe::Present(signature) => Some(marked(Declaration::codata(
                             lowered.constant(),
                             Arc::clone(signature),
                             OriginToken::from(usize::from(lowered.origin())),
-                        )),
+                        ))),
                         Maybe::Absent(_) => None,
                     };
                 },
                 DeclarationOutcome::Abstract(sealing) => {
-                    return Some(Declaration::abstract_type(
+                    return Some(marked(Declaration::abstract_type(
                         lowered.constant(),
                         abstract_type(sealing),
                         OriginToken::from(usize::from(lowered.origin())),
-                    ));
+                    )));
                 },
                 DeclarationOutcome::World => {
-                    return Some(Declaration::world(
+                    return Some(marked(Declaration::world(
                         lowered.constant(),
                         OriginToken::from(usize::from(lowered.origin())),
-                    ));
+                    )));
                 },
                 DeclarationOutcome::Refused(_) => return None,
             };
             let origin = OriginToken::from(usize::from(lowered.origin()));
-            let declaration = Declaration::new(lowered.constant(), declared, defined, origin)
-                .lawful(module.laws(lowered).to_vec())
-                .ruled(module.operation_rules(lowered))
-                .staged(module.stages(lowered).to_vec())
-                .supplied(module.supplies(lowered).to_vec())
-                .resolving(module.models(lowered).to_vec())
-                .obliged(module.handler_laws(lowered).to_vec());
+            let declaration = marked(Declaration::new(
+                lowered.constant(),
+                declared,
+                defined,
+                origin,
+            ))
+            .lawful(module.laws(lowered).to_vec())
+            .ruled(module.operation_rules(lowered))
+            .staged(module.stages(lowered).to_vec())
+            .supplied(module.supplies(lowered).to_vec())
+            .resolving(module.models(lowered).to_vec())
+            .obliged(module.handler_laws(lowered).to_vec());
             Some(match Entry::declared(module.worlds(lowered)) {
                 Maybe::Present(entry) => declaration.entered(entry),
                 Maybe::Absent(_) => declaration,

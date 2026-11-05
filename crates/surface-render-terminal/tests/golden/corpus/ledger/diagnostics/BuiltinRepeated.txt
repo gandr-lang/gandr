@@ -1,0 +1,8 @@
+error[BuiltinRepeated]: an earlier declaration holds the built-in role `irArgs`
+  ╭▸ corpus/ledger/diagnostics/BuiltinRepeated.gandr:5:1
+  │
+5 │ def second = 2;
+  │ ━━━━━━━━━━━━━━━ a built-in role marked twice
+  │
+  ├ note: `second` is refused with BuiltinRepeated, as its expectation states
+  ╰ help: remove the `builtin` mark from one of the two declarations

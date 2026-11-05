@@ -1,0 +1,5 @@
+/// `BuiltinRepeated`: a second declaration claims a role that an earlier declaration holds.
+@[ builtin(irArgs) ]
+def first = 1;
+@[ refuses("BuiltinRepeated"), builtin(irArgs) ]
+def second = 2;

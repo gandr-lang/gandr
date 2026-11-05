@@ -22526,7 +22526,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     && named.is_empty() == (entry.schema() != AttributeSchema::Names)
                     && members.is_empty() == (entry.schema() != AttributeSchema::Interface)
                     && (members.is_empty() || (2_usize ..= 3_usize).contains(&members.len()))
-                    && spelled.is_some() == (entry.schema() == AttributeSchema::Spelled)
+                    && spelled.is_some() == matches!(entry.schema(), AttributeSchema::Spelled | AttributeSchema::Word(_))
             },
             | Ok(&Filing::Unlowered) => {
                 seen.len() == before
@@ -22612,7 +22612,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Vec::new(),
                 Vec::new(),
             ),
-            Payload::Written(_) if matches!(schema, AttributeSchema::Word(_)) => {
+            Payload::Written(placed) if matches!(schema, AttributeSchema::Word(_)) => {
+                // The word as written. A `builtin` mark is read back by its
+                // word.
+                spelled = Some(String::from(self.text_at(placed).as_ref()));
                 (Maybe::Absent(payload::Absent::Word), Vec::new(), Vec::new())
             },
             Payload::Written(placed) if schema == AttributeSchema::Spelled => {
@@ -31126,6 +31129,56 @@ def ended() -> -F [Partial] Unit {
                 written: PayloadForm::Text,
             },
             "the word is no text"
+        );
+    }
+
+    /// #3575: a `builtin` mark gives the declaration it decorates the role
+    /// its word names, and an unmarked declaration takes none. A word that
+    /// names no role is refused at the payload.
+    #[test]
+    fn a_builtin_mark_gives_its_declaration_the_role_3575()
+    {
+        use gandr_kernel_term::Builtin;
+        use gandr_kernel_term::builtin_role;
+
+        use crate::attribute::PayloadForm;
+        use crate::attribute::RegisteredAttribute;
+
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("@[ builtin(irArgs) ] def a : Integer ;\ndef b : Integer ;"),
+            &mut arena,
+        );
+        let role = |name: &str| {
+            let Some(declaration) = module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name() == SurfaceName::from(name))
+            else {
+                panic!("`{name}` is declared");
+            };
+            module.builtin(declaration)
+        };
+        assert_eq!(
+            role("a"),
+            Maybe::Present(Builtin::IrArgs),
+            "the mark gives the role its word names"
+        );
+        assert_eq!(
+            role("b"),
+            Maybe::Absent(builtin_role::Absent::Unmarked),
+            "an unmarked declaration takes no role"
+        );
+        assert!(
+            matches!(
+                refusal(SourceText::from("@[ builtin(irElim) ] def a = 3 ;")),
+                LoweringRefusal::IllTypedPayload {
+                    name: RegisteredAttribute::BUILTIN,
+                    written: PayloadForm::OtherWord,
+                    ..
+                }
+            ),
+            "a word that names no role is refused at the payload"
         );
     }
 

@@ -421,6 +421,8 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::EquivUnsupported { .. }) => "equiv-unsupported",
         Typing::Refused(Refusal::UncertifiedStratum { .. }) => "uncertified-stratum",
         Typing::Refused(Refusal::OutsideFold { .. }) => "outside-fold",
+        Typing::Refused(Refusal::BuiltinRepeated { .. }) => "builtin-repeated",
+        Typing::Refused(Refusal::BuiltinMisplaced(_)) => "builtin-misplaced",
         Typing::Refused(Refusal::RoundTripDistinct { .. }) => "round-trip-distinct",
         Typing::Refused(Refusal::NotOver { .. }) => "not-over",
         Typing::Refused(Refusal::UaUncertified { .. }) => "ua-uncertified",

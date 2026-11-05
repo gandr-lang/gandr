@@ -13938,6 +13938,49 @@ impl<'source> LoweredModule<'source>
             .unwrap_or_default()
     }
 
+    /// The built-in role a `builtin` attribute gives the declaration: what
+    /// the checker's declaration carries as its role.
+    ///
+    /// # Specification
+    /// - requires: `declaration` is one of this module's declarations.
+    /// - ensures: the role whose word the `builtin` entry filed under the
+    ///   declaration's definition form, else under its signature form, was
+    ///   written with; [`gandr_kernel_term::builtin_role::Absent::Unmarked`]
+    ///   for a declaration that no `builtin` attribute decorates.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is the receiver's attribute table read
+    ///   at the declaration's keys, which a clause may not compare against.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a marked declaration and an unmarked one separate the
+    ///   two answers.
+    /// - witness: `lower::tests::a_builtin_mark_gives_its_declaration_the_role_3575`
+    #[inline]
+    pub fn builtin(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+    ) -> Maybe<gandr_kernel_term::Builtin, gandr_kernel_term::builtin_role::Absent>
+    {
+        [declaration.definition(), declaration.signature()]
+            .into_iter()
+            .find_map(|key| {
+                let Maybe::Present(key) = key
+                else {
+                    return None;
+                };
+                self.attributes
+                    .entries(key)
+                    .iter()
+                    .find(|entry| entry.name() == crate::attribute::RegisteredAttribute::BUILTIN)
+                    .and_then(|entry| self.attributes.spelled(key, entry.span()))
+            })
+            .map_or(
+                Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unmarked),
+                |word| gandr_kernel_term::Builtin::named(gandr_kernel_term::RoleWord(word)),
+            )
+    }
+
     /// The documentation of the declaration form whose key is `key`.
     ///
     /// # Specification

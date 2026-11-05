@@ -1186,6 +1186,12 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             defect: UaDefect::UnknownGenerator { .. },
             ..
         } => String::from("name only generators of the `ua` description"),
+        CheckRefusal::BuiltinRepeated { .. } => {
+            String::from("remove the `builtin` mark from one of the two declarations")
+        },
+        CheckRefusal::BuiltinMisplaced(_) => String::from(
+            "mark a datatype with `irSignature`, and a definition with `irArgs` or `irDecode`",
+        ),
         // Unworded: a later slice words each, most-seen first.
         CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::DataArgumentArity(_)
@@ -1231,7 +1237,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 226] = [
+    const WORDED: [&str; 228] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1459,6 +1465,8 @@ mod tests
         "UnlockedDependency",
         "UnmarkedSelfReference",
         "Unreachable",
+        "BuiltinRepeated",
+        "BuiltinMisplaced",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.
