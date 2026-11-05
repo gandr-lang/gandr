@@ -2116,10 +2116,10 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// Whether `codomain`, an arrow's codomain, is written as a value type,
-    /// so that the arrow is a box: neither an arrow, a pure returner nor a
-    /// lazy product, the computation types it otherwise is. A name that
-    /// stands for a computation type reads as a value here; the meaning
-    /// check then withdraws the rewrite.
+    /// so that the arrow is a box: neither an arrow, a returner, pure or with
+    /// a row (`-F [Partial] B`), nor a lazy product, the computation types it
+    /// otherwise is. A name that stands for a computation type reads as a
+    /// value here; the meaning check then withdraws the rewrite.
     ///
     /// # Specification
     /// trivial.
@@ -2133,14 +2133,20 @@ impl<'source> Respelling<'_, 'source>
             self.shape_of(codomain),
             Some((Shape::Arrow { .. } | Shape::Returner { .. }, _))
         );
-        let lazy = match codomain {
+        let named = match codomain {
             Child::Node(at) => matches!(
                 self.rule(at),
-                Some(MoldName("lazy_product_type" | "lazy_record_type"))
+                Some(MoldName(
+                    "lazy_product_type"
+                        | "lazy_record_type"
+                        | "f_type.row"
+                        | "f_type.row.labelled"
+                        | "f_type.result.labelled"
+                ))
             ),
             Child::Leaf(_) => false,
         };
-        if computed || lazy {
+        if computed || named {
             Valued::Computation
         }
         else {

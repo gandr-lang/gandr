@@ -12746,8 +12746,8 @@ impl Walk<'_, '_>
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
                     Join::Prefix(_) | Join::EffectReturner { .. } | Join::Returns(_) | Join::Lambda | Join::TypedLambda | Join::StaticLambda { .. } | Join::Thunk => Binding::Prefix,
-                    // A box over a domain that classifies codes is written as
-                    // its thunk where it names no binder.
+                    // The join writes a box over a domain that classifies
+                    // codes as its thunk where it names no binder.
                     Join::ValueFunction(_, _, Classifies::Codes) if piece.binding == Binding::Prefix => Binding::Prefix,
                     Join::Arrow | Join::Pi | Join::ValueFunction(..) => Binding::Arrow,
                     // A dependent pair naming no binder is the product it
@@ -12760,8 +12760,8 @@ impl Walk<'_, '_>
                     Join::Sequence | Join::DiscardedSequence | Join::SequenceAll(_) | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
                     Join::Bracket(bracket) => match bracket.opener(self.surface) { Opener::Parenthesized(_) => Binding::Atom, Opener::Juxtaposed(_) => Binding::Application },
-                    // An application is juxtaposed where an expression reads
-                    // it, and glued, an atom, where a type reads it.
+                    // The join juxtaposes an application where an expression
+                    // reads it, and glues it, an atom, where a type reads it.
                     Join::Apply(_) if self.surface != Surface::Expression => Binding::Atom,
                     Join::Apply(_) | Join::Ua(_) | Join::Compose(..) | Join::Fill(..) => Binding::Application,
                     Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::OpenRow { .. } => Binding::Atom,

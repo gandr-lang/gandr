@@ -1083,6 +1083,33 @@ fn term_subject(
     }
 }
 
+/// [`RoundTrip::Open`] for a static arrow whose domain classifies no codes,
+/// `Integer -> Integer` as a type component's classifier writes it. The
+/// surface reads that spelling as the static Pi only where the grammar reads a
+/// kind. Where the grammar reads a value type, it is the box. The type reads
+/// back only under its own context.
+///
+/// # Specification
+/// trivial.
+fn kind_only(
+    arena: &CoreArena,
+    node: TypeNode,
+) -> Option<RoundTrip>
+{
+    let TypeNode::Value(ty) = node
+    else {
+        return None;
+    };
+    let Some(&ValueType::StaticPi { domain, .. }) = arena.value_type(ty)
+    else {
+        return None;
+    };
+    match arena.value_type(domain) {
+        Some(&(ValueType::Universe { .. } | ValueType::Row | ValueType::StaticPi { .. })) => None,
+        Some(_) | None => Some(RoundTrip::Open),
+    }
+}
+
 /// `span` as the source starting at `base` measures it, when it lies there.
 ///
 /// # Specification
@@ -4553,17 +4580,18 @@ impl TypeTable
     ///   its claim, `f[<](…)`, which no function outside the definition lowers.
     ///   It is [`RoundTrip::Open`] when the table does not know a binder's type
     ///   — a capability scope's, a described member's — or the function does
-    ///   not lower. A closed one that does not parse as the type of `def x : …
-    ///   ;` with no repair is [`RoundTrip::Unparsed`]. Every other is appended
-    ///   to the source as a signature of a fresh name — a computation type `C`
-    ///   as `+U (C)` — the whole lowered once in the unit the table was built
-    ///   in, an import of each `std` module whose head the source writes after
-    ///   the module's path appended after them and bound to the unit's source
-    ///   of that module, and is [`RoundTrip::Equal`] when the type read is the
-    ///   table's node, `U C` for a computation type, compared by
-    ///   [`equal_type_reading`] under the source's data signatures — the same
-    ///   syntax with path evidence erased, a type of words as the path at its
-    ///   point, a session type by its protocol's behaviour from its state;
+    ///   not lower, and for a static arrow whose domain classifies no codes
+    ///   ([`kind_only`]). A closed one that does not parse as the type of `def
+    ///   x : … ;` with no repair is [`RoundTrip::Unparsed`]. Every other is
+    ///   appended to the source as a signature of a fresh name — a computation
+    ///   type `C` as `+U (C)` — the whole lowered once in the unit the table
+    ///   was built in, an import of each `std` module whose head the source
+    ///   writes after the module's path appended after them and bound to the
+    ///   unit's source of that module, and is [`RoundTrip::Equal`] when the
+    ///   type read is the table's node, `U C` for a computation type, compared
+    ///   by [`equal_type_reading`] under the source's data signatures — the
+    ///   same syntax with path evidence erased, a type of words as the path at
+    ///   its point, a session type by its protocol's behaviour from its state;
     ///   [`RoundTrip::Different`] otherwise; and [`RoundTrip::Refused`] with
     ///   the refusal when the lowering refused a closed signature or the whole
     ///   source. Each type read is printed again under the same binders, with
@@ -4630,6 +4658,9 @@ impl TypeTable
                         else if spelled.wildcards() == Wildcards::Written {
                             (Some(RoundTrip::Wildcard), None)
                         }
+                        else if let Some(open) = kind_only(&self.arena, node) {
+                            (Some(open), None)
+                        }
                         else if matches!(closed, Maybe::Present(ref closed) if *closed == spelled)
                         {
                             (None, None)
@@ -4668,6 +4699,9 @@ impl TypeTable
                         }
                         else if spelled.wildcards() == Wildcards::Written {
                             Some(RoundTrip::Wildcard)
+                        }
+                        else if let Some(open) = kind_only(&self.arena, node) {
+                            Some(open)
                         }
                         else {
                             None

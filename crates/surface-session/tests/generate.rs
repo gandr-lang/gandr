@@ -612,7 +612,7 @@ pub fn apply(
                 lines
                     .next()
                     .is_some_and(|line| {
-                        line.split_once("(x: Integer) -> -F Integer { return ")
+                        line.split_once("(x : Integer) -> -F Integer { return ")
                             .is_some_and(|(name, tail)| {
                                 name
                                     .strip_prefix("def d")

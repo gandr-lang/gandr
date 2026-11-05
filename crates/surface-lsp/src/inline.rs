@@ -737,7 +737,9 @@ impl<'grammar, 'text> Written<'grammar, 'text>
             else {
                 continue;
             };
-            if token.lexeme == Lexeme::Space {
+            // A space, and the zero-width `;` and `}` the layout pass writes,
+            // are layout and no word.
+            if token.lexeme == Lexeme::Space || start == end {
                 continue;
             }
             let punctuation = punctuation(token.lexeme, TokenText::from(text));
@@ -1985,7 +1987,9 @@ impl Labeled<'_>
 /// - requires: nothing.
 /// - ensures: the labeling of `labeled`'s text followed by [`STAND_IN`], up to
 ///   the stand-in's own token: each zero-width `;` and `}` the layout pass
-///   writes before the stand-in is kept, and each it writes after it is not.
+///   writes before the stand-in is kept, and each it writes after it is not. A
+///   word the stand-in lengthens, the cursor inside it, ends at the cut, as the
+///   text writes it.
 /// - fails: never.
 /// - panics: none.
 /// - economy: one copy of the tokens and one rescan from the cut's line
@@ -2008,15 +2012,18 @@ fn at_cursor(labeled: &Labeled<'_>) -> Vec<Token>
         SourceFragment::from(text),
         SourceFragment::from(probe.as_str()),
     );
-    let end = text.len();
-    let tokens = labeling.tokens();
-    let stand_in = tokens
-        .iter()
-        .position(|token| {
-            usize::try_from(token.start).is_ok_and(|start| start == end) && token.start < token.end
-        })
-        .unwrap_or(tokens.len());
-    tokens.get(.. stand_in).unwrap_or_default().to_vec()
+    let cut = u32::try_from(text.len()).unwrap_or(u32::MAX);
+    let mut kept = Vec::with_capacity(labeling.tokens().len());
+    for &token in labeling.tokens() {
+        if token.end > cut || (token.start == cut && token.start < token.end) {
+            if token.start < cut {
+                kept.push(Token { end: cut, ..token });
+            }
+            break;
+        }
+        kept.push(token);
+    }
+    kept
 }
 
 /// The word [`at_cursor`] writes at the cursor to read the layout there.
