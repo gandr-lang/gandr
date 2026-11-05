@@ -3124,9 +3124,10 @@ enum Join
     Returns(Arity),
     /// The box over this many domains and then its codomain: `() -> C`,
     /// `A -> C`, `(A, B) -> C`, a codomain that is an arrow in parentheses;
-    /// where an occurrence named a dependent arrow's binder, the thunk over
-    /// the arrows it stands for.
-    ValueFunction(Arity, Dependent),
+    /// where an occurrence named a dependent arrow's binder, or the first
+    /// dependent domain classifies codes, the thunk over the arrows it stands
+    /// for.
+    ValueFunction(Arity, Dependent, Classifies),
     /// An arrow over its domain and codomain.
     Arrow,
     /// A dependent arrow over its domain and codomain, its binder named by the
@@ -5067,8 +5068,9 @@ struct Link<Node>
 struct Dependent(u64);
 
 /// A value-function alias as [`Walk::alias`] found it: its arrows, outermost
-/// first, which of them are dependent, and its codomain.
-type AliasChain<Node> = (Vec<Link<Node>>, Dependent, Codomain<Node>);
+/// first, which of them are dependent, its codomain, and whether its first
+/// domain classifies codes.
+type AliasChain<Node> = (Vec<Link<Node>>, Dependent, Codomain<Node>, Classifies);
 
 /// How a static redex's reduct is spelled.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -7586,6 +7588,7 @@ impl Walk<'_, '_>
     ///   reads.
     /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
     /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
+    /// - witness: `typed::tests::a_box_over_a_type_prints_as_its_thunk_4853`
     /// - witness: `tests::goldens::a_binder_only_a_dropped_argument_names_is_unnamed_736`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
     #[spec(
@@ -7632,10 +7635,11 @@ impl Walk<'_, '_>
                     link = codomain;
                 },
                 Former::Returner(result) => {
-                    let kinded = links.first().is_some_and(|first| {
-                        first.opener.is_none()
-                            && classifies_codes(source, first.domain) == Classifies::Codes
+                    let first = links.first().map_or(Classifies::Values, |first| {
+                        classifies_codes(source, first.domain)
                     });
+                    let kinded = first == Classifies::Codes
+                        && links.first().is_some_and(|first| first.opener.is_none());
                     if kinded {
                         return None;
                     }
@@ -7643,6 +7647,7 @@ impl Walk<'_, '_>
                         links,
                         dependent,
                         entered.map_or(Codomain::Result(result), Codomain::Reduct),
+                        first,
                     ));
                 },
                 // A decode and a quote print as the node they hold, so the
@@ -7805,7 +7810,7 @@ impl Walk<'_, '_>
     /// # Specification
     /// trivial.
     fn aliased<N>(
-        (links, dependent, codomain): AliasChain<N>,
+        (links, dependent, codomain, first): AliasChain<N>,
         depth: ValueDepth,
         tasks: &mut Vec<Task<N>>,
     )
@@ -7814,7 +7819,7 @@ impl Walk<'_, '_>
             Production("function_type"),
             writes(
                 Production("parenthesized_type"),
-                Join::ValueFunction(Arity(links.len()), dependent),
+                Join::ValueFunction(Arity(links.len()), dependent, first),
             ),
         )));
         for _ in 0_u32 .. dependent.0.count_ones() {
@@ -7848,11 +7853,13 @@ impl Walk<'_, '_>
     /// # Specification
     /// - requires: `domains` are the chain's arrows' domains, outermost first,
     ///   `dependent` marks the dependent ones, and their binders, closed, sat
-    ///   from the open count up, one per dependent arrow in order.
+    ///   from the open count up, one per dependent arrow in order; `first`
+    ///   tells whether the first domain classifies codes.
     /// - ensures: the domains between parentheses, separated by commas, each
     ///   written as the walk writes its arrow alone: a dependent domain as `a :
-    ///   A`, named by its binder, where an occurrence named it or the walk
-    ///   approximated, and bare otherwise; then `->` and the codomain.
+    ///   A`, named by its binder, where an occurrence named it, the walk
+    ///   approximated, or it is the first and classifies codes; bare otherwise;
+    ///   then `->` and the codomain.
     /// - provides: the alias join's dependent spelling, which decides only once
     ///   every occurrence was met.
     /// - fails: the builder's refusal.
@@ -7874,6 +7881,7 @@ impl Walk<'_, '_>
         &mut self,
         domains: &[Piece],
         dependent: Dependent,
+        first: Classifies,
         codomain: Piece,
     ) -> Result<(Doc, Binding), PresentationError>
     {
@@ -7893,7 +7901,11 @@ impl Walk<'_, '_>
             else {
                 binders = binders.saturating_sub(1_usize);
                 let position = OpenBinders(open.saturating_add(binders));
-                (self.fidelity != Fidelity::Faithful || self.occurring.contains(&position))
+                // A bare domain that classifies codes, `(Type) -> B`, reads
+                // as the static Pi. The first such binder keeps its name.
+                (self.fidelity != Fidelity::Faithful
+                    || self.occurring.contains(&position)
+                    || (at == 0_usize && first == Classifies::Codes))
                     .then_some(OpenBinders(binders))
             };
             let doc = if let Some(offset) = named {
@@ -12713,7 +12725,7 @@ impl Walk<'_, '_>
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Returns(Arity(count)) | Join::Compose(_, Arity(count)) => Some(count),
             Join::Fill(_, Arity(cells)) => cells.checked_add(1_usize),
-            Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
+            Join::ValueFunction(Arity(domains), ..) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
             Join::Update(Arity(count)) => {
                 let taken = count.checked_mul(2_usize)?;
@@ -12908,7 +12920,7 @@ impl Walk<'_, '_>
                 let head = self.leaf(Glyphs("-F "))?;
                 (self.builder.concat(head, group)?, Binding::Prefix)
             },
-            Join::ValueFunction(arity, dependent) => {
+            Join::ValueFunction(arity, dependent, first) => {
                 let codomain = self.pop()?;
                 let domains = self.take(arity)?;
                 let open = self.opened.len();
@@ -12918,7 +12930,33 @@ impl Walk<'_, '_>
                 let named = (open .. open.saturating_add(binders))
                     .any(|position| self.occurring.contains(&OpenBinders(position)));
                 if binders > 0_usize && (named || self.fidelity != Fidelity::Faithful) {
-                    self.dependent_alias(&domains, dependent, codomain)?
+                    self.dependent_alias(&domains, dependent, first, codomain)?
+                }
+                else if first == Classifies::Codes {
+                    // The box `Type -> B` reads as the static Pi. A binder
+                    // that nothing names reads back as the plain arrow. The
+                    // join writes the box over a domain that classifies codes
+                    // as its thunk, `+U (Type -> -F B)`.
+                    let returned = self.bare_up_to(codomain, Binding::Atom)?;
+                    let returner = self.leaf(Glyphs("-F "))?;
+                    let mut chain = self.builder.concat(returner, returned)?;
+                    for &domain in domains.iter().rev() {
+                        let domain = self.bare_up_to(domain, Binding::Lazy)?;
+                        let arrow = self.leaf(Glyphs(" ->"))?;
+                        let head = self.builder.concat(domain, arrow)?;
+                        let head = self.space_or_break(head)?;
+                        chain = self.builder.concat(head, chain)?;
+                    }
+                    let inner = self.bare_up_to(
+                        Piece {
+                            doc: chain,
+                            binding: Binding::Arrow,
+                            fields: None,
+                        },
+                        Binding::Atom,
+                    )?;
+                    let thunk = self.leaf(Glyphs("+U "))?;
+                    (self.builder.concat(thunk, inner)?, Binding::Prefix)
                 }
                 else {
                     let domain = match *domains.as_slice() {

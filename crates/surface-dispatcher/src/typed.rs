@@ -7867,6 +7867,37 @@ mod tests
         }
     }
 
+    /// A box over a type parameter whose binder nothing names prints as its
+    /// thunk, `+U (Type -> -F Type)`. The alias `Type -> Type` reads as the
+    /// static Pi, a kind arrow (#4853).
+    #[test]
+    fn a_box_over_a_type_prints_as_its_thunk_4853()
+    {
+        let source = SourceText::from(
+            "theory Counter where\n  sort C : Type;\n  oper start : () --> C;\n  oper step : (c : \
+             C) --> C;\n\ndef countersOn(x : Type) -> Type =\n  return type(Model(Counter) with \
+             sort C = x)\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
+        let boxes: Vec<(&RoundTrip, &Maybe<String, super::reprinted::Absent>)> = read
+            .iter()
+            .filter(|read| read.spelled == "+U (Type -> -F Type)")
+            .map(|read| (&read.trip, &read.reprinted))
+            .collect();
+        assert!(
+            !boxes.is_empty() && boxes.iter().all(|&(trip, reprinted)| {
+                *trip == RoundTrip::Equal
+                    && matches!(reprinted, Maybe::Present(again) if again == "+U (Type -> -F Type)")
+            }),
+            "the box over a type reads back equal and reprints as itself: {boxes:?}"
+        );
+        assert!(
+            read.iter().all(|read| read.spelled != "Type -> Type"),
+            "no type spells the box as the kind arrow"
+        );
+    }
+
     #[test]
     fn a_scoped_capability_answers_at_its_scope()
     {
