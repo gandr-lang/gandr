@@ -30,6 +30,9 @@
 //!   obligation names a node and the evidence that it asks for. A dovetail runs
 //!   a set of them in bounded quanta, in a fixed order, within a budget. None
 //!   of the five outcomes reads as false.
+//! - [`Cache`] — the certificates that runs write, under the canonical bytes of
+//!   the plan that each node roots. The checker replays each hit before the
+//!   machine uses it.
 //!
 //! # References
 //!
@@ -44,6 +47,7 @@ extern crate alloc;
 
 pub mod approx;
 pub mod bisection;
+pub mod cache;
 pub mod certificate;
 pub mod codec;
 pub mod dovetail;
@@ -59,6 +63,11 @@ pub use crate::approx::BilateralApprox;
 pub use crate::approx::NegativeApprox;
 pub use crate::approx::PositiveApprox;
 pub use crate::approx::approximate;
+pub use crate::cache::Cache;
+pub use crate::cache::CacheBound;
+pub use crate::cache::CacheRefusal;
+pub use crate::cache::CacheTally;
+pub use crate::cache::Lookup;
 pub use crate::certificate::Certificate;
 pub use crate::certificate::CertificateCheck;
 pub use crate::certificate::CertificateRefusal;

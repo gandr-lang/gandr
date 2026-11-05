@@ -1932,6 +1932,8 @@ name = "gandr-theory-exact-reals"
 version = "0.0.0"
 dependencies = [
  "allocation-counter",
+ "foldhash 0.2.0",
+ "hashbrown 0.17.1",
  "num-bigint",
  "proptest",
  "quenchant-anodized",

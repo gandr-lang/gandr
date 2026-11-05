@@ -1275,4 +1275,90 @@ impl Plan
             .enumerate()
             .map_while(|(index, node)| NodeId::try_from(index).ok().map(|id| (id, node)));
     }
+
+    /// The plan that the node at `node` roots, in canonical form, and the
+    /// position in this plan of each of its nodes.
+    ///
+    /// The walk is depth first from `node`, in field order, as
+    /// [`PlanBuilder::finish`] walks. This plan holds each distinct subterm
+    /// once, so the nodes that `node` reaches are distinct too. The result is
+    /// the plan that `finish` gives for the same root.
+    ///
+    /// # Specification
+    /// - ensures: the result's nodes are the nodes that `node` reaches, each
+    ///   once, each after its children, the root last. The node at position `i`
+    ///   of the result is the node at the `i`-th position that the map names,
+    ///   its children moved to their new positions.
+    /// - fails: returns [`PlanError::UnknownNode`] when no node stands at
+    ///   `node`, and [`PlanError::WrongSort`] for a domain node, which roots no
+    ///   plan.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk.
+    /// - intension: one walk of the nodes that `node` reaches, one copy of
+    ///   each, and one table of this plan's nodes.
+    ///
+    /// # Errors
+    /// - [`PlanError::UnknownNode`]: no node stands at `node`.
+    /// - [`PlanError::WrongSort`]: the node is a domain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the node of each obligation of the machine's test
+    ///   corpus roots a plan whose cached certificate answers it again. L3 — a
+    ///   subterm that two plans hold at other positions roots one plan in both.
+    /// - witness: `tests::cache::the_corpus_answers_alike_cached_and_uncached`
+    /// - witness: `tests::cache::a_subterm_shared_by_two_plans_shares_its_entry`
+    pub(crate) fn rooted(
+        &self,
+        node: NodeId,
+    ) -> Result<(Self, Vec<NodeId>), PlanError>
+    {
+        let root = match *self.node(node)? {
+            Node::Real(_) => Root::Real(RealId(node)),
+            Node::Open(_) => Root::Open(OpenId(node)),
+            Node::Domain(_) => return Err(PlanError::WrongSort),
+        };
+        let mut placed: Vec<Option<NodeId>> = alloc::vec![None; self.nodes.len()];
+        let mut nodes: Vec<Node> = Vec::new();
+        let mut origin: Vec<NodeId> = Vec::new();
+        let mut stack = Vec::from([Frame {
+            node,
+            followed: EdgeCount(0),
+        }]);
+        while let Some(frame) = stack.last_mut() {
+            let current = self.node(frame.node)?;
+            if let Some(edge) = current.edges().nth(frame.followed.0) {
+                frame.followed = EdgeCount(frame.followed.0.saturating_add(1));
+                if matches!(placed.get(usize::from(edge.node)), Some(&None)) {
+                    stack.push(Frame {
+                        node: edge.node,
+                        followed: EdgeCount(0),
+                    });
+                }
+                continue;
+            }
+            // Every child is placed: place the node.
+            let id = frame.node;
+            let _finished = stack.pop();
+            let moved = current.clone().moved(|child| {
+                return placed
+                    .get(usize::from(child))
+                    .copied()
+                    .flatten()
+                    .ok_or(PlanError::UnknownNode);
+            })?;
+            let fresh = NodeId::try_from(nodes.len())?;
+            nodes.push(moved);
+            origin.push(id);
+            let slot = placed
+                .get_mut(usize::from(id))
+                .ok_or(PlanError::UnknownNode)?;
+            *slot = Some(fresh);
+        }
+        let last = NodeId::try_from(nodes.len().saturating_sub(1))?;
+        let root = match root {
+            Root::Real(_) => Root::Real(RealId(last)),
+            Root::Open(_) => Root::Open(OpenId(last)),
+        };
+        return Ok((Self { nodes, root }, origin));
+    }
 }

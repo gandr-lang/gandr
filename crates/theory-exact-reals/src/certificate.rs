@@ -369,6 +369,114 @@ pub enum Step
     },
 }
 
+impl Step
+{
+    /// The step with each node that it names moved by `rename`, or `None`
+    /// when `rename` has no place for one of them. Premises keep their
+    /// positions.
+    ///
+    /// # Specification
+    /// - ensures: the step of the same rule, with the same points and premises,
+    ///   whose nodes are the places that `rename` gives.
+    /// - fails: returns `None` when `rename` answers `None` for a node.
+    /// - panics: none.
+    /// - executable: none — the clause restates the step's fields.
+    /// - intension: one call of `rename`, and one copy of the step's points and
+    ///   premises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every certificate of the generated corpus moves into
+    ///   the plan that its node roots and back to itself.
+    /// - witness: `tests::cache::a_certificate_moves_to_the_rooted_plan_and_back`
+    pub(crate) fn renamed<Rename>(
+        &self,
+        rename: Rename,
+    ) -> Option<Self>
+    where
+        Rename: Fn(NodeId) -> Option<NodeId>,
+    {
+        return Some(match *self {
+            Self::Witnesses {
+                cut,
+                ref lower,
+                ref upper,
+            } => Self::Witnesses {
+                cut: rename(cut)?,
+                lower: lower.clone(),
+                upper: upper.clone(),
+            },
+            Self::Split {
+                premise,
+                ref point,
+                side,
+            } => Self::Split {
+                premise,
+                point: point.clone(),
+                side,
+            },
+            Self::Constant { real } => Self::Constant {
+                real: rename(real)?,
+            },
+            Self::Below { less, left, right } => Self::Below {
+                less: rename(less)?,
+                left,
+                right,
+            },
+            Self::NotBelow { less, left, right } => Self::NotBelow {
+                less: rename(less)?,
+                left,
+                right,
+            },
+            Self::Variable {
+                real,
+                ref lower,
+                ref upper,
+            } => Self::Variable {
+                real: rename(real)?,
+                lower: lower.clone(),
+                upper: upper.clone(),
+            },
+            Self::Sum { real, left, right } => Self::Sum {
+                real: rename(real)?,
+                left,
+                right,
+            },
+            Self::Difference { real, left, right } => Self::Difference {
+                real: rename(real)?,
+                left,
+                right,
+            },
+            Self::Product { real, left, right } => Self::Product {
+                real: rename(real)?,
+                left,
+                right,
+            },
+            Self::Witness { exists, premise } => Self::Witness {
+                exists: rename(exists)?,
+                premise,
+            },
+            Self::Cover {
+                forall,
+                ref premises,
+            } => Self::Cover {
+                forall: rename(forall)?,
+                premises: premises.clone(),
+            },
+            Self::Counterexample { forall, premise } => Self::Counterexample {
+                forall: rename(forall)?,
+                premise,
+            },
+            Self::Refutation {
+                exists,
+                ref premises,
+            } => Self::Refutation {
+                exists: rename(exists)?,
+                premises: premises.clone(),
+            },
+        });
+    }
+}
+
 /// What a step proves.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Conclusion

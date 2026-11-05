@@ -28,6 +28,9 @@ use core::num::NonZeroU32;
 
 use anodized::spec;
 
+use crate::cache::Cache;
+use crate::cache::CacheRefusal;
+use crate::cache::Lookup;
 use crate::certificate::CertificateRefusal;
 use crate::certificate::CheckerQuotas;
 use crate::codec::CheckpointBytes;
@@ -434,6 +437,93 @@ impl<'plan> Dovetail<'plan>
     ) -> Option<Steps>
     {
         return self.entries.get(position.0).map(|entry| Steps(entry.spent));
+    }
+
+    /// Settle each obligation that has no step yet from `cache`, and the
+    /// refusals of the entries that left it.
+    ///
+    /// # Specification
+    /// - ensures: an obligation that the cache answers settles with the cached
+    ///   certificate, which replays against the scheduler's plan within its
+    ///   quotas, and it spends no step. An obligation with steps stays as it
+    ///   is. A scheduler that never consults a cache does no work for one.
+    /// - panics: none.
+    /// - executable: none — the clause speaks of the certificate's replay.
+    /// - intension: one lookup for each obligation that has no step.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every obligation of the machine's test corpus settles
+    ///   alike from the cache and from a run. L3 — a refused entry.
+    /// - witness: `tests::cache::the_corpus_answers_alike_cached_and_uncached`
+    /// - witness: `tests::cache::an_entry_that_does_not_replay_leaves_by_name`
+    #[inline]
+    pub fn consult(
+        &mut self,
+        cache: &mut Cache,
+    ) -> Vec<(Position, CacheRefusal)>
+    {
+        let mut refusals = Vec::new();
+        for (index, entry) in self.entries.iter_mut().enumerate() {
+            let Some(obligation) = entry.progress.fresh()
+            else {
+                continue;
+            };
+            match cache.lookup(self.plan, obligation, &self.quotas) {
+                Lookup::Hit(certificate) => {
+                    entry.progress.adopt(certificate);
+                    self.live = self.live.saturating_sub(1);
+                },
+                Lookup::Miss => {},
+                Lookup::Refused(refusal) => refusals.push((Position(index), refusal)),
+            }
+        }
+        return refusals;
+    }
+
+    /// Store the certificate of each obligation that the scheduler certified
+    /// by its own steps in `cache`, and the refusals of the certificates that
+    /// did not enter it.
+    ///
+    /// # Specification
+    /// - ensures: the cache holds the certificate of each obligation that a run
+    ///   certified, up to its bound. An obligation that a consultation settled
+    ///   spent no step, and the cache holds its certificate already, so it adds
+    ///   nothing. A suspended, pending, exhausted or cancelled obligation adds
+    ///   nothing.
+    /// - panics: none.
+    /// - executable: none — the clause speaks of the cache's entries.
+    /// - intension: one store, and so one replay, for each obligation that a
+    ///   run certified.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the machine's test corpus run with a cache adds an
+    ///   entry for each certificate alone, and a run that the cache settles
+    ///   records with no refusal.
+    /// - witness: `tests::cache::the_corpus_answers_alike_cached_and_uncached`
+    /// - witness: `tests::cache::the_square_root_of_two_refines_alike_from_the_cache`
+    #[inline]
+    pub fn record(
+        &self,
+        cache: &mut Cache,
+    ) -> Vec<(Position, CacheRefusal)>
+    {
+        let mut refusals = Vec::new();
+        for (index, entry) in self.entries.iter().enumerate() {
+            if entry.spent == 0 {
+                continue;
+            }
+            if let Some(Outcome::Certified(certificate)) = entry.progress.settled()
+                && let Err(refusal) = cache.store(
+                    self.plan,
+                    entry.progress.obligation(),
+                    certificate,
+                    &self.quotas,
+                )
+            {
+                refusals.push((Position(index), refusal));
+            }
+        }
+        return refusals;
     }
 
     /// The checkpoint of the scheduler: its live obligations and the place of

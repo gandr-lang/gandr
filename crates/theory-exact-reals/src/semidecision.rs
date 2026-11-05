@@ -451,6 +451,44 @@ impl Progress
         };
     }
 
+    /// The obligation, while the work has written no step.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn fresh(&self) -> Option<Obligation>
+    {
+        return match self.state {
+            State::Fresh if self.steps.is_empty() => Some(self.obligation),
+            State::Fresh
+            | State::Enclosing(_)
+            | State::Comparing { .. }
+            | State::Searching(_)
+            | State::Certified(_)
+            | State::Suspended(_) => None,
+        };
+    }
+
+    /// Settle the work with `certificate`, a certificate from a cache that
+    /// replays to the evidence that the obligation asks for.
+    ///
+    /// # Specification
+    /// - requires: the work has written no step.
+    /// - ensures: the work is settled with `certificate`, and it spent no step.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every obligation of the corpus that the cache answers
+    ///   settles with the certificate of an uncached run.
+    /// - witness: `tests::cache::the_corpus_answers_alike_cached_and_uncached`
+    #[spec(requires: self.fresh().is_some(), ensures: self.steps.is_empty())]
+    pub(crate) fn adopt(
+        &mut self,
+        certificate: Certificate,
+    )
+    {
+        self.state = State::Certified(certificate);
+    }
+
     /// Do at most `allowance` steps of work, and the number done.
     ///
     /// # Specification
