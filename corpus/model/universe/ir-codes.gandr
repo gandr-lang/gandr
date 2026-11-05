@@ -47,6 +47,20 @@ pub def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type =
       fun (h) { args[<] d (f (thunk { fun (z) { t (h z) } })) x t }
     }))
 
+/// The arguments a code asks for, over core's dependent pairs. The delta arm
+/// decodes its function in the type of the rest, inside the descent.
+///
+/// - see: #5291 — a run in a lambda that a descent in a type takes
+@[ checks ]
+pub def rec sigmaArgs(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type =
+  match c
+    | Iota(e) => return Unit
+    | SigmaC(a, f) => return type(*{y : a, r : sigmaArgs[<](d, f(y), x, t)})
+    | DeltaC(a, f) => return type(*{
+      h : +U (a -> -F x),
+      r : sigmaArgs[<](d, f(fun (z) { t (h z) }), x, t)
+    })
+
 /// Accepts the arguments of any code.
 @[ checks ]
 pub def keep(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), w : args(d, c, x, t)) -> Unit =
