@@ -55,65 +55,6 @@ deps_sub_issues() {
   gh api --paginate "repos/$1/issues/$2/sub_issues?per_page=100" --jq '[.[] | {number, state}]' | jq -s 'add // []'
 }
 
-# Issue `$2`'s sub-issues as the REST page gives them, through a conditional
-# read (#5061): the page and its ETag are kept under the budget's directory,
-# and the kept page is the answer when the server says 304 Not Modified,
-# which spends no request. A page of 100, which may have a next one, is read
-# whole through `--paginate` and not kept.
-deps_sub_issues_kept() {
-  local repo=$1 parent=$2 kept raw etag=''
-  kept=$gh_budget_dir/sub_issues/${repo//\//.}.$parent
-  mkdir -p "${kept%/*}"
-  if [[ -s $kept.json && -s $kept.etag ]]; then etag=$(< "$kept.etag"); fi
-  raw=$(gh api -i ${etag:+-H "If-None-Match: $etag"} "repos/$repo/issues/$parent/sub_issues?per_page=100" 2> /dev/null) || :
-  case ${raw%%$'\n'*} in
-    *' 304 '*) cat "$kept.json" ;;
-    *' 200 '*)
-      awk 'body { print; next } /^\r?$/ { body = 1 }' <<< "$raw" > "$kept.json.new"
-      if [[ $(jq length "$kept.json.new") -ge 100 ]]; then
-        rm -f "$kept.json.new" "$kept.json" "$kept.etag"
-        gh api --paginate "repos/$repo/issues/$parent/sub_issues?per_page=100" | jq -s 'add // []'
-        return
-      fi
-      awk -F': ' 'tolower($1) == "etag" { sub(/\r$/, "", $2); print $2 }' <<< "$raw" > "$kept.etag"
-      mv "$kept.json.new" "$kept.json"
-      cat "$kept.json"
-      ;;
-    *) return 1 ;;
-  esac
-}
-
-# The programme focus (#3959): `.config/issues/focus.toml`'s epics and every
-# sub-issue under them in any state, a sub-epic's in turn, as `{epics,
-# members: [{number, epic, parent, state, labels}]}`, `epic` the focus epic a
-# member falls under and the members of one parent in its sub-issue order.
-# Each parent is read through `deps_sub_issues_kept`, so a walk over parents
-# that did not change spends no request (#5061). Prints `null` when the file
-# names no epic.
-deps_focus() {
-  local repo=$1 focused epic parent page children members='[]'
-  local -a pending nested
-  focused=$(yq -p toml -o json '.epics // []' "$(dirname "${BASH_SOURCE[0]}")/../issues/focus.toml" | jq -c .) || return 1
-  if [[ $focused == '[]' ]]; then
-    echo null
-    return
-  fi
-  for epic in $(jq -r '.[]' <<< "$focused"); do
-    pending=("$epic")
-    while ((${#pending[@]} > 0)); do
-      parent=${pending[0]}
-      pending=("${pending[@]:1}")
-      page=$(deps_sub_issues_kept "$repo" "$parent") || return 1
-      children=$(jq -c '[.[] | {number, state, labels: [.labels[].name]}]' <<< "$page") || return 1
-      members=$(jq -c --argjson epic "$epic" --argjson parent "$parent" --argjson children "$children" \
-        '. + [$children[] | . + {epic: $epic, parent: $parent}]' <<< "$members")
-      mapfile -t nested < <(jq -r '.[] | select(.labels | index("kind:epic")) | .number' <<< "$children")
-      pending+=("${nested[@]}")
-    done
-  done
-  jq -n -c --argjson epics "$focused" --argjson members "$members" '{$epics, $members}'
-}
-
 # Every open issue's dependencies and sub-issues in one paginated GraphQL
 # pass (#3192), as `{"<n>": {blocked_by: [{number, state}], sub_issues:
 # [{number, state}]}}`, each state in lower case as the REST reads give it.

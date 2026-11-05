@@ -1906,10 +1906,6 @@ fi
 # and one commit read per branch working a claim with no marker. An issue the
 # lane released, or a merge on its branch advanced, in the last 2 hours heads
 # its order, and another lane passes it over for those 2 hours.
-# A programme focus (`.config/issues/focus.toml`, #3959) narrows the order to
-# the focus's work: its defects and refactors, then its units, the lane's
-# areas first. The answer opens with `focus: #<epic> …` on stderr, and
-# nothing outside the focus is offered.
 # No candidate prints `no claim: <lane>` and exits 1.
 ["claim:next"]
 description = "Claim the next item in a lane's claim order"
@@ -1954,23 +1950,6 @@ for epic in $epics; do
   jq --arg epic "$epic" --slurpfile children "$board/children.json" '. + {($epic): $children[0]}' "$board/order.json" > "$board/next.json"
   mv "$board/next.json" "$board/order.json"
 done
-# The programme focus (#3959): its members (`deps_focus`), each parent's in
-# its sub-issue order, and the merged pull requests the open defects' and
-# refactors' `from:` lines name. `next.jq` reads both as they stand, so a
-# recorded case reads what a live run does (#4118).
-deps_focus "$repo" > "$board/focus.json"
-printf '[]\n' > "$board/landings.json"
-if [[ $(jq 'type' "$board/focus.json") != '"null"' ]]; then
-  jq -c --slurpfile focus "$board/focus.json" \
-    '. + ($focus[0].members | group_by(.parent) | map({key: "\(.[0].parent)", value: map(.number)}) | from_entries)' "$board/order.json" > "$board/next.json"
-  mv "$board/next.json" "$board/order.json"
-  jq -r -L "$claims" 'include "sections";
-      [.[] | select(.labels | index("kind:defect") or index("kind:refactor")) | .body // "" | from_lines[]] | unique[]' "$board/issues.json" \
-    | while read -r landing; do
-        gh api "repos/$repo/issues/$landing" --jq 'select(.pull_request.merged_at != null) | .number' \
-          | while read -r merged; do gh api "repos/$repo/pulls/$merged" --jq '{number, body: (.body // ""), head: .head.ref}'; done
-      done | jq -s -c . > "$board/landings.json"
-fi
 concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id, issue FROM concern ORDER BY id;')
 yq -p toml -o json '.refusal // {} | keys' "$root/.config/debug/refusals.toml" | jq -c . > "$board/refusals.json"
 gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \
@@ -2042,7 +2021,6 @@ while :; do
   jq --arg n "$number" --slurpfile read "$board/read.json" '.[$n] = $read[0]' "$board/reread.json" > "$board/next.json"
   mv "$board/next.json" "$board/reread.json"
 done
-awk '/^focus: /' <<< "$lines" >&2
 # A claim with no marker and no branch names no lane (#4504): no lane holds
 # it, and the lane working it writes its marker.
 awk '/^unattributed: / { print; print "claim:next: " $2 " names no lane; the lane working it writes `<!-- claim: lane=<lane> -->` in its body" }' <<< "$lines" >&2

@@ -36,14 +36,6 @@
 #   branches origin's branches working a claimed issue with no claim marker:
 #            [{head, at}], at the head commit's time in seconds since the
 #            epoch; absent reads as none (#3951)
-#   focus    the programme focus (`.config/issues/focus.toml`, #3959) as
-#            `deps_focus` reads it, or absent for none: {epics: [number],
-#            members: [{number, epic, parent, state, labels}]}, members every
-#            sub-issue of a focus epic in any state, a sub-epic's in turn,
-#            each with the focus epic it falls under, its parent, its state
-#            and its labels. `claim:next` hands it over as it stands (#4118)
-#   landings the merged pull requests the open issues' `from:` lines name:
-#            [{number, body, head}]; absent reads as none
 #
 # An issue is a candidate when it is unowned (no `status:claimed`, and no
 # other lane's claim marker, #4660), not ruled
@@ -103,20 +95,6 @@
 # first for that lane, ahead of every bucket, the latest release first, and
 # no other lane claims it in those 2 hours: the continuation stays with the
 # lane that holds its context.
-#
-# A focus narrows the order to the programme's work (#3959): the answer opens
-# with `focus: #<epic> …`, and the order offers nothing outside the focus, a
-# release or a collector included. First a `kind:defect` or `kind:refactor`
-# in the focus: its parent, or any `#n` its body writes, names a member or a
-# focus epic, or a `from:` line names a landing that works a member (`names`).
-# These rank by priority, effort and age, the lane's areas first, then any
-# area. Then a member, the focus units, in the focus epics' order and each
-# epic's sub-issue order, by priority first, the lane's areas first, then any
-# area. A sub-epic's units come where the sub-epic sits in its parent's order
-# (#4110): a unit ranks by the indices from its focus epic down to it. A
-# member waits while a sub-epic between it and its focus epic carries
-# `status:deferred` (#4063), as the plain order passes over a deferred epic's
-# units. A lane still holds what it holds, the focus aside.
 
 include "sections";
 include "findings";
@@ -187,36 +165,7 @@ def observation($refusals):
 | (.branches // []) as $branches
 | (.lanes // []) as $lanes
 | [.issues[] | select(has("kind:epic") and (has("status:deferred") | not)) | .number] as $epics
-| (.landings // []) as $landings
-| (if .focus == null or (.focus.epics | length) == 0 then null
-   else .focus as $focus
-     | {epics: $focus.epics, members: $focus.members,
-        named: ($focus.epics + [$focus.members[].number]),
-        landings: [$landings[] | . as $pr | select(any($focus.members[]; . as $m | $pr | names($m.number))) | .number]}
-   end) as $focus
-| def written: [.body // "" | scan("(?<![\\w/])#([0-9]+)\\b") | .[0] | tonumber];
-  def focus_fix:
-    (has("kind:defect") or has("kind:refactor"))
-    and ((.parent | IN($focus.named[])) or any(written[]; IN($focus.named[]))
-      or any(.body // "" | from_lines[]; IN($focus.landings[])));
-  def membership: .number as $n | first($focus.members[] | select(.number == $n)) // null;
-  # Whether a member's chain of parents up to its focus epic meets a deferred
-  # sub-epic.
-  def waits: .parent as $p | first($focus.members[] | select(.number == $p)) // null
-    | if . == null then false
-      elif (.labels // [] | index("status:deferred")) != null then true
-      else waits end;
-  def focus_unit: membership as $m | $m != null and ($m | waits | not) and (focus_fix | not);
-  # The indices from the focus epic down to issue `$n` under parent `$p`,
-  # each in its parent's sub-issue order.
-  def focus_path($n; $p):
-    ($order["\($p)"] // [] | index($n) // infinite) as $at
-    | (first($focus.members[] | select(.number == $p)) // null) as $up
-    | if $up == null then [$at] else focus_path($up.number; $up.parent) + [$at] end;
-  def focus_rank: membership as $m
-    | [($focus.epics | index($m.epic))] + focus_path(.number; $m.parent // .parent);
-  def fixed: [., if has("kind:defect") then "defect" else "refactor" end];
-  (if $focus == null then empty else "focus: \($focus.epics | map("#\(.)") | join(" "))" end),
+| def fixed: [., if has("kind:defect") then "defect" else "refactor" end];
   (if $lane == null then empty
    else .issues[] | select(has("status:claimed") and placed($branches; $lanes) == null and within($areas))
      | "unattributed: #\(.number) \(.title)"
@@ -229,13 +178,7 @@ def observation($refusals):
 | ($held[] | "held: #\(.number) \(.title)"), (
   [.issues[] | select(candidate and unclaimed($lane)) | . as $issue | select([$prs[] | names($issue.number)] | any | not)
     | select($lane == null or ([kept($now) | .lane != $lane] | any | not))] as $open
-| if $focus != null then [
-    ($open | map(select([kept($now) | .lane == $lane] | any) | select(focus_fix or focus_unit)) | sort_by(-(kept($now) | .at), .number) | .[] | [., "released"]),
-    ($open | map(select(focus_fix and within($areas))) | sort_by(priority, effort, .number) | .[] | fixed),
-    ($open | map(select(focus_fix and (within($areas) | not))) | sort_by(priority, effort, .number) | .[] | fixed),
-    ($open | map(select(focus_unit and within($areas))) | sort_by(priority, focus_rank, .number) | .[] | [., "focus"]),
-    ($open | map(select(focus_unit and (within($areas) | not))) | sort_by(priority, focus_rank, .number) | .[] | [., "focus"])
-  ] else [
+| [
     ($open | map(select([kept($now) | .lane == $lane] | any)) | sort_by(-(kept($now) | .at), .number) | .[] | [., "released"]),
     (.issues
       | map(select(has("collector") and has("kind:defect") and within($areas) and unruled and unclaimed($lane) and open_rows > 0))
@@ -251,7 +194,7 @@ def observation($refusals):
       | .[] | [., "planned"]),
     ($open | map(select(has("kind:performance"))) | sort_by(priority, .number) | .[] | [., "performance"]),
     ($open | map(select(has("kind:gap"))) | sort_by(priority, effort, .number) | .[] | [., "gap"])
-  ] end as $ranked
+  ] as $ranked
 | ([.issues[] | select(has("collector") and within($areas) and (has("kind:defect") | not))]
     | sort_by(.number) | .[] | open_rows as $k | select($k > 0)
     | "collector: #\(.number) (\($k) open row\(if $k == 1 then "" else "s" end))"),

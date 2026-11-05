@@ -1,6 +1,0 @@
-# The programme focus (#3959): while `epics` names any, `claim:next` offers
-# every lane only the focus's work, the defects and refactors its members
-# meet, then its units, the lane's areas first (`.config/claims/next.jq`). A
-# deferred sub-epic's units wait until it is no longer deferred (#4063). An
-# empty list sets no focus. The owner sets it and clears it.
-epics = [5327, 5334, 5344, 5214, 491, 4481, 4905, 391, 5101, 4299, 2917, 3592, 4881]
