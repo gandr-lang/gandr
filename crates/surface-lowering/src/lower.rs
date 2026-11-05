@@ -3499,6 +3499,9 @@ struct Lowerer<'run, 'source>
     /// codomain of an arrow it heads: an arrow there is the static Pi, never
     /// the box.
     kinds: BTreeSet<NodeIndex>,
+    /// Each written type's answer to [`crate::form::classifies_codes`], kept
+    /// so each node of an arrow chain is classified once.
+    classified: BTreeMap<NodeIndex, crate::form::Kinded>,
     /// Each `Model(T)` application a manifest type closes, with the sorts it
     /// fixes: each sort's name beside the type it is, in written order.
     fixed_sorts: BTreeMap<NodeIndex, Vec<(Placed, Placed)>>,
@@ -5567,6 +5570,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             data_frames: Vec::new(),
             stand_ins: BTreeSet::new(),
             kinds: BTreeSet::new(),
+            classified: BTreeMap::new(),
             fixed_sorts: BTreeMap::new(),
             fixed_carriers: Vec::new(),
             ahead: Vec::new(),
@@ -16359,19 +16363,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   where a type is quoted.
     /// - ensures: an arrow standing as a value type, or at a definition's
     ///   result, where the returner is inserted over it, that is written as a
-    ///   kind, or whose domain classifies codes, as [`Self::ranges_over_codes`]
-    ///   reads it, is the static Pi, its domain and codomain each read as a
-    ///   value type under the arrow's own frame, since the codomain binds
-    ///   nothing, and a kind's codomain is a kind; any other arrow standing so
-    ///   is the box [`Self::boxed`] plans, the value function `=>` writes, so
-    ///   no arrow at a result is curried. An arrow quoted in a term stands so
-    ///   too, unless [`Self::writes_computation`] reads it as written as a
-    ///   computation type: a type operator's argument or a type family's body
-    ///   writes the box as `=>` did. Any other arrow stands as a computation
-    ///   type: one whose domain is one binder is the dependent arrow
-    ///   [`Self::dependent_arrow`] plans, and the rest read their domain as a
-    ///   value type and their codomain as a computation type. Each is planned
-    ///   over both operands.
+    ///   kind, or whose domain and codomain both classify codes, as
+    ///   [`Self::ranges_over_codes`] reads them, is the static Pi, its domain
+    ///   and codomain each read as a value type under the arrow's own frame,
+    ///   since the codomain binds nothing, and a kind's codomain is a kind; any
+    ///   other arrow standing so is the box [`Self::boxed`] plans, the value
+    ///   function `=>` writes, so no arrow at a result is curried. An arrow
+    ///   quoted in a term stands so too, unless [`Self::writes_computation`]
+    ///   reads it as written as a computation type: a type operator's argument
+    ///   or a type family's body writes the box as `=>` did. Any other arrow
+    ///   stands as a computation type: one whose domain is one binder is the
+    ///   dependent arrow [`Self::dependent_arrow`] plans, and the rest read
+    ///   their domain as a value type and their codomain as a computation type.
+    ///   Each is planned over both operands.
     /// - provides: the function type of the fragment, the box of a function
     ///   value and the classifier of a type operator.
     /// - fails: yields the wrong-sort refusal where neither sort suits the
@@ -16386,11 +16390,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — an arrow where a computation type is read, where a
     ///   value type is read over universes, nested to the right as an
     ///   operator's classifier, over a computation codomain where a value type
-    ///   is read, a box over value types, a kind over a type that classifies no
-    ///   codes, and an arrow quoted in a term over a value type and over a
-    ///   returner, each asserted as the exact core node read back out of the
-    ///   arena or the exact refusal.
+    ///   is read, a box over value types, a box from a universe to a value
+    ///   type, a kind over a type that classifies no codes, and an arrow quoted
+    ///   in a term over a value type and over a returner, each asserted as the
+    ///   exact core node read back out of the arena or the exact refusal.
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+    /// - witness: `lower::tests::an_arrow_from_a_universe_to_a_value_type_is_the_box_5203`
     /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
     /// - witness: `lower::tests::a_computation_codomain_of_a_box_is_refused`
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
@@ -16432,7 +16437,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let codomain = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
         let kind = self.kinds.contains(&site.at.node);
-        let boxes = value_typed && !self.ranges_over_codes(domain)?.0;
+        // The static Pi is a type operator: both its domain and its codomain
+        // classify codes. Any other arrow where a value type is read is the box.
+        let kinded = self.ranges_over_codes(domain)?.0 && self.ranges_over_codes(codomain)?.0;
+        let boxes = value_typed && !kinded;
         // In a kind, the box is a family's telescope, `(a : A, …) -> U`; a
         // bare domain stays the static Pi, whose classifier the checker reads.
         if boxes
@@ -16496,7 +16504,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<crate::form::Kinded, LoweringRefusal<'source>>
     {
         let mut scratch = core::mem::take(&mut self.scratch);
-        let read = crate::form::classifies_codes(self.pbg, self.tree, domain, &mut scratch);
+        let read = crate::form::classifies_codes(
+            self.pbg,
+            self.tree,
+            domain,
+            &mut scratch,
+            &mut self.classified,
+        );
         self.scratch = scratch;
         read
     }
@@ -29258,6 +29272,51 @@ def ended() -> -F [Partial] Unit {
                 && universe(carrier, GroundSort::Value)
                 && universe(result, GroundSort::Value),
             "every operand is the universe it spells"
+        );
+    }
+
+    #[test]
+    fn an_arrow_from_a_universe_to_a_value_type_is_the_box_5203()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def chosen : Type -> Integer ; def operator : Type -> Type ;"),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let universe = |id| {
+            matches!(
+                arena.value_type(id),
+                Some(&ValueType::Universe {
+                    sort: Sort::Ground(GroundSort::Value),
+                    ..
+                })
+            )
+        };
+        let boxed = match arena.value_type(declared_of(lowered[0])) {
+            Some(&ValueType::Thunk(arrow)) => match arena.comp_type(arrow) {
+                Some(&CompType::Arrow { domain, codomain }) => {
+                    universe(domain)
+                        && matches!(
+                            arena.comp_type(codomain),
+                            Some(&CompType::Returner { result, .. })
+                                if arena.value_type(result) == Some(&ValueType::Base(BaseType::Integer))
+                        )
+                },
+                _ => false,
+            },
+            _ => false,
+        };
+        assert!(
+            boxed,
+            "an arrow from a universe to a value type is the box `+U (Type -> -F Integer)`"
+        );
+        assert!(
+            matches!(
+                arena.value_type(declared_of(lowered[1])),
+                Some(&ValueType::StaticPi { domain, codomain }) if universe(domain) && universe(codomain)
+            ),
+            "an arrow between universes stays the static Pi"
         );
     }
 
