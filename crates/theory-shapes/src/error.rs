@@ -6,6 +6,7 @@ use core::fmt;
 use crate::finite::Leg;
 use crate::index::NodeId;
 use crate::index::Point;
+use crate::index::TermIndex;
 use crate::index::Variable;
 
 /// A malformed input or invalid evidence; never a negative entailment result.
@@ -66,6 +67,16 @@ pub enum ShapeError
     /// The conclusion atom at this node does not include the meet of its
     /// citation, or is `⊥`.
     Unsupported(NodeId),
+    /// The normal form of a monotone formula at this node would hold more
+    /// terms than the monotone band admits.
+    PastBudget(NodeId),
+    /// A derivation of one band was offered for a query in the other.
+    OutsideBand,
+    /// A covering derivation does not carry one cover per premise term.
+    CoverCount,
+    /// The cover of this premise term names no conclusion term, or one that
+    /// the premise term does not lie below.
+    NotCovered(TermIndex),
 }
 
 impl fmt::Display for ShapeError
@@ -149,6 +160,18 @@ impl fmt::Display for ShapeError
             Self::CitationCount => f.write_str("one citation per conclusion atom expected"),
             Self::Unsupported(node) => {
                 write!(f, "conclusion atom {} is unsupported", usize::from(node))
+            },
+            Self::PastBudget(node) => {
+                write!(
+                    f,
+                    "normal form at node {} holds more terms than the band admits",
+                    usize::from(node)
+                )
+            },
+            Self::OutsideBand => f.write_str("derivation of another band than the query's"),
+            Self::CoverCount => f.write_str("one cover per premise term expected"),
+            Self::NotCovered(term) => {
+                write!(f, "premise term {} is not covered", usize::from(term))
             },
         }
     }

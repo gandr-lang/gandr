@@ -1,8 +1,9 @@
-//! Entailment in the conjunctive band and its column disjunctions: agreement
-//! with an independent truth table, the stated precedence and size of the
-//! evidence, the coverage reading of a column, hostile evidence, and the
-//! refusals of query admission.
+//! Entailment in the conjunctive band, its column disjunctions and the
+//! monotone band: agreement with an independent truth table, the stated
+//! precedence and size of the evidence, the coverage reading of a column,
+//! hostile evidence, and the refusals of query admission.
 
+use gandr_theory_shapes::Band;
 use gandr_theory_shapes::Citation;
 use gandr_theory_shapes::Countermodel;
 use gandr_theory_shapes::Derivation;
@@ -16,6 +17,7 @@ use gandr_theory_shapes::PointCount;
 use gandr_theory_shapes::Problem;
 use gandr_theory_shapes::ShapeError;
 use gandr_theory_shapes::Subshape;
+use gandr_theory_shapes::TermIndex;
 use gandr_theory_shapes::Variable;
 use gandr_theory_shapes::decide;
 
@@ -164,6 +166,8 @@ struct Tally
     disjoint: usize,
     /// `Supported` derivations.
     supported: usize,
+    /// `Covered` derivations.
+    covered: usize,
     /// Countermodels.
     refuted: usize,
 }
@@ -196,6 +200,7 @@ fn check(
                 Derivation::FalsePremise(_) => &mut tally.bottom,
                 Derivation::Disjoint(..) => &mut tally.disjoint,
                 Derivation::Supported(_) => &mut tally.supported,
+                Derivation::Covered(_) => &mut tally.covered,
             };
             *count = count.saturating_add(1);
         },
@@ -287,6 +292,7 @@ fn generated_queries_agree_with_brute_force()
         }
     }
     let mut atomic: Vec<Formula> = Vec::new();
+    let mut positive: Vec<Node> = Vec::new();
     for context in contexts {
         let rows = assignments(&context);
         let basis = atoms(&context);
@@ -354,12 +360,53 @@ fn generated_queries_agree_with_brute_force()
             });
             check(&context, &premise, &conclusion, &rows, &mut tally);
         }
+        // Shared tables over the monotone atoms alone, whose disjunctions
+        // cross variables and stand in premises: the monotone band.
+        positive.clear();
+        positive.extend(
+            basis
+                .iter()
+                .filter(|node| match **node {
+                    Node::Member(_, ref subset) => {
+                        let decisions = subset.decisions();
+                        decisions
+                            .iter()
+                            .all(|decision| *decision == Membership::Inside)
+                            || decisions
+                                .iter()
+                                .all(|decision| *decision == Membership::Outside)
+                            || decisions == [Membership::Outside, Membership::Inside]
+                    },
+                    Node::Top | Node::Bottom | Node::And(..) | Node::Or(..) => true,
+                })
+                .cloned(),
+        );
+        for _ in 0_usize .. 256 {
+            let [premise, conclusion]: [Formula; 2] = core::array::from_fn(|_| {
+                let mut nodes = positive.clone();
+                for _ in 0_usize .. 32 {
+                    let bound = NodeId::from(nodes.len());
+                    let left = seed.index(bound);
+                    let right = seed.index(bound);
+                    let node = if seed.index(NodeId::from(2_usize)) == NodeId::from(0_usize) {
+                        Node::And(left, right)
+                    }
+                    else {
+                        Node::Or(left, right)
+                    };
+                    nodes.push(node);
+                }
+                formula(nodes)
+            });
+            check(&context, &premise, &conclusion, &rows, &mut tally);
+        }
     }
     assert!(
         tally.empty > 0
             && tally.bottom > 0
             && tally.disjoint > 0
             && tally.supported > 0
+            && tally.covered > 0
             && tally.refuted > 0,
         "every evidence form is exercised: {tally:?}"
     );
@@ -613,11 +660,12 @@ fn input_boundaries_are_checked()
         member!(0, 2, [1]),
         Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
     ]);
-    // An unreached disjunction is refused too: the band is a property of the
-    // table.
+    // An unreached disjunction beside a lower-point atom is refused too: each
+    // band is a property of the table.
     let unreached = formula(vec![
+        member!(0, 2, [0]),
         Node::Top,
-        Node::Or(NodeId::from(0_usize), NodeId::from(0_usize)),
+        Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
         Node::Top,
     ]);
     let pair = context![2];
@@ -628,7 +676,7 @@ fn input_boundaries_are_checked()
         ),
         (&smaller, ShapeError::WrongCarrier(Variable::from(0_usize))),
         (&larger, ShapeError::WrongCarrier(Variable::from(0_usize))),
-        (&unreached, ShapeError::Disjunction(NodeId::from(1_usize))),
+        (&unreached, ShapeError::Disjunction(NodeId::from(2_usize))),
     ] {
         assert_eq!(
             Problem::new(pair.clone(), side.clone(), top.clone()),
@@ -909,5 +957,228 @@ fn deep_formulas_use_no_call_stack()
     assert_eq!(
         supported![&[]].validate(&short),
         Err(ShapeError::Unsupported(NodeId::from(100_000_usize)))
+    );
+}
+
+/// A covering derivation from term positions: `covered![0, 1]`.
+macro_rules! covered {
+    ($($term:expr),* $(,)?) => {
+        Derivation::Covered(vec![$(TermIndex::from($term)),*])
+    };
+}
+
+#[test]
+fn the_monotone_band_admits_positive_formulas_only()
+{
+    // `x ∨ y` with the upper point of two carriers of two points crosses
+    // variables, and every atom is monotone.
+    let pair = context![2, 2];
+    let top = formula(vec![Node::Top]);
+    let either = formula(vec![
+        member!(0, 2, [1]),
+        member!(1, 2, [1]),
+        Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
+    ]);
+    let weaker = Problem::new(pair.clone(), top.clone(), either.clone()).expect("a conclusion");
+    assert!(matches!(*weaker.band(), Band::Monotone { .. }));
+    assert_eq!(weaker.conclusion_atoms(), []);
+    assert_eq!(decide(&weaker), Ok(Evidence::Refuted(countermodel![0, 0])));
+    let same = Problem::new(pair.clone(), either.clone(), either).expect("a premise");
+    assert_eq!(decide(&same), Ok(Evidence::Holds(covered![0, 1])));
+    // The whole and the empty subshape of a larger carrier read as `⊤` and
+    // `⊥`.
+    let whole = formula(vec![
+        member!(0, 3, [0, 1, 2]),
+        member!(1, 2, [1]),
+        Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
+    ]);
+    let problem = Problem::new(context![3, 2], top.clone(), whole).expect("a whole carrier");
+    assert_eq!(decide(&problem), Ok(Evidence::Holds(covered![0])));
+    let empty = formula(vec![
+        member!(0, 3, []),
+        member!(1, 2, [1]),
+        Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
+    ]);
+    let problem = Problem::new(context![3, 2], top.clone(), empty).expect("an empty subshape");
+    assert_eq!(decide(&problem), Ok(Evidence::Refuted(countermodel![0, 0])));
+    // A lower point, or one point of a larger carrier, keeps the present
+    // refusal on either side.
+    let lower = formula(vec![
+        member!(0, 2, [1]),
+        member!(1, 2, [0]),
+        Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
+    ]);
+    let larger = formula(vec![
+        member!(0, 3, [2]),
+        member!(1, 2, [1]),
+        Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
+    ]);
+    for (context, side) in [(&pair, &lower), (&context![3, 2], &larger)] {
+        let refusal = Err(ShapeError::Disjunction(NodeId::from(2_usize)));
+        assert_eq!(
+            Problem::new(context.clone(), side.clone(), top.clone()),
+            refusal
+        );
+        assert_eq!(
+            Problem::new(context.clone(), top.clone(), side.clone()),
+            refusal
+        );
+    }
+    // A query the conjunctive band admits stays in it, a column of upper
+    // points too.
+    let column = formula(vec![
+        member!(0, 2, [1]),
+        member!(0, 2, [1]),
+        Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
+    ]);
+    let problem = Problem::new(pair.clone(), top.clone(), column).expect("a column");
+    assert_eq!(*problem.band(), Band::Conjunctive);
+    // `∧ᵢ (x₂ᵢ ∨ x₂ᵢ₊₁)` has `2ⁿ` terms. Ten conjuncts reach the budget of
+    // 1024 terms, and the eleventh conjunction passes it.
+    let conjoined = |count: usize| {
+        let upper = |variable: usize| member!(variable, 2, [1]);
+        let mut nodes = Vec::new();
+        let mut root = NodeId::default();
+        for index in 0 .. count {
+            nodes.push(upper(index.saturating_mul(2)));
+            nodes.push(upper(index.saturating_mul(2).saturating_add(1)));
+            let pair_root = NodeId::from(nodes.len());
+            nodes.push(Node::Or(
+                NodeId::from(nodes.len().saturating_sub(2)),
+                NodeId::from(nodes.len().saturating_sub(1)),
+            ));
+            root = if index == 0 {
+                pair_root
+            }
+            else {
+                nodes.push(Node::And(root, pair_root));
+                NodeId::from(nodes.len().saturating_sub(1))
+            };
+        }
+        let carriers = vec![PointCount::from(2_usize); count.saturating_mul(2)];
+        (carriers, formula(nodes), root)
+    };
+    let (carriers, ten, _) = conjoined(10);
+    let problem = Problem::new(carriers, ten, top.clone()).expect("the budget");
+    let evidence = decide(&problem).expect("a decision");
+    assert_eq!(
+        evidence,
+        Evidence::Holds(Derivation::Covered(vec![TermIndex::default(); 1024]))
+    );
+    let (carriers, eleven, past) = conjoined(11);
+    assert_eq!(
+        Problem::new(carriers.clone(), eleven.clone(), top),
+        Err(ShapeError::PastBudget(past))
+    );
+    // Beside a lower point the query is outside the band, whatever its size.
+    assert_eq!(
+        Problem::new(carriers, eleven, formula(vec![member!(0, 2, [0])])),
+        Err(ShapeError::Disjunction(NodeId::from(2_usize)))
+    );
+    // A hundred thousand alternating connectives over two variables, built
+    // by a loop and never by recursion.
+    let mut deep = vec![member!(0, 2, [1]), member!(1, 2, [1])];
+    for index in 2_usize ..= 100_000 {
+        let before = NodeId::from(index.saturating_sub(1));
+        let other = NodeId::from(index.checked_rem(2).expect("a positive modulus"));
+        deep.push(if index.checked_rem(2) == Some(0) {
+            Node::Or(before, other)
+        }
+        else {
+            Node::And(before, other)
+        });
+    }
+    let deep = formula(deep);
+    let problem = Problem::new(pair, deep.clone(), deep).expect("a deep query");
+    let Ok(Evidence::Holds(derivation)) = decide(&problem)
+    else {
+        panic!("a formula entails itself");
+    };
+    assert_eq!(derivation.validate(&problem), Ok(()));
+}
+
+#[test]
+fn forged_monotone_evidence_is_refused()
+{
+    // Premise `x ∨ y` against the conclusion `x ∨ y ∨ z`, over three
+    // carriers of two points with the upper point of each.
+    let three = context![2, 2, 2];
+    let premise = formula(vec![
+        member!(0, 2, [1]),
+        member!(1, 2, [1]),
+        Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
+    ]);
+    let conclusion = formula(vec![
+        member!(0, 2, [1]),
+        member!(1, 2, [1]),
+        member!(2, 2, [1]),
+        Node::Or(NodeId::from(0_usize), NodeId::from(1_usize)),
+        Node::Or(NodeId::from(3_usize), NodeId::from(2_usize)),
+    ]);
+    let holds = Problem::new(three.clone(), premise.clone(), conclusion).expect("query");
+    assert_eq!(decide(&holds), Ok(Evidence::Holds(covered![0, 1])));
+    for (forged, refusal) in [
+        (covered![0], ShapeError::CoverCount),
+        (
+            covered![0, 0],
+            ShapeError::NotCovered(TermIndex::from(1_usize)),
+        ),
+        (
+            covered![0, 3],
+            ShapeError::NotCovered(TermIndex::from(1_usize)),
+        ),
+        (
+            covered![2, 1],
+            ShapeError::NotCovered(TermIndex::from(0_usize)),
+        ),
+        (supported![], ShapeError::OutsideBand),
+        (
+            Derivation::FalsePremise(NodeId::from(0_usize)),
+            ShapeError::NotPremiseBottom(NodeId::from(0_usize)),
+        ),
+        (
+            Derivation::Disjoint(Variable::from(0_usize), cite![]),
+            ShapeError::NotDisjoint(Variable::from(0_usize)),
+        ),
+    ] {
+        assert_eq!(forged.validate(&holds), Err(refusal), "{forged:?}");
+    }
+    let conjunctive = Problem::new(
+        three.clone(),
+        formula(vec![Node::Top]),
+        formula(vec![member!(0, 2, [1])]),
+    )
+    .expect("query");
+    assert_eq!(
+        covered![].validate(&conjunctive),
+        Err(ShapeError::OutsideBand)
+    );
+    // Premise `x ∨ y` against `x ∧ y`: the corner of the term `x` refutes it.
+    let both = formula(vec![
+        member!(0, 2, [1]),
+        member!(1, 2, [1]),
+        Node::And(NodeId::from(0_usize), NodeId::from(1_usize)),
+    ]);
+    let refuted = Problem::new(three, premise, both).expect("query");
+    assert_eq!(
+        decide(&refuted),
+        Ok(Evidence::Refuted(countermodel![1, 0, 0]))
+    );
+    assert_eq!(countermodel![1, 0, 0].validate(&refuted), Ok(()));
+    for (forged, refusal) in [
+        (countermodel![1, 1, 0], ShapeError::NotCountermodel),
+        (countermodel![0, 0, 0], ShapeError::NotCountermodel),
+        (countermodel![1, 0], ShapeError::AssignmentLength),
+        (
+            countermodel![2, 0, 0],
+            ShapeError::AssignedOutside(Variable::from(0_usize)),
+        ),
+    ] {
+        assert_eq!(forged.validate(&refuted), Err(refusal), "{forged:?}");
+    }
+    // The covers of the first query, replayed against the second.
+    assert_eq!(
+        covered![0, 1].validate(&refuted),
+        Err(ShapeError::NotCovered(TermIndex::from(0_usize)))
     );
 }

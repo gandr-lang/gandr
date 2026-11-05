@@ -340,6 +340,7 @@ digraph crates {
   "theory-levitation" -> "theory-path-orders";
   "theory-ordered-algebras" -> "theory-exact-reals";
   "theory-shapes" -> "theory-nominal-automata";
+  "theory-shapes" -> "theory-stone-duality";
   "theory-sites" -> "theory-circuit-algebras";
   "theory-virtual-doctrines" -> "theory-cell-complexes";
   "theory-virtual-doctrines" -> "theory-coherent-resolutions";

@@ -1013,7 +1013,7 @@ path = "crates/theory-spec-combinators"
 # features:
 # - none: alloc-only lattices, posets and maps.
 # consumers:
-# - theory-shapes (dev)
+# - theory-shapes
 [workspace.dependencies.gandr-theory-stone-duality]
 path = "crates/theory-stone-duality"
 default-features = false

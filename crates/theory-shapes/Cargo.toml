@@ -3,7 +3,7 @@ name = "gandr-theory-shapes"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Finite shapes for gandr: decidable subshapes, their outer pushout, and face entailment in the conjunctive band and its column disjunctions with a derivation or a countermodel"
+description = "Finite shapes for gandr: decidable subshapes, their outer pushout, and face entailment in the conjunctive band, its column disjunctions and the monotone band, with a derivation or a countermodel"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -21,15 +21,13 @@ path = "tests/lib.rs"
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. The nominal crate's register store holds a
 # boundary's names, and the shape library supplies the absence its reads name.
+# The duality crate holds the free distributive lattice the monotone band
+# decides in.
 [dependencies]
 anodized.workspace = true
 gandr-theory-nominal-automata.workspace = true
-quenchant-shape.workspace = true
-
-# The cube and spectrum suites read the free distributive lattice and finite
-# Birkhoff duality from the duality crate.
-[dev-dependencies]
 gandr-theory-stone-duality.workspace = true
+quenchant-shape.workspace = true
 
 [lints]
 workspace = true

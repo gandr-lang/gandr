@@ -1,10 +1,12 @@
 //! Face formulas over finite membership atoms, and the entailment queries in
-//! the conjunctive band and its column disjunctions.
+//! the conjunctive band, its column disjunctions and the monotone band.
 
 use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_theory_stone_duality::Generator;
+use gandr_theory_stone_duality::Polynomial;
 
 use crate::error::ShapeError;
 use crate::finite::Membership;
@@ -252,26 +254,52 @@ pub enum Truth
     No,
 }
 
+/// The band an admitted query lies in, which names how [`decide`] reads it.
+///
+/// [`decide`]: crate::decide
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Band
+{
+    /// The conjunctive band and its column disjunctions: each side is the
+    /// list of its conjuncts.
+    Conjunctive,
+    /// Every atom of both tables is monotone, and a disjunction may cross
+    /// variables: each side is a polynomial of the free distributive lattice
+    /// on the context's variables, in normal form.
+    Monotone
+    {
+        /// The premise's normal form.
+        premise: Polynomial,
+        /// The conclusion's normal form.
+        conclusion: Polynomial,
+    },
+}
+
 /// An admitted entailment query over a context of finite carriers.
 ///
-/// The premise is a conjunction of membership atoms; the conclusion a
-/// conjunction of membership atoms and column disjunctions.
+/// In the conjunctive band the premise is a conjunction of membership atoms
+/// and the conclusion a conjunction of membership atoms and column
+/// disjunctions. In the monotone band every atom is `⊤`, `⊥` or the upper
+/// point of a carrier of two points, and the connectives are free.
 ///
 /// # Specification
 /// - ensures: every atom of both formulas names a variable of the context and a
-///   subshape of its carrier; the premise holds no disjunction, and every
-///   disjunction of the conclusion has its atoms on one variable.
+///   subshape of its carrier. In the conjunctive band the premise holds no
+///   disjunction, and every disjunction of the conclusion has its atoms on one
+///   variable. In the monotone band every atom of both tables is monotone.
 /// - provides: one query for [`decide`] and both validators, with the conjuncts
-///   of each side listed once.
+///   of each side listed once, or the normal form of each side.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — ill-scoped, ill-carried and disjunctive atoms on either
-///   side are refused, and a column disjunction is admitted as a conclusion
-///   alone; L2 — every admitted generated query is decided in agreement with
+///   side are refused, a column disjunction is admitted as a conclusion alone,
+///   and a disjunction across variables is admitted only when every atom is
+///   monotone; L2 — every admitted generated query is decided in agreement with
 ///   brute force.
 /// - witness: `tests::faces::input_boundaries_are_checked`
 /// - witness: `tests::faces::generated_queries_agree_with_brute_force`
+/// - witness: `tests::faces::the_monotone_band_admits_positive_formulas_only`
 ///
 /// [`decide`]: crate::decide
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -283,23 +311,34 @@ pub struct Problem
     premise: Formula,
     /// The required face.
     conclusion: Formula,
-    /// The premise's reachable conjuncts, in node order.
+    /// The premise's reachable conjuncts, in node order; empty in the
+    /// monotone band.
     premise_atoms: Vec<NodeId>,
-    /// The conclusion's reachable conjuncts, in node order.
+    /// The conclusion's reachable conjuncts, in node order; empty in the
+    /// monotone band.
     conclusion_atoms: Vec<NodeId>,
+    /// The band the query lies in.
+    band: Band,
 }
 
 impl Problem
 {
-    /// Admits a query in the conjunctive band and its column disjunctions.
+    /// Admits a query in the conjunctive band and its column disjunctions, or
+    /// else in the monotone band.
     ///
     /// # Specification
     /// - ensures: both formulas are admitted against the context, the premise
-    ///   first; the conjuncts of each are listed in node order.
+    ///   first; the conjuncts of each are listed in node order. A query that
+    ///   the conjunctive band refuses by a disjunction is admitted in the
+    ///   monotone band when every atom of both tables is monotone.
     /// - fails: the premise's first offending node is refused before the
     ///   conclusion's: an atom outside the context or in another carrier by its
-    ///   variable, a disjunction outside the band by its node.
+    ///   variable, a disjunction outside both bands by its node. A monotone
+    ///   query whose normal form could pass the term budget is refused by the
+    ///   node where it could.
     /// - panics: none.
+    /// - intension: the conjunctive band is tried first, so a query it admits
+    ///   takes the same path and the same work as before the monotone band.
     ///
     /// # Errors
     /// - [`ShapeError::VariableOutside`]: an atom's variable is not in the
@@ -307,23 +346,32 @@ impl Problem
     /// - [`ShapeError::WrongCarrier`]: an atom's subshape is not of its
     ///   variable's carrier.
     /// - [`ShapeError::Disjunction`]: the premise holds a disjunction, or the
-    ///   conclusion holds one whose atoms are not all on one variable.
+    ///   conclusion holds one whose atoms are not all on one variable, and an
+    ///   atom of the query is not monotone.
+    /// - [`ShapeError::PastBudget`]: every atom is monotone, but a normal form
+    ///   could pass the term budget.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each refusal on the premise alone and on the
     ///   conclusion alone, and an atom refused on both sides, separate an
     ///   admission that checks one side or names the wrong defect; a column
     ///   disjunction refused as a premise and admitted as a conclusion
-    ///   separates the sides; L2 — generated queries are admitted and decided.
+    ///   separates the sides; a lower-point atom beside a disjunction across
+    ///   variables separates the monotone band from the rest; L2 — generated
+    ///   queries are admitted and decided.
     /// - witness: `tests::faces::input_boundaries_are_checked`
     /// - witness: `tests::faces::generated_queries_agree_with_brute_force`
+    /// - witness: `tests::faces::the_monotone_band_admits_positive_formulas_only`
     #[inline]
     #[spec(ensures: |ref ret| match *ret {
-        Ok(ref problem) => problem.premise_atoms.iter()
-                .all(|atom| matches!(problem.premise.nodes.get(usize::from(*atom)), Some(&(Node::Bottom | Node::Member(..)))))
-            && problem.conclusion_atoms.iter()
-                .all(|atom| matches!(problem.conclusion.nodes.get(usize::from(*atom)), Some(&(Node::Bottom | Node::Member(..) | Node::Or(..))))),
-        Err(error) => matches!(error, ShapeError::VariableOutside(_) | ShapeError::WrongCarrier(_) | ShapeError::Disjunction(_)),
+        Ok(ref problem) => match problem.band {
+            Band::Conjunctive => problem.premise_atoms.iter()
+                    .all(|atom| matches!(problem.premise.nodes.get(usize::from(*atom)), Some(&(Node::Bottom | Node::Member(..)))))
+                && problem.conclusion_atoms.iter()
+                    .all(|atom| matches!(problem.conclusion.nodes.get(usize::from(*atom)), Some(&(Node::Bottom | Node::Member(..) | Node::Or(..))))),
+            Band::Monotone { .. } => problem.premise_atoms.is_empty() && problem.conclusion_atoms.is_empty(),
+        },
+        Err(error) => matches!(error, ShapeError::VariableOutside(_) | ShapeError::WrongCarrier(_) | ShapeError::Disjunction(_) | ShapeError::PastBudget(_)),
     })]
     pub fn new(
         context: Vec<PointCount>,
@@ -331,14 +379,44 @@ impl Problem
         conclusion: Formula,
     ) -> Result<Self, ShapeError>
     {
-        let premise_atoms = premise.conjuncts(&context, Side::Premise)?;
-        let conclusion_atoms = conclusion.conjuncts(&context, Side::Conclusion)?;
+        let conjunctive = premise
+            .conjuncts(&context, Side::Premise)
+            .and_then(|premise_atoms| {
+                conclusion
+                    .conjuncts(&context, Side::Conclusion)
+                    .map(|conclusion_atoms| (premise_atoms, conclusion_atoms))
+            });
+        let (premise_atoms, conclusion_atoms, band) = match conjunctive {
+            Ok((premise_atoms, conclusion_atoms)) => {
+                (premise_atoms, conclusion_atoms, Band::Conjunctive)
+            },
+            Err(ShapeError::Disjunction(node)) => {
+                let band = match (
+                    premise.polynomial(&context),
+                    conclusion.polynomial(&context),
+                ) {
+                    (Ok(premise), Ok(conclusion)) => Band::Monotone {
+                        premise,
+                        conclusion,
+                    },
+                    (Err(Monotone::Outside), _) | (_, Err(Monotone::Outside)) => {
+                        return Err(ShapeError::Disjunction(node));
+                    },
+                    (Err(Monotone::PastBudget(at)), _) | (_, Err(Monotone::PastBudget(at))) => {
+                        return Err(ShapeError::PastBudget(at));
+                    },
+                };
+                (Vec::new(), Vec::new(), band)
+            },
+            Err(error) => return Err(error),
+        };
         Ok(Self {
             context,
             premise,
             conclusion,
             premise_atoms,
             conclusion_atoms,
+            band,
         })
     }
 
@@ -375,6 +453,18 @@ impl Problem
     pub fn conclusion_atoms(&self) -> &[NodeId]
     {
         &self.conclusion_atoms
+    }
+
+    /// The band the query lies in, with each side's normal form in the
+    /// monotone band.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn band(&self) -> &Band
+    {
+        &self.band
     }
 }
 
@@ -525,4 +615,202 @@ fn disjunctions(
         readings.push(reading);
     }
     Ok(readings)
+}
+
+/// The most terms a normal form of the monotone band holds. A meet or a join
+/// that could pass it is refused before it is built, so a conjunction of many
+/// disjunctions cannot grow a normal form without bound.
+const TERM_BUDGET: usize = 1024;
+
+/// Why a formula is not admitted in the monotone band.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Monotone
+{
+    /// An atom of the table is not monotone, or its variable lies outside
+    /// the context or past the generators of one machine word.
+    Outside,
+    /// The normal form at this node could pass [`TERM_BUDGET`].
+    PastBudget(NodeId),
+}
+
+/// The polynomial of one monotone atom: `⊤` for the whole carrier, `⊥` for
+/// the empty subshape, and the variable's generator for the upper point
+/// `{1}` of a carrier of two points.
+///
+/// # Specification
+/// - ensures: a carrier of two points with its upper point alone reads as the
+///   variable's generator.
+/// - fails: any other atom, an atom outside the context or in another carrier,
+///   and a variable past 64, are outside the band.
+/// - panics: none.
+///
+/// # Errors
+/// - [`Monotone::Outside`]: the atom is not monotone.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the upper point is admitted, and the lower point beside a
+///   disjunction across two variables keeps the present refusal.
+/// - witness: `tests::faces::the_monotone_band_admits_positive_formulas_only`
+#[spec(ensures: |ref ret| ret.is_ok() || *ret == Err(Monotone::Outside))]
+fn monotone_atom(
+    context: &[PointCount],
+    variable: Variable,
+    subset: &Subshape,
+) -> Result<Polynomial, Monotone>
+{
+    let carrier = context
+        .get(usize::from(variable))
+        .ok_or(Monotone::Outside)?;
+    if subset.ambient() != *carrier {
+        return Err(Monotone::Outside);
+    }
+    let decisions = subset.decisions();
+    if decisions
+        .iter()
+        .all(|decision| *decision == Membership::Inside)
+    {
+        return Ok(Polynomial::top());
+    }
+    if decisions
+        .iter()
+        .all(|decision| *decision == Membership::Outside)
+    {
+        return Ok(Polynomial::bottom());
+    }
+    if decisions == [Membership::Outside, Membership::Inside] {
+        return Polynomial::generator(Generator::from(usize::from(variable)))
+            .map_err(|_past| Monotone::Outside);
+    }
+    Err(Monotone::Outside)
+}
+
+/// The normal form already built at a child node.
+///
+/// # Specification
+/// trivial.
+fn form_at(
+    forms: &[Polynomial],
+    child: NodeId,
+) -> Result<&Polynomial, Monotone>
+{
+    forms.get(usize::from(child)).ok_or(Monotone::Outside)
+}
+
+impl Formula
+{
+    /// The polynomial the formula is in the free distributive lattice on the
+    /// context's variables, when every atom of its table is monotone.
+    ///
+    /// # Specification
+    /// - ensures: the polynomial holds at a vertex exactly when the formula
+    ///   holds at the assignment that gives each variable the vertex's point.
+    /// - fails: a table with an atom that is not monotone is outside the band;
+    ///   a node whose normal form could pass the budget is refused by the node.
+    /// - panics: none.
+    /// - intension: one normal form per node in table order, so the work is the
+    ///   meets and joins of the normal forms, each refused before it can pass
+    ///   the budget. The band is a property of the whole table, as the
+    ///   conjunctive band is.
+    ///
+    /// # Errors
+    /// - [`Monotone::Outside`]: an atom of the table is not monotone.
+    /// - [`Monotone::PastBudget`]: a meet or a join could pass the budget.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every polynomial on up to four variables, spelled as
+    ///   a formula, decides as its truth table; L3 — a non-monotone atom keeps
+    ///   the present refusal, and a conjunction of eleven disjunctions passes
+    ///   the budget.
+    /// - witness: `tests::cubes::the_crate_decides_every_monotone_polynomial`
+    /// - witness: `tests::faces::the_monotone_band_admits_positive_formulas_only`
+    #[spec(ensures: |ref ret| ret.is_ok() || matches!(*ret, Err(Monotone::Outside | Monotone::PastBudget(_))))]
+    fn polynomial(
+        &self,
+        context: &[PointCount],
+    ) -> Result<Polynomial, Monotone>
+    {
+        let mut forms: Vec<Polynomial> = Vec::with_capacity(self.nodes.len());
+        for (index, node) in self.nodes.iter().enumerate() {
+            let form = match *node {
+                Node::Top => Polynomial::top(),
+                Node::Bottom => Polynomial::bottom(),
+                Node::Member(variable, ref subset) => monotone_atom(context, variable, subset)?,
+                Node::And(left, right) => {
+                    let (left, right) = (form_at(&forms, left)?, form_at(&forms, right)?);
+                    if left.terms().len().saturating_mul(right.terms().len()) > TERM_BUDGET {
+                        return Err(Monotone::PastBudget(NodeId::from(index)));
+                    }
+                    left.meet(right)
+                },
+                Node::Or(left, right) => {
+                    let (left, right) = (form_at(&forms, left)?, form_at(&forms, right)?);
+                    if left.terms().len().saturating_add(right.terms().len()) > TERM_BUDGET {
+                        return Err(Monotone::PastBudget(NodeId::from(index)));
+                    }
+                    left.join(right)
+                },
+            };
+            forms.push(form);
+        }
+        forms.pop().ok_or(Monotone::Outside)
+    }
+}
+
+/// Evaluates a formula's root at a total assignment, every node of the table
+/// in order.
+///
+/// # Specification
+/// - ensures: `Yes` exactly when the root holds: `⊤` holds, `⊥` fails, an atom
+///   holds when its variable's point is inside its subshape, and the
+///   connectives read as conjunction and disjunction.
+/// - fails: an atom the assignment does not read is refused by name.
+/// - panics: none.
+/// - executable: none — the reading is the formula's semantics itself; the
+///   independent evaluator in the agreement suites is its oracle.
+///
+/// # Errors
+/// - [`ShapeError::VariableOutside`]: the assignment has no point for an atom's
+///   variable.
+/// - [`ShapeError::PointOutside`]: a point lies outside an atom's carrier.
+/// - [`ShapeError::MalformedFormula`]: a child is not read, or the table is
+///   empty.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every countermodel the monotone band returns is read
+///   through this evaluator, and forged assignments on either side of the
+///   premise are refused.
+/// - witness: `tests::cubes::the_crate_decides_every_monotone_polynomial`
+/// - witness: `tests::faces::forged_monotone_evidence_is_refused`
+pub fn evaluate(
+    formula: &Formula,
+    assignment: &[Point],
+) -> Result<Truth, ShapeError>
+{
+    let mut readings: Vec<Truth> = Vec::with_capacity(formula.nodes.len());
+    for node in &formula.nodes {
+        let reading = match *node {
+            Node::Top => Truth::Yes,
+            Node::Bottom => Truth::No,
+            Node::Member(variable, ref subset) => member(variable, subset, assignment)?,
+            Node::And(left, right) | Node::Or(left, right) => {
+                let left = readings.get(usize::from(left)).copied();
+                let right = readings.get(usize::from(right)).copied();
+                let (Some(left), Some(right)) = (left, right)
+                else {
+                    return Err(ShapeError::MalformedFormula);
+                };
+                let both = left == Truth::Yes && right == Truth::Yes;
+                let either = left == Truth::Yes || right == Truth::Yes;
+                let holds = if matches!(*node, Node::And(..)) {
+                    both
+                }
+                else {
+                    either
+                };
+                if holds { Truth::Yes } else { Truth::No }
+            },
+        };
+        readings.push(reading);
+    }
+    readings.last().copied().ok_or(ShapeError::MalformedFormula)
 }

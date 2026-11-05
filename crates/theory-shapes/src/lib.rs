@@ -60,31 +60,36 @@
 //! conclusion conjunct — an atom's subshape or a column's union — for
 //! inclusion.
 //!
+//! [`Band::Monotone`] admits a refused query whose atoms are all monotone, and
+//! [`decide`] answers it in the normal forms of the free distributive lattice.
+//!
 //! The column disjunction is the shape of a coverage question: a match's arms
 //! over one column of a data type are one atom each over that type's
 //! constructors, the arms cover the column when `⊤` entails their
 //! disjunction, and a countermodel is a constructor no arm takes.
 //!
-//! The composite language — disjunctions across variables, or in a premise —
-//! is not offered. Entailment there is coNP-complete ([Rose–Licata]), and
-//! finite membership alone reaches the bar: over two-point carriers read
-//! `x ∈ {1}` as a positive literal and `x ∈ {0}` as a negative one, and a
-//! conjunctive normal form entails `⊥` exactly when it is unsatisfiable. The
-//! extension type's questions at a boundary are atomic or conjunctive, and
-//! gandr's transport is replay over a trace, which consults no entailment
-//! procedure at all. `FaceTT`'s own algorithmic assumption is decidable
-//! atomic entailment; a client meeting `φ ∨ ψ` across variables decomposes it
-//! into one question per disjunct.
+//! The rest of the composite language — disjunctions across variables, or in
+//! a premise, beside a negative literal — is not offered. Entailment there is
+//! coNP-complete ([Rose–Licata]), and finite membership alone reaches the
+//! bar: over two-point carriers read `x ∈ {1}` as a positive literal and
+//! `x ∈ {0}` as a negative one, and a conjunctive normal form entails `⊥`
+//! exactly when it is unsatisfiable. The extension type's questions at a
+//! boundary are atomic or conjunctive, and gandr's transport is replay over a
+//! trace, which consults no entailment procedure at all. `FaceTT`'s own
+//! algorithmic assumption is decidable atomic entailment; a client meeting
+//! `φ ∨ ψ` across variables decomposes it into one question per disjunct.
 //!
 //! # Evidence
 //!
 //! [`decide`] returns [`Evidence::Holds`] with a [`Derivation`] or
-//! [`Evidence::Refuted`] with a [`Countermodel`]. A derivation is one of four
+//! [`Evidence::Refuted`] with a [`Countermodel`]. A derivation is one of five
 //! forms: a variable with an empty carrier (no assignment exists); a `⊥` the
-//! premise reaches; premise atoms on one variable whose meet is empty; or, for
+//! premise reaches; premise atoms on one variable whose meet is empty; for
 //! each conclusion conjunct, the premise atoms on its variable whose meet the
 //! conjunct includes — `∧`-elimination, meet, monotonicity, `∨`-introduction
-//! and `∧`-introduction in the lattice. A countermodel is a total assignment.
+//! and `∧`-introduction in the lattice; or, in the monotone band, for each
+//! term of the premise's normal form, a conclusion term it lies below. A
+//! countermodel is a total assignment.
 //!
 //! Both are untrusted public data. [`Derivation::validate`] reads the cited
 //! atoms out of the query, recomputes their meet and each column's union with
@@ -92,7 +97,9 @@
 //! [`Countermodel::validate`] checks the assignment's length and bounds and
 //! evaluates both formulas at it. Neither calls [`decide`], and the decision
 //! shares no code with them: it intersects and unites raw membership tables.
-//! The agreement suite checks every answer against a truth table computed by
+//! In the monotone band the validator trusts the normal forms that admission
+//! built.
+//! The agreement suites check every answer against a truth table computed by
 //! a separately written evaluator.
 //! This is executable evidence, not a machine-checked proof of the Rust.
 //!
@@ -136,6 +143,9 @@
 //!   Type Theory: a constructive interpretation of the univalence axiom". TYPES
 //!   2015, `doi:10.4230/LIPIcs.TYPES.2015.5` — the interval, its face lattice
 //!   and Glue, the alternative not taken.
+//! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: §
+//!   presented-spaces-stone-faces reads the face formulas as a lattice whose
+//!   monotone part is free, and the monotone band decides in that free part.
 //!
 //! [`FaceTT`]: https://types2026.cse.chalmers.se/abstracts/42.pdf
 //! [Kaposi–Xie]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10
@@ -213,12 +223,14 @@ pub use finite::Membership;
 pub use finite::SetOperation;
 pub use finite::Subshape;
 pub use finite::UnionSquare;
+pub use formula::Band;
 pub use formula::Formula;
 pub use formula::Node;
 pub use formula::Problem;
 pub use index::NodeId;
 pub use index::Point;
 pub use index::PointCount;
+pub use index::TermIndex;
 pub use index::Variable;
 pub use oracle::Citation;
 pub use oracle::Countermodel;

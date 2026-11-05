@@ -5,6 +5,7 @@ use gandr_theory_shapes::Leg;
 use gandr_theory_shapes::NodeId;
 use gandr_theory_shapes::Point;
 use gandr_theory_shapes::ShapeError;
+use gandr_theory_shapes::TermIndex;
 use gandr_theory_shapes::Variable;
 
 #[test]
@@ -29,6 +30,8 @@ fn every_refusal_names_its_index()
         ShapeError::CitedVariable(node),
         ShapeError::NotDisjoint(variable),
         ShapeError::Unsupported(node),
+        ShapeError::PastBudget(node),
+        ShapeError::NotCovered(TermIndex::from(index)),
     ];
     for error in indexed {
         assert!(
@@ -49,6 +52,8 @@ fn every_refusal_names_its_index()
         ShapeError::AssignmentLength,
         ShapeError::NotCountermodel,
         ShapeError::CitationCount,
+        ShapeError::OutsideBand,
+        ShapeError::CoverCount,
     ];
     let mut rendered: Vec<String> = indexed
         .iter()
