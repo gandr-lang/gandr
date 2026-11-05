@@ -12,4 +12,6 @@ mod recognition;
 #[cfg(test)]
 mod scopes;
 #[cfg(test)]
+mod squier;
+#[cfg(test)]
 mod static_operators;
