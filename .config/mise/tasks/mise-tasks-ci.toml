@@ -1931,63 +1931,68 @@ if [[ $areas == '[]' ]]; then
 fi
 claims=$root/.config/claims
 source "$claims/deps.bash"
+source "$claims/input.bash"
 # REST throughout: the GraphQL limit, shared by every seat's watches, runs out
 # within the hour, and a seat must still claim its next item.
 repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
 # The board reaches jq through files, never as arguments: with its bodies it
-# is past the argument limit (#2671).
+# is past the argument limit (#2671). Each reading `next.jq` takes is a file
+# here (`input.bash`, #5292).
 board=$(mktemp -d)
 trap 'rm -rf "$board"' EXIT
+printf '%s\n' "$areas" > "$board/areas.json"
 gh api --paginate "repos/$repo/issues?state=open&per_page=100" --jq '[.[] | select(.pull_request == null)
   | {number, title, labels: [.labels[].name],
      body, blocked: (.issue_dependencies_summary.blocked_by // 0),
      parent: ([.parent_issue_url // "" | capture("/repos/'"$repo"'/issues/(?<n>[0-9]+)$").n | tonumber][0])}]' | jq -s 'add // []' > "$board/issues.json"
 epics=$(jq -r --argjson areas "$areas" '[.[] | select(.labels | index("kind:epic")) | .number] as $epics
   | [.[] | select(any(.labels[]; IN($areas[])) and .parent != null) | .parent as $p | select($epics | index($p))] | map(.parent) | unique[]' "$board/issues.json")
-order='{}'
+printf '{}\n' > "$board/order.json"
 for epic in $epics; do
-  children=$(gh api --paginate "repos/$repo/issues/$epic/sub_issues?per_page=100" --jq '[.[].number]' | jq -s 'add // []')
-  order=$(jq --arg epic "$epic" --argjson children "$children" '. + {($epic): $children}' <<< "$order")
+  gh api --paginate "repos/$repo/issues/$epic/sub_issues?per_page=100" --jq '[.[].number]' | jq -s 'add // []' > "$board/children.json"
+  jq --arg epic "$epic" --slurpfile children "$board/children.json" '. + {($epic): $children[0]}' "$board/order.json" > "$board/next.json"
+  mv "$board/next.json" "$board/order.json"
 done
 # The programme focus (#3959): its members (`deps_focus`), each parent's in
 # its sub-issue order, and the merged pull requests the open defects' and
 # refactors' `from:` lines name. `next.jq` reads both as they stand, so a
 # recorded case reads what a live run does (#4118).
-focus=$(deps_focus "$repo")
-landings='[]'
-if [[ $focus != null ]]; then
-  order=$(jq -c --argjson focus "$focus" \
-    '. + ($focus.members | group_by(.parent) | map({key: "\(.[0].parent)", value: map(.number)}) | from_entries)' <<< "$order")
-  landings=$(jq -r -L "$claims" 'include "sections";
+deps_focus "$repo" > "$board/focus.json"
+printf '[]\n' > "$board/landings.json"
+if [[ $(jq 'type' "$board/focus.json") != '"null"' ]]; then
+  jq -c --slurpfile focus "$board/focus.json" \
+    '. + ($focus[0].members | group_by(.parent) | map({key: "\(.[0].parent)", value: map(.number)}) | from_entries)' "$board/order.json" > "$board/next.json"
+  mv "$board/next.json" "$board/order.json"
+  jq -r -L "$claims" 'include "sections";
       [.[] | select(.labels | index("kind:defect") or index("kind:refactor")) | .body // "" | from_lines[]] | unique[]' "$board/issues.json" \
     | while read -r landing; do
         gh api "repos/$repo/issues/$landing" --jq 'select(.pull_request.merged_at != null) | .number' \
           | while read -r merged; do gh api "repos/$repo/pulls/$merged" --jq '{number, body: (.body // ""), head: .head.ref}'; done
-      done | jq -s -c .)
+      done | jq -s -c . > "$board/landings.json"
 fi
 concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
-refusals=$(yq -p toml -o json '.refusal // {} | keys' "$root/.config/debug/refusals.toml" | jq -c .)
+yq -p toml -o json '.refusal // {} | keys' "$root/.config/debug/refusals.toml" | jq -c . > "$board/refusals.json"
 gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \
   --jq '[.[] | {body: (.body // ""), head: .head.ref}]' | jq -s 'add // []' > "$board/prs.json"
 # Origin's branches working a claimed issue with no claim marker, each with
 # its head commit's time (#3951): `next.jq` places such a claim in the lane
 # its newest branch names, and with no branch in no lane (#4504).
-lanes=$(yq -p toml -o json '.lane | keys' "$root/.config/issues/lanes.toml" | jq -c .)
+yq -p toml -o json '.lane | keys' "$root/.config/issues/lanes.toml" | jq -c . > "$board/lanes.json"
 unmarked=$(jq -r -L "$claims" 'include "markers";
   .[] | select((.labels | index("status:claimed")) and (.body | claim_lane) == null) | .number' "$board/issues.json" | tr '\n' ' ')
-branches='[]'
+printf '[]\n' > "$board/branches.json"
 if [[ -n ${unmarked// /} ]]; then
-  branches=$(git ls-remote --heads origin \
+  git ls-remote --heads origin \
     | awk -v numbers="$unmarked" 'BEGIN { split(numbers, list, " "); for (i in list) wanted[list[i]] = 1 }
         { head = $2; sub(/^refs\/heads\//, "", head); count = split(head, part, "-")
           for (i = 2; i <= count; i++) if (part[i] in wanted) { print $1 "\t" head; next } }' \
     | while IFS=$'\t' read -r sha head; do
         jq -n -c --arg head "$head" --arg at "$(gh api "repos/$repo/commits/$sha" --jq .commit.committer.date)" \
           '{head: $head, at: ($at | fromdateiso8601)}'
-      done | jq -s -c .)
+      done | jq -s -c . > "$board/branches.json"
 fi
 now=$(date +%s)
-live='{}'
+printf '{}\n' > "$board/live.json"
 # The pick is read from GitHub again before the claim, and once more after
 # its write (#4660): the board is as old as the run, so a run that read it
 # before another lane's claim landed would claim the same issue. The order is
@@ -1996,20 +2001,19 @@ live='{}'
 # (`claimed.jq`), so two runs that both reread before either writes see the
 # earlier claim after their writes: it keeps the issue, and the later run
 # takes its marker off and its next pick. Readings reach jq through files, an
-# issue body being past the argument limit at its largest (#2671).
+# issue body being past the argument limit at its largest (#2671, #5292).
 printf '{}\n' > "$board/reread.json"
 claimed=false
 while :; do
-  lines=$(jq -n --argjson areas "$areas" --slurpfile issues "$board/issues.json" --argjson order "$order" --argjson refusals "$refusals" \
-    --arg lane "$lane" --argjson now "$now" --slurpfile prs "$board/prs.json" --argjson focus "$focus" --argjson landings "$landings" --argjson live "$live" \
-    --argjson lanes "$lanes" --argjson branches "$branches" --slurpfile reread "$board/reread.json" \
-    '{areas: $areas, issues: $issues[0], order: $order, refusals: $refusals, lane: $lane, now: $now, prs: $prs[0], focus: $focus, landings: $landings, live: $live, lanes: $lanes, branches: $branches, reread: $reread[0]}' \
+  lines=$(claim_input "$board" "$lane" "$now" \
     | jq -r -L "$claims" --argjson concerns "$concerns" --argjson cutoff "$(jq -R -s -f "$claims/cutoff.jq" "$root/.config/references/window.toml")" -f "$claims/next.jq")
-  unread=$(jq -R -r --argjson live "$live" 'capture("^(blocked: #)?(?<n>[0-9]+)(\t|$)").n | select($live[.] == null)' <<< "$lines")
+  unread=$(jq -R -r --slurpfile live "$board/live.json" 'capture("^(blocked: #)?(?<n>[0-9]+)(\t|$)").n | select($live[0][.] == null)' <<< "$lines")
   if [[ -n $unread ]]; then
     for number in $unread; do
-      live=$(jq -c --arg n "$number" --argjson read "$(deps_blocked_by "$repo" "$number")" \
-        '.[$n] = [$read[] | select(.state == "open") | .number]' <<< "$live")
+      deps_blocked_by "$repo" "$number" > "$board/blocked.json"
+      jq -c --arg n "$number" --slurpfile read "$board/blocked.json" \
+        '.[$n] = [$read[0][] | select(.state == "open") | .number]' "$board/live.json" > "$board/next.json"
+      mv "$board/next.json" "$board/live.json"
     done
     continue
   fi
@@ -2059,7 +2063,7 @@ if [[ -n $design ]]; then
   echo "design pages: $units units and $pages pages that no open unit names; mise run report:design" >&2
 fi
 while read -r _ issue; do
-  echo "blocked: $issue by $(jq -r --arg n "${issue#\#}" '.[$n] | map("#\(.)") | join(", ")' <<< "$live")" >&2
+  echo "blocked: $issue by $(jq -r --arg n "${issue#\#}" '.[$n] | map("#\(.)") | join(", ")' "$board/live.json")" >&2
 done < <(awk '/^blocked: /' <<< "$lines")
 awk '/^(observation due|sections due|restate): /' <<< "$lines"
 source "$claims/pick.bash"
