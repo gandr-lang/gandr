@@ -394,8 +394,9 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 ///   handled as [`Server::changed_on_disk`] states; a watch that cannot start
 ///   is said once in `log` and the hub serves on unwatched. A connection ends
 ///   at `exit`, at the end of its stream, or at a stream fault; it then holds
-///   nothing and its socket is shut. The hub returns once no connection has
-///   been open for `linger`, its socket file removed first so a late client
+///   nothing and its socket is shut. A connection whose thread unwinds also
+///   ends, so it never keeps the hub open. The hub returns once no connection
+///   has been open for `linger`, its socket file removed first so a late client
 ///   starts a fresh hub.
 /// - provides: the engine hub's whole lifetime.
 /// - fails: when accepting fails for a reason other than having nothing to
@@ -418,6 +419,7 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 /// - witness: `hub::tests::a_line_connection_reaches_the_second_face`
 /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
 /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
+/// - witness: `hub::tests::a_hub_whose_connection_faults_exits_after_its_linger_4497`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -455,16 +457,14 @@ where
         stream.set_nonblocking(false)?;
         peers = peers.saturating_add(1);
         let _opened = open.fetch_add(1, Ordering::SeqCst);
-        let (workspace, disk, log, open) = (
-            Arc::clone(&workspace),
-            Arc::clone(&disk),
-            Arc::clone(&log),
-            Arc::clone(&open),
-        );
+        let opened = Opened(Arc::clone(&open));
+        let (workspace, disk, log) = (Arc::clone(&workspace), Arc::clone(&disk), Arc::clone(&log));
         let peer = Peer::from(peers);
         drop(thread::spawn(move || {
+            // The count goes back when the thread ends, whether `connection`
+            // returns or unwinds.
+            let _opened = opened;
             connection(stream, peer, &workspace, &disk, &log, lines);
-            let _closed = open.fetch_sub(1, Ordering::SeqCst);
         }));
         Ok(())
     };
@@ -495,6 +495,29 @@ where
         thread::sleep(POLL);
     }
     Ok(())
+}
+
+/// One open connection of [`run_hub`], counted from its acceptance until its
+/// thread ends.
+#[repr(transparent)]
+struct Opened(Arc<AtomicU64>);
+
+impl Drop for Opened
+{
+    /// Give back the connection's count.
+    ///
+    /// # Specification
+    /// - ensures: the count of open connections is one less.
+    /// - panics: none.
+    /// - executable: none — runs during an unwind as well.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`run_hub`].
+    /// - witness: `hub::tests::a_hub_whose_connection_faults_exits_after_its_linger_4497`
+    fn drop(&mut self)
+    {
+        let _closed = self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// Serve the connection `peer` over `stream` until it ends.
@@ -1790,6 +1813,62 @@ mod tests
             .is_ok(),
             "a socket another hand removed is not a fault"
         );
+    }
+
+    /// A line face that faults on the first line it reads, as a face that
+    /// meets a defect does.
+    ///
+    /// # Specification
+    /// trivial.
+    fn faulting(
+        reading: &mut BufReader<UnixStream>,
+        _peer: super::Peer,
+        _workspace: &std::sync::Mutex<super::Workspace>,
+    )
+    {
+        let mut line = String::new();
+        drop(reading.read_line(&mut line));
+        panic!("the face faults on {line:?}");
+    }
+
+    #[test]
+    fn a_hub_whose_connection_faults_exits_after_its_linger_4497()
+    {
+        let scratch = Scratch::new(Json("fault"));
+        let socket = scratch.socket();
+        let Maybe::Present(listener) = bind(&socket).expect("the socket binds")
+        else {
+            panic!("no other hub serves a fresh socket");
+        };
+        let serving = socket.clone();
+        let hub = thread::spawn(move || {
+            run_hub(
+                &listener,
+                &serving,
+                Duration::from_millis(100),
+                io::sink(),
+                Some(faulting),
+                super::Workspace::spelled(gandr_surface_pretty::Spelling::Unicode),
+            )
+        });
+        let mut model = UnixStream::connect(&socket).expect("the hub accepts");
+        model.write_all(b"{\"fault\":1}\n").expect("the hub reads");
+        drop(model);
+        let deadline = std::time::Instant::now()
+            .checked_add(OWED)
+            .expect("the deadline is representable");
+        while !hub.is_finished() && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            hub.is_finished(),
+            "a hub whose one connection faulted exits after its linger"
+        );
+        assert!(
+            hub.join().expect("the hub returns").is_ok(),
+            "a faulted connection is not a fault of the hub"
+        );
+        assert!(!socket.exists(), "the hub removes its socket");
     }
 
     #[test]
