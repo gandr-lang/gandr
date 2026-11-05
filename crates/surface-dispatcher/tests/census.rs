@@ -6,7 +6,6 @@
 //! test code rather than as shipping code.
 
 use alloc::collections::BTreeMap;
-use alloc::collections::BTreeSet;
 use core::convert::Infallible;
 use core::ops::ControlFlow;
 use std::path::Path;
@@ -648,23 +647,14 @@ mod sweeps
             "the sample is drawn: {}",
             visited.len()
         );
-        let visited: BTreeSet<PathBuf> = visited.into_iter().map(|source| source.path).collect();
-        let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../corpus")
-            .canonicalize()
-            .expect("the corpus resolves");
+        // The walk composes the visited sources alone, each with its import
+        // closure, so the sweep's cost is linear in its sample (#5217).
+        let walk = Walk::new(visited.into_iter().map(|source| source.path).collect());
         let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
         let mut unread: Vec<String> = Vec::new();
         let mut moved: Vec<String> = Vec::new();
         let mut held: Vec<String> = Vec::new();
         let mut over = 0_usize;
-        let walk = Walk::new(vec![
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../surface-corpus/strict")
-                .canonicalize()
-                .expect("the strict root resolves"),
-            corpus,
-        ]);
         let ControlFlow::Continue(_report) = walk.visit(
             &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
@@ -678,9 +668,6 @@ mod sweeps
                 else {
                     return ControlFlow::Continue(());
                 };
-                if !visited.contains(path) {
-                    return ControlFlow::Continue(());
-                }
                 let Some(table) = typed(&grammar, path, root, (text, base))
                 else {
                     return ControlFlow::Continue(());
