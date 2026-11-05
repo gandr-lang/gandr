@@ -5,7 +5,9 @@
 # that a restack rebases `own` onto. The case reads whether the gate carries
 # to the rebased tree.
 set -euo pipefail
-passed="$(cd "${BASH_SOURCE[0]%/*}" && pwd)/passed.bash"
+here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+passed=$here/passed.bash
+source "$here/../cases/scratch.bash"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 failed=0
@@ -21,9 +23,7 @@ fail() {
 setup() {
   git init --quiet -b main "$1"
   cd "$1"
-  git config user.email gate@example.invalid
-  git config user.name gate
-  git config commit.gpgsign false
+  identity
   printf 'one\ntwo\nthree\n' > shared
   git add shared && git commit --quiet -m base
   git checkout --quiet -b top

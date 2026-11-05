@@ -20,7 +20,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-replays.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 failed=0
 
-commit() { printf '%s\n' "$2" > "$1" && git add "$1" && git commit --quiet --message "$3"; }
+source "$here/../cases/scratch.bash"
 
 # Land the lower on main squashed: its tree as one new commit. The commit is
 # dated apart, or one made in the lower's second would be the lower's itself.
@@ -33,9 +33,7 @@ land() {
 scenario() {
   git init --quiet --initial-branch=main "$1"
   cd "$1"
-  git config user.name case
-  git config user.email case@example.invalid
-  git config commit.gpgsign false
+  identity
   commit a.txt base base
   git switch --quiet --create lower
   commit a.txt "$(printf 'base\none')" 'lower (#1)'

@@ -27,16 +27,14 @@ repo=case/case
 trunk=main
 failed=0
 
-commit() { printf '%s\n' "$2" > "$1" && git add "$1" && git commit --quiet --message "$3"; }
+source "$here/../cases/scratch.bash"
 
 # The scratch repository in `$1`, its lower forked as `$2` and edited as `$3`.
 scenario() {
   git init --quiet --bare --initial-branch=main "$1/origin.git"
   git clone --quiet "$1/origin.git" "$1/clone" 2> /dev/null
   cd "$1/clone"
-  git config user.name case
-  git config user.email case@example.invalid
-  git config commit.gpgsign false
+  identity
   commit f.txt a base
   git push --quiet origin main
   if [[ $2 == behind ]]; then git switch --quiet --create lower; fi
@@ -73,9 +71,7 @@ for (( i = 0; i < count; i++ )); do
     (
       git clone --quiet --branch lower "$dir/origin.git" "$dir/seat" 2> /dev/null
       cd "$dir/seat"
-      git config user.name case
-      git config user.email case@example.invalid
-      git config commit.gpgsign false
+      identity
       printf '%s\n' restacked > l.txt
       git commit --quiet --all --amend --no-edit
       git push --quiet --force origin lower

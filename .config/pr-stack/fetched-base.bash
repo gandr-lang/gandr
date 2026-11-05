@@ -22,8 +22,7 @@ trap 'rm -rf "$work"' EXIT
 trunk=main
 failed=0
 
-commit() { printf '%s\n' "$2" > "$1" && git add "$1" && git commit --quiet --message "$3"; }
-identity() { git config user.name case && git config user.email case@example.invalid && git config commit.gpgsign false; }
+source "$here/../cases/scratch.bash"
 evidence_base() { git merge-base origin/main HEAD; }
 
 count=$(jq length "$cases")

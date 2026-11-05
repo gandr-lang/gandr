@@ -16,13 +16,11 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-sweep-subjects.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 failed=0
 
-commit() { printf '%s\n' "$2" > "$1" && git add "$1" && git commit --quiet --message "$3"; }
+source "$here/../cases/scratch.bash"
 
 cd "$work"
 git init --quiet --initial-branch=main .
-git config user.name case
-git config user.email case@example.invalid
-git config commit.gpgsign false
+identity
 commit a.txt base base
 commit a.txt one S
 git switch --quiet --create repeat

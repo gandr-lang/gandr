@@ -19,7 +19,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-restamp.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 failed=0
 
-identity() { git config user.name case && git config user.email case@example.invalid && git config commit.gpgsign false; }
+source "$here/../cases/scratch.bash"
 write() { mkdir -p "${1%/*}" && printf '%s\n' "$2" > "$1"; }
 
 # The BSD tools: each refuses an option only GNU's takes, by name, and runs
