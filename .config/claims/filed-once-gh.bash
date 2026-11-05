@@ -38,14 +38,15 @@ case "$*" in
     cat "$board"
     ;;
   "issue create"*)
-    file=
+    file= title=
     args=("$@")
     for ((i = 0; i < ${#args[@]}; i++)); do
       [[ ${args[i]} != --body-file ]] || file=${args[i + 1]}
+      [[ ${args[i]} != --title ]] || title=${args[i + 1]}
     done
     locked
     number=$(($(jq length "$board") + 1))
-    jq --argjson n "$number" --rawfile body "$file" '. + [{number: $n, state: "OPEN", body: $body}]' "$board" > "$board.new"
+    jq --argjson n "$number" --arg title "$title" --rawfile body "$file" '. + [{number: $n, state: "OPEN", title: $title, body: $body}]' "$board" > "$board.new"
     mv "$board.new" "$board"
     echo "https://github.com/case/case/issues/$number"
     ;;
