@@ -344,6 +344,66 @@ impl Refinement
         ));
     }
 
+    /// The refinement of the registered cut at `cut` whose enclosure has the
+    /// ends `lower` and `upper`, as a replayed `Witnesses` step states them.
+    ///
+    /// # Specification
+    /// - requires: [`crate::certificate::check`] accepts a `Witnesses` step of
+    ///   `cut` with these ends, so each end is a witness of its side.
+    /// - ensures: the enclosure has these ends.
+    /// - fails: refuses a node that is not a registered cut as [`radicand`]
+    ///   does.
+    /// - panics: none.
+    /// - executable: none — the requirement speaks of the replay of a step.
+    ///
+    /// # Errors
+    /// - [`CertificateCheck::UnknownNode`], [`CertificateCheck::WrongNode`],
+    ///   [`CertificateCheck::ForgedCut`]: as [`radicand`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`crate::dovetail::Dovetail::resume`], which
+    ///   rebuilds each enclosure here.
+    /// - witness: `tests::checkpoint::a_resumed_run_certifies_as_an_unbroken_one`
+    pub(crate) fn witnessed(
+        plan: &Plan,
+        cut: NodeId,
+        (lower, upper): (Dyadic, Dyadic),
+    ) -> Result<Self, CertificateCheck>
+    {
+        let radicand = radicand(plan, cut)?;
+        return Ok(Self {
+            radicand,
+            lower,
+            upper,
+        });
+    }
+
+    /// Narrow the enclosure as a replayed `Split` step states: `point`
+    /// replaces the end of `side`.
+    ///
+    /// # Specification
+    /// - requires: [`crate::certificate::check`] accepts the split of this
+    ///   enclosure at `point` on `side`.
+    /// - ensures: the end of `side` is `point`.
+    /// - panics: none.
+    /// - executable: none — the requirement speaks of the replay of a step.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`crate::dovetail::Dovetail::resume`], which
+    ///   narrows each rebuilt enclosure here.
+    /// - witness: `tests::checkpoint::every_checkpoint_resumes_to_the_unbroken_run`
+    pub(crate) fn split(
+        &mut self,
+        point: Dyadic,
+        side: Side,
+    )
+    {
+        match side {
+            Side::Lower => self.lower = point,
+            Side::Upper => self.upper = point,
+        }
+    }
+
     /// The lower end of the enclosure.
     ///
     /// # Specification

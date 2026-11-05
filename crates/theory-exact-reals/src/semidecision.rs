@@ -33,6 +33,8 @@ use crate::certificate::CheckerQuotas;
 use crate::certificate::FormatVersion;
 use crate::certificate::Step;
 use crate::certificate::StepId;
+use crate::certificate::check;
+use crate::dovetail::ResumeError;
 use crate::dovetail::Steps;
 use crate::dyadic::Dyadic;
 use crate::dyadic::Exponent;
@@ -320,6 +322,70 @@ impl Progress
         };
     }
 
+    /// The work on `obligation` that `steps` record, as a checkpoint holds it.
+    ///
+    /// # Specification
+    /// - ensures: the steps replay in [`crate::certificate::check`] within
+    ///   `quotas`, and each chain of the work names the step that concludes its
+    ///   current enclosure. The work goes on as the work that wrote the steps
+    ///   goes on.
+    /// - fails: refuses steps that do not replay with the checker's refusal,
+    ///   and steps that the machine does not write for a live obligation as
+    ///   [`ResumeError::Steps`]: a chain of another node, a split of an
+    ///   enclosure that a later step narrows, or a step that concludes.
+    /// - panics: none.
+    /// - executable: none — the clause speaks of the work that wrote the steps.
+    /// - intension: one replay of the steps, then one walk of them.
+    ///
+    /// # Errors
+    /// - [`ResumeError::Replay`]: the steps do not replay.
+    /// - [`ResumeError::Steps`]: the machine does not write these steps.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every checkpoint of a run at every turn resumes to
+    ///   the certificates of the run that never stops. L3 — each refusal on its
+    ///   smallest trigger.
+    /// - witness: `tests::checkpoint::a_resumed_run_certifies_as_an_unbroken_one`
+    /// - witness: `tests::checkpoint::a_corrupt_checkpoint_is_refused_by_name`
+    pub(crate) fn resume(
+        plan: &ValidatedPlan,
+        obligation: Obligation,
+        steps: Vec<Step>,
+        quotas: &CheckerQuotas,
+    ) -> Result<Self, ResumeError>
+    {
+        if steps.is_empty() {
+            return Ok(Self::new(obligation));
+        }
+        let certificate = Certificate::new(FormatVersion::CURRENT, steps);
+        check(plan, &certificate, quotas).map_err(ResumeError::Replay)?;
+        let steps = certificate.into_steps();
+        let state = rebuilt(plan.plan(), obligation, &steps)?;
+        return Ok(Self {
+            obligation,
+            steps,
+            state,
+        });
+    }
+
+    /// The obligation.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn obligation(&self) -> Obligation
+    {
+        return self.obligation;
+    }
+
+    /// The steps written so far.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn steps(&self) -> &[Step]
+    {
+        return &self.steps;
+    }
+
     /// The outcome of a settled obligation, or `None` while it is live.
     ///
     /// # Specification
@@ -493,7 +559,7 @@ impl Progress
     /// # Specification
     /// trivial.
     fn target(
-        &self,
+        &mut self,
         chain: Chain,
     ) -> (State, Unit)
     {
@@ -679,9 +745,11 @@ impl Progress
     ///
     /// # Specification
     /// trivial.
-    fn certified(&self) -> State
+    fn certified(&mut self) -> State
     {
-        return State::Certified(Certificate::new(FormatVersion::CURRENT, self.steps.clone()));
+        // The settled obligation keeps its steps in the certificate alone.
+        let steps = core::mem::take(&mut self.steps);
+        return State::Certified(Certificate::new(FormatVersion::CURRENT, steps));
     }
 }
 
@@ -705,5 +773,117 @@ const fn suspension(check: CertificateCheck) -> SuspendReason
         | CertificateCheck::NotUpper
         | CertificateCheck::OutsideEnclosure
         | CertificateCheck::NotSeparated => SuspendReason::NoRule,
+    };
+}
+
+/// The state of the work on `obligation` that the replayed `steps` record.
+///
+/// # Specification
+/// - requires: [`crate::certificate::check`] accepts `steps`, which are not
+///   empty.
+/// - ensures: each chain names the last step that narrows it, and the chains
+///   stand in the order that the machine writes them: the first operand's
+///   chain, then the second's.
+/// - fails: refuses steps that the machine does not write for a live obligation
+///   as [`ResumeError::Steps`].
+/// - panics: none.
+/// - executable: none — the clause speaks of the order in which the machine
+///   writes its steps.
+/// - intension: one walk of the steps, and one scan of at most two chains a
+///   step.
+///
+/// # Errors
+/// - [`ResumeError::Steps`]: the machine does not write these steps.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every checkpoint of generated runs at every turn resumes
+///   to the unbroken run. L3 — each step that the machine does not write.
+/// - witness: `tests::checkpoint::every_checkpoint_resumes_to_the_unbroken_run`
+/// - witness: `tests::checkpoint::a_corrupt_checkpoint_is_refused_by_name`
+fn rebuilt(
+    plan: &Plan,
+    obligation: Obligation,
+    steps: &[Step],
+) -> Result<State, ResumeError>
+{
+    // At most two chains: an enclosure has one, and a comparison one for each
+    // operand.
+    let mut chains: Vec<(NodeId, Chain)> = Vec::with_capacity(2);
+    for (index, step) in steps.iter().enumerate() {
+        let id = StepId::try_from(index).map_err(|_wide| ResumeError::Steps)?;
+        match *step {
+            Step::Witnesses {
+                cut,
+                ref lower,
+                ref upper,
+            } => {
+                let refinement = Refinement::witnessed(plan, cut, (lower.clone(), upper.clone()))
+                    .map_err(|_unregistered| ResumeError::Steps)?;
+                chains.push((cut, Chain::Cut {
+                    step: id,
+                    refinement,
+                }));
+            },
+            Step::Constant { real } => {
+                let Ok(&Node::Real(Real::Constant(ref value))) = plan.node(real)
+                else {
+                    return Err(ResumeError::Steps);
+                };
+                chains.push((real, Chain::Constant {
+                    step: id,
+                    value: value.clone(),
+                }));
+            },
+            Step::Split {
+                premise,
+                ref point,
+                side,
+            } => {
+                let Some(&mut (
+                    _,
+                    Chain::Cut {
+                        ref mut step,
+                        ref mut refinement,
+                    },
+                )) = chains.iter_mut().find(|chain| chain.1.step() == premise)
+                else {
+                    return Err(ResumeError::Steps);
+                };
+                refinement.split(point.clone(), side);
+                *step = id;
+            },
+            Step::Below { .. } | Step::NotBelow { .. } => return Err(ResumeError::Steps),
+        }
+    }
+    let node = obligation.node;
+    let mut chains = chains.into_iter();
+    let (first, second) = (chains.next(), chains.next());
+    if chains.next().is_some() {
+        return Err(ResumeError::Steps);
+    }
+    return match (plan.node(node), obligation.demand, first, second) {
+        (Ok(&Node::Real(_)), Demand::Encloses { .. }, Some((real, chain)), None)
+            if real == node =>
+        {
+            Ok(State::Enclosing(chain))
+        },
+        (
+            Ok(&Node::Open(Open::Less(left, right))),
+            Demand::Holds | Demand::Fails,
+            Some((one, chain)),
+            other,
+        ) if one == left.node() => {
+            let right_chain = match other {
+                None => None,
+                Some((two, chain)) if two == right.node() && left != right => Some(chain),
+                Some(_) => return Err(ResumeError::Steps),
+            };
+            Ok(State::Comparing {
+                less: node,
+                left: Some(chain),
+                right: right_chain,
+            })
+        },
+        (Ok(_) | Err(_), ..) => Err(ResumeError::Steps),
     };
 }

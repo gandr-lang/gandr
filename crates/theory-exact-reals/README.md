@@ -51,7 +51,7 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `Certificate`, `Step`, `Side`, `StepId` and `FormatVersion`: a versioned certificate; `encode` to `CertificateBytes` and `decode` from `EncodedCertificate`.
 - `check`: the replay within `CheckerQuotas`, a `Checked` `Conclusion` or a `CertificateRefusal` that names its `StepSite` and its `CertificateCheck`.
 - `square_root`, `square_root_of_two`, `radicand` and `refine`: the registered cut schema, its recognition, and its refinement to a power of two with a certificate.
-- `Obligation`, `Outcome` and `Dovetail`: the refinement machine's obligations, their five outcomes, and the scheduler that runs them in bounded quanta within a budget. The `semidecision` and `dovetail` module documentation states each.
+- `Obligation`, `Outcome` and `Dovetail`: the refinement machine's obligations, their five outcomes, the scheduler that runs them in bounded quanta within a budget, and its checkpoint, which `Dovetail::resume` reads back. The `semidecision` and `dovetail` module documentation states each.
 
 ## Expected features
 

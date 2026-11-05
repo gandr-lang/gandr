@@ -1,15 +1,18 @@
 //! The measurement of the refinement machine: one turn of a quantum on a
-//! comparison that never settles, and a whole run of the try-first of the
-//! scheduler.
+//! comparison that never settles, a whole run of the try-first of the
+//! scheduler, and the checkpoint of a run and its resumption.
 //!
 //! | Row | What it times |
 //! | --- | ------------- |
 //! | `turn` | one round of a fresh scheduler over `sqrt 2 < sqrt 2`, which does one quantum of steps |
 //! | `settle` | a fresh scheduler over `45/32 < sqrt 2` and `sqrt 2 < sqrt 2`, run until the first settles |
+//! | `checkpoint` | the checkpoint of a scheduler over `sqrt 2 < sqrt 2` after one turn |
+//! | `resume` | the resumption of that checkpoint: its reading, the replay of its steps and the rebuild of its state |
 //!
-//! Each row names the quantum and the steps that the run did. `cargo bench`
-//! runs the full measurement and prints one table. Under any other runner the
-//! binary runs one short pass of every row and prints nothing.
+//! Each row names the quantum and the steps that the run did, and a
+//! checkpoint row its bytes. `cargo bench` runs the full measurement and
+//! prints one table. Under any other runner the binary runs one short pass of
+//! every row and prints nothing.
 
 #![expect(
     clippy::expect_used,
@@ -27,6 +30,7 @@ use gandr_theory_exact_reals::CheckerQuotas;
 use gandr_theory_exact_reals::Demand;
 use gandr_theory_exact_reals::Dovetail;
 use gandr_theory_exact_reals::Dyadic;
+use gandr_theory_exact_reals::EncodedCheckpoint;
 use gandr_theory_exact_reals::Evidence;
 use gandr_theory_exact_reals::EvidenceTable;
 use gandr_theory_exact_reals::Exponent;
@@ -163,6 +167,48 @@ fn rows(
     }
 }
 
+/// Measure the checkpoint and the resumption of a scheduler over `never`
+/// after one turn of `steps` steps, printing the rows when `print` asks.
+///
+/// # Specification
+/// trivial.
+fn checkpoint_rows(
+    (plan, never): (&ValidatedPlan, Obligation),
+    steps: Steps,
+    batch: Count,
+    samples: Count,
+    print: Output,
+)
+{
+    let count = u64::from(steps);
+    let quantum = Quantum::from(
+        NonZeroU32::new(u32::try_from(count).expect("a narrow quantum")).expect("a quantum"),
+    );
+    let mut dovetail = Dovetail::new(plan, [never], quantum, CheckerQuotas::default());
+    let bytes = dovetail
+        .run(Budget::from(u64::MAX), Rounds::from(1_u64), || false)
+        .checkpoint();
+    let written = measure(batch, samples, || {
+        black_box(black_box(&dovetail).checkpoint());
+    });
+    let resumed = measure(batch, samples, || {
+        black_box(Dovetail::resume(
+            black_box(plan),
+            EncodedCheckpoint::from(black_box(&bytes)),
+        ))
+        .expect("a checkpoint resumes");
+    });
+    if matches!(print, Output::Table) {
+        let length = bytes.as_ref().len();
+        for (operation, figures) in [("checkpoint", &written), ("resume", &resumed)] {
+            print_row(
+                format_args!("{count} | {count} | {operation} of {length} bytes"),
+                figures,
+            );
+        }
+    }
+}
+
 /// Run the measurement, or the short pass outside `cargo bench`.
 ///
 /// # Specification
@@ -187,5 +233,8 @@ fn main()
             samples,
             output,
         );
+    }
+    for steps in [16_u64, 64_u64, 256_u64] {
+        checkpoint_rows((&plan, never), Steps::from(steps), batch, samples, output);
     }
 }
