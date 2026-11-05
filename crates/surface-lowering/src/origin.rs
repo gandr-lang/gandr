@@ -198,11 +198,16 @@ pub enum Insertion
     /// body is read under.
     Match,
     /// The fixpoint a recursive function closes over its staged parameter's
-    /// lambda, binding the function's own name; and the joint fixpoint a
-    /// mutual block's recursive functions share, with its sum case, its
-    /// ascription and the injection each member and each call through a
-    /// sibling passes.
+    /// lambda, binding the function's own name; and the injection each
+    /// member of a mutual block and each call through a sibling passes to the
+    /// joint the block's recursive functions share, with the application of
+    /// the joint to it.
     Fixpoint,
+    /// A node of the joint a mutual block's recursive functions share, every
+    /// one located at the block's first member: the fixpoint, its lambda, its
+    /// case on the sum of the members' domains and its ascription. The source
+    /// writes each member, never the joint or the type over the sum (#5383).
+    Joint,
     /// A node a loop writes that the source does not: a `while`'s case on its
     /// condition with the unit its false branch leaves with, and the re-entry
     /// where a path through a loop's body ends without leaving it — the

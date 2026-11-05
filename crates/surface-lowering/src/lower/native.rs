@@ -16280,7 +16280,7 @@ impl<'source> Lowerer<'_, 'source>
         record_copied_since(
             sink,
             mark,
-            first.origin.inserted(Insertion::Fixpoint),
+            first.origin.inserted(Insertion::Joint),
             Maybe::Absent(rooted::Absent::Unminted),
             &carried,
         );

@@ -309,6 +309,49 @@ fn the_resolved_comparisons_read_back_2429()
     );
 }
 
+/// #5383: a type that a `match` on a parameter computes reads back to its
+/// certificate. `stlc.gandr`'s `rec` block of `reflectDepth` and
+/// `reifyDepth` types each recursive call at such a type.
+#[test]
+fn a_type_a_match_computes_reads_back_5383()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/model/desc/stlc.gandr")
+        .canonicalize()
+        .expect("the source resolves");
+    let text = std::fs::read_to_string(&path).expect("the source reads");
+    let laid = lay_out(
+        &grammar,
+        &path,
+        classify(&path),
+        SourceText::from(text.as_str()),
+    );
+    let table = TypeTable::of_unit(
+        &grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+    )
+    .expect("the source types");
+    for spelling in [Spelling::Unicode, Spelling::Ascii] {
+        let reads = table.read_back(&grammar, PageWidth::from(PAGE), Style {
+            form: Form::Sugared,
+            spelling,
+        });
+        let unread: Vec<(&str, &RoundTrip)> = reads
+            .iter()
+            .filter(|read| read.spelled.contains("match") && read.trip == RoundTrip::Unparsed)
+            .map(|read| (read.spelled.as_str(), &read.trip))
+            .collect();
+        assert_eq!(
+            unread,
+            Vec::<(&str, &RoundTrip)>::new(),
+            "no type of `stlc.gandr` spells a match where a type is read"
+        );
+    }
+}
+
 /// Every typed entry, declared type and stated run value of the corpus
 /// sources of `shard` (every fourth source the walk visits), spelled and
 /// counted, and every stated value and normal form printed, read back and
