@@ -78,15 +78,49 @@ use gandr_surface_lowering::DeclarationCount;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-/// A fresh scratch directory named for `test` and this process, holding each
-/// of `files`, empty.
+/// How many scratch directories and stores this process has made. Each takes
+/// the count as its last name segment, so two tests that share a name never
+/// share a directory when one process runs them on parallel threads (#5204).
+static MADE: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+/// A directory under the system's temporary directory, named for `kind`,
+/// `test`, this process and this call, and so owned by this call alone.
 ///
 /// # Specification
-/// - requires: `files` are relative paths; the derived directory belongs only
-///   to this test for its lifetime.
-/// - ensures: the canonical path of a directory, any stale one of the same name
-///   removed first, in which each file of `files` has been written empty, its
-///   parent directories made.
+/// - requires: nothing.
+/// - ensures: a path no earlier call of this process returned.
+/// - provides: the path, which no call has made.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — unwitnessable provenance: the obligation concerns every
+///   earlier call of the process, which one call holds nothing to check
+///   against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two calls with one name answer two paths.
+/// - witness: `tests::package::two_calls_with_one_name_make_two_directories_5204`
+fn owned(
+    kind: &Path,
+    test: &Path,
+) -> PathBuf
+{
+    let call = MADE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "gandr-dispatcher-{}-{}-{}-{call}",
+        kind.display(),
+        test.display(),
+        std::process::id()
+    ))
+}
+
+/// A fresh scratch directory named for `test`, this process and this call,
+/// holding each of `files`, empty.
+///
+/// # Specification
+/// - requires: `files` are relative paths.
+/// - ensures: the canonical path of a directory that this call alone made, any
+///   stale one of the same name removed first, in which each file of `files`
+///   has been written empty, its parent directories made.
 /// - fails: never.
 /// - panics: if a directory or a file cannot be made.
 ///
@@ -99,11 +133,7 @@ fn scratch(
     files: &[&Path],
 ) -> PathBuf
 {
-    let directory = std::env::temp_dir().join(format!(
-        "gandr-dispatcher-package-{}-{}",
-        test.display(),
-        std::process::id()
-    ));
+    let directory = owned(Path::new("package"), test);
     if directory.exists() {
         std::fs::remove_dir_all(&directory).expect("a stale scratch directory is removed");
     }
@@ -120,22 +150,36 @@ fn scratch(
         .expect("the scratch directory canonicalizes")
 }
 
-/// A fresh store named for `test` and this process, any stale one of the same
-/// name removed first.
+/// A fresh store named for `test`, this process and this call, any stale one
+/// of the same name removed first.
 ///
 /// # Specification
 /// trivial.
 fn stored(test: &Path) -> Store
 {
-    let directory = std::env::temp_dir().join(format!(
-        "gandr-dispatcher-store-{}-{}",
-        test.display(),
-        std::process::id()
-    ));
+    let directory = owned(Path::new("store"), test);
     if directory.exists() {
         std::fs::remove_dir_all(&directory).expect("a stale store is removed");
     }
     Store::open(&directory).expect("the store opens")
+}
+
+/// #5204: two calls with one test name make two directories, so the cases
+/// that share a name never remove or fill each other's directory on parallel
+/// threads.
+#[test]
+fn two_calls_with_one_name_make_two_directories_5204()
+{
+    let first = scratch(Path::new("shared"), &[Path::new("package.gandr")]);
+    let second = scratch(Path::new("shared"), &[Path::new("package.gandr")]);
+    assert_ne!(first, second, "each call owns its directory");
+    assert!(
+        first.join("package.gandr").is_file(),
+        "the second call leaves the first directory in place"
+    );
+    for directory in [first, second] {
+        std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+    }
 }
 
 /// The root, package source and sources of the package `from` sits in, or
