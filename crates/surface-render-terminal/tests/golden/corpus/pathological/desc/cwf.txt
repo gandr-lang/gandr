@@ -1,53 +1,8 @@
-error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
-   ╭▸ corpus/pathological/desc/cwf.gandr:26:3
+error[UndescribedMember.RewrittenIndex]: this member holds an index that a law at an earlier sort rewrites, whose peak the decision does not join yet
+   ╭▸ corpus/pathological/desc/cwf.gandr:30:3
    │
-26 │   include CwF;
-   │   ━━━━━━━━━━━ a member the description does not read
+30 │   rule tmComp : subTm (subTm t s) u ==> subTm t (comp s u);
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
    │
-   ├ note: `CwFTermIdentity` is refused with UndescribedMember.NestedOperation, as its expectation states
-   ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>
-
-error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
-   ╭▸ corpus/pathological/desc/cwf.gandr:26:3
-   │
-26 │   include CwF;
-   │   ━━━━━━━━━━━ a member the description does not read
-   │
-   ├ note: `CwFTermIdentity` is refused with UndescribedMember.NestedOperation, as its expectation states
-   ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>
-
-error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
-   ╭▸ corpus/pathological/desc/cwf.gandr:26:3
-   │
-26 │   include CwF;
-   │   ━━━━━━━━━━━ a member the description does not read
-   │
-   ├ note: `CwFTermIdentity` is refused with UndescribedMember.NestedOperation, as its expectation states
-   ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>
-
-error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
-   ╭▸ corpus/pathological/desc/cwf.gandr:26:3
-   │
-26 │   include CwF;
-   │   ━━━━━━━━━━━ a member the description does not read
-   │
-   ├ note: `CwFTermIdentity` is refused with UndescribedMember.NestedOperation, as its expectation states
-   ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>
-
-error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
-   ╭▸ corpus/pathological/desc/cwf.gandr:26:3
-   │
-26 │   include CwF;
-   │   ━━━━━━━━━━━ a member the description does not read
-   │
-   ├ note: `CwFTermIdentity` is refused with UndescribedMember.NestedOperation, as its expectation states
-   ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>
-
-error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
-   ╭▸ corpus/pathological/desc/cwf.gandr:28:3
-   │
-28 │   rule tmId : subTm t (id g) ==> t;
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
-   │
-   ├ note: `CwFTermIdentity` is refused with UndescribedMember.NestedOperation, as its expectation states
-   ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>
+   ├ note: `CwFTermComposite` is refused with UndescribedMember.RewrittenIndex, as its expectation states
+   ╰ note: tracked by #5117 <https://github.com/gandr-lang/gandr/issues/5117>

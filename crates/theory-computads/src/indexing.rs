@@ -24,8 +24,18 @@
 //! overlap the carried indices refuse is no peak of the carried rules, since
 //! no term with those indices holds both redexes. Otherwise only an index at a
 //! rigid sort is carried, and the reading keeps every overlap it would refuse:
-//! a whisker's composite index `comp(f, h)` is not carried (#1510). A law's two
-//! sides are still checked to stand at one sort over every index as written.
+//! a whisker's composite index `comp(f, h)` is not carried (#1510).
+//!
+//! A port's sort may apply an operation with indices of its own, as
+//! `Tm(d, subTy(a, s))` does. The reading carries that index with the indices
+//! its operation's sorting fixes, solved from the input ports' sorts (#5042).
+//! Each law has a rank: the position of its left side's sort among the sorts.
+//! A law's two sides stand at one sort modulo the laws of lower rank, the
+//! discipline of a generalized algebraic theory: a `CwF`'s identity law on
+//! terms sorts only modulo the identity law on types. A law whose sides sort
+//! apart even so is refused by name. A left side whose carried index applies an
+//! operation that a law of lower rank rewrites is refused too. A step inside
+//! that index meets a peak, and the decision of such a law is #5117's.
 //!
 //! The reading carries a presentation's own laws
 //! ([`crate::elaborate_theory_desc`]), a closed call and the oriented rules it
@@ -103,8 +113,13 @@ pub enum Unsorted
     /// The right side names an index its left side's sorting does not fix.
     Unfixed,
     /// An index the term's sorting fixes applies an operation with indices
-    /// of its own, which the reading does not carry (#1510).
+    /// of its own that the reading does not carry: no port of the operation
+    /// it stands in fixes them (#4128).
     Nested,
+    /// An index the left side's sorting fixes applies an operation with
+    /// indices of its own, and a law at an earlier sort rewrites that
+    /// operation: the law's decision meets a peak inside an index (#5117).
+    Rewritten,
 }
 
 /// One operation's sorting: the indices it is implicitly applied at, each
@@ -168,6 +183,112 @@ impl Sorting
             output,
         }
     }
+
+    /// `self` with each index term of its ports' sorts carrying the indices of
+    /// the operations it applies, read under `earlier`, each input port at its
+    /// sort so carried.
+    ///
+    /// # Specification
+    /// - ensures: an index term that is a variable stays as written; every
+    ///   other one is the term [`Solving::infer`] reads it as under `earlier`,
+    ///   its unknowns solved over the ports read before it, and stays as
+    ///   written where that reading fails or leaves an index unfixed. The
+    ///   implicit indices are kept, so an operation's own indices are its
+    ///   written ones.
+    /// - panics: none.
+    /// - executable: none — the carried terms are the solution itself.
+    /// - intension: one sorting problem for the whole operation, its ports read
+    ///   first to last.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the type a term substitution moves its term's type to
+    ///   carries the two contexts the substitution stands between.
+    /// - witness: `indexing::tests::a_cwfs_laws_on_terms_check_modulo_its_laws_on_types_5042`
+    fn elaborated(
+        self,
+        earlier: &BTreeMap<Name, Self>,
+    ) -> Self
+    {
+        // An index term as written, and as carried when it carries.
+        type ReadIndex = (FreeTerm, Option<FreeTerm>);
+        let mut solving = Solving::new(earlier, Carrying::Indices);
+        let stated: Vec<&FreeTerm> = self
+            .inputs
+            .iter()
+            .map(|&(_, ref stated)| stated)
+            .chain([&self.output])
+            .collect();
+        // Each port's sort name and index terms, each as written and as
+        // carried, read before any is resolved: a later port's sort may solve
+        // an unknown an earlier one left open.
+        let mut read: Vec<Option<(Name, Vec<ReadIndex>)>> = Vec::with_capacity(stated.len());
+        for (place, &sort) in stated.iter().enumerate() {
+            let TermView::Ctor { name, args } = sort.view()
+            else {
+                read.push(None);
+                continue;
+            };
+            let terms: Vec<ReadIndex> = args
+                .map(|arg| {
+                    let written = arg.to_term();
+                    let carried = match written.view() {
+                        TermView::Var(_) => None,
+                        TermView::Op { .. }
+                        | TermView::Ctor { .. }
+                        | TermView::Results { .. }
+                        | TermView::Inst { .. }
+                        | TermView::Abs { .. }
+                        | TermView::Atom(_)
+                        | TermView::Lam { .. }
+                        | TermView::Bound(_) => solving.infer(&written).ok().map(|(term, _)| term),
+                    };
+                    (written, carried)
+                })
+                .collect();
+            if let Some(&(ref port, _)) = self.inputs.get(place) {
+                let carried = FreeTerm::ctor(
+                    name.clone(),
+                    terms.iter().map(|&(ref written, ref carried)| {
+                        carried.as_ref().unwrap_or(written).clone()
+                    }),
+                );
+                let _first = solving.sorts.insert(port.clone(), carried);
+            }
+            read.push(Some((name.clone(), terms)));
+        }
+        let mut finished = read.into_iter().zip(stated).map(|(read, stated)| {
+            let Some((name, terms)) = read
+            else {
+                return stated.clone();
+            };
+            FreeTerm::ctor(
+                name,
+                terms.into_iter().map(|(written, carried)| {
+                    carried
+                        .map(|carried| solving.resolved(&carried))
+                        .filter(|resolved| {
+                            !resolved
+                                .to_node()
+                                .vars()
+                                .any(|name| name.as_ref().starts_with(UNKNOWN))
+                        })
+                        .unwrap_or(written)
+                }),
+            )
+        });
+        let inputs: Box<[(Name, FreeTerm)]> = self
+            .inputs
+            .iter()
+            .zip(finished.by_ref())
+            .map(|(&(ref name, _), sort)| (name.clone(), sort))
+            .collect();
+        let output = finished.next().unwrap_or_else(|| self.output.clone());
+        Self {
+            implicits: self.implicits,
+            inputs,
+            output,
+        }
+    }
 }
 
 /// The operations of a description over indexed sorts, each with the indices
@@ -181,6 +302,31 @@ pub struct Indexing
     /// Each operation's sorting over every index as written, by name: the
     /// check that a law's two sides stand at one sort.
     written: BTreeMap<Name, Sorting>,
+    /// The place of each operation's output sort among the description's
+    /// sorts, by the operation's name.
+    ranks: BTreeMap<Name, Rank>,
+    /// Each law that reads, in order of its rank: the laws a later sort's
+    /// sorting is read modulo.
+    laws: Vec<Law>,
+}
+
+/// The place of a sort among a description's sorts: a law's sort is the sort
+/// its left side's operation outputs, and a law is read modulo the laws of
+/// lower rank.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Rank(usize);
+
+/// A law that reads, as written and over the indices it carries, at its rank.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Law
+{
+    /// The rank of its sort.
+    rank: Rank,
+    /// The law as written.
+    written: RuleFace,
+    /// The law over the indices the reading carries.
+    carried: RuleFace,
 }
 
 /// Each indexed sort's index positions at a flexible sort, which the reading
@@ -285,6 +431,188 @@ impl<'description> Flexible<'description>
 /// The first character of an unknown the solver mints; no written variable
 /// begins with it.
 const UNKNOWN: char = '·';
+
+/// The most laws a sort check fires while it normalizes the two sorts of a
+/// law's sides; past it, the two sides are refused as [`Unsorted::Clash`].
+const SORT_STEPS: usize = 1 << 10;
+
+/// `term` normalized by `laws`, each fired where its left side matches.
+///
+/// # Specification
+/// - ensures: [`Ok`] with a term no law of `laws` matches at any operation
+///   application, reached from `term` by firing laws, each application's
+///   arguments normalized before the application.
+/// - fails: [`Unsorted::Clash`] when more than [`SORT_STEPS`] laws fire.
+/// - panics: none.
+/// - intension: a worklist of steps, so no call recurses; a law's reduct is
+///   read again, so its own redexes fire too.
+/// - executable: none — a normal form is what this computes; checking one is
+///   another match of every law at every application.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a type substituted along an identity normalizes to the
+///   type, and a sort no law matches stays as it is.
+/// - witness: `indexing::tests::a_cwfs_laws_on_terms_check_modulo_its_laws_on_types_5042`
+fn normal(
+    term: &FreeTerm,
+    laws: &[&RuleFace],
+) -> Result<FreeTerm, Unsorted>
+{
+    let mut steps = Vec::from([Step::Read(term.clone())]);
+    let mut built: Vec<FreeTerm> = Vec::new();
+    let mut fired = 0_usize;
+    while let Some(step) = steps.pop() {
+        match step {
+            Step::Read(next) => match next.view() {
+                TermView::Op { name, args } => {
+                    schedule(&mut steps, Step::Op(name.clone(), args.len()), args);
+                },
+                TermView::Ctor { name, args } => {
+                    schedule(&mut steps, Step::Ctor(name.clone(), args.len()), args);
+                },
+                TermView::Var(_)
+                | TermView::Results { .. }
+                | TermView::Inst { .. }
+                | TermView::Abs { .. }
+                | TermView::Atom(_)
+                | TermView::Lam { .. }
+                | TermView::Bound(_) => built.push(next.clone()),
+            },
+            Step::Op(name, count) => {
+                let start = built.len().saturating_sub(count);
+                let applied = FreeTerm::op(name, built.drain(start ..));
+                match laws.iter().find_map(|law| reduct(law, &applied)) {
+                    Some(reduct) => {
+                        fired = fired.saturating_add(1);
+                        if fired > SORT_STEPS {
+                            return Err(Unsorted::Clash);
+                        }
+                        steps.push(Step::Read(reduct));
+                    },
+                    None => built.push(applied),
+                }
+            },
+            Step::Ctor(name, count) => {
+                let start = built.len().saturating_sub(count);
+                let applied = FreeTerm::ctor(name, built.drain(start ..));
+                built.push(applied);
+            },
+            Step::Results(count) => {
+                let start = built.len().saturating_sub(count);
+                let applied = FreeTerm::results(built.drain(start ..));
+                built.push(applied);
+            },
+            Step::Inst(name, count) => {
+                let start = built.len().saturating_sub(count);
+                let applied = FreeTerm::inst(name, built.drain(start ..));
+                built.push(applied);
+            },
+        }
+    }
+    built.pop().ok_or(Unsorted::Unread)
+}
+
+/// `law`'s right side at the match of its left side against `term`, when it
+/// matches at the root.
+///
+/// # Specification
+/// trivial.
+fn reduct(
+    law: &RuleFace,
+    term: &FreeTerm,
+) -> Option<FreeTerm>
+{
+    let bindings = matched(&law.lhs, term)?;
+    Some(rebuilt(
+        &law.rhs,
+        |name| bindings.get(name),
+        Substitution::Once,
+        Dropping::Nothing,
+    ))
+}
+
+/// The binding of each variable of `pattern` that makes it `term`, when one
+/// does: every variable of `term` stands as a constant.
+///
+/// # Specification
+/// - ensures: [`Some`] exactly when each variable of `pattern` binds one
+///   subterm of `term` at its every occurrence, and every other node of
+///   `pattern` is the node of `term` at its place.
+/// - panics: none.
+/// - intension: a worklist of node pairs, so no call recurses.
+/// - executable: none — the bindings are the match itself.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`normal`]: an identity's repeated context binds one
+///   context only.
+/// - witness: `indexing::tests::a_cwfs_laws_on_terms_check_modulo_its_laws_on_types_5042`
+fn matched(
+    pattern: &FreeTerm,
+    term: &FreeTerm,
+) -> Option<BTreeMap<Name, FreeTerm>>
+{
+    let mut bindings: BTreeMap<Name, FreeTerm> = BTreeMap::new();
+    let mut pending = Vec::from([(pattern.clone(), term.clone())]);
+    while let Some((pattern, term)) = pending.pop() {
+        match (pattern.view(), term.view()) {
+            (TermView::Var(name), _) => {
+                if let Some(bound) = bindings.get(name) {
+                    if *bound != term {
+                        return None;
+                    }
+                }
+                else {
+                    let _first = bindings.insert(name.clone(), term.clone());
+                }
+            },
+            (
+                TermView::Op {
+                    name: first,
+                    args: first_args,
+                },
+                TermView::Op {
+                    name: second,
+                    args: second_args,
+                },
+            )
+            | (
+                TermView::Ctor {
+                    name: first,
+                    args: first_args,
+                },
+                TermView::Ctor {
+                    name: second,
+                    args: second_args,
+                },
+            ) if first == second && first_args.len() == second_args.len() => {
+                pending.extend(
+                    first_args
+                        .map(TermNode::to_term)
+                        .zip(second_args.map(TermNode::to_term)),
+                );
+            },
+            (
+                TermView::Ctor { .. }
+                | TermView::Op { .. }
+                | TermView::Results { .. }
+                | TermView::Inst { .. }
+                | TermView::Abs { .. }
+                | TermView::Atom(_)
+                | TermView::Lam { .. }
+                | TermView::Bound(_),
+                _,
+            ) => {
+                if pattern != term {
+                    return None;
+                }
+            },
+        }
+    }
+    Some(bindings)
+}
 
 /// The sort a port stands at, as a term: its sort's name applied to its index
 /// terms.
@@ -459,12 +787,15 @@ impl Indexing
     ///   ([`Flexible`]) every index is carried. Otherwise every index is
     ///   carried when each law of `description` reads over every index and the
     ///   path order over the precedence its laws induce ([`Precedence::of`])
-    ///   orients each law so read; else only the indices at rigid sorts are.
+    ///   orients each law so read, a law refused by name ([`Unsorted::Clash`],
+    ///   [`Unsorted::Rewritten`]) aside; else only the indices at rigid sorts
+    ///   are.
     /// - fails: [`indexed_reading::Absent::Unindexed`] when no sort is indexed;
     ///   [`indexed_reading::Absent::Unsupported`] when a port binds or
     ///   abstracts, or an operation has other than one output. A carried index
-    ///   applying an operation with indices of its own leaves the reading
-    ///   whole: a term whose sorting meets it is refused [`Unsorted::Nested`].
+    ///   applying an operation whose own indices no port fixes leaves the
+    ///   reading whole: a term whose sorting meets it is refused
+    ///   [`Unsorted::Nested`].
     /// - panics: none.
     ///
     /// # Adequacy
@@ -498,10 +829,10 @@ impl Indexing
             return rigid;
         };
         let precedence = Precedence::of(description);
-        let oriented = description.rules.iter().all(|face| {
-            every.face(face).is_ok_and(|indexed| {
-                bool::from(path_greater(&precedence, &indexed.lhs, &indexed.rhs))
-            })
+        let oriented = description.rules.iter().all(|face| match every.face(face) {
+            Ok(indexed) => bool::from(path_greater(&precedence, &indexed.lhs, &indexed.rhs)),
+            Err(Unsorted::Clash | Unsorted::Rewritten) => true,
+            Err(Unsorted::Unread | Unsorted::Unfixed | Unsorted::Nested) => false,
         });
         if oriented {
             Maybe::Present(every)
@@ -512,10 +843,25 @@ impl Indexing
     }
 
     /// The reading of `description`'s operations that leaves off the index
-    /// positions `flexible` names.
+    /// positions `flexible` names, with the laws that read under it.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: each operation's carried sorting elaborated
+    ///   ([`Sorting::elaborated`]) under the operations declared before it;
+    ///   each law of `description` that reads ([`Self::face`]) kept with its
+    ///   rank, read in order of rank, so each is read modulo the laws of lower
+    ///   rank.
+    /// - fails: [`indexed_reading::Absent::Unsupported`] when a port binds or
+    ///   abstracts, or an operation has other than one output.
+    /// - panics: none.
+    /// - executable: none — the reading is the construction itself.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the `CwF`'s term substitution carries `subTy` in its
+    ///   type index, and its identity law on terms reads only after the
+    ///   identity law on types, a law of lower rank.
+    /// - witness: `indexing::tests::a_cwfs_laws_on_terms_check_modulo_its_laws_on_types_5042`
+    /// - witness: `indexing::tests::a_cwfs_laws_carry_every_index_5016`
     fn carrying<G>(
         description: &TheoryDesc<G>,
         flexible: &Flexible<'_>,
@@ -541,19 +887,50 @@ impl Indexing
             {
                 return Maybe::Absent(indexed_reading::Absent::Unsupported);
             }
-            let _first = operations.insert(
-                operation.name.clone(),
-                Sorting::of(operation, output, |port| flexible.carried(port)),
-            );
+            let carried = Sorting::of(operation, output, |port| flexible.carried(port))
+                .elaborated(&operations);
+            let _first = operations.insert(operation.name.clone(), carried);
             let _first = written.insert(
                 operation.name.clone(),
                 Sorting::of(operation, output, sort_term),
             );
         }
-        Maybe::Present(Self {
+        let places: BTreeMap<&Name, Rank> = description
+            .sorts
+            .iter()
+            .enumerate()
+            .map(|(place, sort)| (&sort.name, Rank(place)))
+            .collect();
+        let ranks = description
+            .opers
+            .iter()
+            .filter_map(|operation| {
+                let output = &operation.arity.outputs.first()?.sort;
+                Some((operation.name.clone(), *places.get(output)?))
+            })
+            .collect();
+        let mut indexing = Self {
             operations,
             written,
-        })
+            ranks,
+            laws: Vec::new(),
+        };
+        let mut ranked: Vec<(Rank, &RuleFace)> = description
+            .rules
+            .iter()
+            .filter_map(|face| Some((indexing.rank(face)?, face)))
+            .collect();
+        ranked.sort_by_key(|&(rank, _)| rank);
+        for (rank, face) in ranked {
+            if let Ok(carried) = indexing.face(face) {
+                indexing.laws.push(Law {
+                    rank,
+                    written: face.clone(),
+                    carried,
+                });
+            }
+        }
+        Maybe::Present(indexing)
     }
 
     /// `face` with each operation application carrying its indices, solved
@@ -561,17 +938,23 @@ impl Indexing
     ///
     /// # Specification
     /// - ensures: both sides with every application `f(t…)` written `f(i…,
-    ///   t…)`, its carried implicit indices first, the two sides at one sort
-    ///   over every index as written and over the carried ones, each
+    ///   t…)`, its carried implicit indices first, an index that applies an
+    ///   operation with indices of its own carrying them too; the two sides at
+    ///   one sort over every index as written and over the carried ones, each
     ///   [`Self::strip`]ped back to the side as written; an index no sort fixes
-    ///   is a fresh variable of the left side.
+    ///   is a fresh variable of the left side. Two sides whose sorts do not
+    ///   unify as they stand unify after each sort is normalized by the laws of
+    ///   lower rank ([`Solving::unify_modulo`]).
     /// - fails: [`Unsorted::Unread`] for a side applying anything but a
     ///   declared operation at its port count, or naming a variable no other
     ///   way; [`Unsorted::Clash`] when two sorts asked of one subterm do not
-    ///   unify; [`Unsorted::Unfixed`] when the right side names an index the
-    ///   left side's sorting does not fix; [`Unsorted::Nested`] when a carried
-    ///   index either side's sorting fixes applies an operation with indices of
-    ///   its own.
+    ///   unify, or the two sides' sorts do not unify modulo the laws of lower
+    ///   rank; [`Unsorted::Nested`] when a carried index applies an operation
+    ///   with indices of its own at its port count alone, which no port fixes;
+    ///   [`Unsorted::Rewritten`] when the left side's carried index applies an
+    ///   operation that heads a law of lower rank ([`Self::unnested`]);
+    ///   [`Unsorted::Unfixed`] when the right side names an index the left
+    ///   side's sorting does not fix.
     /// - panics: none.
     /// - executable: none — the strip-back clause compares terms built from the
     ///   receiver's sorting, which a clause may not read.
@@ -581,25 +964,45 @@ impl Indexing
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the category's unit laws carry the objects their
-    ///   variables fix, and a law equating two sorts apart is refused.
+    ///   variables fix, and a law equating two sorts apart is refused; a
+    ///   `CwF`'s identity law on terms sorts only modulo its identity law on
+    ///   types.
     /// - witness: `indexing::tests::a_categorys_laws_carry_their_objects`
+    /// - witness: `indexing::tests::a_cwfs_laws_on_terms_check_modulo_its_laws_on_types_5042`
     #[inline]
     pub fn face(
         &self,
         face: &RuleFace,
     ) -> Result<RuleFace, Unsorted>
     {
+        let rank = self.rank(face);
         let mut written = Solving::new(&self.written, Carrying::Written);
         let (_, left_sort) = written.infer(&face.lhs)?;
         let (_, right_sort) = written.infer(&face.rhs)?;
-        written.unify(&left_sort, &right_sort)?;
+        let laws: Vec<&RuleFace> = self.below(rank).map(|law| &law.written).collect();
+        written.unify_modulo(&left_sort, &right_sort, &laws)?;
         let mut solving = Solving::new(&self.operations, Carrying::Indices);
         let (left, left_sort) = solving.infer(&face.lhs)?;
         let (right, right_sort) = solving.infer(&face.rhs)?;
-        solving.unify(&left_sort, &right_sort)?;
+        let laws: Vec<&RuleFace> = self.below(rank).map(|law| &law.carried).collect();
+        solving.unify_modulo(&left_sort, &right_sort, &laws)?;
         let (lhs, rhs) = (solving.resolved(&left), solving.resolved(&right));
-        self.unnested(&lhs)?;
-        self.unnested(&rhs)?;
+        let heads: BTreeSet<&Name> = self
+            .below(rank)
+            .filter_map(|law| match law.carried.lhs.view() {
+                TermView::Op { name, .. } => Some(name),
+                TermView::Var(_)
+                | TermView::Ctor { .. }
+                | TermView::Results { .. }
+                | TermView::Inst { .. }
+                | TermView::Abs { .. }
+                | TermView::Atom(_)
+                | TermView::Lam { .. }
+                | TermView::Bound(_) => None,
+            })
+            .collect();
+        self.unnested(&lhs, &heads)?;
+        self.unnested(&rhs, &BTreeSet::new())?;
         let fixed: BTreeSet<&Name> = lhs.to_node().vars().collect();
         if rhs
             .to_node()
@@ -644,7 +1047,7 @@ impl Indexing
         let mut solving = Solving::new(&self.operations, Carrying::Indices);
         let (indexed, _sort) = solving.infer(term)?;
         let indexed = solving.resolved(&indexed);
-        self.unnested(&indexed)?;
+        self.unnested(&indexed, &BTreeSet::new())?;
         if indexed
             .to_node()
             .vars()
@@ -678,15 +1081,49 @@ impl Indexing
         rebuilt(term, |_| None, Substitution::Once, Dropping::Indices(self))
     }
 
+    /// The rank of `face`'s sort: the place of the sort its left side's
+    /// operation outputs.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rank(
+        &self,
+        face: &RuleFace,
+    ) -> Option<Rank>
+    {
+        let TermView::Op { name, .. } = face.lhs.view()
+        else {
+            return None;
+        };
+        self.ranks.get(name).copied()
+    }
+
+    /// The laws below `rank`, in order of rank; none without a rank.
+    ///
+    /// # Specification
+    /// trivial.
+    fn below(
+        &self,
+        rank: Option<Rank>,
+    ) -> impl Iterator<Item = &Law>
+    {
+        self.laws
+            .iter()
+            .filter(move |law| rank.is_some_and(|rank| law.rank < rank))
+    }
+
     /// `term` checked for an index, one of an application's implicit indices
-    /// first, that applies an operation with indices of its own.
+    /// first, that applies an operation with indices of its own at its written
+    /// arity, an index the elaboration of a port's sort did not carry; or one
+    /// that applies such an operation `heads` names, which a law rewrites.
     ///
     /// # Specification
     /// - ensures: `Ok` when no application of a declared operation at its
     ///   implicit indices and port count together has, within one of its
     ///   implicit indices, an application of an operation whose sorting has
-    ///   implicit indices.
-    /// - fails: [`Unsorted::Nested`] otherwise.
+    ///   implicit indices at its port count alone, or one `heads` names.
+    /// - fails: [`Unsorted::Nested`] for the first; [`Unsorted::Rewritten`] for
+    ///   the second.
     /// - panics: none.
     /// - executable: none — the answer reads the receiver's sorting, which a
     ///   clause may not read.
@@ -696,12 +1133,15 @@ impl Indexing
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a whisker's composite index nests a composition, and
-    ///   a category's laws nest none.
+    /// - hypothesis: L3 — a whisker's composite index composes a hom whose
+    ///   objects no port fixes, and a category's laws nest none; the `CwF`'s
+    ///   composite law on terms holds a type index the laws on types rewrite.
     /// - witness: `indexing::tests::a_whiskers_composite_index_leaves_the_other_laws_indexed_1510`
+    /// - witness: `indexing::tests::a_cwfs_laws_on_terms_check_modulo_its_laws_on_types_5042`
     fn unnested(
         &self,
         term: &FreeTerm,
+        heads: &BTreeSet<&Name>,
     ) -> Result<(), Unsorted>
     {
         let mut pending = Vec::from([(term.clone(), false)]);
@@ -709,9 +1149,6 @@ impl Indexing
             match next.view() {
                 TermView::Op { name, args } => {
                     let sorting = self.operations.get(name);
-                    if in_index && sorting.is_some_and(|sorting| !sorting.implicits.is_empty()) {
-                        return Err(Unsorted::Nested);
-                    }
                     let indices = sorting.map_or(0, |sorting| {
                         let implicit = sorting.implicits.len();
                         if args.len() == implicit.saturating_add(sorting.inputs.len()) {
@@ -721,6 +1158,13 @@ impl Indexing
                             0
                         }
                     });
+                    let own = sorting.is_some_and(|sorting| !sorting.implicits.is_empty());
+                    if in_index && own && indices == 0 {
+                        return Err(Unsorted::Nested);
+                    }
+                    if in_index && own && heads.contains(name) {
+                        return Err(Unsorted::Rewritten);
+                    }
                     pending.extend(
                         args.enumerate()
                             .map(|(place, arg)| (arg.to_term(), in_index || place < indices)),
@@ -880,6 +1324,50 @@ impl<'indexing> Solving<'indexing>
         Ok(())
     }
 
+    /// Unify `left` and `right`, the two sorts of a law's sides; where they do
+    /// not unify as they stand, unify their normal forms under `laws`.
+    ///
+    /// # Specification
+    /// - ensures: [`Ok`] when the two sorts unify, or when their normal forms
+    ///   ([`normal`]) under `laws` unify, read after the unknowns solved so
+    ///   far; a failed first attempt leaves no unknown solved.
+    /// - fails: [`Unsorted::Clash`] when neither unifies, or the normal forms
+    ///   take more than [`SORT_STEPS`] laws.
+    /// - panics: none.
+    /// - executable: none — the solution is the problem's own state.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `CwF`'s identity law on terms sorts only after its
+    ///   left side's type is normalized by the identity law on types.
+    /// - witness: `indexing::tests::a_cwfs_laws_on_terms_check_modulo_its_laws_on_types_5042`
+    fn unify_modulo(
+        &mut self,
+        left: &FreeTerm,
+        right: &FreeTerm,
+        laws: &[&RuleFace],
+    ) -> Result<(), Unsorted>
+    {
+        if laws.is_empty() {
+            return self.unify(left, right);
+        }
+        let before = self.solved.clone();
+        match self.unify(left, right) {
+            Err(Unsorted::Clash) => {
+                self.solved = before;
+                let left = normal(&self.resolved(left), laws)?;
+                let right = normal(&self.resolved(right), laws)?;
+                self.unify(&left, &right)
+            },
+            unified @ (Ok(())
+            | Err(
+                Unsorted::Unread | Unsorted::Unfixed | Unsorted::Nested | Unsorted::Rewritten,
+            )) => unified,
+        }
+    }
+
     /// Solve the unknown `name` as `term`, refused where `term` names it.
     ///
     /// # Specification
@@ -1034,6 +1522,8 @@ mod tests
     use gandr_theory_levitation::SortIndex;
     use gandr_theory_levitation::SortRef;
     use gandr_theory_levitation::SurfaceSpan;
+    use gandr_theory_levitation::TermNode;
+    use gandr_theory_levitation::TermView;
     use gandr_theory_levitation::TheoryDesc;
     use quenchant_shape::shape::Maybe;
 
@@ -1498,6 +1988,126 @@ mod tests
             flexible.face(&face(whiskered(var("s")), var("s"))),
             Err(Unsorted::Clash),
             "a whiskered 2-cell stands between composites, so it is no 2-cell between its own ends"
+        );
+    }
+
+    /// A category with families with terms: a term's sort names a type in a
+    /// context, and a term substitution moves its term's type along the
+    /// substitution, an index that applies `subTy`. The laws on types come
+    /// before the laws on terms.
+    ///
+    /// # Specification
+    /// trivial.
+    fn cwf_terms() -> TheoryDesc<Ungraded>
+    {
+        let mut description = cwf();
+        let mut sorts = Vec::from(core::mem::take(&mut description.sorts));
+        sorts.push(SortDesc::family("Tm", DeclPolarity::Data, [
+            SortIndex::new("g", "Con"),
+            SortIndex::new("a", "Ty").applied([var("g")]),
+        ]));
+        description.sorts = sorts.into();
+        let mut opers = Vec::from(core::mem::take(&mut description.opers));
+        opers.push(oper(
+            "subTm",
+            [
+                port("t", "Tm", [var("g"), var("a")]),
+                port("s", "Sub", [var("d"), var("g")]),
+            ],
+            port("out", "Tm", [var("d"), op("subTy", [var("a"), var("s")])]),
+        ));
+        description.opers = opers.into();
+        let mut rules = Vec::from(core::mem::take(&mut description.rules));
+        rules.extend([
+            face(op("subTy", [var("a"), op("id", [var("g")])]), var("a")),
+            face(
+                op("subTy", [op("subTy", [var("a"), var("s")]), var("t")]),
+                op("subTy", [var("a"), op("comp", [var("s"), var("t")])]),
+            ),
+        ]);
+        description.rules = rules.into();
+        description
+    }
+
+    /// #5042: a term substitution's output sort applies `subTy`, so the reading
+    /// carries `subTy`'s two contexts inside the index. The identity law on
+    /// terms sorts only modulo the identity law on types, and it reads. The
+    /// composite law holds a type index the laws on types rewrite, and its
+    /// decision is #5117's. A law whose sides sort apart modulo every law, and
+    /// the identity law on terms without the identity law on types, are
+    /// refused.
+    #[test]
+    fn a_cwfs_laws_on_terms_check_modulo_its_laws_on_types_5042()
+    {
+        let tm_id = face(op("subTm", [var("t"), op("id", [var("g")])]), var("t"));
+        let tm_comp = face(
+            op("subTm", [op("subTm", [var("t"), var("s")]), var("u")]),
+            op("subTm", [var("t"), op("comp", [var("s"), var("u")])]),
+        );
+        let mut description = cwf_terms();
+        let Maybe::Present(indexing) = Indexing::of(&description)
+        else {
+            panic!("the CwF's sorts are indexed");
+        };
+        assert_eq!(
+            indexing
+                .face(&tm_id)
+                .map(|indexed| (indexing.strip(&indexed.lhs), indexing.strip(&indexed.rhs))),
+            Ok((tm_id.lhs.clone(), tm_id.rhs.clone())),
+            "the identity law on terms reads modulo the laws on types and strips back to the law as written"
+        );
+        assert_eq!(
+            indexing.face(&tm_comp),
+            Err(Unsorted::Rewritten),
+            "the composite law's type index is one the composite law on types rewrites"
+        );
+        let Some((_, substitution)) = indexing
+            .operations
+            .iter()
+            .find(|&(name, _)| name.as_ref() == "subTm")
+        else {
+            panic!("the CwF declares `subTm`");
+        };
+        let mut pending = Vec::from([substitution.output.clone()]);
+        let mut carried = 0_usize;
+        while let Some(next) = pending.pop() {
+            match next.view() {
+                TermView::Op { name, args } => {
+                    if name.as_ref() == "subTy" && args.len() == 4 {
+                        carried = carried.saturating_add(1);
+                    }
+                    pending.extend(args.map(TermNode::to_term));
+                },
+                TermView::Ctor { args, .. } => pending.extend(args.map(TermNode::to_term)),
+                TermView::Var(_)
+                | TermView::Results { .. }
+                | TermView::Inst { .. }
+                | TermView::Abs { .. }
+                | TermView::Atom(_)
+                | TermView::Lam { .. }
+                | TermView::Bound(_) => {},
+            }
+        }
+        assert_eq!(
+            carried, 1,
+            "a substitution's type index carries `subTy` with its two contexts"
+        );
+        assert_eq!(
+            indexing.face(&face(op("subTm", [var("t"), var("s")]), var("t"))),
+            Err(Unsorted::Clash),
+            "a moved term stands at another context than the term, modulo every law"
+        );
+        let mut rules = Vec::from(core::mem::take(&mut description.rules));
+        rules.retain(|law| law.lhs != op("subTy", [var("a"), op("id", [var("g")])]));
+        description.rules = rules.into();
+        let Maybe::Present(without) = Indexing::of(&description)
+        else {
+            panic!("the CwF's sorts are indexed");
+        };
+        assert_eq!(
+            without.face(&tm_id),
+            Err(Unsorted::Clash),
+            "without the identity law on types, the identity law on terms sorts apart"
         );
     }
 }

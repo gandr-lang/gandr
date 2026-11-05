@@ -13,7 +13,8 @@
 //! family over it, and a term is a section of that family. The block states
 //! the category laws and the laws on types. Their rules carry each context
 //! that a substitution stands between, so two identities compose at one
-//! context and the unit laws join. The twin keeps the laws on terms.
+//! context and the unit laws join. The pathological twin keeps the composite
+//! law on terms.
 //!
 //! - see: #522
 //! - see: #5016

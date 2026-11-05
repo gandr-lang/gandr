@@ -1,17 +1,8 @@
 error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
-   ╭▸ corpus/ledger/diagnostics/UndescribedMember.NestedOperation.gandr:12:3
+   ╭▸ corpus/ledger/diagnostics/UndescribedMember.NestedOperation.gandr:16:3
    │
-12 │   rule meetBot : meet (bot ()) e ==> bot ();
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
+16 │   rule unitR : ext m (bind x. (ret x)) <=> m;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
    │
-   ├ note: `GradedChoice` is refused with UndescribedMember.NestedOperation, as its expectation states
-   ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>
-
-error[UndescribedMember.NestedOperation]: this member rewrites a term with an operation nested in producer position, which the cell layer does not read yet
-   ╭▸ corpus/ledger/diagnostics/UndescribedMember.NestedOperation.gandr:13:3
-   │
-13 │   rule cutLeft : or (cut ()) y ==> cut ();
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a member the description does not read
-   │
-   ├ note: `GradedChoice` is refused with UndescribedMember.NestedOperation, as its expectation states
+   ├ note: `BelowMonad` is refused with UndescribedMember.NestedOperation, as its expectation states
    ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>

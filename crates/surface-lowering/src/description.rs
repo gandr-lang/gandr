@@ -272,6 +272,12 @@ pub enum MemberFault
     ResultArity,
     /// A rule wearing one variable name as a producer and a consumer.
     MixedPolarity,
+    /// A rule whose two sides stand at sorts that differ, even modulo the
+    /// laws at earlier sorts.
+    IllSorted,
+    /// A rule whose carried index applies an operation that a law at an
+    /// earlier sort rewrites.
+    RewrittenIndex,
     /// A circuit rule whose wiring derives no boundary.
     UnderivedWiring,
     /// A circuit rule rewriting two redexes at once.
@@ -330,6 +336,13 @@ impl fmt::Display for MemberFault
             },
             Self::ResultArity => "returns a number of results other than its operation's outputs",
             Self::MixedPolarity => "wears one variable name as a producer and as a consumer",
+            Self::IllSorted => {
+                "equates two terms whose sorts differ, even modulo the laws at earlier sorts"
+            },
+            Self::RewrittenIndex => {
+                "holds an index that a law at an earlier sort rewrites, whose peak the decision \
+                 does not join yet"
+            },
             Self::UnderivedWiring => "is a circuit whose wiring derives no boundary",
             Self::ParallelRedexes => {
                 "is a circuit rule rewriting two redexes at once, which has no single whiskered \

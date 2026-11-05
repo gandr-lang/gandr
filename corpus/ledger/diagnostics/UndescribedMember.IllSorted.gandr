@@ -1,0 +1,17 @@
+/// `UndescribedMember.IllSorted`: a law whose two sides stand at sorts that differ, even modulo the laws at earlier sorts.
+///
+/// The term `subTm t (id g)` stands at the type `subTy a (id g)`, and `t` stands at `a`. No law on types rewrites the first type to the second. The identity law on terms then equates terms of two sorts.
+///
+/// - see: #5042
+@[ refuses("UndescribedMember.IllSorted") ]
+theory TermIdentity where
+  sort Con : Type;
+  sort Sub(d : Con, g : Con) : Type;
+  sort Ty(g : Con) : Type;
+  sort Tm(g : Con, a : Ty(g)) : Type;
+
+  oper id : (g : Con) --> Sub(g, g);
+  oper subTy : (a : Ty(g), s : Sub(d, g)) --> Ty(d);
+  oper subTm : (t : Tm(g, a), s : Sub(d, g)) --> Tm(d, subTy(a, s));
+
+  rule tmId : subTm t (id g) ==> t;

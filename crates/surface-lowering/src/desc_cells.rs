@@ -169,6 +169,8 @@ impl CellDiagnostic
             },
             CellFault::Rule(ElaborateError::ResultArity { .. }) => MemberFault::ResultArity,
             CellFault::Rule(ElaborateError::MixedPolarity(_)) => MemberFault::MixedPolarity,
+            CellFault::Rule(ElaborateError::IllSorted) => MemberFault::IllSorted,
+            CellFault::Rule(ElaborateError::RewrittenIndex) => MemberFault::RewrittenIndex,
             CellFault::Rule(ElaborateError::NoCircuitComposite(
                 CircuitElaborationError::Derivation(_),
             )) => MemberFault::UnderivedWiring,

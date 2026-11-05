@@ -264,6 +264,7 @@
 //! each decline against the declared member's own span.
 
 use alloc::borrow::Cow;
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::fmt;
@@ -436,6 +437,15 @@ pub enum ElaborateError
     /// boundary-language object the member stands for does not exist and its
     /// derived pair is not admitted on its own strength.
     NoCircuitComposite(CircuitElaborationError),
+    /// The face's two sides stand at sorts that differ, even modulo the laws
+    /// at earlier sorts ([`Indexing::face`]): the law equates terms of two
+    /// sorts, so no sort holds it.
+    IllSorted,
+    /// An index the face's left side carries applies an operation with
+    /// indices of its own that a law at an earlier sort rewrites
+    /// ([`Indexing::face`]): a step inside the index meets a peak the
+    /// decision does not join yet (#5117).
+    RewrittenIndex,
 }
 
 impl From<NonLinearPattern> for ElaborateError
@@ -1019,7 +1029,12 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 ///   [`ElaborateError::UnrepresentableOperation`] and never reaches either
 ///   store, and a face instantiating a variable or firing under a row reaches
 ///   neither: it fires where the kernel's second-order reading or a row says,
-///   which neither store knows.
+///   which neither store knows. Over an indexed block, a face that
+///   [`Indexing::face`] refuses as [`Unsorted::Clash`] is declined with
+///   [`ElaborateError::IllSorted`]. A face it refuses as
+///   [`Unsorted::Rewritten`] is declined with
+///   [`ElaborateError::RewrittenIndex`]. The block keeps its reading for its
+///   other faces.
 /// - ensures: a face calls for terms when it passed the operation gate and is
 ///   constructor-headed; or, under [`DescReading::Shape`] with every sort
 ///   unindexed or the block indexed — every face sorted by [`Indexing::face`]
@@ -1157,32 +1172,48 @@ fn elaborate_desc<G>(
     // Every face either reading holds, in rule order, and whether one of them
     // calls for the term reading. A law over an indexed sort is read with the
     // indices its sorting fixes (`Indexing::face`), which the kernel's
-    // decision of the presentation re-derives. Where one law's sides do not
-    // sort, an index they fix applies an operation with indices of its own,
-    // or a law instantiates a variable or fires under a row, the block has no
-    // indexed reading, as the kernel then has none, and its laws over an
-    // indexed sort stay declined.
+    // decision of the presentation re-derives. A law whose sides sort apart,
+    // even modulo the laws at earlier sorts, is declined as ill sorted, and
+    // the block keeps its reading for its other laws. Where one law's sorting
+    // reads no other way, an index it fixes applies an operation whose own
+    // indices no port fixes, or a law instantiates a variable or fires under a
+    // row, the block has no indexed reading, as the kernel then has none, and
+    // its laws over an indexed sort stay declined.
     let mut indexing = match reading {
         DescReading::Shape => Indexing::of(desc),
         DescReading::Generative => Maybe::Absent(indexed_reading::Absent::Generated),
     };
     let mut sorted: Vec<Cow<'_, RuleFace>> = desc.rules.iter().map(Cow::Borrowed).collect();
+    let mut apart: BTreeMap<usize, ElaborateError> = BTreeMap::new();
     if let Maybe::Present(ref indexed) = indexing {
         let faces: Option<Vec<Cow<'_, RuleFace>>> = desc
             .rules
             .iter()
-            .map(|face| {
+            .enumerate()
+            .map(|(index, face)| {
                 if bool::from(face.instantiates()) || matches!(face.under, Maybe::Present(_)) {
-                    None
+                    return None;
                 }
-                else {
-                    indexed.face(face).ok().map(Cow::Owned)
+                match indexed.face(face) {
+                    Ok(indexed) => Some(Cow::Owned(indexed)),
+                    Err(Unsorted::Clash) => {
+                        let _first = apart.insert(index, ElaborateError::IllSorted);
+                        Some(Cow::Borrowed(face))
+                    },
+                    Err(Unsorted::Rewritten) => {
+                        let _first = apart.insert(index, ElaborateError::RewrittenIndex);
+                        Some(Cow::Borrowed(face))
+                    },
+                    Err(Unsorted::Unread | Unsorted::Unfixed | Unsorted::Nested) => None,
                 }
             })
             .collect();
-        match faces {
-            Some(faces) => sorted = faces,
-            None => indexing = Maybe::Absent(indexed_reading::Absent::Unsupported),
+        if let Some(faces) = faces {
+            sorted = faces;
+        }
+        else {
+            apart.clear();
+            indexing = Maybe::Absent(indexed_reading::Absent::Unsupported);
         }
     }
     let unindexed = desc.sorts.iter().all(|sort| sort.indices.is_empty());
@@ -1197,6 +1228,10 @@ fn elaborate_desc<G>(
     let mut presents = false;
     for ((index, face), sorted) in desc.rules.iter().enumerate().zip(sorted) {
         if bool::from(face.instantiates()) || matches!(face.under, Maybe::Present(_)) {
+            continue;
+        }
+        if let Some(refusal) = apart.remove(&index) {
+            declined_faces.push((DeclinedFaceIndex::from(index), refusal));
             continue;
         }
         let outcome = if matches!(face.lhs.view(), TermView::Ctor { .. }) {

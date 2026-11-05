@@ -166,6 +166,7 @@ impl LoweringRefusal<'_>
                     | MemberFault::Reversible
                     | MemberFault::AggregatedOutput
                     | MemberFault::NestedOperation
+                    | MemberFault::RewrittenIndex
                     | MemberFault::UnrepresentableOperation
                     | MemberFault::ParallelRedexes,
                 ..
@@ -722,6 +723,7 @@ fn undescribed(fault: MemberFault) -> FailureClass
         MemberFault::NestedOperation => {
             FailureClass::Unimplemented(TrackingIssue::NESTED_OPERATION)
         },
+        MemberFault::RewrittenIndex => FailureClass::Unimplemented(TrackingIssue::REWRITTEN_INDEX),
         MemberFault::ParallelRedexes => {
             FailureClass::Unimplemented(TrackingIssue::PARALLEL_REDEXES)
         },
@@ -740,6 +742,7 @@ fn undescribed(fault: MemberFault) -> FailureClass
         | MemberFault::EmptyOperation
         | MemberFault::ResultArity
         | MemberFault::MixedPolarity
+        | MemberFault::IllSorted
         | MemberFault::UnderivedWiring => FailureClass::MalformedSource,
     }
 }
@@ -1523,6 +1526,10 @@ mod tests
                 FailureClass::Unimplemented(TrackingIssue::NESTED_OPERATION),
             ),
             (
+                MemberFault::RewrittenIndex,
+                FailureClass::Unimplemented(TrackingIssue::REWRITTEN_INDEX),
+            ),
+            (
                 MemberFault::ParallelRedexes,
                 FailureClass::Unimplemented(TrackingIssue::PARALLEL_REDEXES),
             ),
@@ -1555,6 +1562,7 @@ mod tests
             (MemberFault::EmptyOperation, FailureClass::MalformedSource),
             (MemberFault::ResultArity, FailureClass::MalformedSource),
             (MemberFault::MixedPolarity, FailureClass::MalformedSource),
+            (MemberFault::IllSorted, FailureClass::MalformedSource),
             (MemberFault::UnderivedWiring, FailureClass::MalformedSource),
             (MemberFault::OffBoundary, FailureClass::EngineFault),
         ];

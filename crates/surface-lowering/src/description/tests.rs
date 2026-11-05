@@ -1575,6 +1575,8 @@ fn every_member_fault_renders_its_own_message()
         MemberFault::UnrepresentableOperation,
         MemberFault::ResultArity,
         MemberFault::MixedPolarity,
+        MemberFault::IllSorted,
+        MemberFault::RewrittenIndex,
         MemberFault::UnderivedWiring,
         MemberFault::ParallelRedexes,
         MemberFault::OffBoundary,
