@@ -6,6 +6,6 @@ def rec plus(n : Nat, m : Nat) -> -F Nat =
   match m
     | Zero => n
     | Succ(p) => Succ (plus[<] n p)
-def f : +U (-F Nat) ;
-def f = thunk { plus Zero (Succ ()) } ;
+def f : +U (-F Nat);
+def f = thunk { plus Zero (Succ ()) };
 def ap(g : +U (Nat -> -F Nat), x : Nat) -> -F Nat { g x }

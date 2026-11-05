@@ -5541,7 +5541,7 @@ crates/surface-format/README.md STE-9.3 761404e10ab25819
 crates/surface-format/README.md STE-9.3 8c05d63acbdf567a
 crates/surface-format/README.md STE-1.2 09b14644f9d4ffc6
 crates/surface-format/README.md STE-1.2 ccd2de960cdaba8b
-crates/surface-format/tests/fixtures/members.gandr STE-3.5 85901dfc0d83fdff
+crates/surface-format/tests/unformatted/members.gandr STE-3.5 85901dfc0d83fdff
 crates/surface-grammar/README.md STE-9.3 a2c85d8ac4e37405
 crates/surface-layout/README.md STE-3.6 86ac3b38ba9df959
 crates/surface-layout/README.md STE-3.5 3d77e40933779400

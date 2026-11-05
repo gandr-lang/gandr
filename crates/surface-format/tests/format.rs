@@ -66,7 +66,7 @@ fn text<'text>(
     formatted(grammar, source, width).into_text()
 }
 
-/// The fixture `name`, and its goldens at both pages.
+/// The unformatted input `name`, and its goldens at both pages.
 ///
 /// # Specification
 /// trivial.
@@ -74,8 +74,9 @@ fn golden(name: &Path)
 {
     let grammar = grammar();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
-    let source = std::fs::read_to_string(root.join("fixtures").join(name).with_extension("gandr"))
-        .expect("the fixture is readable");
+    let source =
+        std::fs::read_to_string(root.join("unformatted").join(name).with_extension("gandr"))
+            .expect("the fixture is readable");
     for (width, page) in [(NARROW, "narrow"), (WIDE, "wide")] {
         let laid = text(&grammar, source.as_str(), width);
         assert_eq!(
@@ -127,7 +128,7 @@ fn the_loop_forms_keep_their_written_spelling()
 {
     golden(Path::new("loops"));
     let source = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/loops.gandr"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/unformatted/loops.gandr"),
     )
     .expect("the fixture is readable");
     assert_eq!(

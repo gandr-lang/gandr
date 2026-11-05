@@ -1,6 +1,6 @@
-import "./base.gandr" ;
+import "./base.gandr";
 data List(a : Type) : Type where
   | Nil : List(a)
   | Cons : (head : a, tail : List(a)) --> List(a)
-def joined : +U (-F List(Nat)) ;
-def joined = thunk { return (Cons Zero (Nil : List(Nat)) : List(Nat)) } ;
+def joined : +U (-F List(Nat));
+def joined = thunk { return (Cons Zero (Nil : List(Nat)) : List(Nat)) };

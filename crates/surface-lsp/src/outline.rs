@@ -1569,14 +1569,14 @@ mod tests
         let answered = Reading::of(SourceText::from(source)).symbols();
         assert_eq!(outline(&answered), [
             "twice 12 1:0-3:10 at 2:4-2:9",
-            "answer 12 4:0-4:17 at 4:4-4:10",
+            "answer 12 4:0-4:16 at 4:4-4:10",
             "Color 10 5:0-6:41 at 6:5-6:10",
             "  Red 9 6:28-6:39 at 6:28-6:31",
-            "Outer 2 7:0-10:18 at 7:7-7:12",
-            "  inner 12 8:2-8:17 at 8:6-8:11",
-            "  Nested 2 9:2-10:18 at 9:9-9:15",
-            "    deep 12 10:4-10:18 at 10:8-10:12",
-            "seat 14 11:0-11:12 at 11:6-11:10",
+            "Outer 2 7:0-10:17 at 7:7-7:12",
+            "  inner 12 8:2-8:16 at 8:6-8:11",
+            "  Nested 2 9:2-10:17 at 9:9-9:15",
+            "    deep 12 10:4-10:17 at 10:8-10:12",
+            "seat 14 11:0-11:11 at 11:6-11:10",
         ]);
         // The wire tree: each held symbol under its holder's `children`.
         let wire = serde_json::to_value(&answered).expect("the symbols encode");

@@ -2,8 +2,8 @@ def twice(
   x : Integer
 ) -> -F Integer =
   return x
-def answer = 42 ;
-def later : Integer ;
+def answer = 42;
+def later : Integer;
 data Color : Type where { | Red : Color }
 theory Shapes where
   sort M : Type;
@@ -12,7 +12,7 @@ theory Shapes where
     node : mul(s, s) --> (out);
   };
 module Plain where
-  def one = 1 ;
-world seat ;
+  def one = 1;
+world seat;
 module Kit.Tools : *{ two : Integer } where
-  def two = 2 ;
+  def two = 2;
