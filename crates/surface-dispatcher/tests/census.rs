@@ -657,6 +657,7 @@ mod sweeps
                             .map(move |read| (spelling, read))
                     });
                 let mut at = String::new();
+                let mut spelled = String::new();
                 for (spelling, read) in reads {
                     at.clear();
                     core::fmt::Write::write_fmt(
@@ -667,7 +668,13 @@ mod sweeps
                     // A constructor call inside a type reads a `*{}` operand
                     // as the type `Unit` (#5208): held when the reprint writes
                     // `Unit` for each `*{}` alone.
-                    let spelled = collapsed(SourceText::from(read.spelled.as_str()));
+                    spelled.clear();
+                    for (index, word) in read.spelled.split_whitespace().enumerate() {
+                        if index > 0 {
+                            spelled.push(' ');
+                        }
+                        spelled.push_str(word);
+                    }
                     let unit_read = match read.reprinted {
                         Maybe::Present(ref again) => {
                             spelled.contains("*{}")
@@ -701,7 +708,12 @@ mod sweeps
                                 .strip_prefix("no type head answers `")
                                 .and_then(|rest| rest.split_once('`'))
                                 .is_some_and(|(head, _)| {
-                                    head.contains('.') && spelled.contains(&format!("[{head}"))
+                                    head.contains('.')
+                                        && spelled.match_indices(head).any(|(start, _)| {
+                                            spelled
+                                                .get(.. start)
+                                                .is_some_and(|before| before.ends_with('['))
+                                        })
                                 });
                             if qualified_row {
                                 held.push(format!(
