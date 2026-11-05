@@ -6,4 +6,4 @@ error[BuiltinMisplaced]: the built-in role `irDecode` marks a definition, and th
   │ ┗━━━━━━━━━━━━━━━━┛ a built-in role on the wrong declaration
   │
   ├ note: `Wrong` is refused with BuiltinMisplaced, as its expectation states
-  ╰ help: mark a datatype with `irSignature`, and a definition with `irArgs` or `irDecode`
+  ╰ help: mark a datatype with `irSignature` or `irPair`, and a definition with `irArgs` or `irDecode`

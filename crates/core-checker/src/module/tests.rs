@@ -208,11 +208,13 @@ fn an_admission_out_of_order_is_refused()
 /// #3575: one declaration of the judgement a built-in role fits holds the
 /// role. A second holder is refused by the first's position. A role on the
 /// other judgement is refused by name. Neither refusal moves the holder, and
-/// each is the source's fault.
+/// each is the source's fault. #5255: a value that holds `E` answers its
+/// canonical body, which reads the pair type.
 #[test]
 fn a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575()
 {
     use gandr_kernel_term::Builtin;
+    use gandr_kernel_term::Departure;
 
     let mut arena = CoreArena::new();
     let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
@@ -221,6 +223,8 @@ fn a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575()
     let codes = alloc::sync::Arc::new(codes);
     let canonical = crate::fixture::canonical_signature(&mut arena, ConstantIndex::from(0_usize));
     let canonical = alloc::sync::Arc::new(canonical);
+    let again = crate::fixture::canonical_signature(&mut arena, ConstantIndex::from(2_usize));
+    let again = alloc::sync::Arc::new(again);
     let data = |at: usize| {
         Declaration::data(
             ConstantIndex::from(at),
@@ -240,19 +244,25 @@ fn a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575()
         Verdict::Data,
         "a datatype holds the signature role"
     );
-    assert!(
-        matches!(
-            check_declaration(&mut context, &value(1).built_in(Builtin::IrArgs)),
-            Verdict::Synthesised { .. }
-        ),
-        "a definition holds the arguments role"
+    assert_eq!(
+        check_declaration(&mut context, &value(1).built_in(Builtin::IrArgs)),
+        Verdict::Refused(CheckRefusal::BuiltinNotCanonical {
+            role: Builtin::IrArgs,
+            departure: Departure::Reads(Builtin::IrPair),
+        }),
+        "`E` reads the pair type, and no declaration holds it"
     );
     let repeated = CheckRefusal::BuiltinRepeated {
-        role: Builtin::IrArgs,
-        holder: ConstantIndex::from(1_usize),
+        role: Builtin::IrSignature,
+        holder: ConstantIndex::from(0_usize),
     };
+    let second = Declaration::data(
+        ConstantIndex::from(2_usize),
+        again,
+        OriginToken::from(2_usize),
+    );
     assert_eq!(
-        check_declaration(&mut context, &value(2).built_in(Builtin::IrArgs)),
+        check_declaration(&mut context, &second.built_in(Builtin::IrSignature)),
         Verdict::Refused(repeated),
         "a second holder is refused by the first's position"
     );
@@ -266,8 +276,15 @@ fn a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575()
         Verdict::Refused(CheckRefusal::BuiltinMisplaced(Builtin::IrDecode)),
         "the decode role on a datatype is refused"
     );
+    let third =
+        crate::fixture::canonical_signature(context.arena_mut(), ConstantIndex::from(5_usize));
+    let third = Declaration::data(
+        ConstantIndex::from(5_usize),
+        alloc::sync::Arc::new(third),
+        OriginToken::from(5_usize),
+    );
     assert_eq!(
-        check_declaration(&mut context, &value(5).built_in(Builtin::IrArgs)),
+        check_declaration(&mut context, &third.built_in(Builtin::IrSignature)),
         Verdict::Refused(repeated),
         "the refusals leave the first holder in place"
     );
@@ -278,12 +295,70 @@ fn a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575()
         "a declaration that is neither data nor a value holds no role"
     );
     assert_eq!(
+        check_declaration(&mut context, &value(7).built_in(Builtin::IrArgs)),
+        Verdict::Refused(CheckRefusal::BuiltinNotCanonical {
+            role: Builtin::IrArgs,
+            departure: Departure::Reads(Builtin::IrPair),
+        }),
+        "the refused holder of `E` gave its role back, so the next one is no second holder"
+    );
+    assert_eq!(
         [
             repeated.classify(),
             CheckRefusal::BuiltinMisplaced(Builtin::IrDecode).classify()
         ],
         [FailureClass::MalformedSource; 2],
         "each refusal is the source's fault"
+    );
+}
+
+/// #5255: the checker refuses the pair role on a datatype that departs from
+/// the canonical pair type, naming the first departure. The refused
+/// declaration holds no role, so a canonical datatype after it holds the role.
+#[test]
+fn a_pair_type_in_another_shape_holds_no_role_5255()
+{
+    use gandr_kernel_term::Builtin;
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::Departure;
+    use gandr_kernel_term::FieldPosition;
+
+    let mut arena = CoreArena::new();
+    let [parameters, fields] = crate::fixture::pair_parts(&mut arena);
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let swapped = gandr_core_term::DataSignature::new(
+        parameters,
+        Vec::from([Vec::from([fields[1], fields[0]])]),
+        kind,
+    );
+    let canonical = crate::fixture::canonical_pair(&mut arena);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let swapped = Declaration::data(
+        ConstantIndex::from(0_usize),
+        alloc::sync::Arc::new(swapped),
+        OriginToken::from(0_usize),
+    );
+    let refusal = CheckRefusal::BuiltinNotCanonical {
+        role: Builtin::IrPair,
+        departure: Departure::Field {
+            tag: ConstructorTag::from(0_usize),
+            field: FieldPosition::from(0_usize),
+        },
+    };
+    assert_eq!(
+        check_declaration(&mut context, &swapped.built_in(Builtin::IrPair)),
+        Verdict::Refused(refusal),
+        "the fields in the other order depart at the first field"
+    );
+    let canonical = Declaration::data(
+        ConstantIndex::from(1_usize),
+        alloc::sync::Arc::new(canonical),
+        OriginToken::from(1_usize),
+    );
+    assert_eq!(
+        check_declaration(&mut context, &canonical.built_in(Builtin::IrPair)),
+        Verdict::Data,
+        "the refused datatype held no role, so the canonical one takes it"
     );
 }
 

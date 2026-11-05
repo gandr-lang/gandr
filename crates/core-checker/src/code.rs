@@ -1907,6 +1907,50 @@ impl CodeDefinitions
         }
     }
 
+    /// Read the closed claim `claim`, `thunk (λⁿ. M)`, to its normal form,
+    /// every definition this table holds unfolding and each definition's own
+    /// recursion read back unrolled, as [`Self::read_claim`] reads it, with no
+    /// trace recorded.
+    ///
+    /// # Specification
+    /// - requires: `claim` is closed and lives in `core`, as every body this
+    ///   table holds does.
+    /// - ensures: the normal form the rounds of evaluation and readback settle
+    ///   at, returning or stuck. A stuck call of a recursive definition reads
+    ///   as its fixpoint applied, so two terms that unfold one definition to
+    ///   the same calls read to one normal form.
+    /// - provides: the normal forms [`crate::canonical::answers`] compares with
+    ///   no definition unfolding.
+    /// - fails: [`CheckRefusal::Undecided`] at `claim` when evaluation or
+    ///   readback faults or runs out of fuel, the rounds run out, or the claim
+    ///   reads back to no thunk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `std.ir`'s `args` and `decodeArgs`, read at each
+    ///   code, meet their canonical answers, and an answer of another type at
+    ///   `ι` reads apart from the unit type.
+    /// - witness: `canonical::tests::a_holder_of_e_is_refused_at_its_first_departing_answer_5255`
+    #[spec(ensures: |ret| match ret {
+        | Ok(normal) => core.value(normal).is_some(),
+        | Err(refusal) => refusal == CheckRefusal::Undecided { at: claim },
+    })]
+    #[inline]
+    pub fn read_normal(
+        &self,
+        core: &mut CoreArena,
+        claim: ValueId,
+    ) -> Result<ValueId, CheckRefusal>
+    {
+        match Self::read_back(core, claim, self.reading(Recursion::Unrolled))? {
+            Readback::Returned { normal, .. } | Readback::Stuck(normal) => Ok(normal),
+            Readback::Unsuspended => Err(CheckRefusal::Undecided { at: claim }),
+        }
+    }
+
     /// The definitions a claim is read back under: every one this table holds
     /// unfolding, a definition's own recursion named as `recursion` says.
     ///

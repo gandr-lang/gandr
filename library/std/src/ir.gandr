@@ -9,16 +9,19 @@
 // the type of the arguments a code asks for over a family `x`, which `t`
 // decodes. `decodeArgs` decodes those arguments. Each recurses on the code.
 //
-// Each of the three holds a role by its `builtin` mark: `IR` holds
-// `irSignature`, `args` holds `irArgs` and `decodeArgs` holds `irDecode`.
-// A role has one holder, and the checker refuses a second.
+// Each of the four holds a role by its `builtin` mark: `Sig` holds `irPair`,
+// `IR` holds `irSignature`, `args` holds `irArgs` and `decodeArgs` holds
+// `irDecode`. A role has one holder, and the checker refuses a second. The
+// checker compares each holder with the canonical form of its role, and
+// `args` and `decodeArgs` with the canonical bodies at each code.
 //
-// - owes: #3575 — the core formers that read the three by role
+// - owes: #3575 — the core formers that read the four by role
 // - cites: [Dybjer-1999-finite_axiomatization_inductiverecursive_definitions]
 //
 // [Dybjer-1999-finite_axiomatization_inductiverecursive_definitions]: https://doi.org/10.1007/3-540-48959-2_11 "Dybjer and Setzer, A finite axiomatization of inductive-recursive definitions"
 
 /// The dependent pairs over a family of types, as data.
+@[ builtin(irPair) ]
 pub data Sig(a : Type, b : a -> Type) : Type where
   /// A value of the first type with a value of the type it picks.
   | MkSig : (x : a, y : b(x)) --> Sig(a, b)

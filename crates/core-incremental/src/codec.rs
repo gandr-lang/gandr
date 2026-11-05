@@ -7349,23 +7349,40 @@ field!(
     }
 );
 
+/// The count each built-in role is written as. The counts of the roles that
+/// stored refusals already name stay as they are.
+///
+/// # Specification
+/// trivial.
+const fn role_count(role: gandr_kernel_term::Builtin) -> Count
+{
+    Count(match role {
+        gandr_kernel_term::Builtin::IrSignature => 0,
+        gandr_kernel_term::Builtin::IrArgs => 1,
+        gandr_kernel_term::Builtin::IrDecode => 2,
+        gandr_kernel_term::Builtin::IrPair => 3,
+    })
+}
+
+/// The built-in role written as `count`.
+///
+/// # Specification
+/// trivial.
+const fn counted_role(count: Count) -> Result<gandr_kernel_term::Builtin, CodecError>
+{
+    match count.0 {
+        0 => Ok(gandr_kernel_term::Builtin::IrSignature),
+        1 => Ok(gandr_kernel_term::Builtin::IrArgs),
+        2 => Ok(gandr_kernel_term::Builtin::IrDecode),
+        3 => Ok(gandr_kernel_term::Builtin::IrPair),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
 field!(
     gandr_kernel_term::Builtin,
-    |role, writer| {
-        writer.count(Count(match *role {
-            gandr_kernel_term::Builtin::IrSignature => 0,
-            gandr_kernel_term::Builtin::IrArgs => 1,
-            gandr_kernel_term::Builtin::IrDecode => 2,
-        }))
-    },
-    |reader| {
-        match reader.count()?.0 {
-            0 => Ok(gandr_kernel_term::Builtin::IrSignature),
-            1 => Ok(gandr_kernel_term::Builtin::IrArgs),
-            2 => Ok(gandr_kernel_term::Builtin::IrDecode),
-            _ => Err(CodecError::Corrupt),
-        }
-    }
+    |role, writer| { writer.count(role_count(*role)) },
+    |reader| { counted_role(reader.count()?) }
 );
 
 field!(
@@ -7383,6 +7400,14 @@ field!(
                 writer.count(Count(4))?;
                 writer.count(Count(usize::from(tag)))?;
                 writer.count(Count(usize::from(field)))
+            },
+            gandr_kernel_term::Departure::Reads(role) => {
+                writer.count(Count(5))?;
+                writer.count(role_count(role))
+            },
+            gandr_kernel_term::Departure::Answer(tag) => {
+                writer.count(Count(6))?;
+                writer.count(Count(usize::from(tag)))
             },
         }
     },
@@ -7405,6 +7430,15 @@ field!(
                     tag: gandr_kernel_term::ConstructorTag::from(tag.0),
                     field: gandr_kernel_term::FieldPosition::from(field.0),
                 })
+            },
+            5 => Ok(gandr_kernel_term::Departure::Reads(counted_role(
+                reader.count()?,
+            )?)),
+            6 => {
+                let tag = reader.count()?;
+                Ok(gandr_kernel_term::Departure::Answer(
+                    gandr_kernel_term::ConstructorTag::from(tag.0),
+                ))
             },
             _ => Err(CodecError::Corrupt),
         }

@@ -1194,7 +1194,8 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             String::from("remove the `builtin` mark from one of the two declarations")
         },
         CheckRefusal::BuiltinMisplaced(_) => String::from(
-            "mark a datatype with `irSignature`, and a definition with `irArgs` or `irDecode`",
+            "mark a datatype with `irSignature` or `irPair`, and a definition with `irArgs` or \
+             `irDecode`",
         ),
         CheckRefusal::BuiltinNotCanonical { .. } => {
             String::from("write the holder in the canonical form of its role")

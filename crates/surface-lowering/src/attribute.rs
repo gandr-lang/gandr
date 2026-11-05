@@ -1979,7 +1979,7 @@ mod tests
             ("boundary", AttributeSchema::Names),
             (
                 "builtin",
-                AttributeSchema::Word(&["irSignature", "irArgs", "irDecode"]),
+                AttributeSchema::Word(&["irSignature", "irPair", "irArgs", "irDecode"]),
             ),
         ];
 
