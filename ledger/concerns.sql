@@ -53,8 +53,10 @@ INSERT INTO site VALUES('fork','surface-dispatcher','pool','implements',NULL,'`P
 INSERT INTO site VALUES('fork','surface-session','forms','consumes',NULL,'`mold_runs`: a revision''s changed forms molded on the session''s pool, one molder per worker.');
 INSERT INTO site VALUES('fork','surface-session','session','consumes',NULL,'`Session::trial_unit`: a trial''s candidates judged on the session''s pool, each result in its own slot.');
 INSERT INTO site VALUES('fork','workflow-lane-budget','github','implements',NULL,'`read_all`: a report''s `gh` reads split across scoped threads of its own, outside the driver''s pool.');
-INSERT INTO site VALUES('measure','core-term','effect::capability','implements',NULL,'`CapabilityGrade`: a capability''s grade, consumable or durable, which the law checker reads as a count of uses with a zero adjoined.');
-INSERT INTO site VALUES('measure','core-term','memory','implements',NULL,'`HoldGrade`: a hold''s grade, one use or many, which the law checker reads as a count of uses with a zero adjoined.');
+INSERT INTO site VALUES('measure','core-checker','judgement::access','consumes',NULL,'The hold rule and `linear_read`: the uses on a held value added in the usage semiring, and the sum admitted only at or below the grade''s bound.');
+INSERT INTO site VALUES('measure','core-term','effect::capability','implements',NULL,'`CapabilityGrade::usage`: a capability''s grade as its bound in the usage semiring, many when durable and one when consumable.');
+INSERT INTO site VALUES('measure','core-term','memory','implements',NULL,'`HoldGrade::usage`: a hold''s grade as its bound in the usage semiring, many at grade ω and one at grade one.');
+INSERT INTO site VALUES('measure','core-term','usage','defines',NULL,'`Usage`: the usage semiring {0, 1, ω}, its addition, its multiplication and its order, whose laws the suite `tests::grades` decides.');
 INSERT INTO site VALUES('measure','theory-ordered-algebras','instance','implements',NULL,'`Tropical` and `Lawvere`: the max-plus semiring and the Lawvere quantale of distances, over exact dyadics.');
 INSERT INTO site VALUES('measure','theory-ordered-algebras','law','defines',NULL,'`check`: the sixteen laws decided on a carrier, each broken law named with its counterexample.');
 INSERT INTO site VALUES('measure','theory-ordered-algebras','signature','defines',NULL,'`OrderedSemiring`: the carrier, the operations and the order that every measure states.');

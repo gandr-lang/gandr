@@ -67,6 +67,11 @@
 //! and the hold stands at a pure returner, as a fork does, so no operation a
 //! handler could resume twice runs while it holds.
 //!
+//! Each rule reads the grade as a bound in the usage semiring of
+//! `gandr-core-term`. The rule adds the uses on the held value. It admits the
+//! sum only at or below that bound. A copy adds one use to one use, for a sum
+//! of many. Only grade `ω` admits that sum.
+//!
 //! # The view is a slot, not a type
 //!
 //! `View^m A` is the role of the view's slot, not a type former: the slot is
