@@ -1,0 +1,51 @@
+//! A pair written in a field of another pair whose type a definition's call
+//! computes.
+//!
+//! The lowering reads the type of a constructor written in a field off the
+//! arguments of the type of the constructor around it. A call that computes
+//! that type gives the lowering no arguments to read. So the inner pair needs
+//! a type that the source does not state.
+//!
+//! The lowering refuses the declaration by name at the inner pair, and it
+//! never drops it. An inner pair with its pair type written beside it checks.
+//! One pair at a computed type checks too.
+//!
+//! - see: #5373
+
+/// The counts.
+data Count : Type where
+  /// Zero.
+  | Z : Count
+  /// The successor of `n`.
+  | S : (n : Count) --> Count
+
+/// A value of the first type with a value of the type it picks.
+data Twin(a : Type, b : a -> Type) : Type where
+  /// The two values.
+  | MkTwin : (x : a, y : b(x)) --> Twin(a, b)
+
+/// The unit type at each count.
+def unitOfCount(m : Count) -> Type = return Unit
+
+/// A pair of a count and the unit value, at each count.
+def innerTwin(n : Count) -> Type = return (Twin Count unitOfCount)
+
+/// A pair of counts that holds a pair of counts.
+def twinType(u : Count) -> Type = return (Twin Count innerTwin)
+
+/// A pair of a count and the unit value.
+def oneType(u : Count) -> Type = return (Twin Count unitOfCount)
+
+/// The inner pair takes its type from the outer pair's field, and the call
+/// gives the lowering no field type to read.
+@[ refuses("OutOfFragment.Unannotated") ]
+def nestedTwin(k : Count) -> twinType(Z) =
+  MkTwin Z (MkTwin Z *{})
+
+/// The inner pair at its written type.
+def ascribedTwin(k : Count) -> twinType(Z) =
+  MkTwin Z (MkTwin Z *{} : Twin(Count, unitOfCount))
+
+/// One pair at a computed type.
+def oneTwin(k : Count) -> oneType(Z) =
+  MkTwin Z *{}

@@ -3545,6 +3545,15 @@ impl<'source> Lowerer<'_, 'source>
                 if let Classifier::Field(_) | Classifier::Parameter(_) = inherited {
                     let _first = self.awaiting.insert(site.at.node);
                 }
+                // The constructor around may read as no family's application,
+                // and then the field states no type for this one: the mint
+                // leaves it unclassified, and the declaration takes this
+                // refusal (#5373).
+                if let Classifier::Field(_) = inherited {
+                    let _first = self
+                        .unclassified
+                        .insert(site.at.node, site.out(FragmentBoundary::Unannotated));
+                }
                 inherited
             },
             (None, None, None, None, None) => return Err(site.out(FragmentBoundary::Unannotated)),
@@ -10303,18 +10312,22 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the field's declared type with the family's parameters
     ///   replaced by `applied`'s arguments and the fields before it by the
     ///   values the constructor is written with, every node the substitution
-    ///   mints recorded at the classifier's inserted origin; nothing when the
-    ///   field's constructor plans no constructor, `applied` is no application
-    ///   of a family to at least the family's parameters, or a type or a value
-    ///   it reads did not lower.
+    ///   mints recorded at the classifier's inserted origin; the unclassified
+    ///   absence when `applied` is no application of a family, which
+    ///   [`Self::refuse_unclassified`] refuses by name; nothing when the
+    ///   field's constructor plans no constructor, `applied` applies the family
+    ///   to fewer arguments than its parameters, or a type or a value it reads
+    ///   did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a list written in a field typed `List(Integer)`, in
     ///   one typed `List(a)` of a family applied to `Integer`, and in one
-    ///   naming the field before it.
+    ///   naming the field before it; a pair in a field of a pair whose type a
+    ///   definition's call computes, left unclassified.
     /// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
+    /// - witness: `lower::native::tests::a_pair_in_a_field_at_a_computed_pair_type_is_refused_by_name_5373`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
     fn field_type(
         &self,
@@ -10333,7 +10346,7 @@ impl<'source> Lowerer<'_, 'source>
         let Some(&gandr_core_term::ValueType::Data { ref arguments, .. }) =
             sink.arena.value_type(applied)
         else {
-            return unminted;
+            return Maybe::Absent(lowered::Absent::Unclassified);
         };
         let mut environment: Vec<ValueId> =
             arguments.iter().take(field.parameters).copied().collect();
