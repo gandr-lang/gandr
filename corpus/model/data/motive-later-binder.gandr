@@ -1,0 +1,36 @@
+// A case on a parameter whose goal reads a later parameter.
+//
+// The type of the later parameter reads the scrutinee, and the goal reads
+// both. The map over the arguments of a signature has this shape: its goal
+// reads the signature and the arguments, and the type of the arguments reads
+// the signature.
+//
+// The checker generalises the case's motive over each later binder that an
+// arm or the motive reads and whose type reads the scrutinee. Each arm then
+// meets the later binder at its own constructor. Here no arm reads `v`, and
+// the motive alone reads it.
+//
+// - see: #5324
+// - see: #3483 — the generalisation over a binder that an arm reads
+
+/// Two codes.
+data Code : Type where
+  /// The first code.
+  | A : Code
+  /// The second code.
+  | B : Code
+
+/// A family over the codes.
+def fam(c : Code) -> Type =
+  match c
+    | A => return Unit
+    | B => return Unit
+
+/// A predicate over a code and a value of its family.
+def pred(c : Code, v : fam(c)) -> Type = return Unit
+
+/// The goal reads `c` and `v`, and the type of `v` reads `c`.
+def go(c : Code, v : fam(c)) -> pred(c, v) =
+  match c
+    | A => *{}
+    | B => *{}

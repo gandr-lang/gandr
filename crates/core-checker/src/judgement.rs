@@ -4663,8 +4663,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .or_else(|refusal| self.forged(term, expected, refusal)),
             },
             Goal::Computation { term, direction } => {
-                // A case on a variable whose arms read a later binder at it is
-                // checked at the motive generalised over that binder.
+                // A case on a variable whose arms or motive read a later binder
+                // at it is checked at the motive generalised over that binder.
                 let term = match crate::solution::refined_case(self.context, term)? {
                     Maybe::Present(refined) => {
                         self.context.record_refinement(term, &refined);
