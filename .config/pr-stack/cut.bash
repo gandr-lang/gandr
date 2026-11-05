@@ -24,7 +24,7 @@ repo=case/case
 trunk=main
 failed=0
 
-commit() { printf '%s\n' "$2" > "$1" && git add "$1" && git commit --quiet --message "$3"; }
+source "$here/../cases/scratch.bash"
 subjects() { git log --format=%s "origin/main..origin/$1" | paste -sd ',' - | sed 's/,/, /g'; }
 
 # The scratch stack in `$1`, its upper `$2` (`apart` or `builds`).
@@ -32,9 +32,7 @@ scenario() {
   git init --quiet --bare --initial-branch=main "$1/origin.git"
   git clone --quiet "$1/origin.git" "$1/clone" 2> /dev/null
   cd "$1/clone"
-  git config user.name case
-  git config user.email case@example.invalid
-  git config commit.gpgsign false
+  identity
   commit base.txt base base
   git push --quiet origin main
   git switch --quiet --create red
