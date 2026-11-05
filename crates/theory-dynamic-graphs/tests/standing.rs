@@ -19,6 +19,10 @@ use gandr_theory_graphs::NodeId;
 use gandr_theory_order_maintenance::OrderError;
 use quenchant_shape::shape::Maybe;
 
+use crate::obstruction::Gluing;
+use crate::obstruction::Weight;
+use crate::obstruction::glued;
+
 /// Construct a fixture edge.
 ///
 /// # Specification
@@ -203,12 +207,18 @@ fn three_offer_systems_agree_with_independent_relaxation()
                     let actual = system
                         .insert_constraint(offer.0, offer.1)
                         .expect("bounded fixture values fit");
+                    let gluing = glued(&actual, &admitted);
                     assert_eq!(
-                        matches!(actual, ConstraintVerdict::Refuted(_)),
+                        matches!(gluing, Gluing::Obstructed(_)),
                         expected == BatchVerdict::PositiveCycle,
                         "{admitted:?}"
                     );
-                    if let ConstraintVerdict::Refuted(cycle) = actual {
+                    if let Gluing::Obstructed(obstruction) = gluing {
+                        let cycle = obstruction.cells;
+                        assert!(
+                            matches!(actual, ConstraintVerdict::Refuted(ref refused) if refused == cycle),
+                            "the obstruction carries the refusal's own cycle"
+                        );
                         assert_eq!(cycle.nodes.first(), cycle.nodes.last());
                         assert!(cycle.edges.contains(&offer.0));
                         assert!(
@@ -219,23 +229,12 @@ fn three_offer_systems_agree_with_independent_relaxation()
                                 .eq(cycle.edges.iter().copied()),
                             "the cycle's edges follow its walk"
                         );
-                        let weight: i64 = cycle
-                            .edges
-                            .iter()
-                            .map(|step| {
-                                admitted
-                                    .iter()
-                                    .filter_map(|&(candidate, offset)| {
-                                        (candidate == *step).then_some(i64::from(offset))
-                                    })
-                                    .max()
-                                    .expect("witness edge belongs to the candidate")
-                            })
-                            .sum();
-                        assert!(weight > 0, "{admitted:?}: {cycle:?}");
+                        assert!(obstruction.weight > Weight::UNIT, "{admitted:?}: {cycle:?}");
                         assert_eq!(nodes.map(|node| system.value(node)), before);
                         admitted.pop();
                     }
+                    // A section: the standing valuation meets every admitted
+                    // constraint.
                     for &(constraint, offset) in &admitted {
                         let Maybe::Present(source) = system.value(constraint.source)
                         else {

@@ -41,11 +41,13 @@ Directed composition remains a **batch** consumer. Its seam-flow graph is rebuil
 
 [`a_standing_graph_preserves_prefixes_across_calls`](tests/standing.rs) holds a public graph through local repairs, a cycle refusal, and a later accepted edge, then checks the exact order, retained adjacency, and comparison errors. The same integration target exercises propagation-overflow rollback, parallel offsets exceeding a node-only budget, and refusal of an unrepresentable node count. It also exhausts 19,683 three-offer systems over three nodes and offsets −1, 0, and 1 against independent Bellman–Ford sweeps, checking positive-cycle evidence and unchanged values after refusal.
 
+Those systems read each verdict as max-plus gluing over the constraint graph ([`tests/obstruction.rs`](tests/obstruction.rs)). An admission is a global section: the standing valuation meets every admitted constraint. A refusal is an obstruction: its cycle names the cells, and the cycle's max-plus weight is above zero. Parallel constraints combine by their maximum, and a path sums its offsets. The refusal's witness carries no offsets, so the weight comes from the constraints the caller holds.
+
 The graph differential rebuilds an independent batch oracle for every offer, validates refusal walks, and checks every retained prefix. Its property generator uses a fixed seed and persistent failure cases. Three deterministic stream families exercise hidden acyclic prefixes, adversarial back edges, and interleaving. The offset probe compares both structures only through their first disagreement, while they still share an admitted prefix; injected wrong verdicts check that the observers reject the intended fault class.
 
 ### Compatibility floor
 
-All 26 named rows are present. The five public standing-state witnesses are additional. The composition comparison row belongs to `theory-decomposition-spaces` and is not counted twice.
+All 26 named rows are present. The five public standing-state witnesses and the obstruction witness are additional. The composition comparison row belongs to `theory-decomposition-spaces` and is not counted twice.
 
 | Test | Location |
 | ---- | -------- |
