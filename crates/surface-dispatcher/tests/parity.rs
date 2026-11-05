@@ -41,7 +41,9 @@ use gandr_surface_format::Selection;
 use gandr_surface_format::format_beside;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::LoweringBudget;
+use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::ScopeAnswer;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::WrittenModel;
@@ -506,7 +508,8 @@ fn census(
 }
 
 /// Every way `written`'s signatures, spelled by the printer, fail the
-/// parity: one line each.
+/// parity: one line each. Beside them, each declaration the parity holds out,
+/// by the issue its printing names ([`inverse_hold`]).
 ///
 /// # Specification
 /// trivial.
@@ -514,18 +517,22 @@ fn misses(
     grammar: &Pbg,
     written: Written<'_>,
     name: &CorpusName,
-) -> Vec<String>
+) -> (Vec<String>, BTreeSet<String>)
 {
     let name: &str = name.as_ref();
     let signatures = signed(written.text, &top_level(grammar, written.text));
     if signatures.is_empty() {
-        return Vec::new();
+        return (Vec::new(), BTreeSet::new());
     }
     let Some(table) = typed(grammar, written)
     else {
-        return vec![format!("{name}: the source does not type")];
+        return (
+            vec![format!("{name}: the source does not type")],
+            BTreeSet::new(),
+        );
     };
     let mut misses = Vec::new();
+    let mut held = BTreeSet::new();
     let mut printed_whole = BTreeMap::new();
     for (declaration, pair) in printed(&table, &signatures) {
         match pair {
@@ -598,15 +605,35 @@ fn misses(
             let want = tokens(SourceFragment::from(pick(pair, expected).as_str()));
             match wrote.get(declaration) {
                 Some(got) if *got == want => {},
-                got => misses.push(format!(
-                    "{name}: `{declaration}` from {from:?} into {into}:\n  formatter: {}\n  printer:   {}",
-                    got.map_or_else(|| String::from("(no signature)"), |got| got.join(" ")),
-                    want.join(" ")
-                )),
+                got => match inverse_hold(SourceFragment::from(pair.0.as_str())) {
+                    Some(why) => {
+                        let _first = held.insert(format!("{name}: `{declaration}`: {why}"));
+                    },
+                    None => misses.push(format!(
+                        "{name}: `{declaration}` from {from:?} into {into}:\n  formatter: {}\n  printer:   {}",
+                        got.map_or_else(|| String::from("(no signature)"), |got| got.join(" ")),
+                        want.join(" ")
+                    )),
+                },
             }
         }
     }
-    misses
+    (misses, held)
+}
+
+/// Why the parity holds out a declaration the printer spells `sugared`: a
+/// reason read off the printing, never a name list. A printing that writes
+/// the path inverse, `Path.back p`, holds a form the formatter rewrites in
+/// neither direction (#5205).
+///
+/// # Specification
+/// trivial.
+fn inverse_hold(sugared: SourceFragment<'_>) -> Option<Held>
+{
+    tokens(sugared)
+        .windows(3)
+        .any(|run| matches!(run, [path, dot, back] if path == "Path" && dot == "." && back == "back"))
+        .then_some(Held::Inverse)
 }
 
 /// The page the printer spells a whole declaration on: wide, so a type is
@@ -627,6 +654,12 @@ enum Held
     /// A printing of a constructor at a type a definition computes, which
     /// names no family the printer reads it by (#3669).
     Computed,
+    /// A printing that writes a path inverse, which the formatter rewrites in
+    /// neither direction (#5205).
+    Inverse,
+    /// A printing that juxtaposes a type application inside an expression,
+    /// where the type grammar reads no juxtaposition (#5200).
+    Juxtaposed,
 }
 
 impl fmt::Display for Held
@@ -644,6 +677,8 @@ impl fmt::Display for Held
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
             Self::Computed => "#3669, a constructor at a type a definition computes",
+            Self::Inverse => "#5205, a printed path inverse",
+            Self::Juxtaposed => "#5200, a type application juxtaposed inside an expression",
         })
     }
 }
@@ -880,6 +915,9 @@ struct Read
     held: BTreeMap<String, Held>,
     /// One line for each declaration spelled unfaithfully otherwise.
     unfaithful: Vec<String>,
+    /// The declarations refused as a type the type grammar reads no
+    /// juxtaposition in, by name.
+    juxtaposed: BTreeSet<String>,
 }
 
 /// Each completed declaration `written` writes as a `def`, read by the
@@ -1061,12 +1099,30 @@ fn read(
         if usize::from(declaration.span().start()) < base {
             continue;
         }
-        let DeclarationOutcome::Completed {
-            declared_type,
-            body,
-        } = declaration.outcome()
-        else {
-            continue;
+        let (declared_type, body) = match declaration.outcome() {
+            DeclarationOutcome::Completed {
+                declared_type,
+                body,
+            } => (declared_type, body),
+            // A type the type grammar reads no juxtaposition in: a lowercase
+            // head reads as a mode, any other head leaves an extra operand.
+            DeclarationOutcome::Refused(
+                LoweringRefusal::StrayReceiverMode { .. }
+                | LoweringRefusal::MalformedForm {
+                    fault: FormFault::ExtraOperand,
+                    ..
+                },
+            ) => {
+                let _first = read.juxtaposed.insert(format!("{}", declaration.name()));
+                continue;
+            },
+            DeclarationOutcome::Refused(_)
+            | DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World => continue,
         };
         let mut forms: Vec<ByteSpan> = Vec::new();
         for half in [declaration.signature(), declaration.definition()] {
@@ -1195,6 +1251,9 @@ fn substituted(
 /// printing reads back to itself, beside them each of `printed` the reading
 /// of `variant` holds out, by why — a printing the parity cannot hold as
 /// written — and every declaration the printer spells whole in `variant`.
+/// A declaration of `printed` completes in its own source, so a variant
+/// that refuses it for a mode word off a receiver, or for an extra operand,
+/// reads the printing's juxtaposed type application (#5200).
 ///
 /// # Specification
 /// trivial.
@@ -1224,7 +1283,14 @@ fn reading_back(
             again
                 .held
                 .get(&declaration.name)
-                .map(|&held| (declaration.name.clone(), held))
+                .copied()
+                .or_else(|| {
+                    again
+                        .juxtaposed
+                        .contains(&declaration.name)
+                        .then_some(Held::Juxtaposed)
+                })
+                .map(|held| (declaration.name.clone(), held))
         })
         .collect();
     (reads, held, again.printed)
@@ -1522,6 +1588,18 @@ fn bodies(
     for declaration in parted {
         holding.push((Held::Apart, declaration.name.as_str()));
     }
+    // A printing that writes a path inverse is held before the formatter
+    // spells it: the formatter rewrites the inverse in neither direction.
+    let (inverted, held): (Vec<&Printed>, Vec<&Printed>) =
+        held.into_iter().partition(|declaration| {
+            inverse_hold(SourceFragment::from(
+                declaration.written(Form::Sugared).as_str(),
+            ))
+            .is_some()
+        });
+    for declaration in inverted {
+        holding.push((Held::Inverse, declaration.name.as_str()));
+    }
     for (held, declaration) in holding {
         found
             .held
@@ -1706,6 +1784,7 @@ fn a_scope_s_and_a_row_s_manifest_carrier_is_spelled_as_the_printer_does_3715()
 /// `sweeps` profile.
 mod sweeps
 {
+    use alloc::collections::BTreeSet;
     use std::io::Write as _;
 
     use gandr_surface_grammar::built_in;
@@ -1770,16 +1849,22 @@ mod sweeps
             &corpus::sources().expect("the corpus reads"),
         );
         let mut all = Vec::new();
+        let mut held = BTreeSet::new();
         for source in sources {
             let text = std::fs::read_to_string(&source.path).expect("a corpus source is readable");
-            all.extend(misses(
+            let (missed, holding) = misses(
                 &grammar,
                 Written {
                     path: &source.path,
                     text: SourceText::from(text.as_str()),
                 },
                 &source.name,
-            ));
+            );
+            all.extend(missed);
+            held.extend(holding);
+        }
+        for line in &held {
+            eprintln!("held out, {line}");
         }
         assert!(all.is_empty(), "{} misses:\n{}", all.len(), all.join("\n"));
     }
