@@ -845,6 +845,13 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         } => String::from("start each cell at the point where the cell before it ends"),
         CheckRefusal::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Column(_),
+            defect: gandr_theory_sites::Unfilled::Profile { .. },
+            ..
+        } => String::from(
+            "write a 2-cell at this place, or give its column the height 0 to hold one 1-cell",
+        ),
+        CheckRefusal::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Column(_),
             ..
         } => String::from(
             "start each 2-cell of a column at the 1-cell where the 2-cell before it ends",

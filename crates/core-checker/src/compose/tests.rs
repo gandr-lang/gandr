@@ -16,6 +16,8 @@ use gandr_kernel_term::BaseType;
 use gandr_theory_sites::Boundary;
 use gandr_theory_sites::ClassCount;
 use gandr_theory_sites::Degree;
+use gandr_theory_sites::PortCount;
+use gandr_theory_sites::Profile;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Unfilled;
 
@@ -462,6 +464,73 @@ fn a_level_two_shape_is_read_at_level_two()
         ),
         "a column's 2-cells that do not meet are refused at the column's seam"
     );
+}
+
+#[test]
+fn a_one_cell_in_a_column_of_two_cells_is_refused_at_its_column_4476()
+{
+    let mut arena = CoreArena::new();
+    let at = integer(&mut arena, Point(0));
+    let mut strata = Strata::default();
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let [zero, one, two] = [0, 1, 2].map(|value| integer(&mut arena, Point(value)));
+    let carrier = arena.value_type_path(integer_type, zero, one);
+    let [low, high] = [5, 6].map(|value| integer(&mut arena, Point(value)));
+    // The 2-cell `a : Path[.A = Path(0, 1)](low, high)` and the 1-cell
+    // `g : Path(1, 2)`, whose carrier is no path type.
+    let two_cell = CellReading::Known {
+        carrier,
+        left: low,
+        right: high,
+    };
+    let one_cell = CellReading::Known {
+        carrier: integer_type,
+        left: one,
+        right: two,
+    };
+    let horizontal = admit(&mut strata, at, columns(Head(5, 11), Written(&[1, 1])))
+        .expect("the horizontal composite is a shape at 5 over 11");
+    let vertical = admit(&mut strata, at, columns(Head(4, 9), Written(&[2])))
+        .expect("the vertical composite is a shape at 4 over 9");
+    let across = columns(Head(5, 11), Written(&[1, 1])).pasting.tree();
+    let down = columns(Head(4, 9), Written(&[2])).pasting.tree();
+    let none = Profile {
+        inputs: PortCount::from(0_usize),
+        outputs: PortCount::from(0_usize),
+    };
+    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (shape, cells, (seam, cell), name) in [
+        (
+            (across, &horizontal),
+            [two_cell, one_cell],
+            (1, 0),
+            "the second column of the horizontal composite",
+        ),
+        (
+            (down, &vertical),
+            [two_cell, one_cell],
+            (0, 1),
+            "the second cell of the vertical composite",
+        ),
+        (
+            (down, &vertical),
+            [one_cell, two_cell],
+            (0, 0),
+            "the first cell of the vertical composite",
+        ),
+    ] {
+        assert!(
+            matches!(
+                fill_columns(&context, at, shape, &cells),
+                Err(CheckRefusal::ComposeDoesNotFill {
+                    seam: Seam::Column(column),
+                    defect: Unfilled::Profile { vertex, found },
+                    ..
+                }) if usize::from(column) == seam && usize::from(vertex) == cell && found == none
+            ),
+            "a 1-cell as {name} is refused at its column by the profile of its vertex"
+        );
+    }
 }
 
 #[test]

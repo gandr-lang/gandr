@@ -421,6 +421,11 @@ fn checked(refusal: CheckRefusal) -> Culprit
         } => "cells that do not fill the chain",
         CheckRefusal::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Column(_),
+            defect: gandr_theory_sites::Unfilled::Profile { .. },
+            ..
+        } => "a 1-cell in a column of 2-cells",
+        CheckRefusal::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Column(_),
             ..
         } => "2-cells that do not fill their column",
         CheckRefusal::NoFiller { .. } => "a square the generator does not fill",

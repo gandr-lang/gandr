@@ -42,3 +42,49 @@ error[ComposeDoesNotFill]: a composite needs each column's 2-cells to meet end t
    │
    ├ note: `columnApart` is refused with ComposeDoesNotFill, as its expectation states
    ╰ help: start each 2-cell of a column at the 1-cell where the 2-cell before it ends
+
+error[ComposeDoesNotFill]: a composite needs a 2-cell at each place of a column of 2-cells
+   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:24:3
+   │
+23 │   def columnFlat(A : Type, x : A, y : A, z : A, f : Path(x, y), g : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), h : Path(y, z…
+   │   │              ┬         ┬      ┬      ┬      ┬               ┬               ┬                                        ─ checked against `Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds h : Path[.A = A](y, z)
+   │   │              │         │      │      │      │               │               │
+   │   │              │         │      │      │      │               │               checked against `Path[.A = Path[.A = A](x, y)](f, g) -> Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
+   │   │              │         │      │      │      │               checked; while checking the body of this function; binds g : Path[.A = A](x, y)
+   │   │              │         │      │      │      checked; while checking the body of this function; binds f : Path[.A = A](x, y)
+   │   │              │         │      │      checked; while checking the body of this function; binds z : A
+   │   │              │         │      checked; while checking the body of this function; binds y : A
+   │   │              │         checked; while checking the body of this function; binds x : A
+   │ ┌─┘              checked; while checking the body of this function; binds A : Type
+   │ │
+24 │ │   compose[5, 11] (chain 2 (1, 1)) (a, h)
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│────────────────────────────────────┤
+   │     │                                    checked; while checking the body of this thunk
+   │     a 1-cell in a column of 2-cells
+   │
+   ├ note: `columnFlat` is refused with ComposeDoesNotFill, as its expectation states
+   ╰ help: write a 2-cell at this place, or give its column the height 0 to hold one 1-cell
+
+error[ComposeDoesNotFill]: a composite needs a 2-cell at each place of a column of 2-cells
+   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:32:3
+   │
+31 │   def emptyThenFlat(A : Type, x : A, y : A, z : A, f : Path(x, y), g : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), h : Path(y…
+   │   │                 ┬         ┬      ┬      ┬      ┬               ┬               ┬                                        ─ checked against `Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds h : Path[.A = A](y, z)
+   │   │                 │         │      │      │      │               │               │
+   │   │                 │         │      │      │      │               │               checked against `Path[.A = Path[.A = A](x, y)](f, g) -> Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
+   │   │                 │         │      │      │      │               checked; while checking the body of this function; binds g : Path[.A = A](x, y)
+   │   │                 │         │      │      │      checked; while checking the body of this function; binds f : Path[.A = A](x, y)
+   │   │                 │         │      │      checked; while checking the body of this function; binds z : A
+   │   │                 │         │      checked; while checking the body of this function; binds y : A
+   │   │                 │         checked; while checking the body of this function; binds x : A
+   │ ┌─┘                 checked; while checking the body of this function; binds A : Type
+   │ │
+32 │ │   compose[4, 9] (chain 2 (0, 1)) (a, h)
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│───────────────────────────────────┤
+   │     │                                   checked; while checking the body of this thunk
+   │     a 1-cell in a column of 2-cells
+   │
+   ├ note: `emptyThenFlat` is refused with ComposeDoesNotFill, as its expectation states
+   ╰ help: write a 2-cell at this place, or give its column the height 0 to hold one 1-cell

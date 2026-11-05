@@ -14,3 +14,19 @@ def stacked(A : Type, x : A, y : A, f : Path(x, y), g : Path(x, y), h : Path(x, 
 @[ refuses("ComposeDoesNotFill") ]
 def columnApart(A : Type, x : A, y : A, f : Path(x, y), g : Path(x, y), h : Path(x, y), k : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), b : Path[.A = Path[.A = A](x, y)](h, k)) -> Path[.A = Path[.A = A](x, y)](f, k) =
   compose[4, 9] (chain 1 2) (a, b)
+
+/// The pasting `[2](1, 1)` wants two 2-cells. The second cell is a 1-cell. The
+/// second column's seam refuses it by the profile of its vertex.
+///
+/// - see: #4476
+@[ refuses("ComposeDoesNotFill") ]
+def columnFlat(A : Type, x : A, y : A, z : A, f : Path(x, y), g : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), h : Path(y, z)) -> Path[.A = A](x, z) =
+  compose[5, 11] (chain 2 (1, 1)) (a, h)
+
+/// The pasting `[2](0, 1)` wants a 1-cell and then a 2-cell. The cells are a
+/// 2-cell and then a 1-cell. The second column's seam refuses the 1-cell.
+///
+/// - see: #4476
+@[ refuses("ComposeDoesNotFill") ]
+def emptyThenFlat(A : Type, x : A, y : A, z : A, f : Path(x, y), g : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), h : Path(y, z)) -> Path[.A = A](x, z) =
+  compose[4, 9] (chain 2 (0, 1)) (a, h)

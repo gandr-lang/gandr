@@ -1130,6 +1130,11 @@ fn checked(
         } => f.write_str("a composite needs its cells to meet end to end along the chain"),
         CheckRefusal::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Column(_),
+            defect: gandr_theory_sites::Unfilled::Profile { .. },
+            ..
+        } => f.write_str("a composite needs a 2-cell at each place of a column of 2-cells"),
+        CheckRefusal::ComposeDoesNotFill {
+            seam: gandr_core_term::compose::Seam::Column(_),
             ..
         } => f.write_str("a composite needs each column's 2-cells to meet end to end"),
         CheckRefusal::FillUncertified { .. } => {
