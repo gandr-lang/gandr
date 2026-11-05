@@ -352,6 +352,55 @@ fn a_type_a_match_computes_reads_back_5383()
     }
 }
 
+/// #5392: the types an inner case binds for its index equations read back to
+/// their certificates. `stlc.gandr`'s `lookVar` cases on `rho` inside a case
+/// on `x`, and both arms bind `_h`.
+#[test]
+fn an_inner_case_s_equation_types_read_back_5392()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/model/desc/stlc.gandr")
+        .canonicalize()
+        .expect("the source resolves");
+    let text = std::fs::read_to_string(&path).expect("the source reads");
+    let laid = lay_out(
+        &grammar,
+        &path,
+        classify(&path),
+        SourceText::from(text.as_str()),
+    );
+    let table = TypeTable::of_unit(
+        &grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+    )
+    .expect("the source types");
+    for spelling in [Spelling::Unicode, Spelling::Ascii] {
+        let reads = table.read_back(&grammar, PageWidth::from(PAGE), Style {
+            form: Form::Sugared,
+            spelling,
+        });
+        let unread: Vec<(&str, &RoundTrip, String)> = reads
+            .iter()
+            .filter(|read| read.trip == RoundTrip::Different)
+            .map(|read| {
+                (
+                    read.spelled.as_str(),
+                    &read.trip,
+                    format!("{:?}", read.reprinted),
+                )
+            })
+            .collect();
+        assert_eq!(
+            unread,
+            Vec::<(&str, &RoundTrip, String)>::new(),
+            "every printed type of `stlc.gandr` reads back to its certificate"
+        );
+    }
+}
+
 /// Every typed entry, declared type and stated run value of the corpus
 /// sources of `shard` (every fourth source the walk visits), spelled and
 /// counted, and every stated value and normal form printed, read back and

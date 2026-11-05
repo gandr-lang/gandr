@@ -4276,7 +4276,9 @@ impl TypeTable
     ///   member, each name its context binds; empty for a closed node or one
     ///   its declaration does not reach. A judged node's context keeps each
     ///   model implicit of its declaration whose components' binders it holds
-    ///   under their paths, `s.x`, to be declared as the implicit whole.
+    ///   under their paths, `s.x`, to be declared as the implicit whole. A
+    ///   binder whose name a later binder of the context holds takes that name
+    ///   primed (`′`) until no binder of the context holds it.
     /// - provides: the context an entry's type is spelled in.
     /// - fails: never.
     /// - panics: none.
@@ -4289,7 +4291,9 @@ impl TypeTable
     ///   theory's operation under the sorts before it; a capability inside a
     ///   scope's subject names the scope, and a type kept at a hold names the
     ///   hold, past the scopes and holds around it; a node the term shares
-    ///   between places of other depths answers at the place it was judged.
+    ///   between places of other depths answers at the place it was judged; an
+    ///   inner arm's binder that shadows an outer one leaves the outer one
+    ///   primed apart.
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1`
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2`
@@ -4299,6 +4303,7 @@ impl TypeTable
     /// - witness: `typed::tests::a_kept_type_answers_at_the_hold_it_is_kept_in`
     /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
     /// - witness: `typed::tests::a_dependent_record_spells_its_variables_where_it_stands_1515`
+    /// - witness: `tests::census::an_inner_case_s_equation_types_read_back_5392`
     fn standing(
         &self,
         standing: Standing,
@@ -4401,6 +4406,32 @@ impl TypeTable
         {
             context.binders.push(Some(name.clone()));
             context.types.push(None);
+        }
+        // A binder that a later binder of the same name shadows is primed
+        // (`′`) apart, as a label is, so a spelling names the binder it reads.
+        // One walk from the innermost binder out finds the shadowed binders,
+        // and a context with none of them renames nothing.
+        let mut inner: BTreeSet<&str> = BTreeSet::new();
+        let mut shadowed: Vec<usize> = Vec::new();
+        for (place, binder) in context.binders.iter().enumerate().rev() {
+            if let Some(name) = binder.as_deref()
+                && !inner.insert(name)
+            {
+                shadowed.push(place);
+            }
+        }
+        if !shadowed.is_empty() {
+            let mut held: BTreeSet<String> = context.binders.iter().flatten().cloned().collect();
+            for place in shadowed {
+                let Some(&mut Some(ref mut name)) = context.binders.get_mut(place)
+                else {
+                    continue;
+                };
+                while held.contains(name.as_str()) {
+                    name.push('′');
+                }
+                held.insert(name.clone());
+            }
         }
         context
     }
