@@ -83,8 +83,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression !=", Standing::Owed(0)),
     ("Expression \"", Standing::Owed(0)),
     ("Expression #[", Standing::Owed(0)),
-    ("Expression &", Standing::Owed(0)),
-    ("Expression ( application", Standing::Owed(0)),
+    ("Expression &{", Standing::Owed(0)),
     (
         "Expression ( group",
         Standing::Design("a parenthesised group: the node inside answers"),
@@ -181,7 +180,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression ∷", Standing::Owed(0)),
     ("Pattern #[", Standing::Owed(0)),
     ("Pattern *{", Standing::Owed(0)),
-    ("Pattern (", Standing::Owed(0)),
+    ("Pattern +{", Standing::Owed(0)),
     ("Pattern _", Standing::Owed(0)),
     ("Pattern constructor", Standing::Owed(0)),
     ("Pattern false", Standing::Owed(0)),
@@ -191,6 +190,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Pattern |", Standing::Owed(0)),
     ("Type !", Standing::Owed(0)),
     ("Type &", Standing::Owed(0)),
+    ("Type &{", Standing::Owed(0)),
     (
         "Type ( group",
         Standing::Design(
@@ -205,7 +205,6 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type ->", Standing::Owed(0)),
     ("Type -F", Standing::Owed(0)),
     ("Type .", Standing::Owed(0)),
-    ("Type =>", Standing::Owed(0)),
     ("Type ?", Standing::Owed(0)),
     ("Type Bridge", Standing::Owed(0)),
     ("Type Buf", Standing::Owed(0)),

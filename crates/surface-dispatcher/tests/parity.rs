@@ -660,6 +660,9 @@ enum Held
     /// A printing that juxtaposes a type application inside an expression,
     /// where the type grammar reads no juxtaposition (#5200).
     Juxtaposed,
+    /// A product of thunk types inside a type quote, whose desugar the
+    /// formatter withdraws (#5207).
+    Withdrawn,
 }
 
 impl fmt::Display for Held
@@ -679,6 +682,7 @@ impl fmt::Display for Held
             Self::Computed => "#3669, a constructor at a type a definition computes",
             Self::Inverse => "#5205, a printed path inverse",
             Self::Juxtaposed => "#5200, a type application juxtaposed inside an expression",
+            Self::Withdrawn => "#5207, a product of thunk types the formatter withdraws in a quote",
         })
     }
 }
@@ -1732,6 +1736,24 @@ fn bodies(
             else {
                 continue;
             };
+            // The formatter withdraws its desugar of a product of thunk types
+            // inside a type quote, `+U C * +U D` into `*{…}`, reading a `+U` as
+            // a computation type (#5207): held when the withdrawal says so and
+            // the printer writes the product `*{…}`.
+            let withdrawn_product =
+                withdrawn
+                    .get(declaration.name.as_str())
+                    .is_some_and(|reason| {
+                        reason.contains("`u_type`, read as a computation type")
+                            && reread.written(expected).contains("*{")
+                    });
+            if withdrawn_product {
+                found.held.entry(Held::Withdrawn).or_default().push(format!(
+                    "{name} `{}` from {from:?} into {into}",
+                    declaration.name
+                ));
+                continue;
+            }
             let mut miss = format!("{name}: `{}` from {from:?} into {into}", declaration.name);
             if let Some(reason) = withdrawn.get(declaration.name.as_str()) {
                 core::fmt::Write::write_fmt(&mut miss, format_args!(", withdrawn: {reason}"))
