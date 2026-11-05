@@ -8,6 +8,8 @@
 #[cfg(test)]
 mod adversarial_alphabet;
 #[cfg(test)]
+mod collapse;
+#[cfg(test)]
 mod completion;
 #[cfg(test)]
 mod differential;
