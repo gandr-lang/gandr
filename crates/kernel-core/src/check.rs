@@ -7554,6 +7554,9 @@ where
     };
     verdict?;
     drain_code_obligations(arena, judgement, memo, session, census, owed)?;
+    // A holder answers its role's canonical form, over the entries admitted
+    // before it.
+    crate::builtin::admit(arena, judgement.entries, declaration)?;
     Ok(match following {
         Maybe::Present(position) => accessibility.following(position),
         Maybe::Absent(_) => accessibility,

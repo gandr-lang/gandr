@@ -843,6 +843,9 @@ pub struct Declaration
     /// The stages a definition's signature quantifies over and where its
     /// declared type reads each; empty for every other declaration.
     stages: crate::stage_signature::StageSignature,
+    /// The built-in role the declaration holds, which the kernel validates
+    /// against the role's canonical form; none for every other declaration.
+    role: Maybe<crate::Builtin, crate::builtin_role::Absent>,
 }
 
 impl Declaration
@@ -961,6 +964,58 @@ impl Declaration
     pub const fn stages(&self) -> &crate::stage_signature::StageSignature
     {
         &self.stages
+    }
+
+    /// The built-in role the declaration holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn role(&self) -> Maybe<crate::Builtin, crate::builtin_role::Absent>
+    {
+        self.role
+    }
+
+    /// This data declaration or definition holding the built-in `role`,
+    /// everything else unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the kernel validates the holder against the role's
+    ///   canonical form at admission, never takes the mark on trust.
+    /// - ensures: a data declaration or a definition comes back holding exactly
+    ///   `role`; any other declaration, which holds no role, comes back
+    ///   unchanged. Content, levels, provenance, name, related pairs, laws,
+    ///   rules and stages are untouched either way.
+    /// - provides: the one way a producer attaches a role, after whichever
+    ///   finisher built the declaration.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a holder keeps its role through the wire, and a
+    ///   declaration of another judgement keeps none.
+    /// - witness: `encode::tests::a_role_closes_a_holder_s_segment_5304`
+    #[spec(
+        captures: entry = (matches!(self.content, DeclarationContent::Data { .. } | DeclarationContent::Def { .. }), self.role, self.laws.len(), self.name.0.len()),
+        ensures: |ret| ret.role == if entry.0 { Maybe::Present(role) } else { entry.1 }
+            && ret.laws.len() == entry.2 && ret.name.0.len() == entry.3,
+    )]
+    #[inline]
+    #[must_use]
+    pub fn held(
+        self,
+        role: crate::Builtin,
+    ) -> Self
+    {
+        match self.content {
+            DeclarationContent::Data { .. } | DeclarationContent::Def { .. } => Self {
+                role: Maybe::Present(role),
+                ..self
+            },
+            DeclarationContent::Codata { .. }
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::AbstractType { .. } => self,
+        }
     }
 
     /// This declaration under `name`, its levels, content and provenance
@@ -1686,6 +1741,7 @@ impl<'arena> DeclarationBuilder<'arena>
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
+            role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
         }
     }
 
@@ -1743,6 +1799,7 @@ impl<'arena> DeclarationBuilder<'arena>
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
+            role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
         }
     }
 
@@ -1797,6 +1854,7 @@ impl<'arena> DeclarationBuilder<'arena>
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
+            role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
         }
     }
 
@@ -1859,6 +1917,7 @@ impl<'arena> DeclarationBuilder<'arena>
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
+            role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
         }
     }
 }
@@ -1957,6 +2016,7 @@ impl DeclarationBuilder<'_>
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
+            role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
         }
     }
 
@@ -1990,6 +2050,7 @@ impl DeclarationBuilder<'_>
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
+            role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
         }
     }
 }

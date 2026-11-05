@@ -203,6 +203,8 @@ pub enum TagSite
     Seam,
     /// A presented rule's node, outside the constructor and variable alphabet.
     RuleNode,
+    /// A holder's built-in role, outside the role alphabet.
+    Role,
 }
 
 impl fmt::Display for TagSite
@@ -247,6 +249,7 @@ impl fmt::Display for TagSite
             Self::HigherLayer => "a higher-field layer kind",
             Self::Seam => "a composition seam",
             Self::RuleNode => "a presented rule's node",
+            Self::Role => "a built-in role",
         })
     }
 }
@@ -597,6 +600,7 @@ mod tests
             TagSite::ConstraintRelation,
             TagSite::Seam,
             TagSite::RuleNode,
+            TagSite::Role,
         ] {
             names.push(format!("{site}"));
             check_sink(&site);
