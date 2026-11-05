@@ -180,11 +180,18 @@ fn named(
         NodeLabel::GhostClose {
             sort: closed,
             class,
-        } => write!(out, "close {} {}", sort(closed), match class {
-            ClosingClass::Paren => "`)`",
-            ClosingClass::Bracket => "`]`",
-            ClosingClass::Brace => "`}`",
-        }),
+            reach,
+        } => {
+            let close = match class {
+                ClosingClass::Paren => "`)`",
+                ClosingClass::Bracket => "`]`",
+                ClosingClass::Brace => "`}`",
+            };
+            match u32::from(reach) {
+                0 => write!(out, "close {} {close}", sort(closed)),
+                bytes => write!(out, "close {} {close} reach {bytes}", sort(closed)),
+            }
+        },
         NodeLabel::Space => write!(out, "space"),
         NodeLabel::Doc => write!(out, "doc"),
     };

@@ -30507,6 +30507,36 @@ def ended() -> -F [Partial] Unit {
         );
     }
 
+    /// #3812: a group's `)` left out where two places parse is marked over
+    /// both places and every byte between them, so the mark touches the place
+    /// the source lost it at.
+    #[test]
+    fn a_closer_owed_at_two_places_is_marked_over_both_3812()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let source = "def raised() -> -F Integer =\n  var xs = 0\n  (xs.first () as w { resume(w, \
+                      2) };\n  pure xs\n";
+        let after = |written: &str| {
+            source
+                .find(written)
+                .map_or(0_usize, |start| start.saturating_add(written.len()))
+        };
+        let tree = repaired(&pbg, SourceText::from(source));
+        assert_eq!(
+            refusal_in(&pbg, &tree),
+            LoweringRefusal::MalformedForm {
+                span: at(after("(xs"), after("2) }")),
+                form: FormName::from(NamedKind("parenthesized_expression")),
+                fault: FormFault::Repaired(Repair::GhostClose(
+                    gandr_surface_syntax::ClosingClass::Paren,
+                )),
+            },
+            "the `)` can close the group after `xs` or after the block: the mark spans both, \
+             and the place the source lost it at, after `()`, lies between"
+        );
+    }
+
     /// #2242: a declaration the parser repaired because a bracket was written
     /// once too often, or left out, is refused at that bracket, as its layout
     /// places it, not where the parser's pairing finally failed.
@@ -30816,6 +30846,7 @@ def ended() -> -F [Partial] Unit {
             gandr_surface_syntax::NodeLabel::GhostClose {
                 sort: gandr_surface_syntax::GroutSort::from(0_u16),
                 class: gandr_surface_syntax::ClosingClass::Brace,
+                reach: gandr_surface_syntax::CloseReach::NONE,
             },
             at(0_usize, 0_usize),
             &[],

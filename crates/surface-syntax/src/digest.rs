@@ -279,9 +279,10 @@ impl Preimage
     /// # Specification
     /// - requires: `text` is the fragment the node covers.
     /// - ensures: appends the label's tag and payload — a mold id, or a grout's
-    ///   sort and shape, or a minted close's sort and family — then the child
-    ///   count, then the text's length and the text exactly when the label
-    ///   carries text.
+    ///   sort and shape, or a minted close's sort and family, the family's byte
+    ///   with its high bit set and the reach after it when the close reaches
+    ///   back — then the child count, then the text's length and the text
+    ///   exactly when the label carries text.
     /// - panics: none.
     /// - executable: none — the appended bytes are the body; restating them
     ///   observes nothing independent.
@@ -324,13 +325,22 @@ impl Preimage
                     GroutShape::Infix => 0x04_u8,
                 });
             },
-            NodeLabel::GhostClose { sort, class } => {
+            NodeLabel::GhostClose { sort, class, reach } => {
                 bytes.extend_from_slice(&u16::from(sort).to_le_bytes());
-                bytes.push(match class {
+                let family = match class {
                     ClosingClass::Paren => 0x01_u8,
                     ClosingClass::Bracket => 0x02_u8,
                     ClosingClass::Brace => 0x03_u8,
-                });
+                };
+                // A close minted at its one place keeps the digest it had
+                // before closes reached back.
+                match u32::from(reach) {
+                    0 => bytes.push(family),
+                    back => {
+                        bytes.push(family | 0x80_u8);
+                        bytes.extend_from_slice(&back.to_le_bytes());
+                    },
+                }
             },
         }
         bytes.extend_from_slice(
@@ -377,6 +387,7 @@ mod tests
     use super::NODE_DIGEST_LEN;
     use super::NodeDigest;
     use super::Preimage;
+    use crate::label::CloseReach;
     use crate::label::NodeLabel;
     use crate::mold::ClosingClass;
     use crate::mold::GroutShape;
@@ -604,19 +615,26 @@ mod tests
                 }
             }
         }
-        let close = |sort: u16, class: ClosingClass| {
+        let reaching = |sort: u16, class: ClosingClass, reach: u32| {
             leaf(
                 NodeLabel::GhostClose {
                     sort: GroutSort::from(sort),
                     class,
+                    reach: CloseReach::from(reach),
                 },
                 SourceFragment::from(""),
             )
         };
+        let close = |sort: u16, class: ClosingClass| reaching(sort, class, 0_u32);
         assert_ne!(
             close(1_u16, ClosingClass::Paren),
             close(2_u16, ClosingClass::Paren),
             "a minted close's sort reaches its digest"
+        );
+        assert_ne!(
+            reaching(1_u16, ClosingClass::Paren, 0_u32),
+            reaching(1_u16, ClosingClass::Paren, 3_u32),
+            "a minted close's reach reaches its digest"
         );
         let classes = [
             ClosingClass::Paren,

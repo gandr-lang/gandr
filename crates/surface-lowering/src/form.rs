@@ -2991,7 +2991,9 @@ fn nested_repair<'source>(
 
 /// The repair a form the parser closed is reported by: the point where the
 /// form at `form` first leaves its rule's shape when that point comes before
-/// `found`, its minted close or ghost end, and `found` otherwise.
+/// `found`, its minted close or ghost end, and `found` otherwise. Either mark
+/// starts at the first place a minted close's closer parses at, when that
+/// place comes first.
 ///
 /// # Specification
 /// - requires: `found` is a repair among the children of `form`.
@@ -2999,7 +3001,9 @@ fn nested_repair<'source>(
 ///   and [`diverged()`]'s point starts before it, the point standing in
 ///   `found`'s form: `found`'s own repair there when the form writes none of
 ///   its tiles past the point, so the close belongs there, and
-///   [`Repair::Diverged`] otherwise; `found` unchanged in every other case.
+///   [`Repair::Diverged`] otherwise, its span starting where [`owed`]'s mark of
+///   `found` starts when that comes first; otherwise [`owed`]'s mark of
+///   `found`; `found` unchanged in every other case.
 /// - provides: the mark at the first place the source went wrong, not at the
 ///   end the parser closed the form at.
 /// - fails: never.
@@ -3011,6 +3015,7 @@ fn nested_repair<'source>(
 ///   `{` at the brace's gap, a group left open before a stray `;` at the gap
 ///   its `)` belongs in, and a module never closed keeps its close.
 /// - witness: `lower::tests::a_closed_form_is_marked_where_it_first_leaves_its_shape_1829`
+/// - witness: `lower::tests::a_closer_owed_at_two_places_is_marked_over_both_3812`
 /// - witness: `tests::modules::a_repaired_container_keeps_its_member`
 #[spec(ensures: |ret| ret == found || (ret.nested == found.nested && (ret.repair == found.repair || matches!(ret.repair, Repair::Diverged(_))) && ret.span.start() < found.span.start()))]
 fn earliest(
@@ -3023,9 +3028,11 @@ fn earliest(
     if !matches!(found.repair, Repair::GhostClose(_) | Repair::Unended(_)) {
         return found;
     }
+    let owed = owed(pbg, tree, form, found);
     match diverged(pbg, tree, form) {
         Maybe::Present(point) if point.at.start() < found.span.start() => Repaired {
-            span: point.at,
+            span: ByteSpan::new(owed.span.start().min(point.at.start()), point.at.end())
+                .unwrap_or(point.at),
             repair: if point.closing {
                 found.repair
             }
@@ -3034,8 +3041,60 @@ fn earliest(
             },
             nested: found.nested,
         },
-        Maybe::Present(_) | Maybe::Absent(_) => found,
+        Maybe::Present(_) | Maybe::Absent(_) => owed,
     }
+}
+
+/// `found`, marked from the first place its closer parses at to the close,
+/// when it is a close the parser minted at the last of several such places.
+///
+/// # Specification
+/// - requires: `found` is a repair among the children of `form`.
+/// - ensures: for a [`Repair::GhostClose`] whose minted close among `form`'s
+///   own children reaches back a nonzero
+///   [`CloseReach`](gandr_surface_syntax::CloseReach), `found` with its span
+///   starting that many bytes earlier and ending where it ends; `found`
+///   unchanged otherwise.
+/// - provides: one mark over every place a left-out closer is owed at, so the
+///   mark touches the place the source lost it at, wherever that is among them.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a group's `)` left out where two places parse is marked
+///   over both, and one left out where one place parses keeps its point.
+/// - witness: `lower::tests::a_closer_owed_at_two_places_is_marked_over_both_3812`
+/// - witness: `lower::tests::a_closed_form_is_marked_where_it_first_leaves_its_shape_1829`
+#[spec(ensures: |ret| ret.repair == found.repair && ret.nested == found.nested && ret.span.end() == found.span.end() && ret.span.start() <= found.span.start())]
+fn owed(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    form: NodeIndex,
+    found: Repaired,
+) -> Repaired
+{
+    let Repair::GhostClose(_) = found.repair
+    else {
+        return found;
+    };
+    let reach = own_children(pbg, tree, form).find_map(|(child, _)| {
+        let node = tree.node(child)?;
+        match node.label() {
+            NodeLabel::GhostClose { reach, .. } if node.span() == found.span => Some(reach),
+            NodeLabel::GhostClose { .. }
+            | NodeLabel::Wald
+            | NodeLabel::Meld(_)
+            | NodeLabel::Tile(_)
+            | NodeLabel::Grout { .. }
+            | NodeLabel::Space
+            | NodeLabel::Doc => None,
+        }
+    });
+    let back = reach.map_or(0_usize, |reach| {
+        usize::try_from(u32::from(reach)).unwrap_or(usize::MAX)
+    });
+    let start = ByteOffset::from(usize::from(found.span.start()).saturating_sub(back));
+    ByteSpan::new(start, found.span.end()).map_or(found, |span| Repaired { span, ..found })
 }
 
 /// Where a form's written children first leave its rule's shape.
@@ -5838,6 +5897,7 @@ mod tests
             super::NodeLabel::GhostClose {
                 sort: gandr_surface_syntax::GroutSort::from(0_u16),
                 class: gandr_surface_syntax::ClosingClass::Bracket,
+                reach: gandr_surface_syntax::CloseReach::NONE,
             },
             at(5_usize, 5_usize),
             &[],

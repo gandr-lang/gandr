@@ -1,0 +1,58 @@
+test: lower::tests::a_closer_owed_at_two_places_is_marked_over_both_3812
+package: gandr-surface-lowering
+command: mise run debug:test gandr-surface-lowering lower::tests::a_closer_owed_at_two_places_is_marked_over_both_3812
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-lowering/0725c61e78a326cc/out/gandr_surface_lowering-0725c61e78a326cc"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-lowering/0725c61e78a326cc/out/gandr_surface_lowering-0725c61e78a326cc' (x86_64).
+(lldb) settings set -- target.run-args  "lower::tests::a_closer_owed_at_two_places_is_marked_over_both_3812" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = gandr_surface_lowering-0725c61e78a326cc`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000002d3c368
+(lldb) run
+
+running 1 test
+test lower::tests::a_closer_owed_at_two_places_is_marked_over_both_3812 ... 
+thread 'lower::tests::a_closer_owed_at_two_places_is_marked_over_both_3812' (1224898) panicked at crates/surface-lowering/src/lower.rs:30526:9:
+assertion `left == right` failed: the `)` can close the group after `xs` or after the block: the mark spans both, and the place the source lost it at, after `()`, lies between
+  left: OutOfFragment { span: ByteSpan { start: ByteOffset(44), end: ByteOffset(53) }, form: FormName("projection_expression"), sort: Computation, boundary: Unadmitted(Projection) }
+ right: MalformedForm { span: ByteSpan { start: ByteOffset(47), end: ByteOffset(78) }, form: FormName("parenthesized_expression"), fault: Repaired(GhostClose(Paren)) }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1223424 launched: 'target/debug-trace/debug/build/gandr-surface-lowering/0725c61e78a326cc/out/gandr_surface_lowering-0725c61e78a326cc' (x86_64)
+Process 1223424 stopped
+* thread #2, name = 'lower::tests::a', stop reason = breakpoint 1.1
+       frame #0: 0x0000555558290368 gandr_surface_lowering-0725c61e78a326cc`__rustc::rust_panic at panicking.rs:887:25
+(lldb) bt 24
+* thread #2, name = 'lower::tests::a', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555558290368 gandr_surface_lowering-0725c61e78a326cc`__rustc::rust_panic at panicking.rs:887:25
+     frame #1: 0x00005555582abb95 gandr_surface_lowering-0725c61e78a326cc`std::panicking::panic_with_hook at panicking.rs:840:5
+     frame #2: 0x000055555828f982 gandr_surface_lowering-0725c61e78a326cc`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13
+     frame #3: 0x00005555582886f9 gandr_surface_lowering-0725c61e78a326cc`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x000055555829054d gandr_surface_lowering-0725c61e78a326cc`__rustc::rust_begin_unwind at panicking.rs:679:5
+     frame #5: 0x0000555558535c6c gandr_surface_lowering-0725c61e78a326cc`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x0000555558535b63 gandr_surface_lowering-0725c61e78a326cc`core::panicking::assert_failed_inner at panicking.rs:447:23
+     frame #7: 0x000055555741b94a gandr_surface_lowering-0725c61e78a326cc`core::panicking::assert_failed::<gandr_surface_lowering::error::LoweringRefusal, gandr_surface_lowering::error::LoweringRefusal>(kind=Eq, left=OutOfFragment{span:{start:{0:44}, end:{0:53}}, form:{0:"projection_expression"}, sort:Computation, boundary:Unadmitted(Projection)}, right=MalformedForm{span:{start:{0:47}, end:{0:78}}, form:{0:"parenthesized_expression"}, fault:Repaired(GhostClose(Paren))}, args=Some({template:{pointer:"the `)` can close the group after `xs` or after the block: the mark spans both, and the place the source lost it at, after `()`, lies between/// A module.\nmodule A where {\n  /// A def.\n  def x = 1 ;\n  /// Nested.\n  module B where { def y = 2 ; }\n}\n/// Decorated, see [gone].\n@[ explicit_exits ]\nmodule C where { def z = 3 ; }\nDecorated, see [gone].a module's, a member's, a nested module's and a decorated module's documentation each stand under their own form, in source orderthe link is writtenza module's link to a missing name refuses its first member at the linkmodule Facts : *{ inner : *{ answer : Integer }, total : Integer } where {\n  module inner : *{ answer : Integer } where {\n    def answer = 1;\n  }\n  def total = inner.answer + 1;\n}\n*{ answer : Integer }the nested signature, its field, the refused member's field and the nested module's own field, each a written typedef s = \"a\\t${ \"b\" }c\" ;append(append(\"a\t\", \"b\"), \"c\")def s = \"${ \"b\" }c\" ;def s = \"${ \"b\" }\" ;append(\"\", \"b\")def s = \"${ \"a\" }${ \"b\" }\" ;def "...}, args:{pointer:{ty:{0:0}}}})) at panicking.rs:407:5
+     frame #8: 0x0000555556bf0b67 gandr_surface_lowering-0725c61e78a326cc`gandr_surface_lowering::lower::tests::a_closer_owed_at_two_places_is_marked_over_both_3812 at lower.rs:30526:9
+     frame #9: 0x0000555556b85687 gandr_surface_lowering-0725c61e78a326cc`gandr_surface_lowering::lower::tests::a_closer_owed_at_two_places_is_marked_over_both_3812::{closure#0}((null)={}) at lower.rs:30514:62
+     frame #10: 0x000055555675daa6 gandr_surface_lowering-0725c61e78a326cc`<gandr_surface_lowering::lower::tests::a_closer_owed_at_two_places_is_marked_over_both_3812::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #11: 0x000055555753fb5b gandr_surface_lowering-0725c61e78a326cc`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #12: 0x000055555753fb59 gandr_surface_lowering-0725c61e78a326cc`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #13: 0x000055555754d0a5 gandr_surface_lowering-0725c61e78a326cc`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #14: 0x000055555754d0a0 gandr_surface_lowering-0725c61e78a326cc`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #15: 0x000055555754d0a0 gandr_surface_lowering-0725c61e78a326cc`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #16: 0x000055555754d08b gandr_surface_lowering-0725c61e78a326cc`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #17: 0x000055555754d08b gandr_surface_lowering-0725c61e78a326cc`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #18: 0x000055555754d08b gandr_surface_lowering-0725c61e78a326cc`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #19: 0x000055555754d076 gandr_surface_lowering-0725c61e78a326cc`test::run_test::{closure#0} at lib.rs:677:43
+     frame #20: 0x0000555557547a64 gandr_surface_lowering-0725c61e78a326cc`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #21: 0x00005555575479e9 gandr_surface_lowering-0725c61e78a326cc`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #22: 0x0000555557550202 gandr_surface_lowering-0725c61e78a326cc`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #23: 0x00005555575501f3 gandr_surface_lowering-0725c61e78a326cc`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit
