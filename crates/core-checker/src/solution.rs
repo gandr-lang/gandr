@@ -120,7 +120,8 @@ pub struct Refined
     /// order the refinement made them.
     pub carried: Vec<Carried>,
     /// Each lambda or bind the refinement minted for a generalised binder,
-    /// beside the place of the binder it stands for.
+    /// beside the place of the binder it stands for, and each bind of an
+    /// equation's reversal, beside the place of the equation.
     pub generalising: Vec<(ComputationId, BinderDepth)>,
     /// Each other node the refinement minted, which stands for no written
     /// node: a thunk, a transport, a bind, a force, an application, a
@@ -144,17 +145,20 @@ pub enum Standing
 /// rewrite, the binder each generalising lambda or bind stands for, and each
 /// such binder open now.
 ///
-/// A refined term binds a copy of each generalised binder, so a term inside it
-/// is judged under more binders than its written context holds. A typing read
-/// back replaces each open copy by the binder it stands for and keys the
-/// written node, so a type the typed run keeps reads in the written context.
+/// A refined term binds a copy of each generalised binder. Where its path runs
+/// against the equation, it also binds the equation's reversal. A term inside
+/// it thus stands under more binders than its written context holds. A typing
+/// read back replaces each open copy by the binder it stands for, and an open
+/// reversal by its equation. It keys the written node, so a type the typed run
+/// keeps reads in the written context.
 #[derive(Clone, Debug, Default)]
 pub struct Written
 {
     /// Each node a refinement rewrote, beside the written node it stands for.
     sources: Sources,
     /// Each lambda or bind a refinement minted for a generalised binder, beside
-    /// the place of the binder it stands for.
+    /// the place of the binder it stands for, and each bind of a reversal,
+    /// beside the place of its equation.
     generalising: BTreeMap<ComputationId, BinderDepth>,
     /// Each other node a refinement minted.
     minted: alloc::collections::BTreeSet<TermNode>,
@@ -2338,7 +2342,8 @@ fn sides(
 ///   `solved` binds one. Inside the thunk, each staged binder is bound to its
 ///   transport and each other abstracted binder by a lambda. Each such lambda
 ///   and bind joins `generalising` beside the place of the binder it stands
-///   for, and each other node it mints joins `minted`.
+///   for, and each other node it mints joins `minted`. The bind of the reversal
+///   joins both, beside the place of the equation.
 /// - fails: as [`refined_arm`].
 /// - panics: none.
 ///
@@ -2354,7 +2359,7 @@ fn sides(
 #[spec(
     captures: before = generalising.len(),
     ensures: |ret| ret.as_ref().map_or(true, |&refined| matches!(arena.computation(refined), Some(&Computation::Bind(..)))
-        && generalising.len() == before.saturating_add(solved.generalised.len())
+        && generalising.len() == before.saturating_add(solved.generalised.len()).saturating_add(usize::from(solved.base != solved.depth))
         && minted.last() == Some(&TermNode::Computation(refined))),
 )]
 fn wrapped(
@@ -2425,6 +2430,9 @@ fn wrapped(
         let equation = variable_at(arena, depth, solved.equation)?;
         let reversed = arena.computation_path_transport(family, equation, reflexivity);
         refined = arena.computation_bind(reversed, refined);
+        // No written binder stands for the reversal: a typing read back past
+        // its binder reads the equation it reverses.
+        generalising.push((refined, solved.equation));
         minted.extend([
             TermNode::Value(left),
             TermNode::Value(reflexivity),

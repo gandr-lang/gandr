@@ -3721,6 +3721,101 @@ fn a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631()
     assert!(crossed.audit().axioms().is_empty());
 }
 
+/// `fix f. λe. case e { Leaf ⇒ (); Wrap(t, e′) ⇒ f(e′); Off ⇒ () }` at `E(Yes)
+/// → F Unit`: the arm solves `t` on the stated side, so its refinement binds
+/// the reversal of the equation. The typed run reads the written call back
+/// under the arm's written binders alone, past the reversal and the copy of
+/// `e′`.
+#[test]
+fn a_refined_arm_reads_its_written_terms_past_the_reversal_5392()
+{
+    let (yes_tag, mut arena) = (ConstructorTag::from(0_usize), CoreArena::new());
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let (code, [codes, boxes]) = codes_and_boxes(&mut arena);
+    let wrapped = ConstantIndex::from(2_usize);
+    let yes = arena.value_constructor(ConstantIndex::from(0_usize), code, yes_tag, vec![]);
+    let no = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        code,
+        ConstructorTag::from(1_usize),
+        vec![],
+    );
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    // `E : T -> Type { Leaf : E(Yes); Wrap : (t : T, e : E(t)) --> E(t); Off
+    // : E(No) }`: `Wrap` states its index as its first field.
+    let under_one = variable(&mut arena, 0);
+    let nested = arena.value_type_data(wrapped, vec![under_one]);
+    let under_both = variable(&mut arena, 1);
+    let family = Declaration::data(
+        wrapped,
+        DataSignature::new(vec![], vec![vec![], vec![code, nested], vec![]], kind)
+            .indexed(vec![code], vec![vec![yes], vec![under_both], vec![no]])
+            .into(),
+        OriginToken::from(2_usize),
+    );
+    let fields = |counts: [usize; 3]| counts.map(gandr_kernel_term::FieldCount::from).to_vec();
+    let one_equation = gandr_kernel_term::EquationCount::from(1_usize);
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let answer = arena.comp_type_returner(unit_type);
+    let returned = arena.computation_return(unit);
+    let bare = arena.computation_lambda(returned);
+    let at_yes = arena.value_type_data(wrapped, vec![yes]);
+    // Under `Wrap`'s arm: the equation 0, `e′` 1, `t` 2, `e` 3, `f` 4.
+    let recursive = variable(&mut arena, 4);
+    let forced = arena.computation_force(recursive);
+    let field = variable(&mut arena, 1);
+    let called = arena.computation_application(forced, field);
+    let descending = arena.computation_lambda(called);
+    let descending = arena.computation_lambda(descending);
+    let descending = arena.computation_lambda(descending);
+    let scrutinee = variable(&mut arena, 0);
+    let case = arena.computation_data_case_with_equations(
+        scrutinee,
+        answer,
+        (vec![bare, descending, bare], fields([0, 2, 0])),
+        one_equation,
+    );
+    let lambda = arena.computation_lambda(case);
+    let fixpoint = arena.computation_fixpoint(
+        lambda,
+        gandr_kernel_term::FixpointEvidence::StructuralDescent,
+    );
+    let dropped = arena.value_thunk(fixpoint);
+    let dropped_type = arena.comp_type_arrow(at_yes, answer);
+    let dropped_type = arena.value_type_thunk(dropped_type);
+    let constant = ConstantIndex::from(3_usize);
+    let typed = gandr_core_checker::type_module(
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &[
+            codes,
+            boxes,
+            family,
+            definition(constant, dropped_type, dropped),
+        ],
+    );
+    assert!(
+        !typed.refused().contains_key(&constant),
+        "the arm refined on the stated side checks: {:?}",
+        typed.refused()
+    );
+    let depths: Vec<usize> = typed
+        .typings()
+        .get(&constant)
+        .expect("the body is typed")
+        .typings()
+        .iter()
+        .filter(|typing| typing.term == gandr_core_checker::TermNode::Computation(called))
+        .map(|typing| usize::from(typing.depth))
+        .collect();
+    assert!(
+        !depths.is_empty() && depths.iter().all(|&depth| depth == 5),
+        "the written call reads under `f`, `e`, `t`, `e′` and the equation alone: {depths:?}"
+    );
+}
+
 #[test]
 fn a_stage_is_carried_across_a_set_and_not_along_a_loop_3631()
 {
