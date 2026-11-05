@@ -26,5 +26,10 @@ anodized.workspace = true
 gandr-theory-nominal-automata.workspace = true
 quenchant-shape.workspace = true
 
+# The cube and spectrum suites read the free distributive lattice and finite
+# Birkhoff duality from the duality crate.
+[dev-dependencies]
+gandr-theory-stone-duality.workspace = true
+
 [lints]
 workspace = true

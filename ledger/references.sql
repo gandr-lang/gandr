@@ -171,6 +171,7 @@ INSERT INTO reference VALUES('doi:10.1016/1385-7258(72)90034-0','core-checker','
 INSERT INTO reference VALUES('doi:10.1016/1385-7258(72)90034-0','surface-lowering','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/b978-0-08-012975-4.50028-x','theory-coherent-resolutions','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.aim.2018.03.016','theory-decomposition-spaces','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.1016/j.jpaa.2022.107306','theory-stone-duality','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.jpdc.2026.105238','theory-order-maintenance','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.peva.2014.07.016','storage-chunker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.tcs.2022.01.017','kernel-strata','','background',NULL,NULL,NULL);
@@ -529,6 +530,7 @@ INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theor
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','ascent::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','stratum::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','wreath','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-stone-duality','','exemplar',NULL,NULL,NULL);
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the
   -- library's citation key, or its locator, `doi:<doi>` in lower case or
@@ -597,6 +599,7 @@ INSERT INTO work VALUES('doi:10.1016/1385-7258(72)90034-0',1972,'doi:10.1016/089
 INSERT INTO work VALUES('doi:10.1016/b978-0-08-012975-4.50028-x',1970,NULL);
 INSERT INTO work VALUES('doi:10.1016/j.aim.2018.03.016',2018,'doi:10.1016/j.aim.2020.107267');
 INSERT INTO work VALUES('doi:10.1016/j.ic.2006.12.002',2007,NULL);
+INSERT INTO work VALUES('doi:10.1016/j.jpaa.2022.107306',2023,NULL);
 INSERT INTO work VALUES('doi:10.1016/j.jpdc.2026.105238',2026,NULL);
 INSERT INTO work VALUES('doi:10.1016/j.peva.2014.07.016',2014,'doi:10.1145/3584663');
 INSERT INTO work VALUES('doi:10.1016/j.tcs.2017.02.009',2017,NULL);

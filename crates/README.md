@@ -89,6 +89,7 @@ crates/
 ├── theory-shapes/                 finite shapes: decidable subshapes, inclusions with complements, the outer pushout and its mediator, and face entailment in the conjunctive band and its column disjunctions, derived or refuted
 ├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
 ├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
+├── theory-stone-duality/          finite Stone duality: the free distributive lattice in normal form, finite Birkhoff duality, and monotone maps as lattice homomorphisms
 ├── theory-virtual-doctrines/      virtual double categories, reflected judgments and directed laws over replayable rewriting evidence
 ├── workflow-build-state/          the `build-state` binary: build state kept to one build's units
 ├── workflow-coverage-guard/       the `coverage-guard` binary: main's coverage upload against the one before it, filed on one issue when it drops

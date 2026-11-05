@@ -59,6 +59,7 @@ members = [
   "crates/theory-shapes",
   "crates/theory-sites",
   "crates/theory-spec-combinators",
+  "crates/theory-stone-duality",
   "crates/theory-virtual-doctrines",
   "crates/workflow-build-state",
   "crates/workflow-coverage-guard",
@@ -178,6 +179,7 @@ default-features = false
 # - theory-shapes
 # - theory-sites
 # - theory-spec-combinators
+# - theory-stone-duality
 # - theory-virtual-doctrines
 # - workflow-build-state
 # - workflow-coverage-guard
@@ -983,6 +985,16 @@ path = "crates/theory-sites"
 # - theory-levitation
 [workspace.dependencies.gandr-theory-spec-combinators]
 path = "crates/theory-spec-combinators"
+
+# The finite case of Stone duality: free distributive lattices in normal
+# form, finite Birkhoff duality, and monotone maps against homomorphisms.
+# features:
+# - none: alloc-only lattices, posets and maps.
+# consumers:
+# - theory-shapes (dev)
+[workspace.dependencies.gandr-theory-stone-duality]
+path = "crates/theory-stone-duality"
+default-features = false
 
 # The workflow crates' one `gh` runner and the error family its failures
 # share.
