@@ -518,7 +518,7 @@ impl Signature
 /// How a call is written: a value's call as a juxtaposed spine, `f x y`, a
 /// family's application in its parentheses, `List(a)`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Calling
+pub enum Calling
 {
     /// `f x y`.
     Juxtaposed,

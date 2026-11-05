@@ -1163,9 +1163,12 @@ fn barred_clauses_read_as_the_comma_separated_ones_4853()
         "def bars() -> -F Unit { handle c : std.process.Exit.Eff { c.exit 1 } with {\n  | pure(x) => pure x\n  | oper exit(code, k) => k *{}\n} }\n",
     ));
     let module = hosted(&text, &mut arena);
-    let body = |name: &str| match outcome_of(&module, name.into()) {
-        DeclarationOutcome::Completed { body, .. } => body,
-        other => panic!("`{name}` lowers: {other:?}"),
+    let body = |name: &str| {
+        let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, name.into())
+        else {
+            panic!("`{name}` lowers");
+        };
+        body
     };
     assert_eq!(
         gandr_core_term::equal_certificate_syntax(&arena, body("bars"), body("commas")),

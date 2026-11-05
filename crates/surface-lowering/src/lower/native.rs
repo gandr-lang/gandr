@@ -10923,7 +10923,6 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::names_that_share_a_type_are_their_entries_written_apart_4853`
     #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == domain)]
     pub(super) fn shared_domain(
-        &self,
         earlier: &[Parameter],
         parameter: &Parameter,
         binds: impl Fn(&Parameter) -> bool,

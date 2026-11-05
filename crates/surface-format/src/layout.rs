@@ -1018,9 +1018,10 @@ fn items<'group, 'source>(
                 let continues = match (columns, last) {
                     (Columns::Read | Columns::Unread, None) => false,
                     (Columns::Read, Some(_)) if separator => true,
-                    (Columns::Read, Some(Some(previous))) => match current.branch {
-                        Some(here) => here.node == previous.node || previous.direct == Direct::Yes,
-                        None => deeper,
+                    (Columns::Read, Some(Some(previous))) => {
+                        current.branch.map_or(deeper, |here| {
+                            here.node == previous.node || previous.direct == Direct::Yes
+                        })
                     },
                     (Columns::Read, Some(None)) | (Columns::Unread, Some(_)) => deeper,
                 };

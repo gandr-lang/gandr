@@ -464,7 +464,9 @@ fn the_box_reads_as_its_thunk_1329()
         .map(|diagnostic| {
             (
                 diagnostic.fault.clone(),
-                &source[usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())],
+                source
+                    .get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
+                    .unwrap_or_default(),
             )
         })
         .collect();

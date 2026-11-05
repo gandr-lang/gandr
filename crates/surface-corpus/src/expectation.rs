@@ -1103,13 +1103,12 @@ fn read_names(spelled: &RunSpelling) -> Maybe<ReadNames<'_>, read_names::Absent>
         Vec::new()
     }
     else {
-        match text
-            .strip_prefix("*{")
+        text.strip_prefix("*{")
             .and_then(|rest| rest.strip_suffix('}'))
-        {
-            Some(inner) => inner.split(',').map(str::trim).collect(),
-            None => Vec::from([text]),
-        }
+            .map_or_else(
+                || Vec::from([text]),
+                |inner| inner.split(',').map(str::trim).collect(),
+            )
     };
     let named = components.iter().all(|name| {
         !name.is_empty()
@@ -1321,10 +1320,7 @@ fn channel_stated(spelled: &RunSpelling) -> Maybe<Channel, channel_stated::Absen
 {
     let unwritten = Maybe::Absent(channel_stated::Absent::Unwritten);
     let text: &str = spelled.as_ref();
-    let read = |head: &str| {
-        text.strip_prefix(head)
-            .and_then(|rest| rest.split_once(' '))
-    };
+    let read = |head: &str| text.strip_prefix(head)?.split_once(' ');
     let named = |name: &str| {
         !name.is_empty()
             && name

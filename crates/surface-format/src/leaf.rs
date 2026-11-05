@@ -9,6 +9,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_parser::ObligationInstance;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::MoldId;
+use gandr_surface_syntax::Node;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
@@ -402,7 +403,7 @@ fn branch_of(
     child: NodeIndex,
 ) -> Branch
 {
-    let direct = match tree.node(child).map(|node| node.label()) {
+    let direct = match tree.node(child).map(Node::label) {
         Some(NodeLabel::Tile(_)) => Direct::Yes,
         Some(
             NodeLabel::Wald

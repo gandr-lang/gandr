@@ -1150,47 +1150,43 @@ mod tests
                 .find(written)
                 .map_or(0_usize, |start| start.saturating_add(written.len()))
         };
-        let open = "def once(n : Integer) -> -F Integer {\n  return n\n";
-        for (source, at, class, why) in [(
-            open,
-            after(open, "return n"),
-            ClosingClass::Brace,
-            "a block's `}` left out at the end, which the layout places, stays where the \
-                 melder minted it",
-        )] {
-            let parsed = parse(&pbg, SourceText::from(source)).unwrap();
-            let tree = parsed.tree();
-            let minted: Vec<_> = tree
-                .positions()
-                .filter_map(|position| tree.node(position))
-                .filter_map(|node| match node.label() {
-                    NodeLabel::GhostClose { class, .. } => Some((class, node.span())),
-                    NodeLabel::Wald
-                    | NodeLabel::Meld(_)
-                    | NodeLabel::Tile(_)
-                    | NodeLabel::Grout { .. }
-                    | NodeLabel::Space
-                    | NodeLabel::Doc => None,
-                })
-                .collect();
-            assert_eq!(minted.len(), 1, "{why}: {minted:?}");
-            let (minted_class, span) = minted.first().copied().unwrap();
-            assert_eq!(
-                (minted_class, span.start(), span.end()),
-                (class, ByteOffset::from(at), ByteOffset::from(at)),
-                "{why}"
-            );
-            assert_eq!(
-                reconstruct(tree),
-                source,
-                "{why}: the tree reconstructs the source"
-            );
-            assert!(
-                matches!(parsed.obligations(), [repair] if repair.class == Oblig::MissingTile),
-                "{why}: one repair stands: {:?}",
-                parsed.obligations()
-            );
-        }
+        let source = "def once(n : Integer) -> -F Integer {\n  return n\n";
+        let at = after(source, "return n");
+        let class = ClosingClass::Brace;
+        let why = "a block's `}` left out at the end, which the layout places, stays where the \
+                   melder minted it";
+        let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+        let tree = parsed.tree();
+        let minted: Vec<_> = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter_map(|node| match node.label() {
+                NodeLabel::GhostClose { class, .. } => Some((class, node.span())),
+                NodeLabel::Wald
+                | NodeLabel::Meld(_)
+                | NodeLabel::Tile(_)
+                | NodeLabel::Grout { .. }
+                | NodeLabel::Space
+                | NodeLabel::Doc => None,
+            })
+            .collect();
+        assert_eq!(minted.len(), 1, "{why}: {minted:?}");
+        let (minted_class, span) = minted.first().copied().unwrap();
+        assert_eq!(
+            (minted_class, span.start(), span.end()),
+            (class, ByteOffset::from(at), ByteOffset::from(at)),
+            "{why}"
+        );
+        assert_eq!(
+            reconstruct(tree),
+            source,
+            "{why}: the tree reconstructs the source"
+        );
+        assert!(
+            matches!(parsed.obligations(), [repair] if repair.class == Oblig::MissingTile),
+            "{why}: one repair stands: {:?}",
+            parsed.obligations()
+        );
     }
 
     /// #2259: a tile other than a bracket the source left out is minted where

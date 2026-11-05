@@ -1215,7 +1215,7 @@ mod tests
             };
             let braced_names = at(braced);
             assert_eq!(
-                braced_names.first().map(|(name, _)| name.as_str()),
+                braced_names.first().map(|&(ref name, _)| name.as_str()),
                 Some("p"),
                 "the braced body offers its parameter first: {braced_names:?}"
             );

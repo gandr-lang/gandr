@@ -1814,6 +1814,7 @@ pub fn classifies_codes<'source>(
 ///   applied in a body, a family a box states and a clause definition over a
 ///   box, each written with `->`, lower and check.
 /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
+#[inline]
 pub fn writes_box<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,

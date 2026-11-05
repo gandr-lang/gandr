@@ -16561,7 +16561,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 // An arrow's output is its last operand; parentheses group
                 // only around one entry.
                 if arrow {
-                    operands.last()
+                    operands.next_back()
                 }
                 else {
                     match (operands.next(), operands.next()) {
@@ -21301,7 +21301,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     domains.get(usize::from(place)).copied()
                 },
                 (Maybe::Present(written), None) => match self.value_type_at(written) {
-                    Maybe::Present(domain) => Some(self.shared_domain(
+                    Maybe::Present(domain) => Some(Self::shared_domain(
                         parameters.get(.. index).unwrap_or_default(),
                         parameter,
                         |named| bool::from(self.scope.mentioned(named.frame)),
@@ -28425,10 +28425,11 @@ def ended() -> -F [Partial] Unit {
                 .iter()
                 .find(|declaration| declaration.name().as_ref() == wanted)
                 .unwrap_or_else(|| panic!("`{wanted}` is declared"));
-            match declaration.outcome() {
-                DeclarationOutcome::Bodied { body } => body,
-                other => panic!("`{wanted}` lowers, not {other:?}"),
-            }
+            let DeclarationOutcome::Bodied { body } = declaration.outcome()
+            else {
+                panic!("`{wanted}` lowers to a body");
+            };
+            body
         };
         for (braced, tupled, reason) in [
             ("braced", "tupled", "positional components"),
@@ -28464,13 +28465,14 @@ def ended() -> -F [Partial] Unit {
                 .iter()
                 .find(|declaration| declaration.name().as_ref() == wanted)
                 .unwrap_or_else(|| panic!("`{wanted}` is declared"));
-            match declaration.outcome() {
-                DeclarationOutcome::Completed {
-                    declared_type,
-                    body,
-                } => (declared_type, body),
-                other => panic!("`{wanted}` completes, not {other:?}"),
-            }
+            let DeclarationOutcome::Completed {
+                declared_type,
+                body,
+            } = declaration.outcome()
+            else {
+                panic!("`{wanted}` completes");
+            };
+            (declared_type, body)
         };
         for (shared, apart, reason) in [
             ("shared", "apart", "two names that share a type"),
@@ -29071,10 +29073,11 @@ def ended() -> -F [Partial] Unit {
                 .iter()
                 .find(|declaration| declaration.name().as_ref() == wanted)
                 .unwrap_or_else(|| panic!("`{wanted}` is declared"));
-            match declaration.outcome() {
-                DeclarationOutcome::Bodied { body } => body,
-                other => panic!("`{wanted}` lowers, not {other:?}"),
-            }
+            let DeclarationOutcome::Bodied { body } = declaration.outcome()
+            else {
+                panic!("`{wanted}` lowers to a body");
+            };
+            body
         };
         for (arrow, thunked, reason) in [
             (

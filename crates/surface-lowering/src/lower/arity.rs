@@ -5538,7 +5538,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
             match self.value_type_at(declared) {
-                Maybe::Present(domain) => domains.push(self.shared_domain(
+                Maybe::Present(domain) => domains.push(Self::shared_domain(
                     written.get(.. index).unwrap_or_default(),
                     parameter,
                     |named| bool::from(self.names_own_binder(codomain, named.frame)),

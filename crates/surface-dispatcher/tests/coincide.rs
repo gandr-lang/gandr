@@ -196,9 +196,9 @@ fn direct_call(body: SourceFragment<'_>) -> Option<String>
         .map(|statement| statement.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|statement| !statement.is_empty())
         .collect();
-    let call = match statements.as_slice() {
-        [only] => only.strip_prefix("become ").unwrap_or(only),
-        [bound, tail] => {
+    let call = match *statements.as_slice() {
+        [ref only] => only.strip_prefix("become ").unwrap_or(only),
+        [ref bound, ref tail] => {
             let (pattern, call) = bound.strip_prefix("let ")?.split_once(" = ")?;
             let returned = tail.strip_prefix("return ").unwrap_or(tail);
             if returned != pattern {
