@@ -2,6 +2,8 @@
 //! its own `cfg(test)` module, so a witness path reads `tests::<area>::<name>`.
 
 #[cfg(test)]
+mod approx;
+#[cfg(test)]
 mod dyadic;
 #[cfg(test)]
 mod interval;

@@ -2,24 +2,22 @@
 //! arithmetic and the plan language that exact real computation reads.
 //!
 //! A real number is an infinite object, and a program can hold only finite
-//! approximations of it. Floating point gives such approximations, but it
-//! rounds each result without a record, so its enclosures are not sound. This
-//! crate gives two exact finite domains instead. A [`Dyadic`] is a number
-//! `m · 2^e` in one canonical form. A [`NumericInterval`] is a pair of dyadic
-//! or infinite endpoints with an explicit closure for each endpoint and an
-//! explicit orientation.
-//!
-//! The interval operations round outward. The lower endpoint rounds toward
-//! the floor and the upper endpoint toward the ceiling, so each result
-//! contains every exact result of its operands. An interval is an
-//! approximant. It is never evidence that a comparison holds. The crate does
-//! not depend on the gandr kernel, and no real number enters kernel
-//! conversion.
+//! approximations of it. Floating point rounds each result without a record,
+//! so its enclosures are not sound. This crate gives two exact finite domains
+//! instead. A [`Dyadic`] is a number `m · 2^e` in one canonical form. A
+//! [`NumericInterval`] is a pair of dyadic or infinite endpoints with an
+//! explicit closure for each endpoint and an explicit orientation. Its
+//! operations round outward, so each result contains every exact result of
+//! its operands. The crate does not depend on the gandr kernel, and no real
+//! number enters kernel conversion.
 //!
 //! A computation over the reals is held as a [`Plan`]: a finite DAG of real,
 //! open and domain nodes whose binders are de Bruijn indices. A plan holds
-//! each distinct subterm once, and it has one canonical byte form, which
-//! [`Plan::encode`] writes and [`Plan::decode`] reads.
+//! each distinct subterm once, and it has one canonical byte form.
+//! [`approximate`] encloses each real node of a validated plan, and it gives
+//! each open node a positive and a negative approximant. Each approximant is
+//! sound on its own, and the crate never reports an undecided proposition as
+//! false.
 //!
 //! Every operation is total. Each malformed input is refused by name, and no
 //! operation panics. The work of one arithmetic operation is bounded by its
@@ -36,12 +34,18 @@
 
 extern crate alloc;
 
+pub mod approx;
 pub mod codec;
 pub mod dyadic;
 pub mod interval;
 pub mod plan;
 pub mod validate;
 
+pub use crate::approx::Approximation;
+pub use crate::approx::BilateralApprox;
+pub use crate::approx::NegativeApprox;
+pub use crate::approx::PositiveApprox;
+pub use crate::approx::approximate;
 pub use crate::codec::DecodeError;
 pub use crate::codec::EncodedPlan;
 pub use crate::codec::PlanBytes;

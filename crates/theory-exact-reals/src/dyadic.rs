@@ -4,7 +4,9 @@
 //! error. Floating point rounds each result without a record of the loss. A
 //! dyadic rational is a number `m · 2^e` with an integer mantissa `m` and an
 //! integer exponent `e`. A sum, a difference or a product of two dyadics is a
-//! dyadic, so the arithmetic stays exact while it keeps every bit.
+//! dyadic, so the arithmetic stays exact while it keeps every bit. A quotient
+//! is a dyadic only when the divisor's odd part divides the dividend, so a
+//! quotient usually rounds.
 //!
 //! [`Dyadic`] holds each value in exactly one form. A nonzero mantissa is odd,
 //! and zero has the exponent zero. Two values are equal exactly when their
@@ -23,8 +25,10 @@
 use core::cmp::Ordering;
 use core::fmt;
 use core::ops::Add as _;
+use core::ops::Div as _;
 use core::ops::Mul as _;
 use core::ops::Neg;
+use core::ops::Rem as _;
 use core::ops::Shl as _;
 use core::ops::Shr as _;
 
@@ -212,6 +216,8 @@ pub enum DyadicError
     ExponentOutOfRange,
     /// A requested precision lies outside `[Precision::MIN, Precision::MAX]`.
     PrecisionOutOfRange,
+    /// The divisor of a quotient is zero.
+    DivisionByZero,
 }
 
 impl fmt::Display for DyadicError
@@ -237,6 +243,7 @@ impl fmt::Display for DyadicError
         match *self {
             Self::ExponentOutOfRange => f.write_str("the exponent of the result is out of range"),
             Self::PrecisionOutOfRange => f.write_str("the precision is out of range"),
+            Self::DivisionByZero => f.write_str("the divisor is zero"),
         }
     }
 }
@@ -625,6 +632,46 @@ impl Dyadic
     ) -> Result<Unrounded, DyadicError>
     {
         return product(self.term(), other.term());
+    }
+
+    /// The quotient `self / other`, rounded to `precision` bits toward
+    /// `rounding`.
+    ///
+    /// # Specification
+    /// - ensures: the result is the floor or the ceiling of the exact quotient
+    ///   on the grid of `precision` significant bits, and is canonical.
+    /// - fails: returns [`DyadicError::DivisionByZero`] when `other` is zero,
+    ///   and [`DyadicError::ExponentOutOfRange`] when the result's exponent
+    ///   leaves the range of `i32`.
+    /// - panics: none.
+    /// - intension: one integer division. The dividend gains low zero bits
+    ///   until it is `precision + 2` bits wider than the divisor. The division
+    ///   stays inline in an `i128` when the widened dividend fits. A nonzero
+    ///   remainder sets one sticky bit, so the rounding sees on which side of
+    ///   the grid the exact quotient lies.
+    ///
+    /// # Errors
+    /// - [`DyadicError::DivisionByZero`]: the divisor is zero.
+    /// - [`DyadicError::ExponentOutOfRange`]: the exponent of the result does
+    ///   not fit an `i32`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the rational oracle forms the exact quotient and
+    ///   rounds it. Generated operands give quotients with and without a
+    ///   remainder, of both signs, inline and on the carrier. A mutant that
+    ///   drops the sticky bit or turns its sign disagrees with the oracle.
+    /// - witness: `tests::oracle::quotient_is_the_directed_neighbour`
+    /// - witness: `tests::dyadic::quotient_refuses_a_zero_divisor`
+    #[inline]
+    #[spec(ensures: |ref result| result.as_ref().map_or(true, |rounded| rounded.value.form() == Form::Canonical && rounded.value.width() <= BitWidth::from(precision)))]
+    pub fn div(
+        &self,
+        other: &Self,
+        precision: Precision,
+        rounding: Rounding,
+    ) -> Result<Rounded, DyadicError>
+    {
+        return quotient(self.term(), other.term(), precision)?.round(precision, rounding);
     }
 
     /// Whether the value is in canonical form.
@@ -1378,6 +1425,130 @@ fn product(
         (Wide::Large(left), Wide::Large(right)) => Wide::Large(left.mul(right)),
     };
     return Ok(Unrounded { mantissa, exponent });
+}
+
+/// The quotient of two terms before rounding: exact, or with one sticky bit
+/// below its top `precision + 2` bits.
+///
+/// # Specification
+/// - ensures: when the division leaves no remainder, the result denotes `lhs /
+///   rhs` exactly. Otherwise its mantissa is wider than `precision + 2` bits,
+///   and it lies strictly between the same two neighbours on the grid of
+///   `precision` significant bits as `lhs / rhs`. Both then round to the same
+///   value, and the rounding is inexact.
+/// - fails: returns [`DyadicError::DivisionByZero`] when `rhs` is zero, and
+///   [`DyadicError::ExponentOutOfRange`] when the exponent arithmetic
+///   overflows.
+/// - panics: none.
+/// - intension: inline in an `i128` when the widened dividend fits 125 bits,
+///   otherwise one division on the carrier.
+///
+/// # Errors
+/// - [`DyadicError::DivisionByZero`]: the divisor is zero.
+/// - [`DyadicError::ExponentOutOfRange`]: the exponent arithmetic overflows.
+///
+/// # Adequacy
+/// - hypothesis: L2 — through [`Dyadic::div`], held to the oracle.
+/// - witness: `tests::oracle::quotient_is_the_directed_neighbour`
+#[spec(ensures: |ref result| result.as_ref().map_or(true, |exact| (exact.sign() == Sign::Zero) == (lhs.sign() == Sign::Zero)))]
+#[inline]
+fn quotient(
+    lhs: Term<'_>,
+    rhs: Term<'_>,
+    precision: Precision,
+) -> Result<Unrounded, DyadicError>
+{
+    if rhs.sign() == Sign::Zero {
+        return Err(DyadicError::DivisionByZero);
+    }
+    if lhs.sign() == Sign::Zero {
+        return Ok(Unrounded::zero());
+    }
+    // The widened dividend is at least `precision + 2` bits wider than the
+    // divisor, so the integer quotient keeps at least `precision + 2` bits.
+    let shift = BitWidth(
+        u64::from(precision.0)
+            .checked_add(2)
+            .and_then(|bits| bits.checked_add(rhs.width().0))
+            .ok_or(DyadicError::ExponentOutOfRange)?
+            .saturating_sub(lhs.width().0),
+    );
+    let inline = match (lhs.digits, rhs.digits) {
+        (Digits::Small(_), Digits::Small(_)) => (|| {
+            let (Wide::Small(dividend), Wide::Small(divisor)) =
+                (lhs.signed_wide(), rhs.signed_wide())
+            else {
+                return None;
+            };
+            if lhs.width().0.checked_add(shift.0)? > 125 {
+                return None;
+            }
+            let dividend = dividend.checked_shl(u32::try_from(shift.0).ok()?)?;
+            let quotient = dividend.checked_div(divisor)?;
+            if dividend.checked_rem(divisor)? == 0 {
+                return Some((Wide::Small(quotient), Exactness::Exact));
+            }
+            let sticky: i128 = if lhs.sign() == rhs.sign() { 1 } else { -1 };
+            let mantissa = quotient.checked_mul(2)?.checked_add(sticky)?;
+            return Some((Wide::Small(mantissa), Exactness::Inexact));
+        })(),
+        (Digits::Small(_) | Digits::Large(_), Digits::Large(_))
+        | (Digits::Large(_), Digits::Small(_)) => None,
+    };
+    let (mantissa, exactness) = inline.unwrap_or_else(|| carried_quotient(lhs, rhs, shift));
+    let sticky = match exactness {
+        Exactness::Exact => BitWidth(0),
+        Exactness::Inexact => BitWidth(1),
+    };
+    let exponent = lhs
+        .exponent
+        .0
+        .checked_sub(rhs.exponent.0)
+        .map(Scale)
+        .ok_or(DyadicError::ExponentOutOfRange)?
+        .lowered(shift)?
+        .lowered(sticky)?;
+    return Ok(Unrounded { mantissa, exponent });
+}
+
+/// The integer quotient of a widened dividend on the carrier, with its
+/// sticky bit.
+///
+/// # Specification
+/// - requires: neither term is zero.
+/// - ensures: returns `trunc(lhs · 2^shift / rhs)` and [`Exactness::Exact`]
+///   when the division leaves no remainder. Otherwise returns twice that
+///   quotient plus the sign of the exact quotient, and [`Exactness::Inexact`].
+/// - panics: none.
+/// - intension: allocates the widened dividend, the quotient and the remainder.
+///
+/// # Adequacy
+/// - hypothesis: L2 — wide operands through [`Dyadic::div`], held to the
+///   oracle.
+/// - witness: `tests::oracle::quotient_is_the_directed_neighbour`
+#[spec(requires: lhs.sign() != Sign::Zero && rhs.sign() != Sign::Zero)]
+fn carried_quotient(
+    lhs: Term<'_>,
+    rhs: Term<'_>,
+    shift: BitWidth,
+) -> (Wide, Exactness)
+{
+    let dividend = lhs.signed_big().shl(shift.0);
+    let divisor = rhs.signed_big();
+    let quotient = (&dividend).div(&divisor);
+    if dividend.rem(&divisor).sign() == num_bigint::Sign::NoSign {
+        return (Wide::Large(quotient), Exactness::Exact);
+    }
+    let sticky = if lhs.sign() == rhs.sign() {
+        BigInt::from(1_u8)
+    }
+    else {
+        BigInt::from(-1_i8)
+    };
+    return (
+        Wide::Large(quotient.shl(1_u8).add(sticky)),
+        Exactness::Inexact,
+    );
 }
 
 /// The exact order of two terms.

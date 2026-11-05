@@ -150,6 +150,8 @@ pub enum IntervalError
     Empty,
     /// An operand of the arithmetic is dual.
     DualOperand,
+    /// The divisor of an interval quotient contains zero.
+    ZeroDivisor,
     /// An endpoint operation failed.
     Arithmetic(DyadicError),
 }
@@ -195,6 +197,7 @@ impl fmt::Display for IntervalError
             },
             Self::Empty => f.write_str("the endpoints are equal and not both closed"),
             Self::DualOperand => f.write_str("an operand of interval arithmetic is dual"),
+            Self::ZeroDivisor => f.write_str("the divisor interval contains zero"),
             Self::Arithmetic(error) => write!(f, "an endpoint operation failed: {error}"),
         }
     }
@@ -285,6 +288,22 @@ impl NumericInterval
         return Self {
             lower: Bound::closed(value.clone()),
             upper: Bound::closed(value),
+            orientation: Orientation::Proper,
+        };
+    }
+
+    /// The proper interval of every real: both endpoints are infinite and
+    /// open.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn whole() -> Self
+    {
+        return Self {
+            lower: Bound::open(Endpoint::NegInf),
+            upper: Bound::open(Endpoint::PosInf),
             orientation: Orientation::Proper,
         };
     }
@@ -592,6 +611,81 @@ impl NumericInterval
         });
     }
 
+    /// The interval quotient, rounded outward to `precision` bits.
+    ///
+    /// # Specification
+    /// - ensures: returns a proper interval containing `x / y` for every `x` in
+    ///   `self` and `y` in `other`.
+    /// - fails: returns [`IntervalError::DualOperand`] when an operand is dual,
+    ///   [`IntervalError::ZeroDivisor`] when `other` contains zero, and
+    ///   [`IntervalError::Arithmetic`] when an endpoint's exponent leaves its
+    ///   range.
+    /// - panics: none.
+    /// - intension: the reciprocal of `other` rounds outward, then the product
+    ///   with `self` rounds outward again. The work is two endpoint quotients
+    ///   and one [`NumericInterval::mul`]. The second rounding can widen the
+    ///   result by one unit in the last place beyond the tightest enclosure.
+    ///
+    /// # Errors
+    /// - [`IntervalError::DualOperand`]: an operand is dual.
+    /// - [`IntervalError::ZeroDivisor`]: the divisor contains zero.
+    /// - [`IntervalError::Arithmetic`]: an endpoint operation failed.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the rational oracle divides sampled points of both
+    ///   operands, and each quotient lands inside the result. Generated
+    ///   divisors take both signs, open zero endpoints and infinities. L3 — a
+    ///   divisor that holds zero at a closed endpoint or inside.
+    /// - witness: `tests::oracle::interval_quotient_encloses_every_quotient`
+    /// - witness: `tests::interval::quotient_refuses_a_divisor_holding_zero`
+    #[inline]
+    #[spec(ensures: |ref result| result.as_ref().map_or(true, |quotient| quotient.orientation == Orientation::Proper))]
+    pub fn div(
+        &self,
+        other: &Self,
+        precision: Precision,
+    ) -> Result<Self, IntervalError>
+    {
+        self.require_proper(other)?;
+        return self.mul(&other.reciprocal(precision)?, precision);
+    }
+
+    /// The reciprocal of a proper interval that excludes zero, rounded
+    /// outward.
+    ///
+    /// # Specification
+    /// - requires: the interval is proper.
+    /// - ensures: returns a proper interval containing `1 / y` for every `y` in
+    ///   `self`. The reciprocal of `[a, b]` is `[1 / b, 1 / a]`, because `a`
+    ///   and `b` have one sign.
+    /// - fails: returns [`IntervalError::ZeroDivisor`] when the interval
+    ///   contains zero, and [`IntervalError::Arithmetic`] when an endpoint's
+    ///   exponent leaves its range.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`IntervalError::ZeroDivisor`]: the interval contains zero.
+    /// - [`IntervalError::Arithmetic`]: an endpoint quotient failed.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — through [`NumericInterval::div`], held to the oracle.
+    /// - witness: `tests::oracle::interval_quotient_encloses_every_quotient`
+    #[spec(requires: self.orientation == Orientation::Proper)]
+    fn reciprocal(
+        &self,
+        precision: Precision,
+    ) -> Result<Self, IntervalError>
+    {
+        if self.contains(&Dyadic::ZERO) != Containment::Excludes {
+            return Err(IntervalError::ZeroDivisor);
+        }
+        return Ok(Self {
+            lower: inverted(&self.upper, precision, Rounding::Floor)?,
+            upper: inverted(&self.lower, precision, Rounding::Ceiling)?,
+            orientation: Orientation::Proper,
+        });
+    }
+
     /// Refuse a dual operand.
     ///
     /// # Specification
@@ -753,6 +847,55 @@ fn endpoint_sign(endpoint: &Endpoint) -> Sign
         Endpoint::Finite(ref value) => value.sign(),
         Endpoint::PosInf => Sign::Positive,
     };
+}
+
+/// The reciprocal of one bound of an interval that excludes zero, as the
+/// opposite bound of the reciprocal interval.
+///
+/// # Specification
+/// - requires: a finite zero endpoint is open, and it is the upper bound when
+///   `rounding` is [`Rounding::Floor`], else the lower bound.
+/// - ensures: an infinity gives an open zero. An open zero gives the open
+///   infinity that `rounding` points to. A nonzero dyadic gives its directed
+///   reciprocal, closed exactly when the bound is closed and the reciprocal is
+///   exact.
+/// - fails: returns [`IntervalError::Arithmetic`] when the reciprocal's
+///   exponent leaves its range.
+/// - panics: none.
+///
+/// # Errors
+/// - [`IntervalError::Arithmetic`]: the endpoint quotient failed.
+///
+/// # Adequacy
+/// - hypothesis: L2 — through [`NumericInterval::div`], held to the oracle over
+///   divisors with infinite and open zero endpoints.
+/// - witness: `tests::oracle::interval_quotient_encloses_every_quotient`
+#[spec(ensures: |ref result| result.as_ref().map_or(true, |inverse| inverse.closure == Closure::Open || matches!(inverse.endpoint, Endpoint::Finite(_))))]
+fn inverted(
+    bound: &Bound,
+    precision: Precision,
+    rounding: Rounding,
+) -> Result<Bound, IntervalError>
+{
+    let value = match bound.endpoint {
+        Endpoint::NegInf | Endpoint::PosInf => {
+            return Ok(Bound::open(Endpoint::Finite(Dyadic::ZERO)));
+        },
+        Endpoint::Finite(ref value) => value,
+    };
+    if value.sign() == Sign::Zero {
+        return Ok(Bound::open(match rounding {
+            Rounding::Floor => Endpoint::NegInf,
+            Rounding::Ceiling => Endpoint::PosInf,
+        }));
+    }
+    let inverse = Dyadic::ONE.div(value, precision, rounding)?;
+    let closure = match (bound.closure, inverse.exactness()) {
+        (Closure::Closed, Exactness::Exact) => Closure::Closed,
+        (Closure::Closed | Closure::Open, Exactness::Inexact)
+        | (Closure::Open, Exactness::Exact) => Closure::Open,
+    };
+    return Ok(Bound::new(Endpoint::Finite(inverse.into_value()), closure));
 }
 
 /// Whether the second operand of an endpoint sum is added or subtracted.

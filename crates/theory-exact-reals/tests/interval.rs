@@ -1,7 +1,7 @@
 //! Boundary witnesses of the interval domain: each refusal by name, points
 //! and rays, the dual involution, containment at each closure, the refused
-//! dual operand, where a product attains zero, and the rendering of each
-//! failure.
+//! dual operand, where a product attains zero, the refused divisor that holds
+//! zero, and the rendering of each failure.
 
 use gandr_theory_exact_reals::Bound;
 use gandr_theory_exact_reals::Closure;
@@ -44,6 +44,7 @@ fn errors_render_one_distinct_line()
         IntervalError::Reversed,
         IntervalError::Empty,
         IntervalError::DualOperand,
+        IntervalError::ZeroDivisor,
         arithmetic,
     ];
     let lines = errors.map(|error| error.to_string());
@@ -60,7 +61,38 @@ fn errors_render_one_distinct_line()
             "a repeated line: {line}"
         );
     }
-    assert!(lines[4].contains(&DyadicError::ExponentOutOfRange.to_string()));
+    assert!(lines[5].contains(&DyadicError::ExponentOutOfRange.to_string()));
+}
+
+#[test]
+fn quotient_refuses_a_divisor_holding_zero()
+{
+    let precision = Precision::try_from(16_u32).unwrap();
+    let one = Dyadic::from(1_i64);
+    let dividend = NumericInterval::point(one.clone());
+    let holding = [
+        NumericInterval::point(Dyadic::ZERO),
+        proper(Bound::closed(Dyadic::ZERO), Bound::closed(one.clone())),
+        proper(
+            Bound::open(at(Dyadic::from(-1_i64))),
+            Bound::closed(Dyadic::ZERO),
+        ),
+        proper(
+            Bound::open(at(Dyadic::from(-1_i64))),
+            Bound::open(at(one.clone())),
+        ),
+        NumericInterval::whole(),
+    ];
+    for divisor in &holding {
+        assert_eq!(
+            dividend.div(divisor, precision),
+            Err(IntervalError::ZeroDivisor)
+        );
+    }
+    let beside = proper(Bound::open(at(Dyadic::ZERO)), Bound::closed(one.clone()));
+    let quotient = dividend.div(&beside, precision).unwrap();
+    assert_eq!(quotient.lower(), &Bound::closed(one));
+    assert_eq!(quotient.upper(), &Bound::open(Endpoint::PosInf));
 }
 
 #[test]

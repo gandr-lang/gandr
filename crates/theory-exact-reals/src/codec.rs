@@ -15,6 +15,8 @@
 //! The layout follows the tree's convention for canonical bytes: a one-byte
 //! kind before each record, every integer little-endian at a fixed width, a
 //! byte payload after its length as a `u64`, and no unknown kind admitted.
+//! The reader allocates no more than the bytes hold, whatever count or
+//! length they state.
 //!
 //! | Field | Bytes |
 //! | ----- | ----- |

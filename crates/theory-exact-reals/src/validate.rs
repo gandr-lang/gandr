@@ -28,9 +28,10 @@
 //! forward walk computes each node's height and binder nesting from its
 //! children and checks its payload. A backward walk from the root then
 //! carries the fewest binders over any path to each node, and a bound
-//! variable must stay below that count. The pass holds one mark per node and
-//! is linear in the nodes and edges, with one search of the evidence table
-//! for each evidence reference.
+//! variable must stay below that count. The pass holds one mark of three
+//! counts per node and is linear in the nodes and edges, with one search of
+//! the evidence table for each evidence reference. A quota excess is a
+//! refusal, and the pass never cuts a plan short.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

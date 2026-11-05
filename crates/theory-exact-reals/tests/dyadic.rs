@@ -63,15 +63,41 @@ fn errors_render_one_distinct_line()
     let lines = [
         DyadicError::ExponentOutOfRange,
         DyadicError::PrecisionOutOfRange,
+        DyadicError::DivisionByZero,
     ]
     .map(|error| error.to_string());
-    for line in &lines {
+    for (index, line) in lines.iter().enumerate() {
         assert!(
             !line.is_empty() && !line.contains('\n'),
             "not one line: {line}"
         );
+        assert!(
+            lines
+                .iter()
+                .skip(index.checked_add(1).unwrap())
+                .all(|other| other != line),
+            "a repeated line: {line}"
+        );
     }
-    assert_ne!(lines[0], lines[1]);
+}
+
+#[test]
+fn quotient_refuses_a_zero_divisor()
+{
+    let precision = Precision::try_from(8_u32).unwrap();
+    for dividend in [Dyadic::ZERO, Dyadic::ONE, Dyadic::from(-3_i64)] {
+        for rounding in [Rounding::Floor, Rounding::Ceiling] {
+            assert_eq!(
+                dividend.div(&Dyadic::ZERO, precision, rounding),
+                Err(DyadicError::DivisionByZero)
+            );
+        }
+    }
+    let zero = Dyadic::ZERO
+        .div(&Dyadic::from(3_i64), precision, Rounding::Ceiling)
+        .unwrap();
+    assert_eq!(zero.value(), &Dyadic::ZERO);
+    assert_eq!(zero.exactness(), Exactness::Exact);
 }
 
 #[test]
