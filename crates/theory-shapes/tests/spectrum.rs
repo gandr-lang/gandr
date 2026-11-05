@@ -9,8 +9,8 @@
 //!
 //! Here the spectrum is the least face at each point. That face is the meet
 //! of the carrier and of every face that holds the point. The suite computes
-//! it with the crate's meet. A closure over bit masks finds the
-//! join-irreducible elements apart from the crate, and the two must agree. The
+//! it with this crate's meet. The duality crate generates the lattice and
+//! reads its spectrum apart from this crate, and the two must agree. This
 //! crate's entailment decides the order of the spectrum. It also decides that
 //! each element of the lattice is the column disjunction of the least faces
 //! below it.
@@ -35,9 +35,25 @@ use gandr_theory_shapes::SetOperation;
 use gandr_theory_shapes::Subshape;
 use gandr_theory_shapes::Variable;
 use gandr_theory_shapes::decide;
+use gandr_theory_stone_duality::Budget;
+use gandr_theory_stone_duality::Comparison as Order;
+use gandr_theory_stone_duality::Element;
+use gandr_theory_stone_duality::ElementCount;
+use gandr_theory_stone_duality::ElementSet;
+use gandr_theory_stone_duality::SetRing;
 
 use crate::carriers::Mask;
 use crate::carriers::points;
+
+/// The most members a lattice or a set of down-sets here may hold: every
+/// subshape of a carrier of at most six points.
+///
+/// # Specification
+/// trivial.
+fn budget() -> Budget
+{
+    Budget::from(64)
+}
 
 /// A set of subshapes of a carrier of at most six points, as a bit mask over
 /// their masks: the bit at a mask is set when the set holds that mask.
@@ -194,52 +210,23 @@ fn shape_of(
     Subshape::new(carrier, &inside).expect("a subset of the carrier")
 }
 
-/// The lattice that the faces generate with the empty face and the whole
-/// carrier: the closure of their masks under intersection and union. This is
-/// the reference reading, written apart from the crate.
+/// The element set of the duality crate that holds the points of a mask.
 ///
 /// # Specification
 /// trivial.
-fn generated(
-    carrier: PointCount,
-    faces: Family,
-) -> Family
+fn set_of(mask: Mask) -> ElementSet
 {
-    let mut lattice = faces.with(Mask(0)).with(whole(carrier));
-    loop {
-        let mut grown = lattice;
-        for left in lattice.members() {
-            for right in lattice.members() {
-                grown = grown
-                    .with(Mask(left.0 & right.0))
-                    .with(Mask(left.0 | right.0));
-            }
-        }
-        if grown == lattice {
-            return lattice;
-        }
-        lattice = grown;
-    }
+    ElementSet::from(u64::try_from(mask.0).expect("a mask below a word"))
 }
 
-/// The join-irreducible elements of a lattice of masks: each nonempty element
-/// that is not the union of the elements strictly below it.
+/// The family of the masks of some element sets of the duality crate.
 ///
 /// # Specification
 /// trivial.
-fn join_irreducibles(lattice: Family) -> Family
+fn family_of(sets: &[ElementSet]) -> Family
 {
-    lattice
-        .members()
-        .filter(|element| {
-            let below = lattice
-                .members()
-                .filter(|other| {
-                    other != element && included(*other, *element) == Membership::Inside
-                })
-                .fold(0_usize, |bits, other| bits | other.0);
-            element.0 != 0 && below != element.0
-        })
+    sets.iter()
+        .map(|set| Mask(usize::try_from(u64::from(*set)).expect("a mask below a word")))
         .fold(Family::default(), Family::with)
 }
 
@@ -325,10 +312,12 @@ pub fn entails(
 /// Checks Birkhoff duality for one family of faces over a carrier, and
 /// returns the spectrum.
 ///
-/// The least faces are the join-irreducible elements. The crate's entailment
-/// orders them by inclusion. It decides each element of the lattice equal to
-/// the column disjunction of the least faces below it. The down-sets of the
-/// spectrum have distinct unions, and these unions are the lattice.
+/// The least faces are the join-irreducible elements of the lattice that the
+/// duality crate generates. This crate's entailment orders them as the
+/// duality crate's spectrum orders them. It decides each element of the
+/// lattice equal to the column disjunction of the least faces below it. The
+/// down-sets of the spectrum read back to distinct elements, and these
+/// elements are the lattice.
 ///
 /// # Specification
 /// trivial.
@@ -342,21 +331,31 @@ fn spectrum(
         .map(|face| shape_of(carrier, face))
         .collect();
     let least = least_faces(carrier, &shapes);
-    let lattice = generated(carrier, faces);
+    let generators: Vec<ElementSet> = faces.members().map(set_of).collect();
+    let elements = ElementCount::from(usize::from(carrier));
+    let ring = SetRing::generated(elements, &generators, budget()).expect("a small lattice");
+    let dual = ring.spectrum().expect("a spectrum");
     assert_eq!(
         least,
-        join_irreducibles(lattice),
+        family_of(dual.points()),
         "the least faces of {faces:?} over {carrier:?}"
     );
-    for below in least.members() {
-        for above in least.members() {
-            let order = match included(below, above) {
-                Membership::Inside => Verdict::Holds,
-                Membership::Outside => Verdict::Refuted,
+    for (lower, below) in dual.points().iter().enumerate() {
+        for (upper, above) in dual.points().iter().enumerate() {
+            let order = match dual
+                .poset()
+                .compare(Element::from(lower), Element::from(upper))
+            {
+                Ok(Order::Below) => Verdict::Holds,
+                Ok(Order::NotBelow) => Verdict::Refuted,
+                Err(error) => panic!("a point of the spectrum refused by {error:?}"),
             };
+            let below = Mask(usize::try_from(u64::from(*below)).expect("a mask below a word"));
+            let above = Mask(usize::try_from(u64::from(*above)).expect("a mask below a word"));
             assert_eq!(entails(carrier, below, Family::single(above)), order);
         }
     }
+    let lattice = family_of(ring.members());
     for element in lattice.members() {
         let below = least
             .members()
@@ -370,35 +369,16 @@ fn spectrum(
             );
         }
     }
-    let spectrum: Vec<Mask> = least.members().collect();
-    let width = u32::try_from(spectrum.len()).expect("a small spectrum");
-    let mut unions = Family::default();
-    let mut downsets = 0_usize;
-    for chosen in 0 .. 1_usize.checked_shl(width).expect("a small spectrum") {
-        let members = spectrum
-            .iter()
-            .enumerate()
-            .filter(|&(index, _)| {
-                let shift = u32::try_from(index).expect("a small index");
-                chosen.checked_shr(shift).unwrap_or(0) & 1 == 1
-            })
-            .fold(Family::default(), |members, (_, face)| members.with(*face));
-        let closed = members.members().all(|upper| {
-            least.members().all(|lower| {
-                included(lower, upper) == Membership::Outside
-                    || members.holds(lower) == Membership::Inside
-            })
-        });
-        if closed {
-            downsets = downsets.saturating_add(1);
-            unions = unions.with(Mask(
-                members.members().fold(0_usize, |bits, face| bits | face.0),
-            ));
-        }
-    }
+    let downs = dual.poset().down_sets(budget()).expect("a small lattice");
+    let unions: Vec<ElementSet> = downs
+        .members()
+        .iter()
+        .map(|down| dual.member(*down).expect("a down-set of the spectrum"))
+        .collect();
+    let unions = family_of(&unions);
     assert_eq!(
         unions.members().count(),
-        downsets,
+        downs.members().len(),
         "two down-sets of {least:?} unite to one face"
     );
     assert_eq!(unions, lattice);

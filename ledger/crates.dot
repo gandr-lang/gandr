@@ -25,6 +25,7 @@ digraph crates {
     "theory-shapes";
     "theory-sites";
     "theory-spec-combinators";
+    "theory-stone-duality";
     "theory-virtual-doctrines";
   }
   subgraph "cluster_kernel" {

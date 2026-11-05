@@ -1,0 +1,27 @@
+[package]
+name = "gandr-theory-stone-duality"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The finite case of Stone duality for gandr: free distributive lattices in normal form, finite Birkhoff duality, and monotone maps against lattice homomorphisms"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["birkhoff-duality", "distributive-lattice", "gandr", "no-std"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
+[dependencies]
+anodized.workspace = true
+
+[lints]
+workspace = true

@@ -1983,6 +1983,7 @@ name = "gandr-theory-shapes"
 version = "0.0.0"
 dependencies = [
  "gandr-theory-nominal-automata",
+ "gandr-theory-stone-duality",
  "quenchant-anodized",
  "quenchant-shape",
 ]
@@ -1999,6 +2000,13 @@ dependencies = [
 
 [[package]]
 name = "gandr-theory-spec-combinators"
+version = "0.0.0"
+dependencies = [
+ "quenchant-anodized",
+]
+
+[[package]]
+name = "gandr-theory-stone-duality"
 version = "0.0.0"
 dependencies = [
  "quenchant-anodized",
