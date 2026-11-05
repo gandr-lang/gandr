@@ -19,6 +19,7 @@ use gandr_core_term::memory::HoldGrade;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
 use gandr_core_term::row::RowInclusion;
+use gandr_core_term::usage::Usage;
 use gandr_kernel_term::DeBruijnIndex;
 
 use super::Control;
@@ -96,7 +97,9 @@ impl Machine<'_, '_>
         };
         match *form {
             MemoryForm::Hold { value, grade, .. } => {
-                if grade == HoldGrade::One {
+                // A value made elsewhere may have another holder. That
+                // holder's use adds to the use of the hold.
+                if Usage::One.add(Usage::One) > grade.usage() {
                     self.entered_in_place(value)?;
                 }
                 self.wait(Frame::HoldValue {
@@ -976,36 +979,45 @@ impl Machine<'_, '_>
             Resident::Held { .. } if read.use_state != LinearUse::Available => {
                 AccessDefect::Consumed
             },
-            Resident::Held { at } => match self.hold_grade(at)? {
-                HoldGrade::Many => return self.read_type(&read),
-                HoldGrade::One => AccessDefect::HeldCopied,
+            // A read of a held slot copies its value. The slot keeps one use.
+            // The read takes one more.
+            Resident::Held { at } => {
+                if Usage::One.add(Usage::One) <= self.hold_grade(at)?.usage() {
+                    return self.read_type(&read);
+                }
+                AccessDefect::HeldCopied
             },
-            Resident::Received { .. }
-            | Resident::View {
-                grade: HoldGrade::Many,
-                ..
-            } => return self.read_type(&read),
-            Resident::View {
-                at,
-                grade: HoldGrade::One,
-                ..
-            } => {
+            Resident::Received { .. } => return self.read_type(&read),
+            Resident::View { at, grade, .. } => {
+                let bound = grade.usage();
+                // A read copies the lent value. The held slot keeps its use.
+                if Usage::One.add(Usage::One) <= bound {
+                    return self.read_type(&read);
+                }
                 let Computation::Memory(MemoryForm::Access { mode, .. }) = *self.computation(at)?
                 else {
                     return Err(CheckRefusal::MachineInvariant);
                 };
-                match (mode, read.use_state) {
-                    (AccessMode::Exclusive { .. }, LinearUse::Available) => {
-                        let _moved = self
-                            .context
-                            .binders()
-                            .move_out(index)
-                            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
-                        return self.read_type(&read);
-                    },
+                // The uses on the lent value before this read: none under an
+                // exclusive view that no read moved, and otherwise one. That
+                // use is the held slot's under a shared view, or the earlier
+                // read's.
+                let standing = match (mode, read.use_state) {
+                    (AccessMode::Exclusive { .. }, LinearUse::Available) => Usage::Zero,
                     (AccessMode::Exclusive { .. }, LinearUse::Moved | LinearUse::Consumed)
-                    | (AccessMode::Shared, _) => AccessDefect::HeldCopied,
+                    | (AccessMode::Shared, _) => Usage::One,
+                };
+                if standing.add(Usage::One) <= bound {
+                    // The read is the one use of the value. It moves the value
+                    // out.
+                    let _moved = self
+                        .context
+                        .binders()
+                        .move_out(index)
+                        .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+                    return self.read_type(&read);
                 }
+                AccessDefect::HeldCopied
             },
         };
         Err(CheckRefusal::Access { at: node, defect })

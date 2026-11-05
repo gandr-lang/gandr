@@ -220,6 +220,24 @@ pub enum CapabilityGrade
     Consumable,
 }
 
+impl CapabilityGrade
+{
+    /// The bound the grade puts on the exercises of the capability, in the
+    /// usage semiring: many when durable, and one when consumable.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn usage(self) -> crate::usage::Usage
+    {
+        match self {
+            Self::Durable => crate::usage::Usage::Many,
+            Self::Consumable => crate::usage::Usage::One,
+        }
+    }
+}
+
 quenchant_shape::reason_enum! {
     /// Why an authority grants no operation by a given name.
     pub mod grant {

@@ -77,6 +77,7 @@ use crate::ComputationId;
 use crate::CoreArena;
 use crate::ValueId;
 use crate::session::ChildOrder;
+use crate::usage::Usage;
 
 quenchant_shape::reason_enum! {
     /// Why a memory form names no resident.
@@ -197,6 +198,24 @@ pub enum HoldGrade
     /// Grade one: the value entered with no other holder and is never copied
     /// while held.
     One,
+}
+
+impl HoldGrade
+{
+    /// The bound the grade puts on the uses of the held value, in the usage
+    /// semiring: many at grade `ω`, and one at grade one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn usage(self) -> Usage
+    {
+        match self {
+            Self::Many => Usage::Many,
+            Self::One => Usage::One,
+        }
+    }
 }
 
 /// The case of a memory form.

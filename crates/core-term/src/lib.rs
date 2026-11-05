@@ -233,6 +233,7 @@ pub mod support;
 mod syntax;
 pub mod tactic;
 pub mod ua;
+pub mod usage;
 pub mod world;
 
 pub use gandr_kernel_term::CellIndex;

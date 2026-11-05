@@ -1,17 +1,17 @@
-//! The grades of the core language read as ordered semirings through the law
-//! checker of the ordered-algebras crate.
+//! The usage semiring of the core language, read as an ordered semiring
+//! through the law checker of the ordered-algebras crate.
 //!
-//! A [`HoldGrade`] or a [`CapabilityGrade`] counts uses: one, or any number.
-//! Neither enum has a zero, and neither states an operation. The suite
-//! adjoins the zero, `None`, and reads each enum in the semiring of usages. A
-//! sum of two single uses is many. A product with zero is zero, and a product
-//! with one is the other factor. The order puts zero and one below many and
-//! leaves them apart, because a linear use is neither dropped nor duplicated.
+//! [`Usage`] is zero, one or many uses. A [`HoldGrade`] or a
+//! [`CapabilityGrade`] is the bound on the uses of its value: one use, or
+//! many. The suite decides the sixteen laws on the three usages. It also
+//! shows that a grade's two points alone break the unit of addition: the
+//! least grade is one use, and one use plus one use is many.
 
-use core::fmt::Debug;
+use core::mem::size_of;
 
 use gandr_core_term::effect::capability::CapabilityGrade;
 use gandr_core_term::memory::HoldGrade;
+use gandr_core_term::usage::Usage;
 use gandr_theory_ordered_algebras::Carrier;
 use gandr_theory_ordered_algebras::Comparison;
 use gandr_theory_ordered_algebras::InstanceName;
@@ -22,141 +22,91 @@ use gandr_theory_ordered_algebras::Outside;
 use gandr_theory_ordered_algebras::Reach;
 use gandr_theory_ordered_algebras::check;
 
-/// A two-point grade of the core language: one use, or any number.
-trait Usage: Copy + Debug + Eq
-{
-    /// The instance's name.
-    const NAME: &'static str;
-    /// The grade of one use.
-    const ONE: Self;
-    /// The grade of any number of uses.
-    const MANY: Self;
-}
-
-impl Usage for HoldGrade
-{
-    const MANY: Self = Self::Many;
-    const NAME: &'static str = "hold grades";
-    const ONE: Self = Self::One;
-}
-
-impl Usage for CapabilityGrade
-{
-    const MANY: Self = Self::Durable;
-    const NAME: &'static str = "capability grades";
-    const ONE: Self = Self::Consumable;
-}
-
-/// The semiring of usages on a two-point grade, with `None` as the zero.
+/// The usage semiring on its three points.
 #[repr(transparent)]
-struct Usages<G>
+struct Usages
 {
     /// Zero, one and many.
-    carrier: [Option<G>; 3],
+    carrier: [Usage; 3],
 }
 
-impl<G> Usages<G>
-where
-    G: Usage,
+impl OrderedSemiring for Usages
 {
-    /// The semiring on the grade's two points and the adjoined zero.
-    ///
-    /// # Specification
-    /// trivial.
-    const fn new() -> Self
-    {
-        Self {
-            carrier: [None, Some(G::ONE), Some(G::MANY)],
-        }
-    }
-}
+    type Element = Usage;
 
-impl<G> OrderedSemiring for Usages<G>
-where
-    G: Usage,
-{
-    type Element = Option<G>;
-
-    /// The grade's name.
+    /// `usages`.
     ///
     /// # Specification
     /// trivial.
     fn name(&self) -> InstanceName
     {
-        InstanceName::from(G::NAME)
+        InstanceName::from("usages")
     }
 
     /// Zero, one and many: the whole carrier.
     ///
     /// # Specification
     /// trivial.
-    fn carrier(&self) -> Carrier<'_, Option<G>>
+    fn carrier(&self) -> Carrier<'_, Usage>
     {
         Carrier::Whole(&self.carrier)
     }
 
-    /// The adjoined zero.
+    /// No use.
     ///
     /// # Specification
     /// trivial.
-    fn zero(&self) -> Option<G>
+    fn zero(&self) -> Usage
     {
-        None
+        Usage::Zero
     }
 
     /// One use.
     ///
     /// # Specification
     /// trivial.
-    fn one(&self) -> Option<G>
+    fn one(&self) -> Usage
     {
-        Some(G::ONE)
+        Usage::One
     }
 
-    /// Zero adds nothing, and any two uses are many.
+    /// The core language's addition.
     ///
     /// # Specification
     /// trivial.
     fn add(
         &self,
-        left: &Option<G>,
-        right: &Option<G>,
-    ) -> Result<Option<G>, Outside>
+        left: &Usage,
+        right: &Usage,
+    ) -> Result<Usage, Outside>
     {
-        Ok(match (*left, *right) {
-            (None, other) | (other, None) => other,
-            (Some(_), Some(_)) => Some(G::MANY),
-        })
+        Ok(left.add(*right))
     }
 
-    /// Zero annihilates, one is the unit, and many times many is many.
+    /// The core language's multiplication.
     ///
     /// # Specification
     /// trivial.
     fn multiply(
         &self,
-        left: &Option<G>,
-        right: &Option<G>,
-    ) -> Result<Option<G>, Outside>
+        left: &Usage,
+        right: &Usage,
+    ) -> Result<Usage, Outside>
     {
-        Ok(match (*left, *right) {
-            (None, _) | (_, None) => None,
-            (Some(first), Some(second)) if first == G::ONE => Some(second),
-            (Some(first), Some(_)) => Some(first),
-        })
+        Ok(left.multiply(*right))
     }
 
-    /// Each grade below itself and below many.
+    /// The core language's order.
     ///
     /// # Specification
     /// trivial.
     fn compare(
         &self,
-        lower: &Option<G>,
-        upper: &Option<G>,
+        lower: &Usage,
+        upper: &Usage,
     ) -> Comparison
     {
-        if lower == upper || *upper == Some(G::MANY) {
+        if lower <= upper {
             Comparison::Below
         }
         else {
@@ -165,55 +115,53 @@ where
     }
 }
 
-/// The two points of a grade alone, with one use standing for the zero the
-/// enum lacks.
+/// The two points of the hold grade alone, with one use standing for the
+/// zero that the grade lacks.
 #[repr(transparent)]
-struct TwoPoints<G>
+struct TwoPoints
 {
     /// One and many.
-    carrier: [G; 2],
+    carrier: [HoldGrade; 2],
 }
 
-impl<G> OrderedSemiring for TwoPoints<G>
-where
-    G: Usage,
+impl OrderedSemiring for TwoPoints
 {
-    type Element = G;
+    type Element = HoldGrade;
 
-    /// The grade's name.
+    /// `hold grades`.
     ///
     /// # Specification
     /// trivial.
     fn name(&self) -> InstanceName
     {
-        InstanceName::from(G::NAME)
+        InstanceName::from("hold grades")
     }
 
     /// One and many.
     ///
     /// # Specification
     /// trivial.
-    fn carrier(&self) -> Carrier<'_, G>
+    fn carrier(&self) -> Carrier<'_, HoldGrade>
     {
         Carrier::Whole(&self.carrier)
     }
 
-    /// One use, the least grade the enum holds.
+    /// One use, the least grade.
     ///
     /// # Specification
     /// trivial.
-    fn zero(&self) -> G
+    fn zero(&self) -> HoldGrade
     {
-        G::ONE
+        HoldGrade::One
     }
 
     /// One use.
     ///
     /// # Specification
     /// trivial.
-    fn one(&self) -> G
+    fn one(&self) -> HoldGrade
     {
-        G::ONE
+        HoldGrade::One
     }
 
     /// Any two uses are many.
@@ -222,11 +170,11 @@ where
     /// trivial.
     fn add(
         &self,
-        _left: &G,
-        _right: &G,
-    ) -> Result<G, Outside>
+        _left: &HoldGrade,
+        _right: &HoldGrade,
+    ) -> Result<HoldGrade, Outside>
     {
-        Ok(G::MANY)
+        Ok(HoldGrade::Many)
     }
 
     /// One is the unit, and many times many is many.
@@ -235,11 +183,16 @@ where
     /// trivial.
     fn multiply(
         &self,
-        left: &G,
-        right: &G,
-    ) -> Result<G, Outside>
+        left: &HoldGrade,
+        right: &HoldGrade,
+    ) -> Result<HoldGrade, Outside>
     {
-        Ok(if *left == G::ONE { *right } else { *left })
+        Ok(if *left == HoldGrade::One {
+            *right
+        }
+        else {
+            *left
+        })
     }
 
     /// Each grade below itself and below many.
@@ -248,11 +201,11 @@ where
     /// trivial.
     fn compare(
         &self,
-        lower: &G,
-        upper: &G,
+        lower: &HoldGrade,
+        upper: &HoldGrade,
     ) -> Comparison
     {
-        if lower == upper || *upper == G::MANY {
+        if lower == upper || *upper == HoldGrade::Many {
             Comparison::Below
         }
         else {
@@ -262,26 +215,46 @@ where
 }
 
 #[test]
-fn hold_grades_pass_every_law_with_a_zero_adjoined()
+fn the_usage_semiring_passes_every_law()
 {
-    let decided = check(&Usages::<HoldGrade>::new()).expect("every law holds");
+    let usages = Usages {
+        carrier: [Usage::Zero, Usage::One, Usage::Many],
+    };
+    let decided = check(&usages).expect("every law holds");
     assert_eq!(decided.reach(), Reach::Whole);
+    assert_eq!(usize::from(decided.laws()), 16);
     assert_eq!(usize::from(decided.tuples()), 6 * 3 + 2 * 9 + 8 * 27);
 }
 
 #[test]
-fn capability_grades_pass_every_law_with_a_zero_adjoined()
+fn a_grade_admits_a_second_use_only_at_many()
 {
-    let decided = check(&Usages::<CapabilityGrade>::new()).expect("every law holds");
-    assert_eq!(decided.reach(), Reach::Whole);
-    assert_eq!(usize::from(decided.laws()), 16);
+    let copied = Usage::One.add(Usage::One);
+    for (bound, many) in [
+        (HoldGrade::Many.usage(), true),
+        (HoldGrade::One.usage(), false),
+        (CapabilityGrade::Durable.usage(), true),
+        (CapabilityGrade::Consumable.usage(), false),
+    ] {
+        assert!(Usage::One <= bound, "every grade admits one use");
+        assert_eq!(copied <= bound, many, "a second use at {bound:?}");
+        assert_eq!(Usage::Zero <= bound, many, "a drop at {bound:?}");
+    }
+}
+
+#[test]
+fn a_usage_and_each_grade_fit_one_byte()
+{
+    assert_eq!(size_of::<Usage>(), 1);
+    assert_eq!(size_of::<HoldGrade>(), 1);
+    assert_eq!(size_of::<CapabilityGrade>(), 1);
 }
 
 #[test]
 fn without_the_zero_a_grade_breaks_the_unit_of_addition()
 {
-    // The least grade the enum holds is one use, and one use plus one use is
-    // many, so no point of the enum is a unit of addition.
+    // The least grade is one use, and one use plus one use is many, so no
+    // point of the grade is a unit of addition.
     let points = TwoPoints {
         carrier: [HoldGrade::One, HoldGrade::Many],
     };

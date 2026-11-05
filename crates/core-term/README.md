@@ -119,7 +119,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | The failure vocabulary | [`failure`](src/failure.rs) |
 | Effects, handlers and control | [`effect`](src/effect.rs), [`control`](src/control.rs) |
 | The co-de Bruijn carrier, its tiered code and the fence; supports carried on arena nodes | [`support`](src/support.rs), [`arena`](src/arena.rs) |
-| Temporary access: hold, access, resume and abort | [`memory`](src/memory.rs) |
+| Temporary access, and the usage semiring its grades read | [`memory`](src/memory.rs), [`usage`](src/usage.rs) |
 | References and specification attributes | [`src/lib.rs`](src/lib.rs) |
 
 ## References
@@ -127,7 +127,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-effects-are-theories) — an effect is a theory whose rules are its equations, and a program over it normalises by them before it runs.
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the host operations that only read, which two forked halves may share.
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — get-get, put-get and put-put are the laws that are rules.
-- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities page (§ quant-record, § quant-counts) — `HoldGrade` and `CapabilityGrade` are the tree's two-point grades, and the grade the page drafts keeps the count they forget.
+- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — anchor: the quantities page (§ quant-record, § quant-counts) — `usage::Usage` is its semiring `{0, 1, ω}`, and each two-point grade reads in it.
 - `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — background: a solved variable's types read back.
 - `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — exemplar: Condoluci, Accattoli and Sacerdoti Coen, "Sharing Equality is Linear", PPDP 2019, `doi:10.1145/3354166.3354174` — the blind check (Algorithm 1) that `syntax::shared` runs.
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey, Borkowski, Vollmer, Koparkar, Kainen and Singhal, "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory", PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAMs and the CAM `world` and `memory` place their forms in.
