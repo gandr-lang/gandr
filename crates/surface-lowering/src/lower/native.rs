@@ -15762,9 +15762,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   function's fixpoint binds, applied to one argument per parameter with
     ///   each before the staged one passed as itself, stands as the unquote of
     ///   that fixpoint called on the staged argument and every one after it,
-    ///   each read as a value, at the universe the position reads, and makes
-    ///   the fixpoint claim descent once [`Self::claim`] admits its position;
-    ///   the fixpoint's binder is recorded as mentioned.
+    ///   each read as a value inside the type, as a decode's arguments are, at
+    ///   the universe the position reads, and makes the fixpoint claim descent
+    ///   once [`Self::claim`] admits its position; the fixpoint's binder is
+    ///   recorded as mentioned. A call in the body of a lambda among the
+    ///   arguments thus stands as the value it returns, since a type holds no
+    ///   computation for it to run before.
     /// - provides: the written spelling of an inductive-recursive decode, `(x :
     ///   el[<](a)) -> -F el[<](b(x))`, whose codomain decodes a code the arm
     ///   cannot compute before its binder.
@@ -15862,6 +15865,11 @@ impl<'source> Lowerer<'_, 'source>
                 self.read(argument, Reading::Value(frame));
             }
         }
+        // Each argument is a value the type reads, as a decode's arguments
+        // are. It counts in the type's telescope. A lambda among them reads
+        // its body inside the type too.
+        self.in_type
+            .extend(stretch(&self.operands, applied).iter().copied());
         let code = Code::Bound {
             from,
             binder: bound.binder,

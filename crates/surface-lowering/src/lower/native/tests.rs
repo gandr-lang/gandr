@@ -1183,6 +1183,27 @@ fn a_descent_inside_a_record_type_stages_its_match_s_parameter_3087()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #5291: a lambda among a descent's arguments in a quoted record type reads
+/// its body inside the type. The call `h z` in that body stands as the value
+/// it returns. So the checker finds no run without a computation around it.
+#[test]
+fn a_lambda_among_a_descent_s_arguments_reads_its_body_in_the_type_5291()
+{
+    let mut arena = CoreArena::new();
+    let source = "data Codes(d : Type) : Type[+, 1] where { | Stop : (e : d) --> Codes(d) | Ask : (a : Type, f : (a -> d) -> Codes(d)) --> Codes(d) }\n\
+         def rec fields(d : Type, c : Codes(d), x : Type, t : x -> d) -> Type { match c { | Stop(e) => return Unit | Ask(a, f) => return type(*{ h : a -> x, r : fields[<](d, f(fun (z) { t (h z) }), x, t) }) } }\n";
+    let module = lowered(SourceText::from(source), &mut arena);
+    assert!(
+        matches!(
+            outcome_of(&module, SurfaceName::from("fields")),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "`fields` lowers: {:?}",
+        outcome_of(&module, SurfaceName::from("fields"))
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn an_unapplied_claim_lowers_to_the_self_binder()
 {
