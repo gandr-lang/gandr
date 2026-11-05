@@ -181,8 +181,6 @@ use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::laid;
 use gandr_surface_dispatcher::lay_out_shadowed;
 use gandr_surface_dispatcher::named_path;
-use gandr_surface_grammar::Pbg;
-use gandr_surface_grammar::RoleTable;
 use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::SourceIndex;
@@ -436,10 +434,11 @@ pub fn hovering<Store, Blocks>(
 /// - provides: what a document copy keeps for its hovers, its definitions, its
 ///   completions and its signature help: the names read off the table once
 ///   ([`Names::of`]) and the heads read off the same parse
-///   ([`Signatures::after`] when the tree is laid after the closure lowering
-///   the process holds, so the closure's heads are read once per lowering, else
-///   [`Signatures::of`]); a name an import brings in types at its use as its
-///   declaration does.
+///   ([`Signatures::after`] when the tree is laid after a closure, which splits
+///   the closure's heads from the document's own whether or not the process
+///   holds the closure's lowering and reads them once per lowering when it
+///   does, else [`Signatures::of`]); a name an import brings in types at its
+///   use as its declaration does.
 /// - fails: never; a refusal answers the empty table.
 /// - panics: none.
 /// - executable: none — the table is the dispatcher's typed run, whose own
@@ -469,8 +468,9 @@ pub fn hovering_laid<Store, Blocks>(
                 let mut signatures = Signatures::default();
                 let read = |tree: &SyntaxTree<'_>, closure: Option<ClosureKey>| {
                     if let Ok(roles) = roles() {
-                        signatures = heads(
-                            (grammar, roles),
+                        signatures = Signatures::after(
+                            grammar,
+                            roles,
                             (tree, &laid.unit, laid.base),
                             closure.as_ref(),
                         );
@@ -514,38 +514,6 @@ pub fn hovering_laid<Store, Blocks>(
         signatures,
         found: OnceCell::new(),
     }
-}
-
-/// The heads a hover reads off `tree`, the parse of a lay-out `unit` whose
-/// last source starts at `base`, laid after the closure lowering `closure`
-/// names when it is.
-///
-/// # Specification
-/// - requires: `tree` is the parse of the text `unit` lays out, under
-///   `grammar`, whose role table `roles` is.
-/// - ensures: [`Signatures::after`] when `closure` is held, so the closure's
-///   heads are read once per lowering, else [`Signatures::of`] over `unit`.
-/// - provides: the heads a judgement's reader reads off the tree it judges,
-///   which a copy's hovers then read without parsing the text again.
-/// - fails: never.
-/// - panics: none.
-/// - executable: none — the clauses are the two readers' own.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a hover after a keystroke answers from the heads its
-///   judgement read, without the copy parsing its text.
-/// - witness: `server::tests::a_hover_reads_the_parse_its_judgement_made_2440`
-#[must_use]
-pub fn heads(
-    (grammar, roles): (&Pbg, &RoleTable),
-    (tree, unit, base): (&SyntaxTree<'_>, &Unit, ByteOffset),
-    closure: Option<&ClosureKey>,
-) -> Signatures
-{
-    closure.map_or_else(
-        || Signatures::of(grammar, roles, tree, unit),
-        |closure| Signatures::after(grammar, roles, (tree, unit, base), closure),
-    )
 }
 
 /// How a hover spells and writes what it shows: the presentation form and
