@@ -2384,13 +2384,17 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Specification
     /// - requires: `content` is the content of the declaration at `constant`.
     /// - ensures: the context answers `constant` for `role`; a second claim by
-    ///   the same declaration is admitted unchanged.
+    ///   the same declaration is admitted unchanged. The holders of `E` and `F`
+    ///   answer their canonical bodies once those are judged
+    ///   ([`crate::canonical::answers`]), so this claim reads only their
+    ///   judgement.
     /// - fails: [`CheckRefusal::BuiltinMisplaced`] when the content is of
     ///   another judgement than [`gandr_kernel_term::Builtin::holder`],
     ///   [`CheckRefusal::BuiltinNotCanonical`] naming the first departure when
-    ///   the signature type's holder departs from the canonical signature type,
-    ///   and [`CheckRefusal::BuiltinRepeated`] naming the holder when another
-    ///   declaration holds the role; the context is unchanged.
+    ///   the holder of the signature type or of the pair type departs from its
+    ///   canonical form, and [`CheckRefusal::BuiltinRepeated`] naming the
+    ///   holder when another declaration holds the role; the context is
+    ///   unchanged.
     /// - panics: none.
     ///
     /// # Errors
@@ -2400,10 +2404,11 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a role claimed by two declarations, a role on a
-    ///   declaration of the wrong judgement and a signature type in another
-    ///   shape are each refused by cause.
+    ///   declaration of the wrong judgement, and a signature type or a pair
+    ///   type in another shape are each refused by cause.
     /// - witness: `module::tests::a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575`
     /// - witness: `module::tests::a_signature_type_in_another_shape_holds_no_role_5254`
+    /// - witness: `module::tests::a_pair_type_in_another_shape_holds_no_role_5255`
     #[spec(
         captures: before = self.builtins.get(&role).copied(),
         ensures: |ret| match ret {
@@ -2415,7 +2420,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     refusal == CheckRefusal::BuiltinMisplaced(role)
                 }
                 else if let CheckRefusal::BuiltinNotCanonical { role: refused, .. } = refusal {
-                    refused == role && role == gandr_kernel_term::Builtin::IrSignature
+                    refused == role && matches!(role, gandr_kernel_term::Builtin::IrSignature | gandr_kernel_term::Builtin::IrPair)
                 }
                 else {
                     before.is_some_and(|holder| refusal == CheckRefusal::BuiltinRepeated { role, holder })
@@ -2442,12 +2447,16 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         if !fits {
             return Err(CheckRefusal::BuiltinMisplaced(role));
         }
-        if let (
-            gandr_kernel_term::Builtin::IrSignature,
-            &crate::DeclarationContent::Data(ref signature),
-        ) = (role, content)
-        {
-            let canonical = crate::canonical::signature(self.arena(), constant, signature);
+        if let &crate::DeclarationContent::Data(ref signature) = content {
+            let canonical = match role {
+                gandr_kernel_term::Builtin::IrSignature => {
+                    crate::canonical::signature(self.arena(), constant, signature)
+                },
+                gandr_kernel_term::Builtin::IrPair => {
+                    crate::canonical::pair(self.arena(), signature)
+                },
+                gandr_kernel_term::Builtin::IrArgs | gandr_kernel_term::Builtin::IrDecode => Ok(()),
+            };
             canonical.map_err(|departure| CheckRefusal::BuiltinNotCanonical { role, departure })?;
         }
         match self.builtins.entry(role) {
@@ -2462,6 +2471,70 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 let _held = vacant.insert(constant);
                 Ok(())
             },
+        }
+    }
+
+    /// The declaration that holds the built-in `role`.
+    ///
+    /// # Specification
+    /// - ensures: the holder [`Self::claim_builtin`] recorded for `role`.
+    /// - fails: [`gandr_kernel_term::Departure::Reads`] naming `role` when no
+    ///   declaration holds it, the departure of a canonical form that reads it.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`gandr_kernel_term::Departure::Reads`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `E` read before the pair type has a holder is refused
+    ///   for the role it reads, and read after it compares its answers.
+    /// - witness: `canonical::tests::a_holder_of_e_is_refused_at_its_first_departing_answer_5255`
+    #[spec(ensures: |ret| match ret {
+        | Ok(holder) => self.builtins.get(&role) == Some(&holder),
+        | Err(departure) => departure == gandr_kernel_term::Departure::Reads(role) && !self.builtins.contains_key(&role),
+    })]
+    #[inline]
+    pub(crate) fn builtin_holder(
+        &self,
+        role: gandr_kernel_term::Builtin,
+    ) -> Result<ConstantIndex, gandr_kernel_term::Departure>
+    {
+        self.builtins
+            .get(&role)
+            .copied()
+            .ok_or(gandr_kernel_term::Departure::Reads(role))
+    }
+
+    /// Take the built-in `role` from the declaration at `constant`, whose
+    /// judged body departs from the role's canonical body.
+    ///
+    /// # Specification
+    /// - ensures: no declaration holds `role` when `constant` held it; the
+    ///   table is unchanged otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a holder of `E` refused for its answers gives its
+    ///   role back, so the next holder is refused for its own answers and not
+    ///   as a second holder.
+    /// - witness: `module::tests::a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575`
+    #[spec(
+        captures: before = self.builtins.get(&role).copied(),
+        ensures: if before == Some(constant) {
+            !self.builtins.contains_key(&role)
+        } else {
+            self.builtins.get(&role).copied() == before
+        },
+    )]
+    #[inline]
+    pub(crate) fn release_builtin(
+        &mut self,
+        role: gandr_kernel_term::Builtin,
+        constant: ConstantIndex,
+    )
+    {
+        if self.builtins.get(&role) == Some(&constant) {
+            let _released = self.builtins.remove(&role);
         }
     }
 

@@ -1,8 +1,9 @@
-error[BuiltinRepeated]: an earlier declaration holds the built-in role `irArgs`
-  ╭▸ corpus/ledger/diagnostics/BuiltinRepeated.gandr:5:1
+error[BuiltinRepeated]: an earlier declaration holds the built-in role `irPair`
+  ╭▸ corpus/ledger/diagnostics/BuiltinRepeated.gandr:6:1
   │
-5 │ def second = 2;
-  │ ━━━━━━━━━━━━━━━ a built-in role marked twice
+6 │ ┏ data Again(a : Type, b : a -> Type) : Type where
+7 │ ┃   | MkAgain : (x : a, y : b(x)) --> Again(a, b)
+  │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a built-in role marked twice
   │
-  ├ note: `second` is refused with BuiltinRepeated, as its expectation states
+  ├ note: `Again` is refused with BuiltinRepeated, as its expectation states
   ╰ help: remove the `builtin` mark from one of the two declarations
