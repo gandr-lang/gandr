@@ -9,6 +9,8 @@ extern crate alloc;
 #[path = "support/differential.rs"]
 mod differential;
 #[cfg(test)]
+mod obstruction;
+#[cfg(test)]
 #[path = "support/probe.rs"]
 mod probe;
 #[cfg(test)]
