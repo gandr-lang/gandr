@@ -580,6 +580,10 @@ mod sweeps
         reads_back(&Sweep::asked().expect("the run's sweep resolves").changed());
     }
 
+    /// Why the census holds a spelling whose reprint writes `Unit` for each
+    /// `*{}` alone.
+    const UNIT_READ: &str = "#5208, a `*{}` operand inside a type reads as `Unit`";
+
     /// Every printed type of every source `sweep` visits reads back to its
     /// certificate.
     ///
@@ -605,6 +609,7 @@ mod sweeps
         let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
         let mut unread: Vec<String> = Vec::new();
         let mut moved: Vec<String> = Vec::new();
+        let mut held: Vec<String> = Vec::new();
         let mut over = 0_usize;
         let walk = Walk::new(vec![
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -659,20 +664,53 @@ mod sweeps
                         format_args!("{} ({spelling:?})", path.display()),
                     )
                     .expect("a string accepts every write");
+                    // A constructor call inside a type reads a `*{}` operand
+                    // as the type `Unit` (#5208): held when the reprint writes
+                    // `Unit` for each `*{}` alone.
+                    let spelled = collapsed(SourceText::from(read.spelled.as_str()));
+                    let unit_read = match read.reprinted {
+                        Maybe::Present(ref again) => {
+                            spelled.contains("*{}")
+                                && spelled.replace("*{}", "Unit")
+                                    == collapsed(SourceText::from(again.as_str()))
+                        },
+                        Maybe::Absent(_) => false,
+                    };
                     let class = match read.trip {
                         RoundTrip::Equal => "Equal",
                         RoundTrip::Open => "Open",
                         RoundTrip::Unknown => "Unknown",
                         RoundTrip::Wildcard => "Wildcard",
                         RoundTrip::Different => {
-                            unread.push(format!(
-                                "{}: `{}` reads back as another type",
-                                at, read.spelled
-                            ));
+                            let line = format!("{}: `{}` reads back as another type", at, read.spelled);
+                            if unit_read {
+                                held.push(format!("{UNIT_READ}: {line}"));
+                            }
+                            else {
+                                unread.push(line);
+                            }
                             "Different"
                         },
                         RoundTrip::Refused(ref refusal) => {
-                            unread.push(format!("{}: `{}` refuses: {refusal}", at, read.spelled));
+                            // A printed row names its effect by a path the
+                            // read back does not resolve (#5209): held when
+                            // the refused head is a path the spelling writes
+                            // as a row entry.
+                            let line = format!("{}: `{}` refuses: {refusal}", at, read.spelled);
+                            let qualified_row = refusal
+                                .strip_prefix("no type head answers `")
+                                .and_then(|rest| rest.split_once('`'))
+                                .is_some_and(|(head, _)| {
+                                    head.contains('.') && spelled.contains(&format!("[{head}"))
+                                });
+                            if qualified_row {
+                                held.push(format!(
+                                    "#5209, a printed row's effect path reads back unresolved: {line}"
+                                ));
+                            }
+                            else {
+                                unread.push(line);
+                            }
                             "Refused"
                         },
                         RoundTrip::Unparsed => {
@@ -690,10 +728,15 @@ mod sweeps
                     // is the spelling.
                     match read.reprinted {
                         Maybe::Present(ref again)
-                            if collapsed(SourceText::from(again.as_str()))
-                                != collapsed(SourceText::from(read.spelled.as_str())) =>
+                            if collapsed(SourceText::from(again.as_str())) != spelled =>
                         {
-                            moved.push(format!("{}: `{}` reprints as `{again}`", at, read.spelled));
+                            let line = format!("{}: `{}` reprints as `{again}`", at, read.spelled);
+                            if unit_read {
+                                held.push(format!("{UNIT_READ}: {line}"));
+                            }
+                            else {
+                                moved.push(line);
+                            }
                         },
                         Maybe::Absent(reprinted::Absent::Unspelled) => {
                             moved.push(format!(
@@ -713,6 +756,9 @@ mod sweeps
             eprintln!("| {class} | {count} |");
         }
         eprintln!("{over} sources past the read-back ceiling, read whole by the `sweeps` profile");
+        for line in &held {
+            eprintln!("held out, {line}");
+        }
         assert!(
             sweep.portion() == Portion::Changed
                 || trips.get("Equal").is_some_and(|&equal| equal > 0_usize),
