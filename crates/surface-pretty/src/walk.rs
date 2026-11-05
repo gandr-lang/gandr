@@ -6886,7 +6886,9 @@ impl Walk<'_, '_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one atom piece holding [`Self::variable_leaf`]'s leaf.
+    /// - ensures: one piece: the substituted argument's piece where a static
+    ///   redex substitutes the variable, with its own binding, and otherwise an
+    ///   atom holding [`Self::variable_leaf`]'s leaf.
     /// - provides: the spelling of a bound variable.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -6899,11 +6901,15 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
     #[spec(
-        captures: [entry = self.pieces.len(), fidelity = self.fidelity],
+        captures: [
+            entry = self.pieces.len(),
+            fidelity = self.fidelity,
+            held = self.opened_at(zone, index).and_then(|position| self.substituted.get(&position)).map(|argument| argument.piece.binding),
+        ],
         ensures: |ref ret| (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
             && match *ret {
                 | Ok(()) => entry.checked_add(1_usize) == Some(self.pieces.len())
-                    && self.pieces.last().is_some_and(|piece| piece.binding == Binding::Atom),
+                    && self.pieces.last().is_some_and(|piece| piece.binding == held.unwrap_or(Binding::Atom)),
                 | Err(PresentationError::Build(_)) => self.pieces.len() == entry,
                 | Err(_) => false,
             },
@@ -12740,6 +12746,9 @@ impl Walk<'_, '_>
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
                     Join::Prefix(_) | Join::EffectReturner { .. } | Join::Returns(_) | Join::Lambda | Join::TypedLambda | Join::StaticLambda { .. } | Join::Thunk => Binding::Prefix,
+                    // A box over a domain that classifies codes is written as
+                    // its thunk where it names no binder.
+                    Join::ValueFunction(_, _, Classifies::Codes) if piece.binding == Binding::Prefix => Binding::Prefix,
                     Join::Arrow | Join::Pi | Join::ValueFunction(..) => Binding::Arrow,
                     // A dependent pair naming no binder is the product it
                     // reads as.
@@ -12751,6 +12760,9 @@ impl Walk<'_, '_>
                     Join::Sequence | Join::DiscardedSequence | Join::SequenceAll(_) | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
                     Join::Bracket(bracket) => match bracket.opener(self.surface) { Opener::Parenthesized(_) => Binding::Atom, Opener::Juxtaposed(_) => Binding::Application },
+                    // An application is juxtaposed where an expression reads
+                    // it, and glued, an atom, where a type reads it.
+                    Join::Apply(_) if self.surface != Surface::Expression => Binding::Atom,
                     Join::Apply(_) | Join::Ua(_) | Join::Compose(..) | Join::Fill(..) => Binding::Application,
                     Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::OpenRow { .. } => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
