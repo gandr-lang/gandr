@@ -2227,6 +2227,71 @@ fn a_stuck_fixpoint_compares_its_leading_arguments_626()
 }
 
 #[test]
+fn a_projected_joint_fixpoint_unfolds_at_its_component_s_constructor_3879()
+{
+    // `j = fix self. ⟨λn. case n { Z ⇒ return Z; S(x) ⇒ self.1 x }, λn. case
+    // n { Z ⇒ return S(Z); S(x) ⇒ self.0 x }⟩`, each component staged at its
+    // first binder, `self.i` the projection `Project(i, force self)`. At the
+    // constructor `S(Z)`, `j.0 S(Z)` unfolds through `j.1 Z` to `return S(Z)`;
+    // at a free `n` the projection stands at its gate and converts with no
+    // return.
+    let mut arena = TermArena::new();
+    let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let one = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![zero]);
+    let motive = arena.comp_type_returner(nat);
+    // Under `self, n`, then the successor's field `x`.
+    let component = |arena: &mut TermArena, on_zero: ValueId, other: usize| {
+        let on_zero = arena.computation_return(on_zero);
+        let recursive = arena.value_variable(DeBruijnIndex::from(2_u32));
+        let forced = arena.computation_force(recursive);
+        let projected = arena.computation_project(Component::from(other), forced);
+        let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let call = arena.computation_application(projected, field);
+        let on_successor = arena.computation_lambda(call);
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let cases =
+            arena.computation_data_case(scrutinee, motive, alloc::vec![on_zero, on_successor]);
+        arena.computation_lambda(cases)
+    };
+    let first = component(&mut arena, zero, 1_usize);
+    let second = component(&mut arena, one, 0_usize);
+    let body = arena.computation_with(&[first, second]);
+    let positions = gandr_kernel_term::JointPositions::new(&[
+        gandr_kernel_term::StagedPosition::from(0_usize),
+        gandr_kernel_term::StagedPosition::from(0_usize),
+    ])
+    .expect("two positions fit the claim");
+    let joint = arena.computation_fixpoint(body, FixpointEvidence::Joint { positions });
+    let projected = arena.computation_project(Component::from(0_usize), joint);
+    let at_one = arena.computation_application(projected, one);
+    let returned = arena.computation_return(one);
+    let free = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let stuck = arena.computation_application(projected, free);
+    let none = Unfoldings::default();
+    assert_eq!(
+        convert(
+            &mut arena,
+            &none,
+            ReplaySides::Computations(at_one, returned),
+            ReplayBudget::default()
+        ),
+        KernelVerdict::Convertible,
+        "the projection unfolds at its component's constructor"
+    );
+    assert_ne!(
+        convert(
+            &mut arena,
+            &none,
+            ReplaySides::Computations(stuck, returned),
+            ReplayBudget::default()
+        ),
+        KernelVerdict::Convertible,
+        "the projection stands at its gate on a free argument"
+    );
+}
+
+#[test]
 fn a_staged_fixpoint_unfolds_the_constant_at_its_staged_argument_3387()
 {
     // `k = fix. λa. λb. case b { Z ⇒ return a; S(x) ⇒ k a x }`, staged at its

@@ -4726,7 +4726,9 @@ where
                     // every call the fragment makes returns. A structural one
                     // opens its stage first (`recursion::open_fixpoint`): the
                     // self binder takes the recursed-on parameter below the
-                    // stage and the body takes it at the stage.
+                    // stage and the body takes it at the stage. A joint one at
+                    // a lazy product opens one stage for every component
+                    // (`recursion::open_joint`), each at its own position.
                     Computation::Fixpoint { body, evidence } => {
                         if matches!(evidence, FixpointEvidence::Partial)
                             && judgement.partial == Partiality::Refused
@@ -4738,10 +4740,17 @@ where
                                 actual: comp_type_witness(arena, expected),
                             });
                         }
+                        let result = match judgement.following {
+                            Maybe::Present(fixpoint) if fixpoint == id => {
+                                recursion::ResultStage::Following
+                            },
+                            Maybe::Present(_) | Maybe::Absent(_) => {
+                                recursion::ResultStage::Declared
+                            },
+                        };
                         let position = evidence.descent();
-                        let (own, inside) = match position {
-                            None => (expected, expected),
-                            Some(position) => {
+                        let (own, inside) = match (position, evidence) {
+                            (Some(position), _) => {
                                 root = respect::fold_root(
                                     arena,
                                     judgement.presentations,
@@ -4749,14 +4758,6 @@ where
                                     (expected, position),
                                     body,
                                 );
-                                let result = match judgement.following {
-                                    Maybe::Present(fixpoint) if fixpoint == id => {
-                                        recursion::ResultStage::Following
-                                    },
-                                    Maybe::Present(_) | Maybe::Absent(_) => {
-                                        recursion::ResultStage::Declared
-                                    },
-                                };
                                 let opened = recursion::open_fixpoint(
                                     arena,
                                     &mut stages,
@@ -4767,6 +4768,23 @@ where
                                 frames.push(Frame::StageExit);
                                 (opened.own, opened.inside)
                             },
+                            (None, FixpointEvidence::Joint { positions }) => {
+                                let opened = recursion::open_joint(
+                                    arena,
+                                    &mut stages,
+                                    (expected, positions),
+                                    result,
+                                )?;
+                                staged_bodies = staged_bodies.saturating_add(1);
+                                frames.push(Frame::StageExit);
+                                (opened.own, opened.inside)
+                            },
+                            (
+                                None,
+                                FixpointEvidence::Partial
+                                | FixpointEvidence::StructuralDescent
+                                | FixpointEvidence::Staged { .. },
+                            ) => (expected, expected),
                         };
                         let recursive = arena.value_type_thunk(own);
                         let scoped = weakened(arena, session, inside);

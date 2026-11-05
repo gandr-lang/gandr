@@ -4655,12 +4655,15 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
 /// # Specification
 /// - requires: the cursor is positioned at a fixpoint's evidence byte.
 /// - ensures: on `Ok`, returns the claim the tag named and advances past it; a
-///   staged claim also reads its position, a varint, and advances past it.
+///   staged claim also reads its position, a varint, and a joint claim its
+///   count and each component's position, varints, advancing past them.
 /// - provides: the evidence alphabet's one interpretation site.
 /// - fails: [`DecodeError::Truncated`] at the end of the image, or within a
-///   staged claim's position; [`DecodeError::UnknownTag`] at the evidence site
-///   on any other byte; the varint's refusal for a position past the platform's
-///   width.
+///   claim's positions; [`DecodeError::UnknownTag`] at the evidence site on any
+///   other byte; the varint's refusal for a position past the platform's width;
+///   [`MalformedSite::IndexRange`] for a joint claim past
+///   [`crate::JointPositions::CAPACITY`] components or with a position past
+///   255.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -4669,11 +4672,13 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
 ///   consumed-offset checks.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 /// - witness: `decode::tests::a_staged_claim_reads_its_position`
+/// - witness: `decode::tests::a_joint_claim_reads_its_positions_3879`
 #[spec(
     captures: start = reader.position,
     ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
         match byte {
             Some(2) => reader.position.0 > start.0 && (ret.is_err() || matches!(ret, Ok(crate::FixpointEvidence::Staged { .. }))),
+            Some(3) => reader.position.0 > start.0 && (ret.is_err() || matches!(ret, Ok(crate::FixpointEvidence::Joint { .. }))),
             Some(0) => reader.position.0 == start.0.saturating_add(1) && ret.as_ref() == Ok(&crate::FixpointEvidence::Partial),
             Some(1) => reader.position.0 == start.0.saturating_add(1) && ret.as_ref() == Ok(&crate::FixpointEvidence::StructuralDescent),
             Some(other) => reader.position.0 == start.0.saturating_add(1) && ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::FixpointEvidence, tag: WireTag::from(other) }),
@@ -4690,6 +4695,26 @@ fn decode_evidence(reader: &mut ByteReader<'_>) -> Result<crate::FixpointEvidenc
         tags::FIXPOINT_STAGED => Ok(crate::FixpointEvidence::Staged {
             position: crate::StagedPosition::from(usize::from(reader.read_usize()?)),
         }),
+        tags::FIXPOINT_JOINT => {
+            let count = usize::from(reader.read_usize()?);
+            if count > crate::JointPositions::CAPACITY {
+                return Err(DecodeError::Malformed {
+                    site: MalformedSite::IndexRange,
+                });
+            }
+            let mut positions = [crate::StagedPosition::default(); crate::JointPositions::CAPACITY];
+            for slot in positions.iter_mut().take(count) {
+                *slot = crate::StagedPosition::from(usize::from(reader.read_usize()?));
+            }
+            let positions = positions.get(.. count).ok_or(DecodeError::Malformed {
+                site: MalformedSite::IndexRange,
+            })?;
+            crate::JointPositions::new(positions)
+                .map(|positions| crate::FixpointEvidence::Joint { positions })
+                .ok_or(DecodeError::Malformed {
+                    site: MalformedSite::IndexRange,
+                })
+        },
         other => Err(DecodeError::UnknownTag {
             site: TagSite::FixpointEvidence,
             tag: other,
@@ -5203,6 +5228,13 @@ mod tests
                     }),
                     2,
                 ),
+                // A joint claim of 0x55 components is past the claim's width.
+                3 => (
+                    Err(DecodeError::Malformed {
+                        site: crate::MalformedSite::IndexRange,
+                    }),
+                    2,
+                ),
                 _ => (Err(unknown(super::TagSite::FixpointEvidence)), 1),
             };
             assert_eq!(super::decode_evidence(&mut reader), evidence);
@@ -5311,6 +5343,50 @@ mod tests
                 "a staged claim cut after {cut} bytes"
             );
         }
+    }
+
+    #[test]
+    fn a_joint_claim_reads_its_positions_3879()
+    {
+        let bytes = [3_u8, 2, 0, 0x81, 1];
+        let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+        let positions = crate::JointPositions::new(&[
+            crate::StagedPosition::from(0_usize),
+            crate::StagedPosition::from(129_usize),
+        ])
+        .expect("two positions below 256 fit the claim");
+        assert_eq!(
+            super::decode_evidence(&mut reader),
+            Ok(crate::FixpointEvidence::Joint { positions })
+        );
+        assert_eq!(
+            reader.position.0, 5,
+            "the count and both positions are consumed"
+        );
+        for cut in 1_usize .. 5 {
+            let image = ArtifactImage::from(bytes.get(.. cut).expect("a prefix"));
+            assert_eq!(
+                super::decode_evidence(&mut ByteReader::new(image)),
+                Err(DecodeError::Truncated),
+                "a joint claim cut after {cut} bytes"
+            );
+        }
+        let wide = [3_u8, 1, 0x80, 2];
+        assert_eq!(
+            super::decode_evidence(&mut ByteReader::new(ArtifactImage::from(wide.as_slice()))),
+            Err(DecodeError::Malformed {
+                site: crate::MalformedSite::IndexRange,
+            }),
+            "a position of 256 is past the claim's width"
+        );
+        let many = [3_u8, 15];
+        assert_eq!(
+            super::decode_evidence(&mut ByteReader::new(ArtifactImage::from(many.as_slice()))),
+            Err(DecodeError::Malformed {
+                site: crate::MalformedSite::IndexRange,
+            }),
+            "fifteen components are past the claim's capacity"
+        );
     }
 
     #[test]

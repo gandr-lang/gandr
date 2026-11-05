@@ -1398,7 +1398,11 @@ fn a_stage_refusal_round_trips_with_where_it_stood()
 fn fixpoint_evidence_round_trips_with_its_staged_position()
 {
     use gandr_kernel_term::FixpointEvidence;
+    use gandr_kernel_term::JointPositions;
     use gandr_kernel_term::StagedPosition;
+    let positions =
+        JointPositions::new(&[StagedPosition::from(0_usize), StagedPosition::from(2_usize)])
+            .expect("two positions fit the claim");
     for (evidence, expected) in [
         (FixpointEvidence::Partial, vec![0_u8]),
         (FixpointEvidence::StructuralDescent, vec![1]),
@@ -1408,6 +1412,9 @@ fn fixpoint_evidence_round_trips_with_its_staged_position()
             },
             vec![2, 3, 0, 0, 0, 0, 0, 0, 0],
         ),
+        (FixpointEvidence::Joint { positions }, vec![
+            3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0,
+        ]),
     ] {
         let mut bytes = CheckpointBytes::default();
         super::write_evidence(&mut Writer { sink: &mut bytes }, evidence)
@@ -1420,11 +1427,20 @@ fn fixpoint_evidence_round_trips_with_its_staged_position()
         assert_eq!(super::read_evidence(&mut reader), Ok(evidence));
         assert_eq!(reader.finish(), Ok(()));
     }
-    let mut past = Reader {
-        bytes: &[3],
-        cursor: 0,
-    };
-    assert_eq!(super::read_evidence(&mut past), Err(CodecError::Corrupt));
+    for corrupt in [&[4_u8][..], &[3], &[3, 15, 0, 0, 0, 0, 0, 0, 0], &[
+        3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+    ]] {
+        let mut past = Reader {
+            bytes: corrupt,
+            cursor: 0,
+        };
+        assert_eq!(
+            super::read_evidence(&mut past),
+            Err(CodecError::Corrupt),
+            "{corrupt:?}: a tag past 3, a short joint claim, fifteen components or a position \
+             of 256"
+        );
+    }
 }
 
 #[test]

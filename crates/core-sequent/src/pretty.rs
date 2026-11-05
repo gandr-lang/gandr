@@ -749,6 +749,14 @@ fn producer(
                     "[<{}]{{x; force(α) ⇒ ",
                     usize::from(position)
                 )),
+                FixpointEvidence::Joint { positions } => Piece::Owned(alloc::format!(
+                    "[<{}]{{x; force(α) ⇒ ",
+                    positions
+                        .iter()
+                        .map(|position| alloc::format!("{}", usize::from(position)))
+                        .collect::<alloc::vec::Vec<_>>()
+                        .join(",")
+                )),
             },
             Piece::Command(body, depth),
             text!("}"),

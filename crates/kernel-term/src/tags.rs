@@ -499,6 +499,9 @@ pub const FIXPOINT_STRUCTURAL_DESCENT: WireTag = WireTag(1);
 /// Fixpoint evidence: structural recursion on the parameter at a position,
 /// the position following as a varint.
 pub const FIXPOINT_STAGED: WireTag = WireTag(2);
+/// Fixpoint evidence: a joint fixpoint's structural recursion, the count of
+/// its components and each component's position following as varints.
+pub const FIXPOINT_JOINT: WireTag = WireTag(3);
 
 /// Literal kind: an integer literal.
 pub const LITERAL_INTEGER: WireTag = WireTag(0);

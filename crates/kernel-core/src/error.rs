@@ -761,6 +761,13 @@ pub enum KernelError
         /// The fixpoint's type.
         actual: CompTypeWitness,
     },
+    /// A joint fixpoint's claim names another count of components than the
+    /// lazy product it checks at, so some component would recurse unstaged.
+    JointClaimArity
+    {
+        /// The fixpoint's type.
+        actual: CompTypeWitness,
+    },
     /// A level variable's index reached or exceeded the declaration's prenex
     /// parameter count.
     LevelVariableOutOfScope
@@ -1037,6 +1044,10 @@ impl core::fmt::Display for KernelError
             Self::PartialFixpoint { .. } => {
                 f.write_str("a fixpoint without termination evidence recurses at a returner")
             },
+            Self::JointClaimArity { .. } => f.write_str(
+                "a joint fixpoint's claim named another count of components than its lazy \
+                 product",
+            ),
             Self::LevelVariableOutOfScope { .. } => {
                 f.write_str("a level variable escaped the declaration's prenex parameters")
             },
@@ -1246,6 +1257,9 @@ mod tests
                 actual: unit_returner,
             },
             KernelError::PartialFixpoint {
+                actual: unit_returner,
+            },
+            KernelError::JointClaimArity {
                 actual: unit_returner,
             },
             KernelError::LevelVariableOutOfScope { variable },

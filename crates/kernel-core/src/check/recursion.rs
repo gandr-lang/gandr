@@ -6,7 +6,9 @@
 //!
 //! - **A fixpoint opens a stage.** [`open_fixpoint`] mints a root `ι` for the
 //!   parameter at the fixpoint's staged position: the body checks with that
-//!   parameter at `A^ι`, the self binder with it at `A^{<ι}`.
+//!   parameter at `A^ι`, the self binder with it at `A^{<ι}`. [`open_joint`]
+//!   mints one root for a joint fixpoint at a lazy product, a mutual block's
+//!   members, and opens each component at its own position under it.
 //! - **A case opens one stage below its scrutinee's.** [`open_case`] mints one
 //!   child of a scrutinee's stage, after naming a bound by fresh stages, and
 //!   [`stage_branch`] binds each field at it through [`stage_field`], which
@@ -59,6 +61,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldPosition;
+use gandr_kernel_term::JointPositions;
 use gandr_kernel_term::Stage;
 use gandr_kernel_term::StageId;
 use gandr_kernel_term::StagedPosition;
@@ -237,6 +240,86 @@ pub(super) fn open_fixpoint(
     result: ResultStage,
 ) -> Result<Opened, KernelError>
 {
+    let root = stages.mint_root();
+    open_at(arena, root, (expected, position), result)
+}
+
+/// Open the stage of a joint fixpoint checked at `expected`, a lazy product
+/// whose component at each index recurses on the parameter at that index of
+/// `positions`.
+///
+/// # Specification
+/// - requires: `expected` is formed.
+/// - ensures: one root stage `ι` minted, and each component opened at `ι` as
+///   [`open_fixpoint`] opens a lone fixpoint's type at its position; the body's
+///   type the lazy product of the components' insides, and the self binder's
+///   the lazy product of their owns. A self-reference `Project(i, force self)`
+///   so takes its argument at component `i`'s position below the one stage,
+///   whichever component it stands in.
+/// - fails: [`KernelError::ComputationShapeMismatch`] wanting a lazy product
+///   when `expected` is no lazy product; [`KernelError::JointClaimArity`] when
+///   `positions` names another count of components; as [`open_fixpoint`] for a
+///   component whose telescope ends before its position.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`, and [`KernelError::ArenaFault`] for an unreadable type.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the joint of a rose tree's two recursions is admitted, a
+///   component calling its sibling at its own parameter is refused, and a claim
+///   of one position at a lazy product of two is refused.
+/// - witness: `tests::recursive_data::a_joint_recursion_descends_through_each_component_3879`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |opened| arena.comp_type(opened.own).is_some() && arena.comp_type(opened.inside).is_some()))]
+pub(super) fn open_joint(
+    arena: &mut TermArena,
+    stages: &mut StageOrder,
+    (expected, positions): (CompTypeId, JointPositions),
+    result: ResultStage,
+) -> Result<Opened, KernelError>
+{
+    let components = match arena.comp_type(expected) {
+        Some(&CompType::With(ref components)) => components.clone(),
+        Some(_) => {
+            return Err(super::comp_shape_mismatch(
+                arena,
+                ExpectedComputationShape::With,
+                expected,
+            ));
+        },
+        None => return Err(KernelError::ArenaFault),
+    };
+    if components.len() != positions.iter().count() {
+        return Err(KernelError::JointClaimArity {
+            actual: super::comp_type_witness(arena, expected),
+        });
+    }
+    let root = stages.mint_root();
+    let mut own = Vec::with_capacity(components.len());
+    let mut inside = Vec::with_capacity(components.len());
+    for (&component, position) in components.iter().zip(positions.iter()) {
+        let opened = open_at(arena, root, (component, position), result)?;
+        own.push(opened.own);
+        inside.push(opened.inside);
+    }
+    Ok(Opened {
+        own: arena.comp_type_with(&own),
+        inside: arena.comp_type_with(&inside),
+    })
+}
+
+/// Open `expected` at the stage `root`, recursing on the parameter at
+/// `position`, as [`open_fixpoint`] states for its own root.
+///
+/// # Specification
+/// trivial.
+fn open_at(
+    arena: &mut TermArena,
+    root: StageId,
+    (expected, position): (CompTypeId, StagedPosition),
+    result: ResultStage,
+) -> Result<Opened, KernelError>
+{
     // The telescope down to the recursed-on arrow, outermost first: each
     // domain, and whether its codomain is under its binder.
     let mut spine: Vec<(ValueTypeId, Dependence)> = Vec::new();
@@ -266,7 +349,6 @@ pub(super) fn open_fixpoint(
         spine.push((domain, dependence));
         cursor = codomain;
     };
-    let root = stages.mint_root();
     // A result under the recursed-on parameter's binder is read as declared.
     let (inside_codomain, own_codomain) = match (result, dependence) {
         (ResultStage::Following, Dependence::Ambient) => (
