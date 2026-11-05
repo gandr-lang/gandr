@@ -6,9 +6,10 @@
 //! finite DAG of nodes, and each node has one of three [`Sort`]s. A
 //! [`Real`] node denotes a real number: a bound variable, a dyadic constant,
 //! an arithmetic operation or a cut. An [`Open`] node denotes an open
-//! proposition, a semidecision: the two constants, a strict comparison, a
-//! finite meet or join, or a bounded quantifier. A [`Domain`] node denotes a
-//! bounded set that a quantifier ranges over. Every later stage reads the
+//! proposition, a semidecision: the two constants, a strict comparison, the
+//! lower or the upper cut of a cut at a real, a finite meet or join, or a
+//! bounded quantifier. A [`Domain`] node denotes a bounded set that a
+//! quantifier ranges over. Every later stage reads the
 //! plan: validation, approximation, the refinement machine and the
 //! certificate checker.
 //!
@@ -388,6 +389,12 @@ pub enum Open
     Bottom,
     /// The first real lies strictly below the second.
     Less(RealId, RealId),
+    /// The second real lies in the lower cut of the first, a cut, so it lies
+    /// strictly below the cut's value.
+    LowerCut(RealId, RealId),
+    /// The second real lies in the upper cut of the first, a cut, so it lies
+    /// strictly above the cut's value.
+    UpperCut(RealId, RealId),
     /// Both hold: a finite meet.
     Meet(OpenId, OpenId),
     /// One holds: a finite join.
@@ -650,7 +657,9 @@ impl Node
             Self::Real(
                 Real::Add(left, right) | Real::Sub(left, right) | Real::Mul(left, right),
             )
-            | Self::Open(Open::Less(left, right)) => ([real(left), real(right), none], 2),
+            | Self::Open(
+                Open::Less(left, right) | Open::LowerCut(left, right) | Open::UpperCut(left, right),
+            ) => ([real(left), real(right), none], 2),
             Self::Real(Real::Div {
                 numerator,
                 denominator,
@@ -746,6 +755,12 @@ impl Node
                 Open::Top | Open::Bottom => node,
                 Open::Less(left, right) => {
                     Open::Less(RealId(place(left.0)?), RealId(place(right.0)?))
+                },
+                Open::LowerCut(cut, point) => {
+                    Open::LowerCut(RealId(place(cut.0)?), RealId(place(point.0)?))
+                },
+                Open::UpperCut(cut, point) => {
+                    Open::UpperCut(RealId(place(cut.0)?), RealId(place(point.0)?))
                 },
                 Open::Meet(left, right) => {
                     Open::Meet(OpenId(place(left.0)?), OpenId(place(right.0)?))
@@ -1131,6 +1146,55 @@ impl PlanBuilder
         root: Root,
     ) -> Result<Plan, PlanError>
     {
+        return self.canonical(root).map(|(plan, _visits)| plan);
+    }
+
+    /// The plan of the nodes that `root` reaches, in canonical form, as
+    /// [`Self::finish`] gives it, and the position in it of each node of the
+    /// builder.
+    ///
+    /// # Specification
+    /// - ensures: the plan that [`Self::finish`] gives. The place at index `i`
+    ///   is the plan's position of the builder's node at `i`, or `None` when
+    ///   the root does not reach it.
+    /// - fails: as [`Self::finish`].
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk.
+    ///
+    /// # Errors
+    /// - [`PlanError::UnknownNode`]: `root` names no node.
+    /// - [`PlanError::WrongSort`]: `root` names a node of the other sort.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every comparison of the generated plans that the
+    ///   elimination rewrites keeps its place in the rewritten plan.
+    /// - witness: `tests::elimination::generated_plans_answer_alike_after_the_elimination`
+    pub(crate) fn finish_placed(
+        self,
+        root: Root,
+    ) -> Result<(Plan, Vec<Option<NodeId>>), PlanError>
+    {
+        let (plan, visits) = self.canonical(root)?;
+        let places = visits
+            .into_iter()
+            .map(|visit| match visit {
+                Visit::Placed(position) => Some(position),
+                Visit::Pending => None,
+            })
+            .collect();
+        return Ok((plan, places));
+    }
+
+    /// The canonical walk of [`Self::finish`], and the visit of each node of
+    /// the builder.
+    ///
+    /// # Specification
+    /// trivial.
+    fn canonical(
+        self,
+        root: Root,
+    ) -> Result<(Plan, Vec<Visit>), PlanError>
+    {
         if self.sort_of(root.node())? != root.sort() {
             return Err(PlanError::WrongSort);
         }
@@ -1192,10 +1256,13 @@ impl PlanBuilder
             Root::Real(_) => Root::Real(RealId(last)),
             Root::Open(_) => Root::Open(OpenId(last)),
         };
-        return Ok(Plan {
-            nodes: placed,
-            root,
-        });
+        return Ok((
+            Plan {
+                nodes: placed,
+                root,
+            },
+            visits,
+        ));
     }
 }
 

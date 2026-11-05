@@ -53,6 +53,7 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `square_root`, `square_root_of_two`, `radicand` and `refine`: the registered cut schema, its recognition, and its refinement to a power of two with a certificate.
 - `Obligation`, `Outcome` and `Dovetail`: the refinement machine's obligations, their five outcomes, and the scheduler that runs them in bounded quanta within a budget. `Dovetail::resume` reads its checkpoint back. The `semidecision`, `dovetail` and `bisection` module documentation states each.
 - `Cache`, `CacheBound`, `Lookup`, `CacheRefusal` and `CacheTally`: the checked-result cache that `Dovetail::consult` reads and `Dovetail::record` fills. The `cache` module documentation states its key.
+- `eliminate`, `Elimination`: cut elimination. The `elimination` module tables the rewrite.
 
 ## Expected features
 
