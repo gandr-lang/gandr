@@ -876,6 +876,7 @@ path = "crates/theory-deep-inference"
 # features:
 # - none: alloc-only graph machinery.
 # consumers:
+# - surface-diagnostics (dev)
 # - theory-decomposition-spaces (dev)
 [workspace.dependencies.gandr-theory-dynamic-graphs]
 path = "crates/theory-dynamic-graphs"
@@ -897,6 +898,7 @@ path = "crates/theory-exact-reals"
 # - surface-dispatcher
 # - surface-format
 # - surface-parser
+# - surface-diagnostics (dev)
 # - theory-decomposition-spaces
 # - theory-dynamic-graphs
 [workspace.dependencies.gandr-theory-graphs]

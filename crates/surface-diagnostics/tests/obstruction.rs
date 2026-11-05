@@ -1,4 +1,4 @@
-//! The potential maintenance's verdicts read as tropical gluing.
+//! The level solver's refusal on the diagnostics model's obstruction shape.
 //!
 //! A system of constraints `value(target) >= value(source) + offset` asks for
 //! one value at each node that meets every constraint. The constraint graph is
@@ -9,17 +9,20 @@
 //! constraint is a global section.
 //!
 //! A cycle whose max-plus weight is above zero is the obstruction to a global
-//! section, because along it a value must exceed itself. The maintenance
-//! refuses an offer with such a cycle as its witness. The witness names the
-//! cells of the cycle and not their offsets. Thus the weight comes from the
-//! constraints that the caller holds.
+//! section, because along it a value must exceed itself. The potential
+//! maintenance refuses an offer with such a cycle as its witness. The witness
+//! names the cells of the cycle and not their offsets. Thus the weight comes
+//! from the constraints that the caller holds.
 //!
 //! [`glued`] maps each verdict into this reading. An admission maps to a
-//! section. A refusal maps to an obstruction, which borrows the cycle of the
-//! refusal and copies nothing. The three-offer differential of the standing
-//! suite reads every verdict through this map.
+//! section. A refusal fills the model's [`Obstruction`]: its cells are the
+//! refused cycle, borrowed, and its witness is the cycle's weight. A parting
+//! pair of completion fills the same shape, so one shape serves two analyses.
+//! No checker path runs the potential maintenance, so this suite holds the
+//! filling.
 
 use anodized::spec;
+use gandr_surface_diagnostics::Obstruction;
 use gandr_theory_dynamic_graphs::ConstraintVerdict;
 use gandr_theory_dynamic_graphs::Offset;
 use gandr_theory_dynamic_graphs::PotentialMaintenance;
@@ -39,17 +42,9 @@ impl Weight
     pub const UNIT: Self = Self(0);
 }
 
-/// An obstruction to a global section: the cells it lives on, and its witness
-/// in the coefficients.
-#[derive(Debug)]
-pub struct Obstruction<'verdict>
-{
-    /// The cycle of the refusal. Its nodes are cells of dimension zero, and
-    /// its edges are cells of dimension one.
-    pub cells: &'verdict CycleWitness,
-    /// The max-plus weight of the cycle.
-    pub weight: Weight,
-}
+/// The level solver's obstruction: the refused cycle as its cells, and the
+/// cycle's max-plus weight as its witness.
+pub type PositiveCycle<'verdict> = Obstruction<&'verdict CycleWitness, Weight>;
 
 /// The gluing reading of one verdict.
 #[derive(Debug)]
@@ -58,7 +53,7 @@ pub enum Gluing<'verdict>
     /// The constraints glue, and the standing valuation is a global section.
     Section,
     /// The offer closes a cycle, and no global section exists.
-    Obstructed(Obstruction<'verdict>),
+    Obstructed(PositiveCycle<'verdict>),
 }
 
 /// The gluing reading of `verdict` over the constraints `held`.
@@ -75,11 +70,11 @@ pub enum Gluing<'verdict>
 ///   copies nothing of the cycle.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the three-offer differential checks each obstruction
-///   against an independent relaxation, and each section against every admitted
-///   constraint. L3 — two parallel constraints decide the weight by their
-///   maximum, so a weight read by the minimum is not above zero there.
-/// - witness: `tests::standing::three_offer_systems_agree_with_independent_relaxation`
+/// - hypothesis: L2 — every refusal of every three-offer system fills the shape
+///   with its own cycle and a weight above zero, and every admission reads as a
+///   section. L3 — two parallel constraints decide the weight by their maximum,
+///   so a weight read by the minimum is not above zero there.
+/// - witness: `tests::obstruction::every_three_offer_refusal_fills_the_shape_with_its_cycle`
 /// - witness: `tests::obstruction::parallel_constraints_weigh_by_their_maximum`
 #[spec(ensures: |output| match *verdict {
     ConstraintVerdict::Satisfied | ConstraintVerdict::SatisfiedAfterRaise => matches!(output, Gluing::Section),
@@ -110,7 +105,7 @@ pub fn glued<'verdict>(
             }
             Gluing::Obstructed(Obstruction {
                 cells: cycle,
-                weight,
+                witness: weight,
             })
         },
     }
@@ -133,7 +128,7 @@ fn parallel_constraints_weigh_by_their_maximum()
             .expect("small offsets fit");
         if let Gluing::Obstructed(obstruction) = glued(&verdict, &held) {
             assert_eq!(
-                obstruction.weight,
+                obstruction.witness,
                 Weight(1),
                 "the cycle reads the greater of the two parallel offsets"
             );
@@ -141,4 +136,63 @@ fn parallel_constraints_weigh_by_their_maximum()
         }
     }
     panic!("the third offer closes a cycle of weight one")
+}
+
+#[test]
+fn every_three_offer_refusal_fills_the_shape_with_its_cycle()
+{
+    let nodes = [0_u32, 1, 2].map(NodeId::from);
+    let mut catalog = Vec::new();
+    for source in nodes {
+        for target in nodes {
+            for offset in [-1_i64, 0, 1] {
+                catalog.push((EdgeId::new(source, target), Offset::from(offset)));
+            }
+        }
+    }
+    let mut admitted = Vec::with_capacity(3);
+    for &first in &catalog {
+        for &second in &catalog {
+            for &third in &catalog {
+                let mut system = PotentialMaintenance::new();
+                system
+                    .insert_constraint(EdgeId::new(nodes[2], nodes[2]), Offset::from(0_i64))
+                    .expect("create the complete fixture domain");
+                admitted.clear();
+                for offer in [first, second, third] {
+                    admitted.push(offer);
+                    let verdict = system
+                        .insert_constraint(offer.0, offer.1)
+                        .expect("bounded fixture values fit");
+                    match (&verdict, glued(&verdict, &admitted)) {
+                        (
+                            &ConstraintVerdict::Refuted(ref cycle),
+                            Gluing::Obstructed(obstruction),
+                        ) => {
+                            assert!(
+                                core::ptr::eq(
+                                    core::ptr::from_ref(obstruction.cells),
+                                    core::ptr::from_ref(cycle)
+                                ),
+                                "{admitted:?}: the shape borrows the refusal's own cycle"
+                            );
+                            assert!(
+                                obstruction.witness > Weight::UNIT,
+                                "{admitted:?}: {cycle:?} weighs above zero"
+                            );
+                            admitted.pop();
+                        },
+                        (
+                            &(ConstraintVerdict::Satisfied
+                            | ConstraintVerdict::SatisfiedAfterRaise),
+                            Gluing::Section,
+                        ) => {},
+                        (_, gluing) => {
+                            panic!("{admitted:?}: {verdict:?} reads as {gluing:?}")
+                        },
+                    }
+                }
+            }
+        }
+    }
 }

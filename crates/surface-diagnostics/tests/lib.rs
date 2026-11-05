@@ -5,3 +5,5 @@ extern crate alloc;
 
 #[cfg(test)]
 mod diagnostics;
+#[cfg(test)]
+mod obstruction;

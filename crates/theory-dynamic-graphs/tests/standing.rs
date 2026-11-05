@@ -19,10 +19,6 @@ use gandr_theory_graphs::NodeId;
 use gandr_theory_order_maintenance::OrderError;
 use quenchant_shape::shape::Maybe;
 
-use crate::obstruction::Gluing;
-use crate::obstruction::Weight;
-use crate::obstruction::glued;
-
 /// Construct a fixture edge.
 ///
 /// # Specification
@@ -207,18 +203,12 @@ fn three_offer_systems_agree_with_independent_relaxation()
                     let actual = system
                         .insert_constraint(offer.0, offer.1)
                         .expect("bounded fixture values fit");
-                    let gluing = glued(&actual, &admitted);
                     assert_eq!(
-                        matches!(gluing, Gluing::Obstructed(_)),
+                        matches!(actual, ConstraintVerdict::Refuted(_)),
                         expected == BatchVerdict::PositiveCycle,
                         "{admitted:?}"
                     );
-                    if let Gluing::Obstructed(obstruction) = gluing {
-                        let cycle = obstruction.cells;
-                        assert!(
-                            matches!(actual, ConstraintVerdict::Refuted(ref refused) if refused == cycle),
-                            "the obstruction carries the refusal's own cycle"
-                        );
+                    if let ConstraintVerdict::Refuted(ref cycle) = actual {
                         assert_eq!(cycle.nodes.first(), cycle.nodes.last());
                         assert!(cycle.edges.contains(&offer.0));
                         assert!(
@@ -229,7 +219,6 @@ fn three_offer_systems_agree_with_independent_relaxation()
                                 .eq(cycle.edges.iter().copied()),
                             "the cycle's edges follow its walk"
                         );
-                        assert!(obstruction.weight > Weight::UNIT, "{admitted:?}: {cycle:?}");
                         assert_eq!(nodes.map(|node| system.value(node)), before);
                         admitted.pop();
                     }
