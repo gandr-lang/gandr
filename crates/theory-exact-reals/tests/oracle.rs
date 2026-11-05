@@ -2,14 +2,14 @@
 //! against a slow exact-rational oracle.
 //!
 //! The oracle holds a value as a reduced fraction of two integers on the
-//! carrier. It adds, subtracts and multiplies by cross multiplication, and it
-//! compares by cross multiplication. It rounds a value to `p` significant
-//! bits by finding the power of two `2^k` above the value and taking the
-//! floor or the ceiling of the value over `2^(k - p)`. It shares no code with
-//! the crate: no alignment, no inline path, no sticky operand and no sign
-//! table. A mutant that moves the sticky position, swaps a rounding
-//! direction, pairs the wrong interval endpoints or misreads a closure
-//! disagrees with it on generated operands.
+//! carrier. It adds, subtracts, multiplies and divides by cross
+//! multiplication, and it compares by cross multiplication. It rounds a value
+//! to `p` significant bits by finding the power of two `2^k` above the value
+//! and taking the floor or the ceiling of the value over `2^(k - p)`. It
+//! shares no code with the crate: no alignment, no inline path, no sticky
+//! operand and no sign table. A mutant that moves the sticky position, swaps
+//! a rounding direction, pairs the wrong interval endpoints or misreads a
+//! closure disagrees with it on generated operands.
 
 use core::cmp::Ordering;
 use core::ops::Add as _;
@@ -25,6 +25,7 @@ use gandr_theory_exact_reals::Bound;
 use gandr_theory_exact_reals::Closure;
 use gandr_theory_exact_reals::Containment;
 use gandr_theory_exact_reals::Dyadic;
+use gandr_theory_exact_reals::DyadicError;
 use gandr_theory_exact_reals::Endpoint;
 use gandr_theory_exact_reals::Exactness;
 use gandr_theory_exact_reals::Exponent;
@@ -37,13 +38,14 @@ use proptest::prelude::ProptestConfig;
 use proptest::prelude::Strategy;
 use proptest::prelude::any;
 use proptest::prop_assert_eq;
+use proptest::prop_assume;
 use proptest::prop_oneof;
 use proptest::proptest;
 use proptest::strategy::Just;
 
 /// An exact rational: the denominator positive, the pair reduced.
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct Rational
+pub struct Rational
 {
     /// The numerator.
     numerator: BigInt,
@@ -103,7 +105,7 @@ impl Rational
     ///
     /// # Specification
     /// trivial.
-    fn of(value: &Dyadic) -> Self
+    pub fn of(value: &Dyadic) -> Self
     {
         return Self::scaled(value.mantissa(), value.exponent());
     }
@@ -129,7 +131,7 @@ impl Rational
     ///
     /// # Specification
     /// trivial.
-    fn plus(
+    pub fn plus(
         &self,
         other: &Self,
     ) -> Self
@@ -144,7 +146,7 @@ impl Rational
     ///
     /// # Specification
     /// trivial.
-    fn minus(
+    pub fn minus(
         &self,
         other: &Self,
     ) -> Self
@@ -159,7 +161,7 @@ impl Rational
     ///
     /// # Specification
     /// trivial.
-    fn times(
+    pub fn times(
         &self,
         other: &Self,
     ) -> Self
@@ -170,11 +172,70 @@ impl Rational
         );
     }
 
+    /// The exact quotient.
+    ///
+    /// # Specification
+    /// - ensures: returns `self / other`.
+    /// - fails: returns [`DyadicError::DivisionByZero`] when `other` is zero.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`DyadicError::DivisionByZero`]: the divisor is zero.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the oracle of every quotient.
+    /// - witness: `tests::oracle::quotient_is_the_directed_neighbour`
+    #[spec(ensures: |ref result| result.is_ok() == (other.numerator != BigInt::ZERO))]
+    pub fn quotient(
+        &self,
+        other: &Self,
+    ) -> Result<Self, DyadicError>
+    {
+        if other.numerator == BigInt::ZERO {
+            return Err(DyadicError::DivisionByZero);
+        }
+        return Ok(Self::reduced(
+            (&self.numerator).mul(&other.denominator),
+            (&self.denominator).mul(&other.numerator),
+        ));
+    }
+
+    /// Whether the interval holds the value, read at each closure.
+    ///
+    /// # Specification
+    /// - requires: the interval is proper.
+    /// - ensures: returns [`Containment::Contains`] exactly when the value lies
+    ///   strictly inside or on a closed endpoint.
+    /// - panics: none.
+    /// - executable: none — the clause restates the comparison.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every enclosure of a quotient or a plan node.
+    /// - witness: `tests::oracle::interval_quotient_encloses_every_quotient`
+    pub fn within(
+        &self,
+        interval: &NumericInterval,
+    ) -> Containment
+    {
+        let side = |bound: &Bound, inside: Ordering| match bound.endpoint {
+            Endpoint::NegInf => inside == Ordering::Less,
+            Endpoint::PosInf => inside == Ordering::Greater,
+            Endpoint::Finite(ref value) => match Self::of(value).order(self) {
+                Ordering::Equal => bound.closure == Closure::Closed,
+                order @ (Ordering::Less | Ordering::Greater) => order == inside,
+            },
+        };
+        if side(interval.lower(), Ordering::Less) && side(interval.upper(), Ordering::Greater) {
+            return Containment::Contains;
+        }
+        return Containment::Excludes;
+    }
+
     /// The exact order, by cross multiplication.
     ///
     /// # Specification
     /// trivial.
-    fn order(
+    pub fn order(
         &self,
         other: &Self,
     ) -> Ordering
@@ -554,6 +615,74 @@ fn interval() -> impl Strategy<Value = NumericInterval>
         );
 }
 
+/// Generated divisors: proper intervals on either side of zero that exclude
+/// it, with closed or open finite endpoints, an open zero endpoint, or an
+/// infinite endpoint.
+///
+/// # Specification
+/// - ensures: every generated interval is admitted and excludes zero.
+/// - panics: none.
+/// - executable: none — a strategy is opaque to the attribute backend.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the generator feeds the interval quotient property.
+/// - witness: `tests::oracle::interval_quotient_encloses_every_quotient`
+fn divisor() -> impl Strategy<Value = NumericInterval>
+{
+    let positive = (
+        proptest::collection::vec(any::<u8>(), 1 ..= 3),
+        -8_i32 ..= 8_i32,
+    )
+        .prop_map(|(mut bytes, exponent)| {
+            // An odd low byte keeps the magnitude above zero.
+            bytes[0] |= 1;
+            let magnitude = BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes);
+            Dyadic::new(magnitude, Exponent::from(exponent)).unwrap()
+        });
+    let closure = prop_oneof![Just(Closure::Closed), Just(Closure::Open)];
+    let shape = (any::<bool>(), any::<bool>(), any::<bool>());
+    return (positive.clone(), positive, closure.clone(), closure, shape).prop_map(
+        |(first, second, lower_closure, upper_closure, (zero_lower, infinite_upper, negative))| {
+            let (low, high) = if first <= second {
+                (first, second)
+            }
+            else {
+                (second, first)
+            };
+            let (lower_closure, upper_closure) = if low == high {
+                (Closure::Closed, Closure::Closed)
+            }
+            else {
+                (lower_closure, upper_closure)
+            };
+            let lower = if zero_lower {
+                Bound::open(Endpoint::Finite(Dyadic::ZERO))
+            }
+            else {
+                Bound::new(Endpoint::Finite(low), lower_closure)
+            };
+            let upper = if infinite_upper {
+                Bound::open(Endpoint::PosInf)
+            }
+            else {
+                Bound::new(Endpoint::Finite(high), upper_closure)
+            };
+            if !negative {
+                return NumericInterval::new(lower, upper, Orientation::Proper).unwrap();
+            }
+            let negated = |bound: Bound| {
+                let endpoint = match bound.endpoint {
+                    Endpoint::NegInf => Endpoint::PosInf,
+                    Endpoint::Finite(ref value) => Endpoint::Finite(value.neg()),
+                    Endpoint::PosInf => Endpoint::NegInf,
+                };
+                Bound::new(endpoint, bound.closure)
+            };
+            NumericInterval::new(negated(upper), negated(lower), Orientation::Proper).unwrap()
+        },
+    );
+}
+
 /// Points of an interval to sample: each closed finite endpoint and the
 /// midpoint of finite endpoints, or a point beside a single finite endpoint.
 ///
@@ -759,6 +888,33 @@ proptest! {
             for y in samples(&right) {
                 let exact = x.mul(&y, Precision::MAX, Rounding::Floor).unwrap().into_value();
                 prop_assert_eq!(product.contains(&exact), Containment::Contains);
+            }
+        }
+    }
+
+    /// A quotient is the oracle's directed neighbour, and a product divided
+    /// by its factor rounds as the other factor does.
+    #[test]
+    fn quotient_is_the_directed_neighbour(left in dyadic(), right in dyadic(), precision in precision(), rounding in rounding()) {
+        prop_assume!(right != Dyadic::ZERO);
+        let quotient = left.div(&right, precision, rounding).unwrap();
+        let exact = Rational::of(&left).quotient(&Rational::of(&right)).unwrap();
+        prop_assert_eq!(Rational::of(quotient.value()), exact.rounded(precision, rounding));
+        prop_assert_eq!(quotient.exactness() == Exactness::Exact, Rational::of(quotient.value()) == exact);
+        let product = left.mul(&right, Precision::MAX, Rounding::Floor).unwrap().into_value();
+        let back = product.div(&right, precision, rounding).unwrap();
+        prop_assert_eq!(back, left.round(precision, rounding).unwrap());
+    }
+
+    /// An interval quotient contains the quotient of every sampled pair.
+    #[test]
+    fn interval_quotient_encloses_every_quotient(left in interval(), right in divisor(), precision in precision()) {
+        let quotient = left.div(&right, precision).unwrap();
+        prop_assert_eq!(quotient.orientation(), Orientation::Proper);
+        for x in samples(&left) {
+            for y in samples(&right) {
+                let exact = Rational::of(&x).quotient(&Rational::of(&y)).unwrap();
+                prop_assert_eq!(exact.within(&quotient), Containment::Contains);
             }
         }
     }

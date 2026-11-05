@@ -13,6 +13,7 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - [Intervals](#intervals)
 - [Plans and their bytes](#plans-and-their-bytes)
 - [Validation](#validation)
+- [Dual approximation](#dual-approximation)
 - [Measurement](#measurement)
 - [License](#license)
 
@@ -20,9 +21,9 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 
 ## Synopsis
 
-**What.** `Dyadic` holds a number `m · 2^e` in one canonical form. `NumericInterval` holds two bounds, each a dyadic or an infinity with a closure, and an explicit orientation. Every dyadic operation rounds to a requested precision toward the floor or the ceiling and reports whether it lost bits. Every interval operation rounds outward. `Plan` holds a computation over the reals as a finite DAG of real, open and domain nodes, and it has one canonical byte form. The crate is `no_std` and depends only on the `num-bigint` carrier and the specification facade.
+**What.** `Dyadic` holds a number `m · 2^e` in one canonical form. `NumericInterval` holds two bounds, each a dyadic or an infinity with a closure, and an explicit orientation. Every dyadic operation rounds to a requested precision toward the floor or the ceiling and reports whether it lost bits. Every interval operation rounds outward. `Plan` holds a computation over the reals as a finite DAG of real, open and domain nodes, and it has one canonical byte form. `approximate` encloses each real node of a validated plan, and it gives each open node a positive and a negative approximant. The crate is `no_std` and depends only on the `num-bigint` carrier and the specification facade.
 
-**Why.** An exact real is an infinite object, and a program holds only finite approximations of it. Floating point rounds each result without a record, so an enclosure built from it is not sound. A dyadic is exact, a sum or a product of dyadics is a dyadic, and directed rounding keeps an enclosure sound while it bounds the bits. The refinement machine of the exact-reals design computes with these values and emits certificates that a checker replays. An interval is an approximant and never evidence of truth. The crate does not depend on the kernel, and no real number enters kernel conversion.
+**Why.** An exact real is an infinite object, and a program holds only finite approximations of it. Floating point rounds each result without a record, so an enclosure built from it is not sound. A dyadic is exact, a sum or a product of dyadics is a dyadic, and directed rounding keeps an enclosure sound while it bounds the bits. The refinement machine of the exact-reals design computes with these values and emits certificates that a checker replays. An interval alone is never evidence of truth. Truth needs a proven approximant, and a later certificate replays it. The crate does not depend on the kernel, and no real number enters kernel conversion.
 
 **How.** A nonzero mantissa is odd, and zero has the exponent zero, so the derived equality agrees with the exact order. A mantissa that fits an `i64` is inline, and the arithmetic on two inline values runs in `i128` with no allocation. A wider mantissa is a `num_bigint::BigInt`. The work of a sum is bounded by the operand widths and the precision, never by the gap between the exponents (see [Rounding and its bound](#rounding-and-its-bound)).
 
@@ -32,14 +33,14 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 
 ## Provided features
 
-- `Dyadic`: `new`, `From<i64>`, `ZERO` and `ONE`; `mantissa`, `exponent`, `width` and `sign`; `round`, `add`, `sub` and `mul` to a `Precision` toward a `Rounding`; the exact order through `Ord`; negation through `Neg`.
+- `Dyadic`: `new`, `From<i64>`, `ZERO` and `ONE`; `mantissa`, `exponent`, `width` and `sign`; `round`, `add`, `sub`, `mul` and `div` to a `Precision` toward a `Rounding`; the exact order through `Ord`; negation through `Neg`.
 - `Rounded`: the rounded value and its `Exactness`, `Exact` or `Inexact`.
 - `Precision`: the significant bits a result keeps, from one bit to the per-operation quota of 2^24 bits.
 - `Exponent`, `BitWidth` and `Sign`: the nominal parts of a dyadic.
-- `DyadicError`: an exponent outside the `i32` range, or a precision outside its range.
-- `NumericInterval`: `new`, `point`, `lower`, `upper`, `orientation`, `dual`, `contains`, and the outward-rounded `add`, `sub` and `mul`.
+- `DyadicError`: an exponent outside the `i32` range, a precision outside its range, or a zero divisor.
+- `NumericInterval`: `new`, `point`, `whole`, `lower`, `upper`, `orientation`, `dual`, `contains`, and the outward-rounded `add`, `sub`, `mul` and `div`.
 - `Bound`, `Endpoint`, `Closure`, `Orientation` and `Containment`: the parts of an interval and the answer of a membership query.
-- `IntervalError`: each malformed interval by name, a dual operand, and a failed endpoint operation.
+- `IntervalError`: each malformed interval by name, a dual operand, a divisor that holds zero, and a failed endpoint operation.
 - `Plan`: the canonical DAG; `root`, `node_count`, `node` and `nodes`; `encode` to `PlanBytes` and `decode` from `EncodedPlan`.
 - `PlanBuilder`: `new`, `with_capacity`, `real`, `open`, `domain`, `sort_of`, `node_count`, and `finish` to the canonical plan of a `Root`.
 - `Real`, `Open` and `Domain`: the node kinds of the three sorts, with `Cut` and `Quantifier`; `Node`, `Sort`, `Edge` and `Edges`.
@@ -47,6 +48,7 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `PlanError` and `DecodeError`: each refused node, root and byte string by name.
 - `validate` and `admit`: the total validation pass from bytes or from a plan, with its `Quotas`, its `EvidenceTable` of `Judgement`s, and a `ValidatedPlan` or a `Refusal` that names its `Site` and its `Check`.
 - `Scope`, `Height` and `ByteLength`: whether an edge enters a binder, and the nominal parts of the quotas.
+- `approximate`: the dual approximation of a validated plan at one precision, an `Approximation` that answers `enclosure` and `approximants` by node, each pair of approximants a `BilateralApprox` of a `PositiveApprox` and a `NegativeApprox`.
 
 ## Expected features
 
@@ -102,32 +104,19 @@ The arithmetic takes proper operands and refuses a dual one as `DualOperand`. A 
 
 ## Plans and their bytes
 
-A plan is a finite DAG, and each node has one of three sorts. A real node is a bound variable, a dyadic constant, a sum, a difference, a product, a quotient with evidence that its divisor is not zero, a natural power, or a cut. An open node is top, bottom, a strict comparison, a finite meet or join, or a bounded existential or universal quantifier with its modality evidence. A domain node is an interval, a product of two domains, or the subdomain where an open proposition holds. A cut and the two quantifiers each bind one real variable, and a bound variable names its binder by a de Bruijn index. So two plans that differ only in the names of their variables are equal. An evidence reference names a certificate that a later unit's table holds.
-
-A `PlanBuilder` appends each node after the nodes that it names, so it holds a DAG by construction, and it refuses a child of the wrong sort or from another builder by name. `finish` walks the nodes that the root reaches, depth first in field order, with a stack of its own. It places each node after its children, and a node whose structure equals a placed node takes that node's position. So a plan holds each distinct subterm once, and the order of its nodes depends on its structure alone. Two builds of one structure give one plan, whatever their order, their sharing or their dead nodes.
-
-The bytes follow the tree's convention: a one-byte kind before each record, every integer little-endian at a fixed width, and a length as a `u64` before a byte payload. They hold the magic `GXRP`, the version, the node count and each node in the plan's order, its children as the positions of earlier nodes. A mantissa is its shortest two's complement. The reader refuses each malformed input by name: a wrong magic or version, no node, a truncated field, an unknown kind, a child that names no earlier node or a node of another sort, a malformed constant or interval, a domain at the root, and bytes after the last node. It then writes the plan that it read and refuses bytes that differ as `NotCanonical`. So it accepts exactly the canonical bytes of a plan, and it allocates no more than the bytes hold.
+A plan is a finite DAG of real, open and domain nodes. A cut and the two quantifiers each bind one real variable, and a bound variable names its binder by a de Bruijn index. A `PlanBuilder` holds a DAG by construction. `finish` brings the nodes that the root reaches to one canonical form, which holds each distinct subterm once in an order that depends on its structure alone. `Plan::encode` writes the canonical bytes, and `Plan::decode` accepts exactly those bytes and refuses every other input by name. The `plan` module documentation states the node kinds and the canonical walk, and the `codec` module documentation tables the byte layout.
 
 ## Validation
 
-A plan is untrusted input, so only a `ValidatedPlan` reaches the later stages. `validate` reads the bytes, and `admit` takes a plan in memory. Each pass yields a `ValidatedPlan` or a `Refusal`. A refusal names the node that fails, or the input as a whole, and the check that fails there. A refused plan never constructs a `ValidatedPlan`, and the pass never panics.
+A plan is untrusted input, so only a `ValidatedPlan` reaches the later stages. `validate` reads the bytes, and `admit` takes a plan in memory. A `Refusal` names the node that fails, or the input as a whole, and the `Check` that fails there. The pass is linear in the nodes and edges, and it never panics. The `validate` module documentation tables each check and states the two walks.
 
-| Check | What it refuses |
-| ----- | --------------- |
-| `ByteQuota`, `NodeQuota` | an input longer than the byte quota, or with more nodes than the node quota, before the reader reads a node |
-| `Decode` | bytes that are not the canonical bytes of a plan: a forward child, which includes a cycle, a child of the wrong sort, a malformed interval or constant |
-| `HeightQuota`, `BinderQuota` | a path from the root longer than the height quota, or under more binders than the binder quota |
-| `WidthQuota`, `PowerQuota` | a dyadic wider than the width quota, or a power above the power quota |
-| `EscapedBinder` | a bound variable whose index reaches past its binders on a path from the root |
-| `CutHull`, `DomainHull` | a dual or unbounded hull of a cut, a dual interval domain, or compact evidence on a hull that is not closed and bounded |
-| `UnknownEvidence`, `EvidenceKind` | a reference that the evidence table does not register, or registers for another judgement |
-| `DomainEvidence` | a quantifier whose evidence differs from the evidence its interval domain states |
+## Dual approximation
 
-The plan is canonical, so each node stands after its children. A forward walk computes each node's height and binder nesting and checks its payload. A backward walk from the root carries the fewest binders over any path to each node, and a bound variable must stay below that count. The pass holds one mark of three counts per node. It is linear in the nodes and edges, with one search of the evidence table for each reference. A quota excess is a refusal, and the pass never cuts a plan short.
+`approximate` gives each node of a validated plan an approximation at one precision. A real node gets an enclosure that holds its value, rounded outward. An open node gets a positive and a negative approximant, and each one is sound on its own. When neither proves its side, the proposition stays undecided at that precision, and the crate never reports it as false. The `approx` module documentation tables the approximation of each node kind and states the bounds of the pass.
 
 ## Measurement
 
-`cargo bench -p gandr-theory-exact-reals` times each dyadic and interval operation at operand widths of 63, 64, 256 and 4096 bits. It times the canonical form, the bytes, the reading back and the validation of three plans. It prints the median, the 99th percentile and the allocations per operation. Each bench's module documentation lists its rows.
+`cargo bench -p gandr-theory-exact-reals` times each dyadic and interval operation at operand widths of 63, 64, 256 and 4096 bits. It times the canonical form, the bytes, the reading back, the validation and the dual approximation at 64 bits of three plans. It prints the median, the 99th percentile and the allocations per operation. Each bench's module documentation lists its rows.
 
 ## License
 

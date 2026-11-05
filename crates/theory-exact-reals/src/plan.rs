@@ -27,7 +27,8 @@
 //! depth-first walk from the root that visits children in field order and
 //! places each node after its children. So a [`Plan`] holds each distinct
 //! subterm once, and two plans of equal structure are equal, whatever order
-//! and whatever sharing built them.
+//! and whatever sharing built them. A node that the root does not reach
+//! leaves the plan.
 //!
 //! A cut, a division and a quantifier name their evidence by an [`Evidence`]
 //! reference. The certificates that such a reference names, and the checks

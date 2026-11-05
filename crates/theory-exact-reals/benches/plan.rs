@@ -1,6 +1,6 @@
 //! The measurement of plans: the canonical form, the bytes, their reading
-//! back and their validation, for the cut of the square root of two and for
-//! plans of a thousand distinct nodes.
+//! back, their validation and their dual approximation, for the cut of the
+//! square root of two and for plans of a thousand distinct nodes.
 //!
 //! | Row | What it times |
 //! | --- | ------------- |
@@ -10,6 +10,7 @@
 //! | `decode` | [`Plan::decode`] of the canonical bytes, with its check that they are canonical |
 //! | `admit` | [`admit`] of the plan under the default quotas |
 //! | `validate` | [`validate`] of the canonical bytes: the reading and the pass |
+//! | `approximate` | [`approximate`] of the admitted plan at 64 bits |
 //!
 //! The plan of a thousand nodes sums 500 distinct constants of 63 bits into
 //! a chain of 499 sums and compares the sum with zero. Its tree form builds
@@ -41,11 +42,13 @@ use gandr_theory_exact_reals::Open;
 use gandr_theory_exact_reals::Orientation;
 use gandr_theory_exact_reals::Plan;
 use gandr_theory_exact_reals::PlanBuilder;
+use gandr_theory_exact_reals::Precision;
 use gandr_theory_exact_reals::Quotas;
 use gandr_theory_exact_reals::Real;
 use gandr_theory_exact_reals::RealId;
 use gandr_theory_exact_reals::Root;
 use gandr_theory_exact_reals::admit;
+use gandr_theory_exact_reals::approximate;
 use gandr_theory_exact_reals::validate;
 
 use crate::support::Count;
@@ -185,6 +188,11 @@ fn rows(
         ))
         .expect("a valid plan");
     });
+    let admitted_plan = admit(plan.clone(), &quotas, &table).expect("a valid plan");
+    let precision = Precision::try_from(64_u32).expect("a precision");
+    let approximated = measure(batch, samples, || {
+        black_box(approximate(black_box(&admitted_plan), precision));
+    });
     if matches!(print, Output::Table) {
         let nodes = usize::from(plan.node_count());
         let length = bytes.as_ref().len();
@@ -207,6 +215,10 @@ fn rows(
         print_row(
             format_args!("{name} | {nodes} | {length} | validate"),
             &validated,
+        );
+        print_row(
+            format_args!("{name} | {nodes} | {length} | approximate"),
+            &approximated,
         );
     }
 }
