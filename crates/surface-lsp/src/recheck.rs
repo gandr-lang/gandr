@@ -211,7 +211,6 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-use crate::hover::heads;
 use crate::inline::Forms;
 use crate::position::Range;
 use crate::protocol::CodeDescription;
@@ -628,7 +627,8 @@ pub struct Rechecked
     pub laid: Maybe<Laid, laid::Absent>,
     /// The type table the judgement kept of the document's own text, which
     /// the document's hovers read, beside the heads read off the judgement's
-    /// tree as [`heads`] reads them, or why it kept none.
+    /// tree as [`Signatures::after`] reads them for a document laid after its
+    /// closure and [`Signatures::of`] for any other, or why it kept none.
     pub table: Maybe<(TypeTable, Signatures), tabled::Absent>,
     /// The reading of the document's own text off the judgement's parse of
     /// it ([`Reading::of_tree`]), when the judgement was asked to keep one
@@ -836,15 +836,15 @@ where
                 .filter(|_| readings == Readings::Kept)
                 .map(|tree| Reading::of_tree(grammar, roles, tree));
             if keeps {
-                let unit = match laid {
-                    Maybe::Present(ref laid) => &laid.unit,
-                    Maybe::Absent(_) => &single,
+                signatures = match laid {
+                    Maybe::Present(ref laid) => Signatures::after(
+                        grammar,
+                        roles,
+                        (parsed.tree, &laid.unit, base),
+                        parsed.closure.as_ref(),
+                    ),
+                    Maybe::Absent(_) => Signatures::of(grammar, roles, parsed.tree, &single),
                 };
-                signatures = heads(
-                    (grammar, roles),
-                    (parsed.tree, unit, base),
-                    parsed.closure.as_ref(),
-                );
             }
         }
     };
@@ -1851,6 +1851,48 @@ mod tests
             (&table, &signatures),
             (typed.table(), typed.signatures()),
             "the table and heads handed on are those a hover types"
+        );
+    }
+
+    /// #5198: a hover read before any recheck of an importer finds no
+    /// lowering of the importer's closure held, and a recheck after it lowers
+    /// the closure. Both keep each head under the same one of the closure's
+    /// part and the importer's own.
+    #[test]
+    fn a_hover_before_its_closure_is_lowered_splits_as_a_recheck_does_5198()
+    {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/model/interop/boundary/function-row.gandr");
+        let written = std::fs::read_to_string(&path).expect("the corpus importer is read");
+        let text = SourceText::from(written.as_str());
+        let uri = DocumentUri::from(format!("file://{}", path.display()).as_str());
+        let mut session = open(&uri, &Arc::default());
+        let hovered = crate::hover::hovering(
+            text,
+            &path,
+            session.as_ref().expect("the grammar builds"),
+            &gandr_surface_dispatcher::Unshadowed,
+        );
+        if let Ok(judging) = session.as_mut() {
+            judging.keep(gandr_surface_session::Tables::Kept);
+        }
+        let rechecked = recheck(
+            &uri,
+            &mut session,
+            text,
+            &gandr_surface_dispatcher::Unshadowed,
+            Verbosity::User,
+            Spelling::Unicode,
+            UNCARETED,
+        );
+        let Maybe::Present((_table, signatures)) = rechecked.table
+        else {
+            panic!("a recheck keeping its table hands the hovers one");
+        };
+        assert_eq!(
+            &signatures,
+            hovered.signatures(),
+            "the hover and the recheck split the heads alike"
         );
     }
 

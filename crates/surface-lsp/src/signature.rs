@@ -634,37 +634,44 @@ impl Signatures
     }
 
     /// The heads `tree`, the text `unit` lays out with the document's own text
-    /// from `base` on, laid after the closure lowering `closure` names, writes,
-    /// as [`Signatures::of`] reads them: those of the forms before `base` as
-    /// the first text laid after the lowering read them, and those of the
-    /// forms from `base` on read now.
+    /// from `base` on, writes, as [`Signatures::of`] reads them: those of the
+    /// forms before `base` under the closure's part, and those of the forms
+    /// from `base` on under the text's own.
     ///
     /// # Specification
     /// - requires: as [`Signatures::of`]; `tree`'s forms before `base` are the
-    ///   closure lowering's own tree, as a tree laid after it holds them.
+    ///   closure's, and `closure` names the lowering of them the process holds,
+    ///   when it holds one.
     /// - ensures: [`Signatures::of`]'s heads, each top-level form read with the
-    ///   documentation written before it on its own side of `base`: the
-    ///   closure's part is the one kept for `closure`, read now from the forms
-    ///   before `base` when nothing is kept, and kept until nothing holds the
-    ///   lowering.
+    ///   documentation written before it on its own side of `base`. When
+    ///   `closure` names a lowering, the closure's part is the one kept for it,
+    ///   read now when nothing is kept, and kept until nothing holds the
+    ///   lowering. Else the closure's part is read now and not kept. The split
+    ///   does not depend on whether the process holds the lowering (#5198).
     /// - provides: a keystroke's heads read off the document's own forms alone.
     /// - fails: never.
     /// - panics: none.
     /// - intension: one walk of the forms from `base` on, one lock and a scan
-    ///   of the kept closures; the closure's forms walked once per lowering.
+    ///   of the kept closures; the closure's forms walked once per lowering, or
+    ///   once per call when no lowering is named.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an importer read after its closure's lowering, read
     ///   whole, and read again after an edit of its own text answers the same
-    ///   heads, and the second reading finds the closure's part kept.
+    ///   heads, and the second reading finds the closure's part kept; a hover
+    ///   read before any lowering of the closure splits the heads as the
+    ///   recheck after it does; a hover after a keystroke answers from the
+    ///   heads its judgement read, without the copy parsing its text.
     /// - witness: `signature::tests::a_closure_s_heads_are_read_once_per_lowering_1403`
+    /// - witness: `recheck::tests::a_hover_before_its_closure_is_lowered_splits_as_a_recheck_does_5198`
+    /// - witness: `server::tests::a_hover_reads_the_parse_its_judgement_made_2440`
     #[spec(ensures: |ret| ret.own.windows(2).all(|pair| matches!(pair, [first, second] if first.0 < second.0)))]
     #[must_use]
     pub fn after(
         grammar: &Pbg,
         roles: &RoleTable,
         (tree, unit, base): (&SyntaxTree<'_>, &Unit, ByteOffset),
-        closure: &ClosureKey,
+        closure: Option<&ClosureKey>,
     ) -> Self
     {
         let top = || tree.roots().iter().flat_map(|&root| tree.children(root));
@@ -679,10 +686,10 @@ impl Signatures
             unit,
             top().filter(|child| !before(child)),
         );
+        let read = || heads_among(grammar, roles, tree, unit, top().filter(before));
         Self {
-            closure: closure_heads(closure, || {
-                heads_among(grammar, roles, tree, unit, top().filter(before))
-            }),
+            closure: closure
+                .map_or_else(|| Arc::from(read()), |closure| closure_heads(closure, read)),
             documented: parameters_documented(unit, &own),
             own,
         }
@@ -2062,7 +2069,8 @@ mod tests
             (&laid.unit, laid.base),
             |tree, closure| {
                 let key = closure.expect("the process holds the closure's lowering");
-                let after = Signatures::after(grammar, roles, (tree, &laid.unit, laid.base), &key);
+                let after =
+                    Signatures::after(grammar, roles, (tree, &laid.unit, laid.base), Some(&key));
                 let whole = Signatures::of(grammar, roles, tree, &laid.unit);
                 let again = super::closure_heads(&key, || {
                     panic!("a closure whose heads are kept is not walked again")
