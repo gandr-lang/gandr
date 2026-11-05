@@ -37,6 +37,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::StagedPosition;
 use quenchant_shape::shape::Maybe;
 
+use super::Crossing;
 use super::Direction;
 use super::Frame;
 use super::Goal;
@@ -1389,7 +1390,8 @@ impl Machine<'_, '_>
     ///   first factor and component one the second factor at the first
     ///   component, read as the value the projection of component zero returns.
     /// - fails: a record projection of a non-record, a tuple projection of a
-    ///   non-product and non-dependent pair, absent labels and absent
+    ///   record, which keeps its fields by label, a tuple projection of any
+    ///   other non-product and non-dependent pair, absent labels and absent
     ///   components refuse separately.
     /// - panics: none.
     ///
@@ -1452,6 +1454,9 @@ impl Machine<'_, '_>
                     self.context.instantiate_value_type(second, point)
                 },
                 _ => return Err(CheckRefusal::AbsentTupleComponent(term)),
+            },
+            (Some(&Computation::TupleProjection(..)), Some(&ValueType::Record(_))) => {
+                return Err(mismatch(ExpectedShape::Positional));
             },
             (Some(&Computation::TupleProjection(..)), _) => {
                 return Err(mismatch(ExpectedShape::Product));
@@ -1737,7 +1742,11 @@ impl Machine<'_, '_>
         self.context.binders().open(Zone::Intuitionistic, first);
         self.context.binders().open(Zone::Intuitionistic, second);
         self.wait(Frame::NativeYield(Produced::CompType(result)));
-        self.wait(Frame::SplitBody { at: term, arity });
+        self.wait(Frame::SplitBody {
+            at: term,
+            arity,
+            crossing: Crossing::Written,
+        });
         Ok(Step::Descend(Goal::Computation {
             term: body,
             direction: Direction::Check(expected),

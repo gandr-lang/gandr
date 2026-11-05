@@ -883,6 +883,10 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             wanted: ExpectedShape::Summand,
             ..
         } => String::from("name a summand that the sum declares"),
+        CheckRefusal::ShapeMismatch {
+            wanted: ExpectedShape::Positional,
+            ..
+        } => String::from("split the record by label, as `*{.label = name, …}`"),
         CheckRefusal::ShapeMismatch { .. } => String::from(
             "change the term or the type it is checked against, so that the type has the required \
              shape",

@@ -1,0 +1,51 @@
+//! A pair whose type a definition's call computes, split by position.
+//!
+//! `std.ir` names a pair type of a signature through a call. The lowering then
+//! sees no pair type and writes the split with no motive. In a dependent pair,
+//! a position names one component. A record that a call computes has no
+//! written order. Thus a position names none of its fields.
+//!
+//! The checker unfolds the call. At a dependent pair it binds the first
+//! component, then the second at the first. The kernel reads the split as the
+//! dependent split at the type that the split has. At a record the checker
+//! refuses the split by name. The help gives the split by label.
+//!
+//! - see: #5290
+//! - see: #5255 — `std.ir` over the native dependent pair
+
+/// The spools: bare, or wound once more.
+data Spool : Type where
+  /// The bare spool.
+  | Bare : Spool
+  /// One more turn on `n`.
+  | Wound : (n : Spool) --> Spool
+
+/// The unit at the bare spool, and a spool at a wound one.
+def turns(n : Spool) -> Type =
+  match n
+    | Bare => return Unit
+    | Wound(m) => return Spool
+
+/// A spool beside a value of its turns.
+def spoolPair(k : Spool) -> Type = return type(*{n : Spool, t : turns(n)})
+
+/// Two spools, and no field reads another.
+def spoolRecord(k : Spool) -> Type = return type(*{n : Spool, t : Spool})
+
+/// Returns the spool `n` and ignores the value of its turns.
+def atTurns(n : Spool, t : turns(n)) -> Spool = n
+
+/// The split binds the spool, then a value of its turns at that spool.
+def splitPair(p : spoolPair(Bare)) -> Spool =
+  match p
+    | *{n, t} => atTurns n t
+
+/// The split by position of the record has no order to read.
+@[ refuses("ShapeMismatch") ]
+def splitRecord(p : spoolRecord(Bare)) -> Spool =
+  match p
+    | *{n, t} => t
+
+/// The projection by position of the record has no order to read.
+@[ refuses("ShapeMismatch") ]
+def firstOfRecord(p : spoolRecord(Bare)) -> Spool = p.0;
