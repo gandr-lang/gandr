@@ -892,6 +892,15 @@ default-features = false
 [workspace.dependencies.gandr-theory-exact-reals]
 path = "crates/theory-exact-reals"
 
+# Finite graded posets with their cells as data, and their subcomplexes.
+# features:
+# - none: alloc-only posets over finite Stone duality's bit rows.
+# consumers:
+# - theory-shapes (dev)
+[workspace.dependencies.gandr-theory-graded-posets]
+path = "crates/theory-graded-posets"
+default-features = false
+
 # The precedence DAG, the walk machine, and the graph algorithms they read.
 # features:
 # - none: alloc-only graph machinery.
