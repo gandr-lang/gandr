@@ -48,3 +48,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ISSUE: ${{ github.event.issue.number }}
         run: .config/triage/triage.sh "$ISSUE"
+  # A new issue pages its sort at once (#5214): the factory's own runner
+  # passes the issue's number and its author's association to one command,
+  # which pages the seat that sorts it into a bucket. No text of the issue
+  # reaches the runner, and the job holds no token. The runner admits only the
+  # default branch's workflows, since every external fork's pull request waits
+  # for approval.
+  notify:
+    name: page the sort of a new issue
+    if: github.event.action == 'opened'
+    runs-on: [self-hosted, factory] # zizmor: ignore[self-hosted-runner]
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: page the sort
+        env:
+          ISSUE: ${{ github.event.issue.number }}
+          ASSOCIATION: ${{ github.event.issue.author_association }}
+        run: factory-notify issue-opened "$ISSUE" "$ASSOCIATION"
