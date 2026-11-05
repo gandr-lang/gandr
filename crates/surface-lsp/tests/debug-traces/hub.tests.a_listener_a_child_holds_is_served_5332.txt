@@ -1,0 +1,83 @@
+test: hub::tests::a_listener_a_child_holds_is_served_5332
+package: gandr-surface-lsp
+command: mise run debug:test gandr-surface-lsp hub::tests::a_listener_a_child_holds_is_served_5332 --break ^gandr_surface_lsp::hub::bind$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-lsp/68fb3854266909c2/out/gandr_surface_lsp-68fb3854266909c2"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-lsp/68fb3854266909c2/out/gandr_surface_lsp-68fb3854266909c2' (arm64).
+(lldb) settings set -- target.run-args  "hub::tests::a_listener_a_child_holds_is_served_5332" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex ^gandr_surface_lsp::hub::bind$
+Breakpoint 1: where = gandr_surface_lsp-68fb3854266909c2`gandr_surface_lsp::hub::bind + 40 at hub.rs:345:1, address = 0x00000001003e247c
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_lsp-68fb3854266909c2`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x0000000103815e68
+(lldb) run
+
+running 1 test
+test hub::tests::a_listener_a_child_holds_is_served_5332 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 18640 launched: 'target/debug-trace/debug/build/gandr-surface-lsp/68fb3854266909c2/out/gandr_surface_lsp-68fb3854266909c2' (arm64)
+Process 18640 stopped
+* thread #2, name = 'hub::tests::a_listener_a_child_holds_is_served_5332', stop reason = breakpoint 1.1
+       frame #0: 0x00000001003e247c gandr_surface_lsp-68fb3854266909c2`gandr_surface_lsp::hub::bind(socket="/tmp/gh-18640-held/hub.sock") at hub.rs:345:1
+   342 	///   binding a socket file nothing accepts on succeeds.
+   343 	/// - witness: `hub::tests::a_socket_has_one_hub`
+   344 	/// - witness: `hub::tests::a_listener_a_child_holds_is_served_5332`
+-> 345 	#[spec(ensures: |ret| ret.as_ref().map_or(true, |bound|
+    	^
+   346 	    !matches!(*bound, Maybe::Present(_)) || socket.exists()))]
+   347 	#[inline]
+   348 	pub fn bind(socket: &Path) -> Result<Maybe<UnixListener, bind::Absent>, io::Error>
+(lldb) bt 24
+* thread #2, name = 'hub::tests::a_listener_a_child_holds_is_served_5332', stop reason = breakpoint 1.1
+   * frame #0: 0x00000001003e247c gandr_surface_lsp-68fb3854266909c2`gandr_surface_lsp::hub::bind(socket="/tmp/gh-18640-held/hub.sock") at hub.rs:345:1
+     frame #1: 0x0000000100473234 gandr_surface_lsp-68fb3854266909c2`gandr_surface_lsp::hub::tests::a_listener_a_child_holds_is_served_5332 at hub.rs:1330:40
+     frame #2: 0x000000010044ee80 gandr_surface_lsp-68fb3854266909c2`gandr_surface_lsp::hub::tests::a_listener_a_child_holds_is_served_5332::{closure#0}((null)={}) at hub.rs:1326:49
+     frame #3: 0x00000001005ba458 gandr_surface_lsp-68fb3854266909c2`<gandr_surface_lsp::hub::tests::a_listener_a_child_holds_is_served_5332::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x00000001008f2058 gandr_surface_lsp-68fb3854266909c2`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #5: 0x00000001008f2050 gandr_surface_lsp-68fb3854266909c2`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #6: 0x00000001008fd574 gandr_surface_lsp-68fb3854266909c2`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #7: 0x00000001008fd568 gandr_surface_lsp-68fb3854266909c2`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #8: 0x00000001008fd568 gandr_surface_lsp-68fb3854266909c2`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #9: 0x00000001008fd564 gandr_surface_lsp-68fb3854266909c2`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #10: 0x00000001008fd564 gandr_surface_lsp-68fb3854266909c2`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #11: 0x00000001008fd564 gandr_surface_lsp-68fb3854266909c2`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #12: 0x00000001008fd558 gandr_surface_lsp-68fb3854266909c2`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #13: 0x00000001008f7f68 gandr_surface_lsp-68fb3854266909c2`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #14: 0x00000001008f7f04 gandr_surface_lsp-68fb3854266909c2`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #15: 0x00000001008ffa38 gandr_surface_lsp-68fb3854266909c2`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #16: 0x00000001008ffa28 gandr_surface_lsp-68fb3854266909c2`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #17: 0x00000001008ffa28 gandr_surface_lsp-68fb3854266909c2`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #18: 0x00000001008ffa24 gandr_surface_lsp-68fb3854266909c2`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #19: 0x00000001008ffa24 gandr_surface_lsp-68fb3854266909c2`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #20: 0x00000001008ffa24 gandr_surface_lsp-68fb3854266909c2`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #21: 0x00000001008ffa14 gandr_surface_lsp-68fb3854266909c2`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+     frame #22: 0x00000001037d4db8 gandr_surface_lsp-68fb3854266909c2`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
+     frame #23: 0x00000001037d4dac gandr_surface_lsp-68fb3854266909c2`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17 [opt]
+(lldb) frame variable --depth 3
+(&std::path::Path) socket = "/tmp/gh-18640-held/hub.sock" {
+  data_ptr = 0x000000010c150a80 {inner:{inner:{inner:"/tmp/gh-18640-held/hub.sock"}}}
+  length = 27
+}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x0000000100473234 gandr_surface_lsp-68fb3854266909c2`gandr_surface_lsp::hub::tests::a_listener_a_child_holds_is_served_5332 at hub.rs:1330:40
+   1327	    {
+   1328	        let scratch = Scratch::new(Json("held"));
+   1329	        let socket = scratch.socket();
+-> 1330	        let Maybe::Present(listener) = bind(&socket).expect("a fresh socket binds")
+    	                                       ^
+   1331	        else {
+   1332	            panic!("a fresh socket has no hub");
+   1333	        };
+(lldb) frame variable --depth 3
+(gandr_surface_lsp::hub::tests::Scratch) scratch = {0:"/tmp/gh-18640-held"}
+(std::path::PathBuf) socket = "/tmp/gh-18640-held/hub.sock" {
+  inner = "/tmp/gh-18640-held/hub.sock" {
+    inner = {inner:size=27}
+  }
+}
