@@ -38,6 +38,7 @@
 | `oracle` | no |
 | `sharing` | no |
 | `nominal` | no |
+| `measure` | no |
 
 ## Engineering
 
