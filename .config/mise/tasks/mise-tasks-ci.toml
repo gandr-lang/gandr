@@ -4706,6 +4706,43 @@ pr-ejected #$root: the required check \`$check\` failed at ${head::12} ($run). \
     "${command[@]}" "${coordinator[@]}" "STALL ejected-and-cut #$root: \`$check\` failed ($run); the stack $before is now $after" || :
   done
 }
+# Page each landing event's seat within a minute (#5214). Between readings,
+# the watch reads the newest issue comments once a minute with a conditional
+# request: a minute that changes nothing answers 304 and costs no rate
+# limit. A comment the landing watcher or `cuts` marks is an event
+# (`events.jq`), and it pages the seat of the lane its branch names, or the
+# coordinator for a branch no seat's lane names.
+events_etag=
+events_seen=null
+poll_events() {
+  local out body result number lane line
+  out=$(gh api -i -H "If-None-Match: $events_etag" "repos/$repo/issues/comments?sort=created&direction=desc&per_page=50" 2> /dev/null) || :
+  out=${out//$'\r'/}
+  [[ $(awk 'NR == 1 { print $2; exit }' <<< "$out") == 200 ]] || return 0
+  events_etag=$(awk -F': ' 'tolower($1) == "etag" { print $2; exit }' <<< "$out")
+  body=$(awk 'body { print } /^$/ { body = 1 }' <<< "$out")
+  result=$(jq -c --argjson seen "$events_seen" '{seen: $seen, comments: .}' <<< "$body" | jq -c -f "$stall_dir/events.jq") || return 0
+  events_seen=$(jq -c .seen <<< "$result")
+  while IFS=$'\t' read -r number line; do
+    echo "$line"
+    lane=$(gh api "repos/$repo/pulls/$number" --jq '.head.ref | split("-")[0]' 2> /dev/null) || lane=
+    if [[ -n $lane ]] && jq -e --arg lane "$lane" '(.seats // {}) | has($lane)' <<< "$page" > /dev/null; then
+      page_seat "$lane" "$line" "$line" || :
+    else
+      "${command[@]}" "${coordinator[@]}" "$line" || :
+    fi
+  done < <(jq -r '.events[] | "\(.number)\t\(.line)"' <<< "$result")
+}
+# Wait `$1` seconds for the next reading, polling the events each minute.
+listen() {
+  local left=$1 step
+  while (( left > 0 )); do
+    step=$(( left < 60 ? left : 60 ))
+    sleep "$step"
+    left=$(( left - step ))
+    poll_events
+  done
+}
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source .config/pr-stack/stack.bash
@@ -4717,7 +4754,7 @@ while :; do
   # A failed read is no finding; the next reading reads again.
   if ! reading=$(stall_reading "$repo" "$trunk" "$(stall_memory)"); then
     echo "stall:watch: the reading failed; reading again in ${interval}s" >&2
-    sleep "$interval"
+    listen "$interval"
     continue
   fi
   paged=$(jq -c .paged <<< "$reading")
@@ -4766,7 +4803,7 @@ while :; do
   jq -c --argjson paged "$paged" --argjson stalled "$stalled" --argjson gone "$gone" --argjson read "$(date +%s)" \
     '{seen, paged: $paged, stalled: $stalled, gone: $gone, read: $read}' <<< "$reading" > "$stall_state.tmp"
   mv "$stall_state.tmp" "$stall_state"
-  sleep "$interval"
+  listen "$interval"
 done
 {% endraw %}
 '''

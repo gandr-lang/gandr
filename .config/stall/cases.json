@@ -2610,5 +2610,81 @@
       }
     },
     "output": "{\"prs\":[{\"number\":5112,\"draft\":false,\"bot\":false,\"head\":\"lane-5112\",\"base\":\"main\",\"oid\":\"5c57\",\"created\":1793782800,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"queue\":null,\"removals\":[],\"claims\":[],\"checks\":[{\"name\":\"test\",\"verdict\":\"pending\",\"conclusion\":\"CANCELLED\",\"started\":1793785140,\"completed\":1793785200},{\"name\":\"lint\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793785140,\"completed\":1793785200}]},{\"number\":5111,\"draft\":false,\"bot\":false,\"head\":\"lane-5111\",\"base\":\"main\",\"oid\":\"5361\",\"created\":1793782800,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"queue\":null,\"removals\":[],\"claims\":[],\"checks\":[{\"name\":\"test\",\"verdict\":\"fail\",\"conclusion\":\"CANCELLED\",\"started\":1793785140,\"completed\":1793785200},{\"name\":\"lint\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793785140,\"completed\":1793785200}]}],\"merged\":[],\"filed\":[],\"claimed\":[]}"
+  },
+  {
+    "name": "#5214: a marked comment newer than the last reading is an event, oldest first; an unmarked or already read comment is none",
+    "program": "events.jq",
+    "input": {
+      "seen": 100,
+      "comments": [
+        {
+          "id": 105,
+          "issue_url": "https://api.github.com/repos/o/r/issues/5358",
+          "body": "pr-dequeued #5358\n\nThe merge queue removed this pull request.\n\n<!-- landing:pr-dequeued:abc -->"
+        },
+        {
+          "id": 104,
+          "issue_url": "https://api.github.com/repos/o/r/issues/5361",
+          "body": "<!-- landing:pr-red:def -->\npr-red #5361 sweep the recovery records (linux)\n\nA required check failed."
+        },
+        {
+          "id": 103,
+          "issue_url": "https://api.github.com/repos/o/r/issues/5360",
+          "body": "Ruling: land it."
+        },
+        {
+          "id": 100,
+          "issue_url": "https://api.github.com/repos/o/r/issues/5300",
+          "body": "pr-dequeued #5300 <!-- landing:pr-dequeued:old -->"
+        },
+        {
+          "id": 106,
+          "issue_url": "https://api.github.com/repos/o/r/issues/5340",
+          "body": "<!-- pr-ejected 0123 -->\npr-ejected #5340: the required check `x` failed."
+        }
+      ]
+    },
+    "output": {
+      "seen": 106,
+      "events": [
+        {
+          "number": 5361,
+          "kind": "red",
+          "line": "EVENT red #5361: pr-red #5361 sweep the recovery records (linux)"
+        },
+        { "number": 5358, "kind": "dequeued", "line": "EVENT dequeued #5358: pr-dequeued #5358" },
+        {
+          "number": 5340,
+          "kind": "ejected",
+          "line": "EVENT ejected #5340: pr-ejected #5340: the required check `x` failed."
+        }
+      ]
+    }
+  },
+  {
+    "name": "#5214: the first reading pages nothing and records the newest comment as read",
+    "program": "events.jq",
+    "input": {
+      "seen": null,
+      "comments": [
+        {
+          "id": 7,
+          "issue_url": "https://api.github.com/repos/o/r/issues/1",
+          "body": "pr-dequeued #1 <!-- landing:pr-dequeued:a -->"
+        },
+        {
+          "id": 9,
+          "issue_url": "https://api.github.com/repos/o/r/issues/2",
+          "body": "<!-- landing:pr-dirty:b -->\npr-dirty #2"
+        }
+      ]
+    },
+    "output": { "seen": 9, "events": [] }
+  },
+  {
+    "name": "#5214: a reading with no comment keeps the last one read",
+    "program": "events.jq",
+    "input": { "seen": 100, "comments": [] },
+    "output": { "seen": 100, "events": [] }
   }
 ]
