@@ -12,9 +12,16 @@
 //! [`Step::Var`] names the arm a leaf runs. [`Step::Split`] lists the cases of
 //! one column, one child for each case, in the order the column's type lists
 //! them. [`Step::Compose`] stands a derivation under one branch of a split. A
-//! part is minted before the step holding it, as in
-//! [`crate::pattern::Patterns`], so every walk is a loop over ids. The
-//! derivation shares the pattern table's arm positions and copies no pattern.
+//! part is minted before the step holding it, so every walk is a loop over
+//! ids. The derivation names arms by position and copies no pattern.
+//!
+//! # Who reads it
+//!
+//! The lowering records a derivation beside each match's tree. The kernel
+//! replays it against the admitted environment: each data split re-derives
+//! its family's constructors and the loops its case owes, and each step meets
+//! the tree's node at its place. A higher inductive type's case owes one branch
+//! for each loop after its constructors, so a data split lists both.
 //!
 //! # References
 //!
@@ -29,12 +36,12 @@
 use alloc::vec::Vec;
 
 use anodized::spec;
-use gandr_kernel_term::ConstantIndex;
-use gandr_kernel_term::ConstructorTag;
-use gandr_kernel_term::FieldCount;
-use gandr_kernel_term::Literal;
 
-use crate::syntax::DataSignature;
+use crate::CellIndex;
+use crate::ConstantIndex;
+use crate::ConstructorTag;
+use crate::FieldCount;
+use crate::Literal;
 
 /// The id of a step in a [`Cover`].
 #[repr(transparent)]
@@ -103,18 +110,71 @@ impl From<ArmCount> for usize
     }
 }
 
+/// One loop a case over a presented sort owes: its type of words and its
+/// cell among the words' cells.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Loop
+{
+    /// The type of words the loop is a letter of.
+    words: ConstantIndex,
+    /// The loop's position among its words' cells.
+    cell: CellIndex,
+}
+
+impl Loop
+{
+    /// The loop at `cell` of the words `words`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        words: ConstantIndex,
+        cell: CellIndex,
+    ) -> Self
+    {
+        Self { words, cell }
+    }
+
+    /// The type of words the loop is a letter of.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn words(self) -> ConstantIndex
+    {
+        self.words
+    }
+
+    /// The loop's position among its words' cells.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn cell(self) -> CellIndex
+    {
+        self.cell
+    }
+}
+
 /// The cases one split lists.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Cases
 {
     /// A data family's constructors: one tag and its field count for each
-    /// branch, in the order the branches stand.
+    /// branch, in the order the branches stand; then the loops its case owes,
+    /// one branch each.
     Data
     {
         /// The family's declaration.
         family: ConstantIndex,
         /// Each branch's constructor and the fields it binds.
         constructors: Vec<(ConstructorTag, FieldCount)>,
+        /// Each loop the case owes, after the constructors' branches.
+        loops: Vec<Loop>,
     },
     /// A boolean: `true`, then `false`.
     Boolean,
@@ -140,9 +200,9 @@ impl Cases
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one for each constructor of a data split, two for a boolean,
-    ///   an integer, a list and a guard, one for a tuple and a record, the
-    ///   summands of a sum, and none for an absurd branch.
+    /// - ensures: one for each constructor and loop of a data split, two for a
+    ///   boolean, an integer, a list and a guard, one for a tuple and a record,
+    ///   the summands of a sum, and none for an absurd branch.
     /// - provides: the width every split's branches must match.
     /// - fails: never.
     /// - panics: none.
@@ -158,8 +218,10 @@ impl Cases
     {
         BranchCount(match *self {
             Self::Data {
-                ref constructors, ..
-            } => constructors.len(),
+                ref constructors,
+                ref loops,
+                ..
+            } => constructors.len().saturating_add(loops.len()),
             Self::Boolean | Self::Integer(_) | Self::List | Self::Guard => 2,
             Self::Tuple(_) | Self::Record(_) => 1,
             Self::Sum(summands) => summands,
@@ -251,6 +313,12 @@ pub enum CoverRefusal
     FieldCount(StepId),
     /// A `var` names an arm the match does not have.
     UnknownArm(StepId),
+    /// A data split lists other loops than the ones its case owes.
+    Loops(StepId),
+    /// A step meets a node of the tree that is not its own: a split over
+    /// another former, another number of branches, or a branch that binds
+    /// other than its fields.
+    Tree(StepId),
 }
 
 impl Cover
@@ -347,7 +415,8 @@ impl Cover
     /// Check the derivation against the signature and the match's arms.
     ///
     /// # Specification
-    /// - requires: `declared` answers the data signature each family names.
+    /// - requires: `declared` answers the field counts of each family's
+    ///   constructors, in tag order.
     /// - ensures: `Ok` when every step names only steps minted before it, every
     ///   split holds one branch for each case, every data split lists its
     ///   family's constructors once each, in tag order, each with its declared
@@ -371,13 +440,14 @@ impl Cover
     /// - witness: `cover::tests::a_split_that_drops_a_constructor_is_refused`
     #[inline]
     #[spec(ensures: |ret| ret.is_err() || !self.steps.is_empty())]
-    pub fn check<'signature, Declared>(
+    pub fn check<Declared, Fields>(
         &self,
         arms: ArmCount,
         declared: Declared,
     ) -> Result<(), CoverRefusal>
     where
-        Declared: Fn(ConstantIndex) -> Option<&'signature DataSignature>,
+        Declared: Fn(ConstantIndex) -> Option<Fields>,
+        Fields: ExactSizeIterator<Item = FieldCount>,
     {
         if self.steps.is_empty() {
             return Err(CoverRefusal::Empty);
@@ -400,6 +470,7 @@ impl Cover
                     if let Cases::Data {
                         family,
                         ref constructors,
+                        ..
                     } = *cases
                     {
                         Self::check_family(id, family, constructors, &declared)?;
@@ -426,18 +497,18 @@ impl Cover
     /// - hypothesis: L3 — as [`Self::check`].
     /// - witness: `cover::tests::a_split_that_drops_a_constructor_is_refused`
     #[spec(ensures: |ret| ret.is_err()
-        || declared(family).is_some_and(|signature| signature.constructors().len() == constructors.len()))]
-    fn check_family<'signature, Declared>(
+        || declared(family).is_some_and(|fields| fields.len() == constructors.len()))]
+    fn check_family<Declared, Fields>(
         id: StepId,
         family: ConstantIndex,
         constructors: &[(ConstructorTag, FieldCount)],
         declared: &Declared,
     ) -> Result<(), CoverRefusal>
     where
-        Declared: Fn(ConstantIndex) -> Option<&'signature DataSignature>,
+        Declared: Fn(ConstantIndex) -> Option<Fields>,
+        Fields: ExactSizeIterator<Item = FieldCount>,
     {
-        let signature = declared(family).ok_or(CoverRefusal::UnknownFamily(id))?;
-        let fields = signature.constructors();
+        let fields = declared(family).ok_or(CoverRefusal::UnknownFamily(id))?;
         if constructors.len() != fields.len() {
             return Err(CoverRefusal::ConstructorCount(id));
         }
@@ -445,7 +516,7 @@ impl Cover
             if tag != ConstructorTag::from(place) {
                 return Err(CoverRefusal::ConstructorOrder(id));
             }
-            if count != FieldCount::from(declared.len()) {
+            if count != declared {
                 return Err(CoverRefusal::FieldCount(id));
             }
         }

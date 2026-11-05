@@ -152,6 +152,7 @@ mod arena;
 mod base;
 mod budget;
 mod builtin;
+pub mod cover;
 mod decl;
 mod decode;
 mod encode;

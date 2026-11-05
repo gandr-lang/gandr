@@ -34,6 +34,8 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Example 1.4 and § 6 give Catt's artifact sizes, which `decode_measured`'s per-declaration shares stand beside.
 - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites grows with dimension, so `decode_measured` reports both sizes rather than one.
 - `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Ambrus Kovács. "Canonicity for Indexed Inductive-Recursive Types." _Proceedings of the ACM on Programming Languages_ 10 (POPL), 2026. `doi:10.1145/3776685` — the signatures, `E` and `F` of § 2.2 give `Builtin`'s three roles and the judgement of each holder.
+- `vault:01a1567c-2c32-7ed3-a102-45e54f702b4f` — anchor: Eremondi and Kammar, "Coverage Semantics for Dependent Pattern Matching", ESOP 2025, `doi:10.1007/978-3-031-91118-7_11` — `cover`'s three rules.
+- `vault:01a1567c-2c32-7ed3-a102-45dc5330206a` — anchor: the coverage design — a match's derivation beside its tree.
 
 ## Provided features
 
@@ -104,6 +106,7 @@ Mechanism, decisions and specification detail live in the rustdoc beside the cod
 | Decode acceptance and its limits | [`src/decode.rs`](src/decode.rs) |
 | The rejection vocabulary | [`src/error.rs`](src/error.rs) |
 | The stage arena and its extents; its lookup files on `gandr-kernel-check-memo`'s hash index | [`src/stage.rs`](src/stage.rs) |
+| The cover derivation of a match and its check against the signatures | [`src/cover.rs`](src/cover.rs) |
 
 ## License
 
